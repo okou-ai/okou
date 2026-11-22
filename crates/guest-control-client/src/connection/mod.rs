@@ -22,11 +22,11 @@ use tokio::sync::{Notify, oneshot};
 use uuid::Uuid;
 
 use crate::operation_tracker::{
-    NormalOperationToken, NormalOperationTracker, NormalOperationTransitionHandle,
+    NormalOperationToken, NormalOperationTracker, PendingNormalOperation,
 };
 use crate::{GuestControlClient, exec_operation};
 
-pub(crate) use frame::{FrameWriteDecision, FrameWriteTiming};
+pub(crate) use frame::{FrameWriteDecision, FrameWriteTiming, OutboundFrame};
 pub(super) use request::{
     CompositeNormalOperation, normal_operation_transition_error,
     normal_request_on_shared_with_timing_frame_builder,
@@ -110,11 +110,6 @@ pub(super) struct RouteReservationEntry {
 pub(super) struct RouteReservation {
     shared: Arc<Shared>,
     route_id: RouteId,
-}
-
-enum PendingNormalOperation {
-    Owned(NormalOperationToken),
-    Composite(NormalOperationTransitionHandle),
 }
 
 /// Connection-local registration identity.
@@ -454,7 +449,9 @@ fn dispatch_reader_frame(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> i
                         .contains(&msg.msg_type)
                         && let Some(normal_operation) = pending_response.normal_operation.take()
                     {
-                        request::complete_pending_normal_operation(normal_operation)?;
+                        normal_operation
+                            .complete()
+                            .map_err(normal_operation_transition_error)?;
                     }
                     Some(pending_response)
                 } else {

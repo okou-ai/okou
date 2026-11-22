@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.27.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.15...runner-supervisor-v0.27.16) (2026-11-22)
+
+## [0.27.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.14...runner-supervisor-v0.27.15) (2026-11-22)
+
+## [0.27.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.13...runner-supervisor-v0.27.14) (2026-11-21)
+
+## [0.27.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.12...runner-supervisor-v0.27.13) (2026-11-21)
+
+## [0.27.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.11...runner-supervisor-v0.27.12) (2026-11-21)
+
+## [0.27.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.10...runner-supervisor-v0.27.11) (2026-11-21)
+
+## [0.27.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.9...runner-supervisor-v0.27.10) (2026-11-21)
+
+## [0.27.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.8...runner-supervisor-v0.27.9) (2026-11-21)
+
+## [0.27.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.7...runner-supervisor-v0.27.8) (2026-11-20)
+
+
+### Refactoring
+
+* **runner-supervisor:** centralize job completion reconciliation ([#49624](https://github.com/okou-ai/okou/issues/49624)) ([6fefb5b](https://github.com/okou-ai/okou/commit/6fefb5b470f93082a235faef79cc2b07c60e05ae))
+
+## [0.27.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.6...runner-supervisor-v0.27.7) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+## [0.27.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.5...runner-supervisor-v0.27.6) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+## [0.27.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.4...runner-supervisor-v0.27.5) (2026-11-20)
+
+## [0.27.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.3...runner-supervisor-v0.27.4) (2026-11-20)
+
+## [0.27.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.2...runner-supervisor-v0.27.3) (2026-11-20)
+
+## [0.27.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.1...runner-supervisor-v0.27.2) (2026-11-20)
+
+## [0.27.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.0...runner-supervisor-v0.27.1) (2026-11-20)
+
+## [0.27.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.13...runner-supervisor-v0.27.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
+## [0.26.13](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.12...runner-supervisor-v0.26.13) (2026-11-20)
+
+## [0.26.12](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.11...runner-supervisor-v0.26.12) (2026-11-19)
+
+## [0.26.11](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.10...runner-supervisor-v0.26.11) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** construct dispatch intake with its home probe ([#49123](https://github.com/okou-ai/okou/issues/49123)) ([3770610](https://github.com/okou-ai/okou/commit/3770610074d3e432ef0fe658109be10420c5fde6))
+
+## [0.26.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.9...runner-supervisor-v0.26.10) (2026-11-19)
+
+
+### Bug Fixes
+
+* **runner:** enable direct dispatch before startup readiness ([#48996](https://github.com/okou-ai/okou/issues/48996)) ([ff43cc4](https://github.com/okou-ai/okou/commit/ff43cc42defc24c5c02511ec822a31f50ec8ae05))
+
+## [0.26.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.8...runner-supervisor-v0.26.9) (2026-11-19)
+
+
+### Bug Fixes
+
+* **runner:** defer preferred dispatch on home checkout contention ([#48947](https://github.com/okou-ai/okou/issues/48947)) ([1e9c38b](https://github.com/okou-ai/okou/commit/1e9c38ba98266756be0ffd55f1ed09b1ef816b59))
+
 ## [0.26.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.7...runner-supervisor-v0.26.8) (2026-11-19)
 
 ## [0.26.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.26.6...runner-supervisor-v0.26.7) (2026-11-19)

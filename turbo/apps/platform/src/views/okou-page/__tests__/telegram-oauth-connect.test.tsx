@@ -34,7 +34,6 @@ function botStatus(connected = false): MockTelegramBotStatus {
     kind: "official",
     username: "support_bot",
     avatarUrl: null,
-    agent: { id: "compose_1", name: "Support" },
     isOwner: false,
     isConnected: connected,
     connectedUser: connected
@@ -47,7 +46,6 @@ function botStatus(connected = false): MockTelegramBotStatus {
     tokenStatus: "valid",
     official: {
       configured: true,
-      usesDefaultAgent: true,
       linkedTelegramUserId: connected ? String(AUTH.id) : null,
     },
     domainConfigured: true,
@@ -164,7 +162,6 @@ test("Works disables Telegram Connect when the official bot is not configured", 
         ...botStatus(),
         official: {
           configured: false,
-          usesDefaultAgent: true,
           linkedTelegramUserId: null,
         },
       },
@@ -395,12 +392,12 @@ test("Leaving Works cancels authorization and ignores a later tab result", async
 
   click(connect);
   await expectAuthorization(popup);
-  click(getAction("link", "Agents"));
+  click(getAction("link", "Workflows"));
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/agents");
+  expect(pathname()).toBe("/workflows");
   expect({ value: popup.closed }).toStrictEqual({ value: false });
   authorize(popup);
   act(() => {

@@ -1,16 +1,13 @@
+import { DEFAULT_AGENT_NAME } from "./default-agent-profile";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { agents } from "@okouai/db/schema/agent";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, count, desc, eq, notExists, or } from "drizzle-orm";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 
 import { db$ } from "../external/db";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 
 export function agentResponse(row: {
   readonly agentId: string;
@@ -45,29 +42,32 @@ export function agentResponse(row: {
 export function publicAgentCountReadPlan(orgId: string) {
   return {
     selection: { value: count() },
-    condition: and(eq(agents.orgId, orgId), eq(agents.visibility, "public")),
+    condition: and(
+      eq(legacyAgentApiProfiles.orgId, orgId),
+      eq(legacyAgentApiProfiles.visibility, "public"),
+    ),
   };
 }
 
-export function defaultAgentJoinCondition() {
-  return and(
-    eq(agents.id, orgMetadata.defaultAgentId),
-    eq(agents.orgId, orgMetadata.orgId),
-  );
-}
+const isDefaultProfile = and(
+  eq(legacyAgentApiProfiles.name, DEFAULT_AGENT_NAME),
+  eq(legacyAgentApiProfiles.visibility, "public"),
+);
 
-/** Apply the immutable workspace default identity at the write boundary. */
-export function nonDefaultAgentCondition(orgId: string) {
-  return notExists(
-    new QueryBuilder()
-      .select({ orgId: orgMetadata.orgId })
-      .from(orgMetadata)
-      .where(and(eq(orgMetadata.orgId, orgId), defaultAgentJoinCondition())),
+export const defaultProfileId =
+  sql`CASE WHEN ${isDefaultProfile} THEN ${legacyAgentApiProfiles.id} END`.mapWith(
+    nullableDriverValueDecoder(legacyAgentApiProfiles.id),
   );
+
+export function defaultProfileCondition(orgId: string) {
+  return and(eq(legacyAgentApiProfiles.orgId, orgId), isDefaultProfile);
 }
 
 function visibleAgentCondition(userId: string) {
-  return or(eq(agents.visibility, "public"), eq(agents.owner, userId));
+  return or(
+    eq(legacyAgentApiProfiles.visibility, "public"),
+    eq(legacyAgentApiProfiles.owner, userId),
+  );
 }
 
 export function visibleJoinedAgentCondition(userId: string) {
@@ -80,8 +80,8 @@ export function visibleAgentIdentityCondition(scope: {
   readonly agentId: string;
 }) {
   return and(
-    eq(agents.orgId, scope.orgId),
-    eq(agents.id, scope.agentId),
+    eq(legacyAgentApiProfiles.orgId, scope.orgId),
+    eq(legacyAgentApiProfiles.id, scope.agentId),
     visibleAgentCondition(scope.userId),
   );
 }
@@ -93,66 +93,26 @@ export function agentList(
   return computed(async (get): Promise<readonly AgentResponse[]> => {
     const rows = await get(db$)
       .select({
-        agentId: agents.id,
-        defaultAgentId: orgMetadata.defaultAgentId,
-        owner: agents.owner,
-        displayName: agents.displayName,
-        description: agents.description,
-        sound: agents.sound,
-        avatarUrl: agents.avatarUrl,
-        visibility: agents.visibility,
+        agentId: legacyAgentApiProfiles.id,
+        defaultAgentId: defaultProfileId,
+        owner: legacyAgentApiProfiles.owner,
+        displayName: legacyAgentApiProfiles.displayName,
+        description: legacyAgentApiProfiles.description,
+        sound: legacyAgentApiProfiles.sound,
+        avatarUrl: legacyAgentApiProfiles.avatarUrl,
+        visibility: legacyAgentApiProfiles.visibility,
       })
-      .from(agents)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-      .where(and(eq(agents.orgId, orgId), visibleAgentCondition(userId)))
-      .orderBy(desc(agents.updatedAt));
+      .from(legacyAgentApiProfiles)
+      .where(
+        and(
+          eq(legacyAgentApiProfiles.orgId, orgId),
+          visibleAgentCondition(userId),
+        ),
+      )
+      .orderBy(desc(legacyAgentApiProfiles.updatedAt));
 
     return rows.map((row) => {
       return agentResponse(row);
     });
   });
-}
-
-export function agentEnabledConnectorSlugsCondition(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}) {
-  return and(
-    eq(userBuiltinConnectors.orgId, args.orgId),
-    eq(userBuiltinConnectors.userId, args.userId),
-    eq(userBuiltinConnectors.agentId, args.agentId),
-  );
-}
-
-export function agentCustomConnectorGrantJoinCondition() {
-  return and(
-    eq(orgCustomConnectors.id, userCustomConnectors.customConnectorId),
-    eq(orgCustomConnectors.orgId, userCustomConnectors.orgId),
-  );
-}
-
-export function agentCustomConnectorGrantsCondition(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}) {
-  return and(
-    eq(userCustomConnectors.orgId, args.orgId),
-    eq(userCustomConnectors.userId, args.userId),
-    eq(userCustomConnectors.agentId, args.agentId),
-    eq(orgCustomConnectors.enabled, true),
-  );
-}
-
-export interface BootstrapAgent {
-  readonly id: string;
-  readonly orgId: string;
-  readonly owner: string;
-  readonly visibility: "public" | "private";
-  readonly name: string;
-  readonly displayName: string | null;
-  readonly description: string | null;
-  readonly sound: string | null;
-  readonly defaultAgentId: string | null;
 }

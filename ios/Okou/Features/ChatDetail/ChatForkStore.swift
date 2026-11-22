@@ -7,7 +7,7 @@ import Observation
 @MainActor @Observable
 final class ChatForkStore: Identifiable {
   let id = UUID()
-  let agentID: String
+  let agentID: String?
   let projectID: String?
   let composer: ComposerDraftStore
   private(set) var modelSelection: ChatModelSelectionStore
@@ -45,7 +45,7 @@ final class ChatForkStore: Identifiable {
 
   init(
     selection: ChatFeedbackSelection, sourceRunID: String, projectID: String?,
-    agentID: String, commands: ChatCommands, models: ChatModelStore,
+    agentID: String?, commands: ChatCommands, models: ChatModelStore,
     workflowSource: ComposerWorkflowSource, lifecycleTasks: LifecycleTasks,
     didCreate: @escaping @MainActor (ChatThread) -> Void,
     didSend: @escaping @MainActor (ChatThread) -> Void,
@@ -115,7 +115,7 @@ final class ChatForkStore: Identifiable {
       }
       do {
         let workflows = try await workflowSource.prepareUse(
-          in: pending.text, document: pending.document, agentID: agentID)
+          in: pending.text, document: pending.document)
         try Task.checkCancellation()
         guard !closed else { return nil }
         let target: ChatThread

@@ -138,6 +138,20 @@ it("ignores additional dispatch metadata and validates known fields", () => {
     runnerDispatchEnvelopeSchema.safeParse({ ...envelope, notAfter: "2000" })
       .success,
   ).toBe(false);
+  const preferredHomeCheckout = {
+    predecessorRunId: "00000000-0000-4000-8000-000000000002",
+    waitUntil: 1_500,
+  };
+  expect(
+    runnerDispatchEnvelopeSchema.parse({ ...envelope, preferredHomeCheckout })
+      .preferredHomeCheckout,
+  ).toStrictEqual(preferredHomeCheckout);
+  expect(
+    runnerDispatchEnvelopeSchema.safeParse({
+      ...envelope,
+      preferredHomeCheckout: { ...preferredHomeCheckout, waitUntil: -1 },
+    }).success,
+  ).toBe(false);
 });
 
 function preparedExecutionContextFixture() {
@@ -205,11 +219,10 @@ describe("runner execution context contract", () => {
   });
 
   it.each([
-    { featureFlags: { singleAgent: true, connectorChatAccountAccess: false } },
+    { featureFlags: { singleAgent: true, retainedDiagnosticFlag: false } },
     {
       featureFlags: {
         singleAgent: false,
-        connectorChatAccountAccess: true,
         retainedDiagnosticFlag: true,
       },
     },

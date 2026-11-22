@@ -27,6 +27,12 @@ const migration = journal.entries.find((entry) => {
   return entry.tag === "1567_copy_inactive_single_agent_pilot";
 });
 assert.ok(migration);
+// The pilot assertions include the subsequent project sort events.
+const sortBackfill = journal.entries.find((entry) => {
+  return entry.tag === "1570_backfill_project_sort_order";
+});
+assert.ok(sortBackfill);
+const beforeMillis = sortBackfill.when + 1;
 const migrationSql = await readFile(
   new URL(`../src/migrations/${migration.tag}.sql`, import.meta.url),
   "utf8",
@@ -140,7 +146,7 @@ try {
         const frontier =
           await sql`SELECT max(created_at)::text AS value FROM drizzle.__drizzle_migrations`;
         await assert.rejects(
-          applyPendingMigrations(sql),
+          applyPendingMigrations(sql, { beforeMillis }),
           /Inactive pilot Project identity belongs/u,
         );
         assert.equal(await preserved(), before);
@@ -158,7 +164,7 @@ try {
         );
         await sql`DELETE FROM projects WHERE id=${collision}`;
       }
-      await applyPendingMigrations(sql);
+      await applyPendingMigrations(sql, { beforeMillis });
       assert.equal(await preserved(), before);
       for (const [index, member] of cohort.entries()) {
         const chatId = chats[index];
@@ -229,7 +235,7 @@ try {
         Array.from(await sql`SELECT * FROM project_events ORDER BY id`),
         Array.from(await sql`SELECT * FROM chat_thread_events ORDER BY id`),
       ]);
-      await applyPendingMigrations(sql);
+      await applyPendingMigrations(sql, { beforeMillis });
       assert.equal(
         JSON.stringify([
           Array.from(await sql`SELECT * FROM workflows ORDER BY id`),

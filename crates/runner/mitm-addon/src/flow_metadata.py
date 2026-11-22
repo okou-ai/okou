@@ -1,8 +1,8 @@
 """Shared flow metadata access helpers.
 
-This module owns only stable shape/default helpers for cross-module metadata
-reads plus narrow shared state transitions. Domain-specific lifecycle state
-stays with the module that creates and releases it.
+This module owns stable shape, default and namespace helpers for cross-module
+metadata values plus narrow shared state transitions. Domain-specific lifecycle
+state stays with the module that creates and releases it.
 """
 
 import time
@@ -38,6 +38,18 @@ def proxy_log_path(meta: Mapping[str, object]) -> str:
     return _metadata_str(meta, metadata_keys.SANDBOX_PROXY_LOG_PATH)
 
 
+def set_sandbox_log_context(
+    meta: MutableMapping[str, object],
+    sandbox_info: Mapping[str, object],
+    *,
+    run_id: object,
+) -> None:
+    """Copy the registry's shared HTTP and TCP log attribution."""
+    meta[metadata_keys.SANDBOX_RUN_ID] = run_id
+    meta[metadata_keys.SANDBOX_NETWORK_LOG_PATH] = sandbox_info.get("networkLogPath", "")
+    meta[metadata_keys.SANDBOX_PROXY_LOG_PATH] = sandbox_info.get("proxyLogPath", "")
+
+
 def sandbox_auth_key(meta: Mapping[str, object]) -> str:
     return _metadata_str(meta, metadata_keys.SANDBOX_AUTH_KEY)
 
@@ -60,6 +72,11 @@ def firewall_base(meta: Mapping[str, object]) -> str:
 
 def firewall_name(meta: Mapping[str, object]) -> str:
     return _metadata_str(meta, metadata_keys.FIREWALL_NAME)
+
+
+def is_model_provider_firewall(name: str) -> bool:
+    """Return whether a firewall name uses the model-provider namespace."""
+    return name.startswith("model-provider:")
 
 
 def firewall_permission(meta: Mapping[str, object]) -> str:

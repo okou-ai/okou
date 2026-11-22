@@ -1,10 +1,8 @@
 package ai.okou.android
 
-import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
-import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
@@ -45,6 +43,12 @@ open class TestChatService : ChatListService {
     override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String): Unit =
         error("Unexpected archive change")
 
+    override suspend fun deleteThread(threadId: String, eventId: String): Unit =
+        error("Unexpected deletion")
+
+    override suspend fun renameProject(projectId: String, name: String, eventId: String): Unit =
+        error("Unexpected Project rename")
+
     override suspend fun renameThread(threadId: String, title: String, eventId: String): Unit =
         error("Unexpected rename")
 
@@ -57,8 +61,6 @@ open class TestChatService : ChatListService {
         eventId: String,
     ): Unit = error("Unexpected pin reorder")
 
-    override suspend fun featureSwitches() = FeatureSwitches(emptyMap(), emptyMap())
-
     override suspend fun chatSnapshot() =
         Json.decodeFromString<ChatSnapshot>(
             """{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"""
@@ -68,9 +70,7 @@ open class TestChatService : ChatListService {
 
     override suspend fun chatEvents(since: Long?) = ChatEvents(emptyList(), false)
 
-    override suspend fun indicators() = Indicators(emptyMap(), emptyMap(), emptyMap())
-
-    override suspend fun agents(): Agents = emptyList()
+    override suspend fun indicators() = Indicators(emptyMap(), emptyMap())
 
     override suspend fun projectSnapshot() =
         Json.decodeFromString<ProjectSnapshot>(

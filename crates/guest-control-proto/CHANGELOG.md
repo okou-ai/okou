@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.22.96](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.95...guest-control-proto-v0.22.96) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+## [0.22.95](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.94...guest-control-proto-v0.22.95) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+## [0.22.94](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.93...guest-control-proto-v0.22.94) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** borrow ordinary file batch contents ([#49472](https://github.com/okou-ai/okou/issues/49472)) ([f9292e2](https://github.com/okou-ai/okou/commit/f9292e2095dc2fd874833ab576a1bedc22381a62))
+
+## [0.22.93](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.92...guest-control-proto-v0.22.93) (2026-11-20)
+
+## [0.22.92](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.91...guest-control-proto-v0.22.92) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** receive large storage inputs into owned buffers ([#49059](https://github.com/okou-ai/okou/issues/49059)) ([d928b49](https://github.com/okou-ai/okou/commit/d928b49f7e1d59d8edf6e62fbdaa500a47302ced))
+
+## [0.22.91](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.90...guest-control-proto-v0.22.91) (2026-11-19)
+
+
+### Refactoring
+
+* **guest-control:** centralize exec output policy limits ([#49027](https://github.com/okou-ai/okou/issues/49027)) ([eaae30a](https://github.com/okou-ai/okou/commit/eaae30ac5e7ed88de0dbb946fd552489d633b560))
+
+
+### Performance Improvements
+
+* **guest-control:** stream large file writes into sealed inputs ([#49029](https://github.com/okou-ai/okou/issues/49029)) ([4c926a5](https://github.com/okou-ai/okou/commit/4c926a5a96d2fd68883a5be1b34247f62389f2d2))
+
 ## [0.22.90](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.89...guest-control-proto-v0.22.90) (2026-11-19)
 
 ## [0.22.89](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.88...guest-control-proto-v0.22.89) (2026-11-18)

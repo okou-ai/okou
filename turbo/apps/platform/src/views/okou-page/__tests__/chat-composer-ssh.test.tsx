@@ -14,10 +14,8 @@ import {
 } from "./chat-message-experience-test-helpers.ts";
 import {
   builtinConnector,
-  SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   OTHER_THREAD_ID,
-  OTHER_AGENT_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 
@@ -507,7 +505,7 @@ test("A new chat has no remote access menu when no hosts are configured", async 
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: "/",
   });
   click(await findFastControl("button", "Connectors"));
   await screen.findByText("Cloud browser");
@@ -533,7 +531,7 @@ test("A new chat leaves host defaults untouched when no choice is changed", asyn
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: "/",
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -543,7 +541,7 @@ test("A new chat leaves host defaults untouched when no choice is changed", asyn
   await userEvent.setup({ delay: null }).keyboard("{Enter}");
   await waitFor(() => {
     expect(fixture.createdThreadRequests).toStrictEqual([
-      { threadId: expect.any(String), connectorSelections: [] },
+      { threadId: expect.any(String) },
     ]);
   });
 });
@@ -557,7 +555,7 @@ test("Remote access remains visible when host discovery fails", async () => {
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: "/",
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -631,7 +629,7 @@ async function prepareDraftHostChoices() {
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat?compose=1`,
+    path: `/?compose=1`,
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
@@ -706,7 +704,6 @@ test("Apply SSH host choices during thread creation", async () => {
     expect(fixture.createdThreadRequests).toStrictEqual([
       {
         threadId: expect.any(String),
-        connectorSelections: [],
         initialRemoteAccessOverrides: [
           {
             protocol: "ssh",
@@ -731,8 +728,8 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   installComposerConnectorFixture({
     threadId: SCOUT_THREAD_ID,
     threads: [
-      { id: SCOUT_THREAD_ID, title: "Scout chat", agentId: SCOUT_AGENT_ID },
-      { id: OTHER_THREAD_ID, title: "Other chat", agentId: OTHER_AGENT_ID },
+      { id: SCOUT_THREAD_ID, title: "Scout chat" },
+      { id: OTHER_THREAD_ID, title: "Other chat" },
     ],
   });
   const host = (threadId: string) => {
@@ -847,7 +844,7 @@ test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, { connections: [] });
     });
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    await setupPage({ context, path: "/" });
     click(await findFastControl("button", "Connectors"));
     click(await findFastControl("button", "Add connectors"));
     const search = await screen.findByPlaceholderText("Find connectors...");
@@ -869,7 +866,7 @@ test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
     }
     await waitFor(() => {
       return expect(window.location.pathname).toBe(
-        showEntry ? "/connectors" : `/agents/${SCOUT_AGENT_ID}/chat`,
+        showEntry ? "/connectors" : "/",
       );
     });
     expect(window.location.search).toBe(
@@ -898,7 +895,7 @@ test("Directory SSH setup follows shelves and categories", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: "/" });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));
   const dialog = await waitFor(() => {

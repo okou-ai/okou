@@ -5,7 +5,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  AGENT_ID,
   THREAD_ID,
   composerWorkflow,
   findComposerEditor,
@@ -14,7 +13,7 @@ import {
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 const HINT = " Search workflows or choose a template…";
@@ -25,10 +24,9 @@ function slashHint(editor: HTMLElement): HTMLElement | null {
 }
 
 async function openComposer(
-  path = `/agents/${AGENT_ID}/chat`,
+  path = `/`,
   sentPrompts: string[] = [],
 ): Promise<HTMLElement> {
-  mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
   context.mocks.data.userPreferences({ sendMode: "enter" });
@@ -69,7 +67,7 @@ function selectText(editor: HTMLElement, from: number, to = from): void {
   fireEvent(document, new Event("selectionchange"));
 }
 
-test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
+test.each([`/`, `/chats/${THREAD_ID}`])(
   "Show the hint after a bare slash and dismiss it with the menu at %s",
   async (path) => {
     const user = userEvent.setup({ delay: null });
@@ -105,9 +103,9 @@ test.each([`/agents/${AGENT_ID}/chat`, `/chats/${THREAD_ID}`])(
 );
 
 test.each([
-  { path: `/agents/${AGENT_ID}/chat`, suffix: " 131" },
+  { path: `/`, suffix: " 131" },
   { path: `/chats/${THREAD_ID}`, suffix: " 131" },
-  { path: `/agents/${AGENT_ID}/chat`, suffix: "1231" },
+  { path: `/`, suffix: "1231" },
   { path: `/chats/${THREAD_ID}`, suffix: "1231" },
 ])(
   "Show the hint immediately after a slash before '$suffix' at $path",
@@ -143,7 +141,7 @@ test.each([
   async (draft, caret) => {
     const user = userEvent.setup({ delay: null });
     const sentPrompts: string[] = [];
-    const editor = await openComposer(`/agents/${AGENT_ID}/chat`, sentPrompts);
+    const editor = await openComposer(`/`, sentPrompts);
     await fill(editor, draft);
     selectText(editor, caret);
     await waitFor(() => {
@@ -178,7 +176,7 @@ test.each([
   async (draft, caret) => {
     const user = userEvent.setup({ delay: null });
     const sentPrompts: string[] = [];
-    const editor = await openComposer(`/agents/${AGENT_ID}/chat`, sentPrompts);
+    const editor = await openComposer(`/`, sentPrompts);
     await fill(editor, draft);
     selectText(editor, caret);
     await waitFor(() => {

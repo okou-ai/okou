@@ -42,13 +42,10 @@ async function setupRelationships({
         parts: [
           { type: "text", text: "Inspect related conversations" },
           {
-            type: "source",
-            kind: "agent",
+            type: "chat_thread",
             threadId: parent.id,
             runId: SOURCE_RUN,
-            agentId: parent.agentId,
             titleSnapshot: ORIGINAL_TITLE,
-            href: `/chats/${parent.id}#run-${SOURCE_RUN}`,
           },
         ],
       },
@@ -110,7 +107,6 @@ async function setupRelationships({
         chatListEvent(97, 2, "renamed", params.id, {
           id: body.eventId,
           title: body.title,
-          agentId: parent.agentId,
         }),
       );
       return respond(204);
@@ -180,7 +176,6 @@ async function setupRelationships({
       events.push(
         chatListEvent(97, 2, "renamed", parent.id, {
           title: RENAMED_TITLE,
-          agentId: parent.agentId,
         }),
       );
       changeChatThreadList();

@@ -15,7 +15,6 @@ export const walletApprovalStatus$ = command(
     { get },
     owner: { readonly userId: string; readonly orgId: string },
     input: {
-      readonly agentId: string;
       readonly threadId: string;
       readonly approvalUrl: string;
     },
@@ -44,13 +43,13 @@ export const walletApprovalStatus$ = command(
             linkWalletSpends.authorizationId,
           ),
           isNull(linkWalletConnections.revokedAt),
+          isNull(linkWalletConnections.retiredAt),
         ),
       )
       .where(
         and(
           eq(linkWalletSpends.orgId, owner.orgId),
           eq(linkWalletSpends.userId, owner.userId),
-          eq(linkWalletSpends.agentId, input.agentId),
           eq(linkWalletSpends.approvalThreadId, input.threadId),
           eq(linkWalletSpends.approvalUrl, input.approvalUrl),
         ),

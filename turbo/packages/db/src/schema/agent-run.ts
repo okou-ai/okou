@@ -145,7 +145,6 @@ export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
       table.status,
       table.createdAt.desc(),
     ),
-    index("idx_agent_runs_agent").on(table.agentId),
     index("idx_agent_runs_threadless_created_id")
       .on(table.createdAt, table.id)
       .where(
@@ -169,7 +168,7 @@ export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
       .where(sql`${table.workflowAutomationId} IS NOT NULL`),
     check(
       "agent_runs_autonomy_budget_check",
-      sql`${table.autonomyBudget} >= 0 AND ${table.autonomyBudget} <= 32`,
+      sql`${table.autonomyBudget} >= 0 AND ${table.autonomyBudget} <= 128`,
     ),
     check(
       "agent_runs_runner_cancellation_mode_check",

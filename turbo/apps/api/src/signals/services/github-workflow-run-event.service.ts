@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   githubWorkflowRunCompletedEventConfigSchema,
   type GithubWorkflowRunCompletedEventConfig,
@@ -71,7 +72,6 @@ export interface GithubWorkflowRunEventPayload {
 
 interface GithubWorkflowRunAutomationRow {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly chatThreadId: string;
   readonly config: GithubWorkflowRunCompletedEventConfig;
@@ -136,13 +136,12 @@ const loadGithubWorkflowRunAutomations$ = command(
     const rows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -181,7 +180,6 @@ const loadGithubWorkflowRunAutomations$ = command(
         workflowAutomationCanFire$,
         {
           automation: row.automation,
-          agentId: row.agentId,
         },
         signal,
       );
@@ -197,7 +195,6 @@ const loadGithubWorkflowRunAutomations$ = command(
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
-            agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
           },
@@ -206,7 +203,6 @@ const loadGithubWorkflowRunAutomations$ = command(
       signal.throwIfAborted();
       automations.push({
         automation: row.automation,
-        agentId: row.agentId,
         workflowName: row.workflowName,
         chatThreadId,
         config: config.data,
@@ -298,11 +294,8 @@ const startGithubWorkflowRunAutomation$ = command(
     await set(
       runWorkflowAutomationNow$,
       {
-        due: {
-          automation: args.automation.automation,
-          agentId: args.automation.agentId,
-          chatThreadId: args.automation.chatThreadId,
-        },
+        automation: args.automation.automation,
+        chatThreadId: args.automation.chatThreadId,
         automationContext: context,
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",

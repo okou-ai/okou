@@ -16,17 +16,17 @@ struct MessageRenderPlan: Sendable {
 
     let webURL: URL
     let action: MessageActionContext?
-    let permissionsEnabled: Bool
+    let permissionMember: WorkspaceMemberID?
     let artifacts: ArtifactOrigin?
 
     @MainActor
     init(
-      webURL: URL, action: MessageActionContext?, permissionsEnabled: Bool,
+      webURL: URL, action: MessageActionContext?, permissionMember: WorkspaceMemberID?,
       artifacts: MessageArtifactStore?
     ) {
       self.webURL = webURL
       self.action = action
-      self.permissionsEnabled = permissionsEnabled
+      self.permissionMember = permissionMember
       self.artifacts = artifacts.map { .init(webURL: $0.webURL, apiURL: $0.apiURL) }
     }
   }
@@ -92,7 +92,7 @@ struct MessageRenderPlan: Sendable {
     if let action = context.action {
       let units = MessageActionBody.blocks(
         content, webURL: context.webURL, agentID: action.agentID, threadID: action.threadID,
-        permissionsEnabled: context.permissionsEnabled
+        permissionMember: context.permissionMember
       ).compactMap { block -> Unit? in
         switch block {
         case .markdown(let fragment):

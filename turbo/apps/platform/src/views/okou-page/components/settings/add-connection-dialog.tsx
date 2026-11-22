@@ -131,9 +131,7 @@ function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
 
 type ConnectModalContentProps = {
   item: PlatformConnectorCatalogStatusItem;
-  agentId?: string;
   origin: ConnectorConnectOrigin;
-  authorizeVisibleAgentsOnConnect: boolean;
   accountOptions: ConnectorAccountMutationOptions;
   accountMode?: ConnectorAccountConnectMode;
   reconnectAuthMethod?: ConnectorAuthMethodId;
@@ -205,8 +203,6 @@ function ManualGrantForm({
   authMethod,
   method,
   origin,
-  authorizeVisibleAgentsOnConnect,
-  agentId,
   accountOptions,
 }: {
   connectorSlug: ConnectorSlug;
@@ -214,8 +210,6 @@ function ManualGrantForm({
   authMethod: ConnectorAuthMethodId;
   method: PublicConnectorCatalogAuthMethodDetail;
   origin: ConnectorConnectOrigin;
-  authorizeVisibleAgentsOnConnect: boolean;
-  agentId?: string;
   accountOptions: ConnectorAccountMutationOptions;
 }) {
   const { t } = useTranslation();
@@ -244,9 +238,7 @@ function ManualGrantForm({
           authMethod,
           inputValues: manualGrantInputValuesForMethod(method, fieldValues),
           options: {
-            authorizeVisibleAgents: authorizeVisibleAgentsOnConnect,
             connectorLabel,
-            ...(agentId ? { agentId } : {}),
             ...accountOptions,
           },
           origin,
@@ -330,8 +322,6 @@ function OAuthAuthCodeConnectButton({
   item,
   method,
   origin,
-  authorizeVisibleAgentsOnConnect,
-  agentId,
   accountOptions,
   accountMode,
   reconnectAuthMethod,
@@ -369,10 +359,8 @@ function OAuthAuthCodeConnectButton({
                 origin,
                 surface: "connect-modal",
                 options: {
-                  authorizeVisibleAgents: authorizeVisibleAgentsOnConnect,
                   connectorLabel: item.label,
                   connectorIcon: item.icon,
-                  ...(agentId ? { agentId } : {}),
                   ...accountOptions,
                 },
               },
@@ -387,13 +375,9 @@ function OAuthAuthCodeConnectButton({
           ? t(($) => {
               return $.connectors.actions.reconnect;
             })
-          : accountMode || !item.connected
-            ? t(($) => {
-                return $.connectors.actions.connect;
-              })
-            : t(($) => {
-                return $.connectors.actions.authorize;
-              })}
+          : t(($) => {
+              return $.connectors.actions.connect;
+            })}
       </Button>
     </>
   );
@@ -405,8 +389,6 @@ function OAuthAuthCodeConnectMethodContent(props: ConnectMethodContentProps) {
       item={props.item}
       method={props.method}
       origin={props.origin}
-      agentId={props.agentId}
-      authorizeVisibleAgentsOnConnect={props.authorizeVisibleAgentsOnConnect}
       accountOptions={props.accountOptions}
       accountMode={props.accountMode}
       reconnectAuthMethod={props.reconnectAuthMethod}
@@ -729,9 +711,7 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
         origin: props.origin,
         surface: "connect-modal",
         options: {
-          authorizeVisibleAgents: props.authorizeVisibleAgentsOnConnect,
           connectorLabel: props.item.label,
-          ...(props.agentId ? { agentId: props.agentId } : {}),
           ...props.accountOptions,
         },
         startOptions: selectedDeviceAuthStartOptions(
@@ -975,9 +955,7 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
       {
         connectorSlug: props.item.slug,
         authMethod: props.authMethod,
-        ...(props.agentId ? { agentId: props.agentId } : {}),
         ...props.accountOptions,
-        authorizeVisibleAgents: props.authorizeVisibleAgentsOnConnect,
       },
       signal,
     );
@@ -992,9 +970,7 @@ function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
         origin: props.origin,
         surface: "connect-modal",
         options: {
-          authorizeVisibleAgents: props.authorizeVisibleAgentsOnConnect,
           connectorLabel: props.item.label,
-          ...(props.agentId ? { agentId: props.agentId } : {}),
           ...props.accountOptions,
         },
       },
@@ -1073,8 +1049,6 @@ function ManualGrantConnectMethodContent(props: ConnectMethodContentProps) {
       authMethod={props.authMethod}
       method={props.method}
       origin={props.origin}
-      authorizeVisibleAgentsOnConnect={props.authorizeVisibleAgentsOnConnect}
-      agentId={props.agentId}
       accountOptions={props.accountOptions}
     />
   );
@@ -1094,9 +1068,7 @@ function NoAuthConnectMethodContent(props: ConnectMethodContentProps) {
         origin: props.origin,
         surface: "connect-modal",
         options: {
-          authorizeVisibleAgents: props.authorizeVisibleAgentsOnConnect,
           connectorLabel: props.item.label,
-          ...(props.agentId ? { agentId: props.agentId } : {}),
           ...props.accountOptions,
         },
       },
@@ -1288,8 +1260,6 @@ export function ConnectModal({
   item,
   onClose,
   origin,
-  authorizeVisibleAgentsOnConnect = false,
-  agentId,
   accountLabel,
   accountOptions,
   accountMode,
@@ -1299,8 +1269,6 @@ export function ConnectModal({
   onClose: () => void;
   /** Where the connection was started; it decides what follows and closes. */
   origin: ConnectorConnectOrigin;
-  authorizeVisibleAgentsOnConnect?: boolean;
-  agentId?: string;
   accountLabel?: string;
   accountOptions: ConnectorAccountMutationOptions;
   accountMode?: ConnectorAccountConnectMode;
@@ -1375,8 +1343,6 @@ export function ConnectModal({
         <div>
           <ConnectModalContent
             item={item}
-            agentId={agentId}
-            authorizeVisibleAgentsOnConnect={authorizeVisibleAgentsOnConnect}
             accountOptions={accountOptions}
             accountMode={accountMode}
             reconnectAuthMethod={reconnectAuthMethod}

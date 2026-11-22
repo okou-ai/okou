@@ -33,8 +33,7 @@ function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
     guildId: "123456789012345678",
     guildName: "Design team",
     discordUserId: "234567890123456789",
-    defaultAgentId: null,
-    defaultAgentName: null,
+
     onboarding: "oauth",
     dmSelectionConnectionId: null,
     dmBindings: [],

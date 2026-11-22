@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { GOOGLE_WORKSPACE_MIME_TYPES } from "@okouai/core/google-workspace-conversion";
 import { describe, expect, it } from "vitest";
@@ -7,25 +8,26 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadsArtifactsSyncRoutes } from "../chat-threads-artifacts-sync";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
+  mockGoogleDriveArtifactUpload,
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
 } from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const callbacks = createChatCallbacksApi(context);
 const connectors = createConnectorBddApi(context);
-const runs = createRunsApi(context);
 const mocks = createRouteMocks(context);
 
 function headers(actor: ApiTestUser) {
@@ -42,7 +44,6 @@ function catalog() {
 async function uploadedArtifact() {
   const owner = await publicChatActor(context);
   const run = await owner.sendChatRun(owner.actor, {
-    agentId: owner.agentId,
     prompt: "Create an artifact for lazy Drive status",
   });
   const execution = await owner.runExecution(run.runId);
@@ -63,7 +64,13 @@ async function uploadedArtifact() {
     run.threadId,
     fileId,
   );
-  return { owner, run, fileId, artifactId };
+  return {
+    owner,
+    run,
+    fileId,
+    artifactId,
+    runToken: okouTokenFromExecution(execution.execution),
+  };
 }
 
 async function connectDrive(actor: ApiTestUser) {
@@ -81,14 +88,18 @@ async function connectDrive(actor: ApiTestUser) {
 }
 
 describe("artifact catalog lazy Drive detail metadata", () => {
-  it("keeps list and context-free detail provider-free and respects agent grants", async () => {
+  it("keeps list and context-free detail provider-free and respects Chat access", async () => {
     const { owner, run, artifactId } = await uploadedArtifact();
-    const { actor, agentId } = owner;
+    const { actor } = owner;
     const connection = await connectDrive(actor);
+    const access = createChatConnectorAccessApi(context);
+    const selection = {
+      target: { kind: "builtin", connectorSlug: "google-drive" },
+      connectionId: connection.id,
+    } as const;
     const provider = mockGoogleDriveFilesList(() => {
       return { status: 200, files: [] };
     });
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
 
     const list = await accept(
       catalog().list({
@@ -109,7 +120,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     expect(plain.body).not.toHaveProperty("googleDriveConnectionId");
     expect(provider.queries).toStrictEqual([]);
 
-    await runs.enableAgentConnectors(actor, agentId, []);
+    await access.setThreadOverride(actor, run.threadId, selection, false);
     const unauthorized = await accept(
       catalog().get({
         headers: headers(actor),
@@ -118,14 +129,13 @@ describe("artifact catalog lazy Drive detail metadata", () => {
       }),
       [200],
     );
-    expect(unauthorized.body.googleDriveConnectionId).toBe(connection.id);
     expect(unauthorized.body.googleDriveSync).toStrictEqual({
       status: "disconnected",
-      recovery: { action: "authorize" },
+      recovery: { action: "unavailable" },
     });
     expect(provider.queries).toStrictEqual([]);
 
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    await access.setThreadOverride(actor, run.threadId, selection, true);
     const ready = await accept(
       catalog().get({
         headers: headers(actor),
@@ -134,17 +144,18 @@ describe("artifact catalog lazy Drive detail metadata", () => {
       }),
       [200],
     );
+    expect(ready.body.googleDriveConnectionId).toBe(connection.id);
     expect(ready.body.googleDriveSync).toStrictEqual({
       status: "not_synced",
-      accountReady: true,
     });
     expect(provider.queries).toHaveLength(1);
   });
 
   it("uses exact upload identity across owned view threads and retains original plus conversion state", async () => {
-    const { owner, run, artifactId, fileId } = await uploadedArtifact();
-    const { actor, agentId } = owner;
-    await connectDrive(actor);
+    const { owner, run, artifactId, fileId, runToken } =
+      await uploadedArtifact();
+    const { actor } = owner;
+    const defaultAccount = await connectDrive(actor);
     mockGoogleDriveConnectorOAuth({
       userInfo: {
         id: "detail-selected-user",
@@ -156,7 +167,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
       actor,
       "google-drive",
       "oauth",
-      undefined,
       { intent: "add", displayName: "Detail selected Drive" },
     );
     const selectedState = new URL(
@@ -179,8 +189,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     if (!connection) {
       throw new Error("Expected selected Drive connection");
     }
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
-    const view = await chat.createThread(actor, { agentId, model: null });
+    const view = await chat.createThread(actor, { model: null });
     await accept(
       setupApp({ context, routes: chatThreadRoutes })(
         chatThreadConnectorSelectionContract,
@@ -230,7 +239,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     expect(detail.body.googleDriveConnectionId).toBe(connection.id);
     expect(detail.body.googleDriveSync).toStrictEqual({
       status: "synced",
-      accountReady: true,
       originalUploaded: true,
       id: "converted-copy",
       name: "report",
@@ -247,13 +255,100 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     expect(provider.authorizationHeaders).toStrictEqual([
       "Bearer drive-access-drive-selected",
     ]);
+
+    const upload = setupApp({
+      context,
+      routes: chatThreadsArtifactsSyncRoutes,
+    })(artifactGoogleDriveContract);
+    const uploaded = mockGoogleDriveArtifactUpload({
+      id: "selected-upload",
+      name: "report.csv",
+    });
+    const request = {
+      params: { artifactId },
+      body: {
+        chatThreadId: view.id,
+        connectionId: connection.id,
+        mode: "original" as const,
+      },
+    };
+    await accept(
+      upload.uploadFromChat({
+        ...request,
+        headers: { authorization: `Bearer ${runToken}` },
+      }),
+      [400],
+    );
+    const conflicting = await accept(
+      upload.uploadFromChat({
+        ...request,
+        headers: headers(actor),
+        body: { ...request.body, connectionId: defaultAccount.id },
+      }),
+      [400],
+    );
+    expect(conflicting.body.error.message).toBe(
+      "Google Drive account is unavailable in this Chat",
+    );
+    expect(uploaded.folderQueries).toHaveLength(0);
+
+    const response = await accept(
+      upload.uploadFromChat({ ...request, headers: headers(actor) }),
+      [200],
+    );
+    expect(response.body.id).toBe("selected-upload");
+    expect(uploaded.authorizationHeaders).toContain(
+      "Bearer drive-access-drive-selected",
+    );
+
+    const currentRun = await owner.sendChatRun(actor, {
+      threadId: view.id,
+      prompt: "Export the owned artifact from this Chat",
+    });
+    const currentExecution = await owner.runExecution(currentRun.runId);
+    await accept(
+      upload.uploadFromChat({
+        ...request,
+        headers: {
+          authorization: `Bearer ${okouTokenFromExecution(currentExecution.execution)}`,
+        },
+      }),
+      [200],
+    );
+
+    const access = createChatConnectorAccessApi(context);
+    const target = { kind: "builtin", connectorSlug: "google-drive" } as const;
+    for (const account of accounts) {
+      await access.setThreadOverride(
+        actor,
+        view.id,
+        { target, connectionId: account.id },
+        false,
+      );
+    }
+    const denied = await accept(
+      catalog().get({
+        headers: headers(actor),
+        params: { artifactId },
+        query: { chatThreadId: view.id },
+      }),
+      [200],
+    );
+    expect(denied.body.googleDriveSync).toStrictEqual({
+      status: "disconnected",
+      recovery: { action: "unavailable" },
+    });
+    await accept(
+      upload.uploadFromChat({ ...request, headers: headers(actor) }),
+      [400],
+    );
+    expect(uploaded.bodies).toHaveLength(2);
   });
 
   it("persists OAuth refresh and terminal reconnect through detail polling", async () => {
     const { owner, run, artifactId } = await uploadedArtifact();
-    const { actor, agentId } = owner;
+    const { actor } = owner;
     const connection = await connectDrive(actor);
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
     const refresh = mockGoogleDriveConnectorOAuth({
       refreshOutcome: { type: "ok", accessToken: "detail-refreshed" },
     });
@@ -273,7 +368,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
       );
       expect(detail.body.googleDriveSync).toStrictEqual({
         status: "not_synced",
-        accountReady: true,
       });
     }
     expect(refresh.refreshBodies).toHaveLength(1);
@@ -310,16 +404,14 @@ describe("artifact catalog lazy Drive detail metadata", () => {
 
   it("rejects non-owned or missing context and independently rejects non-owned resources before provider access", async () => {
     const { owner, run, artifactId } = await uploadedArtifact();
-    const { actor, agentId } = owner;
+    const { actor } = owner;
     await connectDrive(actor);
-    await runs.enableAgentConnectors(actor, agentId, ["google-drive"]);
     const peer = bdd.user({ orgId: actor.orgId });
-    const peerAgent = await bdd.createAgent(peer, {
+    await bdd.createAgent(peer, {
       displayName: "Peer context",
       visibility: "private",
     });
     const peerThread = await chat.createThread(peer, {
-      agentId: peerAgent.agentId,
       model: null,
     });
     const provider = mockGoogleDriveFilesList(() => {

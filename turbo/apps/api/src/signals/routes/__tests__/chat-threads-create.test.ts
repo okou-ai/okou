@@ -1,3 +1,4 @@
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { randomUUID } from "node:crypto";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 
@@ -186,7 +187,6 @@ describe("POST /api/chat-threads", () => {
       });
       const headers = { authorization: `Bearer ${token}` };
       const body = {
-        agentId: fixture.agentId,
         clientThreadId: randomUUID(),
         model: WORKSPACE_DEFAULT_MODEL,
       } as const;
@@ -268,7 +268,6 @@ describe("POST /api/chat-threads", () => {
     const vncHostId = vncHost.body.id;
     const threadId = randomUUID();
     const body = {
-      agentId: fixture.agentId,
       clientThreadId: threadId,
       model: WORKSPACE_DEFAULT_MODEL,
       initialRemoteAccessOverrides: [
@@ -377,7 +376,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId: threadId,
           model: WORKSPACE_DEFAULT_MODEL,
           initialRemoteAccessOverrides: [
@@ -397,32 +395,22 @@ describe("POST /api/chat-threads", () => {
     );
   });
 
-  it("resolves only sparse connector selections during account deletion", async () => {
+  it("repairs selected and inherited accounts during deletion", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {});
+
     const firstResponse = await connectorApi.requestManualGrant(
       fixture.actor,
       "openai",
       "api-token",
       { apiKey: "first-openai-key" },
-      {
-        statuses: [200],
-        agentId: fixture.agentId,
-        authorizeAgent: true,
-        account: { intent: "add", displayName: "First" },
-      },
+      { statuses: [200], account: { intent: "add", displayName: "First" } },
     );
     const secondResponse = await connectorApi.requestManualGrant(
       fixture.actor,
       "openai",
       "api-token",
       { apiKey: "second-openai-key" },
-      {
-        statuses: [200],
-        agentId: fixture.agentId,
-        authorizeAgent: true,
-        account: { intent: "add", displayName: "Second" },
-      },
+      { statuses: [200], account: { intent: "add", displayName: "Second" } },
     );
     if (firstResponse.status !== 200 || secondResponse.status !== 200) {
       throw new Error("Expected connector account creation to succeed");
@@ -435,7 +423,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
@@ -445,17 +432,22 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelections: [
-            {
-              connectionId: secondResponse.body.connectionId,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
         },
       }),
       [201],
+    );
+
+    await accept(
+      connectorSelectionsClient().update({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: selectedThread.body.id },
+        body: {
+          connectionId: secondResponse.body.connectionId,
+          target: { kind: "builtin", connectorSlug: "openai" },
+        },
+      }),
+      [200],
     );
 
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
@@ -488,8 +480,14 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(selected.body.selections).toStrictEqual([]);
-    expect(selected.body.selectedConnections).toStrictEqual([]);
+    const remaining = {
+      target: { kind: "builtin", connectorSlug: "openai" },
+      connectionId: firstResponse.body.connectionId,
+    };
+    expect(selected.body.selections).toStrictEqual([remaining]);
+    expect(selected.body.selectedConnections).toMatchObject([
+      { id: remaining.connectionId, target: remaining.target },
+    ]);
     const inherited = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
@@ -497,8 +495,10 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(inherited.body.selections).toStrictEqual([]);
-    expect(inherited.body.selectedConnections).toStrictEqual([]);
+    expect(inherited.body).toStrictEqual({
+      selections: [],
+      selectedConnections: [],
+    });
 
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
     const deletedRemainingAccount = await accept(
@@ -511,7 +511,7 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(deletedRemainingAccount.body.resolvedSelectionCount).toBe(0);
+    expect(deletedRemainingAccount.body.resolvedSelectionCount).toBe(1);
     const afterClear = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
@@ -522,53 +522,12 @@ describe("POST /api/chat-threads", () => {
     expect(afterClear.body.selections).toStrictEqual([]);
     expect(afterClear.body.selectedConnections).toStrictEqual([]);
 
-    const clientThreadId = randomUUID();
-    const staleSelectionThread = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId,
-          agentId: fixture.agentId,
-          model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelectionPolicy: "required",
-          connectorSelections: [
-            {
-              connectionId: firstResponse.body.connectionId,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
-        },
-      }),
-      [400],
-    );
-    expect(staleSelectionThread.body.error.code).toBe(
-      "CONNECTOR_ACCOUNT_UNAVAILABLE",
-    );
-    await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: clientThreadId },
-      }),
-      [404],
-    );
-    await expect(
-      readCreatedThreadEvents(clientThreadId, token),
-    ).resolves.toHaveLength(0);
-    // An already committed request still replays after its account is deleted.
     const replayed = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
           clientThreadId: selectedThread.body.id,
-          connectorSelectionPolicy: "required",
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelections: [
-            {
-              connectionId: secondResponse.body.connectionId,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
         },
       }),
       [201],
@@ -579,19 +538,15 @@ describe("POST /api/chat-threads", () => {
     ).resolves.toHaveLength(1);
   });
 
-  it("refreshes builtin and custom selection authorization after grant changes", async () => {
+  it("refreshes builtin and custom selection authorization after Chat allowance changes", async () => {
     const actor = bdd.user();
+
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Selection authorization changes",
-      visibility: "private",
-    });
     const builtin = await connectorApi.connectManualGrant(
       actor,
       "openai",
       "api-token",
       { apiKey: "scope-read-openai-key" },
-      agent.agentId,
     );
     const definition = await connectorApi.createCustomConnector(
       actor,
@@ -609,9 +564,6 @@ describe("POST /api/chat-threads", () => {
     if (!custom.connectionId) {
       throw new Error("Expected the API-created custom connector account");
     }
-    await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, [
-      definition.id,
-    ]);
     const headers = { authorization: "Bearer clerk-session" };
     const requested = [
       {
@@ -626,14 +578,20 @@ describe("POST /api/chat-threads", () => {
     const created = await accept(
       threadsClient().create({
         headers,
-        body: {
-          agentId: agent.agentId,
-          model: null,
-          connectorSelections: [...requested],
-        },
+        body: { model: null },
       }),
       [201],
     );
+    for (const selection of requested) {
+      await accept(
+        connectorSelectionsClient().update({
+          headers,
+          params: { id: created.body.id },
+          body: selection,
+        }),
+        [200],
+      );
+    }
     const initial = await accept(
       connectorSelectionsClient().get({
         headers,
@@ -646,9 +604,9 @@ describe("POST /api/chat-threads", () => {
       expect.arrayContaining([...requested]),
     );
 
-    await api.enableAgentConnectors(actor, agent.agentId, []);
-    await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, []);
+    const access = createChatConnectorAccessApi(context);
     for (const selection of requested) {
+      await access.setThreadOverride(actor, created.body.id, selection, false);
       const denied = await accept(
         connectorSelectionsClient().update({
           headers,
@@ -659,7 +617,7 @@ describe("POST /api/chat-threads", () => {
       );
       expect(denied.body.error).toStrictEqual({
         code: "BAD_REQUEST",
-        message: "Connector target is not authorized for this agent",
+        message: "Account is unavailable or not allowed in this Chat",
       });
     }
     const preserved = await accept(
@@ -669,13 +627,10 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(preserved.body.selections).toStrictEqual(initial.body.selections);
+    expect(preserved.body.selections).toStrictEqual([]);
 
-    await api.enableAgentConnectors(actor, agent.agentId, ["openai"]);
-    await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, [
-      definition.id,
-    ]);
     for (const selection of requested) {
+      await access.setThreadOverride(actor, created.body.id, selection, true);
       const updated = await accept(
         connectorSelectionsClient().update({
           headers,
@@ -696,15 +651,14 @@ describe("POST /api/chat-threads", () => {
     expect(restored.body.selections).toStrictEqual(initial.body.selections);
   });
 
-  it("creates and reads an exact built-in connector account selection", async () => {
+  it("sets and reads an exact built-in connector account", async () => {
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {});
+
     const connection = await connectorApi.connectManualGrant(
       fixture.actor,
       "openai",
       "api-token",
       { apiKey: "selected-openai-key" },
-      fixture.agentId,
     );
     const token = await executionToken({
       userId: fixture.userId,
@@ -715,17 +669,21 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelections: [
-            {
-              connectionId: connection.id,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
         },
       }),
       [201],
+    );
+    await accept(
+      connectorSelectionsClient().update({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: created.body.id },
+        body: {
+          connectionId: connection.id,
+          target: { kind: "builtin", connectorSlug: "openai" },
+        },
+      }),
+      [200],
     );
     const selections = await accept(
       connectorSelectionsClient().get({
@@ -752,6 +710,7 @@ describe("POST /api/chat-threads", () => {
       { orgId: fixture.orgId, userId: foreignActor.userId },
       context.signal,
     );
+
     const foreignConnection = await connectorApi.connectManualGrant(
       foreignActor,
       "openai",
@@ -759,17 +718,12 @@ describe("POST /api/chat-threads", () => {
       { apiKey: "foreign-openai-key" },
     );
     await accept(
-      threadsClient().create({
+      connectorSelectionsClient().update({
         headers: { authorization: `Bearer ${token}` },
+        params: { id: created.body.id },
         body: {
-          agentId: fixture.agentId,
-          model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelections: [
-            {
-              connectionId: foreignConnection.id,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
+          connectionId: foreignConnection.id,
+          target: { kind: "builtin", connectorSlug: "openai" },
         },
       }),
       [400],
@@ -791,31 +745,20 @@ describe("POST /api/chat-threads", () => {
       { orgId: otherOrgId, userId: fixture.userId },
       context.signal,
     );
+
     const otherOrgToken = await executionToken({
       userId: fixture.userId,
       orgId: otherOrgId,
     });
     for (const deniedToken of [foreignToken, otherOrgToken]) {
       await accept(
-        connectorSelectionsClient().clear({
+        connectorSelectionsClient().get({
           headers: { authorization: `Bearer ${deniedToken}` },
           params: { id: created.body.id },
-          body: { kind: "builtin", connectorSlug: "openai" },
         }),
         [404],
       );
     }
-    const afterDeniedClear = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(afterDeniedClear.body.selections).toStrictEqual(
-      selections.body.selections,
-    );
-
     context.mocks.ably.publish.mockClear();
     const updated = await accept(
       connectorSelectionsClient().update({
@@ -834,50 +777,6 @@ describe("POST /api/chat-threads", () => {
       null,
     );
 
-    await api.enableAgentConnectors(fixture.actor, fixture.agentId, []);
-    const preserved = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(preserved.body.selections).toStrictEqual(selections.body.selections);
-    await accept(
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [400],
-    );
-
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      connectorSelectionsClient().clear({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: { kind: "builtin", connectorSlug: "openai" },
-      }),
-      [204],
-    );
-    const cleared = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-      }),
-      [200],
-    );
-    expect(cleared.body.selections).toStrictEqual([]);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadDetailChanged:${created.body.id}`,
-      null,
-    );
-
-    await api.enableAgentConnectors(fixture.actor, fixture.agentId, ["openai"]);
     await accept(
       connectorSelectionsClient().update({
         headers: { authorization: `Bearer ${token}` },
@@ -889,62 +788,25 @@ describe("POST /api/chat-threads", () => {
       }),
       [400],
     );
-    await Promise.all([
-      accept(
-        connectorSelectionsClient().update({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: {
-            connectionId: connection.id,
-            target: { kind: "builtin", connectorSlug: "openai" },
-          },
-        }),
-        [200],
-      ),
-      accept(
-        connectorSelectionsClient().clear({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: { kind: "builtin", connectorSlug: "openai" },
-        }),
-        [204],
-      ),
-    ]);
-    const afterConcurrentClear = await accept(
-      connectorSelectionsClient().get({
+
+    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+    const [concurrentSelectionWrite, concurrentDisconnect] = await Promise.all([
+      connectorSelectionsClient().update({
         headers: { authorization: `Bearer ${token}` },
         params: { id: created.body.id },
+        body: {
+          connectionId: connection.id,
+          target: { kind: "builtin", connectorSlug: "openai" },
+        },
       }),
-      [200],
-    );
-    expect([[], selections.body.selections]).toContainEqual(
-      afterConcurrentClear.body.selections,
-    );
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const [concurrentSelectionWrite, concurrentDisconnect, concurrentClear] =
-      await Promise.all([
-        connectorSelectionsClient().update({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: {
-            connectionId: connection.id,
-            target: { kind: "builtin", connectorSlug: "openai" },
-          },
-        }),
-        connectorAccountsClient().delete({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { connectionId: connection.id },
-          body: { target: { kind: "builtin", connectorSlug: "openai" } },
-        }),
-        connectorSelectionsClient().clear({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: created.body.id },
-          body: { kind: "builtin", connectorSlug: "openai" },
-        }),
-      ]);
+      connectorAccountsClient().delete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { connectionId: connection.id },
+        body: { target: { kind: "builtin", connectorSlug: "openai" } },
+      }),
+    ]);
     expect([200, 400]).toContain(concurrentSelectionWrite.status);
     expect(concurrentDisconnect.status).toBe(200);
-    expect(concurrentClear.status).toBe(204);
     const afterDisconnect = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
@@ -955,91 +817,7 @@ describe("POST /api/chat-threads", () => {
     expect(afterDisconnect.body.selections).toStrictEqual([]);
   });
 
-  it("handles a built-in account deleted during chat creation", async () => {
-    const fixture = await seedAgent();
-    const account = await connectorApi.connectManualGrant(
-      fixture.actor,
-      "openai",
-      "api-token",
-      { apiKey: "concurrent-create-key" },
-      fixture.agentId,
-    );
-    const token = await executionToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-    });
-    const clientThreadId = randomUUID();
-    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const [, created] = await Promise.all([
-      accept(
-        connectorAccountsClient().delete({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { connectionId: account.id },
-          body: { target: { kind: "builtin", connectorSlug: "openai" } },
-        }),
-        [200],
-      ),
-      accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            clientThreadId,
-            agentId: fixture.agentId,
-            model: WORKSPACE_DEFAULT_MODEL,
-            connectorSelections: [
-              {
-                connectionId: account.id,
-                target: { kind: "builtin", connectorSlug: "openai" },
-              },
-            ],
-          },
-        }),
-        [201, 400],
-      ),
-    ]);
-    if (created.status === 400) {
-      expect(created.body.error.code).toBe("CONNECTOR_ACCOUNT_UNAVAILABLE");
-      await accept(
-        metadataClient().get({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: clientThreadId },
-        }),
-        [404],
-      );
-      await expect(
-        readCreatedThreadEvents(clientThreadId, token),
-      ).resolves.toHaveLength(0);
-      const recovered = await accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            clientThreadId,
-            agentId: fixture.agentId,
-            model: WORKSPACE_DEFAULT_MODEL,
-          },
-        }),
-        [201],
-      );
-      expect(recovered.body.id).toBe(clientThreadId);
-      await expect(
-        readCreatedThreadEvents(clientThreadId, token),
-      ).resolves.toHaveLength(1);
-    } else {
-      const selected = await accept(
-        connectorSelectionsClient().get({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: clientThreadId },
-        }),
-        [200],
-      );
-      expect(selected.body.selections).toStrictEqual([]);
-      await expect(
-        readCreatedThreadEvents(clientThreadId, token),
-      ).resolves.toHaveLength(1);
-    }
-  });
-
-  it("creates exact custom HTTP and MCP connector selections", async () => {
+  it("sets exact custom HTTP and MCP connector accounts", async () => {
     const fixture = await seedAgent();
     const httpConnector = await connectorApi.createCustomConnector(
       fixture.actor,
@@ -1085,11 +863,6 @@ describe("POST /api/chat-threads", () => {
       mcpConnector.id,
       [{ key: "secret", kind: "secret", value: "thread-mcp-secret" }],
     );
-    await connectorApi.updateAgentCustomConnectors(
-      fixture.actor,
-      fixture.agentId,
-      [httpConnector.id, mcpConnector.id],
-    );
     const httpConnectionId = httpConnection.connectionId;
     const mcpConnectionId = mcpConnection.connectionId;
     if (!httpConnectionId || !mcpConnectionId) {
@@ -1104,28 +877,24 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelections: [
-            {
-              connectionId: httpConnectionId,
-              target: {
-                kind: "custom",
-                customConnectorId: httpConnector.id,
-              },
-            },
-            {
-              connectionId: mcpConnectionId,
-              target: {
-                kind: "custom",
-                customConnectorId: mcpConnector.id,
-              },
-            },
-          ],
         },
       }),
       [201],
     );
+    for (const [connectionId, customConnectorId] of [
+      [httpConnectionId, httpConnector.id],
+      [mcpConnectionId, mcpConnector.id],
+    ] as const) {
+      await accept(
+        connectorSelectionsClient().update({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+          body: { connectionId, target: { kind: "custom", customConnectorId } },
+        }),
+        [200],
+      );
+    }
     const selections = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
@@ -1154,126 +923,6 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    const rejectedThreadId = randomUUID();
-    const withMissingSelection = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: {
-          clientThreadId: rejectedThreadId,
-          agentId: fixture.agentId,
-          model: WORKSPACE_DEFAULT_MODEL,
-          connectorSelections: selections.body.selections,
-        },
-      }),
-      [400],
-    );
-    expect(withMissingSelection.body.error.code).toBe(
-      "CONNECTOR_ACCOUNT_UNAVAILABLE",
-    );
-    await accept(
-      metadataClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: rejectedThreadId },
-      }),
-      [404],
-    );
-    await expect(
-      readCreatedThreadEvents(rejectedThreadId, token),
-    ).resolves.toHaveLength(0);
-
-    // Correcting the choice can create the same client ID exactly once.
-    const correctedBody = {
-      clientThreadId: rejectedThreadId,
-      agentId: fixture.agentId,
-      model: WORKSPACE_DEFAULT_MODEL,
-      connectorSelections: [
-        {
-          connectionId: mcpConnectionId,
-          target: {
-            kind: "custom" as const,
-            customConnectorId: mcpConnector.id,
-          },
-        },
-      ],
-    };
-    const corrected = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: correctedBody,
-      }),
-      [201],
-    );
-    const correctedReplay = await accept(
-      threadsClient().create({
-        headers: { authorization: `Bearer ${token}` },
-        body: correctedBody,
-      }),
-      [201],
-    );
-    expect(correctedReplay.body).toStrictEqual(corrected.body);
-    await expect(
-      readCreatedThreadEvents(rejectedThreadId, token),
-    ).resolves.toHaveLength(1);
-    const correctedSelections = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: rejectedThreadId },
-      }),
-      [200],
-    );
-    expect(correctedSelections.body.selections).toStrictEqual(
-      correctedBody.connectorSelections,
-    );
-
-    const concurrentThreadId = randomUUID();
-    const [, concurrentThread] = await Promise.all([
-      accept(
-        connectorAccountsClient().delete({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { connectionId: mcpConnectionId },
-          body: {
-            target: { kind: "custom", customConnectorId: mcpConnector.id },
-          },
-        }),
-        [200],
-      ),
-      accept(
-        threadsClient().create({
-          headers: { authorization: `Bearer ${token}` },
-          body: { ...correctedBody, clientThreadId: concurrentThreadId },
-        }),
-        [201, 400],
-      ),
-    ]);
-    if (concurrentThread.status === 201) {
-      // The chat committed; disconnect removes any saved preference.
-      const afterConcurrentDelete = await accept(
-        connectorSelectionsClient().get({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: concurrentThreadId },
-        }),
-        [200],
-      );
-      expect(afterConcurrentDelete.body.selections).toStrictEqual([]);
-      await expect(
-        readCreatedThreadEvents(concurrentThreadId, token),
-      ).resolves.toHaveLength(1);
-    } else {
-      // Creation rejects if an account FK check fails.
-      expect(concurrentThread.body.error.code).toBe(
-        "CONNECTOR_ACCOUNT_UNAVAILABLE",
-      );
-      await accept(
-        metadataClient().get({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: concurrentThreadId },
-        }),
-        [404],
-      );
-      await expect(
-        readCreatedThreadEvents(concurrentThreadId, token),
-      ).resolves.toHaveLength(0);
-    }
     const afterDisconnect = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
@@ -1281,7 +930,12 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(afterDisconnect.body.selections).toStrictEqual([]);
+    expect(afterDisconnect.body.selections).toStrictEqual([
+      {
+        connectionId: mcpConnectionId,
+        target: { kind: "custom", customConnectorId: mcpConnector.id },
+      },
+    ]);
   });
 
   it.each([
@@ -1323,11 +977,6 @@ describe("POST /api/chat-threads", () => {
         kind: "custom" as const,
         customConnectorId: definition.id,
       };
-      await connectorApi.updateAgentCustomConnectors(
-        fixture.actor,
-        fixture.agentId,
-        [definition.id],
-      );
       createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
       await accept(
         connectorAccountsClient().setDefault({
@@ -1345,12 +994,18 @@ describe("POST /api/chat-threads", () => {
         threadsClient().create({
           headers: { authorization: `Bearer ${token}` },
           body: {
-            agentId: fixture.agentId,
             model: WORKSPACE_DEFAULT_MODEL,
-            connectorSelections: [{ connectionId: accounts[initial], target }],
           },
         }),
         [201],
+      );
+      await accept(
+        connectorSelectionsClient().update({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: thread.body.id },
+          body: { connectionId: accounts[initial], target },
+        }),
+        [200],
       );
       const [selectionResult, deletion] = await Promise.all([
         accept(
@@ -1444,7 +1099,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
@@ -1472,7 +1126,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           title: "Deep dive on P2",
           model: OTHER_WORKSPACE_MODEL,
         },
@@ -1496,7 +1149,6 @@ describe("POST /api/chat-threads", () => {
     );
     expect(metadataResponse.body).toStrictEqual({
       id: response.body.id,
-      agentId: fixture.agentId,
       title: "Deep dive on P2",
       pinnedAt: null,
       archived: false,
@@ -1520,7 +1172,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: "Bearer clerk-session" },
         body: {
-          agentId: fixture.agentId,
           title: "Caller using another model",
           model: OTHER_WORKSPACE_MODEL,
         },
@@ -1545,7 +1196,7 @@ describe("POST /api/chat-threads", () => {
     const response = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId: fixture.agentId, title: "Inherited model" },
+        body: { title: "Inherited model" },
       }),
       [201],
     );
@@ -1589,7 +1240,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${sourceToken}` },
         body: {
-          agentId: fixture.agentId,
           title: "Priority source",
           model: PRIORITY_MODEL,
           serviceTier: "priority",
@@ -1620,7 +1270,7 @@ describe("POST /api/chat-threads", () => {
     const inherited = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${inheritedToken}` },
-        body: { agentId: fixture.agentId, title: "Inherited priority" },
+        body: { title: "Inherited priority" },
       }),
       [201],
     );
@@ -1641,7 +1291,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${inheritedToken}` },
         body: {
-          agentId: fixture.agentId,
           title: "Explicit standard",
           serviceTier: null,
         },
@@ -1665,7 +1314,7 @@ describe("POST /api/chat-threads", () => {
     const response = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId: fixture.agentId, title: "No model anywhere" },
+        body: { title: "No model anywhere" },
       }),
       [201],
     );
@@ -1678,13 +1327,6 @@ describe("POST /api/chat-threads", () => {
   it("replays one thread when a create request is delivered twice", async () => {
     const fixture = await seedAgent();
     await updateFeatureSwitchesForUser(context, fixture, {});
-    const connection = await connectorApi.connectManualGrant(
-      fixture.actor,
-      "openai",
-      "api-token",
-      { apiKey: "duplicate-delivery-openai-key" },
-      fixture.agentId,
-    );
     const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
@@ -1696,17 +1338,10 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
           eventId,
           title: "Duplicate delivery",
           model: OTHER_WORKSPACE_MODEL,
-          connectorSelections: [
-            {
-              connectionId: connection.id,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
         },
       }),
       [201],
@@ -1718,17 +1353,10 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
           eventId,
           title: "Duplicate delivery",
           model: OTHER_WORKSPACE_MODEL,
-          connectorSelections: [
-            {
-              connectionId: connection.id,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
         },
       }),
       [201],
@@ -1738,19 +1366,6 @@ describe("POST /api/chat-threads", () => {
     await expect(
       readCreatedThreadEvents(clientThreadId, token),
     ).resolves.toHaveLength(1);
-    const selections = await accept(
-      connectorSelectionsClient().get({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: clientThreadId },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([
-      {
-        connectionId: connection.id,
-        target: { kind: "builtin", connectorSlug: "openai" },
-      },
-    ]);
   });
 
   it("replays the stored thread instead of the repeated request body", async () => {
@@ -1765,7 +1380,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
           title: "Title from the request",
           model: OTHER_WORKSPACE_MODEL,
@@ -1786,7 +1400,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
           title: "Title from the request",
           model: OTHER_WORKSPACE_MODEL,
@@ -1826,7 +1439,6 @@ describe("POST /api/chat-threads", () => {
         threadsClient().create({
           headers: { authorization: `Bearer ${token}` },
           body: {
-            agentId: fixture.agentId,
             clientThreadId,
             eventId,
             title: "Raced delivery",
@@ -1839,7 +1451,6 @@ describe("POST /api/chat-threads", () => {
         threadsClient().create({
           headers: { authorization: `Bearer ${token}` },
           body: {
-            agentId: fixture.agentId,
             clientThreadId,
             eventId,
             title: "Raced delivery",
@@ -1868,7 +1479,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${ownerToken}` },
         body: {
-          agentId: owner.agentId,
           clientThreadId,
           title: "Owner thread",
           model: WORKSPACE_DEFAULT_MODEL,
@@ -1886,7 +1496,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${otherToken}` },
         body: {
-          agentId: other.agentId,
           clientThreadId,
           title: "Colliding thread",
           model: WORKSPACE_DEFAULT_MODEL,
@@ -1906,12 +1515,11 @@ describe("POST /api/chat-threads", () => {
       [200],
     );
     expect(metadataResponse.body).toMatchObject({
-      agentId: owner.agentId,
       title: "Owner thread",
     });
   });
 
-  it("answers a client thread id held by another agent like a missing thread", async () => {
+  it("returns the existing member thread when a create is retried", async () => {
     const fixture = await seedAgent();
     const token = await executionToken({
       userId: fixture.userId,
@@ -1922,35 +1530,26 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
-          title: "First agent thread",
+          title: "First title",
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
       [201],
     );
 
-    bdd.acceptAgentStorageWrites();
-    const otherAgent = await bdd.createAgent(fixture.actor, {
-      displayName: "Second chat thread agent",
-      visibility: "private",
-    });
     const collision = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: otherAgent.agentId,
           clientThreadId,
-          title: "Colliding agent thread",
+          title: "Updated title",
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
-      [404],
+      [201],
     );
-    expect(collision.body).toStrictEqual({
-      error: { code: "NOT_FOUND", message: "Chat thread not found" },
-    });
+    expect(collision.body.id).toBe(clientThreadId);
 
     const metadataResponse = await accept(
       metadataClient().get({
@@ -1960,8 +1559,7 @@ describe("POST /api/chat-threads", () => {
       [200],
     );
     expect(metadataResponse.body).toMatchObject({
-      agentId: fixture.agentId,
-      title: "First agent thread",
+      title: "First title",
     });
   });
 });

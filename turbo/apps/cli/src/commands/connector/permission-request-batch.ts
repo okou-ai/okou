@@ -4,9 +4,11 @@ import {
   userPermissionGrantBatchItemSchema,
   userPermissionGrantBatchItemsSchema,
   type UserPermissionGrantBatchItem,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
-import { getPlatformOrigin } from "../../lib/platform-url";
-import { finalizeActionUrl } from "./action-url";
+} from "@okouai/api-contracts/validators/user-permission-grants";
+import {
+  finalizePermissionActionUrl,
+  permissionActionUrl,
+} from "./permission-action-url";
 import { diagnosePermissionRequest } from "./permission-request-diagnostic";
 
 const nonemptyString = string().trim().min(1);
@@ -28,15 +30,8 @@ const batchFileSchema = array(
 
 export async function resolvePermissionRequestBatch(args: {
   readonly batchFile: string;
-  readonly agentId: string | undefined;
   readonly callbackPrompt: string | undefined;
 }) {
-  const agentId = args.agentId?.trim();
-  if (!agentId || agentId !== args.agentId) {
-    throw new Error(
-      "Batch permission requests require a current workspace execution context.",
-    );
-  }
   let input: unknown;
   try {
     input = JSON.parse(await readFile(args.batchFile, "utf8"));
@@ -78,16 +73,13 @@ export async function resolvePermissionRequestBatch(args: {
     }
   }
   if (items.length === 0) return { items, summaries, hasAws, url: undefined };
-  const actionUrl = new URL(
-    `/agents/${encodeURIComponent(agentId)}/permissions/batch`,
-    await getPlatformOrigin(),
-  );
+  const actionUrl = await permissionActionUrl("batch");
   actionUrl.searchParams.set(
     "items",
     JSON.stringify(userPermissionGrantBatchItemsSchema.parse(items)),
   );
   actionUrl.searchParams.set("action", "allow");
-  const url = finalizeActionUrl(actionUrl, args.callbackPrompt, agentId);
+  const url = finalizePermissionActionUrl(actionUrl, args.callbackPrompt);
   if (Buffer.byteLength(url, "utf8") > 8192) {
     throw new Error(
       "Batch permission URL exceeds 8192 UTF-8 bytes. Split the batch into smaller files or shorten the callback prompt.",

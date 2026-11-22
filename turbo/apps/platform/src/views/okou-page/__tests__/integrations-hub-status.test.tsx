@@ -62,11 +62,13 @@ test("Integrations show current status and refresh after GitHub connects", async
   });
   const browserOpen = context.mocks.browser.open(providerWindow);
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
-  expect(screen.getByText(/update permissions/iu)).toBeInTheDocument();
+  expect(
+    getAction("button", "Update Permissions", getIntegrationCard("Slack")),
+  ).toBeInTheDocument();
   expect(getIntegrationCard("Phone")).toHaveTextContent("+15555551212");
   expect(
     getAction("button", "Connect", getIntegrationCard("Discord")),
@@ -126,7 +128,7 @@ test.each([true, false])(
       isConnected = false;
       return respond(200, { ok: true });
     });
-    await setupIntegrationsPage(context);
+    await setupIntegrationsPage(context, { compact: true });
     const card = getIntegrationCard("Slack");
     expect(within(card).getByText("Connected (Okou HQ)")).toBeInTheDocument();
     expect(queryAction("button", "Disconnect", card)).toBeNull();
@@ -154,7 +156,7 @@ test("A workspace member is directed to an admin for GitHub installation", async
     },
   );
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   const githubCard = await waitFor(() => {
     return getIntegrationCard("GitHub");
@@ -164,7 +166,7 @@ test("A workspace member is directed to an admin for GitHub installation", async
       "Ask an organization admin to install the GitHub App",
     ),
   ).toBeInTheDocument();
-  expect(queryAction("link", "Install GitHub App", githubCard)).toBeNull();
+  expect(queryAction("link", "Connect", githubCard)).toBeNull();
   expect(queryAction("button", "Connect", githubCard)).toBeNull();
 });
 
@@ -177,7 +179,6 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
         kind: "official",
         username: "okou_bot",
         avatarUrl: null,
-        agent: null,
         isOwner: false,
         isConnected: false,
         tokenStatus: "valid",
@@ -190,7 +191,6 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
         },
         official: {
           configured: true,
-          usesDefaultAgent: true,
           linkedTelegramUserId: null,
         },
       },
@@ -217,7 +217,7 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   });
   const opened = context.mocks.browser.open(authorizationWindow);
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   await expect(screen.findByText("Telegram")).resolves.toBeInTheDocument();
   const telegramCard = getIntegrationCard("Telegram");
@@ -287,11 +287,13 @@ test("The phone card describes messaging and the connect dialog displays the des
       });
     },
   );
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
   });
-  expect(phoneCard).toHaveTextContent("Text-message access to Okou");
+  expect(phoneCard).toHaveTextContent(
+    "Text Okou a rough idea from your iPhone and ask for a first draft.",
+  );
   expect(phoneCard).not.toHaveTextContent("+1 (314) 438-6568");
   click(getAction("button", "Connect phone", phoneCard));
   const dialog = await screen.findByRole("dialog", {
@@ -326,12 +328,14 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
     },
   );
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
   });
-  expect(phoneCard).toHaveTextContent("Text-message access to Okou");
+  expect(phoneCard).toHaveTextContent(
+    "Text Okou a rough idea from your iPhone and ask for a first draft.",
+  );
   click(getAction("button", "Connect phone", phoneCard));
 
   const dialog = await screen.findByRole("dialog", {
@@ -396,14 +400,16 @@ test("An admin can begin Microsoft Teams installation", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
   mockTeams(context, { isConnected: false, isInstalled: false, isAdmin: true });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   const teamsCard = await waitFor(() => {
     return getIntegrationCard("Microsoft Teams");
   });
-  const install = getAction("button", "Install in Teams", teamsCard);
+  const install = getAction("button", "Connect", teamsCard);
   expect(
-    screen.getByText("Connect your Microsoft account to finish setup"),
+    screen.getByText(
+      "Paste your meeting notes into Teams and ask Okou to pull out the action items.",
+    ),
   ).toBeInTheDocument();
 
   click(install);
@@ -421,13 +427,12 @@ test("Microsoft Teams offers Connect after installation", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
   mockTeams(context, { isConnected: false, isInstalled: true, isAdmin: true });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   const teamsCard = await waitFor(() => {
     return getIntegrationCard("Microsoft Teams");
   });
   expect(getAction("button", "Connect", teamsCard)).toBeInTheDocument();
-  expect(queryAction("button", "Install in Teams", teamsCard)).toBeNull();
 });
 
 test("Microsoft Teams shows its connected account name", async () => {
@@ -448,20 +453,20 @@ test("Microsoft Teams shows its connected account name", async () => {
     ],
   });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   await expect(
     screen.findByText("Microsoft Teams"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Avery)")).toBeInTheDocument();
-  expect(getAction("link", "Install GitHub App")).toBeInTheDocument();
+  expect(getAction("link", "Connect")).toBeInTheDocument();
 });
 
-test("Uninstalling Microsoft Teams requires confirmation", async () => {
+test("Uninstalling connected Microsoft Teams requires confirmation", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  mockTeams(context, { isConnected: false, isInstalled: true, isAdmin: true });
+  mockTeams(context, { isConnected: true, isInstalled: true, isAdmin: true });
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
 
   await expect(
     screen.findByText("Microsoft Teams"),
@@ -491,11 +496,9 @@ test.each([false, true])(
       });
     });
     const opened = context.mocks.browser.open();
-    await setupIntegrationsPage(context);
+    await setupIntegrationsPage(context, { compact: true });
     const card = getIntegrationCard("Slack");
-    click(
-      getAction("button", isInstalled ? "Connect" : "Install to Slack", card),
-    );
+    click(getAction("button", "Connect", card));
     const url = new URL(opened.calls[0]!.url!);
     expect(url.origin).toBe("https://slack.example.test");
     expect(url.pathname).toBe(isInstalled ? "/connect" : "/install");
@@ -528,7 +531,7 @@ test("Slack permission refresh reports actual scope recovery on the original Wor
     });
   });
   const opened = context.mocks.browser.open();
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { compact: true });
   const card = getIntegrationCard("Slack");
   click(getAction("button", "Update Permissions", card));
   const url = new URL(opened.calls[0]!.url!);

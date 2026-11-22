@@ -35,7 +35,6 @@ import {
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   readyChat,
   RUN_PATH,
@@ -51,7 +50,6 @@ import {
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
-const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000001101";
 const OTHER_THREAD_ID = "b0000000-0000-4000-a000-000000001102";
 const ACTION_RUN_ID = "d0000000-0000-4000-a000-000000001103";
 const INITIAL_SCREENSHOT_URL =
@@ -93,7 +91,6 @@ function browserInputAction(
     state,
     callbackDelivered: context.store.get(callbackSent$),
     completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
-    agentId: CAPABILITY_AGENT_ID,
     threadId: RUN_THREAD_ID,
     siteOrigin: "https://accounts.example.test",
     fields: [
@@ -135,7 +132,6 @@ function browserInputAction(
 
 function browserInputUrl(
   args: {
-    readonly agentId?: string;
     readonly threadId?: string;
   } = {},
 ): string {
@@ -143,7 +139,6 @@ function browserInputUrl(
     `/browser/actions/${BROWSER_INPUT_TOKEN}`,
     "https://app.okou.ai",
   );
-  url.searchParams.set("agentId", args.agentId ?? CAPABILITY_AGENT_ID);
   url.searchParams.set("threadId", args.threadId ?? RUN_THREAD_ID);
   url.searchParams.set("callbackPrompt", BROWSER_INPUT_CALLBACK);
   return url.href;
@@ -228,14 +223,10 @@ function computerAuthorizationUrl(origin: string, token: string): string {
 }
 
 function connectorAuthorizationUrl(args: {
-  readonly agentId?: string;
   readonly threadId?: string;
   readonly callbackPrompt?: string;
 }): string {
   const url = new URL("/connectors/slack/authorize", "https://app.okou.ai");
-  if (args.agentId !== undefined) {
-    url.searchParams.set("agentId", args.agentId);
-  }
   if (args.threadId !== undefined) {
     url.searchParams.set("threadId", args.threadId);
   }
@@ -602,22 +593,15 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
     `[Assistant computer action](${trustedComputer})`,
     `[Malformed browser input](${browserInputUrl()}&extra=unexpected)`,
     `[Forged action](${computerAuthorizationUrl("https://app.okou.ai.evil.test", "forged")})`,
-    "Wrong agent:",
-    connectorAuthorizationUrl({
-      agentId: OTHER_AGENT_ID,
-      threadId: RUN_THREAD_ID,
-      callbackPrompt: "Continue after authorization",
-    }),
     "Wrong conversation:",
     connectorAuthorizationUrl({
-      agentId: CAPABILITY_AGENT_ID,
       threadId: OTHER_THREAD_ID,
       callbackPrompt: "Continue in another conversation",
     }),
     "Missing action context:",
     connectorAuthorizationUrl({}),
-    "Unavailable agent:",
-    `https://app.okou.ai/agents/${OTHER_AGENT_ID}/permissions?connectorSlug=slack&permission=messages.read`,
+    "Missing permission owner:",
+    "https://app.okou.ai/connectors/permissions?connectorSlug=slack&permission=messages.read",
   ].join("\n\n");
   installCapabilityChat({
     cloudBrowserEnabled: true,
@@ -661,7 +645,7 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   expect(linkByName("Forged action")).toBeVisible();
 
   await waitFor(() => {
-    expect(screen.getAllByText("Action unavailable")).toHaveLength(5);
+    expect(screen.getAllByText("Action unavailable")).toHaveLength(4);
   });
   const unavailableCards = screen
     .getAllByText("Action unavailable")
@@ -896,6 +880,9 @@ test("Closing an inline form clears password and code drafts while preserving or
   const dialog = await screen.findByRole("dialog", {
     name: "Sign in to download invoices",
   });
+  expect(
+    within(dialog).getByText("https://accounts.example.test"),
+  ).toBeInTheDocument();
   const emailInput = within(dialog).getByLabelText("Account email");
   const passwordInput = within(dialog).getByLabelText("Password");
   const codeInput = within(dialog).getByLabelText("Verification code");
@@ -910,8 +897,8 @@ test("Closing an inline form clears password and code drafts while preserving or
   await fill(passwordInput, "synthetic-password");
   await fill(codeInput, "123456");
 
-  expect(within(dialog).getAllByText("How to fill")).toHaveLength(1);
-  click(within(dialog).getByText("How to fill"));
+  expect(within(dialog).getAllByText("Use a saved password")).toHaveLength(1);
+  click(within(dialog).getByText("Use a saved password"));
   expect(within(dialog).getByText(/^Chrome \(desktop\):/u)).toBeVisible();
   expect(emailInput).toHaveValue("owner@example.test");
   expect(passwordInput).toHaveValue("synthetic-password");
@@ -1162,6 +1149,12 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   if (!submitButton) {
     throw new Error("Missing Browser submit button");
   }
+  const consentLabel = within(dialog).getByText("Consent");
+  click(consentLabel);
+  expect(checkbox).not.toBeChecked();
+  expect(submitButton).toBeDisabled();
+  click(consentLabel);
+  expect(checkbox).toBeChecked();
   expect(submitButton).toBeEnabled();
   click(submitButton);
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();

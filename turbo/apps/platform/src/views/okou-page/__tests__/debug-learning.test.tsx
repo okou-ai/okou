@@ -15,7 +15,6 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const AUTOMATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const THREAD_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
@@ -23,9 +22,6 @@ function learningEntry(): WorkflowAutomationsListEntry {
   return {
     workflow: {
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      agentId: DEFAULT_AGENT_ID,
-      agentName: "okou",
-      agentDisplayName: "Okou",
       name: "proactive-learning",
       displayName: "Proactive Learning",
       description: "Review recent activity and maintain personal memory.",
@@ -95,40 +91,24 @@ function runButton() {
 }
 
 async function openDebug(learning = true) {
-  context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
   await setupPage({
     context,
-    path: "/agents?settings=debug",
+    path: "/?settings=debug",
     featureSwitches: {
       [FeatureSwitchKey.OkouDebug]: true,
-      [FeatureSwitchKey.ProactiveLearning]: learning,
+      [FeatureSwitchKey.AgentSuggestion]: learning,
     },
   });
   await screen.findByRole("heading", { name: "Debug" });
 }
 
-test("runs the current default agent's official Learning while its nightly schedule is paused", async () => {
+test("runs the workspace's official Learning while its nightly schedule is paused", async () => {
   const unrelated = learningEntry();
-  const formerDefault = learningEntry();
   context.mocks.api(
     workflowAutomationsContract.listWorkspace,
     ({ respond }) => {
       return respond(200, [
         customLearningEntry(),
-        {
-          ...formerDefault,
-          workflow: {
-            ...formerDefault.workflow,
-            id: "33333333-3333-4333-8333-333333333333",
-            agentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            agentName: "former-default",
-            agentDisplayName: "Former default",
-          },
-          automation: {
-            ...formerDefault.automation,
-            id: "44444444-4444-4444-8444-444444444444",
-          },
-        },
         {
           ...unrelated,
           workflow: {
@@ -247,11 +227,11 @@ test("dismissal cancels a pending Learning request", async () => {
 test("dismissal also cancels Learning discovery", async () => {
   const requested = context.mocks.deferred<void>();
   const response = context.mocks.deferred<void>();
-  let requestSignal: AbortSignal | undefined;
+  const requestSignals: AbortSignal[] = [];
   context.mocks.api(
     workflowAutomationsContract.listWorkspace,
     async ({ request, respond }) => {
-      requestSignal = request.signal;
+      requestSignals.push(request.signal);
       requested.resolve();
       await response.promise;
       return respond(200, [learningEntry()]);
@@ -260,10 +240,15 @@ test("dismissal also cancels Learning discovery", async () => {
   await openDebug();
   await requested.promise;
   expect(runButton()).toBeDisabled();
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Escape}");
+  const settings = screen.getByRole("dialog", { name: "Settings" });
+  click(within(settings).getByLabelText("Close", { selector: "button" }));
   await waitFor(() => {
-    expect(requestSignal?.aborted).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+    expect(
+      requestSignals.some((signal) => {
+        return signal.aborted;
+      }),
+    ).toBeTruthy();
   });
   response.resolve();
 });

@@ -1,54 +1,23 @@
-import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { publicRunFailureReason } from "../../lib/run-failure";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
-import { env, optionalEnv } from "../../lib/env";
-import { computeHmacSignature } from "../../lib/event-consumer/hmac";
+import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { handleChatInternalCallback$ } from "./internal-chat-run-callback.service";
-import { handleFeishuOrgInternalCallback$ } from "./internal-feishu-org-run-callback.service";
 import {
-  internalRunCallbackKindForRecord,
+  inlineChatDeliveryCallbackKinds,
+  terminalRunCallbackKinds,
+  workflowAutomationRunCallbackKinds,
   type InternalRunCallbackDispatchResult,
   type InternalRunCallbackEnvelope,
-  type InternalRunCallbackKind,
+  type TerminalRunCallbackKind,
 } from "./internal-run-callback";
 import { handleWorkflowAutomationInternalCallback$ } from "./workflow-automation-run-callback.service";
 
 const L = logger("AgentRunCallback");
-
-// Retired kinds (`github:chat`, `slack:org`) stay here so historical rows are
-// never mistaken for HTTP callbacks by the terminal dispatch queries.
-const INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS = [
-  "slack:chat",
-  "wechat:chat",
-  "feishu:chat",
-  "teams:chat",
-  "telegram:chat",
-  "email:chat",
-  "agentphone:chat",
-  "github:chat",
-  "slack:org",
-] as const;
-const DELETED_THREAD_INLINE_CALLBACK_ERROR =
-  "Chat thread was deleted before inline callback delivery";
-
-interface CallbackRecord {
-  readonly id: string;
-  readonly url: string | null;
-  readonly internalKind: string | null;
-  readonly encryptedSecret: string | null;
-  readonly payload: unknown;
-}
 
 interface DispatchResult {
   readonly callbackId: string;
@@ -56,106 +25,36 @@ interface DispatchResult {
   readonly error?: string;
 }
 
-type TerminalCallbackStatus = "completed" | "failed";
-
 interface DispatchRunCallbacksInput {
   readonly runId: string;
-  readonly result?: Record<string, unknown>;
   readonly redriveChatCallbackId?: string;
   readonly skipChatCallback?: boolean;
 }
 
-interface DispatchSingleCallbackInput {
-  readonly callback: CallbackRecord;
-  readonly runId: string;
-  readonly status: TerminalCallbackStatus;
-  readonly result?: Record<string, unknown>;
-  readonly runStatus: string;
-  readonly failureReason: KnownRunFailureReason | null;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
-
-interface DispatchInternalRunCallbackInput {
-  readonly callback: CallbackRecord;
-  readonly runId: string;
-  readonly status: TerminalCallbackStatus;
-  readonly result?: Record<string, unknown>;
-  readonly kind: InternalRunCallbackKind;
-}
-
-interface DispatchInternalCallbackInput {
-  readonly kind: InternalRunCallbackKind;
+interface TerminalRunCallback {
+  readonly kind: TerminalRunCallbackKind;
   readonly envelope: InternalRunCallbackEnvelope;
 }
 
 const dispatchInternalCallback$ = command(
   async (
     { set },
-    input: DispatchInternalCallbackInput,
+    { kind, envelope }: TerminalRunCallback,
     signal: AbortSignal,
   ): Promise<InternalRunCallbackDispatchResult> => {
-    switch (input.kind) {
-      case "email:chat": {
-        return {
-          success: false,
-          error: "Email chat delivery callbacks are inline-only",
-        };
-      }
-      case "agentphone:chat": {
-        return {
-          success: false,
-          error: "AgentPhone chat delivery callbacks are inline-only",
-        };
-      }
+    switch (kind) {
       case "chat": {
         return await set(
           handleChatInternalCallback$,
-          { callback: input.envelope },
+          { callback: envelope },
           signal,
         );
-      }
-      case "feishu:org": {
-        return await set(
-          handleFeishuOrgInternalCallback$,
-          input.envelope,
-          signal,
-        );
-      }
-      case "wechat:chat": {
-        return {
-          success: false,
-          error: "WeChat chat delivery callbacks are inline-only",
-        };
-      }
-      case "slack:chat": {
-        return {
-          success: false,
-          error: "Slack chat delivery callbacks are inline-only",
-        };
-      }
-      case "feishu:chat": {
-        return {
-          success: false,
-          error: "Feishu chat delivery callbacks are inline-only",
-        };
-      }
-      case "teams:chat": {
-        return {
-          success: false,
-          error: "Teams chat delivery callbacks are inline-only",
-        };
-      }
-      case "telegram:chat": {
-        return {
-          success: false,
-          error: "Telegram chat delivery callbacks are inline-only",
-        };
       }
       case "workflow-automation:cron":
       case "workflow-automation:loop": {
         return await set(
           handleWorkflowAutomationInternalCallback$,
-          { kind: input.kind, callback: input.envelope },
+          { kind, callback: envelope },
           signal,
         );
       }
@@ -163,18 +62,11 @@ const dispatchInternalCallback$ = command(
   },
 );
 
-function resolveCallbackUrl(url: string): string {
-  return env("ENV") === "development" && url.startsWith("https://tunnel-")
-    ? url.replace(/^https:\/\/tunnel-[^/]+/, "http://localhost:3000")
-    : url;
-}
-
 type InternalCallbackDeliveryStage =
   | { readonly stage: "attempt-started" }
   | { readonly stage: "delivered" }
   | { readonly stage: "failed"; readonly error: string };
 
-/** Own only internal delivery bookkeeping, not callback dispatch or recovery. */
 const recordInternalCallbackDelivery$ = command(
   async (
     { set },
@@ -215,26 +107,20 @@ const recordInternalCallbackDelivery$ = command(
 const dispatchSingleInternalCallback$ = command(
   async (
     { set },
-    input: DispatchInternalRunCallbackInput,
+    callback: TerminalRunCallback,
     signal: AbortSignal,
   ): Promise<DispatchResult> => {
+    const { callbackId, runId } = callback.envelope;
     await set(
       recordInternalCallbackDelivery$,
-      input.callback.id,
+      callbackId,
       { stage: "attempt-started" },
       signal,
     );
     signal.throwIfAborted();
-    const callbackId = input.callback.id;
+
     const responseResult = await settle(
-      set(
-        dispatchInternalCallback$,
-        {
-          kind: input.kind,
-          envelope: callbackEnvelope(input),
-        },
-        signal,
-      ),
+      set(dispatchInternalCallback$, callback, signal),
     );
     signal.throwIfAborted();
 
@@ -252,7 +138,7 @@ const dispatchSingleInternalCallback$ = command(
       signal.throwIfAborted();
       L.error("Internal callback dispatch threw", {
         callbackId,
-        runId: input.runId,
+        runId,
         error: responseResult.error,
       });
       return { callbackId, success: false, error: errorMessage };
@@ -268,7 +154,7 @@ const dispatchSingleInternalCallback$ = command(
       signal.throwIfAborted();
       L.warn("Internal callback dispatch failed", {
         callbackId,
-        runId: input.runId,
+        runId,
         error: responseResult.value.error,
       });
       return {
@@ -296,15 +182,16 @@ export const failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ = command(
       .update(agentRunCallbacks)
       .set({
         status: "failed",
-        lastError: DELETED_THREAD_INLINE_CALLBACK_ERROR,
+        lastError: "Chat thread was deleted before inline callback delivery",
       })
       .where(
         and(
           eq(agentRunCallbacks.runId, runId),
           eq(agentRunCallbacks.status, "pending"),
-          inArray(agentRunCallbacks.internalKind, [
-            ...INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS,
-          ]),
+          inArray(
+            agentRunCallbacks.internalKind,
+            inlineChatDeliveryCallbackKinds,
+          ),
         ),
       );
     signal.throwIfAborted();
@@ -314,292 +201,68 @@ export const failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ = command(
 export const dispatchRunCallbacks$ = command(
   async (
     { get, set },
-    input: DispatchRunCallbacksInput,
+    {
+      runId,
+      redriveChatCallbackId,
+      skipChatCallback,
+    }: DispatchRunCallbacksInput,
     signal: AbortSignal,
   ): Promise<DispatchResult[]> => {
-    const { runId, result, redriveChatCallbackId, skipChatCallback } = input;
-    const db = get(db$);
-    const [run] = await db
-      .select({
-        orgId: agentRuns.orgId,
-        userId: agentRuns.userId,
-        status: agentRuns.status,
-        failureReason: agentRuns.failureReason,
-        modelProvider: agentRuns.modelProvider,
-      })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, runId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!run) {
-      return [];
-    }
-    const status = run.status === "completed" ? "completed" : "failed";
-    const failureReason =
-      publicRunFailureReason(
-        run.status,
-        run.failureReason,
-        run.modelProvider,
-      ) ?? null;
-    const featureSwitchContext = await set(
-      loadUserFeatureSwitchContext$,
-      run.orgId,
-      run.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    const callbacks = await db
+    const callbacks = await get(db$)
       .select({
         id: agentRunCallbacks.id,
-        url: agentRunCallbacks.url,
         internalKind: agentRunCallbacks.internalKind,
-        encryptedSecret: agentRunCallbacks.encryptedSecret,
         payload: agentRunCallbacks.payload,
+        runStatus: agentRuns.status,
       })
       .from(agentRunCallbacks)
+      .innerJoin(agentRuns, eq(agentRuns.id, agentRunCallbacks.runId))
       .where(
         and(
           eq(agentRunCallbacks.runId, runId),
+          inArray(agentRunCallbacks.status, ["pending", "failed"]),
+          inArray(
+            agentRunCallbacks.internalKind,
+            skipChatCallback
+              ? workflowAutomationRunCallbackKinds
+              : terminalRunCallbackKinds,
+          ),
           redriveChatCallbackId === undefined
             ? undefined
             : and(
                 eq(agentRunCallbacks.id, redriveChatCallbackId),
                 eq(agentRunCallbacks.internalKind, "chat"),
               ),
-          or(
-            eq(agentRunCallbacks.status, "pending"),
-            eq(agentRunCallbacks.status, "failed"),
-          ),
-          or(
-            isNull(agentRunCallbacks.internalKind),
-            notInArray(agentRunCallbacks.internalKind, [
-              ...INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS,
-              ...(skipChatCallback ? (["chat"] as const) : []),
-            ]),
-          ),
         ),
       );
     signal.throwIfAborted();
 
     const results: DispatchResult[] = [];
     for (const callback of callbacks) {
-      const internalKind = internalRunCallbackKindForRecord(callback);
-      const dispatchResult: DispatchResult = internalKind
-        ? await set(
-            dispatchSingleInternalCallback$,
-            {
-              callback,
-              runId,
-              status,
-              result,
-              kind: internalKind,
-            },
-            signal,
-          )
-        : await set(
-            dispatchHttpCallback$,
-            {
-              callback,
-              runId,
-              status,
-              result,
-              featureSwitchContext,
-              runStatus: run.status,
-              failureReason,
-            },
-            signal,
-          );
+      const kind = terminalRunCallbackKinds.find((candidate) => {
+        return candidate === callback.internalKind;
+      });
+      if (kind === undefined) {
+        throw new Error(
+          "Terminal callback selection returned an unsupported kind",
+        );
+      }
+      const result = await set(
+        dispatchSingleInternalCallback$,
+        {
+          kind,
+          envelope: {
+            callbackId: callback.id,
+            runId,
+            status: callback.runStatus === "completed" ? "completed" : "failed",
+            payload: callback.payload,
+          },
+        },
+        signal,
+      );
       signal.throwIfAborted();
-      results.push(dispatchResult);
+      results.push(result);
     }
     return results;
-  },
-);
-
-function callbackEnvelope(
-  input: DispatchInternalRunCallbackInput,
-): InternalRunCallbackEnvelope {
-  return {
-    callbackId: input.callback.id,
-    runId: input.runId,
-    result: input.result,
-    payload: input.callback.payload,
-    status: input.status,
-  };
-}
-
-const dispatchHttpCallback$ = command(
-  async (
-    { set },
-    input: DispatchSingleCallbackInput,
-    signal: AbortSignal,
-  ): Promise<DispatchResult> => {
-    const { callback, runId, status, result } = input;
-    if (!callback.url) {
-      const errorMessage = "Callback URL is missing";
-      await set(
-        recordHttpCallbackDelivery$,
-        callback.id,
-        { stage: "failed", error: errorMessage },
-        signal,
-      );
-      return { callbackId: callback.id, success: false, error: errorMessage };
-    }
-    if (!callback.encryptedSecret) {
-      const errorMessage = "Callback secret is missing";
-      await set(
-        recordHttpCallbackDelivery$,
-        callback.id,
-        { stage: "failed", error: errorMessage },
-        signal,
-      );
-      return { callbackId: callback.id, success: false, error: errorMessage };
-    }
-    const secret = await decryptPersistentSecretValue(
-      callback.encryptedSecret,
-      input.featureSwitchContext,
-    );
-    signal.throwIfAborted();
-    const body = JSON.stringify({
-      callbackId: callback.id,
-      runId,
-      status,
-      runStatus: input.runStatus,
-      failureReason: input.failureReason,
-      result,
-      payload: callback.payload,
-    });
-    const timestamp = Math.floor(now() / 1000);
-    const signature = computeHmacSignature(body, secret, timestamp);
-
-    await set(
-      recordHttpCallbackDelivery$,
-      callback.id,
-      { stage: "attempt-started" },
-      signal,
-    );
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "X-Okou-Signature": signature,
-      "X-Okou-Timestamp": timestamp.toString(),
-    };
-    const bypass = optionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET");
-    if (bypass) {
-      headers["x-vercel-protection-bypass"] = bypass;
-    }
-
-    const callbackUrl = resolveCallbackUrl(callback.url);
-    const responseResult = await settle(
-      (async () => {
-        const acceptedResponse = await settle(
-          accept(
-            fetch(callbackUrl, {
-              method: "POST",
-              headers,
-              body,
-            }),
-            [200, 201, 202, 204],
-          ),
-        );
-        if (!acceptedResponse.ok) {
-          const error = acceptedResponse.error;
-          if (error instanceof HttpStatusError && error.status >= 300) {
-            return error.response;
-          }
-          throw error;
-        }
-        return acceptedResponse.value;
-      })(),
-    );
-    signal.throwIfAborted();
-
-    if (!responseResult.ok) {
-      const errorMessage =
-        responseResult.error instanceof Error
-          ? responseResult.error.message
-          : "Unknown error";
-      await set(
-        recordHttpCallbackDelivery$,
-        callback.id,
-        { stage: "failed", error: errorMessage },
-        signal,
-      );
-      L.error("Callback dispatch threw", {
-        callbackId: callback.id,
-        runId,
-        error: responseResult.error,
-      });
-      return { callbackId: callback.id, success: false, error: errorMessage };
-    }
-
-    const response = responseResult.value;
-    if (response.ok) {
-      await set(
-        recordHttpCallbackDelivery$,
-        callback.id,
-        { stage: "delivered" },
-        signal,
-      );
-      return { callbackId: callback.id, success: true };
-    }
-
-    const errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-    await set(
-      recordHttpCallbackDelivery$,
-      callback.id,
-      { stage: "failed", error: errorMessage },
-      signal,
-    );
-    L.warn("Callback dispatch failed", {
-      callbackId: callback.id,
-      runId,
-      error: errorMessage,
-    });
-    return { callbackId: callback.id, success: false, error: errorMessage };
-  },
-);
-
-type HttpCallbackDeliveryStage =
-  | { readonly stage: "attempt-started" }
-  | { readonly stage: "delivered" }
-  | { readonly stage: "failed"; readonly error: string };
-
-// HTTP fetch remains non-interruptible; cancellation is observed after awaits.
-// A completed request can remain unrecorded and be delivered again on recovery.
-const recordHttpCallbackDelivery$ = command(
-  async (
-    { set },
-    callbackId: string,
-    delivery: HttpCallbackDeliveryStage,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    switch (delivery.stage) {
-      case "attempt-started": {
-        await db
-          .update(agentRunCallbacks)
-          .set({ attempts: 1, lastAttemptAt: nowDate() })
-          .where(eq(agentRunCallbacks.id, callbackId));
-        signal.throwIfAborted();
-        break;
-      }
-      case "delivered": {
-        await db
-          .update(agentRunCallbacks)
-          .set({ status: "delivered", deliveredAt: nowDate() })
-          .where(eq(agentRunCallbacks.id, callbackId));
-        signal.throwIfAborted();
-        break;
-      }
-      case "failed": {
-        await db
-          .update(agentRunCallbacks)
-          .set({ status: "failed", lastError: delivery.error })
-          .where(eq(agentRunCallbacks.id, callbackId));
-        signal.throwIfAborted();
-        break;
-      }
-    }
   },
 );

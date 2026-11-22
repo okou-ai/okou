@@ -1,14 +1,29 @@
 use super::*;
 
 #[test]
-fn only_large_remote_batches_get_the_wider_download_window() {
+fn download_concurrency_scales_with_remote_batch_size() {
     assert_eq!(download_concurrency(0, 2), 2);
     assert_eq!(download_concurrency(0, 128), 4);
     assert_eq!(download_concurrency(17, 128), 16);
-    assert_eq!(download_concurrency(63, 128), 16);
+    assert_eq!(download_concurrency(32, 128), 16);
+    assert_eq!(download_concurrency(33, 128), 17);
+    assert_eq!(download_concurrency(34, 39), 17);
+    assert_eq!(download_concurrency(38, 128), 19);
+    assert_eq!(download_concurrency(39, 128), 20);
+    assert_eq!(download_concurrency(41, 128), 20);
+    assert_eq!(download_concurrency(63, 128), 20);
     assert_eq!(download_concurrency(64, 128), 24);
     assert_eq!(download_concurrency(95, 128), 24);
     assert_eq!(download_concurrency(96, 128), 32);
+    assert_eq!(download_concurrency(97, 128), 33);
+    assert_eq!(download_concurrency(110, 115), 37);
+    assert_eq!(download_concurrency(117, 128), 39);
+    assert_eq!(download_concurrency(118, 128), 40);
+    assert_eq!(download_concurrency(120, 128), 40);
+    assert_eq!(download_concurrency(121, 128), 40);
+    assert_eq!(download_concurrency(149, 195), 40);
+    assert_eq!(download_concurrency(160, 160), 40);
+    assert_eq!(download_concurrency(161, 200), 40);
 }
 
 fn normalized_path(path: &str) -> PathBuf {

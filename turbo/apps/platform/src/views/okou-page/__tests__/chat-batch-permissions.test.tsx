@@ -1,11 +1,15 @@
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
+import {
+  connectorPermissionsContract,
+  type ApplyConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrantsBatchRequest,
-  type UserPermissionGrantBatchItem,
-  type UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
+
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -20,7 +24,6 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { permissionMetadata } from "./chat-capability-connector-test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   createChatCapabilityHelpers,
   readyChat,
@@ -54,10 +57,9 @@ function batchUrl(
     readonly callbackPrompt?: string;
   } = {},
 ): string {
-  const url = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions/batch`,
-    "https://app.okou.ai",
-  );
+  const url = new URL(`/connectors/permissions/batch`, "https://app.okou.ai");
+  url.searchParams.set("orgId", "org_default");
+  url.searchParams.set("userId", "test-user-123");
   url.searchParams.set("items", JSON.stringify(args.rows ?? items));
   url.searchParams.set("action", "allow");
   url.searchParams.set("expiresIn", "1h");
@@ -93,14 +95,11 @@ async function openPermissions(
 
 function activeGrant(
   item: UserPermissionGrantBatchItem,
-): UserPermissionGrantResponse {
+): ConnectorPermissionFixture {
   return {
     ...item,
-    agentId: CAPABILITY_AGENT_ID,
     action: "allow",
     expiresAt: "2099-08-01T09:00:00.000Z",
-    createdAt: "2026-08-01T08:00:00.000Z",
-    updatedAt: "2026-08-01T09:00:00.000Z",
   };
 }
 
@@ -133,7 +132,6 @@ function installConversation(url: string): void {
   context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
     return respond(200, {
       id: params.id,
-      agentId: CAPABILITY_AGENT_ID,
       title: "Capability conversation",
       selectedModel: null,
       modelSettings: {},
@@ -147,29 +145,34 @@ function installConversation(url: string): void {
   });
 }
 
-function installGrants(initial: readonly UserPermissionGrantResponse[] = []) {
+function installGrants(
+  initial: readonly ConnectorPermissionFixture[] = [],
+  beforeRead?: () => Promise<void>,
+  afterSave?: () => void,
+) {
   let grants = [...initial];
-  const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, grants);
-  });
+  const applied: ApplyConnectorPermissions[] = [];
   context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      applied.push(body);
-      const saved = body.groups.flatMap((group) => {
-        return group.grants.map((grant) => {
-          return activeGrant({
-            connectorSlug: group.connectorSlug,
-            permission: grant.permission,
-          });
-        });
-      });
-      grants = [...grants, ...saved];
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, saved);
+    connectorPermissionsContract.get,
+    async ({ query, respond }) => {
+      await beforeRead?.();
+      return respond(200, connectorPermissionsResponse(query, grants));
     },
   );
+  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
+    applied.push(body);
+    if (body.target.kind !== "builtin") {
+      throw new Error("Expected a builtin connector");
+    }
+    const { connectorSlug } = body.target;
+    const saved = body.grants.map((grant) => {
+      return activeGrant({ connectorSlug, permission: grant.permission });
+    });
+    grants = [...grants, ...saved];
+    afterSave?.();
+    context.mocks.ably.trigger("connectorPermissionUpdated");
+    return respond(200, connectorPermissionsResponse(body.target, grants));
+  });
   return applied;
 }
 
@@ -177,17 +180,16 @@ test("Review full scopes grouped by connector and apply the selected duration to
   const user = userEvent.setup();
   installMetadata();
   const applied = installGrants();
-  installConversation(
-    batchUrl({
-      rows: [
-        ...items,
-        {
-          connectorSlug: "reports-service",
-          permission: UNKNOWN_PERMISSION_GRANT,
-        },
-      ],
-    }),
-  );
+  const originalUrl = batchUrl({
+    rows: [
+      ...items,
+      {
+        connectorSlug: "reports-service",
+        permission: UNKNOWN_PERMISSION_GRANT,
+      },
+    ],
+  });
+  installConversation(originalUrl);
 
   await setupPage({
     context,
@@ -198,6 +200,10 @@ test("Review full scopes grouped by connector and apply the selected duration to
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
   const dialog = await openPermissions(card);
+  const detailsLink = queryAllByRoleFast("link", dialog).find((link) => {
+    return link.textContent === "View permission details";
+  });
+  expect(detailsLink).toHaveAttribute("href", originalUrl);
   await waitFor(() => {
     expect(getButton("Allow all 4 permissions", dialog)).toBeEnabled();
   });
@@ -241,37 +247,31 @@ test("Review full scopes grouped by connector and apply the selected duration to
   expect(within(reopened).getByText("Permissions allowed")).toBeInTheDocument();
   expect(applied).toStrictEqual([
     {
-      agentId: CAPABILITY_AGENT_ID,
-      groups: [
-        {
-          connectorSlug: "calendar-service",
-          grants: items.slice(0, 2).map((item) => {
-            return {
-              permission: item.permission,
-              action: "allow",
-              expiresIn: "24h",
-            };
-          }),
-        },
-        {
-          connectorSlug: "reports-service",
-          grants: expect.arrayContaining([
-            {
-              permission: items[2]!.permission,
-              action: "allow",
-              expiresIn: "24h",
-            },
-            {
-              permission: UNKNOWN_PERMISSION_GRANT,
-              action: "allow",
-              expiresIn: "24h",
-            },
-          ]),
-        },
-      ],
+      target: { kind: "builtin", connectorSlug: "calendar-service" },
+      mode: "patch",
+      grants: items.slice(0, 2).map(({ permission }) => {
+        return {
+          permission,
+          action: "allow",
+          expiresIn: "24h",
+        };
+      }),
+    },
+    {
+      target: { kind: "builtin", connectorSlug: "reports-service" },
+      mode: "patch",
+      grants: expect.arrayContaining(
+        [items[2]!.permission, UNKNOWN_PERMISSION_GRANT].map((permission) => {
+          return {
+            permission,
+            action: "allow",
+            expiresIn: "24h",
+          };
+        }),
+      ),
     },
   ]);
-  expect(applied[0]!.groups[1]!.grants).toHaveLength(2);
+  expect(applied[1]!.grants).toHaveLength(2);
 });
 
 test("Review every scope in a large batch as metadata and grants arrive separately", async () => {
@@ -305,21 +305,9 @@ test("Review every scope in a large batch as metadata and grants arrive separate
       });
     },
   );
-  let grants: UserPermissionGrantResponse[] = [];
-  const applied: ApplyUserPermissionGrantsBatchRequest[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, async ({ respond }) => {
+  const applied = installGrants([], async () => {
     await grantsResponse.promise;
-    return respond(200, grants);
   });
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      applied.push(body);
-      grants = largeBatch.map(activeGrant);
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, grants);
-    },
-  );
   installConversation(batchUrl({ rows: largeBatch }));
 
   await setupPage({
@@ -371,31 +359,29 @@ test("Review every scope in a large batch as metadata and grants arrive separate
     within(card).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByText("Permissions allowed")).toBeInTheDocument();
-  expect(applied).toStrictEqual([
-    {
-      agentId: CAPABILITY_AGENT_ID,
-      groups: ["calendar-service", "reports-service"].map((connectorSlug) => {
-        return {
-          connectorSlug,
-          grants: expect.arrayContaining(
-            largeBatch
-              .filter((item) => {
-                return item.connectorSlug === connectorSlug;
-              })
-              .map((item) => {
-                return {
-                  permission: item.permission,
-                  action: "allow",
-                  expiresIn: "always",
-                };
-              }),
-          ),
-        };
-      }),
-    },
-  ]);
-  for (const group of applied[0]!.groups) {
-    expect(group.grants).toHaveLength(10);
+  expect(applied).toStrictEqual(
+    ["calendar-service", "reports-service"].map((connectorSlug) => {
+      return {
+        target: { kind: "builtin", connectorSlug },
+        mode: "patch",
+        grants: expect.arrayContaining(
+          largeBatch
+            .filter((item) => {
+              return item.connectorSlug === connectorSlug;
+            })
+            .map(({ permission }) => {
+              return {
+                permission,
+                action: "allow",
+                expiresIn: "always",
+              };
+            }),
+        ),
+      };
+    }),
+  );
+  for (const request of applied) {
+    expect(request.grants).toHaveLength(10);
   }
 });
 
@@ -423,18 +409,10 @@ test("Approve only missing scopes without reapplying or extending active grants"
   ).resolves.toBeInTheDocument();
   expect(applied).toStrictEqual([
     {
-      agentId: CAPABILITY_AGENT_ID,
-      groups: [
-        {
-          connectorSlug: "reports-service",
-          grants: [
-            {
-              permission: items[2]!.permission,
-              action: "allow",
-              expiresIn: "1h",
-            },
-          ],
-        },
+      target: { kind: "builtin", connectorSlug: "reports-service" },
+      mode: "patch",
+      grants: [
+        { permission: items[2]!.permission, action: "allow", expiresIn: "1h" },
       ],
     },
   ]);
@@ -525,37 +503,23 @@ test("A batch save does not empty sibling permission cards during a grants reloa
   const reloadStarted = context.mocks.deferred<void>();
   const reloadResponse = context.mocks.deferred<void>();
   let refreshing = false;
-  let grants: UserPermissionGrantResponse[] = [];
-  context.mocks.api(userPermissionGrantsContract.list, async ({ respond }) => {
-    if (refreshing) {
-      // Each card owns a grants read, so the shared reload starts multiple requests.
-      if (!reloadStarted.settled()) {
-        reloadStarted.resolve(undefined);
+  installGrants(
+    [],
+    async () => {
+      if (refreshing) {
+        if (!reloadStarted.settled()) {
+          reloadStarted.resolve(undefined);
+        }
+        await reloadResponse.promise;
       }
-      await reloadResponse.promise;
-    }
-    return respond(200, grants);
-  });
-  context.mocks.api(
-    userPermissionGrantsContract.applyBatch,
-    ({ body, respond }) => {
-      grants = body.groups.flatMap((group) => {
-        return group.grants.map((grant) => {
-          return activeGrant({
-            connectorSlug: group.connectorSlug,
-            permission: grant.permission,
-          });
-        });
-      });
+    },
+    () => {
       refreshing = true;
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, grants);
     },
   );
-  const single = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions`,
-    "https://app.okou.ai",
-  );
+  const single = new URL(`/connectors/permissions`, "https://app.okou.ai");
+  single.searchParams.set("orgId", "org_default");
+  single.searchParams.set("userId", "test-user-123");
   single.searchParams.set("connectorSlug", "reports-service");
   single.searchParams.set("permission", items[2]!.permission);
   single.searchParams.set("action", "allow");

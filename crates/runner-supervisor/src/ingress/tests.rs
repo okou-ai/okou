@@ -4,7 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use uuid::Uuid;
 
-use super::test_support::{HOST, TOKEN};
+use super::test_support::{HOST, RUNNER_VERSION, TOKEN};
 
 fn identity(id: u128) -> RunnerProcessIdentity {
     RunnerProcessIdentity::new(Uuid::from_u128(id), 7).unwrap()
@@ -18,7 +18,7 @@ pub(super) fn namespace() -> (tempfile::TempDir, PathBuf) {
     (root, path)
 }
 
-pub(super) async fn request(path: &std::path::Path, request: &str) -> (u16, String) {
+pub(super) async fn request(path: &std::path::Path, request: &str) -> (u16, String, String) {
     tokio::time::timeout(Duration::from_secs(5), async {
         let mut stream = UnixStream::connect(path).await.unwrap();
         stream.write_all(request.as_bytes()).await.unwrap();
@@ -29,10 +29,17 @@ pub(super) async fn request(path: &std::path::Path, request: &str) -> (u16, Stri
         (
             head.split_whitespace().nth(1).unwrap().parse().unwrap(),
             body.to_owned(),
+            head.to_owned(),
         )
     })
     .await
     .unwrap()
+}
+
+fn dispatch_timing(head: &str) -> Option<serde_json::Value> {
+    head.lines()
+        .find_map(|line| line.strip_prefix("x-okou-runner-dispatch-timing: "))
+        .map(|header| serde_json::from_str(header).expect("dispatch timing JSON"))
 }
 
 fn health_request(id: RunnerProcessIdentity, credential: &str) -> String {
@@ -59,11 +66,11 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
     use serde_json::json;
     let (_root, directory) = namespace();
     let id = identity(1);
-    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN)
+    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN, RUNNER_VERSION)
         .await
         .unwrap();
     let (intake, mut receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", id.runner_id()));
     let run_id = runner_types::ids::RunId::new_v4();
@@ -108,7 +115,14 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
             413,
         ),
     ] {
-        assert_eq!(request(&socket, &bad).await.0, status);
+        let (actual_status, _, head) = request(&socket, &bad).await;
+        assert_eq!(actual_status, status);
+        let timing = dispatch_timing(&head);
+        if matches!(status, 400 | 413) {
+            assert_eq!(timing, Some(json!({"runnerVersion": RUNNER_VERSION})));
+        } else {
+            assert!(timing.is_none());
+        }
     }
     let mut invalids = vec!["{".to_owned()];
     for (key, value) in [
@@ -139,6 +153,14 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
             serde_json::from_str::<serde_json::Value>(&response.1).unwrap()["disposition"],
             "unknown"
         );
+        let timing = dispatch_timing(&response.2).unwrap();
+        assert!(timing["bodyReadMs"].as_f64().is_some_and(|ms| ms >= 0.0));
+        assert!(
+            timing["envelopeParseMs"]
+                .as_f64()
+                .is_some_and(|ms| ms >= 0.0)
+        );
+        assert!(timing.get("acceptanceMs").is_none());
     }
     assert!(matches!(
         receiver.try_recv(),
@@ -149,11 +171,11 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
     // A replacement process cannot answer for the previous generation's custody.
     let restarted =
         RunnerProcessIdentity::new(id.runner_id(), id.heartbeat_generation() + 1).unwrap();
-    let runtime = IngressRuntime::start(directory, restarted, HOST.into(), TOKEN)
+    let runtime = IngressRuntime::start(directory, restarted, HOST.into(), TOKEN, RUNNER_VERSION)
         .await
         .unwrap();
     let (intake, mut receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let response = request(
         &socket,
@@ -177,11 +199,11 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
 async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
     let (_root, directory) = namespace();
     let id = identity(1);
-    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN)
+    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN, RUNNER_VERSION)
         .await
         .unwrap();
     let (intake, mut receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", id.runner_id()));
     let run_id = runner_types::ids::RunId::new_v4();
@@ -199,13 +221,37 @@ async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
         .await
         .unwrap()
         .unwrap();
-    owned.settle(dispatch::Disposition::Accepted);
+    owned.settle(dispatch::Disposition::Accepted(Instant::now()));
     let response = sending.await.unwrap();
     assert_eq!(response.0, 200);
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&response.1).unwrap()["disposition"],
-        "accepted"
+        serde_json::from_str::<serde_json::Value>(&response.1).unwrap(),
+        serde_json::json!({
+            "runnerId": id.runner_id(),
+            "heartbeatGeneration": id.heartbeat_generation(),
+            "runId": run_id,
+            "disposition": "accepted"
+        })
     );
+    let timing = dispatch_timing(&response.2).unwrap();
+    assert_eq!(timing["runnerVersion"], RUNNER_VERSION);
+    let body_read = timing["bodyReadMs"].as_f64().unwrap();
+    let envelope_parse = timing["envelopeParseMs"].as_f64().unwrap();
+    let context_decode = timing["contextDecodeMs"].as_f64().unwrap();
+    assert!(body_read >= 0.0 && envelope_parse >= 0.0 && context_decode >= 0.0);
+    assert!(timing["acceptanceMs"].as_f64().unwrap() >= body_read);
+
+    // An HTTP retry can observe custody but contributes no new parse or acceptance.
+    let (status, body, head) = request(&socket, &original).await;
+    assert_eq!(status, 200);
+    assert_eq!(body, response.1);
+    let timing = dispatch_timing(&head).unwrap();
+    assert_eq!(timing["runnerVersion"], RUNNER_VERSION);
+    assert!(timing["bodyReadMs"].as_f64().is_some_and(|ms| ms >= 0.0));
+    for unavailable in ["envelopeParseMs", "contextDecodeMs", "acceptanceMs"] {
+        assert!(timing.get(unavailable).is_none());
+    }
+    assert!(receiver.try_recv().is_err());
     // Drive the same expiry action used by the listener's periodic sweep at
     // the original deadline, while retaining the independent work owner.
     runtime.handler.dispatch.get().unwrap().expire(deadline);
@@ -226,7 +272,7 @@ async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
         .await
         .unwrap()
         .unwrap();
-    work.settle(dispatch::Disposition::Accepted);
+    work.settle(dispatch::Disposition::Accepted(Instant::now()));
     drop(work);
     let response = sending.await.unwrap();
     assert_eq!(response.0, 200);
@@ -242,11 +288,11 @@ async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
 async fn dispatch_bounds_chunked_bodies_even_without_content_length() {
     let (_root, directory) = namespace();
     let id = identity(1);
-    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN)
+    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN, RUNNER_VERSION)
         .await
         .unwrap();
     let (intake, mut receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(4)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", id.runner_id()));
     let run_id = runner_types::ids::RunId::new_v4();
@@ -277,11 +323,11 @@ async fn dispatch_bounds_chunked_bodies_even_without_content_length() {
 async fn incomplete_dispatch_body_times_out_and_releases_its_transaction_slot() {
     let (_root, directory) = namespace();
     let id = identity(1);
-    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN)
+    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN, RUNNER_VERSION)
         .await
         .unwrap();
     let (intake, _receiver) =
-        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(1)));
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(1)), None);
     runtime.enable_dispatch(intake);
     let socket = directory.join(format!("{}.sock", id.runner_id()));
     let run_id = runner_types::ids::RunId::new_v4();
@@ -323,17 +369,29 @@ async fn incomplete_dispatch_body_times_out_and_releases_its_transaction_slot() 
 #[tokio::test]
 async fn unix_health_uses_official_service_auth_and_routes_are_disjoint() {
     let (_root, directory) = namespace();
-    let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN)
-        .await
-        .unwrap();
-    let second = IngressRuntime::start(directory.clone(), identity(2), HOST.into(), TOKEN)
-        .await
-        .unwrap();
+    let first = IngressRuntime::start(
+        directory.clone(),
+        identity(1),
+        HOST.into(),
+        TOKEN,
+        RUNNER_VERSION,
+    )
+    .await
+    .unwrap();
+    let second = IngressRuntime::start(
+        directory.clone(),
+        identity(2),
+        HOST.into(),
+        TOKEN,
+        RUNNER_VERSION,
+    )
+    .await
+    .unwrap();
     let first_path = directory.join(format!("{}.sock", identity(1).runner_id()));
     let second_path = directory.join(format!("{}.sock", identity(2).runner_id()));
     let token = TOKEN;
     let valid = health_request(identity(1), token);
-    let (status, body) = request(&first_path, &valid).await;
+    let (status, body, _) = request(&first_path, &valid).await;
     assert_eq!(status, 200);
     assert_eq!(body, "ok");
     assert_eq!(
@@ -382,7 +440,7 @@ async fn unix_health_uses_official_service_auth_and_routes_are_disjoint() {
             400,
         ),
     ] {
-        let (status, body) = request(&first_path, &bad).await;
+        let (status, body, _) = request(&first_path, &bad).await;
         assert_eq!(status, expected, "{bad}");
         assert!(body.is_empty());
     }
@@ -400,9 +458,15 @@ async fn unix_health_uses_official_service_auth_and_routes_are_disjoint() {
 #[tokio::test]
 async fn shutdown_joins_connections_and_service_auth_survives_runner_restart() {
     let (_root, directory) = namespace();
-    let first = IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN)
-        .await
-        .unwrap();
+    let first = IngressRuntime::start(
+        directory.clone(),
+        identity(1),
+        HOST.into(),
+        TOKEN,
+        RUNNER_VERSION,
+    )
+    .await
+    .unwrap();
     let path = directory.join(format!("{}.sock", identity(1).runner_id()));
     let mut slow = UnixStream::connect(&path).await.unwrap();
     slow.write_all(b"GET ").await.unwrap();
@@ -414,7 +478,7 @@ async fn shutdown_joins_connections_and_service_auth_survives_runner_restart() {
         .unwrap();
     assert!(matches!(closed, Ok(0) | Err(_)));
     let restarted = RunnerProcessIdentity::new(identity(1).runner_id(), 8).unwrap();
-    let second = IngressRuntime::start(directory, restarted, HOST.into(), TOKEN)
+    let second = IngressRuntime::start(directory, restarted, HOST.into(), TOKEN, RUNNER_VERSION)
         .await
         .unwrap();
     assert_eq!(
@@ -429,9 +493,15 @@ async fn unsafe_namespace_or_noncanonical_host_fails_ingress_startup() {
     let (_root, directory) = namespace();
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o777)).unwrap();
     assert!(
-        IngressRuntime::start(directory.clone(), identity(1), HOST.into(), TOKEN)
-            .await
-            .is_err()
+        IngressRuntime::start(
+            directory.clone(),
+            identity(1),
+            HOST.into(),
+            TOKEN,
+            RUNNER_VERSION
+        )
+        .await
+        .is_err()
     );
     assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
     std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o710)).unwrap();
@@ -443,9 +513,15 @@ async fn unsafe_namespace_or_noncanonical_host_fails_ingress_startup() {
         "runner.example.org:443",
     ] {
         assert!(
-            IngressRuntime::start(directory.clone(), identity(1), hostname.into(), TOKEN)
-                .await
-                .is_err()
+            IngressRuntime::start(
+                directory.clone(),
+                identity(1),
+                hostname.into(),
+                TOKEN,
+                RUNNER_VERSION
+            )
+            .await
+            .is_err()
         );
         assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
     }
@@ -462,7 +538,7 @@ async fn public_health_requires_successful_bounded_ok_response() {
         .timeout(HEALTH_TIMEOUT)
         .build()
         .unwrap();
-    let health = IngressHandler::new(identity(1), HOST.into(), TOKEN);
+    let health = IngressHandler::new(identity(1), HOST.into(), TOKEN, RUNNER_VERSION);
     let path = format!("/runners/{}/control/health", identity(1).runner_id());
     for (status, body, accepted) in [
         (200, "ok".into(), true),

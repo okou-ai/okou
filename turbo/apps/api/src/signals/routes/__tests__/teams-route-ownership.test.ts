@@ -5,7 +5,6 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { teamsBotIngressResponseSchema } from "@okouai/api-contracts/contracts/teams-bot";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { HttpResponse, http } from "msw";
@@ -17,10 +16,12 @@ import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
-import { onboardingStatusRoutes } from "../onboarding-status";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   postTeamsActivityForTest,
@@ -154,15 +155,8 @@ async function setupTeamsRoute() {
   const fixture = teamsConnectFixture();
   const { deliveries, runnerGroup } = await configureTeamsProvider(fixture);
   mocks.clerk.session(fixture.userId, fixture.orgId);
-  const app = await setupApp({
-    context,
-    routes: onboardingStatusRoutes,
-  });
-  const onboarding = await accept(
-    app(onboardingStatusContract).getStatus({ headers: authHeaders() }),
-    [200],
-  );
-  expect(onboarding.body.hasDefaultAgent).toBeTruthy();
+  await deliverOrganizationCreated(context, fixture);
+  const sinceSeqId = (await createdThreads(fixture)).at(-1)?.seqId;
   await postActivity(
     teamsMessageActivityForTest(fixture, {
       type: "installationUpdate",
@@ -170,14 +164,17 @@ async function setupTeamsRoute() {
     }),
   );
   await connect(fixture);
-  return { fixture, deliveries, runnerGroup };
+  return { fixture, deliveries, runnerGroup, sinceSeqId };
 }
 
-async function createdThreads(fixture: TeamsConnectFixture) {
+async function createdThreads(
+  fixture: TeamsConnectFixture,
+  sinceSeqId?: number,
+) {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const events = await accept(
     setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract).events(
-      { headers: authHeaders(), query: {} },
+      { headers: authHeaders(), query: { sinceSeqId } },
     ),
     [200],
   );
@@ -263,14 +260,16 @@ function onlyThreadId(
 
 describe("Teams route ownership through public ingress", () => {
   it("creates one durable thread and reuses it for distinct and repeated activities", async () => {
-    const { fixture } = await setupTeamsRoute();
+    const { fixture, sinceSeqId } = await setupTeamsRoute();
     await postActivity(message(fixture, "first", "first route message"));
-    const firstThreads = await createdThreads(fixture);
+    const firstThreads = await createdThreads(fixture, sinceSeqId);
     const threadId = onlyThreadId(firstThreads);
     const second = message(fixture, "second", "second route message");
     await postActivity(second);
     await postActivity(second);
-    await expect(createdThreads(fixture)).resolves.toStrictEqual(firstThreads);
+    await expect(createdThreads(fixture, sinceSeqId)).resolves.toStrictEqual(
+      firstThreads,
+    );
     const rows = await inputRows(fixture, threadId);
     expect(rows).toHaveLength(2);
     expect(rows).toStrictEqual(
@@ -298,7 +297,7 @@ describe("Teams route ownership through public ingress", () => {
   });
 
   it("keeps the same external channel and thread isolated between connected identities", async () => {
-    const { fixture } = await setupTeamsRoute();
+    const { fixture, sinceSeqId } = await setupTeamsRoute();
     const other = teamsConnectFixture({
       ...fixture,
       userId: `user_other_${fixture.fixtureId}`,
@@ -308,7 +307,7 @@ describe("Teams route ownership through public ingress", () => {
     await connect(other);
     await postActivity(message(fixture, "owner", "owner message"));
     await postActivity(message(other, "other", "other message"));
-    const ownerId = onlyThreadId(await createdThreads(fixture));
+    const ownerId = onlyThreadId(await createdThreads(fixture, sinceSeqId));
     const otherId = onlyThreadId(await createdThreads(other));
     expect(otherId).not.toBe(ownerId);
     await expect(inputRows(fixture, ownerId)).resolves.toHaveLength(1);
@@ -326,7 +325,8 @@ describe("Teams route ownership through public ingress", () => {
   });
 
   it("reuses a personal thread when Teams changes the conversation destination", async () => {
-    const { fixture, deliveries, runnerGroup } = await setupTeamsRoute();
+    const { fixture, deliveries, runnerGroup, sinceSeqId } =
+      await setupTeamsRoute();
     const destination = `personal-new-${fixture.fixtureId}`;
     const previousDestination = `personal-old-${fixture.fixtureId}`;
     const personal = (id: string, conversationId: string) => {
@@ -343,10 +343,12 @@ describe("Teams route ownership through public ingress", () => {
       });
     };
     await postActivity(personal("first personal message", previousDestination));
-    const first = await createdThreads(fixture);
+    const first = await createdThreads(fixture, sinceSeqId);
     const threadId = onlyThreadId(first);
     await postActivity(personal("second personal message", destination));
-    await expect(createdThreads(fixture)).resolves.toStrictEqual(first);
+    await expect(createdThreads(fixture, sinceSeqId)).resolves.toStrictEqual(
+      first,
+    );
     const rows = await inputRows(fixture, threadId);
     expect(rows).toHaveLength(2);
 
@@ -384,12 +386,12 @@ describe("Teams route ownership through public ingress", () => {
   });
 
   it("converges overlapping public messages onto one thread without losing either input", async () => {
-    const { fixture } = await setupTeamsRoute();
+    const { fixture, sinceSeqId } = await setupTeamsRoute();
     await Promise.all([
       postActivity(message(fixture, "overlap-one", "overlap one")),
       postActivity(message(fixture, "overlap-two", "overlap two")),
     ]);
-    const threadId = onlyThreadId(await createdThreads(fixture));
+    const threadId = onlyThreadId(await createdThreads(fixture, sinceSeqId));
     const rows = await inputRows(fixture, threadId);
     expect(rows).toHaveLength(2);
     expect(JSON.stringify(rows)).toContain("overlap one");

@@ -116,7 +116,7 @@ def publish(manifest, apk, store, directory):
 
 def main(version, apk):
     version_parts(version)
-    tools = Path(os.environ["ANDROID_HOME"]) / "build-tools/36.0.0"
+    tools = Path(os.environ["ANDROID_HOME"]) / "build-tools/37.0.0"
     subprocess.run([str(tools / "apksigner"), "verify", str(apk)], check=True, capture_output=True)
     badging = subprocess.check_output([str(tools / "aapt2"), "dump", "badging", str(apk)], text=True)
     root = Path(__file__).resolve().parents[3]

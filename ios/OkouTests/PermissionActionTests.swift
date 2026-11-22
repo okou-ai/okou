@@ -13,7 +13,7 @@ final class PermissionActionTests: XCTestCase {
     let sync = ChatSync(client: fixture.http.client)
     let commands = ChatCommands(client: fixture.http.client, sync: sync)
     let thread = ChatThread(
-      id: PermissionHTTPFixture.threadID, agentID: PermissionHTTPFixture.agentID,
+      id: PermissionHTTPFixture.threadID, agentID: nil,
       title: "Permissions", createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil,
       pinOrder: nil)
     return ConversationStore(
@@ -55,7 +55,7 @@ final class PermissionActionTests: XCTestCase {
     let gate = ModelResponseGate()
     let started = expectation(description: "Permission read started")
     let fixture = PermissionHTTPFixture { request in
-      if request.url!.path == "/api/agents/\(PermissionHTTPFixture.agentID)" {
+      if request.url!.path == "/api/connector-catalog/gmail/permissions" {
         started.fulfill()
         await gate.wait()
       }
@@ -82,7 +82,7 @@ final class PermissionActionTests: XCTestCase {
     let fixture = PermissionHTTPFixture()
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    fixture.state.withLock { $0.threadAgentID = UUID().uuidString }
+    fixture.state.withLock { $0.metadataThreadID = UUID().uuidString }
     await card.confirm()
     XCTAssertNotNil(card.error)
     XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
@@ -213,7 +213,7 @@ final class PermissionActionTests: XCTestCase {
         ))
       let action = try XCTUnwrap(
         ChatPermissionAction(
-          url: url, agentID: PermissionHTTPFixture.agentID, threadID: UUID().uuidString))
+          url: url, threadID: UUID().uuidString))
       _ = conversation.permissionActions.resources.read(action)
     }
     conversation.permissionActions.activate(owner: UUID())
@@ -301,7 +301,7 @@ final class PermissionActionTests: XCTestCase {
         string: PermissionHTTPFixture.actionURL(callback: false), relativeTo: fixture.http.baseURL))
     let action = try XCTUnwrap(
       ChatPermissionAction(
-        url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID))
+        url: url, threadID: PermissionHTTPFixture.threadID))
     fixture.state.withLock { $0.missingMetadata = false }
     await conversation.permissionActions.card(action).refresh()
     let displayed = try await card.read.load()
@@ -358,8 +358,7 @@ final class PermissionActionTests: XCTestCase {
     let second = conversation.permissionActions.card(
       try XCTUnwrap(
         ChatPermissionAction(
-          url: secondURL, agentID: PermissionHTTPFixture.agentID,
-          threadID: PermissionHTTPFixture.threadID)))
+          url: secondURL, threadID: PermissionHTTPFixture.threadID)))
     let one = Task { await first.loadIfNeeded() }
     let two = Task { await second.loadIfNeeded() }
     addTeardownBlock { @MainActor in
@@ -484,7 +483,7 @@ final class PermissionActionTests: XCTestCase {
     )
     return try XCTUnwrap(
       ChatPermissionAction(
-        url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID))
+        url: url, threadID: PermissionHTTPFixture.threadID))
   }
 
   private func assertPermissionReadCounts(
@@ -492,8 +491,7 @@ final class PermissionActionTests: XCTestCase {
   ) {
     let requests = fixture.state.withLock { $0.requests }
     for path in [
-      "/api/feature-switches",
-      "/api/agents/\(PermissionHTTPFixture.agentID)", "/api/user-permission-grants",
+      "/api/connector-permissions",
       "/api/connector-catalog/gmail/permissions"
     ] {
       XCTAssertEqual(

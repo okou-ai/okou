@@ -6,7 +6,7 @@ import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { now } from "../../../lib/time.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { AGENT_ID, setupPage } from "./chat-lifecycle-test-helpers.ts";
+import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
@@ -88,15 +88,9 @@ function assistantGroupFor(element: Element): HTMLElement {
   return group;
 }
 
-function viewAgentProfileLinks(): HTMLElement[] {
-  return queryAllByRoleFast("link").filter((link) => {
-    return link.getAttribute("aria-label") === "View agent profile";
-  });
-}
-
-function agentNameLines(): HTMLElement[] {
-  return queryAllByRoleFast("link").filter((link) => {
-    return link.dataset.chatAssistantNameLine !== undefined;
+function myOkouAvatarButtons(): HTMLElement[] {
+  return queryAllByRoleFast("button").filter((button) => {
+    return button.getAttribute("aria-label") === "My Okou";
   });
 }
 
@@ -570,10 +564,10 @@ test("Count one output.message once when Markdown renders multiple child blocks"
   await expect(screen.findByTestId("plan-upgrade-card")).resolves.toBeVisible();
   expect(queryWorkHistoryToggles("collapsed")).toHaveLength(0);
   expect(screen.queryAllByText(/^Working(?: for)? /u)).toHaveLength(1);
-  expect(viewAgentProfileLinks()).toHaveLength(1);
+  expect(myOkouAvatarButtons()).toHaveLength(1);
 });
 
-test("With Agent name on replies, a reply opens with its agent's name, linked to the agent's profile", async () => {
+test("A retained conversation displays the workspace assistant name on its reply", async () => {
   installRunChat({
     chatEvents: [
       promptEvent({
@@ -599,17 +593,10 @@ test("With Agent name on replies, a reply opens with its agent's name, linked to
   });
 
   await readyChat();
-  await screen.findByText("The launch notes are summarized.");
-  await waitFor(() => {
-    expect(agentNameLines()).toHaveLength(1);
-  });
-  const [nameLine] = agentNameLines();
-  expect(nameLine).toHaveAccessibleName("Run Agent");
-  expect(nameLine).toHaveAttribute("href", `/agents/${AGENT_ID}`);
-  expect(nameLine?.closest('[data-role="assistant"]')).toHaveTextContent(
-    "The launch notes are summarized.",
-  );
-  expect(viewAgentProfileLinks()).toHaveLength(0);
+  const reply = await screen.findByText("The launch notes are summarized.");
+  const group = reply.closest('[data-role="assistant"]');
+  expect(group).toHaveTextContent("Okou");
+  expect(myOkouAvatarButtons()).toHaveLength(0);
 });
 
 test.each([
@@ -699,7 +686,7 @@ test.each(finalOutputDocuments)(
     await readyChat();
     const main = await find();
     expect(main).toBeVisible();
-    expect(viewAgentProfileLinks()).toHaveLength(1);
+    expect(myOkouAvatarButtons()).toHaveLength(1);
     expect(screen.queryByText("Earlier output belongs in history")).toBeNull();
     expect(queryWorkHistoryToggles("collapsed")).toHaveLength(1);
     const thinking = document.querySelector<HTMLElement>(
@@ -804,6 +791,9 @@ test("Show working dots on scroll-to-bottom while the thread works", async () =>
     scrollHeight: { configurable: true, value: 2400 },
     clientHeight: { configurable: true, value: 600 },
   });
+  scroller.scrollTop = 1800;
+  fireEvent.scroll(scroller);
+  fireEvent.wheel(scroller, { deltaY: -1000 });
   scroller.scrollTop = 800;
   fireEvent.scroll(scroller);
 

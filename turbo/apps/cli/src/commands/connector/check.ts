@@ -1,6 +1,4 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
-import { resolveConnectorAgentId } from "./agent-context";
-import { modeHelp } from "../../lib/command/single-agent";
+import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Command, Option } from "commander";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
@@ -37,11 +35,7 @@ import {
 import { printConnectorCheckJson } from "./check-json";
 import { resolveDiagnosticConnectorSelector } from "./diagnostic-connector-selector";
 import { diagnoseConnectorCheckWithContext } from "../../lib/api/domains/connectors";
-import { getAgentUserBuiltinConnectors } from "../../lib/api/domains/agents";
-import {
-  chatConnectorAccountsEnabled,
-  listRunConnectorAccounts,
-} from "../../lib/api/domains/run-connector-accounts";
+import { getAllowedChatConnectorTargetKeys } from "../../lib/api/domains/run-connector-accounts";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { toPlatformUrl } from "../../lib/platform-url";
 import {
@@ -51,9 +45,9 @@ import {
 import {
   CALLBACK_PROMPT_PLACEHOLDER,
   connectorActionUrl,
-  currentChatSupportsActionCallback,
   printCallbackActionUrlExample,
 } from "./action-url";
+import { currentPermissionCallbackThread } from "./permission-action-url";
 import {
   isRunBoundConnectorContext,
   resolveRunConnectorAccountLookups,
@@ -67,34 +61,18 @@ import {
 } from "./member-status";
 
 interface DiagContext {
-  readonly singleAgent: boolean;
   readonly environmentNames: readonly string[] | null;
   readonly label: string;
   readonly connectorAvailable: boolean;
   readonly credentialResolution: "network-boundary" | "none";
   readonly run: ResolvedDiagnostic["run"];
   readonly platformOrigin: string;
-  readonly agentId: string | undefined;
   readonly runBound: boolean;
 }
 
 interface BuiltinDiagContext extends DiagContext {
   readonly connectorSlug: ConnectorSlug;
 }
-
-type ConnectorConfigurationStatus = {
-  readonly isConnected: boolean;
-  readonly needsReconnect: boolean;
-} & (
-  | {
-      readonly runAccount: RunConnectorAccountLookup;
-      readonly memberFacts: null;
-    }
-  | {
-      readonly runAccount: null;
-      readonly memberFacts: MemberConnectorFacts;
-    }
-);
 
 function printMemberConnectionStatus(
   ctx: BuiltinDiagContext,
@@ -109,13 +87,12 @@ function printMemberConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/reconnect/${account.id}`,
-      agentId: ctx.agentId,
     });
     console.log(
       `The ${ctx.label} connector has a saved account that needs to be reconnected.`,
     );
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
   } else if (facts.memberStatus === "connected") {
     console.log(`The ${ctx.label} connector is connected and active.`);
   } else if (facts.memberStatus === "not-connected") {
@@ -123,40 +100,18 @@ function printMemberConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/connect`,
-      agentId: ctx.agentId,
     });
     console.log(`Connect it at: [Connect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
   } else {
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: "/connectors",
-      agentId: ctx.agentId,
     });
     console.log(
       `Review the ${ctx.label} accounts: [Manage ${ctx.label} accounts](${url})`,
     );
   }
-}
-
-function printConnectorConnectionStatus(
-  ctx: BuiltinDiagContext,
-  status: ConnectorConfigurationStatus,
-): void {
-  console.log(
-    "### 2a: Connector status (user must configure via OAuth login or API key)",
-  );
-  console.log("");
-  if (!ctx.connectorAvailable) {
-    console.log(
-      `The ${ctx.label} connector is not available for this account.`,
-    );
-  } else if (status.memberFacts !== null) {
-    printMemberConnectionStatus(ctx, status.memberFacts);
-  } else {
-    printRunConnectionStatus(ctx, status.runAccount);
-  }
-  console.log("");
 }
 
 function printRunConnectionStatus(
@@ -194,93 +149,14 @@ function printRunConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/reconnect/${runAccount.connectionId}`,
-      agentId: ctx.agentId,
     });
     console.log(`The ${ctx.label} connector needs to be reconnected.`);
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
     console.log("After reconnecting, start a new run.");
   } else {
     console.log(`The ${ctx.label} connector is connected and active.`);
   }
-}
-
-function printAgentAuthorizationStatus(
-  ctx: BuiltinDiagContext,
-  status: ConnectorConfigurationStatus,
-  hasPermission: boolean,
-): void {
-  if (!ctx.agentId) {
-    console.log(
-      ctx.singleAgent
-        ? "Workspace execution context is unavailable — cannot check your access."
-        : "OKOU_AGENT_ID is not set — cannot check agent authorization.",
-    );
-  } else if (status.needsReconnect) {
-    console.log(
-      `Skipped — ${ctx.singleAgent ? "your Okou access" : "agent authorization"} can only be checked once the ${ctx.label} connector is reconnected (see 2a).`,
-    );
-  } else if (hasPermission) {
-    console.log(
-      status.isConnected
-        ? `The ${ctx.label} connector is authorized for ${ctx.singleAgent ? "your Okou" : "this agent"}.`
-        : ctx.runBound
-          ? `The ${ctx.label} connector is authorized for ${ctx.singleAgent ? "your Okou" : "this agent"}, but an account is not available for this run.`
-          : `The ${ctx.label} connector is authorized for ${ctx.singleAgent ? "your Okou" : "this agent"}, but it is not connected.`,
-    );
-  } else {
-    const url = connectorActionUrl({
-      origin: ctx.platformOrigin,
-      path: `/connectors/${ctx.connectorSlug}/authorize`,
-      agentId: ctx.agentId,
-    });
-    console.log(
-      status.isConnected
-        ? `The ${ctx.label} connector is not authorized for ${ctx.singleAgent ? "your Okou" : `this agent (${ctx.agentId})`}.`
-        : ctx.runBound
-          ? `The ${ctx.label} connector is not authorized for ${ctx.singleAgent ? "your Okou" : `this agent (${ctx.agentId})`}, and an account is not available for this run.`
-          : `The ${ctx.label} connector needs to be connected and authorized for ${ctx.singleAgent ? "your Okou" : `this agent (${ctx.agentId})`}.`,
-    );
-    console.log(`Authorize it at: [Authorize ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
-    if (ctx.runBound) {
-      console.log("After authorizing it, start a new run.");
-    }
-  }
-}
-
-function printConnectorAuthorizationStatus(
-  ctx: BuiltinDiagContext,
-  status: ConnectorConfigurationStatus,
-  hasPermission: boolean,
-): void {
-  if (chatConnectorAccountsEnabled()) {
-    console.log("### 2b: Chat account access");
-    console.log(
-      hasPermission
-        ? `The ${ctx.label} connector has an allowed account in this Chat.`
-        : `The ${ctx.label} connector has no allowed account in this Chat. Inspect connector account list ${ctx.connectorSlug} --json and request owner approval for an account.`,
-    );
-    console.log("");
-    return;
-  }
-  console.log(
-    ctx.singleAgent
-      ? "### 2b: Your Okou access (authorization is required to use this connector)"
-      : "### 2b: Agent authorization (user must authorize agent to use this connector)",
-  );
-  console.log("");
-  if (!ctx.connectorAvailable) {
-    console.log(
-      `Skipped — the ${ctx.label} connector is not available for this account.`,
-    );
-  } else {
-    printAgentAuthorizationStatus(ctx, status, hasPermission);
-  }
-  console.log(
-    `This run uses ${ctx.singleAgent ? "your existing workspace connector authorization" : "agent-scoped connector authorization"} for ${ctx.label} access.`,
-  );
-  console.log("");
 }
 
 function checkEnvironmentNames(ctx: DiagContext): void {
@@ -321,77 +197,44 @@ function checkEnvironmentNames(ctx: DiagContext): void {
   console.log("");
 }
 
-async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
-  readonly isConnected: boolean;
-  readonly needsReconnect: boolean;
-  readonly hasPermission: boolean;
-}> {
+async function checkBuiltinConnectorStatus(
+  ctx: BuiltinDiagContext,
+): Promise<void> {
   console.log("## Step 2: Connector configuration");
   console.log("");
+  console.log("### 2a: Account status");
+  console.log("");
+  if (!ctx.connectorAvailable) {
+    console.log(
+      `The ${ctx.label} connector is not available for this account.`,
+    );
+    return;
+  }
+
+  const target = { kind: "builtin", connectorSlug: ctx.connectorSlug } as const;
+  if (!ctx.runBound) {
+    printMemberConnectionStatus(ctx, await readMemberAccountFacts(target));
+    console.log("");
+    return;
+  }
+
+  const [[account], allowedTargets] = await Promise.all([
+    resolveRunConnectorAccountLookups([target]),
+    getAllowedChatConnectorTargetKeys(),
+  ]);
+  if (!account) throw new Error("Missing run account lookup for connector");
+  printRunConnectionStatus(ctx, account);
+  console.log("");
+  console.log("### 2b: Chat account access");
   console.log(
-    "A Connector holds the real credentials (OAuth tokens or API keys) for an external service. These credentials are never injected into the sandbox. Instead, when the sandbox sends an HTTP request to a base URL registered by the Connector, the network boundary intercepts the request and replaces the auth headers with real credentials. For this to work, three conditions must be met:",
+    allowedTargets.has(connectorAccountTargetKey(target))
+      ? `The ${ctx.label} connector has an allowed account in this Chat.`
+      : `The ${ctx.label} connector has no allowed account in this Chat. Inspect connector account list ${ctx.connectorSlug} --json for accounts you can request to use.`,
   );
   console.log("");
-
-  const [configuration, enabledConnectorSlugs] = await Promise.all([
-    ctx.runBound
-      ? resolveRunConnectorAccountLookups([
-          { kind: "builtin", connectorSlug: ctx.connectorSlug },
-        ]).then((lookups) => {
-          const runAccount = lookups[0];
-          if (!runAccount) {
-            throw new Error("Missing run account lookup for connector");
-          }
-          return {
-            isConnected: runAccount.state === "available",
-            needsReconnect:
-              runAccount.state === "available" &&
-              runAccount.metadata.connectionStatus === "reconnect-required",
-            runAccount,
-            memberFacts: null,
-          } satisfies ConnectorConfigurationStatus;
-        })
-      : readMemberAccountFacts({
-          kind: "builtin",
-          connectorSlug: ctx.connectorSlug,
-        }).then((facts) => {
-          return {
-            isConnected:
-              facts.memberStatus === "connected" ||
-              facts.memberStatus === "reconnect-required",
-            needsReconnect: facts.memberStatus === "reconnect-required",
-            runAccount: null,
-            memberFacts: facts,
-          } satisfies ConnectorConfigurationStatus;
-        }),
-    ctx.agentId
-      ? chatConnectorAccountsEnabled()
-        ? listRunConnectorAccounts().then((inventory) => {
-            return inventory.accounts.flatMap((account) => {
-              return account.enabled && account.target.kind === "builtin"
-                ? [account.target.connectorSlug]
-                : [];
-            });
-          })
-        : getAgentUserBuiltinConnectors(ctx.agentId)
-      : Promise.resolve(null),
-  ]);
-
-  const hasPermission =
-    enabledConnectorSlugs !== null &&
-    enabledConnectorSlugs.includes(ctx.connectorSlug);
-
-  printConnectorConnectionStatus(ctx, configuration);
-  printConnectorAuthorizationStatus(ctx, configuration, hasPermission);
-
-  return {
-    isConnected: configuration.isConnected,
-    needsReconnect: configuration.needsReconnect,
-    hasPermission,
-  };
 }
 
-function checkConnectorDomains(ctx: DiagContext): boolean | null {
+function printConnectorDomains(ctx: DiagContext): void {
   console.log(
     "### 2c: Registered base URLs (credential replacement only applies to URLs matching these prefixes)",
   );
@@ -403,7 +246,7 @@ function checkConnectorDomains(ctx: DiagContext): boolean | null {
         "This diagnostic is not scoped to a run — skipping the run base URL check.",
       );
       console.log("");
-      return null;
+      return;
     case "not-configured":
       console.log(
         `No configuration found for the ${ctx.label} connector in this run.`,
@@ -412,7 +255,7 @@ function checkConnectorDomains(ctx: DiagContext): boolean | null {
         "This means no base URLs are registered for credential replacement for this connector.",
       );
       console.log("");
-      return false;
+      return;
     case "configured":
       console.log(
         `The ${ctx.label} connector is configured for this run with the following base URLs:`,
@@ -427,7 +270,7 @@ function checkConnectorDomains(ctx: DiagContext): boolean | null {
         );
       }
       console.log("");
-      return true;
+      return;
   }
 }
 
@@ -462,7 +305,6 @@ function printNamedPolicyResult(
   target: ConnectorRuntimeTarget,
   permission: string,
   policy: ConnectorCheckPolicy,
-  agentId: string | undefined,
   request: UrlDiagnosticRequest | undefined,
   platformOrigin: string,
 ): void {
@@ -501,7 +343,6 @@ function printNamedPolicyResult(
       printPermissionRequestCommands(
         target,
         permission,
-        agentId,
         "To request this permission, run",
         request,
         platformOrigin,
@@ -516,7 +357,6 @@ function printNamedPolicyResult(
       printPermissionRequestCommands(
         target,
         permission,
-        agentId,
         "To request this permission, run",
         request,
         platformOrigin,
@@ -531,7 +371,6 @@ function printNamedPolicyResult(
 function printPermissionRequestCommands(
   target: ConnectorRuntimeTarget,
   permission: string,
-  agentId: string | undefined,
   introduction: string,
   request: UrlDiagnosticRequest | undefined,
   platformOrigin: string,
@@ -558,7 +397,7 @@ function printPermissionRequestCommands(
     request,
   );
   console.log(`${introduction}: ${command}`);
-  if (!currentChatSupportsActionCallback(agentId)) {
+  if (!currentPermissionCallbackThread()) {
     return;
   }
 
@@ -572,7 +411,6 @@ function printPermissionRequestCommands(
 function printUnknownEndpointPolicy(
   target: ConnectorRuntimeTarget,
   policy: ConnectorCheckPolicy,
-  agentId: string | undefined,
   request: UrlDiagnosticRequest,
   platformOrigin: string,
   suppressBuiltinUnknownAction: boolean,
@@ -608,7 +446,6 @@ function printUnknownEndpointPolicy(
       printPermissionRequestCommands(
         target,
         "__unknown__",
-        agentId,
         "To request access to unknown endpoints, run",
         request,
         platformOrigin,
@@ -622,7 +459,6 @@ function printUnknownEndpointPolicy(
       printPermissionRequestCommands(
         target,
         "__unknown__",
-        agentId,
         "To request access to unknown endpoints, run",
         request,
         platformOrigin,
@@ -637,7 +473,6 @@ function printUnknownEndpointPolicy(
 function printUrlPermissionDiagnostic(
   request: UrlDiagnosticRequest,
   result: ResolvedUrlDiagnostic,
-  agentId: string | undefined,
   platformOrigin: string,
   awsContextIncomplete: boolean,
 ): void {
@@ -662,7 +497,6 @@ function printUrlPermissionDiagnostic(
         result.connector.target,
         permission.name,
         permission.policy,
-        agentId,
         request,
         platformOrigin,
       );
@@ -679,7 +513,6 @@ function printUrlPermissionDiagnostic(
     printUnknownEndpointPolicy(
       result.connector.target,
       result.permission.policy,
-      agentId,
       request,
       platformOrigin,
       awsContextIncomplete,
@@ -691,7 +524,6 @@ function printUrlPermissionDiagnostic(
 function printEnvironmentPermissionDiagnostic(
   result: ResolvedEnvironmentDiagnostic,
   permissionName: string | undefined,
-  agentId: string | undefined,
   platformOrigin: string,
 ): void {
   if (result.permission === null) {
@@ -712,7 +544,6 @@ function printEnvironmentPermissionDiagnostic(
     result.connector.target,
     permissionName,
     result.permission,
-    agentId,
     undefined,
     platformOrigin,
   );
@@ -759,8 +590,7 @@ export const checkConnectorCommand = addAwsDiagnosticOptions(
 )
   .addHelpText(
     "after",
-    modeHelp(
-      `
+    `
 Scope:
   --env-name diagnoses a builtin environment binding; --check-permission can
   select a permission in this mode. Custom HTTP/MCP routes use --url; this checks
@@ -803,7 +633,7 @@ Permission recovery:
   builtin deny/ask outcomes, use the exact permission-request command printed
   for the failed URL and method, one concrete permission at a time. Do not turn
   provider OAuth errors such as missing_scope or needed into Okou permissions.
-  Custom HTTP permission bundles use Connectors > agent access > Permissions.
+  Review custom HTTP permissions in Connectors settings.
   MCP connectors have no HTTP permission bundle.
   unknown-endpoint means no named permission matched; unknown-policy identifies
   the fallback policy used. Neither label alone means access was denied.
@@ -813,29 +643,9 @@ Permission recovery:
   review routing/permission definitions. There is no custom unknown-endpoint
   approval control.
   An allowed permission check does not verify credentials or upstream API success.
-  Callback examples are for a single supported action in the current web chat
-  for its current Agent. When multiple access actions are needed, use ordinary
-  links and wait for all confirmations. Return every action URL verbatim. Custom
-  settings guidance has no callback approval flow.`,
-      `
-Diagnose the exact failed URL and method, or a builtin environment name.
-Examples:
-  okou connector check --url https://api.example.com/items --method GET
-  okou connector check --env-name GITHUB_TOKEN
-  okou connector check --connector custom:<uuid> --url https://api.example.com/items
-
-Your current workspace execution context supplies accounts and grants automatically.
-A connection is not a permission grant. Missing admitted accounts remain unavailable.
-For AWS SigV4, include the observed non-secret service/action/target/query/header
-selectors required by the diagnostic; URL and method alone can be insufficient.
-Use only a permission-request command printed for a deny/ask outcome. Provider OAuth
-scopes are not Okou permissions. Custom permissions use Connectors settings.
-For a single supported access action, use the printed callback command/URL; keep
-its prompt concise and free of secrets. Return every action URL verbatim and end
-the turn. Multiple access actions require ordinary links and no callback.
-Use --json for the existing structured diagnostic result.
-`,
-    ),
+  Use a callback for a single supported action in the current Web Chat. For
+  multiple access actions, use ordinary links and wait for all confirmations.
+  Return every action URL verbatim. Use Connectors settings for custom permissions.`,
   )
   .action(
     withErrorHandler(async (opts: CheckConnectorOptions, command: Command) => {
@@ -902,44 +712,31 @@ Use --json for the existing structured diagnostic result.
         credentialResolution: result.connector.credentialResolution,
         run: result.run,
         platformOrigin: platformUrl.origin,
-        agentId: await resolveConnectorAgentId(undefined),
-        singleAgent: await singleAgentEnabled(),
         runBound: isRunBoundConnectorContext(),
       };
 
       checkEnvironmentNames(ctx);
-      const status =
-        target.kind === "builtin"
-          ? await checkConnectorStatus({
-              ...ctx,
-              connectorSlug: target.connectorSlug,
-            })
-          : null;
+      if (target.kind === "builtin") {
+        await checkBuiltinConnectorStatus({
+          ...ctx,
+          connectorSlug: target.connectorSlug,
+        });
+      }
       if (custom) {
         printCustomConnectorCheckStatus(custom, ctx.platformOrigin);
       }
-      const configuredForRun = checkConnectorDomains(ctx);
-
-      if (configuredForRun === false) {
+      printConnectorDomains(ctx);
+      if (ctx.run.status === "not-configured") {
         console.log(
-          `Steps 1-2 summary: The ${ctx.label} connector is not configured for this run. Check ${ctx.singleAgent ? "your Okou access in Connectors settings" : "the agent authorization settings"}, then start a new run after updating them.`,
+          `This Run has no routing for ${ctx.label}. Review this Chat's allowed accounts, then retry with an available account.`,
         );
-      } else if (
-        status?.isConnected &&
-        !status.needsReconnect &&
-        status.hasPermission
-      ) {
-        console.log(
-          `Steps 1-2 summary: The ${ctx.label} connector is connected, active, and authorized. Outbound requests to the registered base URLs will have credentials injected at the network boundary.`,
-        );
+        console.log("");
       }
-      console.log("");
 
       if (result.mode === "url") {
         printUrlPermissionDiagnostic(
           requireUrlRequest(request),
           result,
-          ctx.agentId,
           ctx.platformOrigin,
           awsContextIncomplete,
         );
@@ -947,7 +744,6 @@ Use --json for the existing structured diagnostic result.
         printEnvironmentPermissionDiagnostic(
           result,
           request.mode === "environment" ? request.permission : undefined,
-          ctx.agentId,
           ctx.platformOrigin,
         );
       }

@@ -9,8 +9,13 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-def values(path):
-    return dict(line.split() for line in path.read_text().splitlines())
+def parse_cgroup_counters(text):
+    """Parse the two-column entries in a cgroup counter sample."""
+    return dict(line.split() for line in text.splitlines())
+
+
+def read_cgroup_counters(path):
+    return parse_cgroup_counters(path.read_text())
 
 
 @contextmanager
@@ -123,15 +128,15 @@ def probe(cgroup, env, as_role, record, pi_session, ready, release):
             raise ValueError("resource tool did not receive one owned leaf")
         return result, added.pop()
 
-    cpu_before = int(values(cgroup / "cpu.stat")["usage_usec"])
+    cpu_before = int(read_cgroup_counters(cgroup / "cpu.stat")["usage_usec"])
     result, leaf = tool(
         "import json,os,pathlib; data=bytearray(16*1024*1024); data[::4096]=b'x'*(len(data)//4096); "
         "print(sum(i*i for i in range(1000000))); "
         "print(json.dumps({'uid':os.getuid(),'context':pathlib.Path('/proc/self/attr/current').read_text().rstrip('\\0'),"
         "'workloadPidsCurrent':int(pathlib.Path('/sys/fs/cgroup/vm0-exec/exec-native/workload/pids.current').read_text())}))"
     )
-    leaf_cpu = int(values(leaf / "cpu.stat")["usage_usec"])
-    workload_delta = int(values(cgroup / "cpu.stat")["usage_usec"]) - cpu_before
+    leaf_cpu = int(read_cgroup_counters(leaf / "cpu.stat")["usage_usec"])
+    workload_delta = int(read_cgroup_counters(cgroup / "cpu.stat")["usage_usec"]) - cpu_before
     memory_peak = int((leaf / "memory.peak").read_text())
     pids_peak = int((cgroup / "pids.peak").read_text())
     identity = (
@@ -146,7 +151,7 @@ def probe(cgroup, env, as_role, record, pi_session, ready, release):
         and 0 < leaf_cpu <= workload_delta
         and memory_peak >= 16 * 1024 * 1024
         and pids_peak >= 1
-        and values(leaf / "cgroup.events")["populated"] == "0",
+        and read_cgroup_counters(leaf / "cgroup.events")["populated"] == "0",
         leaf=str(leaf),
         toolCpuUsec=leaf_cpu,
         workloadCpuDeltaUsec=workload_delta,
@@ -156,7 +161,7 @@ def probe(cgroup, env, as_role, record, pi_session, ready, release):
         identity=identity,
         stderr=result.stderr[-1000:],
     )
-    oom_before = int(values(cgroup / "memory.events")["oom_kill"])
+    oom_before = int(read_cgroup_counters(cgroup / "memory.events")["oom_kill"])
     with protected_runtime(cgroup, env, pi_session, ready, release, record):
         result, leaf = tool(
             "chunks=[]\n"
@@ -166,14 +171,14 @@ def probe(cgroup, env, as_role, record, pi_session, ready, release):
             " chunks.append(data)\n"
             "raise AssertionError('bounded allocation did not trigger workload OOM')\n"
         )
-    events = values(leaf / "memory.events")
+    events = read_cgroup_counters(leaf / "memory.events")
     record(
         "real_tool_group_oom_contained",
         result.returncode != 0
         and int(events["oom_kill"]) > 0
-        and int(values(cgroup / "memory.events")["oom_kill"]) > oom_before
+        and int(read_cgroup_counters(cgroup / "memory.events")["oom_kill"]) > oom_before
         and (leaf / "memory.oom.group").read_text().strip() == "1"
-        and values(leaf / "cgroup.events")["populated"] == "0"
+        and read_cgroup_counters(leaf / "cgroup.events")["populated"] == "0"
         and Path("/sys/fs/selinux/enforce").read_text().strip() == "1",
         leaf=str(leaf),
         events=events,

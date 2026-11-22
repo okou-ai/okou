@@ -1,3 +1,4 @@
+import { threadEventCursor } from "./helpers/api-bdd-chat-files";
 import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import {
@@ -20,7 +21,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { object, string } from "zod";
+import { uuid, object, string } from "zod";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { signSandboxJwtForTests, verifyOkouToken } from "../../auth/tokens";
@@ -1309,8 +1310,8 @@ async function readHistoricalTeamsDownloadExecution(
   await owned.run(() => {
     return authOrgApi.completeOnboarding(actor);
   });
-  const { defaultAgentId } = await owned.run(() => {
-    return authOrgApi.readOnboardingStatus(actor);
+  const defaultAgentId = await owned.run(() => {
+    return authOrgApi.readDefaultAgentId(actor);
   });
   if (!defaultAgentId) {
     throw new Error("Expected the normal onboarding Agent");
@@ -2312,25 +2313,8 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(fileId).toMatch(/^[0-9a-f-]{36}$/u);
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const threadEvents = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadsContract,
-      ).events({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {},
-      }),
-      [200],
-    );
-    const chatThreadCreated = threadEvents.body.events.find((event) => {
-      return (
-        event.kind === "created" && event.agentId === defaultAgent.body.agentId
-      );
-    });
-    if (!chatThreadCreated) {
-      throw new Error("Expected the canonical Teams file chat thread");
-    }
     const threadEventsPage = await readProjectedChatEvents(context, {
-      threadId: chatThreadCreated.chatThreadId,
+      threadId: uuid().parse(execution.platformEnvironment.OKOU_CHAT_THREAD_ID),
       headers: { authorization: "Bearer clerk-session" },
     });
     expect(threadEventsPage).toContainEqual(
@@ -2372,6 +2356,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     "provides a source link for a Teams %s message",
     async (conversationType) => {
       const { fixture, actor } = await setupConnectedTeamsBotActor();
+      const sinceSeqId = await threadEventCursor(context, actor);
       const activityId = teamsFixtureExternalId(fixture, "source-link");
       const conversationId =
         conversationType === "personal"
@@ -2398,7 +2383,7 @@ describe("POST /api/webhooks/teams/bot", () => {
           chatThreadsContract,
         ).events({
           headers: { authorization: "Bearer clerk-session" },
-          query: {},
+          query: { sinceSeqId },
         }),
         [200],
       );
@@ -2963,10 +2948,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       const subscription = await runsApi.grantProEntitlement(actor, {
         subscriptionId: owned.subscriptionId,
       });
-      expect(
-        (await createBddApi(context).readOnboardingStatus(actor))
-          .defaultAgentId,
-      ).toBe(defaultAgent.body.agentId);
+      await expect(
+        createBddApi(context).readDefaultAgentId(actor),
+      ).resolves.toBe(defaultAgent.body.agentId);
       await webhooksApi.postStripeEvent(
         {
           type: "customer.subscription.updated",
@@ -3478,7 +3462,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       },
     });
     await ownedRuns.run(async () => {
-      const { runnerGroup, outboundRequests, defaultAgentId } =
+      const { runnerGroup, outboundRequests } =
         await setupConnectedTeamsBotActor(fixture);
       const personalChatId = `19:${teamsFixtureExternalId(
         fixture,
@@ -3560,7 +3544,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         expect.objectContaining({
           id: runId,
           prompt: "continue this private task",
-          agentId: defaultAgentId,
         }),
       );
       await runsApi.heartbeatRunner(runnerGroup);
@@ -3648,13 +3631,13 @@ describe("POST /api/webhooks/teams/bot", () => {
         await removeTeamsForTest(context.signal, fixture);
       });
       const { runnerGroup } = await scenario.prepareActor(actor);
-      const onboarding = await scenario.run(() => {
-        return authOrgApi.readOnboardingStatus(actor);
+      const onboardingAgentId = await scenario.run(() => {
+        return authOrgApi.readDefaultAgentId(actor);
       });
-      if (!onboarding.defaultAgentId) {
+      if (!onboardingAgentId) {
         throw new Error("Expected the normal Teams default Agent");
       }
-      const defaultAgentId = onboarding.defaultAgentId;
+      const defaultAgentId = onboardingAgentId;
       await scenario.run(() => {
         return authOrgApi.readAgent(actor, defaultAgentId);
       });
@@ -3755,7 +3738,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
-  it("asks connected Teams users to configure a default agent", async () => {
+  it("checks the connected member’s credits when no Agent profile exists", async () => {
     const fixture = await trackTeamsFixture(
       Promise.resolve(teamsConnectFixture()),
     );
@@ -3786,7 +3769,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       activityId,
       body: {
         type: "message",
-        text: expect.stringContaining("No agent is configured"),
+        text: expect.stringContaining("Insufficient credits"),
         replyToId: activityId,
       },
     });

@@ -23,7 +23,8 @@ use tokio::task::JoinSet;
 use tracing::info;
 
 use super::job_activation::{
-    activation_resources, build_spawn_job_request, job_activation_resources,
+    activation_resources, finish_spawn_job_request, home_prepare_policy_for_job,
+    job_activation_resources, prepare_spawn_job_request,
 };
 use super::job_spawn::{JobResult, SpawnContext, run_job};
 #[cfg(test)]
@@ -54,12 +55,14 @@ use crate::resource_budget::BudgetLease;
 use crate::telemetry::JobTelemetry;
 use runner_provider::ExecutionJob;
 use runner_provider::RunCancellationRegistration;
+use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, SandboxReuseResult};
 
 pub(super) struct FinalizingActivationRequest {
     pub(super) job: ExecutionJob,
     pub(super) cancellation: RunCancellationRegistration,
     pub(super) handoff_context: FinalizingHandoffContext,
+    pub(super) preferred_home_source: Option<RunId>,
     pub(super) accepted_at: Instant,
     pub(super) profile_name: String,
     pub(super) rootfs_hash: String,
@@ -114,6 +117,7 @@ async fn run_finalizing_activation(
         job,
         cancellation,
         mut handoff_context,
+        preferred_home_source,
         accepted_at,
         profile_name,
         rootfs_hash,
@@ -363,18 +367,20 @@ async fn run_finalizing_activation(
         .reuse_entry
         .as_ref()
         .is_none_or(|entry| entry.kind() == IdleSandboxKind::Blank);
-    // Inventory can change while unpark awaits. Keep a source already selected
-    // before activation; checkout revalidates it under the cache entry lock.
+    // Disk fallback keeps the dispatch's expected generation. For an ordinary
+    // handoff, retain any source selected before unpark could change inventory.
     let required_home_source_run_id = if home_fallback {
-        selected_home_source_run_id.or_else(|| {
-            ctx.home_cache_snapshot
-                .has_source_home_hint(
-                    &handoff_context.reuse_key,
-                    &profile_name,
-                    handoff_context.source_run_id,
-                )
-                .then_some(handoff_context.source_run_id)
-        })
+        preferred_home_source
+            .or(selected_home_source_run_id)
+            .or_else(|| {
+                ctx.home_cache_snapshot
+                    .has_source_home_hint(
+                        &handoff_context.reuse_key,
+                        &profile_name,
+                        handoff_context.source_run_id,
+                    )
+                    .then_some(handoff_context.source_run_id)
+            })
     } else {
         None
     };
@@ -397,11 +403,19 @@ async fn run_finalizing_activation(
         },
         job_activation_resources(&ctx),
     );
-    let mut request = match AssertUnwindSafe(build_spawn_job_request(&mut activation, &ctx))
-        .catch_unwind()
-        .await
+    let (request, home_policy) = match AssertUnwindSafe(async {
+        prepare_spawn_job_request(&mut activation, &ctx).await?;
+        let home_policy = if home_fallback && preferred_home_source.is_none() {
+            None
+        } else {
+            Some(home_prepare_policy_for_job(activation.setup()?, &ctx))
+        };
+        finish_spawn_job_request(&mut activation).map(|request| (request, home_policy))
+    })
+    .catch_unwind()
+    .await
     {
-        Ok(Ok(request)) => request,
+        Ok(Ok(prepared)) => prepared,
         Ok(Err(error)) => {
             return Ok(activation
                 .recover(error.recovery_reason(), error.to_string())
@@ -417,9 +431,8 @@ async fn run_finalizing_activation(
         }
     };
     drop(activation_transfer_guard);
-    if home_fallback {
+    let home_policy = home_policy.unwrap_or_else(|| {
         let (predecessor_state, lock_policy) = handoff_context.fallback_home_prepare_policy();
-        request.job_profile.home_image_prepare_policy = lock_policy;
         if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
             info!(
                 run_id = %run_id,
@@ -427,8 +440,9 @@ async fn run_finalizing_activation(
                 "finalizing fallback will skip home cache lock retry"
             );
         }
-    }
-    Ok(run_job(request, ctx).await)
+        lock_policy
+    });
+    Ok(run_job(request, home_policy, ctx).await)
 }
 
 async fn prepare_finalizing_resource(

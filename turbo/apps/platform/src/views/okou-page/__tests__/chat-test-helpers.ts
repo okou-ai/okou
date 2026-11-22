@@ -32,7 +32,6 @@ import {
 } from "@okouai/api-contracts/contracts/run-routes";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import {
   mockChatEventRows,
@@ -106,7 +105,7 @@ export async function fillComposer(
 interface ThreadListItem {
   id: string;
   title: string | null;
-  agent: { id: string; avatarUrl: string | null };
+
   createdAt: string;
   updatedAt: string;
   pinnedAt?: string | null;
@@ -125,7 +124,7 @@ export function threadListSnapshot(threads: readonly ThreadListItem[]) {
   return threads.map((thread) => {
     return {
       id: thread.id,
-      agentId: thread.agent.id,
+
       title: thread.title,
       sortAt: thread.updatedAt,
       createdAt: thread.createdAt,
@@ -393,7 +392,6 @@ export function mockChatLifecycle(
       modelSelection: ModelSelectionRequest | null;
       serviceTier?: ChatThreadServiceTier | null;
       reasoningEffort?: ReasoningEffort;
-      connectorSelections?: readonly ConnectorAccountSelection[];
       initialRemoteAccessOverrides?: readonly {
         protocol: "ssh" | "vnc";
         connectionId: string;
@@ -591,10 +589,7 @@ export function mockChatLifecycle(
       {
         id: threadId,
         title: threadTitle,
-        agent: {
-          id: "c0000000-0000-4000-a000-000000000001",
-          avatarUrl: null,
-        },
+
         createdAt: "2026-03-10T00:00:00Z",
         updatedAt: "2026-03-10T00:00:00Z",
         pinnedAt: null,
@@ -863,7 +858,6 @@ export function mockChatLifecycle(
       activeThreadIds.add(threadId);
     }
     return respond(200, {
-      agents: {},
       threads: Object.fromEntries(
         [...activeThreadIds]
           .filter((id) => {
@@ -899,7 +893,6 @@ export function mockChatLifecycle(
       modelSelection,
       serviceTier: body.serviceTier,
       reasoningEffort: body.reasoningEffort,
-      connectorSelections: body.connectorSelections,
       initialRemoteAccessOverrides: body.initialRemoteAccessOverrides,
     });
     return respond(201, {
@@ -947,8 +940,6 @@ export function mockChatLifecycle(
     return respond(200, {
       id: "a0000000-0000-4000-a000-000000000001",
       sessionId: "session-1",
-      agentId: "zero",
-      displayName: null,
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,

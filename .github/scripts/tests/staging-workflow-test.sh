@@ -30,7 +30,7 @@ ts_checks = [
 ]
 validation = ts_checks + ['file-size-check', 'test-migrate', 'lint-runtime-api-compat']
 deployed = [
-    'deploy-api', 'deploy-app', 'prepare-cli', 'deploy-runner-prepare', 'deploy-runner-start',
+    'deploy-api', 'deploy-app', 'prepare-cli', 'select-runner-placement', 'deploy-runner-prepare', 'deploy-runner-start',
     'cli-e2e-01-serial', 'cli-e2e-02-browser', 'cli-e2e-02-playwright',
 ]
 finalizers = ['cli-e2e-02-playwright-finalize', 'cli-e2e-03-runner-cleanup']
@@ -55,6 +55,8 @@ def context(event='push', run_id='100'):
         'github.event.pull_request.head.repo.full_name': 'test/repo',
         'needs.detect-release.outputs.skip': 'false',
         'needs.detect-release.outputs.lookup-failed': '',
+        'needs.validate-release-presence.outputs.release-entry': '',
+        'vars.PRODUCTION_RELEASE_FREEZE': '',
         'needs.detect-turbo-ts-checks.outputs.ios-only': 'false',
         'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': 'true',
         'needs.prepare.outputs.job-ref': 'staging' if event == 'push' else 'pr-42',
@@ -80,7 +82,7 @@ def expression(source, values, job=None, cancelled=False):
     }
     for function, value in replacements.items():
         source = source.replace(function, str(value))
-    source = re.sub(r'\b(?:github|needs)\.[\w.-]+', lambda m: repr(values[m[0]]), source)
+    source = re.sub(r'\b(?:github|needs|vars)\.[\w.-]+', lambda m: repr(values[m[0]]), source)
     source = source.replace('&&', ' and ').replace('||', ' or ')
     source = re.sub(r'!(?!=)', 'not ', source)
     return eval('(' + source + ')', {'__builtins__': {}}, {
@@ -230,10 +232,11 @@ for name in deployed + finalizers:
     assert condition(jobs[name], push), f'staging must still execute {name}'
 assert not set(needs(jobs['cli-e2e-01-serial'])) & set(validation)
 gate(push, True)
+gate(push | {'vars.PRODUCTION_RELEASE_FREEZE': 'true'}, True)
 for name in deployed + [name for name in validation if name in needs(jobs['ci-gate-turbo'])]:
     for failure in ['failure', 'cancelled']:
         gate(push | {f'needs.{name}.result': failure}, False)
-for name in ['deploy-app', 'prepare-cli', 'cli-e2e-01-serial', 'deploy-runner-prepare', 'deploy-runner-start']:
+for name in ['deploy-app', 'prepare-cli', 'cli-e2e-01-serial', 'select-runner-placement', 'deploy-runner-prepare', 'deploy-runner-start']:
     gate(push | {f'needs.{name}.result': 'skipped'}, False)
 for name in finalizers:
     assert condition(jobs[name], push | {'needs.cli-e2e-02-playwright.result': 'failure'})

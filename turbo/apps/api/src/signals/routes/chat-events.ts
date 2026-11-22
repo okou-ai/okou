@@ -18,8 +18,9 @@ import { measureChatEnqueue } from "../services/chat-enqueue-timing.service";
 import {
   handleSendChatEvent$,
   chatEnqueueTiming$,
+  startNormalSendBootstrap$,
 } from "../services/chat-events.command";
-import { projectReferencesAvailable } from "../services/project-reference.service";
+import { captureProjectReferences } from "../services/project-reference.service";
 import {
   hasEmptySuggestionNote,
   suggestionFeedbacks,
@@ -33,7 +34,19 @@ import {
 const sendEventBody$ = bodyResultOf(chatEventsContract.send);
 
 export const sendValidatedChatEvent$ = command(
-  async ({ get, set }, data: ChatEventSendBody, signal: AbortSignal) => {
+  async (
+    { get, set },
+    {
+      data,
+      projectId,
+      requireVisibleThread,
+    }: {
+      readonly data: ChatEventSendBody;
+      readonly projectId?: string;
+      readonly requireVisibleThread?: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     const auth = get(organizationAuthContext$);
     const scope =
@@ -42,14 +55,21 @@ export const sendValidatedChatEvent$ = command(
       return resourceUnavailable("Insufficient scope");
     }
     const timing = get(chatEnqueueTiming$);
-    if (
-      !(await measureChatEnqueue(timing, "references", () => {
-        return get(projectReferencesAvailable(auth, data.userMessage));
-      }))
-    ) {
-      return notFound("Project or conversation not found");
-    }
+    const referenceRead = measureChatEnqueue(timing, "references", () => {
+      return get(captureProjectReferences(auth, data.userMessage, projectId));
+    });
+    const bootstrap = set(startNormalSendBootstrap$, {
+      body: data,
+      auth,
+      requireVisibleThread,
+    });
+    const projectReferences = await referenceRead;
     signal.throwIfAborted();
+    if (projectReferences === null) {
+      return notFound(
+        projectId ? "Project not found" : "Project or conversation not found",
+      );
+    }
     const candidate =
       auth.tokenType === "session" &&
       data.userMessage &&
@@ -90,7 +110,11 @@ export const sendValidatedChatEvent$ = command(
         return invalid;
       }
     }
-    const result = await set(handleSendChatEvent$, data, signal);
+    const result = await set(
+      handleSendChatEvent$,
+      { body: data, projectId, projectReferences, bootstrap },
+      signal,
+    );
     if (custom && result.status === 201 && data.clientEventId) {
       await set(
         recordAcceptedSuggestionFollowup$,
@@ -126,7 +150,7 @@ const sendChatEventInner$ = command(
       get(organizationAuthContext$).tokenType,
       body.data.threadId !== undefined,
     );
-    return await set(sendValidatedChatEvent$, body.data, signal);
+    return await set(sendValidatedChatEvent$, { data: body.data }, signal);
   },
 );
 

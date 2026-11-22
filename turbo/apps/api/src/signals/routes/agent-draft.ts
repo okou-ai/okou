@@ -1,9 +1,18 @@
+import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  iosVoiceDraftTransforms,
+  androidVoiceDraftTransforms,
+} from "@okouai/api-contracts/client-transforms/voice-draft";
+import type { ClientResponseTransform } from "@okouai/api-contracts/client-transforms/types";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
-import { projectAccess$ } from "./projects";
+import { personalProjectAccess$ } from "./projects";
 import { command, computed } from "ccstate";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import {
+  agentDraftContract,
+  composerDraftContract,
+} from "@okouai/api-contracts/contracts/agent-draft";
 import { agentDrafts } from "@okouai/db/schema/agent-draft";
-import { agents } from "@okouai/db/schema/agent";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -13,7 +22,7 @@ import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { notFound } from "../../lib/error";
 import { visibleAgentIdentityCondition } from "../services/agent-data.service";
-import { projectReferenceWritesEnabled } from "../services/project-reference.service";
+import { canWriteProjectReferences } from "../services/project-reference.service";
 import type { RouteEntry } from "../route-entry";
 
 const agentReadAuth = {
@@ -27,6 +36,7 @@ function agentNotFound(agentId: string) {
 }
 
 type AgentDraftContract =
+  | typeof composerDraftContract
   | typeof agentDraftContract
   | {
       get: typeof projectChatContract.agentDraft;
@@ -37,25 +47,26 @@ function createAgentDraftReader(
   projectEndpoint: boolean,
 ) {
   const getAgentDraftInner$ = computed(async (get) => {
-    if (projectEndpoint && !(await get(projectAccess$))) {
+    if (projectEndpoint && !get(personalProjectAccess$)) {
       return notFound("Projects unavailable");
     }
     const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(contract.get));
-
-    const agentScope = {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    };
-    const [visibleAgent] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(visibleAgentIdentityCondition(agentScope))
-      .limit(1);
-    const exists = Boolean(visibleAgent);
-    if (!exists) {
-      return agentNotFound(params.id);
+    if ("pathParams" in contract.get) {
+      const { id } = get(pathParamsOf(contract.get));
+      const [visibleAgent] = await get(db$)
+        .select({ id: legacyAgentApiProfiles.id })
+        .from(legacyAgentApiProfiles)
+        .where(
+          visibleAgentIdentityCondition({
+            orgId: auth.orgId,
+            userId: auth.userId,
+            agentId: id,
+          }),
+        )
+        .limit(1);
+      if (!visibleAgent) {
+        return agentNotFound(id);
+      }
     }
 
     const [draft] = await get(db$)
@@ -68,7 +79,6 @@ function createAgentDraftReader(
         and(
           eq(agentDrafts.userId, auth.userId),
           eq(agentDrafts.orgId, auth.orgId),
-          eq(agentDrafts.agentId, params.id),
         ),
       )
       .limit(1);
@@ -76,7 +86,7 @@ function createAgentDraftReader(
     return {
       status: 200 as const,
       body: {
-        draftUserMessage: draft?.draftUserMessage ?? null,
+        draftUserMessage: readStoredDraftMessage(draft?.draftUserMessage),
         draftAttachments: draft?.draftAttachments ?? null,
       },
     };
@@ -87,44 +97,43 @@ function createAgentDraftReader(
 function createAgentDraftRoutes(
   contract: AgentDraftContract,
   projectEndpoint: boolean,
+  responseTransforms: readonly ClientResponseTransform[] = [],
 ): readonly RouteEntry[] {
   const getAgentDraftInner$ = createAgentDraftReader(contract, projectEndpoint);
   const patchAgentDraftInner$ = command(
     async ({ get, set }, signal: AbortSignal) => {
-      if (projectEndpoint && !(await get(projectAccess$))) {
+      if (projectEndpoint && !get(personalProjectAccess$)) {
         return notFound("Projects unavailable");
       }
       const auth = get(organizationAuthContext$);
-      const params = get(pathParamsOf(contract.patch));
 
       const bodyResult = await get(bodyResultOf(contract.patch));
       signal.throwIfAborted();
       if (!bodyResult.ok) {
         return bodyResult.response;
       }
-      if (
-        !(await get(
-          projectReferenceWritesEnabled(auth, bodyResult.data.draftUserMessage),
-        ))
-      ) {
+      if (!canWriteProjectReferences(auth, bodyResult.data.draftUserMessage)) {
         return notFound("Projects unavailable");
       }
       signal.throwIfAborted();
 
-      const agentScope = {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: params.id,
-      };
-      const [visibleAgent] = await get(db$)
-        .select({ id: agents.id })
-        .from(agents)
-        .where(visibleAgentIdentityCondition(agentScope))
-        .limit(1);
-      signal.throwIfAborted();
-      const exists = Boolean(visibleAgent);
-      if (!exists) {
-        return agentNotFound(params.id);
+      if ("pathParams" in contract.patch) {
+        const { id } = get(pathParamsOf(contract.patch));
+        const [visibleAgent] = await get(db$)
+          .select({ id: legacyAgentApiProfiles.id })
+          .from(legacyAgentApiProfiles)
+          .where(
+            visibleAgentIdentityCondition({
+              orgId: auth.orgId,
+              userId: auth.userId,
+              agentId: id,
+            }),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!visibleAgent) {
+          return agentNotFound(id);
+        }
       }
 
       const draftAttachments = bodyResult.data.draftAttachments ?? null;
@@ -134,7 +143,6 @@ function createAgentDraftRoutes(
       const draft = {
         userId: auth.userId,
         orgId: auth.orgId,
-        agentId: params.id,
         draftUserMessage,
         draftAttachments,
         updatedAt,
@@ -143,7 +151,6 @@ function createAgentDraftRoutes(
         const keyPredicate = and(
           eq(agentDrafts.userId, draft.userId),
           eq(agentDrafts.orgId, draft.orgId),
-          eq(agentDrafts.agentId, draft.agentId),
         );
         if (
           !draft.draftUserMessage &&
@@ -163,11 +170,7 @@ function createAgentDraftRoutes(
           .insert(agentDrafts)
           .values(draft)
           .onConflictDoUpdate({
-            target: [
-              agentDrafts.userId,
-              agentDrafts.orgId,
-              agentDrafts.agentId,
-            ],
+            target: [agentDrafts.userId, agentDrafts.orgId],
             set: update,
           });
       })();
@@ -177,20 +180,30 @@ function createAgentDraftRoutes(
     },
   );
 
+  const auth =
+    "pathParams" in contract.get
+      ? agentReadAuth
+      : ({
+          requireOrganization: true,
+          missingOrganizationStatus: 401,
+          accept: ["session"],
+        } as const);
   return [
     {
       route: contract.get,
-      handler: authRoute(agentReadAuth, getAgentDraftInner$),
+      responseTransforms,
+      handler: authRoute(auth, getAgentDraftInner$),
     },
     {
       route: contract.patch,
-      handler: authRoute(agentReadAuth, patchAgentDraftInner$),
+      handler: authRoute(auth, patchAgentDraftInner$),
     },
   ];
 }
 export const agentDraftRoutes = createAgentDraftRoutes(
   agentDraftContract,
   false,
+  [iosVoiceDraftTransforms.agent, androidVoiceDraftTransforms.agent],
 );
 export const projectAgentDraftRoutes = createAgentDraftRoutes(
   {
@@ -198,4 +211,10 @@ export const projectAgentDraftRoutes = createAgentDraftRoutes(
     patch: projectChatContract.saveAgentDraft,
   },
   true,
+);
+
+export const composerDraftRoutes = createAgentDraftRoutes(
+  composerDraftContract,
+  false,
+  [iosVoiceDraftTransforms.composer, androidVoiceDraftTransforms.composer],
 );

@@ -1,7 +1,6 @@
 import { command, computed, state } from "ccstate";
-import { debounceCommand, onRef, resetSignal } from "../utils.ts";
+import { debounceCommand, resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
-import { openCreateAgentDialog$ } from "./jobs-page.ts";
 
 // ---------------------------------------------------------------------------
 // Chat navigation search query
@@ -71,11 +70,6 @@ export const renameDialogThreadId$ = computed((get) => {
   return get(internalRenameDialogThreadId$);
 });
 
-const internalRenameDialogAgentId$ = state<string | null>(null);
-export const renameDialogAgentId$ = computed((get) => {
-  return get(internalRenameDialogAgentId$);
-});
-
 const internalRenameDialogInput$ = state("");
 export const renameDialogInput$ = computed((get) => {
   return get(internalRenameDialogInput$);
@@ -90,15 +84,12 @@ export const openRenameChatThreadDialog$ = command(
     {
       threadId,
       title,
-      agentId,
     }: {
       threadId: string;
       title: string | null | undefined;
-      agentId?: string | null | undefined;
     },
   ) => {
     set(internalRenameDialogInput$, title?.trim() ?? "");
-    set(internalRenameDialogAgentId$, agentId?.trim() || null);
     set(internalRenameDialogThreadId$, threadId);
     set(internalRenameDialogOpen$, true);
   },
@@ -140,7 +131,7 @@ export const closeChatThreadEmojiMenu$ = command(({ set }) => {
 // Three-column search dialog state
 // ---------------------------------------------------------------------------
 export type ThreeColumnSearchFilter =
-  "all" | "chats" | "messages" | "agents" | "workflows" | "artifacts";
+  "all" | "chats" | "messages" | "workflows" | "artifacts";
 
 const internalThreeColumnSearchOpen$ = state(false);
 export const threeColumnSearchOpen$ = computed((get) => {
@@ -169,105 +160,6 @@ export const openThreeColumnSearchDialog$ = command(({ set }) => {
   set(clearChatListQuery$);
   set(internalThreeColumnSearchFilter$, "all");
   set(internalThreeColumnSearchOpen$, true);
-});
-
-// ---------------------------------------------------------------------------
-// Pin agent dialog state (pinned agent grid)
-// ---------------------------------------------------------------------------
-const internalPinAgentDialogOpen$ = state(false);
-export const pinAgentDialogOpen$ = computed((get) => {
-  return get(internalPinAgentDialogOpen$);
-});
-export const setPinAgentDialogOpen$ = command(({ set }, open: boolean) => {
-  set(internalPinAgentDialogOpen$, open);
-});
-
-const internalPinAgentDialogQuery$ = state("");
-export const pinAgentDialogQuery$ = computed((get) => {
-  return get(internalPinAgentDialogQuery$);
-});
-export const setPinAgentDialogQuery$ = command(({ set }, query: string) => {
-  set(internalPinAgentDialogQuery$, query);
-});
-
-// The pin manager hands off to the create-agent dialog only after it has
-// finished closing, and skips its own focus return while doing so. Swapping
-// both in one commit let that return land after the create dialog's initial
-// focus, outside the open create dialog.
-const internalPinAgentDialogHandoff$ = state(false);
-export const pinAgentDialogHandoff$ = computed((get) => {
-  return get(internalPinAgentDialogHandoff$);
-});
-
-// The pin control sits in the grid while the pinned agents and it share one
-// row, and moves to the section header once they no longer do. Pinning or
-// unpinning from the dialog can therefore unmount the control that opened it,
-// so the dialog returns focus to whichever control is mounted when it closes.
-const internalPinAgentControl$ = state<HTMLElement | null>(null);
-export const pinAgentControl$ = computed((get) => {
-  return get(internalPinAgentControl$);
-});
-export const pinAgentControlRef$ = onRef(
-  command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-    set(internalPinAgentControl$, element);
-    signal.addEventListener(
-      "abort",
-      () => {
-        if (get(internalPinAgentControl$) === element) {
-          set(internalPinAgentControl$, null);
-        }
-      },
-      { once: true },
-    );
-  }),
-);
-
-export const openPinAgentDialog$ = command(({ set }) => {
-  set(internalPinAgentDialogHandoff$, false);
-  set(internalPinAgentDialogQuery$, "");
-  set(internalPinAgentDialogOpen$, true);
-});
-
-export const handOffPinAgentDialogToCreateAgent$ = command(({ set }) => {
-  set(internalPinAgentDialogHandoff$, true);
-  set(internalPinAgentDialogOpen$, false);
-});
-
-export const completePinAgentDialogClose$ = command(({ get, set }) => {
-  if (!get(internalPinAgentDialogHandoff$)) {
-    return;
-  }
-  set(internalPinAgentDialogHandoff$, false);
-  set(openCreateAgentDialog$);
-});
-
-// ---------------------------------------------------------------------------
-// Pinned agent drag and drop state (pinned agent grid)
-// ---------------------------------------------------------------------------
-const internalDraggingPinnedAgentId$ = state<string | null>(null);
-export const draggingPinnedAgentId$ = computed((get) => {
-  return get(internalDraggingPinnedAgentId$);
-});
-
-const internalPinnedAgentDropTargetId$ = state<string | null>(null);
-export const pinnedAgentDropTargetId$ = computed((get) => {
-  return get(internalPinnedAgentDropTargetId$);
-});
-
-export const startPinnedAgentDrag$ = command(({ set }, agentId: string) => {
-  set(internalDraggingPinnedAgentId$, agentId);
-  set(internalPinnedAgentDropTargetId$, null);
-});
-
-export const setPinnedAgentDropTarget$ = command(
-  ({ set }, agentId: string | null) => {
-    set(internalPinnedAgentDropTargetId$, agentId);
-  },
-);
-
-export const endPinnedAgentDrag$ = command(({ set }) => {
-  set(internalDraggingPinnedAgentId$, null);
-  set(internalPinnedAgentDropTargetId$, null);
 });
 
 // ---------------------------------------------------------------------------

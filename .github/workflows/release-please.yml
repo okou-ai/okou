@@ -546,19 +546,41 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
           persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+          fetch-depth: 1
+      - name: Fetch complete history for the release source
+        run: >-
+          git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
+          --unshallow --filter=tree:0 origin "$ANDROID_RELEASE_SOURCE_SHA"
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-provider: external
+      - name: Restore Android Gradle dependencies
+        id: gradle-dependencies
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Match the cache published by instrumentation in android.yml.
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches/modules-2/files-2.1
+            ~/.gradle/caches/modules-2/metadata-*
+          key: android-instrumentation-gradle-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle', 'android/**/*.gradle.kts', 'android/**/gradle.properties', 'android/gradle/**/*.toml', 'android/gradle/wrapper/gradle-wrapper.properties') }}
       - name: Install Android SDK
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Build unsigned Android APK
+        env:
+          SENTRY_DSN_ANDROID: ${{ vars.SENTRY_DSN_ANDROID }}
+          # R8 and Release lint share the Gradle JVM on the hosted runner.
+          GRADLE_OPTS: >-
+            -Dorg.gradle.jvmargs='-Xmx4g -Dfile.encoding=UTF-8'
         run: |
+          : "${SENTRY_DSN_ANDROID:?Set the public Android Sentry DSN}"
           test "$(git rev-parse HEAD)" = "$ANDROID_RELEASE_SOURCE_SHA"
           bash .github/scripts/artifacts/build-okou-android-apk.sh "$ANDROID_VERSION" "$RUNNER_TEMP/android-release"
       - name: Sign and verify Android APK
@@ -590,6 +612,23 @@ jobs:
         run: |
           python3 .github/scripts/release/archive-android-mapping.py "$ANDROID_TAG" \
             "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-mapping.txt.gz"
+      - name: Install verified Android Sentry CLI
+        run: |
+          bash .github/scripts/download-verified.sh \
+            https://github.com/getsentry/sentry-cli/releases/download/2.58.5/sentry-cli-Linux-x86_64 \
+            48eb3b98cbe1cc2331b6d04591c22fa9c0d948d0b3da33164bb76f038f290750 \
+            "$RUNNER_TEMP/sentry-cli"
+          chmod +x "$RUNNER_TEMP/sentry-cli"
+      - name: Upload Android R8 mapping to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: android
+        run: |
+          python3 android/scripts/upload-sentry-mapping.py \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-mapping.txt.gz" \
+            --cli "$RUNNER_TEMP/sentry-cli"
       - name: Publish verified Android update
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1586,6 +1625,39 @@ jobs:
           neon-project-id: ${{ vars.NEON_PROJECT_ID }}
           branch-name: release-smoke/migrate-${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: Check Workflow and feed maintenance window
+        id: workflow-maintenance
+        if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
+        working-directory: turbo/packages/db
+        env:
+          DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
+          RELEASE_TARGET: ${{ needs.release-please.outputs.release_target }}
+          QUIESCED_RELEASE: ${{ vars.WORKFLOW_MEMBER_SCOPE_QUIESCED_RELEASE }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync } from "node:fs";
+          import postgres from "postgres";
+          const db = postgres(process.env.DATABASE_URL, { max: 1 });
+          try {
+            const [state] = await db`
+              SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND (table_name, column_name) IN (
+                  ('workflows', 'agent_id'), ('feed_items', 'source_type')
+                )
+              ) AS pending
+            `;
+            const confirmed = /^[a-f0-9]{40}$/.test(process.env.RELEASE_TARGET) &&
+              process.env.QUIESCED_RELEASE === process.env.RELEASE_TARGET;
+            if (state.pending && !confirmed) {
+              throw new Error("Drain the outgoing API and scheduling workers together, then confirm this release SHA in WORKFLOW_MEMBER_SCOPE_QUIESCED_RELEASE.");
+            }
+            appendFileSync(process.env.GITHUB_OUTPUT, `required=${confirmed}\n`);
+          } finally {
+            await db.end();
+          }
+          JS
+
       - name: Run Production Migrations
         id: production-migrations
         if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
@@ -1851,6 +1923,12 @@ jobs:
             echo "Checks: $WORKER_CHECKS_OUTCOME; deployment: $WORKER_DEPLOY_OUTCOME; verification: $WORKER_VERIFY_OUTCOME."
             echo "See the Worker steps above. Production traffic remains on the canonical API."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require both runtimes before completing the Workflow and feed cutover
+        if: always() && steps.workflow-maintenance.outputs.required == 'true' && steps.api-worker-verify.outcome != 'success'
+        run: |
+          echo "::error::Keep API traffic and scheduling paused until the API Worker passes health and release SHA verification."
+          exit 1
 
       - name: Remove temporary API production environment
         if: always()
@@ -2914,6 +2992,7 @@ jobs:
         release-please,
         builds-complete,
         promote-api-production,
+        promote-app-worker-production,
         build-runner-production,
         runner-production-host-groups,
       ]
@@ -2923,7 +3002,9 @@ jobs:
       needs.builds-complete.result == 'success' &&
       needs.build-runner-production.result == 'success' &&
       (needs.release-please.outputs.api_deploy_required != 'true' ||
-       needs.promote-api-production.result == 'success')
+       needs.promote-api-production.result == 'success') &&
+      (needs.release-please.outputs.app_deploy_required != 'true' ||
+       needs.promote-app-worker-production.result == 'success')
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116

@@ -15,6 +15,7 @@ import snapshot_report_fixture
 import report
 import report_test
 import snapshot_report as startup
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class CreateCancellationTests(unittest.TestCase):
@@ -49,10 +50,8 @@ class CreateCancellationTests(unittest.TestCase):
                 {"cancelled_ns":clock(510),"first_dropped_ns":clock(520),"second_pending_ns":clock(530),
                  "foreground_acquired_ns":clock(540),"first_pending":True,"first_dropped":True,"second_pending":True,
                  "release_byte_withheld":True,"allocated":[4,8192,2],"accounting":copy.deepcopy(held),
-                 "heartbeat":{"receipt":{"received_ns":clock(550),"acknowledgement_status":204,"state":{
-                    "runnerId":str(uuid.uuid4()),"snapshotGeneration":1,"snapshotSequence":1,"group":"native-foreground",
-                    "mode":"running","allocatedVcpu":4,"allocatedMemoryMb":8192}},"send_joined":True,"completed_ns":clock(560)},
-                 "observer":{"started_ns":clock(570),"completed_ns":clock(580),"available_bytes":32*1024**3,"age_ns":2,"read_duration_ns":1,"joined":True}},
+                 "heartbeat":foreground_heartbeat(str(uuid.uuid4()), 1, clock(550), clock(560), (4, 8192)),
+                 "observer":joined_observer(clock(570), clock(580))},
                 {"completion":{"workspace":str(pathlib.PurePosixPath(path).parent),"workspace_absent":True,
                     "cleanup_ns":clock(650),"allocated":[4,8192,2],"accounting":copy.deepcopy(held)},
                  "release_ns":clock(610),"joined_ns":clock(690),"transaction_joined":True,"cancelled":True,
@@ -62,8 +61,14 @@ class CreateCancellationTests(unittest.TestCase):
                 dict(uncertain,closed=True,allocated=[0,0,0]),
             ]
             for phase,value,ns in zip(create.PHASES,values,[clock(ms) for ms in (10,500,600,700,800)]+[terminal[4]["monotonic_ns"]+1]):
-                self.witnesses.append({"version":1,"case":case,"phase":phase,"monotonic_ns":ns,"unix_ns":ns+1000,
-                    "sandbox_id":terminal[1]["sandbox_id"],"backing_generation":terminal[1]["backing_generation"],"evidence":value})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=ns,
+                    unix_ns=ns+1000,
+                    sandbox_id=terminal[1]["sandbox_id"],
+                    backing_generation=terminal[1]["backing_generation"],
+                    evidence=value,
+                ))
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

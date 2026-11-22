@@ -3,10 +3,6 @@ import {
   connectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
   connectorAccountTargetKey,
   connectorAccountsContract,
   type ConnectorAccountConnection,
@@ -31,7 +27,6 @@ import {
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
 function mockAccountReads(
   read: () => readonly ConnectorAccountConnection[],
@@ -79,7 +74,7 @@ async function openConnection(
 ): Promise<HTMLElement> {
   await setupPage({
     context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${connector.slug}/connect`,
   });
   await screen.findByText(
     connectorFixtureAccount(connector) !== undefined
@@ -148,14 +143,6 @@ test.each([1, 2])(
         return respond(200, { ...connector, connectionId: account.id });
       },
     );
-    let grants: AgentCustomConnectorGrant[] = [];
-    context.mocks.api(
-      agentCustomConnectorsContract.update,
-      ({ body, respond }) => {
-        grants = body.grants;
-        return respond(200, { grants });
-      },
-    );
 
     const dialog = await openConnection(connector);
     expect(getConnectorAction("button", "Save", dialog)).toBeDisabled();
@@ -172,9 +159,6 @@ test.each([1, 2])(
     });
     expect(mutations).toStrictEqual([
       { intent: "reconnect", connectionId: account.id },
-    ]);
-    expect(grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
     ]);
   },
 );
@@ -256,10 +240,12 @@ function installOAuthFlow(state: PreflightState, complete = false) {
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   let preflight = false;
+  let lastAccountPageLimit: number | undefined;
   context.mocks.api(
     connectorAccountsContract.connections,
     async ({ query, respond }) => {
       expect(query).toMatchObject(account.target);
+      lastAccountPageLimit = query.limit;
       if (preflight && !requested.settled()) {
         requested.resolve();
       }
@@ -301,6 +287,7 @@ function installOAuthFlow(state: PreflightState, complete = false) {
   context.mocks.api(
     customConnectorOAuth2Contract.start,
     ({ body, respond }) => {
+      expect(lastAccountPageLimit).toBe(1);
       mutations.push(body.account);
       if (complete || state === "expired") {
         completed.set(attemptId, account.id);
@@ -329,14 +316,6 @@ function installOAuthFlow(state: PreflightState, complete = false) {
       });
     },
   );
-  const grants: AgentCustomConnectorGrant[][] = [];
-  context.mocks.api(
-    agentCustomConnectorsContract.update,
-    ({ body, respond }) => {
-      grants.push(body.grants);
-      return respond(200, { grants: body.grants });
-    },
-  );
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
     value: { href: "about:blank" },
@@ -351,7 +330,6 @@ function installOAuthFlow(state: PreflightState, complete = false) {
     requested,
     release,
     mutations,
-    grants,
     authWindow,
     startPreflight: () => {
       preflight = true;
@@ -372,7 +350,7 @@ test("Wait for the initial account inventory before offering a custom connection
   flow.startPreflight();
   await setupPage({
     context,
-    path: `/connectors/${flow.connector().slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${flow.connector().slug}/connect`,
   });
   await flow.requested.promise;
   expect(queryConnectorAction("button", "Connect")).toBeNull();
@@ -387,7 +365,7 @@ test("Keep a failed initial account inventory from offering a custom connection"
   flow.startPreflight();
   await setupPage({
     context,
-    path: `/connectors/${flow.connector().slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${flow.connector().slug}/connect`,
   });
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Account access unavailable",
@@ -448,7 +426,7 @@ test.each([
   },
 );
 
-test("Authorize an expired OAuth default only after ready completion", async () => {
+test("Reconnect the expired OAuth account after its completion receipt", async () => {
   const flow = installOAuthFlow("expired", true);
   const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
@@ -464,15 +442,12 @@ test("Authorize an expired OAuth default only after ready completion", async () 
       screen.queryByRole("dialog", { name: "Connect Acme Search" }),
     ).toBeNull();
   });
-  expect(flow.grants).toStrictEqual([
-    [{ customConnectorId: flow.connector().id, permissionNames: [] }],
-  ]);
   expect(flow.mutations).toStrictEqual([
     { intent: "reconnect", connectionId: flow.account.id },
   ]);
 });
 
-test("Keep an incomplete OAuth reconnect unauthorized", async () => {
+test("Leave an incomplete OAuth reconnect unconfirmed", async () => {
   const flow = installOAuthFlow("expired");
   const dialog = await openOAuthConnection(flow);
   click(getConnectorAction("button", "Continue", dialog));
@@ -488,6 +463,5 @@ test("Keep an incomplete OAuth reconnect unauthorized", async () => {
   expect(flow.mutations).toStrictEqual([
     { intent: "reconnect", connectionId: flow.account.id },
   ]);
-  expect(flow.grants).toStrictEqual([]);
   expect(screen.queryByText("Acme Search connected")).toBeNull();
 });

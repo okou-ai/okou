@@ -18,6 +18,7 @@ use std::time::{Duration, UNIX_EPOCH};
 // Includes the root. Cache exhaustion releases parents before checked tar
 // extraction, so wide/deep archives do not retain an unbounded number of FDs.
 const MAX_DIRECTORY_HANDLES: usize = 64;
+const COPY_BUFFER_BYTES: usize = 64 * 1024;
 const DIRECTORY_FLAGS: libc::c_int =
     libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
 
@@ -27,6 +28,7 @@ pub(crate) struct RootedWriter<'a> {
     root: Option<File>,
     root_path_bytes: usize,
     parents: HashMap<PathBuf, File>,
+    copy_buffer: Vec<u8>,
 }
 
 impl<'a> RootedWriter<'a> {
@@ -37,6 +39,7 @@ impl<'a> RootedWriter<'a> {
             root: None,
             root_path_bytes: target.as_os_str().as_bytes().len(),
             parents: HashMap::new(),
+            copy_buffer: Vec::new(),
         }
     }
 
@@ -187,7 +190,7 @@ impl<'a> RootedWriter<'a> {
         };
         let expected = entry.size();
         let copied = if expected > 8 * 1024 {
-            copy_buffered(entry, &mut file)?
+            copy_buffered(entry, &mut file, &mut self.copy_buffer)?
         } else {
             io::copy(entry, &mut file)?
         };
@@ -207,14 +210,27 @@ impl<'a> RootedWriter<'a> {
     }
 }
 
-// Keep buffering code out of the generated small-file extraction path.
+// Reuse the allocation across files in this archive. Keep the large reads
+// and their buffer management out of the small-file path.
 #[inline(never)]
-fn copy_buffered<R: Read>(entry: &mut tar::Entry<'_, R>, file: &mut File) -> io::Result<u64> {
-    let mut output = io::BufWriter::with_capacity(64 * 1024, file);
-    let copied = io::copy(entry, &mut output)?;
-    // Drop cannot report final-write failures.
-    output.flush()?;
-    Ok(copied)
+fn copy_buffered<R: Read>(
+    entry: &mut tar::Entry<'_, R>,
+    file: &mut File,
+    buffer: &mut Vec<u8>,
+) -> io::Result<u64> {
+    buffer.resize(COPY_BUFFER_BYTES, 0);
+    let mut copied = 0;
+    loop {
+        match entry.read(buffer) {
+            Ok(0) => return Ok(copied),
+            Ok(read) => {
+                file.write_all(buffer.split_at(read).0)?;
+                copied += read as u64;
+            }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 fn has_descriptor_budget(concurrency: usize) -> bool {

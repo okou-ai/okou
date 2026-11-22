@@ -22,7 +22,7 @@ export const projectIndicatorStates$ = computed(
     const currentThreadId = get(pathParams$)?.threadId;
     const states = new Map<string, ProjectIndicatorState>();
     for (const [projectId, threadIds] of groupProjectThreadIds(
-      get(list.projectThreads$),
+      await get(list.projectThreads$),
     )) {
       if (
         threadIds.some((threadId) => {

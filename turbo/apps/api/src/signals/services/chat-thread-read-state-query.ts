@@ -17,8 +17,8 @@ import {
   chatEvents,
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -33,38 +33,26 @@ function terminalWatermarkCondition(threadIds: readonly string[]) {
   );
 }
 
-/** User-only Thread authorization; the Agent supplies publication ownership. */
 export function createChatThreadReadPreparation(args: {
+  readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
 }) {
   const thread$ = computed(async (get) => {
     const [thread] = await get(db$)
       .select({
-        agentId: chatThreads.agentId,
         lastReadAt: chatThreads.lastReadAt,
       })
       .from(chatThreads)
       .where(
         and(
           eq(chatThreads.id, args.threadId),
+          chatThreadOrganizationPredicate(args.orgId),
           eq(chatThreads.userId, args.userId),
         ),
       )
       .limit(1);
     return thread;
-  });
-  const agent$ = computed(async (get) => {
-    const thread = await get(thread$);
-    if (!thread?.agentId) {
-      return null;
-    }
-    const [agent] = await get(db$)
-      .select({ orgId: agents.orgId })
-      .from(agents)
-      .where(eq(agents.id, thread.agentId))
-      .limit(1);
-    return agent ?? null;
   });
   const watermark$ = computed(async (get) => {
     const rows = await get(db$)
@@ -84,51 +72,33 @@ export function createChatThreadReadPreparation(args: {
 
   return computed(async (get) => {
     const thread = await get(thread$);
-    if (!thread?.agentId) {
-      return null;
-    }
-    const agent = await get(agent$);
-    if (!agent) {
+    if (!thread) {
       return null;
     }
     const watermark = await get(watermark$);
     return {
       threadId: args.threadId,
       userId: args.userId,
-      agentId: thread.agentId,
-      orgId: agent.orgId,
+      orgId: args.orgId,
       lastReadAt: thread.lastReadAt,
       watermark,
     };
   });
 }
 
-/** Bounded caller-owned candidates and one terminal watermark query per Agent. */
-export function createAgentThreadReadPreparation(args: {
-  readonly agentId: string;
+/** Bounded caller-owned candidates and one terminal watermark query per member. */
+export function createWorkspaceThreadReadPreparation(args: {
   readonly userId: string;
   readonly orgId: string;
 }) {
-  const agent$ = computed(async (get) => {
-    const [agent] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)))
-      .limit(1);
-    return agent;
-  });
   const candidates$ = computed(async (get) => {
-    const agent = await get(agent$);
-    if (!agent) {
-      return [];
-    }
     return await get(db$)
       .select({ id: chatThreads.id, lastReadAt: chatThreads.lastReadAt })
       .from(chatThreads)
       .where(
         and(
           eq(chatThreads.userId, args.userId),
-          eq(chatThreads.agentId, args.agentId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.muted, false),
           gte(
             chatThreads.lastMessageAt,
@@ -176,10 +146,6 @@ export function createAgentThreadReadPreparation(args: {
   );
 
   return computed(async (get) => {
-    const agent = await get(agent$);
-    if (!agent) {
-      return null;
-    }
     const candidates = await get(candidates$);
     const watermarks = await get(watermarks$);
     return candidates.flatMap((candidate) => {
@@ -198,6 +164,7 @@ export const advanceChatThreadReadCursors$ = command(
     { set },
     args: {
       readonly userId: string;
+      readonly orgId: string;
       readonly cursors: readonly {
         readonly threadId: string;
         readonly watermark: Date;
@@ -231,6 +198,7 @@ export const advanceChatThreadReadCursors$ = command(
       .where(
         and(
           eq(chatThreads.userId, args.userId),
+          chatThreadOrganizationPredicate(args.orgId),
           args.unmutedOnly ? eq(chatThreads.muted, false) : undefined,
           or(
             isNull(chatThreads.lastReadAt),

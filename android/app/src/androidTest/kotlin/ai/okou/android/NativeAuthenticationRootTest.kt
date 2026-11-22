@@ -1,14 +1,12 @@
 package ai.okou.android
 
 import ai.okou.android.auth.AuthenticationState
-import android.content.pm.ApplicationInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -20,7 +18,6 @@ class NativeAuthenticationRootTest {
     fun pendingAuthenticationDisplaysNativeLoginBeforeAndAfterActivityRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
-        assertEquals(0, app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE)
         val authentication = app.authentication as TestAuthentication
         val previous = authentication.state.value
         val device = UiDevice.getInstance(instrumentation)
@@ -34,11 +31,7 @@ class NativeAuthenticationRootTest {
                             10_000,
                         )
                     )
-                    assertFalse(
-                        device.hasObject(
-                            By.pkg(app.packageName).text(app.getString(R.string.chat_list_title))
-                        )
-                    )
+                    assertFalse(device.hasObject(chatListRegion(app)))
                     assertFalse(device.hasObject(By.text(app.getString(R.string.settings))))
                 }
                 verify()

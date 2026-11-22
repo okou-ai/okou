@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { setupEmailConnectPage$ } from "./okou-page/email-connect-page.ts";
 import {
   captureFriendReferral$,
@@ -6,7 +5,7 @@ import {
 } from "./friend-referrals.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { resetProjectUi$ } from "./projects/project-ui.ts";
-import { command, type Command, type Store } from "ccstate";
+import { command, type Command } from "ccstate";
 import { createElement } from "react";
 import { clerk$, setupClerkUser$, watchOrgSwitch$ } from "./auth.ts";
 import {
@@ -29,11 +28,12 @@ import {
   setupPageWrapper,
   setupAuthPageWrapper,
   pathParams$,
+  searchParams$,
   pathname$,
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
+import { onDomEventFn, resetSignal } from "./utils.ts";
 import { setupVisualViewportKeyboardState } from "../lib/visual-viewport-keyboard.ts";
 import { refreshChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 import "./pwa-install.ts";
@@ -56,20 +56,16 @@ import {
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
 import { setupActivityInspectPage$ } from "./activity-page/activity-inspect-page-setup.ts";
-import { setupAgentsPage$ } from "./agents-page/agents-page-setup.ts";
-import { setupAgentDetailPage$ } from "./agents-page/agent-detail-page-setup.ts";
 import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
-import {
-  setupAgentChatPage$,
-  setupHomeChatPage$,
-} from "./okou-page/agent-chat-page-setup.ts";
-import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
-import { singleAgentEnabled$ } from "./single-agent.ts";
+import { setupHomeChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupProjectPage$ } from "./projects/project-page-setup.ts";
-import { hydrateProjects$ } from "./projects/projects.ts";
+import {
+  hydrateProjects$,
+  revealCurrentThreadProject$,
+} from "./projects/projects.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { clearChatThreadPanes$ } from "./chat-page/chat-thread-panes.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
@@ -99,7 +95,6 @@ import { THREAD_MAIL_SEARCH_PARAMS } from "./chat-page/thread-mail-location.ts";
 import { setupSubscriptionResetPage$ } from "./subscription-reset/subscription-reset-page-setup.ts";
 import { setupBrowserUserActionPage$ } from "./browser-user-action/browser-user-action-page-setup.ts";
 import { setupDirectedConnectPage$ } from "./connectors-page/directed-connect-page-setup.ts";
-import { setupDirectedAuthorizePage$ } from "./connectors-page/directed-authorize-page-setup.ts";
 import { setupConnectorRedirectingPage$ } from "./connectors-page/connector-redirecting-page-setup.ts";
 import { setupConnectorCallbackPage$ } from "./connectors-page/connector-callback-page-setup.ts";
 import { setupBankingConnectReturnPage$ } from "./banking-connect-return-page-setup.ts";
@@ -112,6 +107,7 @@ import {
 import { setupOAuthConsentPage$ } from "./oauth-consent-page-setup.ts";
 import { setupHostedSiteAuthorizationPage$ } from "./hosted-site-authorization-page-setup.ts";
 import { setupHostedSiteAccessPage$ } from "./hosted-site-access-page-setup.ts";
+import { setupStandaloneChatApprovalPage$ } from "./standalone-chat-approval-page-setup.ts";
 import { setupPermissionAllowPage$ } from "./permission-allow/permission-allow-page-setup.ts";
 import { setupPermissionBatchPage$ } from "./permission-allow/permission-batch-page-setup.ts";
 import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
@@ -129,11 +125,10 @@ import { NotFoundPage } from "../views/not-found-page.tsx";
 import { setupSharedArtifact$ } from "./shared-artifact.ts";
 import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-setup.ts";
 
-import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
+import { setupThreadNumberShortcuts$ } from "./okou-page/thread-number-shortcuts.ts";
+import { setupKeyboardShortcutHints$ } from "./keyboard-shortcut-hints.ts";
 import { setupChatThreadFilterShortcut$ } from "./okou-page/chat-thread-filter-selection.ts";
 import { setupChatThreadPinShortcuts$ } from "./chat-page/chat-thread-pin-shortcuts.ts";
-import { setupProjectFoldShortcuts$ } from "./projects/project-fold-shortcuts.ts";
-import { setupProjectOrderShortcuts$ } from "./projects/project-order-shortcuts.ts";
 import { featureSwitches$ } from "./external/feature-switch.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog.ts";
@@ -156,23 +151,19 @@ const setupNotFoundPage$ = command(async ({ set }, signal: AbortSignal) => {
 });
 
 /**
- * Create a redirect setup command for static routes (no params to forward).
- */
-function redirectTo(target: RoutePath) {
-  return command(({ set }) => {
-    set(detachedNavigateTo$, target, { replace: true });
-  });
-}
-
-/**
  * Create a redirect setup command for parameterized routes.
  * Reads the `id` param from the source URL and maps it to `targetParam` on the target route.
  */
-function redirectWithId(target: RoutePath, targetParam: string) {
+function redirectWithId(
+  target: RoutePath,
+  targetParam: string,
+  preserveSearch = false,
+) {
   return command(({ get, set }) => {
     const params = get(pathParams$) ?? {};
     set(detachedNavigateTo$, target, {
       pathParams: { [targetParam]: String(params.id) } as RouterPathParams,
+      searchParams: preserveSearch ? get(searchParams$) : undefined,
       replace: true,
     });
   });
@@ -184,14 +175,17 @@ function setupSettingsParamAfterStableRoute(
   return command(async ({ get, set }, signal: AbortSignal) => {
     set(resetProjectUi$);
     const initialPathname = get(pathname$);
-    await set(setupPage, signal);
+    const hydrateSidebar = get(activeRoute$) !== "project";
+    // Sidebar freshness must not wait for a thread's draft or transcript.
+    await Promise.all([
+      set(setupPage, signal),
+      hydrateSidebar ? set(hydrateProjects$, signal) : undefined,
+    ]);
     signal.throwIfAborted();
     if (get(pathname$) !== initialPathname) {
       return;
     }
-    if (get(activeRoute$) !== "project") {
-      await set(hydrateProjects$, signal);
-    }
+    set(revealCurrentThreadProject$);
     await set(checkUnifiedSettingsParam$, signal);
   });
 }
@@ -204,18 +198,6 @@ function setupAuthSidebarPageWrapper(
 
 const setupAuthenticatedPwaMePage$ =
   setupAuthSidebarPageWrapper(setupPwaMePage$);
-
-// My Okou renders its chat page at `/`, which applies its own settings param;
-// otherwise `/` forwards to the default agent's chat.
-const setupLegacyHomePage$ = setupSettingsParamAfterStableRoute(setupHomePage$);
-const setupHomeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
-  await set(
-    (await get(singleAgentEnabled$))
-      ? setupHomeChatPage$
-      : setupLegacyHomePage$,
-    signal,
-  );
-});
 
 const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   await set(
@@ -329,6 +311,14 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupBrowserAuthorizationPage$),
   },
   {
+    path: ROUTES.bankingAccess,
+    setup: setupAuthPageWrapper(setupStandaloneChatApprovalPage$),
+  },
+  {
+    path: ROUTES.connectorAccountSelect,
+    setup: setupAuthPageWrapper(setupStandaloneChatApprovalPage$),
+  },
+  {
     path: ROUTES.bankingConnectReturnResult,
     setup: setupBankingConnectReturnPage$,
   },
@@ -362,7 +352,7 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.directedAuthorize,
-    setup: setupAuthPageWrapper(setupDirectedAuthorizePage$),
+    setup: setupAuthPageWrapper(setupDirectedConnectPage$),
   },
   {
     path: ROUTES.directedReconnect,
@@ -386,20 +376,12 @@ const ROUTE_CONFIG = [
     setup: setupPwaMeRoute$,
   },
   {
-    path: ROUTES.agentIdeas,
-    setup: setupAuthSidebarPageWrapper(setupIdeationPage$),
-  },
-  {
-    path: ROUTES.agentChat,
-    setup: setupAuthPageWrapper(setupAgentChatPage$),
-  },
-  {
-    path: "/agents/:agentId/permissions/batch",
-    setup: setupAuthPageWrapper(setupPermissionBatchPage$),
-  },
-  {
-    path: ROUTES.agentPermissions,
+    path: ROUTES.connectorPermissions,
     setup: setupAuthPageWrapper(setupPermissionAllowPage$),
+  },
+  {
+    path: ROUTES.connectorPermissionsBatch,
+    setup: setupAuthPageWrapper(setupPermissionBatchPage$),
   },
   {
     path: ROUTES.workflowDetail,
@@ -420,14 +402,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.workflows,
     setup: setupAuthSidebarPageWrapper(setupWorkflowsPage$),
-  },
-  {
-    path: ROUTES.agentDetail,
-    setup: setupAuthSidebarPageWrapper(setupAgentDetailPage$),
-  },
-  {
-    path: ROUTES.agents,
-    setup: setupAuthSidebarPageWrapper(setupAgentsPage$),
   },
   {
     path: ROUTES.artifacts,
@@ -580,16 +554,10 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.home,
-    setup: setupAuthPageWrapper(setupHomeRoute$),
+    setup: setupAuthPageWrapper(setupHomeChatPage$),
   },
 
   // --- Redirect routes (backward compatibility) ---
-  { path: "/team", setup: redirectTo(ROUTES.agents) },
-  { path: "/team/:id", setup: redirectWithId(ROUTES.agentDetail, "agentId") },
-  {
-    path: "/firewall-allow/:id",
-    setup: redirectWithId(ROUTES.agentPermissions, "agentId"),
-  },
   {
     path: "/activity/:id",
     setup: redirectWithId(ROUTES.activityDetail, "activityRunId"),
@@ -680,7 +648,6 @@ const completeBootstrap$ = command(
   async (
     { get, set },
     render: (view: BootstrapView) => void,
-    watch: Store["watch"],
     signal: AbortSignal,
   ): Promise<void> => {
     await set(initLocale$, signal);
@@ -697,27 +664,6 @@ const completeBootstrap$ = command(
       throw features.reason;
     }
 
-    // Keydown must decide synchronously whether to claim the browser event.
-    let singleAgent = features.value[FeatureSwitchKey.SingleAgent];
-    const refreshShortcutGate = async () => {
-      const pending = get(singleAgentEnabled$);
-      const enabled = await pending;
-      if (!signal.aborted && get(singleAgentEnabled$) === pending) {
-        singleAgent = enabled;
-      }
-    };
-    const stopWatching = watch(singleAgentEnabled$, () => {
-      detach(
-        refreshShortcutGate(),
-        Reason.Daemon,
-        "Refresh shortcut eligibility",
-      );
-    });
-    signal.addEventListener("abort", stopWatching, { once: true });
-    const isSingleAgent = () => {
-      return singleAgent;
-    };
-
     set(setupAuthenticatedRealtime$, signal);
     render("app");
 
@@ -733,11 +679,10 @@ const completeBootstrap$ = command(
       set(registerServiceWorker$, signal),
       set(setupNotificationListener$, signal),
 
-      set(setupGlobalKeyboardShortcuts$, isSingleAgent, signal),
+      set(setupThreadNumberShortcuts$, signal),
+      set(setupKeyboardShortcutHints$, signal),
       set(setupChatThreadFilterShortcut$, signal),
       set(setupChatThreadPinShortcuts$, signal),
-      set(setupProjectFoldShortcuts$, isSingleAgent, signal),
-      set(setupProjectOrderShortcuts$, isSingleAgent, signal),
       set(watchOrgSwitch$, signal),
       set(syncLocalePreference$, signal),
       set(syncThemePreferences$, signal),
@@ -754,7 +699,6 @@ export const bootstrap$ = command(
     { get, set },
     appVersion: string,
     render: (view: BootstrapView) => void,
-    watch: Store["watch"],
     signal: AbortSignal,
   ): Promise<void> => {
     setupVisualViewportKeyboardState(
@@ -798,7 +742,7 @@ export const bootstrap$ = command(
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);
     const sharedDatabaseSetup = set(setupSharedDatabaseBridge$, signal);
-    const ready = set(completeBootstrap$, render, watch, signal);
+    const ready = set(completeBootstrap$, render, signal);
 
     await Promise.all([clerkIdentitySetup, sharedDatabaseSetup, ready]);
     signal.throwIfAborted();

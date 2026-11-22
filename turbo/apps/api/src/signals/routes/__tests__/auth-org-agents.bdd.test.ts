@@ -138,15 +138,7 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
     });
 
     const after = await api.readOnboardingStatus(admin);
-    expect(after.hasDefaultAgent).toBeTruthy();
     expect(after.onboardingComplete).toBeTruthy();
-    expect(after.defaultAgentId).toBe(defaultAgentId);
-    expect(after.defaultAgentMetadata).toMatchObject({
-      displayName: "Okou",
-      sound: "professional",
-      avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-    });
-
     const defaultAgent = await api.readAgent(admin, defaultAgentId);
     expect(defaultAgent.displayName).toBe("Okou");
     expect(defaultAgent.avatarUrl).toBe(DEFAULT_AGENT_AVATAR_URL);
@@ -186,9 +178,6 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
       }),
     ).toBeTruthy();
 
-    const selectedStatus = await api.readOnboardingStatus(admin);
-    expect(selectedStatus.defaultAgentId).toBe(defaultAgentId);
-
     const updated = await api.updateAgentMetadata(admin, created.agentId, {
       displayName: "BDD Secondary Agent Updated",
       description: "Updated through metadata API",
@@ -200,11 +189,6 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
       description: "Updated through metadata API",
       visibility: "private",
     });
-
-    await api.deleteAgent(admin, created.agentId);
-    const deleted = await api.requestReadAgent(admin, created.agentId, [404]);
-    expectApiError(deleted.body);
-    expect(deleted.body.error.code).toBe("NOT_FOUND");
   });
 
   it("reads and caches a Clerk organization whose slug is null", async () => {
@@ -235,7 +219,6 @@ describe("AUTH-03", () => {
     const preferences = await api.updatePreferences(admin, {
       timezone: "UTC",
       locale: "en-US",
-      pinnedAgentIds: [],
       sendMode: "cmd-enter",
       captureNetworkBodiesRemaining: 3,
     });
@@ -529,8 +512,8 @@ describe("ORG-03 onboarding status mapping", () => {
     async (role) => {
       const admin = api.user();
       api.acceptAgentStorageWrites();
-      const onboarding = await api.readOnboardingStatus(admin);
-      const defaultAgentId = onboarding.defaultAgentId;
+      const onboardingAgentId = await api.readDefaultAgentId(admin);
+      const defaultAgentId = onboardingAgentId;
       if (!defaultAgentId) {
         throw new Error("Expected the workspace default agent");
       }
@@ -624,20 +607,10 @@ describe("ORG-03 onboarding status mapping", () => {
         description: "Updated responsibility",
         sound: "direct",
       });
-      const deletion = await api.requestDeleteAgent(
-        owner,
-        defaultAgentId,
-        [400],
-      );
-      expect(deletion.body).toMatchObject({
-        error: { code: "DEFAULT_AGENT_DELETE_LOCKED" },
-      });
       await expect(api.readAgent(owner, defaultAgentId)).resolves.toStrictEqual(
         updated.body,
       );
-      expect((await api.readOnboardingStatus(owner)).defaultAgentId).toBe(
-        defaultAgentId,
-      );
+      await expect(api.readDefaultAgentId(owner)).resolves.toBe(defaultAgentId);
 
       const savedInstructions = await accept(
         instructions.update({
@@ -701,7 +674,6 @@ describe("ORG-03 onboarding status mapping", () => {
         visibility: "private",
         isDefaultAgent: false,
       });
-      await api.deleteAgent(owner, custom.agentId);
     },
   );
 
@@ -716,9 +688,6 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: false,
       isAdmin: false,
       hasOrg: false,
-      hasDefaultAgent: false,
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
     });
 
     // A new member has their own source-first onboarding ahead of them.
@@ -728,9 +697,6 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: false,
       isAdmin: false,
       hasOrg: true,
-      hasDefaultAgent: false,
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
     });
 
     api.acceptAgentStorageWrites();
@@ -740,21 +706,8 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: false,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentMetadata: {
-        displayName: "Okou",
-        sound: "professional",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      },
     });
-    expect(adminBeforeSetup.defaultAgentId).toBeTruthy();
-    if (!adminBeforeSetup.defaultAgentId) {
-      throw new Error(
-        "Expected lazy onboarding status bootstrap to create an agent",
-      );
-    }
-    const bootstrappedAgentId = adminBeforeSetup.defaultAgentId;
-
+    await api.provisionWorkspace(admin);
     const bootstrappedBilling = await runsApi.readBillingStatus(admin);
     expect(bootstrappedBilling).toMatchObject({
       credits: 0,
@@ -790,10 +743,7 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: true,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
     });
-
-    const agentId = bootstrappedAgentId;
 
     await runsApi.grantProEntitlement(admin);
     const entitled = await api.readOnboardingStatus(admin);
@@ -802,31 +752,15 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: true,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentId: agentId,
-      defaultAgentMetadata: {
-        displayName: "Okou",
-        sound: "professional",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      },
     });
 
-    await api.requestDeleteAgent(admin, agentId, [400]);
     const orphaned = await api.readOnboardingStatus(admin);
     expect(orphaned).toMatchObject({
       needsOnboarding: false,
       onboardingComplete: true,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentMetadata: {
-        displayName: "Okou",
-        sound: "professional",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      },
     });
-    expect(orphaned.defaultAgentId).toBeTruthy();
-    expect(orphaned.defaultAgentId).toBe(agentId);
     const preservedPaidBilling = await runsApi.readBillingStatus(admin);
     expect(preservedPaidBilling).toMatchObject({
       tier: "pro",
@@ -927,7 +861,7 @@ describe("AGENT-01 and AGENT-02", () => {
     expect(privateAfterBlockedVisibility.visibility).toBe("private");
   });
 
-  it("covers agent isolation, default-agent permissions, and org custom connector enablement", async () => {
+  it("covers agent visibility and workspace custom connector connection", async () => {
     const admin = api.user();
     const member = api.user({
       orgId: admin.orgId,
@@ -1001,42 +935,6 @@ describe("AGENT-01 and AGENT-02", () => {
     expect(JSON.stringify(builtinConnectorList)).not.toContain(
       "custom-connector-secret",
     );
-
-    const enabled = await api.updateAgentCustomConnectors(
-      admin,
-      publicAgent.agentId,
-      [connector.id],
-    );
-    expect(enabled.grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
-    const readEnabled = await api.readAgentCustomConnectors(
-      admin,
-      publicAgent.agentId,
-    );
-    expect(readEnabled.grants).toStrictEqual([
-      { customConnectorId: connector.id, permissionNames: [] },
-    ]);
-
-    const otherAgent = await api.createAgent(otherAdmin, {
-      displayName: "Other Org Agent",
-      visibility: "private",
-    });
-    const crossOrgConnector = await api.requestUpdateAgentCustomConnectors(
-      otherAdmin,
-      otherAgent.agentId,
-      [connector.id],
-      [400],
-    );
-    expectApiError(crossOrgConnector.body);
-    expect(crossOrgConnector.body.error.code).toBe("VALIDATION_ERROR");
-
-    const cleared = await api.updateAgentCustomConnectors(
-      admin,
-      publicAgent.agentId,
-      [],
-    );
-    expect(cleared.grants).toStrictEqual([]);
 
     await api.deleteDefaultCustomConnectorAccount(admin, connector.id);
     const afterDisconnect = await api.listCustomConnectors(admin);

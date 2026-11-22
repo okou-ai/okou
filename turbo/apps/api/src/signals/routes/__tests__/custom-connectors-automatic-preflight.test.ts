@@ -231,7 +231,6 @@ describe("Automatic custom connector preflight", () => {
           caller,
           definitionId,
           [404],
-          undefined,
           mutation,
         );
         expect(denied.body).toMatchObject({ error: { code: "NOT_FOUND" } });
@@ -240,7 +239,6 @@ describe("Automatic custom connector preflight", () => {
         actor,
         connector.id,
         [200],
-        undefined,
         reconnect,
       );
       if (own.status !== 200) {
@@ -391,7 +389,6 @@ describe("Automatic custom connector preflight", () => {
       actor,
       connector.id,
       [404],
-      undefined,
       { intent: "reconnect", connectionId: account.id },
     );
     expect(failed.body).toMatchObject({ error: { code: "NOT_FOUND" } });
@@ -416,7 +413,6 @@ describe("Automatic custom connector preflight", () => {
     const authorizationUrl = await connectors.startCustomConnectorOAuth2(
       actor,
       connector.id,
-      undefined,
       { intent: "reconnect", connectionId: account.id },
     );
     const state = new URL(authorizationUrl).searchParams.get("state");

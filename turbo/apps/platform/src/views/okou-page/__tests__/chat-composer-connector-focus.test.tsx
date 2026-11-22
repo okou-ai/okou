@@ -1,7 +1,7 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, test } from "vitest";
@@ -10,7 +10,6 @@ import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
   connectorAccount,
-  SCOUT_AGENT_ID,
   createComposerConnectorHelpers,
   chatConnectorOverviewFixture,
 } from "./chat-composer-connectors-test-helpers.ts";
@@ -20,7 +19,7 @@ const context = testContext();
 const { installComposerConnectorFixture } =
   createComposerConnectorHelpers(context);
 
-async function openLoadingConnectors(chatAccounts: boolean) {
+async function openLoadingConnectors() {
   const user = userEvent.setup({ delay: null });
   const authorization = context.mocks.deferred<void>();
   const catalog = Array.from({ length: 21 }, (_, index) => {
@@ -40,38 +39,27 @@ async function openLoadingConnectors(chatAccounts: boolean) {
   installComposerConnectorFixture({
     catalog,
     accounts,
-    builtinAuthorizations: {
-      [SCOUT_AGENT_ID]: catalog.map((connector) => {
-        return connector.slug;
-      }),
-    },
-    authorizationGates: { [SCOUT_AGENT_ID]: authorization.promise },
   });
-  if (chatAccounts) {
-    context.mocks.api(
-      chatConnectorAccessContract.overview,
-      async ({ respond }) => {
-        await authorization.promise;
-        return respond(
-          200,
-          catalog.map((connector) => {
-            return chatConnectorOverviewFixture({
-              target: { kind: "builtin", connectorSlug: connector.slug },
-              label: connector.label,
-              icon: connector.icon,
-              accounts,
-            });
-          }),
-        );
-      },
-    );
-  }
+  context.mocks.api(
+    chatConnectorAccessContract.overview,
+    async ({ respond }) => {
+      await authorization.promise;
+      return respond(
+        200,
+        catalog.map((connector) => {
+          return chatConnectorOverviewFixture({
+            target: { kind: "builtin", connectorSlug: connector.slug },
+            label: connector.label,
+            icon: connector.icon,
+            accounts,
+          });
+        }),
+      );
+    },
+  );
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat?compose=1`,
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
-    },
+    path: `/?compose=1`,
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
@@ -83,9 +71,9 @@ async function openLoadingConnectors(chatAccounts: boolean) {
   return { user, authorization, trigger, dialog, add };
 }
 
-async function prepareLoadedConnectorSearch(chatAccounts: boolean) {
+async function prepareLoadedConnectorSearch() {
   const { user, authorization, trigger, dialog } =
-    await openLoadingConnectors(chatAccounts);
+    await openLoadingConnectors();
   await waitFor(() => {
     expect(dialog.contains(document.activeElement)).toBeTruthy();
   });
@@ -102,79 +90,72 @@ async function prepareLoadedConnectorSearch(chatAccounts: boolean) {
   return { user, trigger };
 }
 
-describe.each([false, true])(
-  "connector search, Chat accounts=%s",
-  (chatAccounts) => {
-    it("keeps filtered connectors accessible without losing search focus", async () => {
-      await prepareLoadedConnectorSearch(chatAccounts);
-      expect(screen.getByPlaceholderText("Find connectors...")).toHaveFocus();
-      const list = screen.getByRole("list", { name: "Connectors" });
-      expect(within(list).getByRole("listitem")).toHaveTextContent(
-        "Focus app 20",
-      );
+describe("connector search, Chat accounts=%s", () => {
+  it("keeps filtered connectors accessible without losing search focus", async () => {
+    await prepareLoadedConnectorSearch();
+    expect(screen.getByPlaceholderText("Find connectors...")).toHaveFocus();
+    const list = screen.getByRole("list", { name: "Connectors" });
+    expect(within(list).getByRole("listitem")).toHaveTextContent(
+      "Focus app 20",
+    );
+  });
+
+  it("focuses the loaded connector search during reopen", async () => {
+    const { user, trigger } = await prepareLoadedConnectorSearch();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
     });
-
-    it("focuses the loaded connector search during reopen", async () => {
-      const { user, trigger } =
-        await prepareLoadedConnectorSearch(chatAccounts);
-      await user.keyboard("{Escape}");
-      await waitFor(() => {
-        expect(trigger).toHaveFocus();
-      });
-      click(trigger);
-      const reopenedSearch =
-        await screen.findByPlaceholderText("Find connectors...");
-      await waitFor(() => {
-        expect(reopenedSearch).toHaveFocus();
-      });
-      expect(reopenedSearch).toHaveValue("");
+    click(trigger);
+    const reopenedSearch =
+      await screen.findByPlaceholderText("Find connectors...");
+    await waitFor(() => {
+      expect(reopenedSearch).toHaveFocus();
     });
+    expect(reopenedSearch).toHaveValue("");
+  });
 
-    it("does not take focus after keyboard navigation when search loads", async () => {
-      const { user, authorization, dialog, add } =
-        await openLoadingConnectors(chatAccounts);
-      await waitFor(() => {
-        expect(dialog.contains(document.activeElement)).toBeTruthy();
-      });
-      expect(add).not.toHaveFocus();
-      await user.keyboard("{Tab}");
-      expect(add).toHaveFocus();
+  it("does not take focus after keyboard navigation when search loads", async () => {
+    const { user, authorization, dialog, add } = await openLoadingConnectors();
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBeTruthy();
+    });
+    expect(add).not.toHaveFocus();
+    await user.keyboard("{Tab}");
+    expect(add).toHaveFocus();
 
-      authorization.resolve(undefined);
+    authorization.resolve(undefined);
+    await within(dialog).findByPlaceholderText("Find connectors...");
+    expect(add).toHaveFocus();
+  });
+
+  it("preserves trigger focus when closed before loading", async () => {
+    const { user, authorization, trigger } = await openLoadingConnectors();
+    await user.keyboard("{Escape}");
+    authorization.resolve(undefined);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
+      expect(trigger).toHaveFocus();
+    });
+  });
+
+  it("keeps mobile connector search unfocused after loading", async () => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(pointer: coarse)";
+    });
+    const { authorization, dialog } = await openLoadingConnectors();
+    authorization.resolve(undefined);
+
+    const search =
       await within(dialog).findByPlaceholderText("Find connectors...");
-      expect(add).toHaveFocus();
-    });
-
-    it("preserves trigger focus when closed before loading", async () => {
-      const { user, authorization, trigger } =
-        await openLoadingConnectors(chatAccounts);
-      await user.keyboard("{Escape}");
-      authorization.resolve(undefined);
-
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
-        expect(trigger).toHaveFocus();
-      });
-    });
-
-    it("keeps mobile connector search unfocused after loading", async () => {
-      context.mocks.browser.matchMedia((query) => {
-        return query === "(pointer: coarse)";
-      });
-      const { authorization, dialog } =
-        await openLoadingConnectors(chatAccounts);
-      authorization.resolve(undefined);
-
-      const search =
-        await within(dialog).findByPlaceholderText("Find connectors...");
-      expect(search).not.toHaveFocus();
-    });
-  },
-);
+    expect(search).not.toHaveFocus();
+  });
+});
 
 test("Searching connector names returns from account navigation to connector results", async () => {
   const { user, authorization, trigger, dialog } =
-    await openLoadingConnectors(true);
+    await openLoadingConnectors();
   authorization.resolve(undefined);
   const search =
     await within(dialog).findByPlaceholderText("Find connectors...");

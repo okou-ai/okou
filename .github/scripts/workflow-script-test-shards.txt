@@ -4,10 +4,11 @@
 # 41737313806, 41749283984, 41751513317, 41753481232, 41754890091, 41757795041.
 # Rebalance Caddy from shard 2 to shard 4 using main runs 43209636681,
 # 43210025396, 43224400774 and PR runs 43217719975, 43221863911, 43227758650.
+# Move Caddy to shard 1 and two release suites to shard 2 after shard 3 and 4
+# timeouts in runs 44798931007 and 44827061114.
 # The shard runner rejects missing, unknown, or duplicate test assignments.
 1 check-action-pins-test.sh
-4 provision-runner-caddy-test.sh
-1 aws-audit-target-setup-test.sh
+1 provision-runner-caddy-test.sh
 1 changed-test.sh
 1 check-packaged-addon-control-test.sh
 1 check-workflow-shell-compatibility-test.sh
@@ -53,9 +54,10 @@
 2 crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh
 2 normalize-github-app-private-key-test.sh
 2 okou-desktop-artifact-test.sh
-2 release-tool-downloads-test.sh
 2 resolve-desktop-version-change-test.sh
 2 resolve-production-rollback-target-test.sh
+2 pass-release-pr-ci-gates-test.sh
+2 rollback-app-production-test.sh
 2 verify-registry-publisher-cutover-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-agent-ready-benchmark-test.sh
 2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-test.sh
@@ -93,14 +95,12 @@
 3 crates/kerberos-worker/tests/infrastructure/kerberos-native-cache-test.sh
 3 mitm-addon-test-sharding-workflow-test.sh
 3 native-only-gates-test.sh
-3 pass-release-pr-ci-gates-test.sh
 3 prepare-okou-app-worker-shell-test.sh
 3 prepare-runner-image-test.sh
 3 report-cgroup-memory-peak-test.sh
 3 report-sccache-stats-test.sh
 3 resolve-pr-title-test.sh
 3 rollback-api-worker-production-test.sh
-3 rollback-app-production-test.sh
 3 crates/runner/tests/behavior/tests/runner-behavior-cancel-test.sh
 3 runner-binary-cache-test.sh
 3 runner-binary-download-test.sh

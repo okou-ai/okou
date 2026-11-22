@@ -22,6 +22,7 @@ import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.artifacts.ArtifactService
 import ai.okou.android.chat.AblyRealtimeConnection
 import ai.okou.android.chat.AssistantRecoveryService
 import ai.okou.android.chat.ChatComposerService
@@ -43,6 +44,7 @@ import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.instructions.PersonalInstructionsService
 import java.io.Closeable
+import java.io.IOException
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
@@ -65,16 +67,6 @@ import kotlinx.serialization.json.long
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-data class WorkspaceIdentity(
-    val apiOrigin: String,
-    val userId: String,
-    val sessionId: String,
-    val workspaceId: String,
-    val authorizationScope: String = "",
-)
-
-data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
-
 interface WorkspaceSession :
     Closeable,
     ChatListService,
@@ -83,7 +75,15 @@ interface WorkspaceSession :
     RealtimeService,
     RunControlService,
     AssistantRecoveryService {
-    suspend fun bootstrap(): WorkspaceBootstrap
+    val artifacts: ArtifactService
+
+    suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits
+
+    suspend fun activateModelAccount(
+        accountId: String
+    ): ai.okou.android.api.generated.ActivatedModelAccount
+
+    suspend fun organization(): Organization
 
     suspend fun preferences(): UserPreferences
 
@@ -104,6 +104,7 @@ class CanonicalWorkspaceSession(
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
     private val transfers = SignedTransferClient()
+    override val artifacts = ArtifactService(api, transfers, identity.apiOrigin)
     private val archiveJson = Json {
         ignoreUnknownKeys = true
         explicitNulls = true
@@ -149,14 +150,9 @@ class CanonicalWorkspaceSession(
 
     override suspend fun indicators() = api.indicators()
 
-    override suspend fun agents() = api.agents()
-
-    override suspend fun newChatAgent(): String? {
-        if (api.featureSwitches().effectiveSwitches["singleAgent"] != true) return null
+    override suspend fun newChatReady(): Boolean {
         val status = api.onboardingStatus()
-        return status.defaultAgentId?.takeIf {
-            status.hasOrg && status.hasDefaultAgent && status.onboardingComplete
-        }
+        return status.hasOrg && !status.needsOnboarding
     }
 
     override suspend fun createThread(request: CreateThreadRequest) = api.createThread(request)
@@ -177,6 +173,11 @@ class CanonicalWorkspaceSession(
     override suspend fun recoverySubscriptions() = api.recoverySubscriptions()
 
     override suspend fun recoveryBilling() = api.recoveryBilling()
+
+    override suspend fun usagePackCredits() = api.usagePackCredits()
+
+    override suspend fun activateModelAccount(accountId: String) =
+        api.activateModelAccount(accountId)
 
     override suspend fun resetSubscription(accountId: String, idempotencyKey: String) =
         api.resetSubscription(accountId, idempotencyKey)
@@ -218,11 +219,6 @@ class CanonicalWorkspaceSession(
 
     override suspend fun projectEvents(since: Long) = api.projectEvents(since)
 
-    override suspend fun featureSwitches() = api.featureSwitches()
-
-    override suspend fun personalInstructionsEnabled() =
-        api.featureSwitches().effectiveSwitches["singleAgent"] == true
-
     override suspend fun personalInstructions() = api.personalInstructions().owned()
 
     override suspend fun updatePersonalInstructions(content: String, ifVersion: String) =
@@ -258,6 +254,12 @@ class CanonicalWorkspaceSession(
 
     override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) =
         api.setArchived(threadId, archived, eventId)
+
+    override suspend fun deleteThread(threadId: String, eventId: String) =
+        api.deleteThread(threadId, eventId)
+
+    override suspend fun renameProject(projectId: String, name: String, eventId: String) =
+        api.renameProject(projectId, name, eventId)
 
     override suspend fun renameThread(threadId: String, title: String, eventId: String) =
         api.renameThread(threadId, title, eventId)
@@ -309,7 +311,9 @@ class CanonicalWorkspaceSession(
             try {
                 transfers.download(address) { archiveJson.decodeFromStream<T>(it) }
             } catch (error: ApiFailure.Http) {
-                throw ChatSnapshotUnavailable(error.status)
+                throw ChatSnapshotUnavailable(error.status, error.retryAfterSeconds)
+            } catch (error: IOException) {
+                throw ApiFailure.Network(error)
             } catch (_: SerializationException) {
                 throw ApiFailure.IncompatibleResponse()
             } catch (_: IllegalArgumentException) {
@@ -317,12 +321,10 @@ class CanonicalWorkspaceSession(
             }
         }
 
-    override suspend fun bootstrap(): WorkspaceBootstrap {
+    override suspend fun organization(): Organization {
         val organization = api.organization()
-        check(organization.id == identity.workspaceId) {
-            "Workspace response belongs to another identity"
-        }
-        return WorkspaceBootstrap(organization, preferences())
+        if (organization.id != identity.workspaceId) throw ApiFailure.Unauthenticated()
+        return organization
     }
 
     override suspend fun preferences(): UserPreferences {

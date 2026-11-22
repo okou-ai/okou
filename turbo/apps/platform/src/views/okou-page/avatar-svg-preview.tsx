@@ -18,7 +18,7 @@ import {
  * brush mark is 4.4px and reads as noise rather than as a stroke. 180% shows
  * two or three marks per frame.
  */
-export function AvatarTextureLayer({ url }: { url: string }) {
+function AvatarTextureLayer({ url }: { url: string }) {
   return (
     <span
       {...AVATAR_TEXTURE_SLOT}

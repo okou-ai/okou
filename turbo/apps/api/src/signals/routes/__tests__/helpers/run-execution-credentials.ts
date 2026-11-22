@@ -96,7 +96,7 @@ export function createRunExecutionCredentials(context: TestContext) {
         });
         const thread = await createChatFilesBddApi(context).createThread(
           actor,
-          { agentId: agent.agentId, model: null },
+          { model: null },
         );
         const run = await runs.createThreadRun(actor, {
           agentId: agent.agentId,

@@ -1,5 +1,4 @@
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -13,14 +12,13 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   THREAD_ID,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
-const HOME_PATH = `/agents/${AGENT_ID}/chat`;
+const HOME_PATH = `/`;
 const THREAD_PATH = `/chats/${THREAD_ID}`;
 const SUMMARY_NAME =
   /^(?:Charts(?::|$)|(?:Presentation|Website|Spreadsheet|Report)(?:, Charts:|$))/u;
@@ -148,7 +146,6 @@ async function setupCharts({
   await setupPage({
     context,
     path: path === HOME_PATH ? `${path}?compose=1` : path,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
   });
   const editor = await findComposerEditor();
   if (path !== HOME_PATH) {

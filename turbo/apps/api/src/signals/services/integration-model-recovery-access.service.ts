@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
 import { uuid } from "zod";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -94,11 +93,10 @@ export const integrationModelRecoveryIdentity$ = command(
         eventId: chatEvents.id,
         threadId: chatThreads.id,
         userId: chatThreads.userId,
-        orgId: agents.orgId,
+        orgId: chatThreads.orgId,
       })
       .from(chatEvents)
       .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(eq(chatEvents.id, actor.eventId))
       .limit(1);
     signal.throwIfAborted();

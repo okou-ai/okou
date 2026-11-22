@@ -1,5 +1,83 @@
 # Changelog
 
+## [0.32.40](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.39...guest-storage-apply-v0.32.40) (2026-11-21)
+
+
+### Performance Improvements
+
+* **guest-storage:** avoid repeated decoded mount task scans ([#49746](https://github.com/okou-ai/okou/issues/49746)) ([bad5553](https://github.com/okou-ai/okou/commit/bad5553659e2926c43944ca700125e3108b9f92f))
+
+## [0.32.39](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.38...guest-storage-apply-v0.32.39) (2026-11-21)
+
+
+### Documentation
+
+* link workflow copy adapters to their retirement issue ([#49675](https://github.com/okou-ai/okou/issues/49675)) ([4806b77](https://github.com/okou-ai/okou/commit/4806b774b21d728224cf8995d5d333e7da9dd7c4))
+
+## [0.32.38](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.37...guest-storage-apply-v0.32.38) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** shorten medium remote archive batches ([#49541](https://github.com/okou-ai/okou/issues/49541)) ([f743269](https://github.com/okou-ai/okou/commit/f7432695ce4856ab3b2f22e243b0c6cb05e71b9f))
+* **guest-storage-apply:** summarize stale-path cleanup successes ([#49601](https://github.com/okou-ai/okou/issues/49601)) ([d185d77](https://github.com/okou-ai/okou/commit/d185d77b85131b96a61f14c4e5f759073b0ef59c))
+
+## [0.32.37](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.36...guest-storage-apply-v0.32.37) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** shorten wide remote archive batches ([#49525](https://github.com/okou-ai/okou/issues/49525)) ([a8f3005](https://github.com/okou-ai/okou/commit/a8f3005f9988f68d822489d6c0912159e0e6bbf3))
+
+## [0.32.36](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.35...guest-storage-apply-v0.32.36) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** reuse the archive file copy buffer ([#49487](https://github.com/okou-ai/okou/issues/49487)) ([5528f7c](https://github.com/okou-ai/okou/commit/5528f7c3c38f88de478d62c6163230f45299a7ef))
+
+## [0.32.35](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.34...guest-storage-apply-v0.32.35) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** shorten very wide remote archive batches ([#49407](https://github.com/okou-ai/okou/issues/49407)) ([59c2b83](https://github.com/okou-ai/okou/commit/59c2b835504051d40e559b03ccf51dbc9bc1596c))
+
+## [0.32.34](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.33...guest-storage-apply-v0.32.34) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-control:** stream large decoded storage into sealed stdin ([#49350](https://github.com/okou-ai/okou/issues/49350)) ([841df64](https://github.com/okou-ai/okou/commit/841df6479f1171967fa0d8a5c4109de01a1fe067))
+
+## [0.32.33](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.32...guest-storage-apply-v0.32.33) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage:** pass large decoded inputs in sealed descriptors ([#49206](https://github.com/okou-ai/okou/issues/49206)) ([b48b19f](https://github.com/okou-ai/okou/commit/b48b19f606fe851dc9faa04995c2d1fdaef7203a))
+
+## [0.32.32](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.31...guest-storage-apply-v0.32.32) (2026-11-19)
+
+## [0.32.31](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.30...guest-storage-apply-v0.32.31) (2026-11-19)
+
+## [0.32.30](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.29...guest-storage-apply-v0.32.30) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** reuse fully read archive connections ([#48983](https://github.com/okou-ai/okou/issues/48983)) ([1c3a9ee](https://github.com/okou-ai/okou/commit/1c3a9ee21d5f8fcfa4bf737982ba85b27ae52621))
+
 ## [0.32.29](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.28...guest-storage-apply-v0.32.29) (2026-11-19)
 
 

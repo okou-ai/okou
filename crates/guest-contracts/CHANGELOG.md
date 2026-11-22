@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.32.30](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.29...guest-contracts-v0.32.30) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+## [0.32.29](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.28...guest-contracts-v0.32.29) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+## [0.32.28](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.27...guest-contracts-v0.32.28) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage:** pass large decoded inputs in sealed descriptors ([#49206](https://github.com/okou-ai/okou/issues/49206)) ([b48b19f](https://github.com/okou-ai/okou/commit/b48b19f606fe851dc9faa04995c2d1fdaef7203a))
+
+## [0.32.27](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.26...guest-contracts-v0.32.27) (2026-11-19)
+
+
+### Refactoring
+
+* **rust:** share vectored log writes ([#49127](https://github.com/okou-ai/okou/issues/49127)) ([4592830](https://github.com/okou-ai/okou/commit/45928304aad5dc912cf2aafe9c6b241c03f1c063))
+
+## [0.32.26](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.25...guest-contracts-v0.32.26) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** stream large file writes into sealed inputs ([#49029](https://github.com/okou-ai/okou/issues/49029)) ([4c926a5](https://github.com/okou-ai/okou/commit/4c926a5a96d2fd68883a5be1b34247f62389f2d2))
+
 ## [0.32.25](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.24...guest-contracts-v0.32.25) (2026-11-19)
 
 

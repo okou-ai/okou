@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.19.2](https://github.com/okou-ai/okou/compare/runner-types-v0.19.1...runner-types-v0.19.2) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+## [0.19.1](https://github.com/okou-ai/okou/compare/runner-types-v0.19.0...runner-types-v0.19.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+## [0.19.0](https://github.com/okou-ai/okou/compare/runner-types-v0.18.22...runner-types-v0.19.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
+## [0.18.22](https://github.com/okou-ai/okou/compare/runner-types-v0.18.21...runner-types-v0.18.22) (2026-11-19)
+
+## [0.18.21](https://github.com/okou-ai/okou/compare/runner-types-v0.18.20...runner-types-v0.18.21) (2026-11-19)
+
 ## [0.18.20](https://github.com/okou-ai/okou/compare/runner-types-v0.18.19...runner-types-v0.18.20) (2026-11-19)
 
 ## [0.18.19](https://github.com/okou-ai/okou/compare/runner-types-v0.18.18...runner-types-v0.18.19) (2026-11-18)

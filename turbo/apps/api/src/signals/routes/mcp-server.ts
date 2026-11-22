@@ -1,14 +1,23 @@
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
+import { mcpThreadSnapshotContract } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
+import { env } from "../../lib/env";
+import { downloadS3Buffer } from "../external/s3";
+import { getChatThreadSnapshot } from "../services/chat-thread-event.service";
+import { isOwnedChatThreadSnapshotObjectKey } from "../services/chat-thread-snapshot-object";
+import { randomUUID } from "node:crypto";
+import { mcpChatCommandContract } from "@okouai/api-contracts/contracts/mcp-chat-tools";
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import {
-  chatEventsContract,
   chatThreadEventsContract,
   chatThreadModelSelectionContract,
   chatThreadRenameContract,
   chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { mcpProjectChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
@@ -23,7 +32,7 @@ import {
 } from "../../lib/mcp-server-config";
 import { VERCEL_PROTECTION_BYPASS_HEADER } from "../../lib/preview-automation-bypass";
 import { request$ } from "../context/hono";
-import { queryOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { verifyClerkOAuthAccessToken } from "../external/clerk";
@@ -32,15 +41,16 @@ import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import { mcpChatSearch } from "../services/mcp-chat-search.service";
 import { awaitWithSignal, settle } from "../utils";
-import { agentsRoutes } from "./agents";
-import { chatEventsRoutes } from "./chat-events";
+import { recallChatEvent$ } from "../services/chat-events.command";
+import { sendValidatedChatEvent$ } from "./chat-events";
+import { projectRoutes } from "./projects";
 import { chatThreadRoutes } from "./chat-threads";
 import { runModelsRoutes } from "./run-models";
 import { runsCancelRoutes } from "./runs-cancel";
 
 const searchInput$ = computed((get) => {
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(mcpChatSearchContract.search));
+  const query = get(queryOf(mcpProjectChatSearchContract.search));
   return { userId: auth.userId, orgId: auth.orgId, ...query };
 });
 const search$ = mcpChatSearch(searchInput$);
@@ -49,33 +59,164 @@ const searchResponse$ = computed(async (get) => {
   return { status: 200 as const, body: result };
 });
 
-// Search alone owns MCP presentation; other tools reuse production Web entries.
+const mcpSendBody$ = bodyResultOf(mcpChatCommandContract.send);
+const mcpRevokeBody$ = bodyResultOf(mcpChatCommandContract.revoke);
+
+const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const body = await get(mcpSendBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const {
+    threadId,
+    projectId,
+    prompt = "(see message parts)",
+    model,
+    userMessage,
+  } = body.data;
+  const eventId = randomUUID();
+  const response = await set(
+    sendValidatedChatEvent$,
+    {
+      projectId,
+      requireVisibleThread: true,
+      data: {
+        threadId,
+        prompt,
+        model,
+        clientEventId: eventId,
+        userMessage: userMessage ?? {
+          version: 1,
+          parts: [{ type: "text", text: prompt }],
+        },
+        hasTextContent: true,
+      },
+    },
+    signal,
+  );
+  return response.status === 201
+    ? { ...response, body: { ...response.body, eventId } }
+    : response;
+});
+
+const mcpRevokeChat$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const body = await get(mcpRevokeBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  // The canonical recall command authorizes the thread and then recalls its event.
+  return await set(
+    recallChatEvent$,
+    {
+      threadId: body.data.threadId,
+      revokesEventId: body.data.eventId,
+    },
+    signal,
+  );
+});
+
+const gunzipAsync = promisify(gunzip);
+
+const mcpThreadSnapshot$ = command(async ({ get }, signal: AbortSignal) => {
+  const { userId, orgId } = get(organizationAuthContext$);
+  const snapshot = await get(getChatThreadSnapshot({ userId, orgId }));
+  signal.throwIfAborted();
+  if (!snapshot) {
+    return {
+      status: 200 as const,
+      body: { chatThreads: [], latestEventId: null, latestSeqId: null },
+    };
+  }
+  if (!isOwnedChatThreadSnapshotObjectKey(snapshot.objectKey, userId, orgId)) {
+    throw new Error("Invalid chat thread snapshot object key");
+  }
+  const compressed = await get(
+    downloadS3Buffer(
+      env("R2_USER_STORAGES_BUCKET_NAME"),
+      snapshot.objectKey,
+      signal,
+    ),
+  );
+  signal.throwIfAborted();
+  const archive = chatThreadSnapshotArchiveSchema.parse(
+    JSON.parse((await gunzipAsync(compressed)).toString("utf8")),
+  );
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      chatThreads: archive.chatThreads.map(({ id, ...thread }) => {
+        return { ...thread, threadId: id };
+      }),
+      latestEventId: snapshot.latestEventId,
+      latestSeqId: snapshot.latestSeqId,
+    },
+  };
+});
+
+// The project and chat reads reuse canonical routes in the scoped MCP slice.
 const toolContracts: ReadonlySet<AppRoute> = Object.freeze(
   new Set([
-    agentsMainContract.list,
+    projectsContract.list,
+    projectsContract.threads,
     runModelsMainContract.list,
-    chatThreadsContract.snapshot,
+    mcpThreadSnapshotContract.get,
     chatThreadsContract.events,
     chatThreadsContract.indicators,
     chatThreadEventsContract.snapshot,
     chatThreadEventsContract.rows,
-    mcpChatSearchContract.search,
+    mcpProjectChatSearchContract.search,
     chatThreadActivitySummaryContract.summarize,
     chatInputStatusContract.get,
-    chatEventsContract.send,
+    mcpChatCommandContract.send,
+    mcpChatCommandContract.revoke,
     chatThreadRenameContract.rename,
     chatThreadModelSelectionContract.update,
     runsCancelContract.cancel,
   ]),
 );
 const toolRoutes = [
-  ...agentsRoutes,
+  ...projectRoutes,
   ...runModelsRoutes,
   ...chatThreadRoutes,
-  ...chatEventsRoutes,
+  {
+    route: mcpThreadSnapshotContract.get,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-thread:read",
+        oauthScope: "okou:chat:read",
+      },
+      mcpThreadSnapshot$,
+    ),
+  },
+  {
+    route: mcpChatCommandContract.send,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-event:write",
+        oauthScope: "okou:chat:send",
+      },
+      mcpSendChat$,
+    ),
+  },
+  {
+    route: mcpChatCommandContract.revoke,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-event:write",
+        oauthScope: "okou:run:cancel",
+      },
+      mcpRevokeChat$,
+    ),
+  },
   ...runsCancelRoutes,
   {
-    route: mcpChatSearchContract.search,
+    route: mcpProjectChatSearchContract.search,
     handler: authRoute(
       {
         requireOrganization: true,
@@ -202,7 +343,7 @@ const mcpRequest$ = command(async ({ get, set }, signal: AbortSignal) => {
           }
         }
         // In-process dispatch retains scoped OAuth authentication and native
-        // validation/ownership. Only search composes MCP-specific Agent metadata.
+        // validation and ownership.
         const app = createAppWithRoutes({
           routes: toolRoutes,
           signal: operationSignal,

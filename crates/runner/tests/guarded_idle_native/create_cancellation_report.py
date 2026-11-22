@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Validate actual owned create IO, cancelled observers and positive rollback."""
 
-import argparse
 import hashlib
-import json
 import pathlib
-import re
 
+import ext4_superblock
 import progress_report as foreground
 import pressure_report as pressure
 import observation_report as reads
@@ -45,10 +43,11 @@ def validate(directory):
     generations, created_ids = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered actual create phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((e["sandbox_id"],e["backing_generation"]) != identity for e in events):
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered actual create phases",
+        )
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("actual create lost original generation")
         ordered([terminal[1]["monotonic_ns"], *(e["monotonic_ns"] for e in events[:5]), terminal[2]["monotonic_ns"]])
         ordered([terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"]])
@@ -64,15 +63,18 @@ def validate(directory):
         path = pathlib.PurePosixPath(created.get("home_path", ""))
         if (not path.is_absolute() or ".." in path.parts or path.name != "home.ext4"
                 or not foreground.identifier(path.parent.name) or path.parent.name == identity[0]
-                or path.parent.name in created_ids or not isinstance(created.get("superblock_hex"),str)
-                or not re.fullmatch(r"[0-9a-f]{2048}",created["superblock_hex"])):
+                or path.parent.name in created_ids):
             raise ValueError("actual home bytes/identity/path changed")
-        block=bytes.fromhex(created["superblock_hex"])
-        if block[56:58] != b"\x53\xef" or hashlib.sha256(block).hexdigest() != created.get("superblock_sha256"):
+        block = ext4_superblock.decode_hex(
+            created.get("superblock_hex"), "actual home bytes/identity/path changed"
+        )
+        if (not ext4_superblock.has_magic(block)
+                or hashlib.sha256(block).hexdigest() != created.get("superblock_sha256")):
             raise ValueError("actual ext4 superblock bytes/hash mismatch")
         created_ids.add(path.parent.name)
         ordered([events[0]["monotonic_ns"],created.get("held_ns"),events[1]["monotonic_ns"]])
-        report.exact(created,{"home_path":str(path),"home_bytes":report.NATIVE_HOME_BYTES,"ext4_magic":"53ef",
+        report.exact(created,{"home_path":str(path),"home_bytes":report.NATIVE_HOME_BYTES,
+            "ext4_magic":ext4_superblock.MAGIC_HEX,
             "superblock_hex":created["superblock_hex"],"superblock_sha256":created["superblock_sha256"],"held_ns":created["held_ns"]},"actual formatted home shape changed")
         actual = accepted.get("samples")
         reads.samples(actual, events[0]["monotonic_ns"],events[1]["monotonic_ns"],policy)
@@ -115,5 +117,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser=argparse.ArgumentParser(description=__doc__); parser.add_argument("directory",type=pathlib.Path)
-    print(json.dumps(validate(parser.parse_args().directory),indent=2))
+    report.run_cli(validate, __doc__)

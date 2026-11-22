@@ -1,5 +1,4 @@
 /** Runtime connector capability shared by launch preparation and runtime sync. */
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
 import {
   type ExecutionFirewallInlineEntry,
@@ -176,33 +175,19 @@ function buildCustomConnectorRuntimeApis(args: {
   return apis;
 }
 
-export function resolveCustomConnectorBaseUrlVars(args: {
-  readonly row: CustomConnectorRuntimeDataRows[number];
-  readonly provided: Readonly<Record<string, string>> | undefined;
-  readonly hasProvided: boolean;
-}): Readonly<Record<string, string>> | undefined {
-  if (args.row.connector.kind === "mcp") {
-    if (!args.hasProvided) {
-      return {};
-    }
-    return Object.keys(args.provided ?? {}).length === 0 ? {} : undefined;
+export function resolveCustomConnectorBaseUrlVars(
+  row: CustomConnectorRuntimeDataRows[number],
+): Readonly<Record<string, string>> | undefined {
+  if (row.connector.kind === "mcp") {
+    return {};
   }
   const variableKeys = [
-    ...customConnectorPrefixTemplateVariableKeys(
-      args.row.connector.prefixTemplates,
-    ),
+    ...customConnectorPrefixTemplateVariableKeys(row.connector.prefixTemplates),
   ].sort();
-  if (args.hasProvided) {
-    const provided = args.provided ?? {};
-    const providedKeys = Object.keys(provided).sort();
-    return jsonArrayEqual(variableKeys, providedKeys)
-      ? { ...provided }
-      : undefined;
-  }
   if (variableKeys.length === 0) {
     return {};
   }
-  const prefixValues = args.row.values.filter(
+  const prefixValues = row.values.filter(
     (
       value,
     ): value is Extract<
@@ -231,31 +216,13 @@ export function resolveCustomConnectorBaseUrlVars(args: {
   return baseUrlVars;
 }
 
-function jsonArrayEqual(
-  left: readonly string[],
-  right: readonly string[],
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => {
-      return value === right[index];
-    })
-  );
-}
-
 export interface BuildCustomConnectorRuntimeContextArgs {
   readonly rows: CustomConnectorRuntimeDataRows;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeLookup;
-  readonly grants: readonly AgentCustomConnectorGrant[] | undefined;
-  readonly memberPermissionPolicies?: FirewallPolicies | null;
-  readonly permissionBundlesByConnectorId?: ReadonlyMap<
+  readonly memberPermissionPolicies: FirewallPolicies | null;
+  readonly permissionBundlesByConnectorId: ReadonlyMap<
     string,
     CustomConnectorPermissionBundle | null | undefined
-  >;
-  readonly baseUrlVarsByConnectorId?: ReadonlyMap<
-    string,
-    Readonly<Record<string, string>>
   >;
 }
 
@@ -305,19 +272,15 @@ export async function loadEffectiveCustomConnectorPermissionBundle(args: {
     : null;
 }
 
-function buildCustomConnectorPermissionPolicy(args: {
-  readonly bundle: CustomConnectorPermissionBundle;
-  readonly selectedPermissionNames: readonly string[];
-}): FirewallPolicy {
-  const selectedPermissionNames = new Set(args.selectedPermissionNames);
+function buildCustomConnectorPermissionPolicy(
+  bundle: CustomConnectorPermissionBundle,
+): FirewallPolicy {
   return {
     policies: Object.fromEntries(
-      [...args.bundle.permissionNames].map((permissionName) => {
+      [...bundle.permissionNames].map((permissionName) => {
         return [
           permissionName,
-          selectedPermissionNames.has(permissionName)
-            ? "allow"
-            : (args.bundle.defaultPolicies[permissionName] ?? "deny"),
+          bundle.defaultPolicies[permissionName] ?? "deny",
         ];
       }),
     ),
@@ -328,15 +291,11 @@ function buildCustomConnectorPermissionPolicy(args: {
 function customRuntimePermissionPolicy(args: {
   readonly row: CustomConnectorRuntimeDataRows[number];
   readonly context: BuildCustomConnectorRuntimeContextArgs;
-  readonly selectedPermissionNames: readonly string[];
   readonly permissionBundle: CustomConnectorPermissionBundle | null;
 }) {
   const { permissionBundle } = args;
   const defaultPolicy = permissionBundle
-    ? buildCustomConnectorPermissionPolicy({
-        bundle: permissionBundle,
-        selectedPermissionNames: args.selectedPermissionNames,
-      })
+    ? buildCustomConnectorPermissionPolicy(permissionBundle)
     : undefined;
   const overlay =
     args.context.memberPermissionPolicies?.[
@@ -370,11 +329,10 @@ function customRuntimeAuthUnavailable(args: {
   );
 }
 
-async function buildCustomConnectorRuntimeRow(args: {
+function buildCustomConnectorRuntimeRow(args: {
   readonly row: CustomConnectorRuntimeDataRows[number];
   readonly context: BuildCustomConnectorRuntimeContextArgs;
-  readonly selectedPermissionNames: readonly string[];
-}): Promise<BuiltCustomConnectorRuntimeRow> {
+}): BuiltCustomConnectorRuntimeRow {
   const networkEnabled = isFeatureEnabled(
     FeatureSwitchKey.CustomConnectorCloudflareAccess,
     args.context.featureSwitchContext,
@@ -383,13 +341,7 @@ async function buildCustomConnectorRuntimeRow(args: {
   if (binding && (!networkEnabled || binding.status !== "available")) {
     return unavailableCustomConnectorRuntimeRow();
   }
-  const hasProvidedBaseUrlVars =
-    args.context.baseUrlVarsByConnectorId?.has(args.row.connector.id) ?? false;
-  const baseUrlVars = resolveCustomConnectorBaseUrlVars({
-    row: args.row,
-    provided: args.context.baseUrlVarsByConnectorId?.get(args.row.connector.id),
-    hasProvided: hasProvidedBaseUrlVars,
-  });
+  const baseUrlVars = resolveCustomConnectorBaseUrlVars(args.row);
   const { headers, query } = customConnectorRuntimeAuth({
     row: args.row,
   });
@@ -399,12 +351,9 @@ async function buildCustomConnectorRuntimeRow(args: {
   if (baseUrlVars === undefined) {
     return unavailableCustomConnectorRuntimeRow();
   }
-  const permissionBundle = args.context.permissionBundlesByConnectorId
-    ? args.context.permissionBundlesByConnectorId.get(args.row.connector.id)
-    : await loadEffectiveCustomConnectorPermissionBundle({
-        row: args.row,
-        snapshot: args.context.connectorCatalogSnapshot,
-      });
+  const permissionBundle = args.context.permissionBundlesByConnectorId.get(
+    args.row.connector.id,
+  );
   if (permissionBundle === undefined) {
     return unavailableCustomConnectorRuntimeRow();
   }
@@ -481,25 +430,19 @@ export function orderedCustomConnectorRuntimeRows(
   });
 }
 
-export async function buildCustomConnectorRuntimeContext(
+export function buildCustomConnectorRuntimeContext(
   args: BuildCustomConnectorRuntimeContextArgs,
-): Promise<CustomConnectorRuntimeContext> {
+): CustomConnectorRuntimeContext {
   const firewalls: ExpandedFirewallConfig[] = [];
   const reservedSecretAliases: Record<string, true> = {};
   const permissionPolicies: FirewallPolicies = {};
   const targets: ConnectorRuntimeTargetRegistration[] = [];
   const customConnectorIdByFirewallName: Record<string, string> = {};
   const customConnectorSourceIdByFirewallName: Record<string, string> = {};
-  const grantByConnectorId = new Map(
-    (args.grants ?? []).map((grant) => {
-      return [grant.customConnectorId, grant.permissionNames] as const;
-    }),
-  );
   for (const row of orderedCustomConnectorRuntimeRows(args.rows)) {
-    const built = await buildCustomConnectorRuntimeRow({
+    const built = buildCustomConnectorRuntimeRow({
       row,
       context: args,
-      selectedPermissionNames: grantByConnectorId.get(row.connector.id) ?? [],
     });
     if (!built.registration) {
       continue;

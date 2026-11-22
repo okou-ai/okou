@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   fill,
@@ -15,10 +15,7 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
-import {
-  AGENT_ID,
-  createTemplateGalleryHelpers,
-} from "./chat-composer-template-gallery-test-helpers.ts";
+import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
@@ -73,7 +70,7 @@ test.each(["HTML", "PPTX"] as const)(
     const capture = mockTemplateChat();
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
       auth: ownerAuth,
       featureSwitches: enabledFeatures,
     });
@@ -124,7 +121,7 @@ test("A format changed after choosing a template is frozen at send time", async 
   await setupPage({
     context,
     auth: ownerAuth,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
@@ -166,7 +163,7 @@ test("A restored feedback template freezes the changed format when sent", async 
     ],
   };
   const capture = mockTemplateChat();
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: { version: 1, parts: [feedback] },
       draftAttachments: null,
@@ -175,7 +172,7 @@ test("A restored feedback template freezes the changed format when sent", async 
   await setupPage({
     context,
     auth: ownerAuth,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
@@ -216,7 +213,7 @@ test("A changed format survives a fresh page and is shared by Chart presentation
   await setupPage({
     context,
     auth: ownerAuth,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   await findComposerEditor();
@@ -236,7 +233,7 @@ test("A changed format survives a fresh page and is shared by Chart presentation
   await setupPage({
     context: reloadedContext,
     auth: ownerAuth,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
@@ -280,7 +277,7 @@ test("Chart presentation output uses HTML until the user changes the preference"
   await setupPage({
     context,
     auth: ownerAuth,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
@@ -310,7 +307,7 @@ test("A presentation format preference does not change another Chart output type
   await setupPage({
     context,
     auth: ownerAuth,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
@@ -339,7 +336,7 @@ test("Peers cannot enable presentation format through a stored opt-in", async ()
   const capture = mockTemplateChat();
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: enabledFeatures,
   });
   const editor = await findComposerEditor();
@@ -366,7 +363,7 @@ test("Presentation uses its existing defaults when output format selection is di
   const capture = mockTemplateChat();
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: ownerAuth,
     featureSwitches: {
       [FeatureSwitchKey.PresentationOutputFormat]: false,

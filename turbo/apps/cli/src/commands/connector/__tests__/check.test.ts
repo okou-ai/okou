@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   stubRunConnectorAccountInspection,
+  stubRunConnectorAccountInventory,
   writeRunConnectorAccountContext,
 } from "../../__tests__/helpers/run-connector-accounts";
 import { server } from "../../../mocks/server";
@@ -31,7 +32,6 @@ import {
 import { checkConnectorCommand } from "../check";
 
 const API_BASE_URL = "https://app.okou.ai";
-const AGENT_ID = "00000000-0000-4000-8000-000000000001";
 const SELECTED_CONNECTION_ID = "00000000-0000-4000-8000-000000000099";
 
 type ResolvedDiagnostic = Extract<
@@ -238,18 +238,28 @@ function stubDefaultBuiltinAccount(
   );
 }
 
-function stubAgentConnectors(
-  enabledConnectorSlugs: string[],
+function stubAllowedChatConnectors(
+  allowedConnectorSlugs: string[],
   onRequest?: () => void,
   baseUrl = API_BASE_URL,
 ): void {
   server.use(
-    http.get(`${baseUrl}/api/agents/${AGENT_ID}/user-connectors`, () => {
-      onRequest?.();
-      return HttpResponse.json({
-        enabledConnectorSlugs: enabledConnectorSlugs,
-      });
-    }),
+    stubRunConnectorAccountInventory(
+      {
+        accounts: allowedConnectorSlugs.map((connectorSlug, index) => {
+          return {
+            target: { kind: "builtin", connectorSlug },
+            connectionId: `00000000-0000-4000-8000-${(index + 1).toString().padStart(12, "0")}`,
+            displayName: "Chat current account",
+            enabled: true,
+            isCurrent: true,
+            isDefault: true,
+          };
+        }),
+      },
+      baseUrl,
+      onRequest,
+    ),
   );
 }
 
@@ -257,7 +267,7 @@ function stubResolvedDependencies(
   connectorSlug = "github",
   options: {
     readonly connector?: ConnectorAccountConnection | null;
-    readonly enabledConnectorSlugs?: string[];
+    readonly allowedConnectorSlugs?: string[];
     readonly baseUrl?: string;
   } = {},
 ): void {
@@ -270,8 +280,8 @@ function stubResolvedDependencies(
     undefined,
     baseUrl,
   );
-  stubAgentConnectors(
-    options.enabledConnectorSlugs ?? [connectorSlug],
+  stubAllowedChatConnectors(
+    options.allowedConnectorSlugs ?? [connectorSlug],
     undefined,
     baseUrl,
   );
@@ -345,13 +355,13 @@ describe("okou connector check command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", API_BASE_URL);
     vi.stubEnv("OKOU_TOKEN", buildOkouToken());
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     vi.stubEnv("GH_TOKEN", "");
     vi.stubEnv("GITHUB_TOKEN", "");
     checkConnectorCommand.setOptionValue("json", false);
     setRunAccount("github", "connected");
+    stubAllowedChatConnectors(["github"]);
   });
 
   afterEach(() => {
@@ -375,7 +385,7 @@ describe("okou connector check command", () => {
   }
 
   it.each([false, true])(
-    "uses Chat allowance rather than Agent grants in diagnostics (JSON: %s)",
+    "shows Chat allowance separately from the exact Run account (JSON: %s)",
     async (json) => {
       vi.stubEnv(
         "OKOU_TOKEN",
@@ -387,29 +397,8 @@ describe("okou connector check command", () => {
           ],
         }),
       );
-      let legacyReads = 0;
-      stubAgentConnectors([], () => {
-        legacyReads += 1;
-      });
       stubDiagnostic(resolvedEnvironment());
-      server.use(
-        http.get(`${API_BASE_URL}/api/run/connector-accounts`, () => {
-          return HttpResponse.json({
-            chatThreadId: "22222222-2222-4222-8222-222222222222",
-            permissionGrants: [],
-            accounts: [
-              {
-                target: { kind: "builtin", connectorSlug: "github" },
-                connectionId: SELECTED_CONNECTION_ID,
-                displayName: "Run-selected account",
-                enabled: true,
-                isCurrent: true,
-                isDefault: true,
-              },
-            ],
-          });
-        }),
-      );
+      stubAllowedChatConnectors(["github"]);
       await checkConnectorCommand.parseAsync([
         "node",
         "cli",
@@ -417,12 +406,11 @@ describe("okou connector check command", () => {
         "GH_TOKEN",
         ...(json ? ["--json"] : []),
       ]);
-      expect(legacyReads).toBe(0);
       expect(getOutput()).toContain(
-        json ? '"authorized": true' : "has an allowed account in this Chat",
+        json ? '"allowedInChat": true' : "has an allowed account in this Chat",
       );
       expect(getOutput()).toContain(SELECTED_CONNECTION_ID);
-      expect(getOutput()).not.toContain("/authorize");
+      expect(getOutput()).not.toContain("Chat current account");
     },
   );
 
@@ -434,7 +422,6 @@ describe("okou connector check command", () => {
 
     beforeEach(() => {
       vi.stubEnv("OKOU_TOKEN", "test-session-token");
-      vi.stubEnv("OKOU_AGENT_ID", "");
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
       stubDiagnostic(resolvedEnvironment({ run: { status: "not-scoped" } }));
     });
@@ -611,7 +598,7 @@ describe("okou connector check command", () => {
           diagnosticRequest = body;
         },
       );
-      stubResolvedDependencies("aws", { enabledConnectorSlugs: [] });
+      stubResolvedDependencies("aws", { allowedConnectorSlugs: [] });
       setRunAccount("aws", "connected");
 
       await checkConnectorCommand.parseAsync([
@@ -680,7 +667,7 @@ describe("okou connector check command", () => {
         API_BASE_URL,
         CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
       );
-      stubResolvedDependencies("aws", { enabledConnectorSlugs: [] });
+      stubResolvedDependencies("aws", { allowedConnectorSlugs: [] });
       setRunAccount("aws", "connected");
 
       await checkConnectorCommand.parseAsync([
@@ -735,7 +722,7 @@ describe("okou connector check command", () => {
           },
         }),
       );
-      stubResolvedDependencies("github", { enabledConnectorSlugs: [] });
+      stubResolvedDependencies("github", { allowedConnectorSlugs: [] });
       setRunAccount("github", "reconnect-required");
       vi.stubEnv("GITHUB_TOKEN", "environment-value-must-not-be-printed");
       chalk.level = 3;
@@ -775,7 +762,7 @@ describe("okou connector check command", () => {
         accountSummary: null,
         memberStatus: null,
         managedStatus: null,
-        authorization: { agentId: AGENT_ID, authorized: false },
+        allowedInChat: false,
         environment: [{ name: "GITHUB_TOKEN", present: true }],
         actions: expect.arrayContaining([
           expect.objectContaining({
@@ -799,6 +786,7 @@ describe("okou connector check command", () => {
     });
 
     it("keeps current JSON identity and status with canonical environment identity", async () => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
       const target = { kind: "builtin", connectorSlug: "github" } as const;
       const account = connectorAccount(target, {
         id: "00000000-0000-4000-8000-000000000003",
@@ -819,7 +807,7 @@ describe("okou connector check command", () => {
           },
         ),
       );
-      vi.stubEnv("OKOU_AGENT_ID", "");
+      vi.stubEnv("OKOU_TOKEN", "test-session-token");
       stubDiagnostic(
         resolvedEnvironment({
           run: { status: "not-scoped" },
@@ -839,7 +827,7 @@ describe("okou connector check command", () => {
       expect(json).toMatchObject({
         context: "current",
         account: null,
-        authorization: null,
+        allowedInChat: null,
         managedStatus: null,
         accountSummary: {
           accountCount: 2,
@@ -1078,7 +1066,6 @@ describe("okou connector check command", () => {
     });
 
     it("requires a URL diagnostic before printing a callback permission command", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
       vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
       stubDiagnostic(
         resolvedEnvironment({
@@ -1301,13 +1288,13 @@ describe("okou connector check command", () => {
   });
 
   describe("resolved identities and local responsibilities", () => {
-    it("uses a server-only connector slug for local presence, connection, and authorization checks", async () => {
+    it("uses a server-only connector slug for routing, account and allowance checks", async () => {
       const serverOnlyIdentity = connectorIdentity({
         target: { kind: "builtin", connectorSlug: "server-only" },
         label: "Server Only Connector",
       });
       let connectorCalls = 0;
-      let authorizationCalls = 0;
+      let chatInventoryReads = 0;
       setRunAccount("server-only", "connected");
       vi.stubEnv("SERVER_ONLY_TOKEN", "placeholder-not-a-secret");
       stubDiagnostic(
@@ -1330,8 +1317,8 @@ describe("okou connector check command", () => {
           connectorCalls += 1;
         },
       );
-      stubAgentConnectors(["server-only"], () => {
-        authorizationCalls += 1;
+      stubAllowedChatConnectors(["server-only"], () => {
+        chatInventoryReads += 1;
       });
 
       await checkConnectorCommand.parseAsync([
@@ -1352,7 +1339,7 @@ describe("okou connector check command", () => {
         "The Server Only Connector connector is connected and active.",
       );
       expect(output).toContain(
-        "The Server Only Connector connector is authorized for this agent.",
+        "The Server Only Connector connector has an allowed account in this Chat.",
       );
       expect(output).toContain("  - https://one.server-only.example.com");
       expect(output).toContain("  - https://two.server-only.example.com");
@@ -1361,7 +1348,7 @@ describe("okou connector check command", () => {
       );
       expect(output).not.toContain("Credentials resolved from:");
       expect(connectorCalls).toBe(0);
-      expect(authorizationCalls).toBe(1);
+      expect(chatInventoryReads).toBe(1);
     });
 
     it("reports a missing local environment value without reading a bundled binding", async () => {
@@ -1388,39 +1375,38 @@ describe("okou connector check command", () => {
         name: "unavailable",
         identity: connectorIdentity({ visibility: "unavailable" }),
         connector: null,
-        enabledConnectorSlugs: [] as string[],
+        allowedConnectorSlugs: [] as string[],
         expected: "not available for this account",
       },
       {
-        name: "disconnected but authorized",
+        name: "allowed but not admitted",
         identity: connectorIdentity(),
         connector: null,
-        enabledConnectorSlugs: ["github"],
-        expected:
-          "authorized for this agent, but an account is not available for this run",
+        allowedConnectorSlugs: ["github"],
+        expected: "No GitHub account was admitted for this run",
       },
       {
         name: "expired",
         identity: connectorIdentity(),
         connector: builtinAccount("github", "reconnect-required"),
-        enabledConnectorSlugs: ["github"],
+        allowedConnectorSlugs: ["github"],
         expected: "needs to be reconnected",
       },
       {
-        name: "connected but unauthorized",
+        name: "admitted but Chat allowance is off",
         identity: connectorIdentity(),
         connector: builtinAccount("github"),
-        enabledConnectorSlugs: [] as string[],
-        expected: "not authorized for this agent",
+        allowedConnectorSlugs: [] as string[],
+        expected: "has no allowed account in this Chat",
       },
     ])(
       "renders $name connector state",
-      async ({ identity, connector, enabledConnectorSlugs, expected }) => {
+      async ({ identity, connector, allowedConnectorSlugs, expected }) => {
         setRunAccount("github", connector?.connectionStatus ?? null);
         stubDiagnostic(resolvedEnvironment({ connector: identity }));
         stubResolvedDependencies("github", {
           connector,
-          enabledConnectorSlugs,
+          allowedConnectorSlugs,
         });
 
         await checkConnectorCommand.parseAsync([
@@ -1445,7 +1431,7 @@ describe("okou connector check command", () => {
       stubDefaultBuiltinAccount("github", builtinAccount("github"), () => {
         defaultAccountRequests += 1;
       });
-      stubAgentConnectors(["github"]);
+      stubAllowedChatConnectors(["github"]);
 
       await checkConnectorCommand.parseAsync([
         "node",
@@ -1458,7 +1444,7 @@ describe("okou connector check command", () => {
       expect(text).toContain("Account used by this run: Run account B");
       expect(text).toContain(`Connection ID: ${SELECTED_CONNECTION_ID}`);
       expect(text).toContain(
-        `/connectors/github/reconnect/${SELECTED_CONNECTION_ID}?agentId=${AGENT_ID}`,
+        `/connectors/github/reconnect/${SELECTED_CONNECTION_ID}`,
       );
       expect(text).toContain("After reconnecting, start a new run.");
       expect(text).toContain("Reconnect reason: configuration_invalid");
@@ -1501,7 +1487,7 @@ describe("okou connector check command", () => {
             API_BASE_URL,
           ),
         );
-        stubAgentConnectors(["openai"]);
+        stubAllowedChatConnectors(["openai"]);
 
         await checkConnectorCommand.parseAsync([
           "node",
@@ -1514,11 +1500,9 @@ describe("okou connector check command", () => {
         expect(text).toContain("Account used by this run: Run account B");
         expect(text).toContain(`Reconnect reason: ${reconnectReason}`);
         expect(text).toContain("Missing required configuration: apiKey");
-        const actionPath = `/connectors/openai/reconnect/${SELECTED_CONNECTION_ID}?agentId=`;
+        const actionPath = `/connectors/openai/reconnect/${SELECTED_CONNECTION_ID}`;
         expect(text).toContain(actionPath);
-        expect(text).toContain(
-          "Skipped — agent authorization can only be checked once",
-        );
+        expect(text).toContain("has an allowed account in this Chat");
         expect(text).not.toMatch(
           /connected and active|connected, active, and authorized/,
         );
@@ -1541,7 +1525,7 @@ describe("okou connector check command", () => {
               reconnectReason,
             },
           },
-          authorization: { authorized: true },
+          allowedInChat: true,
           actions: expect.arrayContaining([
             expect.objectContaining({
               kind: "link",
@@ -1567,7 +1551,7 @@ describe("okou connector check command", () => {
           defaultAccountRequests += 1;
         },
       );
-      stubAgentConnectors(["github"]);
+      stubAllowedChatConnectors(["github"]);
 
       await checkConnectorCommand.parseAsync([
         "node",
@@ -1656,7 +1640,6 @@ describe("okou connector check command", () => {
 
     it("preserves the exact reconnect-required current default beside a healthy sibling", async () => {
       vi.stubEnv("OKOU_TOKEN", "test-session-token");
-      vi.stubEnv("OKOU_AGENT_ID", "");
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
       stubDiagnostic(resolvedEnvironment({ run: { status: "not-scoped" } }));
       const account = connectorAccount(
@@ -1754,11 +1737,11 @@ describe("okou connector check command", () => {
       "maps $name links to the platform origin",
       async ({ baseUrl, platformOrigin }) => {
         vi.stubEnv("OKOU_API_BACKEND_URL", baseUrl);
-        setRunAccount("github", "connected", { origin: baseUrl });
+        setRunAccount("github", "reconnect-required", { origin: baseUrl });
         stubDiagnostic(resolvedEnvironment(), undefined, baseUrl);
         stubResolvedDependencies("github", {
           connector: null,
-          enabledConnectorSlugs: [],
+          allowedConnectorSlugs: [],
           baseUrl,
         });
 
@@ -1770,17 +1753,18 @@ describe("okou connector check command", () => {
         ]);
 
         expect(getOutput()).toContain(
-          `[Authorize GitHub](${platformOrigin}/connectors/github/authorize?agentId=${AGENT_ID})`,
+          `[Reconnect GitHub](${platformOrigin}/connectors/github/reconnect/${SELECTED_CONNECTION_ID})`,
         );
       },
     );
 
     it("prints a finalized callback action URL for the current web chat", async () => {
       vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
+      setRunAccount("github", "reconnect-required");
       stubDiagnostic(resolvedEnvironment());
       stubResolvedDependencies("github", {
         connector: null,
-        enabledConnectorSlugs: [],
+        allowedConnectorSlugs: [],
       });
 
       await checkConnectorCommand.parseAsync([
@@ -1799,9 +1783,10 @@ describe("okou connector check command", () => {
         throw new Error("Expected callback action URL");
       }
       const callbackUrl = new URL(callbackUrlText);
-      expect(callbackUrl.pathname).toBe("/connectors/github/authorize");
+      expect(callbackUrl.pathname).toBe(
+        `/connectors/github/reconnect/${SELECTED_CONNECTION_ID}`,
+      );
       expect(Array.from(callbackUrl.searchParams.entries())).toStrictEqual([
-        ["agentId", AGENT_ID],
         ["callbackPrompt", "SOMETHING_AGENT_WANT_TO_BE_CALLBACK"],
         ["threadId", "thread-abc-123"],
       ]);
@@ -2009,6 +1994,7 @@ describe("okou connector check command", () => {
     );
 
     it("renders multiple matched URL permissions from final server outcomes", async () => {
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "20000000-0000-4000-8000-000000000001");
       stubDiagnostic(
         resolvedUrl({
           permission: {
@@ -2044,6 +2030,32 @@ describe("okou connector check command", () => {
       expect(getOutput()).toContain(
         "okou connector permission-request 'github' --permission 'metadata:read' --url 'https://api.github.com/repos/okou-ai/okou' --method 'GET'",
       );
+      expect(getOutput()).toContain(
+        '--callback-prompt "SOMETHING_AGENT_WANT_TO_BE_CALLBACK"',
+      );
+      mockConsoleLog.mockClear();
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--url",
+        "https://api.github.com/repos/okou-ai/okou",
+        "--json",
+      ]);
+      expect(getOutput()).toContain('"callbackCommand"');
+
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "invalid-chat");
+      for (const flags of [[], ["--json"]]) {
+        mockConsoleLog.mockClear();
+        await checkConnectorCommand.parseAsync([
+          "node",
+          "cli",
+          "--url",
+          "https://api.github.com/repos/okou-ai/okou",
+          ...flags,
+        ]);
+        expect(getOutput()).toContain("okou connector permission-request");
+        expect(getOutput()).not.toContain("--callback-prompt");
+      }
     });
 
     interface UnknownPolicyCase {
@@ -2134,7 +2146,7 @@ describe("okou connector check command", () => {
         API_BASE_URL,
         CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
       );
-      stubResolvedDependencies("aws", { enabledConnectorSlugs: [] });
+      stubResolvedDependencies("aws", { allowedConnectorSlugs: [] });
       setRunAccount("aws", "connected");
 
       await checkConnectorCommand.parseAsync([
@@ -2372,7 +2384,7 @@ describe("okou connector check command", () => {
         stubDefaultBuiltinAccount("github", builtinAccount("github"), () => {
           secondaryCalls += 1;
         });
-        stubAgentConnectors(["github"], () => {
+        stubAllowedChatConnectors(["github"], () => {
           secondaryCalls += 1;
         });
 

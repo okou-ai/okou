@@ -126,7 +126,7 @@ not copied from CSS and are not all mandated by Apple.
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1.5 s working shimmer, fold spring, 50 ms waveform sample, 30 fps Okou avatar; navigation transitions are system-owned)                 |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1 s working spinner turn, fold spring, 50 ms waveform sample, 30 fps Okou avatar; navigation transitions are system-owned)              |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
 | Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
 
@@ -262,10 +262,10 @@ Reusable views, grouped by what they do. Each group is a folder in
   own actions, on every sheet and full-screen viewer (`OkouCloseToolbarItem`; never
   `.cancellationAction` or the leading side). The system's own pickers (Photos, Files)
   keep theirs.
-- **Swipe-action fills** (`OkouSwipeTint`) carry the system's white label in both
+- **Swipe-action fills** (`OkouSwipeTint`) carry the system's white glyph in both
   appearances and say what kind of change it is: `neutral` (brand dark grey) for moving a
-  chat, `readState` (the unread dot's sky blue) for read state. Never amber or the warning
-  orange.
+  chat, `readState` (the unread dot's sky blue) for read state, `destructive` (the system
+  red Messages uses) for Delete. Never amber or the warning orange.
 
 ### Selection and input
 
@@ -337,14 +337,16 @@ Reusable views, grouped by what they do. Each group is a folder in
   it appears in a section only when one of that section's chats has a status, and
   rows without one show a quiet `message-circle` glyph so titles stay on one edge.
   The emoji stays in the title so web and iOS agree; archive is a separate flag.
-- **Working** shimmers the chat's title (`OkouShimmerText`) instead of taking the trailing
-  slot, so a working chat keeps its draft in view. A folded project's name shimmers only
-  when one of its chats works and none is unread; unread takes priority.
-- **Trailing state** shows one state, in the web's order: an unread dot (8 pt `running` sky
+- **Working** takes the trailing slot with `OkouRunningSpinner`: a `running` arc turning on a
+  faint track of the same blue. Its shape sets it apart from the unread dot, so working and
+  finished differ in a still frame. A working chat's draft or pin returns once the run ends.
+  A folded project badges its folder with a small spinner (`OkouRunningBadge`) when one of its
+  chats works and none is unread; unread takes priority.
+- **Trailing state** shows one state, in the web's order: the working spinner; a quiet
+  `bell-off` for a muted chat (a muted chat shows no unread dot); an unread dot (8 pt `running` sky
   blue, as on the web; amber is kept for a primary commit) once a run finished or failed since
   the chat was read, with the title in medium weight; a `pencil` for an unsent draft; the
-  resting `pin` of a pinned chat; or nothing. The pin outlasts the other states, so the row's
-  accessibility value says "Pinned" rather than the mark. The pencil and the pin are 20 pt in
+  resting `pin` of a pinned chat; or nothing. VoiceOver reads every state the chat is in, in that order ("Working, Muted and Pinned"), so a state hidden behind the drawn one is still announced. The bell, the pencil and the pin are 20 pt in
   `OkouColor.quietMark` (gray-500), as is the status column's
   quiet chat glyph, so a row draws one line weight (a glyph's stroke grows with its size);
   every trailing mark is centred in one 20 pt column so they line up down the list. A chat still in memory takes its
@@ -456,13 +458,10 @@ single floating line, and colour is a small accent for status only.
   (sky-600) dot breathing between 0.64× / 34 % and 0.88× / 52 % with a ring that
   spreads to 1.56× once per 2.4 s cycle. All indicators share one clock. It is the
   transcript's "working" line.
-- **Working text** uses `OkouShimmerText`: the text stays in `foreground` and a
-  soft-edged band of `placeholder` grey sweeps left to right once per 1.5 s
-  (`OkouMotion.shimmerText`; the web's thinking label takes 3.5 s). On a gradient twice the
-  text's width the band fades in from 28 %, is grey across 40–60 % and fades out by 72 %, so
-  part of the title lightens at a time with soft edges and never reads as a grey block. Only the
-  gradient moves, never the glyphs. Under Reduce Motion the text breathes like a skeleton
-  (1 → 0.7 → 1 over 2 s) instead.
+- **A working chat** in the sidebar uses `OkouRunningSpinner`: a 14 pt `running` arc
+  over 28 % of a circle on a 20 % track of the same blue, one turn per second
+  (`OkouMotion.runningSpin`), every spinner on one clock. It is drawn rather than a system
+  spinner, so under Reduce Motion it holds still as a 70 % arc.
 - `OkouUsageMeter` is the one allowance row: name left, "80% remaining" right
   (15 pt monospaced digits, muted), a 6 pt capsule that fills with what is left, and
   the reset below in caption — "Resets in 2 hr 10 min" under a day, otherwise
@@ -638,7 +637,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | `OkouRowLabel`                             | Row title with its leading graphic in the shared 28 pt slot                                                                                               |
 | `OkouValueRow`                             | A grouped row with a trailing value (system Settings style): the title keeps one line, the 17 pt `trailingValue` value yields and truncates in the middle |
 | `okouSectionHeader()`, `okouSectionNote()` | Grouped-list section header (15 pt medium) and footer note (13 pt muted)                                                                                  |
-| `OkouChatRowLabel` / `OkouChatStatusMark`  | A sidebar chat: status column (emoji or quiet glyph), one body line (medium when unread, shimmering while working), trailing unread / draft / pin         |
+| `OkouChatRowLabel` / `OkouChatStatusMark`  | A sidebar chat: status column (emoji or quiet glyph), one body line (medium when unread), trailing working / muted / unread / draft / pin                 |
 | `OkouListDivider`                          | A hairline in `border` between list sections (the projects and the chats below)                                                                           |
 | `OkouActionRow`                            | A plain sheet's action row (Add to chat): row label in body, 48 pt, page edge, destructive red, optional trailing note                                    |
 | `OkouAccountRowLabel`                      | The Settings account: 40 pt mark, name in body medium, email in footnote supporting text                                                                  |
@@ -656,7 +655,8 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | Component                                | Use / states                                                                                                                                                                                                                                                       |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `OkouRunningIndicator`                   | Web's breathing running dot, the transcript's working line                                                                                                                                                                                                         |
-| `OkouShimmerText`                        | Working text: a soft-edged band of `placeholder` grey sweeping across `foreground` text every 1.5 s (`okouShimmerText()`)                                                                                                                                          |
+| `OkouRunningSpinner`                     | A working chat in the sidebar: a `running` arc turning on a faint track, still under Reduce Motion                                                                                                                                                                 |
+| `OkouRunningBadge`                       | A 10 pt `OkouRunningSpinner` over a folded project's folder corner, with a cut ring, where `OkouUnreadBadge` puts its dot                                                                                                                                          |
 | `OkouUnreadBadge`                        | An 8 pt `running` dot over a glyph's top-right corner, as an iOS badged symbol: a ring cut out of the glyph keeps a gap between them. It marks something unread inside (the menu button, a folded project's folder); the control's accessibility value says Unread |
 | `OkouLoadErrorRow` / `OkouLoadingRow`    | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                                                                                                   |
 | `OkouChatSkeleton` / `OkouSkeletonBlock` | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                                                                                                             |
@@ -710,7 +710,11 @@ feature; the catalog shows each one.
   provenance is still retained when sending. Keep the shared composer geometry. The model
   control stays in the composer's toolbar, as in ordinary chat. Fit the sheet vertically to this
   content rather than reserving a half/full page, and let the native editor scroll for a
-  long draft. Sending still closes only after acceptance and leaves the source chat open.
+  long draft. Measure the fitted height from the first layout, and let the quoted note take
+  native focus only after that height has settled, so the keyboard never resizes a sheet
+  that is still presenting. UIKit lifts the fitted sheet above the keyboard; a draft short
+  enough to clear it ignores SwiftUI's keyboard inset so its content stays fixed under the
+  title. Sending still closes only after acceptance and leaves the source chat open.
 - **Chat header** has no title: the menu glass circle on the left, the chat's "…" menu on
   the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
@@ -833,8 +837,9 @@ feature; the catalog shows each one.
   no bounce, and its fold is remembered. The folder sits in the status column, so the name
   starts on the chat titles' edge, and the row ends with a 20 pt `chevron-down` in
   `quietMark` that turns right as the project folds. A folded project with an unread chat
-  badges its folder (`OkouUnreadBadge`, as the menu button does), so the chevron keeps the
-  trailing column in line with the chats' own dots.
+  badges its folder (`OkouUnreadBadge`, as the menu button does), and one with only a
+  working chat badges it with a small spinner (`OkouRunningBadge`), so the chevron keeps the
+  trailing column in line with the chats' own marks.
   Inside an unfolded project, its pinned chats lead in their manual order, then
   the rest by latest activity, indented to the project's name; a project lists every chat it
   holds. An empty project says so in one quiet line, then offers "Show archived chats" when
@@ -857,9 +862,15 @@ feature; the catalog shows each one.
   with vertical scrolling through public delegate failure relationships;
   preserve horizontal content arbitration.
   A page swipe never also taps the row under it. Dragging a chat row from left to right
-  reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive.
-  Continuing either gesture to a full swipe executes that action; a shorter swipe leaves
-  the button available to tap.
+  reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive
+  and, inside it, Delete. Swipe actions are icons only, as Messages draws them; their
+  titles remain the accessible names. Continuing either gesture to a full swipe executes
+  Mark as read/unread or Archive/Unarchive; a shorter swipe leaves the buttons available
+  to tap. Delete is never the full swipe and always asks first in the system
+  confirmation dialog. List, swipe actions and the dialog own every row's motion: an
+  Archive that takes the chat out of the current list uses the destructive role so the
+  system slides the row away; Delete keeps no role, because the destructive role would
+  remove the row before the user confirms.
 
 ### Sign-in and account
 
@@ -925,7 +936,10 @@ feature; the catalog shows each one.
 - iOS can retain a composer's disabled Return key after programmatic text insertion
   or when automatic disabling is turned off, despite `reloadInputViews()`. The
   owning editor may restart its active input session without animation and return
-  focus to the same view. Keep ordinary typing in its native session and defer this refresh until marked-text
+  focus to the same view. Keep ordinary typing in its native session: automatic
+  disabling follows content outside the editor's own text (quotes, ready
+  attachments), so typing or emptying a draft never changes it, and only an empty
+  editor restarts when that content changes. Defer this refresh until marked-text
   composition settles; preserve the document, selection, and undo history rather
   than replacing text or overriding `hasText`.
 - First-party authentication uses native provider, email, code, password, and

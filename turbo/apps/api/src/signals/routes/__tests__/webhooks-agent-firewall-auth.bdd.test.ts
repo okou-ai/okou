@@ -158,14 +158,11 @@ async function firewallRun(
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
-  const agents: string[] = [];
+
   const modelAccounts = new Set<string>();
   codexAccounts.owned.set(actor.userId, modelAccounts);
   const owner = publicRunOwner(context, actor, {
     afterRuns: async () => {
-      for (const agentId of agents) {
-        await bdd.deleteAgent(actor, agentId);
-      }
       const support = createAuthDeviceSupportApi(context);
       for (const id of modelAccounts) {
         await support.deletePersonalModelProviderAccount(actor, id);
@@ -201,7 +198,7 @@ async function firewallRun(
       displayName: "BDD firewall agent",
       visibility: "private",
     });
-    agents.push(agent.agentId);
+
     await options.prepareAgent?.(actor, agent.agentId);
     const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
@@ -1351,12 +1348,10 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         });
         if (refreshError === "invalid_client") {
           const secondAuthorization =
-            await connectors.startCustomConnectorOAuth2(
-              actor,
-              mcp.id,
-              undefined,
-              { intent: "add", displayName: "Second" },
-            );
+            await connectors.startCustomConnectorOAuth2(actor, mcp.id, {
+              intent: "add",
+              displayName: "Second",
+            });
           const secondState = new URL(secondAuthorization).searchParams.get(
             "state",
           );
@@ -1443,12 +1438,10 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
                   return item.connectionStatus;
                 }),
               ).toStrictEqual(["reconnect-required", "reconnect-required"]);
-              await connectors.startCustomConnectorOAuth2(
-                actor,
-                mcp.id,
-                undefined,
-                { intent: "reconnect", connectionId: account.id },
-              );
+              await connectors.startCustomConnectorOAuth2(actor, mcp.id, {
+                intent: "reconnect",
+                connectionId: account.id,
+              });
               expect(provider.registrationBodies).toHaveLength(2);
             },
             temporarily_unavailable: async () => {
@@ -1508,7 +1501,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       execution: receivedExecution,
     } = await firewallRun({
       additionalConnectorSlugs: [catalog.slug],
-      prepareAgent: async (owner, agentId) => {
+      prepareAgent: async (owner) => {
         mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
         mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
         mockEnv("APP_URL", "https://app.okou.ai");
@@ -1529,8 +1522,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
             body: {
               authMethod: catalog.methodId,
               account: { intent: "add" },
-              agentId,
-              authorizeAgent: true,
             },
           }),
           [200],
@@ -1954,7 +1945,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
           actor,
           "test-oauth",
           "oauth",
-          undefined,
           {
             intent: "reconnect",
             connectionId: account.id,

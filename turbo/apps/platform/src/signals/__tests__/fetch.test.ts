@@ -6,7 +6,7 @@ import {
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../__tests__/page-helper.ts";
@@ -14,7 +14,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { testContext } from "./test-helpers.ts";
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
+const THREAD_ID = "c0000000-0000-4000-a000-000000000001";
 const APP_VERSION = "platform-gwt-version";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -42,18 +42,18 @@ async function waitForReadyPage(): Promise<void> {
 }
 
 function client() {
-  return context.store.get(apiClient$)(userBuiltinConnectorsContract);
+  return context.store.get(apiClient$)(chatThreadByIdContract);
 }
 
 test("Service requests carry stable client context and a unique trace", async () => {
   const observedHeaders: ObservedClientHeaders[] = [];
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ request, respond }) => {
-      observedHeaders.push(observedClientHeaders(request));
-      return respond(200, { enabledConnectorSlugs: [] });
-    },
-  );
+  context.mocks.api(chatThreadByIdContract.get, ({ request, respond }) => {
+    observedHeaders.push(observedClientHeaders(request));
+    return respond(200, {
+      lastReadAt: null,
+      cancellationRecoveryPending: false,
+    });
+  });
 
   await setupPage({
     appVersion: APP_VERSION,
@@ -64,7 +64,7 @@ test("Service requests carry stable client context and a unique trace", async ()
   await waitForReadyPage();
 
   await client().get({
-    params: { id: AGENT_ID },
+    params: { id: THREAD_ID },
     extraHeaders: {
       [CLIENT_REQUEST_ID_HEADER]: "caller-request-id",
       [CLIENT_SESSION_ID_HEADER]: "caller-session-id",
@@ -72,7 +72,7 @@ test("Service requests carry stable client context and a unique trace", async ()
       [CLIENT_VERSION_HEADER]: "caller-version",
     },
   });
-  await client().get({ params: { id: AGENT_ID } });
+  await client().get({ params: { id: THREAD_ID } });
 
   expect(observedHeaders).toHaveLength(2);
   const [contractRequest, secondRequest] = observedHeaders;
@@ -96,10 +96,11 @@ test("Service requests carry stable client context and a unique trace", async ()
 });
 
 test("An empty service error still gives the user a useful status", async () => {
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(403, {
-      error: { code: "FORBIDDEN", message: "" },
-    });
+  context.mocks.http.get(`*/api/chat-threads/${THREAD_ID}`, () => {
+    return Response.json(
+      { error: { code: "FORBIDDEN", message: "" } },
+      { status: 403 },
+    );
   });
 
   await setupPage({ context, path: "/_/error" });
@@ -107,14 +108,14 @@ test("An empty service error still gives the user a useful status", async () => 
   await waitForReadyPage();
 
   await expect(
-    accept(client().get({ params: { id: AGENT_ID } }), [200]),
+    accept(client().get({ params: { id: THREAD_ID } }), [200]),
   ).rejects.toThrow("HTTP 403");
 
   await screen.findByText("HTTP 403");
 });
 
 test("The update dialog appears only when an update is required", async () => {
-  context.mocks.http.get("*/api/agents/:id/user-connectors", () => {
+  context.mocks.http.get(`*/api/chat-threads/${THREAD_ID}`, () => {
     return Response.json(
       { error: "Client update required" },
       { status: CLIENT_FORCE_UPGRADE_STATUS },
@@ -126,7 +127,7 @@ test("The update dialog appears only when an update is required", async () => {
   await waitForReadyPage();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-  await client().get({ params: { id: AGENT_ID } });
+  await client().get({ params: { id: THREAD_ID } });
 
   const dialog = await screen.findByRole("dialog", {
     name: "Update required",

@@ -21,7 +21,10 @@ import { Buffer } from "node:buffer";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { array, object, string } from "zod";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  threadEventCursor,
+} from "./helpers/api-bdd-chat-files";
 
 import {
   chatThreadConnectorSelectionContract,
@@ -37,7 +40,7 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import {
   logsByIdContract,
   logsListContract,
@@ -89,7 +92,6 @@ import {
   deleteFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
-import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectedConnectorsRoutes } from "../connected-connectors";
@@ -234,12 +236,12 @@ interface FeishuInstallationFixture {
 }
 
 interface FeishuRunFixture extends FeishuInstallationFixture {
+  readonly sinceSetupSeqId?: number;
   readonly subscription: {
     readonly customerId: string;
     readonly subscriptionId: string;
   };
   readonly runnerGroup: string;
-  readonly alternateAgentId: string;
 }
 
 function messageContent(message: CapturedFeishuMessage): string {
@@ -1200,14 +1202,14 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       });
     });
     authOrgApi.acceptAgentStorageWrites();
-    const onboarding = await own(() => {
-      return authOrgApi.readOnboardingStatus(actor);
+    const onboardingAgentId = await own(() => {
+      return authOrgApi.readDefaultAgentId(actor);
     });
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
     const defaultAgentId = requireValue(
-      onboarding.defaultAgentId,
+      onboardingAgentId,
       "Expected the normal default Agent",
     );
     const defaultAgent = await own(() => {
@@ -1243,27 +1245,19 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       bundlesOnly: true,
     });
     runsApi.acceptTelemetryIngest();
-    const onboarding = await own(() => {
-      return authOrgApi.readOnboardingStatus(actor);
+    const onboardingAgentId = await own(() => {
+      return authOrgApi.readDefaultAgentId(actor);
     });
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
     const defaultAgentId = requireValue(
-      onboarding.defaultAgentId,
+      onboardingAgentId,
       "Expected the normal default Agent",
     );
-    const [defaultAgent, alternateAgent] = await Promise.all([
-      own(() => {
-        return authOrgApi.readAgent(actor, defaultAgentId);
-      }),
-      own(() => {
-        return authOrgApi.createAgent(actor, {
-          displayName: "Feishu alternate agent",
-          visibility: "public",
-        });
-      }),
-    ]);
+    const defaultAgent = await own(() => {
+      return authOrgApi.readAgent(actor, defaultAgentId);
+    });
     const subscription = await grantEntitlement(actor);
     await own(() => {
       return runsApi.ensurePersonalSubscriptionModel(actor, {
@@ -1274,7 +1268,11 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     const { callbackUrl, installationId } = await configureTestInstallation({
       appId,
     });
+    const sinceSetupSeqId = await own(() => {
+      return threadEventCursor(context, actor);
+    });
     return {
+      sinceSetupSeqId,
       actor,
       runnerGroup,
       subscription,
@@ -1282,7 +1280,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       callbackUrl,
       installationId,
       defaultAgentId: defaultAgent.agentId,
-      alternateAgentId: alternateAgent.agentId,
     };
   }
 
@@ -3043,14 +3040,14 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, member);
         });
-        const onboarding = await own(() => {
-          return authOrgApi.readOnboardingStatus(admin);
+        const onboardingAgentId = await own(() => {
+          return authOrgApi.readDefaultAgentId(admin);
         });
         await own(() => {
           return authOrgApi.completeOnboarding(admin);
         });
         const defaultAgentId = requireValue(
-          onboarding.defaultAgentId,
+          onboardingAgentId,
           "Expected the normal default Agent",
         );
         await own(() => {
@@ -3907,14 +3904,14 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        const onboarding = await own(() => {
-          return authOrgApi.readOnboardingStatus(actor);
+        const onboardingAgentId = await own(() => {
+          return authOrgApi.readDefaultAgentId(actor);
         });
         await own(() => {
           return authOrgApi.completeOnboarding(actor);
         });
         const defaultAgentId = requireValue(
-          onboarding.defaultAgentId,
+          onboardingAgentId,
           "Expected the normal default Agent",
         );
         await own(() => {
@@ -4383,7 +4380,6 @@ export function registerFeishuIntegrationTests(
               setupCompleted: true,
               isConnected: true,
               tenantKey: TENANT_KEY,
-              defaultAgentId: fixture.defaultAgentId,
             });
             const connectorsAfter = await own(() => {
               return accept(
@@ -4528,7 +4524,7 @@ export function registerFeishuIntegrationTests(
         ).toBe(`${APP_ORIGIN}${provider.settingsPath}`);
       });
 
-      it("replies when the default agent has not been initialized", async () => {
+      it("offers connection to an unlinked sender before workspace onboarding", async () => {
         const actor = createActor({
           userId: `user_${randomUUID()}`,
           orgId: `org_${randomUUID()}`,
@@ -4551,7 +4547,6 @@ export function registerFeishuIntegrationTests(
         expect(status.body).toMatchObject({
           isInstalled: true,
           callbackVerified: true,
-          defaultAgentId: null,
         });
         const messageId = `om_${randomUUID()}`;
         const event = directMessage(
@@ -4573,15 +4568,12 @@ export function registerFeishuIntegrationTests(
         expect(replies).toHaveLength(1);
         const reply = requireValue(
           replies[0],
-          "Expected unavailable Agent reply",
+          "Expected account connection reply",
         );
         expect(reply.target).toBe(messageId);
         expect(reply.replyInThread).toBeTruthy();
         expect(reply.msgType).toBe("interactive");
-        expect(messageContent(reply)).toContain("Agent unavailable");
-        expect(messageContent(reply)).toContain(
-          `The configured ${provider.name} agent could not be found. Ask an admin to select another agent.`,
-        );
+        expect(messageContent(reply)).toContain("Connect your account");
         const duplicate = await own(() => {
           return postEvent(callbackUrl, event, { encrypted: true });
         });
@@ -4655,21 +4647,21 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(disconnected.body.isConnected).toBeFalsy();
-        const grantsClient = setupApp({ context, routes: agentsRoutes })(
-          agentCustomConnectorsContract,
-        );
-        const ungranted = await own(() => {
+        const directory = setupApp({
+          context,
+          routes: connectedConnectorsRoutes,
+        })(connectedConnectorsContract);
+        const readConnections = () => {
           return accept(
-            grantsClient.get({
+            directory.list({
               headers: { authorization: "Bearer clerk-session" },
-              params: { id: fixture.defaultAgentId },
             }),
             [200],
           );
-        });
-        expect(ungranted.body.grants).not.toContainEqual(
-          expect.objectContaining({ customConnectorId: managedConnector.id }),
-        );
+        };
+        expect(
+          (await own(readConnections)).body.customConnectors,
+        ).toStrictEqual([]);
         await connectFixtureUser(fixture);
         const connected = await own(() => {
           return accept(
@@ -4680,24 +4672,19 @@ export function registerFeishuIntegrationTests(
           );
         });
         expect(connected.body.isConnected).toBeTruthy();
-        const granted = await own(() => {
-          return accept(
-            grantsClient.get({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: fixture.defaultAgentId },
-            }),
-            [200],
-          );
-        });
-        expect(granted.body.grants).toContainEqual({
-          customConnectorId: managedConnector.id,
-          permissionNames: [],
-        });
+        expect(
+          (await own(readConnections)).body.customConnectors,
+        ).toStrictEqual([
+          expect.objectContaining({
+            id: managedConnector.id,
+            integrationManaged: true,
+          }),
+        ]);
       });
 
-      it("preserves agent access and retries welcome when reconnecting", async () => {
+      it("preserves member permissions and retries welcome when reconnecting", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, appId, defaultAgentId } = fixture;
+        const { actor, appId } = fixture;
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
@@ -4791,27 +4778,23 @@ export function registerFeishuIntegrationTests(
           }),
           "Expected managed Feishu custom connector",
         );
-        const agentAccessClient = setupApp({ context, routes: agentsRoutes })(
-          agentCustomConnectorsContract,
-        );
-        const selectedPermissions = ["messages:send-as-user"];
-        await own(() => {
-          return accept(
-            agentAccessClient.update({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: defaultAgentId },
-              body: {
-                grants: [
-                  {
-                    customConnectorId: managedConnector.id,
-                    permissionNames: selectedPermissions,
-                  },
-                ],
-                operation: "add",
+        const rules = createChatConnectorAccessApi(context);
+        const target = {
+          kind: "custom",
+          customConnectorId: managedConnector.id,
+        } as const;
+        const expectedPermissions = await own(() => {
+          return rules.applyPermissions(actor, {
+            target,
+            mode: "patch",
+            grants: [
+              {
+                permission: "messages:send-as-user",
+                action: "allow",
+                expiresIn: "1h",
               },
-            }),
-            [200],
-          );
+            ],
+          });
         });
         const retryConnectResponse = await own(() => {
           return connectApp.request("/api/feishu/connect", {
@@ -4829,19 +4812,11 @@ export function registerFeishuIntegrationTests(
           retryAuthorizationUrl,
           "ou_feishu_user",
         );
-        const preservedAccess = await own(() => {
-          return accept(
-            agentAccessClient.get({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: defaultAgentId },
-            }),
-            [200],
-          );
-        });
-        expect(preservedAccess.body.grants).toContainEqual({
-          customConnectorId: managedConnector.id,
-          permissionNames: selectedPermissions,
-        });
+        await expect(
+          own(() => {
+            return rules.readPermissions(actor, target);
+          }),
+        ).resolves.toStrictEqual(expectedPermissions);
         await own(flushWaitUntilForTest);
         const welcome = fixtureState.outboundMessages.find((message) => {
           return (
@@ -4870,7 +4845,6 @@ export function registerFeishuIntegrationTests(
           expect.objectContaining({
             id: fixture.installationId,
             appId,
-            defaultAgentId,
             isConnected: true,
             connectedUserName: "Feishu User",
           }),
@@ -5074,7 +5048,7 @@ export function registerFeishuIntegrationTests(
 
       it("rejects account rebinding and replaces the connected identity", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+        const { actor, appId, callbackUrl } = fixture;
         const connectUrl = await connectFixtureUser(fixture);
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -5229,7 +5203,6 @@ export function registerFeishuIntegrationTests(
           callbackVerified: true,
           messageReceived: true,
           tenantKey: TENANT_KEY,
-          defaultAgentId,
         });
         await own(() => {
           return accept(
@@ -5549,8 +5522,7 @@ export function registerFeishuIntegrationTests(
       it("runs a Feishu DM file with downloadable resource context", async () => {
         const firstUploadCall = context.mocks.s3.send.mock.calls.length;
         const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-          fixture;
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
         fixtureState.oauthTokenExpiresInSeconds = 0;
         await connectFixtureUser(fixture);
         const customConnectorClient = setupApp({
@@ -5570,23 +5542,6 @@ export function registerFeishuIntegrationTests(
           "Expected connected Feishu custom connector",
         );
         const managedSkillDigest = uploadedSkillDigest(firstUploadCall);
-        const customConnectorGrants = await own(() => {
-          return accept(
-            setupApp({ context, routes: agentsRoutes })(
-              agentCustomConnectorsContract,
-            ).get({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: defaultAgentId },
-            }),
-            [200],
-          );
-        });
-        expect(customConnectorGrants.body.grants).toStrictEqual([
-          {
-            customConnectorId: managedConnector.id,
-            permissionNames: [],
-          },
-        ]);
         const fileKey = `file_v2_${"a".repeat(1400)}`;
         await own(() => {
           return postEvent(
@@ -5716,32 +5671,6 @@ export function registerFeishuIntegrationTests(
             unknownPolicy: "deny",
           },
         );
-        const permissionGrant = await own(() => {
-          return accept(
-            setupApp({ context, routes: agentsRoutes })(
-              agentCustomConnectorsContract,
-            ).update({
-              headers: { authorization: "Bearer clerk-session" },
-              params: { id: defaultAgentId },
-              body: {
-                grants: [
-                  {
-                    customConnectorId: managedConnector.id,
-                    permissionNames: ["messages:send-as-user"],
-                  },
-                ],
-                operation: "replace",
-              },
-            }),
-            [200],
-          );
-        });
-        expect(permissionGrant.body.grants).toStrictEqual([
-          {
-            customConnectorId: managedConnector.id,
-            permissionNames: ["messages:send-as-user"],
-          },
-        ]);
         const managedSkillMount = receivedExecution.contentBundles.skills.find(
           (bundle) => {
             return bundle.mountPath.endsWith(
@@ -5775,14 +5704,14 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
         });
         const chatThreadCreated = requireValue(
           threadEvents.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the canonical Feishu file chat thread",
         );
@@ -5903,8 +5832,7 @@ export function registerFeishuIntegrationTests(
         "runs a rich post with imported and native images in %s",
         async (chatType) => {
           const fixture = await setupFeishuRunFixture();
-          const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-            fixture;
+          const { actor, runnerGroup, appId, callbackUrl } = fixture;
           await connectFixtureUser(fixture);
           const messageId = `om_post_${randomUUID()}`;
           const uploads = captureIntegrationInputUploads(context);
@@ -6053,16 +5981,14 @@ export function registerFeishuIntegrationTests(
                 chatThreadsContract,
               ).events({
                 headers: { authorization: "Bearer clerk-session" },
-                query: {},
+                query: { sinceSeqId: fixture.sinceSetupSeqId },
               }),
               [200],
             );
           });
           const thread = requireValue(
             threads.body.events.find((event) => {
-              return (
-                event.kind === "created" && event.agentId === defaultAgentId
-              );
+              return event.kind === "created";
             }),
             "Expected a canonical rich post thread",
           );
@@ -6582,7 +6508,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -6604,7 +6530,7 @@ export function registerFeishuIntegrationTests(
         });
         expect(selections.body.selections).toStrictEqual([]);
         expect(selections.body.selectedConnections).toStrictEqual([]);
-        await own(() => {
+        const updated = await own(() => {
           return accept(
             chatThreadConnectorSelectionsClient().update({
               headers: { authorization: "Bearer clerk-session" },
@@ -6617,36 +6543,14 @@ export function registerFeishuIntegrationTests(
                 },
               },
             }),
-            [400],
+            [200],
           );
         });
-        const genericCreate = await own(() => {
-          return accept(
-            setupApp({ context, routes: chatThreadRoutes })(
-              chatThreadsContract,
-            ).create({
-              headers: { authorization: "Bearer clerk-session" },
-              body: {
-                agentId: fixture.defaultAgentId,
-                model: "claude-fable-5-1",
-                connectorSelections: [
-                  {
-                    connectionId: connectorId,
-                    target: {
-                      kind: "custom",
-                      customConnectorId: customConnector.id,
-                    },
-                  },
-                ],
-              },
-            }),
-            [400],
-          );
+        expect(updated.body).toStrictEqual({
+          connectionId: connectorId,
+          target: { kind: "custom", customConnectorId: customConnector.id },
         });
-        expect(genericCreate.body.error.code).toBe(
-          "CONNECTOR_ACCOUNT_UNAVAILABLE",
-        );
-        expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
           `chatThreadDetailChanged:${created.chatThreadId}`,
           null,
         );
@@ -6697,8 +6601,7 @@ export function registerFeishuIntegrationTests(
 
       it("retains platform run history when a model change starts a fresh session", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-          fixture;
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
         const providerThreadId = `omt_${randomUUID()}`;
         await startFeishuDmSession(fixture, providerThreadId);
         await configureNativeModels(actor);
@@ -6709,14 +6612,14 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
         });
         const thread = requireValue(
           threads.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the integration chat thread",
         );
@@ -6779,8 +6682,7 @@ export function registerFeishuIntegrationTests(
 
       it("builds Feishu DM context and canonical response metadata", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-          fixture;
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
         await connectFixtureUser(fixture);
         fixtureState.outboundMessages = [];
         context.mocks.ably.publish.mockClear();
@@ -6872,14 +6774,14 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
         });
         const chatThreadCreated = requireValue(
           threadEvents.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the canonical Feishu chat thread",
         );
@@ -6910,8 +6812,8 @@ export function registerFeishuIntegrationTests(
         });
         const receivedExecution = await readRunExecution(run.id);
         expect(receivedExecution.prompt).toBe("do the Feishu task");
-        expect(receivedExecution.platformEnvironment.OKOU_AGENT_ID).toBe(
-          defaultAgentId,
+        expect(receivedExecution.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+          chatThreadCreated.chatThreadId,
         );
         expect(
           receivedExecution.platformEnvironment.OKOU_CURRENT_INTEGRATION,
@@ -7019,14 +6921,14 @@ export function registerFeishuIntegrationTests(
           revokesEventId: expect.any(String),
           runId: run.id,
         });
-        const completedReply = [...fixtureState.outboundMessages]
-          .reverse()
-          .find((message) => {
-            return (
-              message.kind === "reply" &&
-              messageContent(message).includes("Canonical Feishu answer")
-            );
-          });
+        const completionMessages = fixtureState.outboundMessages.filter(
+          (message) => {
+            return messageContent(message).includes("Canonical Feishu answer");
+          },
+        );
+        expect(completionMessages).toHaveLength(1);
+        const [completedReply] = completionMessages;
+        expect(completedReply?.kind).toBe("reply");
         expect(completedReply?.msgType).toBe("interactive");
         expect(completedReply?.target).toBe(firstMessageId);
         expect(completedReply?.replyInThread).toBeTruthy();
@@ -7719,7 +7621,7 @@ export function registerSharedFeishuConversationTests(): void {
 
     it("reuses one Feishu DM thread for concurrent input and a changed chat destination", async () => {
       const fixture = await setupFeishuRunFixture();
-      const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+      const { actor, appId, callbackUrl } = fixture;
       await connectFixtureUser(fixture);
       const before = await readFeishuThreadEvents(actor);
       const previousIds = new Set(
@@ -7746,7 +7648,6 @@ export function registerSharedFeishuConversationTests(): void {
       });
       expect(created).toHaveLength(1);
       const thread = requireValue(created[0], "Expected the new DM thread");
-      expect(thread.agentId).toBe(defaultAgentId);
 
       const movedPrompt = "continue in the changed Feishu chat";
       const moved = await own(() => {
@@ -8138,8 +8039,7 @@ export function registerSharedFeishuConversationTests(): void {
 
     it("terminalizes and delivers a queued Feishu admission failure exactly once", async () => {
       const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-        fixture;
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped Feishu actor");
       }
@@ -8232,14 +8132,14 @@ export function registerSharedFeishuConversationTests(): void {
             chatThreadsContract,
           ).events({
             headers: { authorization: "Bearer clerk-session" },
-            query: {},
+            query: { sinceSeqId: fixture.sinceSetupSeqId },
           }),
           [200],
         );
       });
       const thread = requireValue(
         threadEvents.body.events.find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
+          return event.kind === "created";
         }),
         "Expected the queued Feishu chat thread",
       );
@@ -8348,8 +8248,7 @@ export function registerSharedFeishuConversationTests(): void {
 
     it("persists a queued Feishu admission failure when delivery fails", async () => {
       const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-        fixture;
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped Feishu actor");
       }
@@ -8427,14 +8326,14 @@ export function registerSharedFeishuConversationTests(): void {
             chatThreadsContract,
           ).events({
             headers: { authorization: "Bearer clerk-session" },
-            query: {},
+            query: { sinceSeqId: fixture.sinceSetupSeqId },
           }),
           [200],
         );
       });
       const thread = requireValue(
         threadEvents.body.events.find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
+          return event.kind === "created";
         }),
         "Expected the failed-delivery Feishu chat thread",
       );

@@ -1,25 +1,12 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 
 import { env } from "../../lib/env";
-import {
-  badRequestMessage,
-  conflict,
-  connectorAccountUnavailable,
-  notFound,
-} from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { welcomeThreadContent } from "../../lib/welcome-thread-content";
-import { writeDb$ } from "../external/db";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { createChatThread$ } from "./chat-thread.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 interface WelcomeThreadAction {
   readonly userId: string;
@@ -56,39 +43,13 @@ function automaticWelcomeChatThreadId(
   );
 }
 
-export type WelcomeThreadDeliveryOutcome =
-  | {
-      readonly outcome: "delivered" | "already-delivered";
-      readonly threadId: string;
-    }
-  | {
-      readonly outcome: "skipped";
-      readonly reason: "default-agent-not-ready";
-    };
+export interface WelcomeThreadDeliveryOutcome {
+  readonly outcome: "delivered" | "already-delivered";
+  readonly threadId: string;
+}
 
 export const createWelcomeChatThread$ = command(
   async ({ get, set }, args: WelcomeThreadAction, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(orgMetadata)
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, orgMetadata.orgId),
-          visibleJoinedAgentCondition(args.userId),
-        ),
-      )
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      return conflict(
-        "The workspace default agent is unavailable. Ask a workspace admin to configure it, then retry.",
-      );
-    }
-
     const pin = await set(
       resolveDefaultModelFirstPin$,
       { orgId: args.orgId, userId: args.userId },
@@ -97,26 +58,15 @@ export const createWelcomeChatThread$ = command(
     signal.throwIfAborted();
     const preferences = await get(userPreferences(args));
     signal.throwIfAborted();
-    const featureContext = await set(
-      loadUserFeatureSwitchContext$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
     const content = welcomeThreadContent({
       locale: preferences.locale ?? "en-US",
       appUrl: env("APP_URL"),
-      singleAgent: isFeatureEnabled(
-        FeatureSwitchKey.SingleAgent,
-        featureContext,
-      ),
     });
 
     const result = await set(
       createChatThread$,
       {
         ...args,
-        agentId: agent.id,
         title: content.title,
         eventId: undefined,
         selectedModel: pin.selectedModel,
@@ -127,13 +77,7 @@ export const createWelcomeChatThread$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.kind === "connector_account_unavailable") {
-      return connectorAccountUnavailable();
-    }
-    if (
-      result.kind === "invalid_connector_selection" ||
-      result.kind === "invalid_remote_access_selection"
-    ) {
+    if (result.kind === "invalid_remote_access_selection") {
       return badRequestMessage(result.message);
     }
     // The id already belongs to another thread. Answer exactly like a thread
@@ -173,9 +117,6 @@ export const deliverWelcomeChatThread$ = command(
       // this recipient's own earlier delivery can hold an id derived from this
       // recipient's identity, so the welcome is already there.
       return { outcome: "already-delivered", threadId };
-    }
-    if (result.status === 409) {
-      return { outcome: "skipped", reason: "default-agent-not-ready" };
     }
     // Creation's only remaining answer is the invalid-connector-selection 400,
     // which automatic delivery cannot reach because it selects no connectors.

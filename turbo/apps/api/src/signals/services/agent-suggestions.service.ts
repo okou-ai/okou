@@ -18,7 +18,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   suggestionSchema,
@@ -44,7 +43,7 @@ import { chatThreadOrganizationPredicate } from "./chat-thread-organization.serv
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
 import {
   storedSuggestion$,
   storedSuggestions$,
@@ -54,7 +53,7 @@ import {
   hasValidSuggestionConsumeToken,
   withSuggestionConsumeToken,
 } from "./agent-suggestion-consumption-token";
-import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive";
 import { readFeedSources$ } from "./feed-sources.service";
 
 interface Owner {
@@ -119,18 +118,10 @@ export const suggestionAccess$ = command(
       const [run] = await get(db$)
         .select({
           id: agentRuns.id,
-          agentId: agentRuns.agentId,
           triggerSource: agentRuns.triggerSource,
           provenance: agentRuns.officialWorkflowProvenance,
         })
         .from(agentRuns)
-        .innerJoin(
-          orgMetadata,
-          and(
-            eq(orgMetadata.orgId, auth.orgId),
-            eq(orgMetadata.defaultAgentId, agentRuns.agentId),
-          ),
-        )
         .where(
           and(
             eq(agentRuns.id, auth.runId),
@@ -143,7 +134,7 @@ export const suggestionAccess$ = command(
       signal.throwIfAborted();
       if (!run) {
         return resourceUnavailable(
-          "Suggestions are available only to a running Okou primary Agent.",
+          "Suggestions are available only to a running Okou session.",
         );
       }
       if (
@@ -165,15 +156,8 @@ export const suggestionAccess$ = command(
           );
         })
       ) {
-        const preference = await set(
-          loadProactiveWorkflowsEligibility$,
-          auth,
-          signal,
-        );
-        if (
-          !preference.suggestions.active ||
-          preference.agentId !== run.agentId
-        ) {
+        const preference = await set(loadProactivePreferences$, auth, signal);
+        if (!preference.suggestions.active) {
           return resourceUnavailable(
             "Automatic suggestion curation is disabled or no longer available. Continue without changing suggestions.",
           );
@@ -221,16 +205,14 @@ export const createSuggestion$ = command(
     signal.throwIfAborted();
     if (!sources.suggestions) {
       return resourceUnavailable(
-        "Suggestions are turned off in For you sources. Existing cards remain available.",
+        "New suggestion cards are turned off. Existing cards remain available.",
       );
     }
-    for (const option of input.content.options) {
-      const invalid = await set(
-        validateThread$,
-        owner,
-        option.threadId,
-        signal,
-      );
+    for (const { threadId } of [
+      ...input.content.options,
+      input.content.customOption,
+    ]) {
+      const invalid = await set(validateThread$, owner, threadId, signal);
       if (invalid) {
         return invalid;
       }
@@ -401,17 +383,13 @@ export const updateSuggestion$ = command(
     ) {
       return badRequestMessage("Suggestion expiry must be in the future.");
     }
-    if (input.content?.options) {
-      for (const option of input.content.options) {
-        const invalid = await set(
-          validateThread$,
-          owner,
-          option.threadId,
-          signal,
-        );
-        if (invalid) {
-          return invalid;
-        }
+    for (const { threadId } of [
+      ...(input.content?.options ?? []),
+      ...(input.content?.customOption ? [input.content.customOption] : []),
+    ]) {
+      const invalid = await set(validateThread$, owner, threadId, signal);
+      if (invalid) {
+        return invalid;
       }
     }
     const item = await set(changeSuggestion$, owner, id, input, signal);

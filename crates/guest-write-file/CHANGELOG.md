@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.1.318](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.317...guest-write-file-v0.1.318) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-write-file:** copy sealed batch ranges in the kernel ([#49581](https://github.com/okou-ai/okou/issues/49581)) ([6b6f161](https://github.com/okou-ai/okou/commit/6b6f161ef2f54cf0cdecc25fe241edb6091cc902))
+
+## [0.1.317](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.316...guest-write-file-v0.1.317) (2026-11-20)
+
+
+### Refactoring
+
+* **guest:** centralize guest write destination policy ([#49552](https://github.com/okou-ai/okou/issues/49552)) ([6003409](https://github.com/okou-ai/okou/commit/6003409fadc41b407e53ceac6ca2f9fc219cd439))
+
+## [0.1.316](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.315...guest-write-file-v0.1.316) (2026-11-20)
+
+## [0.1.315](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.314...guest-write-file-v0.1.315) (2026-11-20)
+
+## [0.1.314](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.313...guest-write-file-v0.1.314) (2026-11-20)
+
+
+### Performance Improvements
+
+* **guest-storage:** pass large decoded inputs in sealed descriptors ([#49206](https://github.com/okou-ai/okou/issues/49206)) ([b48b19f](https://github.com/okou-ai/okou/commit/b48b19f606fe851dc9faa04995c2d1fdaef7203a))
+
+## [0.1.313](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.312...guest-write-file-v0.1.313) (2026-11-19)
+
+## [0.1.312](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.311...guest-write-file-v0.1.312) (2026-11-19)
+
+
+### Performance Improvements
+
+* **guest-control:** stream large file writes into sealed inputs ([#49029](https://github.com/okou-ai/okou/issues/49029)) ([4c926a5](https://github.com/okou-ai/okou/commit/4c926a5a96d2fd68883a5be1b34247f62389f2d2))
+
 ## [0.1.311](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.310...guest-write-file-v0.1.311) (2026-11-19)
 
 ## [0.1.310](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.309...guest-write-file-v0.1.310) (2026-11-18)

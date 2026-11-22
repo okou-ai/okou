@@ -1,6 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
 import { and, eq, exists, isNotNull, lte } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -90,7 +89,6 @@ const persistRunTimeBudgetInput$ = command(
         .select({ id: agentRuns.id })
         .from(agentRuns)
         .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .where(
           and(
             eq(agentRuns.id, args.candidate.runId),

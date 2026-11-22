@@ -11,6 +11,7 @@ import {
   enum as zEnum,
   unknown as zUnknown,
   type infer as zInfer,
+  type RefinementCtx,
 } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
@@ -104,11 +105,7 @@ export const bankingRepairInstitutionSchema = object({
   institutionName: string().nullable(),
 });
 
-export const bankingAccessRequestStatusResponseSchema = object({
-  agent: object({
-    id: uuid(),
-    name: string(),
-  }),
+const bankingWorkspaceStatusSchema = object({
   connection: object({
     id: uuid(),
     status: zEnum(["active", "repair_required"]),
@@ -135,11 +132,20 @@ export const bankingAccessRequestStatusResponseSchema = object({
   }).nullable(),
 });
 
-export const bankingConnectSessionRequestSchema = object({
-  agentId: uuid(),
+export const bankingAccessRequestStatusResponseSchema =
+  bankingWorkspaceStatusSchema.extend({
+    agent: object({ id: uuid(), name: string() }),
+  });
+
+const bankingConnectSessionShape = {
   mode: zEnum(["connect", "fix"]),
   institutionLoginId: string().trim().min(1).max(128).optional(),
-}).superRefine((value, context) => {
+};
+
+const validateBankingConnectSession = (
+  value: { mode: "connect" | "fix"; institutionLoginId?: string },
+  context: RefinementCtx,
+) => {
   if (value.mode === "fix" && !value.institutionLoginId) {
     context.addIssue({
       code: "custom",
@@ -154,18 +160,26 @@ export const bankingConnectSessionRequestSchema = object({
       message: "institutionLoginId is only valid for a fix session",
     });
   }
-});
+};
+
+export const bankingConnectSessionRequestSchema = object({
+  ...bankingConnectSessionShape,
+  agentId: uuid(),
+}).superRefine(validateBankingConnectSession);
 
 export const bankingConnectSessionResponseSchema = object({
   sessionId: uuid(),
   url: url(),
 });
 
-export const bankingAgentGrantRequestSchema = object({
-  agentId: uuid(),
+const bankingGrantRequestSchema = object({
   accountIds: array(uuid()).min(1),
   duration: bankingGrantDurationSchema,
   purpose: string().trim().min(1).max(500),
+});
+
+export const bankingAgentGrantRequestSchema = bankingGrantRequestSchema.extend({
+  agentId: uuid(),
 });
 
 export const bankingAgentGrantRevokeRequestSchema = object({
@@ -285,6 +299,58 @@ export const bankingUserContract = c.router({
     summary: "Revoke an agent banking grant",
   },
 });
+
+export type BankingWorkspaceStatus = zInfer<
+  typeof bankingWorkspaceStatusSchema
+>;
+
+export const bankingWorkspaceContract = c.router({
+  accessRequestStatus: {
+    method: "GET",
+    path: "/api/banking/access-requests/current",
+    headers: authHeadersSchema,
+    responses: {
+      ...bankingUserContract.accessRequestStatus.responses,
+      200: bankingWorkspaceStatusSchema,
+    },
+  },
+  createConnectSession: {
+    method: "POST",
+    path: "/api/banking/workspace/connect-sessions",
+    headers: authHeadersSchema,
+    body: object(bankingConnectSessionShape).superRefine(
+      validateBankingConnectSession,
+    ),
+    responses: bankingUserContract.createConnectSession.responses,
+  },
+  saveGrant: {
+    method: "POST",
+    path: "/api/banking/workspace/grant",
+    headers: authHeadersSchema,
+    body: bankingGrantRequestSchema,
+    responses: {
+      ...bankingUserMutationResponses,
+      200: bankingWorkspaceStatusSchema,
+    },
+  },
+  revokeGrant: {
+    method: "POST",
+    path: "/api/banking/workspace/grant/revoke",
+    headers: authHeadersSchema,
+    body: object({}),
+    responses: {
+      ...bankingUserMutationResponses,
+      200: bankingWorkspaceStatusSchema,
+    },
+  },
+});
+
+export type WorkspaceBankingConnectSessionRequest = zInfer<
+  typeof bankingWorkspaceContract.createConnectSession.body
+>;
+export type WorkspaceBankingGrantRequest = zInfer<
+  typeof bankingGrantRequestSchema
+>;
 
 export const bankingPublicContract = c.router({
   connectReturn: {

@@ -125,7 +125,6 @@ type ComposerSuggestionSignals = Pick<
   | "setSlashHintMenuRef$"
   | "setMentionHintMenuRef$"
   | "clearSlashRange$"
-  | "insertAgent$"
   | "insertChatThread$"
 > & {
   /** A token can own a session before its asynchronous rows are available. */
@@ -268,7 +267,6 @@ export interface ComposerSignals {
   readonly create: ComposerCreateSignals;
   readonly addMenu: ComposerUiSignalGroups["addMenu"];
   readonly taskChips: ComposerTaskChipsSignals;
-  readonly agentId: string;
   readonly threadId?: string;
   /** Present on a new chat's page composer, which can start it in a Project. */
   readonly project?: ComposerProjectSignals;
@@ -309,7 +307,6 @@ export interface ComposerSignals {
 }
 
 interface CreateComposerSignalsOptions {
-  readonly agentId: string;
   readonly draft: {
     readonly signals: DraftSignals;
     readonly load$: ComposerDraftSignals["load$"];
@@ -453,7 +450,6 @@ function composerSuggestionSignals(
     setSlashHintMenuRef$: composer.setSlashHintMenuRef$,
     setMentionHintMenuRef$: composer.setMentionHintMenuRef$,
     clearSlashRange$: composer.clearSlashRange$,
-    insertAgent$: composer.insertAgent$,
     insertChatThread$: composer.insertChatThread$,
   };
 }
@@ -564,14 +560,10 @@ export function createComposerSignals(
 ): ComposerSignals {
   const eventSignals = createComposerChatEventSignals(options.eventSignals);
   const draft = options.draft.signals;
-  const agentId$ = computed((): string => {
-    return options.agentId;
-  });
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
     ui.openTemplatePickerDialog$,
-    agentId$,
     {
       autoFocus: true,
       ...(options.forwardComposer
@@ -598,16 +590,11 @@ export function createComposerSignals(
   );
   const fileInput = createComposerFileInputSignals();
   const connector =
-    options.connector ??
-    createComposerConnectorSignals(options.agentId, options.threadId);
+    options.connector ?? createComposerConnectorSignals(options.threadId);
   const draftSignals = composerDraftSignals(options.draft, fileInput);
   const annotation = createComposerAttachmentAnnotation(draft, draftSignals);
-  const connectorCompletion = createComposerConnectorCompletion(
-    connector,
-    options.agentId,
-  );
+  const connectorCompletion = createComposerConnectorCompletion(connector);
   return {
-    agentId: options.agentId,
     threadId: options.threadId,
     /** Starts the composer's owner-scoped work under its owner's signal. */
     setup$: command(({ set }, signal: AbortSignal) => {
@@ -638,7 +625,7 @@ export function createComposerSignals(
     },
     computer: {
       ...createComputerUseGuideSignals(
-        `${options.forwardComposer ? "forward" : "composer"}:${options.threadId ?? options.agentId}`,
+        `${options.forwardComposer ? "forward" : "composer"}:${options.threadId ?? "new-chat"}`,
       ),
       computerUseHostId$: options.computerUseHostId$,
       cloudBrowserEnabled$: options.cloudBrowserEnabled$,

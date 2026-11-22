@@ -52,10 +52,9 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
         store.canConfigurePermissions(slug: connector.target.connectorSlug), kind == "supported")
       if kind == "supported" {
         try await store.service.savePermissions(
-          slug: "slack", agentID: FixtureData.agentID,
+          slug: "slack",
           edits: [ChatPermissionEdit(permission: "read", action: "allow", expiresIn: "24h")])
-        let permissions = try await store.service.permissions(
-          slug: "slack", agentID: FixtureData.agentID)
+        let permissions = try await store.service.permissions(slug: "slack")
         XCTAssertEqual(
           permissions.metadata.policy(for: "read", grants: permissions.grants, at: .now), .allow)
         let access = try await store.service.connectorAccess(
@@ -72,7 +71,7 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     let fixture = makeFixture(state)
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     workspace.startNewChat()
     workspace.newChatDraft = "Keep this message"
     let store = workspace.newModelSelection.connectors
@@ -80,7 +79,8 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     await store.refresh()
     await store.setAccountAccess(
       target: .builtin("slack"), connectionID: FixtureData.siblingID, enabled: true)
-    await store.selectAccount(target: .builtin("slack"), connectionID: FixtureData.siblingID)
+    await store.setAccountAccess(
+      target: .builtin("slack"), connectionID: FixtureData.accountID, enabled: false)
     await workspace.sendNewChat()
     XCTAssertEqual(workspace.newChatDraft, "Keep this message")
     XCTAssertNil(workspace.selectedThreadID)

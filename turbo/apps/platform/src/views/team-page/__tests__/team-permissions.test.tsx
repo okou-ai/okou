@@ -1,3 +1,11 @@
+import {
+  connectorPermissionsContract,
+  type ApplyConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
+import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
 import { screen, waitFor } from "@testing-library/react";
 import {
   type PublicConnectorCatalogPermissionDetail,
@@ -5,19 +13,15 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrantsRequest,
-  type UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
+
 import { expect, test } from "vitest";
 
 import {
   click,
   fill,
+  setupPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
@@ -26,13 +30,16 @@ import {
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  RESEARCH_AGENT_ID,
   catalogConnectorFixture,
   mockConnectorOverview,
   permissionGrantFixture,
   permissionMetadataFixture,
-  setupTeamPage,
 } from "./team-page-test-helpers.ts";
+import {
+  mockPublicConnectorStatus,
+  getConnectorCard,
+} from "../../okou-page/__tests__/connector-page-test-helpers.ts";
+import { findFastControl } from "../../okou-page/__tests__/chat-message-experience-test-helpers.ts";
 
 const context = testContext();
 const FIXED_NOW_ISO = "2026-08-18T12:00:00.000Z";
@@ -40,8 +47,8 @@ const FIXED_NOW_ISO = "2026-08-18T12:00:00.000Z";
 interface PermissionSurfaceOptions {
   readonly connector: PublicConnectorCatalogStatusItem;
   readonly metadata: PublicConnectorCatalogPermissionDetail;
-  readonly initialGrants?: readonly UserPermissionGrantResponse[];
-  readonly onApply?: (request: ApplyUserPermissionGrantsRequest) => void;
+  readonly initialGrants?: readonly ConnectorPermissionFixture[];
+  readonly onApply?: (request: ApplyConnectorPermissions) => void;
 }
 
 function expiresAtFor(expiresIn: "1h" | "24h" | "7d" | "always" | undefined) {
@@ -68,6 +75,7 @@ function mockPermissionSurface(
 ): void {
   let grants = [...(options.initialGrants ?? [])];
   mockConnectorOverview(testContextValue, [options.connector]);
+  mockPublicConnectorStatus(testContextValue, [options.connector]);
   testContextValue.mocks.api(
     connectorCatalogContract.permissions,
     ({ respond }) => {
@@ -78,35 +86,22 @@ function mockPermissionSurface(
     return respond(200, { connectors: [] });
   });
   testContextValue.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ respond }) => {
-      return respond(200, { enabledConnectorSlugs: [] });
-    },
-  );
-  testContextValue.mocks.api(
-    agentCustomConnectorsContract.get,
-    ({ respond }) => {
-      return respond(200, { grants: [] });
-    },
-  );
-  testContextValue.mocks.api(
-    userPermissionGrantsContract.list,
+    connectorPermissionsContract.get,
     ({ query, respond }) => {
-      return respond(
-        200,
-        grants.filter((grant) => {
-          return grant.agentId === query.agentId;
-        }),
-      );
+      return respond(200, connectorPermissionsResponse(query, grants));
     },
   );
   testContextValue.mocks.api(
-    userPermissionGrantsContract.apply,
+    connectorPermissionsContract.apply,
     ({ body, respond }) => {
+      if (body.target.kind !== "builtin") {
+        throw new Error("Expected a builtin connector");
+      }
+      const { connectorSlug } = body.target;
       options.onApply?.(body);
       const incoming = body.grants.map((grant) => {
         return permissionGrantFixture(
-          body.connectorSlug,
+          connectorSlug,
           grant.permission,
           grant.action,
           grant.action === "allow" ? expiresAtFor(grant.expiresIn) : null,
@@ -115,7 +110,7 @@ function mockPermissionSurface(
       if (body.mode === "replace") {
         grants = [
           ...grants.filter((grant) => {
-            return grant.connectorSlug !== body.connectorSlug;
+            return grant.connectorSlug !== connectorSlug;
           }),
           ...incoming,
         ];
@@ -128,14 +123,14 @@ function mockPermissionSurface(
         grants = [
           ...grants.filter((grant) => {
             return (
-              grant.connectorSlug !== body.connectorSlug ||
+              grant.connectorSlug !== connectorSlug ||
               !updatedNames.has(grant.permission)
             );
           }),
           ...incoming,
         ];
       }
-      return respond(200, grants);
+      return respond(200, connectorPermissionsResponse(body.target, grants));
     },
   );
 }
@@ -220,9 +215,14 @@ function chooseDuration(permission: string, option: string): void {
 }
 
 async function openPermissions(connectorName: string): Promise<void> {
-  await screen.findByRole("heading", { name: "Research Agent" });
   await screen.findByText(connectorName);
-  click(labelledButton(`Manage ${connectorName} permissions`));
+  click(
+    await findFastControl(
+      "button",
+      "Permissions",
+      getConnectorCard(connectorName),
+    ),
+  );
   await screen.findByRole("heading", {
     name: (accessibleName) => {
       return accessibleName.startsWith(`${connectorName} permissions`);
@@ -237,14 +237,11 @@ function startPermissionPage(
 ): Promise<void> {
   mockNow(new Date(FIXED_NOW_ISO), context.signal);
   mockPermissionSurface(context, { connector, metadata, ...options });
-  return setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}`,
-  });
+  return setupPage({ context, path: "/connectors?scope=connected" });
 }
 
 async function setupAppliedAxiomPermission() {
-  const requests: ApplyUserPermissionGrantsRequest[] = [];
+  const requests: ApplyConnectorPermissions[] = [];
   const connector = catalogConnectorFixture("axiom", "Axiom");
   const metadata = permissionMetadataFixture(
     "axiom",
@@ -286,7 +283,7 @@ async function setupAppliedAxiomPermission() {
   click(exactDurationOption("Allow for 24h"));
   click(exactButton("Apply"));
   await waitFor(() => {
-    expect(screen.getByText("Permissions updated")).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(
       screen.queryByRole("heading", { name: /^Axiom permissions\b/u }),
     ).not.toBeInTheDocument();
@@ -307,7 +304,9 @@ test("A user can apply a temporary connector policy", async () => {
 
 test("A user can restore the saved connector-policy baseline", async () => {
   const requests = await setupAppliedAxiomPermission();
-  click(labelledButton("Manage Axiom permissions"));
+  click(
+    await findFastControl("button", "Permissions", getConnectorCard("Axiom")),
+  );
   await screen.findByRole("heading", { name: /^Axiom permissions\b/u });
   click(policyButton(permissionRow("annotations|create"), "Deny"));
   click(policyButton(otherEndpointsRow(), "Deny"));
@@ -324,14 +323,14 @@ test("A user can restore the saved connector-policy baseline", async () => {
     ).not.toBeInTheDocument();
   });
   expect(requests[1]).toMatchObject({
-    connectorSlug: "axiom",
+    target: { kind: "builtin", connectorSlug: "axiom" },
     mode: "replace",
     grants: [],
   });
 });
 
 test("Closing connector permissions discards unapplied changes", async () => {
-  const requests: ApplyUserPermissionGrantsRequest[] = [];
+  const requests: ApplyConnectorPermissions[] = [];
   const connector = catalogConnectorFixture("axiom", "Axiom");
   const metadata = permissionMetadataFixture(
     "axiom",
@@ -359,7 +358,9 @@ test("Closing connector permissions discards unapplied changes", async () => {
   });
   expect(requests).toStrictEqual([]);
 
-  click(labelledButton("Manage Axiom permissions"));
+  click(
+    await findFastControl("button", "Permissions", getConnectorCard("Axiom")),
+  );
   await screen.findByRole("heading", { name: /^Axiom permissions\b/u });
   const reopened = permissionRow("annotations|create");
   expectPolicy(reopened, "Deny", true);
@@ -399,7 +400,7 @@ test("An expired allow grant falls back to the connector's current default", asy
 });
 
 async function setupGroupedSlackPermissions() {
-  const requests: ApplyUserPermissionGrantsRequest[] = [];
+  const requests: ApplyConnectorPermissions[] = [];
   const connector = catalogConnectorFixture("slack", "Slack", {
     permissionCount: 5,
   });
@@ -476,7 +477,7 @@ test("Grouped and individual connector policies submit together", async () => {
   click(exactButton("Apply"));
   await waitFor(() => {
     expect(requests).toHaveLength(1);
-    expect(screen.getByText("Permissions updated")).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(
     new Set(
@@ -500,7 +501,7 @@ test("Grouped and individual connector policies submit together", async () => {
 });
 
 test("A user can change one connector permission from temporary to permanent", async () => {
-  const requests: ApplyUserPermissionGrantsRequest[] = [];
+  const requests: ApplyConnectorPermissions[] = [];
   const connector = catalogConnectorFixture("axiom", "Axiom", {
     permissionCount: 2,
   });
@@ -550,10 +551,10 @@ test("A user can change one connector permission from temporary to permanent", a
   click(exactButton("Apply"));
   await waitFor(() => {
     expect(requests).toHaveLength(1);
-    expect(screen.getByText("Permissions updated")).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(requests[0]).toMatchObject({
-    connectorSlug: "axiom",
+    target: { kind: "builtin", connectorSlug: "axiom" },
     mode: "patch",
     grants: [
       {
@@ -566,7 +567,7 @@ test("A user can change one connector permission from temporary to permanent", a
 });
 
 test("A user can find and save a permission beyond the initially visible list", async () => {
-  const requests: ApplyUserPermissionGrantsRequest[] = [];
+  const requests: ApplyConnectorPermissions[] = [];
   const permissionNames = Array.from({ length: 110 }, (_, index) => {
     return `catalog.${String(index + 1).padStart(3, "0")}.read`;
   });
@@ -595,11 +596,10 @@ test("A user can find and save a permission beyond the initially visible list", 
   click(exactButton("Apply"));
   await waitFor(() => {
     expect(requests).toHaveLength(1);
-    expect(screen.getByText("Permissions updated")).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(requests[0]).toMatchObject({
-    agentId: RESEARCH_AGENT_ID,
-    connectorSlug: "cloudflare",
+    target: { kind: "builtin", connectorSlug: "cloudflare" },
     mode: "patch",
     grants: [
       {

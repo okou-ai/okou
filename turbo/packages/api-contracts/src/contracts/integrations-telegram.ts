@@ -32,14 +32,12 @@ const telegramBotSchema = object({
   kind: literal("official").optional(),
   username: string().nullable(),
   avatarUrl: string().nullable(),
-  agent: object({ id: string(), name: string() }).nullable(),
   isOwner: boolean(),
   isConnected: boolean(),
   connectedUser: telegramConnectedUserSchema.nullable().optional(),
   tokenStatus: telegramTokenStatusSchema,
   official: object({
     configured: boolean(),
-    usesDefaultAgent: boolean(),
     linkedTelegramUserId: string().nullable(),
   }).optional(),
 });

@@ -39,6 +39,19 @@ function nullableSchema(
   return undefined;
 }
 
+function isUnrestrictedStringUnion(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  // A URI or a hostless reference still has one wire representation.
+  return (
+    value.every((branch) => {
+      return schemaObject(branch) && branch.type === "string";
+    }) &&
+    value.some((branch) => {
+      return schemaObject(branch) && Object.keys(branch).length === 1;
+    })
+  );
+}
+
 function stringValues(value: unknown): string[] | undefined {
   if (!schemaObject(value)) return undefined;
   if (Array.isArray(value.anyOf)) {
@@ -311,6 +324,7 @@ export function renderKotlinModels(
   let hasOptionalJson = false;
   let hasOptionalInput = false;
   let requestBinding = false;
+  let preserveOptionalNullable: readonly string[] = [];
   const integerLiterals = new Set<number>();
   const imports = new Set([
     "kotlinx.serialization.SerialName",
@@ -414,6 +428,31 @@ object ${name}Serializer : KSerializer<${name}> {
 }`);
     return name;
   };
+  const booleanLiterals = new Set<boolean>();
+  const literalBoolean = (value: boolean) => {
+    const name = value ? "CanonicalTrue" : "CanonicalFalse";
+    if (booleanLiterals.has(value)) return name;
+    reserve(name);
+    reserve(`${name}Serializer`);
+    booleanLiterals.add(value);
+    serializerImports();
+    declarations.push(`@Serializable(with = ${name}Serializer::class)
+data object ${name}
+
+object ${name}Serializer : KSerializer<${name}> {
+    override val descriptor = JsonPrimitive.serializer().descriptor
+    override fun deserialize(decoder: Decoder): ${name} {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON boolean literal")
+        if (input.decodeJsonElement() != JsonPrimitive(${value})) throw SerializationException("Unexpected boolean literal")
+        return ${name}
+    }
+    override fun serialize(encoder: Encoder, value: ${name}) {
+        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON boolean literal")
+        output.encodeJsonElement(JsonPrimitive(${value}))
+    }
+}`);
+    return name;
+  };
   const optionalInput = () => {
     if (hasOptionalInput) return;
     reserve("CanonicalOptional");
@@ -507,7 +546,7 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
         if (opaque) optionalJson();
         const optionalNullable =
           optional &&
-          requestBinding &&
+          (requestBinding || preserveOptionalNullable.includes(field)) &&
           schemaObject(schema) &&
           nullableSchema(schema, `${name}${suffix(field)}`) !== undefined;
         if (optionalNullable) optionalInput();
@@ -629,6 +668,18 @@ object ${name}Serializer : KSerializer<${name}> {
     }
   }
 
+  const renderLiteral = (value: JsonObject, name: string): string => {
+    if (value.type === "boolean" && typeof value.const === "boolean")
+      return literalBoolean(value.const);
+    if (
+      ["number", "integer"].includes(String(value.type)) &&
+      typeof value.const === "number" &&
+      Number.isSafeInteger(value.const)
+    )
+      return literalInteger(value.const);
+    throw new Error(`${name}: unsupported literal`);
+  };
+
   const render = (value: unknown, name: string, parent?: string): string => {
     if (!schemaObject(value))
       throw new Error(`${name}: expected a JSON schema`);
@@ -647,17 +698,10 @@ object ${name}Serializer : KSerializer<${name}> {
       return name;
     }
     if (value.enum) throw new Error(`${name}: unsupported enum`);
-    if (value.const !== undefined) {
-      if (
-        ["number", "integer"].includes(String(value.type)) &&
-        typeof value.const === "number" &&
-        Number.isSafeInteger(value.const)
-      )
-        return literalInteger(value.const);
-      throw new Error(`${name}: unsupported literal`);
-    }
+    if (value.const !== undefined) return renderLiteral(value, name);
     const union = value.anyOf ?? value.oneOf;
     if (Array.isArray(union)) {
+      if (isUnrestrictedStringUnion(value.anyOf)) return "String";
       const variants = objectUnionVariants(union);
       if (variants.length < 2) throw new Error(`${name}: unsupported union`);
       const selectors = unionSelectors(variants, name);
@@ -720,9 +764,10 @@ ${types
   };
   for (const binding of bindings) {
     requestBinding = requestTypes.has(binding.name);
+    preserveOptionalNullable = binding.preserveOptionalNullable ?? [];
     const name = kotlinTypeName(binding.name);
     const result = render(
-      toJSONSchema(binding.schema, {
+      toJSONSchema(binding.readSchema ?? binding.schema, {
         io: binding.direction,
         override: ({ zodSchema, jsonSchema }) => {
           if (rawObjects.has(zodSchema)) {

@@ -16,7 +16,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -28,16 +27,6 @@ const client = () => {
     instructionsContract,
   );
 };
-async function mode(actor: ApiTestUser, singleAgent: boolean) {
-  if (!actor.orgId) {
-    throw new Error("Expected org");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { singleAgent },
-  );
-}
 async function save(actor: ApiTestUser, content: string) {
   createRouteMocks(context).clerk.session(
     actor.userId,
@@ -48,12 +37,11 @@ async function save(actor: ApiTestUser, content: string) {
 }
 
 describe("Captured personal Instructions in direct Runs", () => {
-  it("keeps published personal content and signed API mode across a live flag disable", async () => {
+  it("keeps published personal content and signed API mode after personal Instructions change", async () => {
     const owned = await publicChatActor(context);
-    owned.ownsFeatureSwitches();
     await owned.run(async () => {
       const s3 = installWorkflowVolumeS3Fixture(context);
-      const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
+      const defaultAgentId = await bdd.readDefaultAgentId(owned.actor);
       if (!defaultAgentId) {
         throw new Error("Expected default executor");
       }
@@ -62,7 +50,7 @@ describe("Captured personal Instructions in direct Runs", () => {
         defaultAgentId,
         "Shared legacy Instructions",
       );
-      await mode(owned.actor, true);
+
       await save(owned.actor, "personal at admission");
       const queued = await api.createThreadRun(owned.actor, {
         agentId: defaultAgentId,
@@ -70,7 +58,7 @@ describe("Captured personal Instructions in direct Runs", () => {
         model: "auto",
       });
       await save(owned.actor, "latest after Run admission");
-      await mode(owned.actor, false);
+
       const { execution } = await owned.runExecution(queued.runId);
       const selected = execution.contentBundles.instructions!;
       expect(
@@ -97,46 +85,17 @@ describe("Captured personal Instructions in direct Runs", () => {
       ).toBe("personal at admission");
       await api.requestCancelRun(owned.actor, queued.runId, [200]);
       await accept(client().get({ headers: runHeaders }), [403]);
-      const legacy = await api.createThreadRun(owned.actor, {
-        agentId: defaultAgentId,
-        prompt: "legacy after disable",
-        model: "auto",
-      });
-      await mode(owned.actor, true);
-      const next = await owned.runExecution(legacy.runId);
-      expect(
-        readExecutionContentBundle(
-          s3.objects,
-          next.execution.contentBundles.instructions!,
-        )
-          .get("instructions.md")
-          ?.toString(),
-      ).toBe("Shared legacy Instructions");
-      await accept(
-        client().get({
-          headers: {
-            authorization: `Bearer ${next.execution.platformEnvironment.OKOU_TOKEN!}`,
-          },
-        }),
-        [403],
-      );
     });
   });
 
-  it("clears the native instruction input and preserves the explicit non-default legacy path", async () => {
+  it("uses cleared member Instructions even when a legacy client supplies a named Agent", async () => {
     const owned = await publicChatActor(context);
-    owned.ownsFeatureSwitches();
     await owned.run(async () => {
       const s3 = installWorkflowVolumeS3Fixture(context);
-      const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
-      if (!defaultAgentId) {
-        throw new Error("Expected default executor");
-      }
-      await mode(owned.actor, true);
+
       await save(owned.actor, "old managed file");
       await save(owned.actor, "");
       const queued = await api.createThreadRun(owned.actor, {
-        agentId: defaultAgentId,
         prompt: "clear personal file",
         model: "auto",
       });
@@ -158,14 +117,18 @@ describe("Captured personal Instructions in direct Runs", () => {
         model: "auto",
       });
       const nonDefault = await owned.runExecution(retained.runId);
-      await accept(
+      const saved = await accept(
         client().get({
           headers: {
             authorization: `Bearer ${nonDefault.execution.platformEnvironment.OKOU_TOKEN!}`,
           },
         }),
-        [403],
+        [200],
       );
+      expect(saved.body).toMatchObject({
+        userId: owned.actor.userId,
+        content: "",
+      });
       expect(
         readExecutionContentBundle(
           s3.objects,
@@ -173,12 +136,11 @@ describe("Captured personal Instructions in direct Runs", () => {
         )
           .get("instructions.md")
           ?.toString(),
-      ).toBe("retained non-default");
+      ).toBe("");
     });
   });
   it("uses the default until the first save and isolates two members on the same default executor", async () => {
     const owned = await publicChatActor(context);
-    owned.ownsFeatureSwitches();
     await owned.run(async () => {
       // Deployments publish the default before serving.
       const { archive } = await prepareContentBundle([
@@ -196,11 +158,11 @@ describe("Captured personal Instructions in direct Runs", () => {
           ],
         ]),
       );
-      const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
+      const defaultAgentId = await bdd.readDefaultAgentId(owned.actor);
       if (!defaultAgentId) {
         throw new Error("Expected default executor");
       }
-      await mode(owned.actor, true);
+
       const first = await api.createThreadRun(owned.actor, {
         agentId: defaultAgentId,
         prompt: "first personal use",
@@ -222,7 +184,7 @@ describe("Captured personal Instructions in direct Runs", () => {
       await bobOwner.run(async () => {
         await bdd.completeOnboarding(bob);
         await api.ensurePersonalSubscriptionModel(bob);
-        await mode(bob, true);
+
         await save(owned.actor, "Alice only");
         await save(bob, "Bob only");
         const aliceRun = await api.createThreadRun(owned.actor, {

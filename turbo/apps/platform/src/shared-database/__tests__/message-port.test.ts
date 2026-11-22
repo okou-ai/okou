@@ -804,7 +804,7 @@ test("Authenticate a shared read with the first successful tab without waiting f
   await first.bridge.registerTab(context.signal);
   await second.bridge.registerTab(context.signal);
   const requestTokens = new Set<string | null>();
-  const indicators = { agents: {}, threads: {}, unreadAt: {} };
+  const indicators = { threads: {}, unreadAt: {} };
   context.mocks.api(chatThreadsContract.indicators, ({ request, respond }) => {
     requestTokens.add(request.headers.get("authorization"));
     return respond(200, indicators);
@@ -852,7 +852,7 @@ test.each(["rejects", "disconnects"] as const)(
     );
     await first.bridge.registerTab(firstOwnerSignal);
     await healthy.bridge.registerTab(context.signal);
-    const indicators = { agents: {}, threads: {}, unreadAt: {} };
+    const indicators = { threads: {}, unreadAt: {} };
     const requestTokens = new Set<string | null>();
     context.mocks.api(
       chatThreadsContract.indicators,
@@ -954,7 +954,7 @@ test("Cancel a shared read waiting for a token without cancelling worker progres
     deferHeartbeatLoop,
   );
   await bridge.registerTab(context.signal);
-  const indicators = { agents: {}, threads: {}, unreadAt: {} };
+  const indicators = { threads: {}, unreadAt: {} };
   const requestTokens = new Set<string | null>();
   context.mocks.api(chatThreadsContract.indicators, ({ request, respond }) => {
     requestTokens.add(request.headers.get("authorization"));
@@ -1003,7 +1003,7 @@ test("Keep overlapping token broadcasts independent when the later request compl
     deferHeartbeatLoop,
   );
   await bridge.registerTab(context.signal);
-  const indicators = { agents: {}, threads: {}, unreadAt: {} };
+  const indicators = { threads: {}, unreadAt: {} };
   const requestTokens = new Map<string, string | null>();
   context.mocks.api(chatThreadsContract.indicators, ({ request, respond }) => {
     requestTokens.set("indicators", request.headers.get("authorization"));
@@ -1238,7 +1238,6 @@ test("Stop pending requests when the bridge lifecycle ends", async () => {
 function mockUnreadIndicators(threadId: string): void {
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: { [threadId]: "unread" },
       unreadAt: {},
     });
@@ -1315,15 +1314,13 @@ function cachedRows(
 
 test("Refresh unread indicators after an indicator change without warming messages", async () => {
   const threadId = crypto.randomUUID();
-  const agentId = crypto.randomUUID();
   let muted = false;
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(
       200,
       muted
-        ? { agents: {}, threads: {}, unreadAt: {} }
+        ? { threads: {}, unreadAt: {} }
         : {
-            agents: { [agentId]: "unread" },
             threads: { [threadId]: "unread" },
             unreadAt: { [threadId]: "2026-03-10T00:00:00Z" },
           },
@@ -1351,7 +1348,7 @@ test("Refresh unread indicators after an indicator change without warming messag
   await vi.waitFor(async () => {
     await expect(
       bridge.getComputed("chat-thread-indicators"),
-    ).resolves.toStrictEqual({ agents: {}, threads: {}, unreadAt: {} });
+    ).resolves.toStrictEqual({ threads: {}, unreadAt: {} });
   });
 });
 
@@ -1494,7 +1491,6 @@ test("Keep indicators readable when message-triggered chat warming fails", async
   await expect(
     bridge.getComputed("chat-thread-indicators"),
   ).resolves.toStrictEqual({
-    agents: {},
     threads: { [threadId]: "unread" },
     unreadAt: {},
   });

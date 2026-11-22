@@ -75,13 +75,6 @@ function memberOf(admin: OrgActor) {
   } as const;
 }
 
-function mockDefaultAgentStorage(): void {
-  context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
-  context.mocks.s3.getSignedUrl.mockResolvedValue(
-    "https://r2.example.test/default-agent.tar.gz?signature=test",
-  );
-}
-
 async function statusAs(actor: OrgActor) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.role);
   const response = await accept(
@@ -190,7 +183,6 @@ describe("Onboarding draft", () => {
       client.save({ headers, body: { ...draft, revision: null } }),
       [200],
     );
-    mockDefaultAgentStorage();
     await completeAs(actor);
     await accept(client.get({ headers }), [404]);
     await accept(
@@ -226,17 +218,12 @@ describe("member source-first onboarding", () => {
       onboardingComplete: false,
       isAdmin: false,
       hasOrg: true,
-      hasDefaultAgent: false,
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
     });
   });
 
   it("keeps the organization's completion as the org-wide answer for a member", async () => {
-    mockDefaultAgentStorage();
     const admin = orgActor();
     const member = memberOf(admin);
-    await statusAs(admin);
     await completeAs(admin);
 
     // The owner finishing setup does not finish it for the member.
@@ -248,7 +235,6 @@ describe("member source-first onboarding", () => {
   });
 
   it("records a member's completion without changing the organization's onboarding", async () => {
-    mockDefaultAgentStorage();
     const admin = orgActor();
     const member = memberOf(admin);
     const adminBefore = await statusAs(admin);
@@ -296,11 +282,11 @@ describe("member source-first onboarding", () => {
     }
     const existing = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(existing, {
+    await bdd.createAgent(existing, {
       displayName: "Existing member agent",
       visibility: "private",
     });
-    await chat.createThread(existing, { agentId: agent.agentId });
+    await chat.createThread(existing, {});
     const member = {
       userId: existing.userId,
       orgId: admin.orgId,
@@ -333,28 +319,26 @@ describe("member source-first onboarding", () => {
       orgRole: "org:member",
     });
     bdd.acceptAgentStorageWrites();
-    const peerAgent = await bdd.createAgent(peer, {
+    await bdd.createAgent(peer, {
       displayName: "Peer agent",
       visibility: "private",
     });
-    await chat.createThread(peer, { agentId: peerAgent.agentId });
-    const otherOrgAgent = await bdd.createAgent(sameUserElsewhere, {
+    await chat.createThread(peer, {});
+    await bdd.createAgent(sameUserElsewhere, {
       displayName: "Other workspace agent",
       visibility: "private",
     });
-    await chat.createThread(sameUserElsewhere, {
-      agentId: otherOrgAgent.agentId,
-    });
+    await chat.createThread(sameUserElsewhere, {});
     await expect(statusAs(actor)).resolves.toMatchObject({
       needsOnboarding: true,
       isAdmin: false,
     });
 
-    const ownAgent = await bdd.createAgent(member, {
+    await bdd.createAgent(member, {
       displayName: "Member agent",
       visibility: "private",
     });
-    await chat.createThread(member, { agentId: ownAgent.agentId });
+    await chat.createThread(member, {});
     await expect(statusAs(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       isAdmin: false,
@@ -363,10 +347,9 @@ describe("member source-first onboarding", () => {
 });
 
 describe("POST /api/onboarding/complete", () => {
-  it("publishes the free Plan before any lazy onboarding status bootstrap and keeps it on replay", async () => {
+  it("publishes the free Plan on completion and keeps it on replay", async () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-    mockDefaultAgentStorage();
 
     await expect(
       completeAs(actor, { body: { industry: "marketing" } }),
@@ -374,8 +357,6 @@ describe("POST /api/onboarding/complete", () => {
       onboardingComplete: true,
       needsOnboarding: false,
     });
-    // This read cannot bootstrap Plan. Read it before onboarding/status, which
-    // can create the default agent and its entitlement.
     const billing = await accept(
       billingStatusClient().get({ headers: authHeaders() }),
       [200],
@@ -423,7 +404,6 @@ describe("POST /api/onboarding/complete", () => {
   it("completes simultaneous public requests without an industry and preserves completion on replay", async () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-    mockDefaultAgentStorage();
     const client = onboardingCompleteClient();
 
     const responses = await Promise.all([
@@ -471,10 +451,6 @@ describe("POST /api/onboarding/complete", () => {
   it("persists an admin's completed onboarding state", async () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-    context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.test/default-agent.tar.gz?signature=test",
-    );
 
     const before = await accept(
       onboardingStatusClient().getStatus({ headers: authHeaders() }),
@@ -485,9 +461,7 @@ describe("POST /api/onboarding/complete", () => {
       onboardingComplete: false,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
     });
-    expect(before.body.defaultAgentId).toBeTruthy();
 
     const completed = await accept(
       onboardingCompleteClient().complete({
@@ -510,8 +484,6 @@ describe("POST /api/onboarding/complete", () => {
       onboardingComplete: true,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentId: before.body.defaultAgentId,
     });
     const policies = await accept(
       runModelsClient().list({ headers: authHeaders() }),
@@ -526,7 +498,6 @@ describe("POST /api/onboarding/complete", () => {
 
   it("completes an admin's onboarding with the field the source-first flow answered", async () => {
     const actor = orgActor();
-    mockDefaultAgentStorage();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
 
     const completed = await accept(

@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -7,8 +6,6 @@ import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom
 import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -24,46 +21,35 @@ import {
   customConnector,
   getConnectorAction,
   getConnectorCard,
-  getConnectorSwitch,
   getConnectorIcon,
-  listAgent,
   mockConnectors,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
   publicStatusItem,
   queryConnectorAction,
   queryConnectorCard,
-  mockConnectorAgentAccess,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
 
-test.each([false, true])(
-  "Connector catalog describes the current experience (My Okou=%s)",
-  async (singleAgent) => {
-    mockConnectors(context, []);
-    const metadata = publicStatusItem({
-      connectorSlug: "github",
-      label: "GitHub",
-      authMethods: [oauthMethod()],
-    });
-    context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
-      return respond(200, { connectors: [metadata], totalConnectorCount: 42 });
-    });
-    await setupPage({
-      context,
-      path: "/connectors",
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
-    });
-    await expect(
-      screen.findByText(
-        singleAgent
-          ? "Connect 42 services for your Okou to use."
-          : "Connect 42 services for your agents to use.",
-      ),
-    ).resolves.toBeInTheDocument();
-  },
-);
+test("Connector catalog describes the current experience", async () => {
+  mockConnectors(context, []);
+  const metadata = publicStatusItem({
+    connectorSlug: "github",
+    label: "GitHub",
+    authMethods: [oauthMethod()],
+  });
+  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
+    return respond(200, { connectors: [metadata], totalConnectorCount: 42 });
+  });
+  await setupPage({
+    context,
+    path: "/connectors",
+  });
+  await expect(
+    screen.findByText("Connect 42 services for your Okou to use."),
+  ).resolves.toBeInTheDocument();
+});
 
 test("Show saved membership without loading accounts when catalog projections have been retired", async () => {
   const [account] = mockConnectors(context, [
@@ -95,72 +81,9 @@ test("Show saved membership without loading accounts when catalog projections ha
   expect(within(card).getByText("Connected")).toBeInTheDocument();
   expect(within(card).queryByText("octocat")).not.toBeInTheDocument();
   expect(
-    getConnectorAction("button", "Manage GitHub access", card),
+    getConnectorAction("button", "Manage GitHub accounts", card),
   ).toBeEnabled();
   expect(queryConnectorAction("button", "Connect GitHub", card)).toBeNull();
-});
-
-test("Authorize one agent without changing another agent", async () => {
-  const researchId = "c0000000-0000-4000-a000-000000000010";
-  const supportId = "c0000000-0000-4000-a000-000000000011";
-  context.mocks.data.agents([
-    listAgent(researchId, "Research", "preset:0"),
-    listAgent(supportId, "Support", "preset:0"),
-  ]);
-  mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "octocat" },
-  ]);
-  const authorized = new Set<string>();
-  context.mocks.api(connectorAgentAccessContract.get, ({ respond }) => {
-    return respond(200, {
-      visibleAgentIds: [researchId, supportId],
-      builtin: [...authorized].map((agentId) => {
-        return {
-          agentId,
-          connectorSlug: "github",
-        };
-      }),
-      custom: [],
-    });
-  });
-  context.mocks.api(
-    userBuiltinConnectorsContract.update,
-    ({ params, body, respond }) => {
-      if (body.operation === "add") {
-        authorized.add(params.id);
-      } else {
-        authorized.delete(params.id);
-      }
-      context.mocks.ably.trigger("composerAgentConnectorsChanged", {
-        agentId: params.id,
-      });
-      return respond(200, {
-        enabledConnectorSlugs: authorized.has(params.id) ? ["github"] : [],
-      });
-    },
-  );
-  await setupPage({ context, path: "/connectors" });
-  const manage = await waitFor(() => {
-    return getConnectorAction("button", "Manage GitHub access");
-  });
-  click(manage);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Manage GitHub access",
-  });
-  await waitFor(() => {
-    expect(
-      getConnectorSwitch("Authorize GitHub access for Research", dialog),
-    ).toHaveAttribute("aria-checked", "false");
-  });
-  click(getConnectorSwitch("Authorize GitHub access for Research", dialog));
-  await waitFor(() => {
-    expect(
-      getConnectorSwitch("Revoke GitHub access for Research", dialog),
-    ).toHaveAttribute("aria-checked", "true");
-  });
-  expect(
-    getConnectorSwitch("Authorize GitHub access for Support", dialog),
-  ).toHaveAttribute("aria-checked", "false");
 });
 
 function oauthMethod() {
@@ -173,18 +96,6 @@ function oauthMethod() {
     manualFields: [],
     startOptions: [],
   };
-}
-
-async function expectCards(expected: {
-  readonly github: boolean;
-  readonly asana: boolean;
-}): Promise<void> {
-  await waitFor(() => {
-    expect({
-      github: queryConnectorCard("GitHub") !== null,
-      asana: queryConnectorCard("Asana") !== null,
-    }).toStrictEqual(expected);
-  });
 }
 
 test("Browse connectors by category", async () => {
@@ -206,63 +117,6 @@ test("Browse connectors by category", async () => {
   // The catalog is browsed a category at a time, and a category is far taller
   // than the viewport. Its marks are fetched as they are reached.
   expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
-});
-
-async function openConnectorFilterCatalog() {
-  const researchId = "c0000000-0000-4000-a000-000000000010";
-  const [github] = mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "octocat" },
-  ]);
-  if (!github) {
-    throw new Error("Expected the connected GitHub account");
-  }
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "github",
-      label: "GitHub",
-      authMethods: [oauthMethod()],
-      account: { ...github, connectionStatus: "connected" },
-    }),
-    publicStatusItem({
-      connectorSlug: "asana",
-      label: "Asana",
-      authMethods: [oauthMethod()],
-    }),
-  ]);
-  context.mocks.data.agents([
-    listAgent(researchId, "Research Agent", "preset:0"),
-  ]);
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, {
-        enabledConnectorSlugs: params.id === researchId ? ["github"] : [],
-      });
-    },
-  );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return { enabledConnectorSlugs: agentId === researchId ? ["github"] : [] };
-  });
-  await setupPage({ context, path: "/connectors?scope=connected" });
-  await expectCards({ github: true, asana: false });
-  return { researchId };
-}
-
-test("Filter connected connectors by an agent after clearing the text search", async () => {
-  const { researchId } = await openConnectorFilterCatalog();
-  const search = screen.getByPlaceholderText("Find connected connectors");
-  await fill(search, "git");
-  await expectCards({ github: true, asana: false });
-  await fill(search, "");
-  click(getConnectorAction("button", "Filter connectors"));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Research Agent");
-    }),
-  );
-  await expectCards({ github: true, asana: false });
-  expect(locationSearch()).toContain("connection=agent");
-  expect(locationSearch()).toContain(researchId);
 });
 
 test("Require an application update before using connectors", async () => {
@@ -323,7 +177,7 @@ test("Search the full connector catalog", async () => {
   await setupPage({ context, path: "/connectors" });
   await expect(screen.findByText("GitHub")).resolves.toBeInTheDocument();
   await expect(
-    screen.findByText("Connect 1,234 services for your agents to use."),
+    screen.findByText("Connect 1,234 services for your Okou to use."),
   ).resolves.toBeInTheDocument();
 
   await fill(screen.getByPlaceholderText("Find connectors"), "Slack");
@@ -334,7 +188,7 @@ test("Search the full connector catalog", async () => {
   });
   expect(keywords).toContain("Slack");
   await expect(
-    screen.findByText("Connect 1,234 services for your agents to use."),
+    screen.findByText("Connect 1,234 services for your Okou to use."),
   ).resolves.toBeInTheDocument();
 });
 
@@ -557,22 +411,20 @@ test("Land on Discover, then switch to the connectors this workspace has", async
     expect(locationSearch()).toContain("scope=connected");
   });
 
-  // The other scope is the connected ones alone, and its dimension is the
-  // agent -- one control in the slot, never two.
   const grid = await screen.findByTestId("connectors-connected-grid");
   expect(within(grid).getAllByTestId("connector-card-label")).toHaveLength(2);
   expect(
     screen.queryByTestId("connector-shelf-communication-collaboration"),
   ).toBeNull();
-  expect(screen.getByLabelText("Filter connectors")).toHaveTextContent(
-    "Filter: All agents",
-  );
-  await click(screen.getByLabelText("Filter connectors"));
-  const menu = await screen.findByRole("menu");
-  const options = queryAllByRoleFast("menuitem", menu).map((item) => {
-    return item.textContent;
+  const search = screen.getByPlaceholderText("Find connected connectors");
+  await fill(search, "gmail");
+  await waitFor(() => {
+    const results = within(screen.getByTestId("connectors-connected-grid"));
+    expect(results.getAllByTestId("connector-card-label")).toHaveLength(1);
+    expect(results.getByTestId("connector-card-label")).toHaveTextContent(
+      "Gmail",
+    );
   });
-  expect(options).toContain("All agents");
 });
 
 test("Keep a saved connector in Connected when its account needs a reconnect", async () => {
@@ -599,55 +451,6 @@ test("Keep a saved connector in Connected when its account needs a reconnect", a
     );
     expect(getConnectorAction("button", "Manage Gmail accounts")).toBeEnabled();
   });
-});
-
-test("Find the connectors no agent is using", async () => {
-  const researchId = "c0000000-0000-4000-a000-000000000011";
-  mockConnectors(context, [
-    { connectorSlug: "mail-0" as ConnectorSlug },
-    { connectorSlug: "mail-1" as ConnectorSlug },
-  ]);
-  mockSavedShelfConnectors(["mail-0", "mail-1"]);
-  context.mocks.data.agents([listAgent(researchId, "Research", "preset:0")]);
-  context.mocks.api(
-    userBuiltinConnectorsContract.get,
-    ({ params, respond }) => {
-      return respond(200, {
-        enabledConnectorSlugs: params.id === researchId ? ["mail-0"] : [],
-      });
-    },
-  );
-  mockConnectorAgentAccess(context, (agentId) => {
-    return {
-      enabledConnectorSlugs:
-        agentId === researchId ? ["mail-0" as ConnectorSlug] : [],
-    };
-  });
-  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
-    "communication-collaboration": 327,
-    "ai-voice-audio": 50,
-  });
-  await setupPage({
-    context,
-    path: "/connectors?scope=connected",
-  });
-
-  await waitFor(() => {
-    expect(getConnectorCard("Gmail")).toBeInTheDocument();
-  });
-  expect(queryConnectorCard("Outlook Mail")).toBeInTheDocument();
-
-  // A connector nobody uses is the one worth finding in your own list, and it
-  // is the question the agent dimension cannot ask agent by agent.
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Not shared with any agent"));
-  await waitFor(() => {
-    expect(queryConnectorCard("Gmail")).toBeNull();
-  });
-  expect(getConnectorCard("Outlook Mail")).toBeInTheDocument();
-  expect(new URLSearchParams(locationSearch()).get("connection")).toBe(
-    "unshared",
-  );
 });
 
 test("Reach the connectors this workspace built from their own segment", async () => {

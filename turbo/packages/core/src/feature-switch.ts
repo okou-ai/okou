@@ -46,6 +46,19 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.VoiceMessages]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Send voice messages and transcribe their recordings with model credits.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.ChatShareRefresh]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Refined message sharing",
+    description:
+      "Share messages from a card in the composer's place: Select all, one selection count, unselected messages faded back, and a Copy link action once the link exists.",
+    enabled: false,
+  },
   [FeatureSwitchKey.OnboardingMultipleOutputs]: {
     maintainer: "scarlettx@okou.ai",
     description:
@@ -106,13 +119,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.SingleAgent]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "My Okou",
+  [FeatureSwitchKey.MarkdownDocumentTypography]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown document typography",
     description:
-      "Use personal Instructions, workspace Workflows, and private Projects with one Okou experience.",
-    enabled: true,
+      "Use a clearer heading hierarchy in Markdown document previews without changing chat typography.",
+    enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",
@@ -138,20 +152,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
-  },
-  [FeatureSwitchKey.ConnectorChatAccountAccess]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Chat connector accounts",
-    description:
-      "Configure Chat connector accounts and shared member connector permissions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.FeatureGuides]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Feature guides",
-    description: "Show published product updates once per user and edition.",
-    enabled: true,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
@@ -221,6 +221,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Describe each Who can access option in the share menu with one line, and anchor Copy link as a full-width footer under a divider.",
     enabled: true,
   },
+  [FeatureSwitchKey.WorksChannelCards]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Works channel cards",
+    description:
+      "Show Works channels in a compact grid with usage examples and icon actions for connecting and managing accounts.",
+    enabled: false,
+  },
   [FeatureSwitchKey.HostedSiteShareRows]: {
     maintainer: "ming@okou.ai",
     displayName: "Website share rows",
@@ -234,6 +241,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
     enabled: true,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.OkouRailEntry]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Okou rail entry",
+    description:
+      "Show the Okou logo and name on the rail's chat entry, and a compose icon on New chat.",
+    enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BillingSurvey]: {
@@ -254,14 +269,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.AgentSuggestion]: {
     maintainer: "lancy@okou.ai",
     displayName: "Suggestions",
-    description: "Discover and curate useful next-step suggestions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ProactiveLearning]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Proactive learning",
-    description: "Review activity overnight and improve personal memory.",
+    description:
+      "Update the user profile daily and curate useful next-step suggestions.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

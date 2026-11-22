@@ -8,10 +8,12 @@ use guest_control_proto::{
     MSG_EXEC_STARTED,
 };
 
+use crate::protocol_error;
 use crate::{ConnectionState, Shared, normal_operation_transition_error};
 
 use super::state::{
     ExecCaptureState, ExecOperation, ExecOperationLifecycle, ExecStreamTryReserveError,
+    PendingExecControl,
 };
 use super::types::{
     ExecControlAck, ExecControlGuestStatus, ExecControlOutcome, ExecOperationResult,
@@ -198,7 +200,7 @@ fn dispatch_output(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Res
             && let Some(operation) = operations.get_mut_by_seq(msg.seq)
         {
             let decoded = guest_control_proto::decode_exec_output(msg.payload)
-                .map_err(exec_operation_protocol_error)?;
+                .map_err(protocol_error::invalid_data)?;
             if !operation.allows_output() {
                 return Err(exec_operation_protocol_error(
                     "exec output arrived before exec_started",
@@ -282,7 +284,7 @@ fn dispatch_started(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Re
                     return Ok(());
                 };
                 let decoded = guest_control_proto::decode_exec_started(msg.payload)
-                    .map_err(exec_operation_protocol_error)?;
+                    .map_err(protocol_error::invalid_data)?;
                 let lifecycle =
                     std::mem::replace(&mut operation.lifecycle, ExecOperationLifecycle::OneShot);
                 match lifecycle {
@@ -364,7 +366,7 @@ fn dispatch_agent_ready(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io
                     return Ok(());
                 };
                 let decoded = guest_control_proto::decode_exec_agent_ready(msg.payload)
-                    .map_err(exec_operation_protocol_error)?;
+                    .map_err(protocol_error::invalid_data)?;
                 let lifecycle =
                     std::mem::replace(&mut operation.lifecycle, ExecOperationLifecycle::OneShot);
                 match lifecycle {
@@ -429,7 +431,7 @@ pub(in crate::exec_operation) fn dispatch_result(
         match &mut *guard {
             ConnectionState::Connected { operations, .. } if operations.contains_seq(msg.seq) => {
                 let decoded = guest_control_proto::decode_exec_result(msg.payload)
-                    .map_err(exec_operation_protocol_error)?;
+                    .map_err(protocol_error::invalid_data)?;
                 let Some(operation) = operations.get_mut_by_seq(msg.seq) else {
                     return Ok(());
                 };
@@ -462,19 +464,11 @@ pub(in crate::exec_operation) fn dispatch_result(
 }
 
 fn dispatch_control_result(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Result<()> {
-    let Some(pending) = ({
-        let mut guard = shared.state.lock().unwrap_or_else(|e| e.into_inner());
-        match &mut *guard {
-            ConnectionState::Connected { operations, .. } => {
-                operations.take_pending_control(msg.seq)
-            }
-            ConnectionState::Closed(_) => None,
-        }
-    }) else {
+    let Some(pending) = take_pending_control_reply(shared, msg.seq) else {
         return Ok(());
     };
     let decoded = guest_control_proto::decode_exec_control_result(msg.payload)
-        .map_err(exec_operation_protocol_error)?;
+        .map_err(protocol_error::invalid_data)?;
 
     if decoded.control_nonce != pending.control_nonce {
         return Err(exec_operation_protocol_error(
@@ -494,11 +488,7 @@ fn dispatch_control_result(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) ->
             pending.message_id, decoded.message_id
         )));
     }
-    pending
-        .normal_operation
-        .complete()
-        .map_err(normal_operation_transition_error)?;
-    let outcome = match decoded.status {
+    settle_control_reply(pending, || match decoded.status {
         ExecControlStatus::Delivered => ExecControlOutcome::Delivered(ExecControlAck {
             target_seq: decoded.target_seq,
             message_id: decoded.message_id.to_owned(),
@@ -507,9 +497,7 @@ fn dispatch_control_result(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) ->
             status,
             diagnostic: decoded.diagnostic.to_owned(),
         }),
-    };
-    let _ = pending.response_tx.send(Ok(outcome));
-    Ok(())
+    })
 }
 
 fn dispatch_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Result<bool> {
@@ -519,7 +507,7 @@ fn dispatch_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Resu
             ConnectionState::Connected { operations, .. } if operations.contains_seq(msg.seq) => {
                 let err = guest_control_proto::decode_error(msg.payload)
                     .map(|message| exec_operation_guest_error(message.to_string()))
-                    .map_err(exec_operation_protocol_error)?;
+                    .map_err(protocol_error::invalid_data)?;
                 operations
                     .take_terminal_exec_operation(msg.seq)?
                     .map(|terminal| (terminal, err))
@@ -539,26 +527,33 @@ fn dispatch_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Resu
 }
 
 fn dispatch_control_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Result<bool> {
-    let Some(pending) = ({
-        let mut guard = shared.state.lock().unwrap_or_else(|e| e.into_inner());
-        match &mut *guard {
-            ConnectionState::Connected { operations, .. } => {
-                operations.take_pending_control(msg.seq)
-            }
-            ConnectionState::Closed(_) => None,
-        }
-    }) else {
+    let Some(pending) = take_pending_control_reply(shared, msg.seq) else {
         return Ok(false);
     };
     let message = guest_control_proto::decode_error(msg.payload)
         .map(|message| message.to_owned())
-        .map_err(exec_operation_protocol_error)?;
+        .map_err(protocol_error::invalid_data)?;
+    settle_control_reply(pending, || ExecControlOutcome::GuestError(message))?;
+    Ok(true)
+}
+
+fn take_pending_control_reply(shared: &Shared, seq: u32) -> Option<PendingExecControl> {
+    let mut guard = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+    match &mut *guard {
+        ConnectionState::Connected { operations, .. } => operations.take_pending_control(seq),
+        ConnectionState::Closed(_) => None,
+    }
+}
+
+fn settle_control_reply(
+    pending: PendingExecControl,
+    outcome: impl FnOnce() -> ExecControlOutcome,
+) -> io::Result<()> {
     pending
         .normal_operation
         .complete()
         .map_err(normal_operation_transition_error)?;
-    let _ = pending
-        .response_tx
-        .send(Ok(ExecControlOutcome::GuestError(message)));
-    Ok(true)
+    let outcome = outcome();
+    let _ = pending.response_tx.send(Ok(outcome));
+    Ok(())
 }

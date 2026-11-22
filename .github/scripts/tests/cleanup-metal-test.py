@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the cleanup CLI with real files/flocks and external command fixtures."""
 
+import contextlib
+import fcntl
 import json
 import os
 import select
@@ -8,7 +10,9 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -28,7 +32,10 @@ if 'graphql' in args:
    with path.open('a') as lock:
     try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);locked=False
     except BlockingIOError:pass
-  state='OPEN' if data.get('reopen')==n and locked else 'CLOSED'
+  reopened = data.get('reopen') == n
+  if locked and data.get('reopen_after_recovery') == n:
+   reopened = (root / 'metal-a/ssh.log').read_text().count('session\n') == 2
+  state = 'OPEN' if locked and reopened else 'CLOSED'
   pulls[f'p{n}']={'number':n,'state':state,'createdAt':'2026-10-01T00:00:00Z','closedAt':'2026-10-02T00:00:00Z','headRefName':'reused','headRepository':{'nameWithOwner':'okou-ai/okou'}}
  print(json.dumps({'data':{'repository':pulls}}))
 elif any(a.endswith('/actions/runs') for a in args):
@@ -42,6 +49,8 @@ elif any(a.endswith('/actions/runs') for a in args):
    scans.pop(0);(root/'github.json').write_text(json.dumps(data))
   print(json.dumps(pages));sys.exit(0)
  runs=[dict(r) for r in data.get('runs',[]) if r['status']==status]
+ if data.get('hide_owners_after_recovery') and (root / 'metal-a/ssh.log').read_text().count('session\n') == 2:
+  runs=[]
  if data.get('churn'):
   for run in runs:run['id']+=len((root/'github.log').read_text().splitlines())
  pages=[{'total_count':len(runs),'workflow_runs':runs[offset:offset+100]} for offset in range(0,min(len(runs),1000),100)]
@@ -50,15 +59,26 @@ elif any('/actions/runs/' in a for a in args):
  run_id=next(a.rsplit('/',1)[1] for a in args if '/actions/runs/' in a)
  record=data.get('run_details',{}).get(run_id)
  if record is None:sys.exit(1)
- print(json.dumps(record))
+ print(record['created_at'] if '--jq' in args else json.dumps(record))
 elif any('/commits/' in a for a in args):print(json.dumps([[{'number':n} for n in data.get('associated',[])]]))
 else:raise SystemExit('unexpected gh call')
 """
 
 SSH = r"""#!/usr/bin/env python3
-import json,os,shlex,signal,subprocess,sys
+import fcntl,json,os,select,shlex,signal,subprocess,sys
 from pathlib import Path
-root=Path(os.environ['FIXTURE']);host=sys.argv[1].split('@')[1];args=sys.argv[2:]
+root = Path(os.environ['FIXTURE'])
+if sys.argv[1:4] == ['-v', '-n', '-T'] and sys.argv[-1] == 'true':
+ print(f"debug1: fixture probe for {sys.argv[-2]}", file=sys.stderr)
+ sys.exit(0)
+host = sys.argv[1].split('@')[1].removesuffix('.vm3.ai')
+args = sys.argv[2:]
+
+def await_event(name):
+ with (root / name).open() as event:
+  assert select.select([event], [], [], 10)[0], name
+  assert event.readline() == 'ready\n'
+
 history=root/host/'ssh.log'
 if args[:4]==['sudo','python3','-','inventory']:
  with history.open('a') as log:log.write('inventory\n')
@@ -83,7 +103,45 @@ if args[2]=='-c':
  if os.environ.get('STOP_CLOCK_STEP'):
   source='import runpy;runpy.run_path('+repr(str(root/'clock.py'))+');'+source
  command=[sys.executable,'-c',source,*args[4:],'--root',str(root/host)]
- if os.environ.get('PARTIAL_RELEASE'):
+ failure = os.environ.get('READY_FAILURE')
+ prior_lost = failure in ('prior-lost', 'prior-lost-command', 'prior-lost-repeat')
+ session_count = history.read_text().count('session\n')
+ if prior_lost and host == 'metal-a' and session_count == 1:
+  with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as worker:
+   print(worker.stdout.readline(), end='', flush=True)
+   await_event('disconnect-a')
+   worker.stdin.close()
+   worker.wait(timeout=5)
+  sys.exit(7 if failure == 'prior-lost-command' else 255)
+ if prior_lost and host == 'metal-a':
+  # Reacquiring the first host while retaining B would invert lock order.
+  for number in args[5:]:
+   path = root / 'metal-b/var/lock' / f'vm0-runner-lifecycle-pr-{number}.lock'
+   with path.open() as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+  if failure == 'prior-lost-repeat':
+   sys.exit(255)
+ failure = failure if host == 'metal-b' else None
+ if failure == 'invalid':
+  print('{"ready":[]}')
+  sys.exit(255)
+ if failure == 'command':
+  sys.exit(7)
+ if failure == 'reset-always' or (
+  (failure == 'reset-once' or (prior_lost and host == 'metal-b')) and session_count == 1
+ ):
+  with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as worker:
+   assert json.loads(worker.stdout.readline()) == {'ready': [int(n) for n in args[5:]]}
+   sys.stdout.write('{"ready":')
+   sys.stdout.flush()
+   worker.stdin.close()
+   worker.wait(timeout=5)
+  sys.exit(255)
+ retiring_b = prior_lost and host == 'metal-b' and session_count == 2
+ if retiring_b:
+  (root / 'disconnect-a').write_text('ready\n')
+  await_event('diagnosing-a')
+ if retiring_b or os.environ.get('PARTIAL_RELEASE'):
   with subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,bufsize=1) as worker:
    print(worker.stdout.readline(),end='',flush=True)
    for line in sys.stdin:
@@ -91,6 +149,14 @@ if args[2]=='-c':
     if json.loads(line)['operation']=='heartbeat':continue
     reply=worker.stdout.readline()
     if json.loads(reply).get('released'):
+     if retiring_b:
+      (root / 'released-b').touch()
+      drop_receipt = os.environ.get('DROP_RESTART_RELEASE')
+      if not drop_receipt:
+       print(reply, end='', flush=True)
+      worker.stdin.close()
+      status = worker.wait(timeout=5)
+      sys.exit(255 if drop_receipt else status)
      worker.stdin.close();worker.wait(timeout=5)
      sys.stdout.write('{"released":');sys.stdout.flush()
      with (root/'reply-ready').open('w') as ready:ready.write(str(os.getpid())+'\n')
@@ -101,6 +167,27 @@ if args[2]=='-c':
   subprocess.call(command);sys.exit(255)
  os.execv(sys.executable,command)
 os.execv(sys.executable,[sys.executable,*args[2:],'--root',str(root/host)])
+"""
+
+BLOCKED_DIAGNOSTICS = r"""
+import os
+import sys
+import time
+from pathlib import Path
+
+args = sys.argv[1:]
+if len(args) == 3 and args[1] == "master":
+    probe = Path(args[2]).read_text()
+    failure = os.environ.get("READY_FAILURE")
+    if failure in ("prior-lost", "prior-lost-command", "prior-lost-repeat") and "metal-a.vm3.ai" in probe:
+        root = Path(os.environ["FIXTURE"])
+        (root / "diagnosing-a").write_text("ready\n")
+        # Keep the wrapper alive briefly after the native command closes.
+        time.sleep(1.5)
+    elif failure == "reset-once" and "metal-b.vm3.ai" in probe:
+        # Reproduce diagnostics finishing after the former five-second exit wait.
+        time.sleep(6)
+os.execv(sys.executable, [sys.executable, *args])
 """
 
 CLOCK = r"""import os,sys,threading,time
@@ -120,7 +207,7 @@ time.monotonic=monotonic;time.sleep=sleep
 """
 
 SYSTEMCTL = r"""#!/usr/bin/env python3
-import json,os,sys
+import fcntl,json,os,sys,time
 from pathlib import Path
 root=Path(os.environ['FIXTURE_HOST']);statefile=root/'states.json';states=json.loads(statefile.read_text()) if statefile.exists() else {};args=sys.argv[1:];op=args[0]
 jobsfile=root/'stop-jobs.json';jobs=json.loads(jobsfile.read_text()) if jobsfile.exists() else {}
@@ -136,6 +223,12 @@ if op=='list-units':
  for name in sorted(states):
   if any(fnmatch.fnmatch(name,p) for p in patterns):print(name+' loaded inactive dead Fixture')
 elif op=='show':
+ if '--property=LoadState,FragmentPath,NeedDaemonReload' in args:
+  name,=names
+  print('LoadState=loaded')
+  print('FragmentPath='+str(root/files[name].lstrip('/')))
+  print('NeedDaemonReload='+('yes' if os.environ.get('STALE_STRIPE_UNIT') else 'no'))
+  sys.exit(0)
  if os.environ.get('STATE_ERROR') and (root/'stopped').exists():sys.exit(1)
  if os.environ.get('WAIT_DRAIN') and (root/'stopped').exists() and 'populated 1' in (root/'sys/fs/cgroup/system.slice/fixture.service/cgroup.events').read_text():
   fixture=Path(os.environ['FIXTURE'])
@@ -169,14 +262,83 @@ elif op in ('stop','reset-failed'):
   for name in names:
    if name not in jobs:(root/'run/systemd/transient'/name).unlink(missing_ok=True)
  statefile.write_text(json.dumps(states));jobsfile.write_text(json.dumps(jobs))
+ if op=='reset-failed' and os.environ.get('PAUSE_CLEANUP_BEFORE_RELOAD'):
+  (root/'cleanup-wrote-unit-files').touch()
+  deadline=time.monotonic()+4
+  while not (root/'cleanup-can-reload').exists():
+   assert time.monotonic()<deadline
+   time.sleep(.02)
 elif op=='disable':
  for d in roots:
   for directory in (root/d).glob('*.wants'):
    for name in names:(directory/name).unlink(missing_ok=True)
+elif op=='start':
+ name,=names
+ ref=name.removeprefix('vm0-stripe-listener-').removesuffix('.service')
+ directory=root/'var/lib/vm0-runner/stripe'/ref
+ with (root/'var/lock'/f'vm0-runner-lifecycle-{ref}.lock').open() as lock:
+  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  except BlockingIOError:pass
+  else:raise SystemExit('Stripe listener started outside the lifecycle lock')
+ assert (directory/'bin/stripe').is_file()
+ assert not states.get(name,{}).get('Job')
+ states[name]={'ActiveState':'active','MainPID':'123'}
+ statefile.write_text(json.dumps(states))
+ (directory/'stripe-listen.log').write_text('Ready! Your webhook signing secret is fixture\n')
+elif op=='is-active':
+ sys.exit(0 if all(states[name]['ActiveState']=='active' for name in names) else 3)
 elif op=='daemon-reload':
  if os.environ.get('RELOAD_ERROR'):
   print('manager rejected daemon-reload',file=sys.stderr);sys.exit(1)
 else:raise SystemExit('unexpected systemctl call')
+"""
+
+STRIPE_SSH = r"""#!/usr/bin/env python3
+import json,os,shlex,subprocess,sys
+from pathlib import Path
+fixture=Path(os.environ['FIXTURE'])
+assert sys.argv[1:3]==['-T','ubuntu@metal-b']
+args=shlex.split(sys.argv[3])
+assert args[:5]==['sudo','-n','/usr/bin/python3','-I','-c']
+root=fixture/'metal-b'
+submit=len(args)==7
+with (root/'stripe-ssh.log').open('a') as log:
+ log.write(('submit' if submit else 'observe')+'\n')
+result=subprocess.run(
+ [sys.executable,*args[3:6],str(root),*args[7:]],
+ stdout=subprocess.PIPE,text=True,check=False,
+ env={**os.environ,'FIXTURE_HOST':str(root),'PATH':str(fixture/'stripe-bin')+':'+os.environ['PATH']},
+)
+if not result.returncode:
+ if submit and os.environ.get('DROP_STRIPE_REPLIES'):
+  print('{"operation":',end='')
+  sys.exit(255)
+ if not submit and os.environ.get('DROP_STRIPE_REPLIES'):
+  record=json.loads(result.stdout)['record']
+  lost=root/'ready-reply-lost'
+  if record and record['status']=='ready' and not lost.exists():
+   lost.touch()
+   sys.exit(255)
+print(result.stdout,end='')
+sys.exit(result.returncode)
+"""
+
+STRIPE_SYSTEMD_RUN = r"""#!/usr/bin/env python3
+import os,subprocess,sys
+from pathlib import Path
+root=Path(os.environ['FIXTURE_HOST'])
+args=sys.argv[sys.argv.index('/usr/bin/python3'):]
+with (root/'stripe-worker.log').open('a') as log:
+ subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
+"""
+
+STRIPE_INSTALL = r"""#!/usr/bin/env python3
+import os,sys
+from pathlib import Path
+assert len(sys.argv)==2 and Path(sys.argv[1]).name=='ensure-stripe-cli.sh'
+directory=Path(os.environ['STRIPE_CLI_INSTALL_DIR'])
+directory.mkdir()
+(directory/'stripe').touch()
 """
 
 
@@ -301,6 +463,24 @@ class CleanupTests(unittest.TestCase):
             check=False,
         )
 
+    def guarded_controller(self, **env):
+        bin_dir = self.root / "bin"
+        fake_ssh = (bin_dir / "ssh").rename(bin_dir / "real-ssh")
+        (bin_dir / "ssh").symlink_to(TOOLS / "cloudflare-ssh-command.sh")
+        python = bin_dir / "python3"
+        python.write_text(f"#!{sys.executable}\n{BLOCKED_DIAGNOSTICS}")
+        python.chmod(0o755)
+        transport_state = self.root / "transport"
+        transport_state.mkdir()
+        return self.controller(
+            METAL_HOSTS="metal-a.vm3.ai,metal-b.vm3.ai",
+            RUNNER_TEMP=str(self.root),
+            OKOU_CLOUDFLARE_SSH_REAL_SSH=str(fake_ssh),
+            OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR=str(TOOLS),
+            OKOU_CLOUDFLARE_SSH_STATE_DIR=str(transport_state),
+            **env,
+        )
+
     def owner(self, number=42, associated=True):
         return {
             "id": 10,
@@ -313,31 +493,6 @@ class CleanupTests(unittest.TestCase):
             "head_repository": {"full_name": "okou-ai/okou"},
             "pull_requests": [{"number": number}] if associated else [],
         }
-
-    def test_worker_cleans_files_transient_listener_and_exact_namespace(self):
-        runner = self.resource("var/lib/vm0-runner/runners/pr-42-api/config")
-        listener = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        unit = self.resource("etc/systemd/system/vm0-stripe-listener-pr-42.service")
-        transient = self.resource(
-            "run/systemd/transient/vm0-runner-pr-42-native.service"
-        )
-        bare = self.resource("etc/systemd/system/vm0-runner-pr-42.service")
-        binary = self.resource("var/lib/vm0-runner/bin/pr-42-build/runner")
-        group = self.resource("var/lib/vm0-runner/groups/vm0/smoke-pr-42-api/config")
-        override = self.resource(
-            "etc/systemd/system/vm0-runner-pr-42-api.service.d/50-vm0-drain.conf"
-        )
-        other = self.resource("var/lib/vm0-runner/runners/pr-420-api/config")
-        result, payload = self.worker("cleanup", 42)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload["42"]["outcome"], "cleaned")
-        for path in (runner, listener, unit, transient, bare, binary, group, override):
-            self.assertFalse(path.exists(), path)
-        self.assertEqual(other.read_text(), "fixture")
-        result, payload = self.worker("cleanup", 42)
-        self.assertEqual(payload["42"]["outcome"], "already_absent")
-        log = (self.root / "metal-a/systemctl.log").read_text()
-        self.assertEqual(log.count('"daemon-reload"'), 1)
 
     def test_metadata_converges_but_cgroup_execution_stays_actionable(self):
         name = "vm0-runner-pr-42-test-systemd-reload-b.service"
@@ -452,6 +607,11 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(failed["operation_result"]["outcome"], "cleaned")
         self.assertEqual(failed["operation_result"]["units"], 1)
         self.assertEqual(failed["operation_result"]["directories"], 1)
+        result, payload = self.worker("cleanup", 42)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "already_absent")
+        log = (self.root / "metal-a/systemctl.log").read_text()
+        self.assertEqual(log.count('"daemon-reload"'), 2)
 
     def test_pending_systemd_job_is_not_an_empty_manager_record(self):
         name = "vm0-runner-pr-42-api.service"
@@ -598,6 +758,57 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(payload["42"]["outcome"], "cleaned")
         self.assertEqual(precious.read_text(), "keep")
 
+    def test_unsafe_image_admission_path_fails_only_its_namespace(self):
+        target = self.root / "external-image"
+        target.mkdir()
+        marker = target / (".image-owner-" + "a" * 64)
+        marker.touch()
+        root = self.root / "metal-a/var/lib/vm0-runner/bin"
+        root.mkdir(parents=True)
+        (root / "pr-42-image-1234").symlink_to(target, target_is_directory=True)
+        sibling = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+
+        result, payload = self.worker("cleanup", 42, 43)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertIn("resource ancestor is a symlink", payload["42"]["error"])
+        self.assertTrue(marker.is_file())
+        self.assertEqual(payload["43"]["outcome"], "cleaned")
+        self.assertFalse(sibling.exists())
+
+        unit = self.resource("etc/systemd/system/vm0-runner-pr-43.service")
+        result, payload = self.worker("cleanup", 42, 43, RELOAD_ERROR="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertIn("resource ancestor is a symlink", payload["42"]["error"])
+        self.assertTrue(marker.is_file())
+        self.assertEqual(payload["43"]["outcome"], "unverified")
+        self.assertEqual(payload["43"]["operation_result"]["outcome"], "cleaned")
+        self.assertFalse(unit.exists())
+
+    def test_initial_inventory_failure_preserves_image_revocation_failure(self):
+        marker = self.resource("external-image/.image-owner-" + "a" * 64)
+        sibling_marker = self.resource(
+            "var/lib/vm0-runner/bin/pr-43-image-1234/.image-owner-" + "b" * 64
+        )
+        (sibling_marker.parent.parent / "pr-42-image-1234").symlink_to(
+            marker.parent, target_is_directory=True
+        )
+        unit = self.resource("etc/systemd/system/vm0-runner-pr-43.service")
+        legacy = "vm0-ci-image-" + "c" * 64 + ".service"
+        self.resource("run/systemd/transient/" + legacy)
+        self.state(legacy, ActiveState="active", MainPID="123")
+
+        result, payload = self.worker("cleanup", 42, 43)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertIn("resource ancestor is a symlink", payload["42"]["error"])
+        self.assertTrue(marker.is_file())
+        self.assertEqual(payload["43"]["outcome"], "unverified")
+        self.assertIn("image unit ownership unavailable", payload["43"]["error"])
+        self.assertFalse(sibling_marker.exists())
+        self.assertTrue(unit.exists())
+
     @unittest.skipIf(os.getuid() == 0, "requires normal filesystem permissions")
     def test_permission_failure_keeps_resource_and_other_pr_progresses(self):
         unit = self.resource("etc/systemd/system/vm0-runner-pr-42-api.service")
@@ -637,28 +848,6 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(config.exists())
         self.assertIn('"deferred_owner": 1', result.stdout)
-
-    def test_persistent_count_drift_preserves_cleanup_outcomes(self):
-        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        unrelated = {**self.owner(99), "status": "queued"}
-        self.github(
-            run_pages={
-                "queued": [
-                    [{"total_count": 2, "workflow_runs": [unrelated]}],
-                ]
-            }
-        )
-        result = self.controller()
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        self.assertFalse(config.exists())
-        decision = next(
-            json.loads(line)
-            for line in result.stdout.splitlines()
-            if line.startswith('{"pr":42,')
-        )
-        self.assertEqual(decision["outcome"], "cleaned")
-        self.assertEqual(decision["hosts"]["metal-a"]["outcome"], "cleaned")
-        self.assertEqual(decision["hosts"]["metal-b"]["outcome"], "already_absent")
 
     def test_disappeared_run_is_rechecked_before_cleanup(self):
         unrelated = {**self.owner(99), "id": 20}
@@ -718,6 +907,10 @@ class CleanupTests(unittest.TestCase):
                     self.assertEqual(decision["runs"], [10])
                 else:
                     self.assertEqual(decision["outcome"], "cleaned")
+                    self.assertEqual(decision["hosts"]["metal-a"]["outcome"], "cleaned")
+                    self.assertEqual(
+                        decision["hosts"]["metal-b"]["outcome"], "already_absent"
+                    )
 
     def test_repeatedly_missing_owner_is_retained_across_changing_sweeps(self):
         configs = [
@@ -788,26 +981,16 @@ class CleanupTests(unittest.TestCase):
             {**self.owner(number=100 + index), "id": 2000 - index}
             for index in range(1000)
         ]
-        for reported in (999, 1001):
-            with self.subTest(reported=reported):
-                config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-                self.github(
-                    run_pages={
-                        "in_progress": [
-                            [
-                                {
-                                    "total_count": reported,
-                                    "workflow_runs": newest[offset : offset + 100],
-                                }
-                                for offset in range(0, 1000, 100)
-                            ]
-                        ]
-                    }
-                )
-                result = self.controller()
-                self.assertEqual(result.returncode, 1, result.stderr)
-                self.assertTrue(config.exists())
-                self.assertIn('"unverified": 1', result.stdout)
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        pages = [
+            {"total_count": 999, "workflow_runs": newest[offset : offset + 100]}
+            for offset in range(0, 1000, 100)
+        ]
+        self.github(run_pages={"in_progress": [pages]})
+        result = self.controller()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(config.exists())
+        self.assertIn('"unverified": 1', result.stdout)
 
     def test_unrelated_run_churn_does_not_block_selected_namespace(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
@@ -847,14 +1030,6 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertTrue(config.exists())
         self.assertIn('"unverified": 1', result.stdout)
-
-    def test_reopened_under_lock_keeps_resources(self):
-        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        self.github(reopen=42)
-        result = self.controller()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(config.exists())
-        self.assertIn('"skipped_open": 1', result.stdout)
 
     def test_reopened_during_owner_discovery_keeps_resources(self):
         reopened = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
@@ -907,17 +1082,132 @@ class CleanupTests(unittest.TestCase):
                         "inventory\n" * calls,
                     )
 
+    def test_lock_readiness_recovers_after_lost_reply_and_slow_diagnostics(self):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        result = self.guarded_controller(READY_FAILURE="reset-once")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(not file.exists() for file in files))
+        self.assertIn('"cleaned": 1', result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\n"
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+
+    def test_lock_readiness_failure_preserves_all_host_resources(self):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+        for failure, sessions in (("reset-always", 2), ("command", 1), ("invalid", 1)):
+            with self.subTest(failure=failure):
+                history = self.root / "metal-b/ssh.log"
+                history.unlink(missing_ok=True)
+                result = self.controller(READY_FAILURE=failure)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertTrue(all(file.is_file() for file in files))
+                self.assertEqual(
+                    history.read_text(), "inventory\n" + "session\n" * sessions
+                )
+
+    def pre_dispatch_loss(self, failure, **env):
+        files = [
+            self.resource("var/lib/vm0-runner/stripe/pr-42/config", host=host)
+            for host in ("metal-a", "metal-b")
+        ]
+
+        def open_event(path, flags):
+            return os.open(path, flags | os.O_RDWR | os.O_NONBLOCK)
+
+        with contextlib.ExitStack() as events:
+            for name in ("disconnect-a", "diagnosing-a"):
+                event = self.root / name
+                os.mkfifo(event)
+                events.enter_context(open(event, "rb", opener=open_event))
+            return files, self.guarded_controller(READY_FAILURE=failure, **env)
+
+    def test_reacquires_locks_when_old_release_receipt_is_lost(self):
+        files, result = self.pre_dispatch_loss("prior-lost", DROP_RESTART_RELEASE="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(not file.exists() for file in files), result.stdout)
+        self.assertTrue((self.root / "released-b").is_file(), result.stderr)
+        self.assertIn("Metal lock release before restart unconfirmed", result.stderr)
+        self.assertIn('"cleaned": 1', result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(),
+            "inventory\nsession\nsession\nsession\n",
+        )
+
+    def test_rechecks_github_authority_after_pre_dispatch_restart(self):
+        owner = self.owner()
+        self.github(
+            runs=[owner],
+            reopen_after_recovery=44,
+            hide_owners_after_recovery=True,
+            run_details={str(owner["id"]): owner},
+        )
+        selected = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+        reopened = self.resource("var/lib/vm0-runner/stripe/pr-44/config", host="metal-b")
+        owned, result = self.pre_dispatch_loss("prior-lost")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(file.is_file() for file in owned), result.stdout)
+        self.assertTrue(reopened.is_file(), result.stdout)
+        self.assertFalse(selected.exists(), result.stdout)
+        self.assertIn('"deferred_owner": 1', result.stdout)
+        self.assertIn('"skipped_open": 1', result.stdout)
+
+    def test_pre_dispatch_command_failure_keeps_all_host_resources(self):
+        files, result = self.pre_dispatch_loss("prior-lost-command")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertIn(
+            "namespace lock worker unavailable on metal-a.vm3.ai", result.stdout
+        )
+        self.assertEqual(
+            (self.root / "metal-b/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+
+    def test_pre_dispatch_restart_does_not_retry_a_second_disconnect(self):
+        files, result = self.pre_dispatch_loss("prior-lost-repeat")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(all(file.is_file() for file in files), result.stdout)
+        self.assertEqual(
+            (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\nsession\n"
+        )
+
     def test_namespace_selection_is_explicit_and_fails_closed(self):
-        selected = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        other = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+        selected = [
+            self.resource(path)
+            for path in (
+                "var/lib/vm0-runner/runners/pr-42-api/config",
+                "var/lib/vm0-runner/stripe/pr-42/config",
+                "etc/systemd/system/vm0-stripe-listener-pr-42.service",
+                "run/systemd/transient/vm0-runner-pr-42-native.service",
+                "etc/systemd/system/vm0-runner-pr-42.service",
+                "var/lib/vm0-runner/bin/pr-42-build/runner",
+                "var/lib/vm0-runner/groups/vm0/smoke-pr-42-api/config",
+                "etc/systemd/system/vm0-runner-pr-42-api.service.d/50-vm0-drain.conf",
+            )
+        ]
+        other = self.resource("var/lib/vm0-runner/runners/pr-420-api/config")
         result = self.controller(RUNNER_PR_NUMBERS=" ")
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertTrue(selected.exists())
-        self.assertTrue(other.exists())
+        self.assertTrue(all(path.is_file() for path in selected))
+        self.assertEqual(other.read_text(), "fixture")
         result = self.controller(RUNNER_PR_NUMBERS=" 42, 9999 ")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(selected.exists())
-        self.assertTrue(other.exists())
+        for path in selected:
+            self.assertFalse(path.exists(), path)
+        self.assertEqual(other.read_text(), "fixture")
+        log = (self.root / "metal-a/systemctl.log").read_text()
+        self.assertEqual(log.count('"daemon-reload"'), 1)
         # A close event must fence a first claim even with no resources yet.
         for host in ("metal-a", "metal-b"):
             cutoff = self.root / host / "var/lock/vm0-runner-lifecycle-pr-9999.lock"
@@ -1169,46 +1459,210 @@ class CleanupTests(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=5)
 
-    def test_listener_cleanup_failure_prevents_replacement_under_lock(
-        self,
-    ):
-        ansible = self.root / "bin/ansible-playbook"
-        ansible.write_text(r"""#!/usr/bin/env python3
-import fcntl,os,sys
-from pathlib import Path
-root=Path(os.environ['FIXTURE'])
-for host in ('metal-a','metal-b'):
- with (root/host/'var/lock'/'vm0-runner-lifecycle-pr-42.lock').open('a') as lock:
-  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-  except BlockingIOError:pass
-  else:raise SystemExit('listener lifecycle ran outside namespace exclusion')
-if 'playbooks/cleanup-stripe-listener.yml' in sys.argv:
- sys.exit(37)
-(root/'listener-started').write_text('started')
-""")
-        ansible.chmod(0o755)
-        args = [
-            "bash",
-            str(TOOLS / "with-runner-lifecycle-lock.sh"),
-            "bash",
-            str(TOOLS / "start-stripe-listener.sh"),
-        ]
-        env = {
+    def stripe_fixture(self):
+        (self.root / "stripe-bin").mkdir()
+        for name, contents in (
+            ("bin/ssh", STRIPE_SSH),
+            ("stripe-bin/systemd-run", STRIPE_SYSTEMD_RUN),
+            ("stripe-bin/bash", STRIPE_INSTALL),
+        ):
+            path = self.root / name
+            path.write_text(contents)
+            path.chmod(0o755)
+        self.github(run_details={"123": {"created_at": "2026-10-01T01:00:00Z"}})
+        self.stripe_host = self.root / "metal-b"
+        self.stripe_state = self.stripe_host / "run/vm0-ci-stripe-deployments/pr-42"
+        self.stripe_unit = self.resource(
+            "etc/systemd/system/vm0-stripe-listener-pr-42.service", host="metal-b"
+        )
+        self.state(
+            self.stripe_unit.name, host="metal-b", ActiveState="inactive", Job="91"
+        )
+        self.stripe_lock = self.resource(
+            "var/lock/vm0-runner-lifecycle-pr-42.lock", host="metal-b", contents=""
+        )
+        self.stripe_env = {
             **self.env,
             "JOB_REF": "pr-42",
+            "METAL_HOSTS": "metal-b",
+            "GITHUB_RUN_ATTEMPT": "1",
             "API_PREVIEW_URL": "https://preview.example.test",
-            "STRIPE_SECRET_KEY": "fixture",
+            "STRIPE_SECRET_KEY": "sk_test_stripefixture",
+            "VERCEL_AUTOMATION_BYPASS_SECRET": "fixture/bypass+",
         }
-        result = subprocess.run(
-            args,
-            env=env,
-            capture_output=True,
+
+    @contextlib.contextmanager
+    def stripe_controller(self, **options):
+        with subprocess.Popen(
+            ["bash", str(TOOLS / "start-stripe-listener.sh")],
+            env={**self.stripe_env, **options},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
-            timeout=10,
+        ) as process:
+            try:
+                yield process
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=5)
+
+    def wait_for_stripe_worker(self, process):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            record_file = self.stripe_state / "current.json"
+            if record_file.is_file():
+                record = json.loads(record_file.read_text())
+                stage = self.stripe_state / record["operation"]
+                if stage.is_dir() and not (stage / "settings.json").exists():
+                    return
+            if process.poll() is not None:
+                self.fail(str(process.communicate()))
+            time.sleep(0.02)
+        self.fail("worker did not consume its inputs before waiting for the lock")
+
+    def stripe_unit_mutations(self):
+        lines = (self.stripe_host / "systemctl.log").read_text().splitlines()
+        return [
+            args[0] for args in map(json.loads, lines) if self.stripe_unit.name in args
+        ]
+
+    def test_stripe_recovers_original_listener_after_both_reply_losses(self):
+        self.stripe_fixture()
+        with self.stripe_lock.open("r+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with self.stripe_controller(DROP_STRIPE_REPLIES="1") as process:
+                self.wait_for_stripe_worker(process)
+                self.assertEqual(self.stripe_unit.read_text(), "fixture")
+                self.assertFalse((self.stripe_host / "systemctl.log").exists())
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                output, errors = process.communicate(timeout=20)
+                self.assertEqual(process.returncode, 0, output + errors)
+        self.assertIn("submission response unavailable", output)
+        self.assertIn("observation unavailable", output)
+        self.assertIn("listener is ready on metal-b", output)
+        self.assertEqual(
+            (self.stripe_host / "stripe-ssh.log")
+            .read_text()
+            .splitlines()
+            .count("submit"),
+            1,
         )
-        self.assertEqual(result.returncode, 37, result.stderr)
-        self.assertFalse((self.root / "listener-started").exists())
+        mutations = self.stripe_unit_mutations()
+        self.assertLess(mutations.index("stop"), mutations.index("start"))
+        self.assertEqual(mutations.count("start"), 1)
+        self.assertEqual(
+            list(self.stripe_state.iterdir()), [self.stripe_state / "current.json"]
+        )
+        directory = self.stripe_host / "var/lib/vm0-runner/stripe/pr-42"
+        self.assertIn("fixture%2Fbypass%2B", (directory / "env").read_text())
+        self.assertNotIn(
+            "fixture/bypass+", self.stripe_unit.read_text() + output + errors
+        )
+        self.assertNotIn("sk_test_stripefixture", output + errors)
+
+        # A legacy replacement can retire the installed listener even while
+        # the old operation result remains on host tmpfs.
+        (directory / ".deployment").unlink()
+        with self.stripe_controller() as process:
+            output, errors = process.communicate(timeout=10)
+            self.assertNotEqual(process.returncode, 0, output + errors)
+            self.assertIn("receipt no longer matches", errors)
+        self.assertEqual(self.stripe_unit_mutations().count("start"), 1)
+
+    def test_stripe_stop_failure_preserves_the_original_listener_files(self):
+        self.stripe_fixture()
+        with self.stripe_controller(MUTATION_ERROR="1") as process:
+            output, errors = process.communicate(timeout=10)
+            self.assertNotEqual(process.returncode, 0, output + errors)
+        self.assertIn("failed to retire original listener", errors)
+        self.assertEqual(self.stripe_unit.read_text(), "fixture")
+        self.assertNotIn("start", self.stripe_unit_mutations())
+
+    def test_stripe_refuses_to_start_if_manager_still_needs_reload(self):
+        self.stripe_fixture()
+        with self.stripe_controller(STALE_STRIPE_UNIT="1") as process:
+            output, errors = process.communicate(timeout=10)
+            self.assertNotEqual(process.returncode, 0, output + errors)
+        self.assertNotIn("start", self.stripe_unit_mutations())
+
+    def test_stripe_startup_and_cleanup_share_the_reload(self):
+        self.stripe_fixture()
+        removed = self.resource(
+            "etc/systemd/system/vm0-stripe-listener-pr-43.service", host="metal-b"
+        )
+        host = self.stripe_host
+
+        def wait_for(path):
+            deadline = time.monotonic() + 3
+            while not path.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(path.exists(), str(path))
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            cleanup = pool.submit(
+                self.worker,
+                "cleanup",
+                43,
+                host="metal-b",
+                PAUSE_CLEANUP_BEFORE_RELOAD="1",
+            )
+            try:
+                wait_for(host / "cleanup-wrote-unit-files")
+                self.assertFalse(removed.exists())
+                with self.stripe_controller() as process:
+                    wait_for(host / "var/lib/vm0-runner/stripe/pr-42/.deployment")
+                    (host / "cleanup-can-reload").touch()
+                    output, errors = process.communicate(timeout=10)
+                    self.assertEqual(process.returncode, 0, output + errors)
+            finally:
+                (host / "cleanup-can-reload").touch()
+            result, payload = cleanup.result(timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["43"]["outcome"], "cleaned")
+        self.assertEqual(
+            (host / "systemctl.log").read_text().count('"daemon-reload"'), 1
+        )
+        self.assertEqual(self.stripe_unit_mutations().count("start"), 1)
+
+    def test_stripe_queued_worker_checks_closure_and_cleanup_retires_receipt(self):
+        self.stripe_fixture()
+        with self.stripe_lock.open("r+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with self.stripe_controller() as process:
+                self.wait_for_stripe_worker(process)
+                os.pwrite(lock.fileno(), b"2026-10-02T00:00:00Z\n", 0)
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                output, errors = process.communicate(timeout=10)
+                self.assertNotEqual(process.returncode, 0, output + errors)
+                self.assertIn("failed to check admission", errors)
+        self.assertEqual(self.stripe_unit.read_text(), "fixture")
+        self.assertFalse((self.stripe_host / "systemctl.log").exists())
+        result, payload = self.worker("cleanup", 42, host="metal-b")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["42"]["outcome"], "cleaned")
+        self.assertFalse(self.stripe_state.exists())
+        with self.stripe_controller() as process:
+            _, errors = process.communicate(timeout=10)
+            self.assertNotEqual(process.returncode, 0, errors)
+            self.assertIn("predates PR closure", errors)
+
+    def test_closed_pr_cleanup_preserves_a_newer_staged_stripe_operation(self):
+        path = self.resource(
+            "run/vm0-ci-stripe-deployments/pr-42/current.json",
+            contents=json.dumps(
+                {
+                    "operation": "a" * 64,
+                    "generation": ["2026-10-03T00:00:00Z", 123, 1],
+                    "status": "pending",
+                }
+            ),
+        )
+        path.parent.parent.chmod(0o700)
+        _, payload = self.worker("cleanup", 42)
+        self.assertEqual(payload["42"]["outcome"], "failed")
+        self.assertEqual(payload["42"]["error"], "resources remain after cleanup")
+        self.assertTrue(path.is_file())
 
 
 if __name__ == "__main__":

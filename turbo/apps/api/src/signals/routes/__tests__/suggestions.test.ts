@@ -100,7 +100,7 @@ async function primaryRun(enabled = true, secondary = false) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
-  const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+  const defaultAgentId = await bdd.readDefaultAgentId(actor);
   if (!actor.orgId || !defaultAgentId) {
     throw new Error("Expected a default Agent");
   }
@@ -110,7 +110,6 @@ async function primaryRun(enabled = true, secondary = false) {
     { ...actor, orgId: actor.orgId },
     {
       [FeatureSwitchKey.AgentSuggestion]: enabled,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   );
   bdd.acceptAgentStorageWrites();
@@ -268,7 +267,7 @@ describe("Agent suggestions", () => {
     expect(resumed.body.state.status).toBe("active");
   });
 
-  it("protects For you preferences and read receipts with session, rollout and owner boundaries", async () => {
+  it("protects For you preferences and read receipts with rollout and owner boundaries", async () => {
     const fixture = await primaryRun();
     const card = await accept(
       client().create({ headers: fixture.headers, body: input() }),
@@ -286,13 +285,14 @@ describe("Agent suggestions", () => {
       [FeatureSwitchKey.AgentSuggestion]: true,
     });
     await accept(client().summary({ headers: {} }), [401]);
-    await accept(
+    const saved = await accept(
       client().updateSources({
         headers: fixture.headers,
         body: { offers: false },
       }),
-      [403],
+      [200],
     );
+    expect(saved.body.offers).toBeFalsy();
     const other = {
       userId: `user_${randomUUID()}`,
       orgId: fixture.actor.orgId,
@@ -731,9 +731,6 @@ describe("Agent suggestions", () => {
   it("requires an enabled primary Agent capability and denies human publication", async () => {
     const fixture = await primaryRun(false);
     expect(fixture.prompt).not.toContain("# Suggestions feedback context");
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.ProactiveLearning]: true,
-    });
     await accept(
       client().create({ headers: fixture.headers, body: input() }),
       [403],
@@ -748,15 +745,18 @@ describe("Agent suggestions", () => {
     );
     expect(result.body.error.code).toBe("FORBIDDEN");
   });
-  it("does not grant suggestion publication to a secondary Agent", async () => {
+  it("publishes as the member when a send includes a legacy secondary Agent ID", async () => {
     const fixture = await primaryRun(true, true);
-    expect(fixture.prompt).not.toContain("# Suggestions feedback context");
-    await accept(
+    const created = await accept(
       client().create({ headers: fixture.headers, body: input() }),
-      [403],
+      [200],
     );
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.items).toStrictEqual([]);
+    expect(
+      pool.body.items.map((item) => {
+        return item.id;
+      }),
+    ).toContain(created.body.id);
   });
   it("limits homepage display while managing all concurrent cards and consumes once without replay resurrection", async () => {
     const fixture = await primaryRun();
@@ -920,7 +920,6 @@ describe("Agent suggestions", () => {
     );
     await updateFeatureSwitchesForUser(context, fixture.actor, {
       [FeatureSwitchKey.AgentSuggestion]: false,
-      [FeatureSwitchKey.ProactiveLearning]: true,
     });
     await accept(client().list({ headers: fixture.headers }), [403]);
     await accept(
@@ -1203,7 +1202,7 @@ describe("Agent suggestions", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: owner.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1297,12 +1296,72 @@ describe("Agent suggestions", () => {
     expect(retained.body.items).toHaveLength(1);
     expect(retained.body.items[0]?.id).toBe(suggestion.id);
   });
+  it("lets a custom direction continue only its owner's thread", async () => {
+    const owner = await primaryRun();
+    const threads = setupApp({ context, routes: chatThreadCreateRoutes })(
+      chatThreadsContract,
+    );
+    const thread = await accept(
+      threads.create({
+        headers: humanHeaders,
+        body: {},
+      }),
+      [201],
+    );
+    const continuing = input();
+    const customOption = {
+      ...continuing.content.customOption,
+      threadId: thread.body.id,
+    };
+    await accept(
+      client().create({
+        headers: owner.headers,
+        body: {
+          ...continuing,
+          content: { ...continuing.content, customOption },
+        },
+      }),
+      [200],
+    );
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(
+      pool.body.items.filter((item) => {
+        return item.type === "suggestion";
+      })[0]?.content.customOption.threadId,
+    ).toBe(thread.body.id);
+    const other = await primaryRun();
+    const foreign = input();
+    await accept(
+      client().create({
+        headers: other.headers,
+        body: { ...foreign, content: { ...foreign.content, customOption } },
+      }),
+      [404],
+    );
+    await accept(
+      client().create({ headers: other.headers, body: foreign }),
+      [200],
+    );
+    await accept(
+      client().update({
+        headers: other.headers,
+        params: { id: foreign.id },
+        body: { content: { customOption } },
+      }),
+      [404],
+    );
+    const unchanged = await accept(
+      client().list({ headers: humanHeaders }),
+      [200],
+    );
+    expect(
+      unchanged.body.items.filter((item) => {
+        return item.type === "suggestion";
+      })[0]?.content.customOption,
+    ).toStrictEqual(foreign.content.customOption);
+  });
   it("returns the original target and canonical draft when its thread was deleted after publication", async () => {
     const fixture = await primaryRun();
-    const secondary = await createBddApi(context).createAgent(fixture.actor, {
-      displayName: "Target Agent",
-      visibility: "private",
-    });
     const threads = setupApp({
       context,
       routes: [...chatThreadCreateRoutes, ...chatThreadDeleteRoutes],
@@ -1310,7 +1369,7 @@ describe("Agent suggestions", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: secondary.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1435,7 +1494,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: fixture.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1463,7 +1522,6 @@ describe("Suggestion custom follow-ups", () => {
       parts: [contextPart, background],
     };
     const body = {
-      agentId: fixture.agentId,
       threadId: thread.body.id,
       clientEventId: randomUUID(),
       prompt: "Evaluate the unresolved budget",
@@ -1548,7 +1606,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const contextPart = suggestionContextPart({
@@ -1564,7 +1622,6 @@ describe("Suggestion custom follow-ups", () => {
       setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
         headers: humanHeaders,
         body: {
-          agentId: fixture.agentId,
           threadId: thread.body.id,
           clientEventId: randomUUID(),
           prompt: "My own direction",
@@ -1639,14 +1696,13 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const events = setupApp({ context, routes: chatEventsRoutes })(
       chatEventsContract,
     );
     const body = {
-      agentId: fixture.agentId,
       threadId: thread.body.id,
       prompt: "Compare both decisions",
       hasTextContent: true,
@@ -1729,14 +1785,13 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     await accept(
       setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
         headers: humanHeaders,
         body: {
-          agentId: fixture.agentId,
           threadId: thread.body.id,
           clientEventId: randomUUID(),
           prompt: "What should I consider about this earlier decision?",
@@ -1803,14 +1858,13 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const events = setupApp({ context, routes: chatEventsRoutes })(
       chatEventsContract,
     );
     const body = {
-      agentId: fixture.agentId,
       threadId: thread.body.id,
       prompt: "Review the risks",
       userMessage: document,

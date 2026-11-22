@@ -1,5 +1,3 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
-import { personalExecutorId } from "../../lib/command/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -10,7 +8,6 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { formatIsoTimestamp } from "../../lib/utils/time-format";
 import { parseSearchQuery } from "../../lib/utils/search-query";
-import { isUuid } from "../../lib/utils/uuid";
 
 const SUPPORTED_SOURCES = ["agent-session", "chat", "slack"] as const;
 type Source = (typeof SUPPORTED_SOURCES)[number];
@@ -50,13 +47,11 @@ To verify the token and network policy end-to-end:
 
 Slack API docs: https://api.slack.com/methods/search.messages
 
-Note: --agent is ignored for the slack source.
 Add time filters directly to the Slack search query.`;
 }
 
 interface SearchOptions {
   source: string[];
-  agent?: string;
 }
 
 function collectSource(value: string, previous: string[]): string[] {
@@ -73,44 +68,19 @@ function renderChatMessage(msg: ChatSearchMessage): void {
   console.log(msg.content);
 }
 
-function renderChatResults(
-  response: ChatSearchResponse,
-  personal: boolean,
-): void {
+function renderChatResults(response: ChatSearchResponse): void {
   let isFirst = true;
   for (const result of response.results) {
     if (!isFirst) console.log();
     isFirst = false;
 
-    console.log(
-      chalk.bold(
-        `── Thread ${result.chatThreadId}${personal ? "" : ` (${result.agentName})`} ──────────`,
-      ),
-    );
+    console.log(chalk.bold(`── Thread ${result.chatThreadId} ──────────`));
     renderChatMessage(result.matchedMessage);
   }
 }
 
-async function runChatSource(
-  query: string,
-  options: SearchOptions,
-): Promise<void> {
-  const personal = await singleAgentEnabled();
-  if (personal && options.agent !== undefined)
-    throw new Error(
-      "Agent selection is unavailable in My Okou. Remove --agent.",
-    );
-  if (options.agent !== undefined && !isUuid(options.agent)) {
-    console.error(
-      chalk.red(`✗ Invalid agent ID "${options.agent}" — expected a UUID`),
-    );
-    process.exit(1);
-  }
-
-  const response = await searchChat({
-    keyword: query,
-    agentId: personal ? await personalExecutorId() : options.agent,
-  });
+async function runChatSource(query: string): Promise<void> {
+  const response = await searchChat({ keyword: query });
 
   if (response.results.length === 0) {
     console.log(chalk.dim("No matches found"));
@@ -118,7 +88,7 @@ async function runChatSource(
     return;
   }
 
-  renderChatResults(response, personal);
+  renderChatResults(response);
 }
 
 async function runSlackSource(
@@ -145,7 +115,6 @@ export const searchCommand = new Command()
     collectSource,
     [] as string[],
   )
-  .option("--agent <id>", "Filter by agent ID")
   .addHelpText("after", SEARCH_EXPLAINER)
   .action(
     withErrorHandler(async (query: string, options: SearchOptions) => {
@@ -173,7 +142,7 @@ export const searchCommand = new Command()
           await runAgentSessionSource(searchQuery, options);
           return;
         case "chat":
-          await runChatSource(searchQuery, options);
+          await runChatSource(searchQuery);
           return;
         case "slack":
           await runSlackSource(searchQuery, options);

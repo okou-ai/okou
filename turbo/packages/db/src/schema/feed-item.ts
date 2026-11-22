@@ -24,7 +24,6 @@ export const feedItems = pgTable(
     userId: text("user_id").notNull(),
     id: uuid("id").notNull(),
     type: text("type").$type<FeedItemType>().notNull(),
-    sourceType: text("source_type").notNull().default("agent"),
     priority: integer("priority").notNull().default(0),
     content: jsonb("content").$type<FeedItemContent>(),
     state: jsonb("state").$type<FeedItemState>().notNull(),
@@ -37,10 +36,6 @@ export const feedItems = pgTable(
     return [
       primaryKey({ columns: [table.orgId, table.userId, table.id] }),
       check("feed_items_type", sql`${table.type} IN ('suggestion', 'event')`),
-      check(
-        "feed_items_source_type",
-        sql`(${table.type} = 'suggestion' AND ${table.sourceType} = 'agent') OR (${table.type} = 'event' AND ${table.sourceType} = 'platform-event')`,
-      ),
       check(
         "feed_items_suggestion_state",
         sql`${table.type} <> 'suggestion' OR (

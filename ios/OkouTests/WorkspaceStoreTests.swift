@@ -21,7 +21,7 @@ final class WorkspaceStoreTests: XCTestCase {
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
       case "/api/chat-thread-drafts":
         return ChatHTTPResponse(body: #"{"draftThreadIds":["\#(storeThreadID)","\#(otherID)"]}"#)
-      case "/api/agents/\(storeAgentID)/draft", "/api/chat-threads/\(storeThreadID)/draft":
+      case "/api/chat-drafts/composer", "/api/chat-threads/\(storeThreadID)/draft":
         return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
       case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
       case "/api/chat-threads/\(storeThreadID)/event-rows":
@@ -386,7 +386,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testAuxiliaryUpgradeResponseBlocksAllFurtherWorkspaceReads() async {
     for endpoint in [
-      "/api/agents", "/api/indicators"
+      "/api/indicators"
     ] {
       let requests = Mutex<[String]>([])
       let fixture = ChatHTTPFixture { request in
@@ -414,11 +414,11 @@ final class WorkspaceStoreTests: XCTestCase {
       if endpoint == "/api/indicators" {
         await store.refresh()
       } else {
-        await store.refreshNavigation()
+        await store.prepareWorkspaceComposer()
       }
       XCTAssertTrue(store.needsUpgrade, endpoint)
       let before = requests.withLock { $0 }
-      await store.refreshNavigation()
+      await store.prepareWorkspaceComposer()
       await store.refresh()
       XCTAssertEqual(requests.withLock { $0 }, before)
     }
@@ -507,7 +507,7 @@ final class WorkspaceRefreshTests: XCTestCase {
         return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
       case "/api/chat-thread-drafts":
         return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
-      case "/api/agents/\(storeAgentID)/draft":
+      case "/api/chat-drafts/composer":
         return ChatHTTPResponse(body: "{\"draftUserMessage\":null,\"draftAttachments\":null}")
       case "/api/chat-threads/\(storeThreadID)/draft":
         return ChatHTTPResponse(

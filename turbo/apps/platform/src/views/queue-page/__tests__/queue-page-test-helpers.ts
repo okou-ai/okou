@@ -8,8 +8,6 @@ import type { QueueResponse } from "@okouai/api-contracts/contracts/runs";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
-export const QUEUE_AGENT_ID = "c0000000-0000-4000-a000-000000000091";
-
 export function queueResponse(
   concurrency: QueueResponse["concurrency"],
 ): QueueResponse {
@@ -59,13 +57,6 @@ export function installQueuePageFixture(
   let currentBillingStatus = options.billing;
   let currentQueueResponse = options.queue;
 
-  context.mocks.data.agents([
-    {
-      agentId: QUEUE_AGENT_ID,
-      displayName: "Capacity agent",
-      visibility: "private",
-    },
-  ]);
   context.mocks.data.org({ role: options.role ?? "admin" });
   context.mocks.api(runsQueueContract.getQueue, ({ respond }) => {
     return respond(200, currentQueueResponse);

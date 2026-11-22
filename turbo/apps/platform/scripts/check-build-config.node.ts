@@ -13,6 +13,7 @@ import { createContext, runInContext, runInNewContext } from "node:vm";
 import { build, loadConfigFromFile } from "vite";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type {
+  DocumentExportWorkerReadyMessage,
   PdfWorkerRequest,
   PdfWorkerResponse,
 } from "../src/lib/message-pdf/types.ts";
@@ -173,7 +174,18 @@ async function assertPdfLinkAnnotation(
   }
 }
 
-await test("built PDF worker exports grapheme text and links with missing or native APIs", async () => {
+type WorkerListener = (event: MessageEvent<unknown>) => void | Promise<void>;
+
+async function dispatchWorkerEvent(
+  listeners: ReadonlyMap<string, WorkerListener>,
+  event: MessageEvent<unknown>,
+): Promise<void> {
+  const listener = listeners.get(event.type);
+  assert.ok(listener, `The built worker must listen for ${event.type}`);
+  await listener(event);
+}
+
+await test("built PDF worker renders and reports decode failures with missing or native APIs", async () => {
   const result = await build({
     configFile: false,
     logLevel: "silent",
@@ -242,9 +254,9 @@ await test("built PDF worker exports grapheme text and links with missing or nat
       writable: true,
       value: native ? URL.canParse : undefined,
     });
+    const listeners = new Map<string, WorkerListener>();
     const delivery: {
-      listener?: (event: { data: PdfWorkerRequest }) => Promise<void>;
-      response?: PdfWorkerResponse;
+      response?: PdfWorkerResponse | DocumentExportWorkerReadyMessage;
     } = {};
     const workerScope = createContext({
       Intl: workerIntl,
@@ -261,24 +273,33 @@ await test("built PDF worker exports grapheme text and links with missing or nat
       queueMicrotask,
       atob,
       btoa,
-      addEventListener(_type: string, listener: typeof delivery.listener) {
-        delivery.listener = listener;
+      addEventListener(type: string, listener: WorkerListener) {
+        listeners.set(type, listener);
       },
-      postMessage(response: PdfWorkerResponse) {
+      postMessage(
+        response: PdfWorkerResponse | DocumentExportWorkerReadyMessage,
+      ) {
         delivery.response = response;
       },
     });
     runInContext("globalThis.self = globalThis", workerScope);
     runInContext(entry.code, workerScope);
-    assert.ok(delivery.listener);
-    await delivery.listener({ data: request });
+    await dispatchWorkerEvent(
+      listeners,
+      new MessageEvent("message", { data: request }),
+    );
     const response = delivery.response;
-    assert.ok(response?.ok);
+    assert.ok(response && "ok" in response && response.ok);
     assert.equal(response.blob.type, "application/pdf");
     await assertPdfLinkAnnotation(
       response.blob,
       "https://example.com/reference",
     );
+    await dispatchWorkerEvent(listeners, new MessageEvent("messageerror"));
+    assert.deepEqual(structuredClone(delivery.response), {
+      ok: false,
+      failure: "message_decode",
+    });
     assert.deepEqual(
       Array.from(new workerIntl.Segmenter().segment("e\u0301👩‍💻"), (part) => {
         return part.segment;
@@ -359,7 +380,7 @@ await test("production build isolates the configured lazy dependency", async () 
   );
 });
 
-await test("production workers and PDF fonts stay on the app origin", async () => {
+await test("workers and Pandoc stay on the app origin and PDF fonts use the default asset URL", async () => {
   const loaded = await productionConfigPromise;
 
   assert.ok(loaded);
@@ -386,18 +407,11 @@ await test("production workers and PDF fonts stay on the app origin", async () =
         'location.origin + "/okou-app/assets/message-pdf-worker-AbCd1234.js"',
     },
   );
+  assert.deepEqual(renderBuiltUrl("assets/pandoc-AbCd1234.wasm", context), {
+    runtime: 'location.origin + "/okou-app/assets/pandoc-AbCd1234.wasm"',
+  });
   for (const filename of [
-    "NotoSansCJKsc-Regular-AbCd1234.otf",
-    "NotoSansCJKsc-Bold-AbCd1234.otf",
-    "sarasa-gothic-sc-italic-AbCd1234.ttf",
-    "sarasa-gothic-sc-bolditalic-AbCd1234.ttf",
-    "noto-emoji-emoji-400-normal-AbCd1234.woff",
-  ]) {
-    assert.deepEqual(renderBuiltUrl(`assets/${filename}`, context), {
-      runtime: `location.origin + "/okou-app/assets/${filename}"`,
-    });
-  }
-  for (const filename of [
+    "assets/NotoSansCJKsc-Regular-AbCd1234.otf",
     "assets/index-AbCd1234.js",
     "assets/other-worker-AbCd1234.js",
     "assets/message-pdf-worker-AbCd1234.js.map",
@@ -966,7 +980,7 @@ async function writeExternalWorkerFixture(root: string): Promise<void> {
   await writeFile(path.join(root, "index.html"), clerkDiscoveryFixture());
   await writeFile(
     path.join(sourceDirectory, "main.js"),
-    'import "./main.css"; import SharedDatabaseWorker from "./shared-database-worker.js?sharedworker"; import localeUrl from "./locale.json?url"; import mermaid from "../packages/mermaid-lite/dist/mermaid.esm.min.mjs"; import vendor from "fixture-vendor"; globalThis.loadKatex = () => import("katex"); globalThis.exportPdf = () => new Worker(new URL("./message-pdf-worker.js", import.meta.url), { type: "module" }); new SharedDatabaseWorker({ name: "test" }); console.log(localeUrl, mermaid.value, vendor.value);',
+    'import "./main.css"; import SharedDatabaseWorker from "./shared-database-worker.js?sharedworker"; import localeUrl from "./locale.json?url"; import mermaid from "../packages/mermaid-lite/dist/mermaid.esm.min.mjs"; import vendor from "fixture-vendor"; import pdfFontUrl from "fixture-vendor/NotoSansCJKsc-Regular.otf?url"; globalThis.loadKatex = () => import("katex"); globalThis.exportPdf = () => new Worker(new URL("./message-pdf-worker.js", import.meta.url), { type: "module" }); new SharedDatabaseWorker({ name: "test" }); console.log(localeUrl, mermaid.value, vendor.value, pdfFontUrl);',
   );
   await writeFile(
     path.join(sourceDirectory, "main.css"),
@@ -986,11 +1000,21 @@ async function writeExternalWorkerFixture(root: string): Promise<void> {
   );
   await writeFile(
     path.join(vendorDirectory, "package.json"),
-    JSON.stringify({ exports: "./index.cjs", name: "fixture-vendor" }),
+    JSON.stringify({
+      exports: {
+        ".": "./index.cjs",
+        "./NotoSansCJKsc-Regular.otf": "./NotoSansCJKsc-Regular.otf",
+      },
+      name: "fixture-vendor",
+    }),
   );
   await writeFile(
     path.join(vendorDirectory, "index.cjs"),
     'module.exports = { value: "vendor-static" };',
+  );
+  await writeFile(
+    path.join(vendorDirectory, "NotoSansCJKsc-Regular.otf"),
+    "font fixture",
   );
   await writeFile(
     path.join(mermaidDirectory, "mermaid.esm.min.mjs"),
@@ -1056,6 +1080,10 @@ await test("emits the fixed page topology and two external workers", async () =>
       );
     });
     assert.ok(emittedVendorChunk?.type === "chunk");
+    assert.match(
+      emittedVendorChunk.code,
+      /=\s*"https:\/\/static\.okou\.io\/okou-app\/assets\/NotoSansCJKsc-Regular-[^"/]+\.otf"/u,
+    );
     assert.ok(
       emittedVendorChunk.moduleIds.some((moduleId) => {
         return moduleId.endsWith(

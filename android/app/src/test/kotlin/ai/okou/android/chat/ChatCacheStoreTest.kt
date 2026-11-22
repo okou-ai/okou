@@ -1,13 +1,10 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.TestOkouApplication
-import ai.okou.android.api.generated.AgentsItem
-import ai.okou.android.api.generated.AgentsItemVisibility
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ProjectArchive
@@ -21,6 +18,7 @@ import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.SQLiteStatement
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
@@ -66,23 +64,124 @@ class ChatCacheStoreTest {
         )
     }
 
-    private fun navigation() =
-        CachedChatNavigation(
-            agents =
-                listOf(
-                    AgentsItem(
-                        CHAT_AGENT,
-                        true,
-                        "user-a",
-                        null,
-                        "My Okou",
-                        null,
-                        null,
-                        AgentsItemVisibility.PRIVATE,
+    @Test
+    fun startupPreparationIsScopedAndDoesNotReplaceTheActiveLease() = runTest {
+        val store = cache(temporary.newFolder())
+        val checkpoint = checkpoint()
+        store
+            .open(identity) { true }
+            .use { lease ->
+                assertNull(store.prepareChatList(identity, Dispatchers.Default))
+                lease.save(checkpoint, 1234)
+
+                val prepared = checkNotNull(store.prepareChatList(identity, Dispatchers.Default))
+                assertEquals(identity, prepared.identity)
+                assertEquals(checkpoint, prepared.saved.checkpoint)
+                assertEquals(replayChatList(checkpoint), prepared.rows)
+                assertNull(
+                    store.prepareChatList(identity.copy(userId = "other"), Dispatchers.Default)
+                )
+                val rejected = runCatching {
+                    store.prepareChatList(
+                        identity.copy(authorizationScope = "changed"),
+                        Dispatchers.Default,
                     )
-                ),
-            projectsEnabled = true,
+                }
+                assertTrue(rejected.exceptionOrNull() is IOException)
+                assertEquals(checkpoint, lease.load()?.checkpoint)
+            }
+    }
+
+    @Test
+    fun upgradingVersionTwoPreservesChatAndProjectCache() = runTest {
+        val root = temporary.newFolder()
+        val original = checkpoint()
+        val projects =
+            ProjectCheckpoint(
+                ProjectArchive(
+                    listOf(ConfirmedProject(CHAT_PROJECT, "Example", CHAT_DATE, CHAT_DATE)),
+                    null,
+                    0,
+                )
+            )
+        val store = cache(root)
+        store
+            .open(identity) { true }
+            .use {
+                it.save(original, 1234)
+                it.saveProjects(projects, 2345)
+            }
+        store.close()
+
+        val database = root.resolve("chats.db")
+        val driver = BundledSQLiteDriver()
+        driver.open(database.path).use {
+            it.execSQL(
+                "ALTER TABLE chat_scopes ADD COLUMN projectsEnabled INTEGER NOT NULL DEFAULT 0"
+            )
+            it.execSQL("ALTER TABLE chat_scopes ADD COLUMN hasAgents INTEGER NOT NULL DEFAULT 0")
+            it.execSQL(
+                "CREATE TABLE chat_agents (scope TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (scope, id), FOREIGN KEY (scope) REFERENCES chat_scopes(scope) ON DELETE CASCADE)"
+            )
+            it.execSQL("PRAGMA user_version = 2")
+        }
+
+        val upgraded = cache(root)
+        upgraded
+            .open(identity) { true }
+            .use {
+                val chats = checkNotNull(it.load())
+                assertEquals(original, chats.checkpoint)
+                assertEquals(1234L, chats.confirmedAt)
+                val savedProjects = checkNotNull(it.loadProjects())
+                assertEquals(projects, savedProjects.checkpoint)
+                assertEquals(2345L, savedProjects.confirmedAt)
+            }
+        upgraded.close()
+    }
+
+    @Test
+    fun unreadSnapshotReopensOnlyForTheSameAuthorizedWorkspaceAndAccount() = runTest {
+        val root = temporary.newFolder()
+        val snapshot = CachedUnread(1_000L, mapOf(CHAT_PERSONAL to CHAT_DATE))
+        val original = cache(root).open(identity) { true }
+        assertTrue(original.saveUnread(snapshot))
+        original.close()
+        val reopened = cache(root)
+        val returning = reopened.open(identity.copy(sessionId = "session-b")) { true }
+        assertEquals(snapshot, returning.loadUnread())
+
+        for (replacement in
+            listOf(
+                identity.copy(workspaceId = "org-b"),
+                identity.copy(userId = "user-b"),
+                identity.copy(authorizationScope = "admin"),
+                identity.copy(apiOrigin = "https://other.okou.ai/"),
+            )) {
+            reopened.open(replacement) { true }.use { assertNull(it.loadUnread()) }
+        }
+        assertTrue(
+            runCatching { returning.saveUnread(snapshot) }.exceptionOrNull()
+                is CancellationException
         )
+        reopened.open(identity) { true }.use { assertEquals(snapshot, it.loadUnread()) }
+    }
+
+    @Test
+    fun corruptUnreadSnapshotCanBeReplacedByAConfirmedSnapshot() = runTest {
+        val root = temporary.newFolder().resolve("chat-list")
+        val snapshot = CachedUnread(1_000L, mapOf(CHAT_PERSONAL to CHAT_DATE))
+        cache(root)
+            .open(identity) { true }
+            .use { lease ->
+                assertTrue(lease.saveUnread(snapshot))
+                checkNotNull(root.listFiles()).single().writeText("{")
+                assertNull(lease.loadUnread())
+
+                assertTrue(lease.saveUnread(snapshot))
+                assertEquals(snapshot, lease.loadUnread())
+            }
+    }
 
     @Test
     fun projectDatasetReopensWithoutAChatCacheAndRejectsStaleOrUnauthorizedWrites() = runTest {
@@ -108,9 +207,9 @@ class ChatCacheStoreTest {
         store
             .open(identity) { true }
             .use {
-                it.saveProjects(snapshot, 1234)
-                it.saveProjects(renamed, 2345)
-                it.saveProjects(snapshot, 1234)
+                assertTrue(it.saveProjects(snapshot, 1234))
+                assertTrue(it.saveProjects(renamed, 2345))
+                assertFalse(it.saveProjects(snapshot, 1234))
                 assertNull(it.load())
             }
         store.close()
@@ -142,7 +241,7 @@ class ChatCacheStoreTest {
             checkpoint(
                 chatEventWire(kind = "project_updated", extra = ",\"projectId\":\"$CHAT_PROJECT\"")
             )
-        first.open(identity) { true }.use { it.save(deferred, 1234, navigation()) }
+        first.open(identity) { true }.use { it.save(deferred, 1234) }
         first.close()
         val reopened = cache(root)
         reopened
@@ -151,7 +250,6 @@ class ChatCacheStoreTest {
                 val saved = checkNotNull(lease.load())
                 assertEquals(deferred.cursor, saved.checkpoint.cursor)
                 assertEquals(1234L, saved.confirmedAt)
-                assertEquals(navigation(), saved.navigation)
                 ChatListApiFixture().use { fixture ->
                     fixture.events = {
                         jsonResponse(
@@ -162,7 +260,7 @@ class ChatCacheStoreTest {
                         ChatListSync(fixture.service).synchronize(saved.checkpoint).checkpoint
                     assertEquals(CHAT_PROJECT, replayChats(confirmed).single().projectId)
                     assertEquals(CHAT_PERSONAL, replayChats(confirmed).single().id)
-                    lease.save(confirmed, 2345, saved.navigation)
+                    lease.save(confirmed, 2345)
                 }
             }
         reopened.close()
@@ -226,7 +324,7 @@ class ChatCacheStoreTest {
             .open(identity) { true }
             .use { lease ->
                 val original = checkpoint()
-                lease.save(original, 1234)
+                assertTrue(lease.save(original, 1234))
                 val newer =
                     checkpoint(
                         chatEventWire() +
@@ -238,8 +336,8 @@ class ChatCacheStoreTest {
                                 title = "New title",
                             )
                     )
-                lease.save(newer, 2345)
-                lease.save(original, 1234)
+                assertTrue(lease.save(newer, 2345))
+                assertFalse(lease.save(original, 1234))
                 assertEquals(newer, checkNotNull(lease.load()).checkpoint)
                 val rebased =
                     ChatCheckpoint(
@@ -248,7 +346,7 @@ class ChatCacheStoreTest {
                         emptyList(),
                         newer.cursor,
                     )
-                lease.save(rebased, 3456)
+                assertTrue(lease.save(rebased, 3456))
                 store.close()
                 store
                     .open(identity) { true }
@@ -265,7 +363,7 @@ class ChatCacheStoreTest {
         val root = temporary.newFolder()
         val store = cache(root)
         val original = checkpoint()
-        store.open(identity) { true }.use { it.save(original, 1234, navigation()) }
+        store.open(identity) { true }.use { it.save(original, 1234) }
         store.close()
         // Fault at the real disk boundary after the transaction has begun replacing its snapshot.
         SQLiteDatabase.openDatabase(
@@ -297,7 +395,6 @@ class ChatCacheStoreTest {
                 val saved = checkNotNull(lease.load())
                 assertEquals(original, saved.checkpoint)
                 assertEquals(1234L, saved.confirmedAt)
-                assertEquals(navigation(), saved.navigation)
             }
     }
 

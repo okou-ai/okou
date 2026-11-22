@@ -1,15 +1,6 @@
-import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-
 export interface MemberMemoryOwner {
   readonly orgId: string;
   readonly userId: string;
-}
-
-/** Every Run selects its member's Memory independently of Skills and models. */
-export function memberMemoryReadPlan(owner: MemberMemoryOwner) {
-  return [
-    { lookup: { ...owner, name: MEMORY_ARTIFACT_NAME }, version: undefined },
-  ];
 }
 
 export function memberMemoryMergeVersions(

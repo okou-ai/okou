@@ -1,5 +1,5 @@
 import {
-  mergeRunPromptAndSkills,
+  mergeRunPrompt,
   renderRunPrompts,
   type SkillVolume,
   type SystemPromptVariables,
@@ -9,11 +9,9 @@ import { createEmailThreadPrompt } from "./email";
 import { createSuggestionsPrompt } from "./suggestions";
 import { createWechatThreadPrompt } from "./wechat";
 import { computed, type Computed } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
-import { createSystemSkillsContext } from "../system-skills-context.service";
+import { createSystemSkillVolumes } from "../system-skills-context.service";
 import type { ThreadContext } from "../thread-context.signals";
 import { createAgentPrompt } from "./agent";
 import { createAgentPhoneThreadPrompt } from "./agentphone";
@@ -30,28 +28,27 @@ import type { PickedThreadInputEvent } from "./types";
 import { createUserPrompt } from "./user";
 import { createWebThreadPrompt } from "./web";
 
-export interface PromptAndSkillVolumes {
+export interface PreparedRunPrompt {
   readonly systemPromptVariables: SystemPromptVariables;
   readonly appendedSystemPrompt: string;
   readonly userPrompt: string;
-  readonly skillVolumes: readonly SkillVolume[];
   readonly userTimezone: string | undefined;
 }
 
-export class PromptAndSkillVolumesError extends Error {
+export class RunPromptError extends Error {
   constructor(
     readonly code: string,
     message: string,
   ) {
     super(message);
-    this.name = "PromptAndSkillVolumesError";
+    this.name = "RunPromptError";
   }
 }
 
 function unavailablePromptContext(
   contextType?: PickedThreadInputEvent["contextType"],
 ) {
-  return new PromptAndSkillVolumesError(
+  return new RunPromptError(
     contextType === "discord" ? "DISCORD_ACCESS_REVOKED" : "CONFLICT",
     contextType === "discord"
       ? "This Discord conversation is no longer available."
@@ -119,52 +116,42 @@ function createIntegrationPrompts(
       featureSwitches$,
     ),
     automation: createAutomationThreadPrompt(
-      pickedEvent$,
-      threadContext.automationContext$,
-      threadContext.automationTarget$,
+      threadContext.automationSnapshot$,
+      threadContext.automationPayload$,
       singleAgent$,
     ),
   };
 }
 
-function createExecutionPromptSources(
+function createSharedPromptSources(
   bootstrap: AgentRunContextSignals,
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ) {
-  const agent$ = computed((get) => {
-    return get(bootstrap.agent$);
-  });
-  const memberMetadata$ = computed((get) => {
-    return get(bootstrap.memberMetadata$);
-  });
   const featureSwitches$ = computed((get) => {
     return get(bootstrap.featureSwitches$);
   });
-  const singleAgent$ = computed(async (get) => {
-    const [agent, features] = await Promise.all([
-      get(agent$),
-      get(featureSwitches$),
-    ]);
-    return (
-      agent !== null &&
-      agent.id === agent.defaultAgentId &&
-      isFeatureEnabled(FeatureSwitchKey.SingleAgent, features)
-    );
+  const disabledPaidTools$ = computed((get) => {
+    return get(bootstrap.disabledPaidTools$);
   });
-  const memberRoutes$ = computed((get) => {
-    return get(bootstrap.memberRoutes$);
+  const seedSkills$ = computed((get) => {
+    return get(bootstrap.seedSkills$);
+  });
+  const contextType$ = computed(async (get) => {
+    const event = await get(pickedEvent$);
+    if (!event?.contextType) {
+      throw unavailablePromptContext();
+    }
+    return event.contextType;
+  });
+  const singleAgent$ = computed(async (get) => {
+    return (await get(featureSwitches$)).personalExecution;
   });
   const authorizedConnectors$ = computed(async (get) => {
-    const [connectors, features] = await Promise.all([
+    const [connectors, selection] = await Promise.all([
       get(bootstrap.authorizedConnectors$),
-      get(bootstrap.featureSwitches$),
+      get(threadContext.connectorSelection$),
     ]);
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.ConnectorChatAccountAccess, features)
-    ) {
-      return connectors;
-    }
-    const selection = await get(threadContext.connectorSelection$);
     if ("status" in selection) {
       throw new Error("Connector prompt requires an available Chat");
     }
@@ -175,45 +162,74 @@ function createExecutionPromptSources(
         : scope.allowedCustomConnectorIds.includes(connector.customConnectorId);
     });
   });
-  const selectedImageModel$ = computed((get) => {
-    return get(bootstrap.selectedImageModel$);
-  });
-  const disabledPaidTools$ = computed((get) => {
-    return get(bootstrap.disabledPaidTools$);
-  });
-  const seedSkills$ = computed((get) => {
-    return get(bootstrap.seedSkills$);
-  });
-  return {
-    agent$,
-    singleAgent$,
-    memberMetadata$,
-    featureSwitches$,
-    memberRoutes$,
+  const connectors$ = createConnectorsContext(
     authorizedConnectors$,
-    selectedImageModel$,
+    singleAgent$,
+  );
+  const templates$ = computed(async (get) => {
+    if ((await get(contextType$)) === "automation") {
+      return null;
+    }
+    const templates = await get(threadContext.templates$);
+    if ("error" in templates) {
+      throw new RunPromptError(templates.error.code, templates.error.message);
+    }
+    return templates;
+  });
+  const systemSkills$ = createSystemSkillVolumes(
     disabledPaidTools$,
     seedSkills$,
+  );
+  const skillVolumes$ = computed(
+    async (get): Promise<readonly SkillVolume[]> => {
+      const [templates, connectors, systemSkills] = await Promise.all([
+        get(templates$),
+        get(connectors$),
+        get(systemSkills$),
+      ]);
+      return [
+        ...(templates?.skillVolumes ?? []),
+        ...connectors.skillVolumes,
+        ...systemSkills,
+      ];
+    },
+  );
+  return {
+    featureSwitches$,
+    disabledPaidTools$,
+    contextType$,
+    singleAgent$,
+    connectors$,
+    templates$,
+    skillVolumes$,
   };
 }
 
-/** Render prompt contributions once; storage preparation binds skill paths. */
+/** Share template and Connector contributions between the prompt and package plans. */
 export function createPromptAndSkillVolumesSignals(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
-): Computed<Promise<PromptAndSkillVolumes>> {
-  const sources = createExecutionPromptSources(bootstrap, threadContext);
+) {
+  const memberMetadata$ = computed((get) => {
+    return get(bootstrap.memberMetadata$);
+  });
+  const selectedImageModel$ = computed((get) => {
+    return get(bootstrap.selectedImageModel$);
+  });
+  const shared = createSharedPromptSources(
+    bootstrap,
+    pickedEvent$,
+    threadContext,
+  );
   const {
-    agent$,
+    contextType$,
     singleAgent$,
-    memberMetadata$,
+    templates$,
+    connectors$,
     featureSwitches$,
-    authorizedConnectors$,
-    selectedImageModel$,
     disabledPaidTools$,
-    seedSkills$,
-  } = sources;
+  } = shared;
   const cloudBrowserEnabled$ = createCloudBrowserEnabled(pickedEvent$);
   const integrationPrompts = createIntegrationPrompts(
     pickedEvent$,
@@ -222,7 +238,6 @@ export function createPromptAndSkillVolumesSignals(
     singleAgent$,
   );
   const agentPrompt$ = createAgentPrompt(
-    agent$,
     featureSwitches$,
     cloudBrowserEnabled$,
     disabledPaidTools$,
@@ -236,31 +251,16 @@ export function createPromptAndSkillVolumesSignals(
   const userPrompt$ = createUserPrompt(memberMetadata$);
   const deviceUsePrompts = createDeviceUsePrompts(
     pickedEvent$,
-    threadContext,
     featureSwitches$,
   );
   const { computerUsePrompt$, phoneUsePrompt$ } = deviceUsePrompts;
   const rotatedPrompt$ = createRotatedPrompt(threadContext.incompleteContext$);
-  const connectors$ = createConnectorsContext(
-    authorizedConnectors$,
-    singleAgent$,
-  );
   const runtimePrompt$ = createRuntimePrompt(
     selectedImageModel$,
     disabledPaidTools$,
   );
-  const systemSkills$ = createSystemSkillsContext(
-    disabledPaidTools$,
-    seedSkills$,
-  );
-
-  return computed(async (get): Promise<PromptAndSkillVolumes> => {
-    const event = await get(pickedEvent$);
-    if (!event?.contextType) {
-      throw unavailablePromptContext();
-    }
-    const contextType = event.contextType;
-    const automation = contextType === "automation";
+  const prompt$ = computed(async (get): Promise<PreparedRunPrompt> => {
+    const contextType = await get(contextType$);
     const [
       integration,
       continuation,
@@ -270,32 +270,24 @@ export function createPromptAndSkillVolumesSignals(
       computerUse,
       phoneUse,
       connectors,
-      systemSkills,
       runtime,
       suggestions,
     ] = await Promise.all([
       get(integrationPrompts[contextType]),
-      automation ? null : get(rotatedPrompt$),
-      automation ? null : get(threadContext.templates$),
+      contextType === "automation" ? null : get(rotatedPrompt$),
+      get(templates$),
       get(agentPrompt$),
       get(userPrompt$),
       get(computerUsePrompt$),
       get(phoneUsePrompt$),
       get(connectors$),
-      get(systemSkills$),
       get(runtimePrompt$),
       get(suggestionsPrompt$),
     ]);
     if (!integration) {
       throw unavailablePromptContext(contextType);
     }
-    if (templates && "error" in templates) {
-      throw new PromptAndSkillVolumesError(
-        templates.error.code,
-        templates.error.message,
-      );
-    }
-    const combined = mergeRunPromptAndSkills([
+    const combined = mergeRunPrompt([
       agent,
       integration,
       ...(continuation ? [continuation] : []),
@@ -304,7 +296,6 @@ export function createPromptAndSkillVolumesSignals(
       computerUse,
       phoneUse,
       connectors,
-      systemSkills,
       runtime,
       suggestions,
     ]);
@@ -313,29 +304,21 @@ export function createPromptAndSkillVolumesSignals(
       systemPromptVariables: combined.systemPromptVariables,
       appendedSystemPrompt: prompts.systemPrompt,
       userPrompt: prompts.userPrompt,
-      skillVolumes: combined.skillVolumes,
       // createUserPrompt already consumed this memoized member observation.
       userTimezone:
         (await get(memberMetadata$)).preferences?.timezone ?? undefined,
     };
   });
+  return { prompt$, skillVolumes$: shared.skillVolumes$ };
 }
 
 function createDeviceUsePrompts(
   event$: Parameters<typeof createComputerUsePrompt>[0],
-  threadContext: ThreadContext,
-  features$: Parameters<typeof createComputerUsePrompt>[2],
+  features$: Parameters<typeof createComputerUsePrompt>[1],
 ) {
   return {
-    computerUsePrompt$: createComputerUsePrompt(
-      event$,
-      threadContext.computerUseHostGrant$,
-      features$,
-    ),
-    phoneUsePrompt$: createPhoneUsePrompt(
-      threadContext.phoneUseGrant$,
-      features$,
-    ),
+    computerUsePrompt$: createComputerUsePrompt(event$, features$),
+    phoneUsePrompt$: createPhoneUsePrompt(event$, features$),
   };
 }
 

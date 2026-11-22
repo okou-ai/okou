@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -17,7 +16,6 @@ import {
   chatListThreadId,
   installChatListStream,
 } from "./chat-list-test-helpers.ts";
-import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   createChatRunFixtures,
@@ -51,9 +49,8 @@ function installChat() {
     snapshot: [
       chatListThread(1, "Run conversation", {
         id: RUN_THREAD_ID,
-        agentId: AGENT_ID,
       }),
-      chatListThread(2, "Earlier title", { agentId: AGENT_ID }),
+      chatListThread(2, "Earlier title"),
     ],
   });
   let events: ChatThreadEvent[] = [];
@@ -74,7 +71,6 @@ function installChat() {
   );
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: unread ? { [AGENT_ID]: "unread" } : {},
       threads: unread ? { [OTHER_THREAD_ID]: "unread" } : {},
       unreadAt: unread ? { [OTHER_THREAD_ID]: "2026-08-01T01:00:02.000Z" } : {},
     });
@@ -83,7 +79,6 @@ function installChat() {
     advance(title = "Updated while away") {
       events = [
         chatListEvent(91, 2, "renamed", OTHER_THREAD_ID, {
-          agentId: AGENT_ID,
           title,
         }),
       ];
@@ -176,7 +171,6 @@ test.each([
   "A $gap gap catches up Project changes without another notification at $path",
   async ({ path, gap }) => {
     installChat();
-    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
     const renamedId = "30000000-0000-4000-8000-000000000071";
     const deletedId = "30000000-0000-4000-8000-000000000072";
     const createdId = "30000000-0000-4000-8000-000000000073";
@@ -214,7 +208,6 @@ test.each([
       context,
       path,
       sharedWorkerTestTransport: "message-port",
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
     await expect(
       screen.findByText("Earlier Project"),

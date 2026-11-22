@@ -25,7 +25,6 @@ import { pathname, search } from "../../../signals/location.ts";
 import { CLAUDE_SUBSCRIPTION_PROVIDER_ID } from "./chat-composer-test-helpers.ts";
 import { buildProvider, buildRunModel } from "./chat-model-builders.ts";
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000081";
 const CREATED_AT = "2026-08-01T10:00:00.000Z";
 
@@ -85,7 +84,6 @@ function userMessage(text: string): UserMessageInputDocument {
 function chatThread(title: string): ChatThreadSnapshotProjection {
   return {
     id: THREAD_ID,
-    agentId: AGENT_ID,
     title,
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -139,7 +137,6 @@ function configureExistingChat(args: {
   context.mocks.browser.language(portuguese.locale);
   context.mocks.data.userPreferences({ locale: portuguese.locale });
   configureNoBrowserSession();
-  context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
     selectedModel: "claude-sonnet-5",
     serviceTier: null,

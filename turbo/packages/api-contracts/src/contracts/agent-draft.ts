@@ -50,6 +50,24 @@ export const agentDraftContract = c.router({
   },
 });
 
+export const composerDraftContract = c.router({
+  get: {
+    method: "GET",
+    path: "/api/chat-drafts/composer",
+    headers: authHeadersSchema,
+    responses: agentDraftContract.get.responses,
+    summary: "Get the member’s draft for a new chat",
+  },
+  patch: {
+    method: "PATCH",
+    path: "/api/chat-drafts/composer",
+    headers: authHeadersSchema,
+    body: agentDraftRequestSchema,
+    responses: agentDraftContract.patch.responses,
+    summary: "Update the member’s draft for a new chat",
+  },
+});
+
 export type AgentDraftResponse = zInfer<typeof agentDraftResponseSchema>;
 export type AgentDraftRequest = zInfer<typeof agentDraftRequestSchema>;
 export type AgentDraftContract = typeof agentDraftContract;

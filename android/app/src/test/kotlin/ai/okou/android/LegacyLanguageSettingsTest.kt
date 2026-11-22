@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.core.app.LocaleManagerCompat
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,7 +22,7 @@ class LegacyLanguageSettingsTest {
 
     @Test
     fun applicationLanguageChangesUseTheNativeCompatibilityPathAndRecreateTheList() {
-        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Language").performScrollTo().performClick()
         compose
@@ -31,11 +32,11 @@ class LegacyLanguageSettingsTest {
         compose.waitForIdle()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("設定").assertExists()
-        org.junit.Assert.assertEquals(
-            "en",
-            LocaleManagerCompat.getSystemLocales(compose.activity)[0]?.language,
-        )
+        assertEquals("ja", LocaleManagerCompat.getApplicationLocales(compose.activity)[0]?.language)
+        assertEquals("en", LocaleManagerCompat.getSystemLocales(compose.activity)[0]?.language)
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNodeWithText(compose.activity.getString(R.string.chat_list_title)).assertExists()
+        compose
+            .onNodeWithContentDescription(compose.activity.getString(R.string.chat_list_title))
+            .assertExists()
     }
 }

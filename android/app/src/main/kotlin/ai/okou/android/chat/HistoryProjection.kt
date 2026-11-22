@@ -134,9 +134,11 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                         if (
                             row.type == "input.automation" &&
                                 (document == null || document === JsonNull)
-                        )
-                            return@mapNotNull null
-                        blocks.addAll(userBlocks(document))
+                        ) {
+                            if (row.id !in queued) return@mapNotNull null
+                        } else {
+                            blocks.addAll(userBlocks(document))
+                        }
                         row.inputError?.let { blocks.add(HistoryBlock(HistoryBlockKind.Error, it)) }
                         HistoryRole.User
                     }
@@ -277,7 +279,6 @@ private fun userBlocks(value: JsonElement?): List<HistoryBlock> {
                 "annotation",
                 "feedback",
                 "chat_thread",
-                "agent",
                 "project",
                 "template",
                 "source",

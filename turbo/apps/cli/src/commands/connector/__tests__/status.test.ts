@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou connector status command
  *
@@ -22,8 +23,6 @@ import {
   stubConnectorCatalog,
   stubConnectorCatalogDetail,
 } from "../../__tests__/helpers/connector-catalog";
-
-const AGENT_UUID = "550e8400-e29b-41d4-a716-446655440000";
 
 const githubAccount = {
   authMethod: "oauth",
@@ -55,33 +54,6 @@ function stubConnector(connector: ReturnType<typeof catalogStatusItem>) {
   return stubStatus([connector]);
 }
 
-function stubAgent(
-  id: string,
-  displayName: string | null,
-  origin = "http://localhost:3000",
-) {
-  return http.get(`${origin}/api/agents/${id}`, () => {
-    return HttpResponse.json({
-      agentId: id,
-      ownerId: "owner-1",
-      description: null,
-      displayName,
-      sound: null,
-      avatarUrl: null,
-    });
-  });
-}
-
-function stubUserConnectors(
-  id: string,
-  enabledConnectorSlugs: string[],
-  origin = "http://localhost:3000",
-) {
-  return http.get(`${origin}/api/agents/${id}/user-connectors`, () => {
-    return HttpResponse.json({ enabledConnectorSlugs: enabledConnectorSlugs });
-  });
-}
-
 function stubAvailableConnectors(connectorSlugs: string[]) {
   return stubStatus(
     connectorSlugs.map((connectorSlug) => {
@@ -108,9 +80,7 @@ describe("okou connector status command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
-    vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
-    statusCommand.setOptionValue("agent", undefined);
     statusCommand.setOptionValue("json", false);
     server.use(stubConnectorAccounts([]));
   });
@@ -122,7 +92,7 @@ describe("okou connector status command", () => {
     vi.unstubAllEnvs();
   });
 
-  describe("without agent context", () => {
+  describe("saved accounts outside a Run", () => {
     it.each(["github", "GitHub", "builtin:github", "builtin:GitHub"])(
       "displays connected status selected by %s",
       async (selector) => {
@@ -207,293 +177,22 @@ describe("okou connector status command", () => {
             connectorType: "builtin",
             target: { kind: "builtin", connectorSlug: "github" },
           }),
-          authorization: null,
         }),
       );
       expect(output).not.toContain("\u001b[");
     });
   });
 
-  describe("with agent context", () => {
-    it("shows authorized prose when agent is authorized", async () => {
-      server.use(
-        stubConnector(connectedGithub),
-        stubAgent(AGENT_UUID, "maya"),
-        stubUserConnectors(AGENT_UUID, ["github"]),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain(
-        `The github connector is authorized for agent maya (${AGENT_UUID}).`,
-      );
-      expect(logCalls).not.toContain("is not authorized");
-      expect(logCalls).not.toContain("is not connected");
-      expect(logCalls).not.toContain("[Authorize github]");
-      expect(logCalls).not.toContain("[Connect github]");
-    });
-
-    it("shows authorize link when connected but agent is not authorized", async () => {
-      server.use(
-        stubConnector(connectedGithub),
-        stubAgent(AGENT_UUID, "maya"),
-        stubUserConnectors(AGENT_UUID, []),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain(
-        `The github connector is not authorized for agent maya (${AGENT_UUID}).`,
-      );
-      expect(logCalls).toContain("[Authorize github](");
-      expect(logCalls).toContain(
-        `/connectors/github/authorize?agentId=${AGENT_UUID}`,
-      );
-      expect(logCalls).not.toContain("is not connected");
-      expect(logCalls).not.toContain("[Connect github]");
-      expect(logCalls).not.toContain("okou connector check");
-      expect(logCalls).not.toContain("callbackPrompt=");
-    });
-
-    it("does not attach run callback context to a standalone agent lookup", async () => {
-      vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
-      server.use(
-        stubConnector(connectedGithub),
-        stubAgent(AGENT_UUID, "maya"),
-        stubUserConnectors(AGENT_UUID, []),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain(
-        `/connectors/github/authorize?agentId=${AGENT_UUID}`,
-      );
-      expect(logCalls).not.toContain("threadId=thread-abc-123");
-      expect(logCalls).not.toContain("callbackPrompt=");
-    });
-
-    it("fails closed for canonical run context without a projection", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
-
-      await statusCommand.parseAsync(["node", "cli", "github"]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain("Account used by this run is unavailable");
-    });
-
-    it("uses the production app origin in authorization links", async () => {
-      const apiOrigin = "https://api.okou.ai";
-      vi.stubEnv("APP_URL", "https://unrelated.example.test");
-      vi.stubEnv("OKOU_API_BACKEND_URL", apiOrigin);
-      server.use(
-        stubStatus([connectedGithub], apiOrigin),
-        stubConnectorAccounts(
-          catalogAccountConnections([connectedGithub]),
-          apiOrigin,
-        ),
-        stubAgent(AGENT_UUID, "maya", apiOrigin),
-        stubUserConnectors(AGENT_UUID, [], apiOrigin),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain(
-        `[Authorize github](https://app.okou.ai/connectors/github/authorize?agentId=${AGENT_UUID})`,
-      );
-    });
-
-    it("prefers OKOU_APP_URL in authorization links", async () => {
-      const apiOrigin = "https://api.example.test";
-      const appOrigin = "https://app.example.test";
-      vi.stubEnv("OKOU_API_BACKEND_URL", apiOrigin);
-      vi.stubEnv("OKOU_APP_URL", `${appOrigin}/ignored-path`);
-      server.use(
-        stubStatus([connectedGithub], apiOrigin),
-        stubConnectorAccounts(
-          catalogAccountConnections([connectedGithub]),
-          apiOrigin,
-        ),
-        stubAgent(AGENT_UUID, "maya", apiOrigin),
-        stubUserConnectors(AGENT_UUID, [], apiOrigin),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain(
-        `[Authorize github](${appOrigin}/connectors/github/authorize?agentId=${AGENT_UUID})`,
-      );
-    });
-
-    it("shows connect link when connector is not connected", async () => {
-      server.use(
-        stubAvailableConnectors(["github"]),
-        stubAgent(AGENT_UUID, "maya"),
-        stubUserConnectors(AGENT_UUID, []),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain(
-        `The github connector is not connected. Once connected, it will be authorized for agent maya (${AGENT_UUID}).`,
-      );
-      expect(logCalls).toContain("Connect and authorize it at:");
-      expect(logCalls).toContain(
-        `/connectors/github/connect?agentId=${AGENT_UUID}`,
-      );
-      expect(logCalls).not.toContain("[Authorize github]");
-      expect(logCalls).not.toContain("okou connector check");
-    });
-
-    it("shows connect guidance when connector is authorized but not connected", async () => {
-      server.use(
-        stubAvailableConnectors(["github"]),
-        stubAgent(AGENT_UUID, "maya"),
-        stubUserConnectors(AGENT_UUID, ["github"]),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain("not connected");
-      expect(logCalls).toContain(
-        `The github connector is authorized for agent maya (${AGENT_UUID}), but it is not connected.`,
-      );
-      expect(logCalls).toContain("[Connect github](");
-      expect(logCalls).toContain(
-        `/connectors/github/connect?agentId=${AGENT_UUID}`,
-      );
-      expect(logCalls).not.toContain("[Authorize github]");
-      expect(logCalls).not.toContain("okou connector check");
-    });
-
-    it("shows reconnect guidance when connector needs reconnect", async () => {
-      server.use(
-        stubConnector(
-          catalogStatusItem({
-            connectorSlug: "github",
-            authMethods: [authCodeMethod("oauth")],
-            account: {
-              ...githubAccount,
-              connectionStatus: "reconnect-required",
-            },
-          }),
-        ),
-        stubAgent(AGENT_UUID, "maya"),
-        stubUserConnectors(AGENT_UUID, ["github"]),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain("reconnect needed");
-      expect(logCalls).toContain(
-        `The github connector is connected but needs to be reconnected before agent maya (${AGENT_UUID}) can use it.`,
-      );
-      expect(logCalls).toContain("[Reconnect github](");
-      expect(logCalls).toContain("/connectors");
-      expect(logCalls).not.toContain("[Authorize github]");
-      expect(logCalls).not.toContain("okou connector check");
-    });
-
-    it("uses $OKOU_AGENT_ID to detect legacy run context", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
-
-      await statusCommand.parseAsync(["node", "cli", "github"]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain("Account used by this run is unavailable");
-    });
-
-    it("does not let matching --agent bypass unavailable run context", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain("Account used by this run is unavailable");
-      expect(logCalls).not.toContain("authorized for agent");
-    });
-
-    it("falls back to UUID-only label when displayName is null", async () => {
-      server.use(
-        stubConnector(connectedGithub),
-        stubAgent(AGENT_UUID, null),
-        stubUserConnectors(AGENT_UUID, ["github"]),
-      );
-
-      await statusCommand.parseAsync([
-        "node",
-        "cli",
-        "github",
-        "--agent",
-        AGENT_UUID,
-      ]);
-
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain(
-        `The github connector is authorized for agent ${AGENT_UUID}.`,
-      );
-      expect(logCalls).not.toContain(`${AGENT_UUID} (${AGENT_UUID})`);
+  it("reports unavailable account context in a Run", async () => {
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
+    await statusCommand.parseAsync(["node", "cli", "github", "--json"]);
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toStrictEqual({
+      context: "run",
+      state: "unavailable",
+      reason: "legacy-or-missing",
+      connector: null,
     });
   });
 

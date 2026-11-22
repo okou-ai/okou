@@ -1,5 +1,3 @@
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agents } from "@okouai/db/schema/agent";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import {
   workflows,
@@ -40,21 +38,6 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
         .where(eq(officialWorkflowCatalogState.authority, "official"))
         .for("share")
     : sql`SELECT NULL::text AS release_id`;
-  const parents = query
-    .select({
-      id: agents.id,
-      xmin: sql`${agents}.xmin::text`.mapWith(pgTextDecoder).as("xmin"),
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, args.orgId),
-        inArray(agents.id, [args.sourceWorkflow.agentId, args.targetAgentId]),
-        after("copy_catalog_locked"),
-      ),
-    )
-    .orderBy(asc(agents.id))
-    .for("share");
   const source = query
     .select({
       id: workflows.id,
@@ -73,7 +56,7 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
         official
           ? eq(workflows.officialInstallationState, "installed")
           : undefined,
-        after("copy_parents_locked"),
+        after("copy_catalog_locked"),
       ),
     )
     .for("update");
@@ -127,7 +110,6 @@ function copySourceLocks(args: WorkflowCopyPublicationArgs): SQL[] {
     .for("share");
   return [
     sql`copy_catalog_locked AS MATERIALIZED (${catalog})`,
-    sql`copy_parents_locked AS MATERIALIZED (${parents})`,
     sql`copy_source_locked AS MATERIALIZED (${source})`,
     sql`copy_automations_locked AS MATERIALIZED (${automations})`,
     sql`copy_hooks_locked AS MATERIALIZED (${hooks})`,
@@ -169,15 +151,7 @@ export function copySourcePublicationClauses(
         .from(read),
     );
   }
-  const parentCount = new Set([args.sourceWorkflow.agentId, args.targetAgentId])
-    .size;
-  const personalTarget = args.personalCopy
-    ? sql`EXISTS (SELECT 1 FROM ${orgMetadata} WHERE ${orgMetadata.orgId} = ${args.orgId}
-        AND ${orgMetadata.defaultAgentId} = ${args.targetAgentId})`
-    : sql`true`;
-  const valid = sql`${personalTarget} AND ${revisionExists} AND (SELECT ${count()} FROM copy_source_locked) = 1
-    AND ${observed.parents.length === parentCount}
-    AND (${versionSetMatches("copy_parents_locked", observed.parents)})
+  const valid = sql`${revisionExists} AND (SELECT ${count()} FROM copy_source_locked) = 1
     AND (${versionSetMatches("copy_automations_locked", observed.automations)})
     AND (SELECT release_id FROM copy_catalog_locked) IS NOT DISTINCT FROM ${observed.acceptedReleaseId}
     AND (SELECT ${count()} FROM copy_hooks_locked) = ${hooks.length}

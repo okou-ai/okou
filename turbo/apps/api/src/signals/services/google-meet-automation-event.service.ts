@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { googleMeetTranscriptGeneratedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import {
   googleWorkspaceEventSubscriptionStates,
@@ -94,7 +95,6 @@ interface GoogleMeetTranscriptEventContext {
 
 interface GoogleMeetEventAutomationRow {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly workflowTitle: string;
   readonly chatThreadId: string;
@@ -452,13 +452,12 @@ const loadGoogleMeetEventAutomations$ = command(
     const automationRows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -505,7 +504,6 @@ const loadGoogleMeetEventAutomations$ = command(
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
-            agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
           },
@@ -514,7 +512,6 @@ const loadGoogleMeetEventAutomations$ = command(
       signal.throwIfAborted();
       automations.push({
         automation: row.automation,
-        agentId: row.agentId,
         workflowName: row.workflowName,
         workflowTitle: row.workflowDisplayName ?? row.workflowName,
         chatThreadId,
@@ -652,11 +649,8 @@ const dispatchGoogleMeetTranscriptEventForAutomation$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation: args.automation.automation,
-            agentId: args.automation.agentId,
-            chatThreadId: args.automation.chatThreadId,
-          },
+          automation: args.automation.automation,
+          chatThreadId: args.automation.chatThreadId,
           automationContext: context,
           connectorSourceId: args.state.connectorId,
           apiStartTime: args.apiStartTime,

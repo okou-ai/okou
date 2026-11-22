@@ -146,22 +146,35 @@ fn exec_operation_capture_and_stream_success() {
     send_exec_start(
         &mut host_stream,
         103,
-        "printf visible",
+        "printf visible; printf visible >&2",
         5000,
         ExecOutputPolicy::CaptureAndStream {
             capture_limit_bytes: 64,
             stream_limit_bytes: 64,
             chunk_limit_bytes: 4,
         },
-        ExecOutputPolicy::Discard,
+        ExecOutputPolicy::CaptureAndStream {
+            capture_limit_bytes: 5,
+            stream_limit_bytes: 6,
+            chunk_limit_bytes: 2,
+        },
     );
     let (chunks, result) = read_exec_result(&mut host_stream, 103);
 
     assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
     assert_eq!(result.stdout, Some(b"visible".to_vec()));
-    assert_eq!(result.stderr, None);
+    assert!(!result.stdout_truncated);
+    assert_eq!(result.stderr, Some(b"visib".to_vec()));
+    assert!(result.stderr_truncated);
     assert_eq!(stdout_data(&chunks), b"visible".to_vec());
-    assert!(chunks.iter().all(|chunk| !chunk.truncated));
+    assert_eq!(stderr_data(&chunks), b"visibl".to_vec());
+    assert!(chunks.iter().all(|chunk| match chunk.stream {
+        ExecOutputStream::Stdout => chunk.chunk.len() <= 4 && !chunk.truncated,
+        ExecOutputStream::Stderr => chunk.chunk.len() <= 2,
+    }));
+    assert!(chunks.iter().any(|chunk| {
+        chunk.stream == ExecOutputStream::Stderr && chunk.truncated && chunk.chunk.is_empty()
+    }));
 
     finish_guest_connection(handle, host_stream);
 }

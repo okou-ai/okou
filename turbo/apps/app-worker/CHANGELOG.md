@@ -1,5 +1,278 @@
 # Changelog
 
+## [1.10.260](https://github.com/okou-ai/okou/compare/app-worker-v1.10.259...app-worker-v1.10.260) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.101.0
+    * @okouai/core bumped to 8.859.3
+
+## [1.10.259](https://github.com/okou-ai/okou/compare/app-worker-v1.10.258...app-worker-v1.10.259) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.100.1
+    * @okouai/core bumped to 8.859.2
+
+## [1.10.258](https://github.com/okou-ai/okou/compare/app-worker-v1.10.257...app-worker-v1.10.258) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.100.0
+    * @okouai/core bumped to 8.859.1
+
+## [1.10.257](https://github.com/okou-ai/okou/compare/app-worker-v1.10.256...app-worker-v1.10.257) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.99.0
+    * @okouai/core bumped to 8.859.0
+
+## [1.10.256](https://github.com/okou-ai/okou/compare/app-worker-v1.10.255...app-worker-v1.10.256) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.5
+    * @okouai/core bumped to 8.858.10
+
+## [1.10.255](https://github.com/okou-ai/okou/compare/app-worker-v1.10.254...app-worker-v1.10.255) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.4
+    * @okouai/core bumped to 8.858.9
+
+## [1.10.254](https://github.com/okou-ai/okou/compare/app-worker-v1.10.253...app-worker-v1.10.254) (2026-11-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.3
+    * @okouai/core bumped to 8.858.8
+
+## [1.10.253](https://github.com/okou-ai/okou/compare/app-worker-v1.10.252...app-worker-v1.10.253) (2026-11-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.2
+    * @okouai/core bumped to 8.858.7
+
+## [1.10.252](https://github.com/okou-ai/okou/compare/app-worker-v1.10.251...app-worker-v1.10.252) (2026-11-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.1
+    * @okouai/core bumped to 8.858.6
+
+## [1.10.251](https://github.com/okou-ai/okou/compare/app-worker-v1.10.250...app-worker-v1.10.251) (2026-11-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.858.5
+
+## [1.10.250](https://github.com/okou-ai/okou/compare/app-worker-v1.10.249...app-worker-v1.10.250) (2026-11-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.0
+    * @okouai/core bumped to 8.858.4
+
+## [1.10.249](https://github.com/okou-ai/okou/compare/app-worker-v1.10.248...app-worker-v1.10.249) (2026-11-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.97.0
+    * @okouai/core bumped to 8.858.3
+
+## [1.10.248](https://github.com/okou-ai/okou/compare/app-worker-v1.10.247...app-worker-v1.10.248) (2026-11-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.2
+    * @okouai/core bumped to 8.858.2
+
+## [1.10.247](https://github.com/okou-ai/okou/compare/app-worker-v1.10.246...app-worker-v1.10.247) (2026-11-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.1
+    * @okouai/core bumped to 8.858.1
+
+## [1.10.246](https://github.com/okou-ai/okou/compare/app-worker-v1.10.245...app-worker-v1.10.246) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.0
+    * @okouai/core bumped to 8.858.0
+
+## [1.10.245](https://github.com/okou-ai/okou/compare/app-worker-v1.10.244...app-worker-v1.10.245) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.3
+    * @okouai/core bumped to 8.857.6
+
+## [1.10.244](https://github.com/okou-ai/okou/compare/app-worker-v1.10.243...app-worker-v1.10.244) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.2
+    * @okouai/core bumped to 8.857.5
+
+## [1.10.243](https://github.com/okou-ai/okou/compare/app-worker-v1.10.242...app-worker-v1.10.243) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.1
+    * @okouai/core bumped to 8.857.4
+
+## [1.10.242](https://github.com/okou-ai/okou/compare/app-worker-v1.10.241...app-worker-v1.10.242) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.95.0
+    * @okouai/core bumped to 8.857.3
+
+## [1.10.241](https://github.com/okou-ai/okou/compare/app-worker-v1.10.240...app-worker-v1.10.241) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.857.2
+
+## [1.10.240](https://github.com/okou-ai/okou/compare/app-worker-v1.10.239...app-worker-v1.10.240) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.1
+    * @okouai/core bumped to 8.857.1
+
+## [1.10.239](https://github.com/okou-ai/okou/compare/app-worker-v1.10.238...app-worker-v1.10.239) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.94.0
+    * @okouai/core bumped to 8.857.0
+
+## [1.10.238](https://github.com/okou-ai/okou/compare/app-worker-v1.10.237...app-worker-v1.10.238) (2026-11-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.2
+    * @okouai/core bumped to 8.856.2
+
+## [1.10.237](https://github.com/okou-ai/okou/compare/app-worker-v1.10.236...app-worker-v1.10.237) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.1
+    * @okouai/core bumped to 8.856.1
+
+## [1.10.236](https://github.com/okou-ai/okou/compare/app-worker-v1.10.235...app-worker-v1.10.236) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.93.0
+    * @okouai/core bumped to 8.856.0
+
+## [1.10.235](https://github.com/okou-ai/okou/compare/app-worker-v1.10.234...app-worker-v1.10.235) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.1
+    * @okouai/core bumped to 8.855.1
+
+## [1.10.234](https://github.com/okou-ai/okou/compare/app-worker-v1.10.233...app-worker-v1.10.234) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.92.0
+    * @okouai/core bumped to 8.855.0
+
 ## [1.10.233](https://github.com/okou-ai/okou/compare/app-worker-v1.10.232...app-worker-v1.10.233) (2026-11-19)
 
 

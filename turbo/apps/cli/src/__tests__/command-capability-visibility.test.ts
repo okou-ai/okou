@@ -19,7 +19,6 @@ function buildCommands(): Command[] {
   return [
     new Command("org"),
     new Command("model"),
-    new Command("agent"),
     new Command("connector"),
     new Command("mcp"),
     new Command("run"),
@@ -87,7 +86,7 @@ describe("decodeSandboxTokenPayload", () => {
       runId: "run-1",
       orgId: "org-1",
       scope: "okou",
-      capabilities: ["agent:read", "connector:read"],
+      capabilities: ["chat-thread:read", "connector:read"],
       iat: 1000,
       exp: 2000,
     });
@@ -97,7 +96,7 @@ describe("decodeSandboxTokenPayload", () => {
       runId: "run-1",
       orgId: "org-1",
       scope: "okou",
-      capabilities: ["agent:read", "connector:read"],
+      capabilities: ["chat-thread:read", "connector:read"],
       iat: 1000,
       exp: 2000,
     });
@@ -109,7 +108,7 @@ describe("decodeSandboxTokenPayload", () => {
       runId: "run-okou",
       orgId: "org-okou",
       scope: "okou",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
       iat: 1000,
       exp: 2000,
     });
@@ -117,7 +116,7 @@ describe("decodeSandboxTokenPayload", () => {
     expect(decodeSandboxTokenPayload(token)).toMatchObject({
       userId: "user-okou",
       scope: "okou",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
     });
   });
 
@@ -134,7 +133,7 @@ describe("decodeSandboxTokenPayload", () => {
   it("should return undefined for a non-okou scope", () => {
     const token = buildOkouToken({
       scope: "sandbox",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
     });
     expect(decodeSandboxTokenPayload(token)).toBeUndefined();
   });
@@ -248,7 +247,7 @@ describe("registerCommands", () => {
   it("should hide unmapped commands and show capable ones with valid token", () => {
     const token = buildOkouToken({
       scope: "okou",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
     });
     vi.stubEnv("OKOU_TOKEN", token);
 
@@ -256,7 +255,6 @@ describe("registerCommands", () => {
 
     expect(visibleCommandNames(prog)).toEqual([
       "model",
-      "agent",
       "run",
       "upgrade",
       "resource",
@@ -299,7 +297,7 @@ describe("registerCommands", () => {
   it("should hide run-only commands and keep global commands visible outside the Okou run scope", () => {
     const token = buildOkouToken({
       scope: "sandbox",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
     });
     vi.stubEnv("OKOU_TOKEN", token);
 
@@ -699,7 +697,7 @@ describe("registerCommands", () => {
   it("should hide credit but keep globally enabled upgrade guidance when billing capabilities are missing", () => {
     const token = buildOkouToken({
       scope: "okou",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
     });
     vi.stubEnv("OKOU_TOKEN", token);
 
@@ -768,7 +766,7 @@ describe("registerCommands", () => {
   it("should hide billing help examples when billing capabilities are missing", () => {
     const token = buildOkouToken({
       scope: "okou",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
     });
     const help = buildHelpText(decodeSandboxTokenPayload(token));
 
@@ -877,7 +875,7 @@ describe("registerCommands", () => {
   it("should hide telegram when file read and telegram write capabilities are missing", () => {
     const token = buildOkouToken({
       scope: "okou",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
     });
     vi.stubEnv("OKOU_TOKEN", token);
 
@@ -906,27 +904,14 @@ describe("registerCommands", () => {
     );
   });
 
-  it("should hide agent when agent:read capability is missing", () => {
-    const token = buildOkouToken({
-      scope: "okou",
-      capabilities: ["connector:read"],
-    });
-    vi.stubEnv("OKOU_TOKEN", token);
-
-    const prog = buildProgram();
-
-    expect(visibleCommandNames(prog)).toEqual([
-      "model",
-      "connector",
-      "mcp",
-      "run",
-      "upgrade",
-      "resource",
-      "whoami",
-      "generate",
-      "web",
-    ]);
-    expect(hiddenCommandNames(prog)).toContain("agent");
+  it("shows workflows in a Run without a CLI capability gate", () => {
+    vi.stubEnv(
+      "OKOU_TOKEN",
+      buildOkouToken({ scope: "okou", capabilities: [] }),
+    );
+    const program = new Command();
+    registerCommands(program, [new Command("workflow")]);
+    expect(visibleCommandNames(program)).toContain("workflow");
   });
 
   it("should show connector when connector:read capability is present", () => {
@@ -974,7 +959,7 @@ describe("registerCommands", () => {
   it("should hide connector when connector capabilities are missing", () => {
     const token = buildOkouToken({
       scope: "okou",
-      capabilities: ["agent:read"],
+      capabilities: ["instructions:read"],
     });
     vi.stubEnv("OKOU_TOKEN", token);
 

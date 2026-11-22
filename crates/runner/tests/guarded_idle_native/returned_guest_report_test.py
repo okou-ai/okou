@@ -15,6 +15,7 @@ import report
 import report_test
 import returned_guest_report as returned
 import snapshot_report as startup
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class ReturnedGuestTests(unittest.TestCase):
@@ -59,13 +60,7 @@ class ReturnedGuestTests(unittest.TestCase):
                       for i, label in enumerate(returned.STAGES[:returned.STAGES.index(stage)+1])]
             actual = {"created": created, "stages": stages, "cleanup": None}
             def observer(ms):
-                return {"started_ns": clock(ms), "completed_ns": clock(ms+5), "available_bytes": 32*1024**3,
-                        "age_ns": 2, "read_duration_ns": 1, "joined": True}
-            def heartbeat(ms, sequence):
-                return {"receipt": {"received_ns": clock(ms), "acknowledgement_status": 204, "state": {
-                    "runnerId": runner, "snapshotGeneration": 1, "snapshotSequence": sequence,
-                    "group": "native-foreground", "mode": "running", "allocatedVcpu": 4, "allocatedMemoryMb": 8192}},
-                    "send_joined": True, "completed_ns": clock(ms+5)}
+                return joined_observer(clock(ms), clock(ms+5))
             completion = {"sandbox_id": sandbox_id, "backing_generation": backing, "positive_backing_wait": True,
                           "workspace": str(pathlib.PurePosixPath(path).parent), "workspace_absent": True,
                           "last_home": copy.deepcopy(home), "cleanup_ns": clock(750),
@@ -82,12 +77,15 @@ class ReturnedGuestTests(unittest.TestCase):
                 {"cancelled_ns": clock(510), "first_dropped_ns": clock(520), "second_pending_ns": clock(530),
                  "foreground_acquired_ns": clock(540), "first_pending": True, "first_dropped": True, "second_pending": True,
                  "release_byte_withheld": True, "allocated": [4,8192,2], "accounting": copy.deepcopy(held),
-                 "heartbeat": heartbeat(550,1), "observer": observer(570)},
+                 "heartbeat": foreground_heartbeat(runner, 1, clock(550), clock(555), (4, 8192)),
+                 "observer": observer(570)},
                 {"released_ns": clock(610), "joined_ns": clock(690), "resource_id": sandbox_id,
                  "prepared": stage == "park", "allocated": [4,8192,2], "accounting": uncertain},
                 {"actual": cleanup_actual, "pending_ns": clock(760), "cleanup_pending": True,
                  "release_byte_withheld": True, "allocated": [4,8192,2],
-                 "accounting": copy.deepcopy(cleaning), "heartbeat": heartbeat(770,2), "observer": observer(780)},
+                 "accounting": copy.deepcopy(cleaning),
+                 "heartbeat": foreground_heartbeat(runner, 2, clock(770), clock(775), (4, 8192)),
+                 "observer": observer(780)},
                 {"release_ns": clock(810), "joined_ns": clock(840), "positive_backing_wait": True, "blank_count": 0,
                  "resource_id": sandbox_id, "allocated": [2,4096,1], "accounting": copy.deepcopy(uncertain)},
                 {"preparation_joined": True, "pressure_stopped": True, "heartbeat_joined": True, "provider_joined": True,
@@ -96,8 +94,14 @@ class ReturnedGuestTests(unittest.TestCase):
             ]
             clocks = [clock(ms) for ms in (10,500,600,700,800,850,900)]+[terminal[4]["monotonic_ns"]+1]
             for phase, value, ns in zip(returned.PHASES, values, clocks):
-                self.witnesses.append({"version": 1, "case": case, "phase": phase, "monotonic_ns": ns, "unix_ns": ns+1000,
-                    "sandbox_id": original_id, "backing_generation": original_backing, "evidence": value})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=ns,
+                    unix_ns=ns+1000,
+                    sandbox_id=original_id,
+                    backing_generation=original_backing,
+                    evidence=value,
+                ))
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

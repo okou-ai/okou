@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "बंद करें"
+  },
   "activity": {
     "codex": {
       "codexError": "Codex त्रुटि",
@@ -86,7 +89,6 @@
           "title": "प्रोवाइडर अस्थायी रूप से अनुपलब्ध है"
         }
       },
-      "fallbackAgent": "एजेंट",
       "fields": {
         "duration": "अवधि",
         "model": "मॉडल",
@@ -333,15 +335,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "एजेंट लोड नहीं हो सके",
       "back": "पीछे",
       "backToChats": "चैट पर वापस जाएँ",
       "chatListUnavailable": "चैट लोड नहीं हो सकीं",
       "chats": "चैट",
       "me": "मैं",
-      "navigation": "मुख्य नेविगेशन",
-      "searchAgents": "एजेंट खोजें",
-      "switchAgent": "एजेंट बदलें"
+      "navigation": "मुख्य नेविगेशन"
     },
     "shortcutHelp": {
       "close": "कुंजीपटल शॉर्टकट बंद करें",
@@ -358,10 +357,8 @@
         "collapseProject": "Project संक्षिप्त करें",
         "expandProject": "Project विस्तृत करें",
         "newChat": "नई चैट",
-        "nextAgent": "अगला एजेंट",
         "nextThread": "अगला थ्रेड",
         "openFirstThread": "पहला थ्रेड खोलें",
-        "previousAgent": "पिछला एजेंट",
         "previousThread": "पिछला थ्रेड",
         "renameChat": "चैट का नाम बदलें",
         "scrollBottom": "नीचे स्क्रॉल करें",
@@ -383,7 +380,6 @@
         "openAutomations": "मोबाइल ऑटोमेशन खोलें"
       },
       "navigation": {
-        "agents": "एजेंटों",
         "artifacts": "आर्टिफ़ैक्ट्स",
         "connectors": "कनेक्टर्स",
         "settings": "सेटिंग्स",
@@ -525,10 +521,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "एजेंट अभी भी लोड हो रहा है",
       "connect": "Google Drive कनेक्ट करें",
-      "connectTooltip": "आर्टिफ़ैक्ट अपलोड करने के लिए Google Drive कनेक्ट करें",
-      "conversionNotice": "संपादन योग्य कॉपी बनाता है; फ़ॉर्मैट बदल सकता है।",
       "conversionUnconfirmed": "Google रूपांतरण की पुष्टि नहीं हो सकी। दोबारा कोशिश करने से पहले Drive देखें।",
       "openDocs": "Google Docs में खोलें",
       "openSheets": "Google Sheets में खोलें",
@@ -998,11 +991,9 @@
         "twentyFourHours": "24 घंटे"
       },
       "errors": {
-        "agentNotFound": "एजेंट नहीं मिला",
-        "loadAgent": "एजेंट लोड करने में विफल",
         "loadGrants": "अनुमति अनुदान लोड करने में विफल",
+        "loadMember": "वर्कस्पेस सदस्य की जानकारी लोड नहीं हो सकी।",
         "loadMetadata": "अनुमति मेटाडेटा लोड करने में विफल",
-        "missingAgentId": "URL पैरामीटर में एजेंट ID गुम है",
         "missingPermission": "URL पैरामीटर्स में अनुपलब्ध अनुमति",
         "unknownAction": "अज्ञात अनुमति क्रिया: {{action}}",
         "unknownConnector": "अज्ञात कनेक्टर: {{connector}}",
@@ -1050,14 +1041,11 @@
       "invalid": "अनुमति का यह लिंक अमान्य या अनुपलब्ध है।",
       "loadFailed": "सभी अनुरोधित अनुमतियों की पुष्टि नहीं हो सकी। किसी भी अनुमति में बदलाव नहीं किया जा सकता।",
       "loading": "अनुमतियाँ लोड हो रही हैं",
-      "myOkouScopeNote": "इस कार्यक्षेत्र में आपके Okou के इस्तेमाल पर लागू है, केवल मौजूदा काम पर नहीं।",
       "myOkouSharedScopeNote": "इस कार्यक्षेत्र में आपकी सभी चैट में इस कनेक्टर पर लागू है। आपके साथियों की अनुमतियाँ अलग हैं।",
       "notNow": "अभी नहीं",
       "pending_one": "{{count}} अनुमति देनी है",
       "pending_other": "{{count}} अनुमतियाँ देनी हैं",
       "review": "अनुमतियों की समीक्षा करें",
-      "scopeNote": "यह इस एजेंट पर लागू होता है, केवल मौजूदा कार्य पर नहीं।",
-      "sharedScopeNote": "इस कनेक्टर की अनुमतियाँ आपकी सभी चैट और एजेंट पर लागू होती हैं।",
       "title": "निम्नलिखित अनुमतियाँ दें"
     }
   },
@@ -1530,7 +1518,6 @@
           "action": "चेक इन करें",
           "description": "दिन में एक बार चेक इन करें। 00:00 UTC पर रीसेट होता है।",
           "name": "रोज़ चेक इन करें",
-          "pendingDescription": "आपका चेक-इन सहेज लिया गया है। पुष्टि के बाद क्रेडिट अपडेट होंगे।",
           "unit": "प्रति दिन"
         },
         "connector": {
@@ -1547,12 +1534,6 @@
         },
         "inReview": "समीक्षा में",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} क्रेडिट",
-            "confirm": "काम पर लौटें",
-            "description": "क्रेडिट असली काम के लिए लगते हैं: हर रन, हर आउटपुट, और शेड्यूल पर चलने वाला हर वर्कफ़्लो।",
-            "title": "आज का हिस्सा पूरा"
-          },
           "connector": {
             "confirm": "सभी कनेक्टर देखें",
             "connected": "कनेक्टेड",
@@ -1637,8 +1618,7 @@
         "whatsCooking": "क्या पक रहा है, {{userName}}?",
         "whatsOnYourMind": "आपके मन में क्या है, {{userName}}?",
         "whatsTheMove": "क्या चाल है, {{userName}}?"
-      },
-      "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
+      }
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
@@ -1650,9 +1630,19 @@
       "dismiss": "खारिज करें",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "मुझे जल्दी न करवाएँ",
+      "dontNudgeRecorded": "नोट कर लिया: इस बारे में फिर जल्दी न करवाएँ",
+      "editDraft": "मौजूदा चैट में ड्राफ़्ट तैयार करें",
       "editReason": "Edit reason",
+      "feedbackPrompt": "यह सुझाव कैसा लगा?",
       "feedLabel": "फ़ीड",
       "forYou": {
+        "cover": {
+          "change": "कवर बदलें",
+          "default": "डिफ़ॉल्ट",
+          "gallery": "कवर",
+          "option": "कवर {{index}}"
+        },
         "loading": "सुझाव लोड हो रहे हैं",
         "next": "अगला सुझाव",
         "previous": "पिछला सुझाव",
@@ -1665,10 +1655,11 @@
           "title": "आपके लिए स्रोत",
           "whatsNew": "नया क्या है"
         },
-        "subtitle": "एक बार में एक काम",
+        "subtitle": "Okou के चुने काम",
         "title": "आपके लिए"
       },
       "homeCard": {
+        "completeDescription": "जब कुछ आपके समय के लायक होगा, Okou अगली चीज़ यहाँ ले आएगा।",
         "completeTitle": "सब पूरा हो गया",
         "feedback": "सुझाव के विकल्प",
         "navigation": "सुझाव देखें",
@@ -1684,9 +1675,12 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "भेजा जा रहा है…",
+      "sendNew": "नई चैट में भेजें",
       "sent": "नई चैट में भेजा गया",
+      "sentToChat": "चैट में भेजा गया",
       "unavailable": "यह सुझाव अब उपलब्ध नहीं है। सुझाव रीफ़्रेश कर दिए गए हैं।",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "स्रोत देखें"
     },
     "attachments": {
       "attach": "अटैच करें",
@@ -1824,7 +1818,7 @@
       "repair": "सुधारें",
       "repairRequired": "{{institution}} को सुधारने की आवश्यकता है",
       "revoke": "एक्सेस वापस लें",
-      "revokeConfirm": "इस एजेंट की बैंकिंग एक्सेस वापस लें?",
+      "revokeConfirm": "इस वर्कस्पेस की बैंकिंग एक्सेस वापस लें?",
       "selectAccounts": "खाते चुनें",
       "sevenDays": "7 दिन",
       "thirtyDays": "30 दिन",
@@ -2005,7 +1999,6 @@
     },
     "composer": {
       "add": "जोड़ें",
-      "agentSuggestions": "एजेंट",
       "configureModel": "मॉडल कॉन्फ़िगर करें",
       "create": {
         "addStyle": "शैली जोड़ें",
@@ -2017,7 +2010,7 @@
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
       },
-      "mentionHint": "एजेंट या चैट खोजें…",
+      "mentionHint": "चैट या प्रोजेक्ट खोजें…",
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
@@ -2104,13 +2097,8 @@
       "unavailableTitle": "खाता उपलब्ध नहीं है"
     },
     "connectors": {
-      "accountForThread": "इस थ्रेड के लिए खाता",
-      "add": "{{connectorName}} जोड़ें",
       "addConnectors": "कनेक्टर्स जोड़ें",
-      "authorized": "{{connectorName}} जुड़ा हुआ है और {{agentName}} के लिए अधिकृत है",
       "back": "पीछे",
-      "configurePermissions": "{{connectorName}} अनुमतियाँ कॉन्फ़िगर करें",
-      "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
       "directory": {
         "allCategories": "सभी",
         "askAdmin": "इसे चालू करने के लिए एडमिन से कहें",
@@ -2140,14 +2128,8 @@
         "tabCustom": "कस्टम",
         "tabDiscover": "खोजें"
       },
-      "fallsBackTo": "{{account}} पर वापस जाता है",
       "find": "कनेक्टर ढूंढें...",
-      "loadFailed": "कनेक्टर्स लोड नहीं हो सके।",
-      "noUsableAccount": "कोई उपयोग योग्य खाता नहीं",
-      "remove": "{{connectorName}} हटाएँ",
-      "selectedAccountFor": "{{connector}} · चुना गया खाता: {{account}}",
-      "title": "कनेक्टर्स",
-      "useDefault": "डिफ़ॉल्ट उपयोग करें"
+      "title": "कनेक्टर्स"
     },
     "documentTitle": "चैट",
     "errors": {
@@ -2236,16 +2218,7 @@
       "sent": "नई चैट बनाई गई"
     },
     "forward": {
-      "action": "फ़ॉरवर्ड करें",
-      "agents": "एजेंट",
-      "back": "वापस",
       "composerPlaceholder": "संदेश जोड़ें",
-      "content": "सामग्री",
-      "description": "चुनी गई सामग्री पर काम जारी रखने के लिए उसे किसी एजेंट या चैट में भेजें।",
-      "noResults": "कोई एजेंट या चैट नहीं मिली",
-      "search": "एजेंट और चैट खोजें...",
-      "sent": "सफलतापूर्वक फ़ॉरवर्ड किया गया",
-      "threads": "चैट",
       "title": "फ़ॉरवर्ड करें"
     },
     "mail": {
@@ -2311,10 +2284,11 @@
       "unavailable": "यह ईमेल अब उपलब्ध नहीं है."
     },
     "messageDocument": {
-      "agent": "[एजेंट: {{name}}]",
       "chatThread": "[चैट थ्रेड: {{title}}]",
       "file": "[फ़ाइल: {{filename}}]",
-      "template": "[टेम्पलेट: {{title}}]"
+      "template": "[टेम्पलेट: {{title}}]",
+      "voice": "वॉइस मैसेज",
+      "voiceClip": "वॉइस क्लिप {{index}}"
     },
     "newChat": "नई चैट",
     "origins": {
@@ -2342,7 +2316,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "एजेंट नहीं मिला",
       "allow": "अनुमति दें",
       "alreadyAllowed": "पहले से ही अनुमति है",
       "alreadyDenied": "मना किया हुआ",
@@ -2357,6 +2330,7 @@
       "expiresInHours_one": "{{count}} घंटे में समाप्त होता है",
       "expiresInHours_other": "{{count}} घंटे में समाप्त होता है",
       "loadFailed": "अनुमति स्थिति लोड नहीं की जा सकी",
+      "memberNotFound": "वर्कस्पेस सदस्य उपलब्ध नहीं है।",
       "otherEndpoints": "अन्य समापन बिंदु",
       "unknown": "अज्ञात अनुमति",
       "updated": "अनुमतियाँ अद्यतन की गईं",
@@ -2505,19 +2479,29 @@
       "workingFor": "{{duration}} से काम जारी"
     },
     "sharing": {
+      "accessNote": "केवल आप ही पहुँच बदल सकते हैं।",
       "cancel": "रद्द करें",
       "close": "बंद करें",
       "copyFailed": "लिंक कॉपी नहीं हो सका",
       "create": "शेयर करें",
       "createFailed": "साझा बातचीत नहीं बनाई जा सकी।",
+      "createLink": "लिंक बनाएँ",
+      "deselectAll": "सभी का चयन हटाएँ",
       "deselectGroup": "संदेश समूह का चयन हटाएँ",
+      "done": "हो गया",
       "everyone": "सभी",
       "linkCopied": "लिंक कॉपी हो गया",
+      "linkCreated_one": "{{count}} संदेश के लिए लिंक बनाया गया",
+      "linkCreated_other": "{{count}} संदेशों के लिए लिंक बनाया गया",
       "messageShareFailed": "साझा लिंक नहीं बनाया जा सका।",
       "organizationDescription": "केवल आपके संगठन के लोग",
+      "selectAll": "सभी चुनें",
       "selectedCount_one": "{{count}} चुना गया",
       "selectedCount_other": "{{count}} चुने गए",
+      "selectedOfTotal_one": "{{total}} में से {{count}} चुना गया",
+      "selectedOfTotal_other": "{{total}} में से {{count}} चुने गए",
       "selectGroup": "संदेश समूह चुनें",
+      "selectPrompt": "शेयर करने के लिए संदेश चुनें",
       "shareLink": "साझा बातचीत का लिंक",
       "start": "संदेश शेयर करें",
       "tooLarge": "शेयर करने के लिए कम संदेश चुनें",
@@ -2819,7 +2803,6 @@
       "noEmojiFound": "कोई इमोजी नहीं मिला",
       "notFound": "चैट थ्रेड नहीं मिला",
       "openBrowser": "खुला ब्राउज़र",
-      "openNamedAgent": "ओपन एजेंट {{name}}",
       "openNamedChat": "चैट {{title}} खोलें",
       "pickEmoji": "एक इमोजी चुनें",
       "scrollToBottom": "नीचे स्क्रॉल करें",
@@ -2952,28 +2935,12 @@
     "totalAccounts": "{{value}} खाते"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{agent}} के लिए {{action}} {{connector}} पहुंच",
-      "accessUpdated": "{{connector}} एक्सेस अपडेट किया गया",
-      "clearSearch": "एजेंट खोज साफ़ करें",
-      "description": "चुनें कि कौन से एजेंट इस कनेक्टर का उपयोग कर सकते हैं।",
-      "loading": "एजेंट लोड हो रहे हैं...",
-      "managePermissions": "अनुमतियाँ प्रबंधित करें",
-      "managePermissionsFor": "{{agent}} के लिए {{connector}} अनुमतियाँ प्रबंधित करें",
-      "noAgents": "कोई एजेंट नहीं मिला",
-      "noMatchingAgents": "\"{{search}}\" से मेल खाने वाला कोई एजेंट नहीं",
-      "permissionsUpdated": "अनुमतियाँ अद्यतन की गईं",
-      "search": "एजेंटों को खोजें",
-      "title": "{{connector}} पहुंच प्रबंधित करें",
-      "unnamedAgent": "अज्ञात"
-    },
     "accounts": {
       "accountName": "खाते का नाम",
       "accountsUnavailable": "इस कनेक्टर के लिए खाते उपलब्ध नहीं हैं।",
       "actions": "खाते की कार्रवाइयाँ",
       "addAccount": "खाता जोड़ें",
       "connected": "कनेक्टेड",
-      "default": "डिफ़ॉल्ट",
       "disconnectAccount": "खाता डिस्कनेक्ट करें",
       "disconnectDescription": "यह खाते को Okou से डिस्कनेक्ट करता है। इसका उपयोग करने वाले थ्रेड डिफ़ॉल्ट इनहेरिटेंस पर लौट जाएँगे। प्रदाता का खाता हटाया नहीं जाएगा।",
       "disconnectDescriptionWithCount": "यह खाते को Okou से डिस्कनेक्ट करता है। {{value}} थ्रेड डिफ़ॉल्ट इनहेरिटेंस पर लौट जाएँगे। प्रदाता का खाता हटाया नहीं जाएगा।",
@@ -2989,8 +2956,6 @@
       "find": "खाते खोजें",
       "loading": "खाते लोड हो रहे हैं…",
       "loadMore": "और लोड करें",
-      "makeDefault": "डिफ़ॉल्ट बनाएँ",
-      "managerDescription": "नए रन आपके डिफ़ॉल्ट खाते का उपयोग करते हैं।",
       "managerTitle": "{{connector}} खाते प्रबंधित करें",
       "namePromptDescription": "आप इसे छोड़ सकते हैं और खाते को बाद में नाम दे सकते हैं।",
       "namePromptTitle": "अपने {{connector}} खाते को नाम दें",
@@ -3004,7 +2969,6 @@
     },
     "actions": {
       "apply": "आवेदन करना",
-      "authorize": "अधिकृत",
       "cancel": "रद्द करना",
       "close": "बंद करना",
       "closeWindow": "विंडो बंद",
@@ -3051,7 +3015,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} पहुंच",
-      "authorized": "अधिकृत",
       "connectAria": "{{connector}} कनेक्ट करें",
       "connected": "कनेक्टेड",
       "connectionExpired": "कनेक्शन समाप्त हो गया",
@@ -3064,11 +3027,7 @@
     },
     "catalog": {
       "access": {
-        "add": "पहुंच जोड़ें",
-        "manage": "{{connector}} पहुंच प्रबंधित करें",
-        "summaryMany": "{{value}} एजेंट",
-        "unavailable": "पहुंच उपलब्ध नहीं है",
-        "usedBy": "द्वारा उपयोग किया जाता है"
+        "manage": "{{connector}} पहुंच प्रबंधित करें"
       },
       "categories": {
         "ai": {
@@ -3124,8 +3083,6 @@
           "menu": "बिक्री और व्यवसाय"
         }
       },
-      "description": "अपने एजेंटों के उपयोग के लिए तृतीय-पक्ष सेवाओं को कनेक्ट करें।",
-      "descriptionWithCount": "अपने एजेंटों के उपयोग के लिए {{value}} सेवाओं को कनेक्ट करें।",
       "directory": {
         "browse": "ब्राउज़ करें",
         "builtin": "बिल्ट-इन कनेक्टर",
@@ -3139,18 +3096,13 @@
         "searchAll": "सभी कनेक्टर खोजें"
       },
       "empty": {
-        "agent": "इस एजेंट के लिए कोई कनेक्टर नहीं",
         "connected": "कोई कनेक्टेड कनेक्टर नहीं",
-        "search": "\"{{search}}\" से मेल खाने वाला कोई कनेक्टर नहीं",
-        "unshared": "हर कनेक्टर किसी एजेंट के साथ साझा है"
+        "search": "\"{{search}}\" से मेल खाने वाला कोई कनेक्टर नहीं"
       },
       "filterCategory": "श्रेणी",
       "filters": {
-        "agents": "एजेंटों",
         "all": "सभी",
-        "allAgents": "सभी एजेंट",
-        "aria": "फ़िल्टर कनेक्टर्स",
-        "unshared": "किसी एजेंट के साथ साझा नहीं"
+        "aria": "फ़िल्टर कनेक्टर्स"
       },
       "filterWith": "फ़िल्टर: {{category}}",
       "myOkouDescription": "अपने Okou के इस्तेमाल के लिए बाहरी सेवाएँ जोड़ें।",
@@ -3180,8 +3132,7 @@
         "seeMore_other": "{{names}} और {{count}} अन्य देखें",
         "top": "शीर्ष कनेक्टर"
       },
-      "title": "कनेक्टर्स",
-      "unnamedAgent": "अज्ञात"
+      "title": "कनेक्टर्स"
     },
     "connectDialog": {
       "connectedAs": "{{username}} के रूप में जुड़ा हुआ है",
@@ -3302,7 +3253,7 @@
         "tokenUrl": "टोकन URL"
       },
       "delete": {
-        "description": "यह कनेक्टर और प्रत्येक सदस्य के संग्रहीत रहस्य को हटा देता है। इस कनेक्टर के लिए अधिकृत एजेंट तुरंत पहुंच खो देंगे। इसे पूर्ववत नहीं किया जा सकता.",
+        "description": "इस कनेक्टर को हटाने पर एक्सेस तुरंत समाप्त हो जाएगा और वर्कस्पेस के सभी सदस्यों के सहेजे गए सीक्रेट मिट जाएँगे। इसे वापस नहीं लिया जा सकता।",
         "title": "{{connector}} हटाएं?"
       },
       "edit": {
@@ -3325,9 +3276,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "{{agent}} को अधिकृत करें",
-      "authorized": "{{connector}} अधिकृत",
-      "authorizeDocumentTitle": "{{connector}} को अधिकृत करें",
       "connectDocumentTitle": "{{connector}} कनेक्ट करें",
       "connected": "{{connector}} कनेक्ट हुआ",
       "needsConnector": "{{agent}} को आगे बढ़ने के लिए {{connector}} की आवश्यकता है",
@@ -3355,10 +3303,8 @@
       "allowOptions": "{{permission}} विकल्पों की अनुमति देता है",
       "always": "हमेशा",
       "clearSearch": "अनुमति खोज साफ़ करें",
-      "descriptionAgent": "कॉन्फ़िगर करें कि इस एजेंट को इस कनेक्टर के माध्यम से कौन से कार्य करने की अनुमति है।",
       "find": "अनुमतियाँ खोजें",
       "findPlaceholder": "अनुमतियाँ ढूँढें...",
-      "forTarget": "{{target}} के लिए",
       "loadError": "अनुमति मेटाडेटा लोड करने में विफल",
       "loading": "अनुमतियाँ लोड हो रही हैं...",
       "metadataMissing": "{{connector}} के लिए कोई अनुमति मेटाडेटा नहीं मिला",
@@ -3415,13 +3361,13 @@
       },
       "github": {
         "accountFallback": "यह GitHub खाता",
-        "alreadyDescription": "आप पहले से ही {{account}} के रूप में कनेक्ट हैं। GitHub इश्यू में अपने एजेंट का उल्लेख करें या चैटिंग शुरू करने के लिए पुल रिक्वेस्ट करें।",
+        "alreadyDescription": "आप {{account}} के रूप में कनेक्ट हैं। चैट शुरू करने के लिए GitHub के किसी इश्यू या पुल रिक्वेस्ट में Okou को मेंशन करें।",
         "alreadyTitle": "पहले से ही GitHub से कनेक्ट है",
         "back": "वर्कफ़्लोज़ पर वापस जाएँ",
         "checkingConnectionDescription": "कृपया प्रतीक्षा करें जब तक हम आपके GitHub कनेक्शन की जाँच कर रहे हैं।",
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
         "checkingSession": "कृपया तब तक प्रतीक्षा करें जब तक हम आपके {{brandName}} सत्र का सत्यापन नहीं कर लेते।",
-        "connectDescription": "अपने {{brandName}} खाते को {{account}} से लिंक करें ताकि GitHub उल्लेख आपके एजेंटों को इश्यू और पुल रिक्वेस्ट से चला सके।",
+        "connectDescription": "GitHub से चैट शुरू करने के लिए अपने {{brandName}} खाते को {{account}} से लिंक करें।",
         "connectTitle": "GitHub से कनेक्ट करें",
         "errorFallback": "हम GitHub कनेक्ट नहीं कर सके. GitHub से पुनः प्रयास करें।",
         "invalidInstallation": "इस लिंक पर GitHub इंस्टालेशन मान्य नहीं है.",
@@ -3439,7 +3385,7 @@
         "signInCheckFailed": "साइन-इन की जाँच नहीं की जा सकी",
         "signInDescription": "इस GitHub उपयोगकर्ता को जोड़ने से पहले अपने {{brandName}} खाते का उपयोग करें।",
         "signInTitle": "जारी रखने के लिए साइन इन करें",
-        "successDescription": "आप {{account}} के रूप में जुड़े हुए हैं। GitHub इश्यू में अपने एजेंट का उल्लेख करें या चैटिंग शुरू करने के लिए पुल रिक्वेस्ट करें।",
+        "successDescription": "आप {{account}} के रूप में कनेक्ट हैं। चैट शुरू करने के लिए GitHub के किसी इश्यू या पुल रिक्वेस्ट में Okou को मेंशन करें।",
         "successTitle": "GitHub से जुड़ा!",
         "wrongOrganizationDescription": "आपका सक्रिय संगठन इस GitHub इंस्टॉलेशन से मेल नहीं खाता है। सही संगठन पर जाएँ और लिंक को दोबारा खोलें।",
         "wrongOrganizationTitle": "संगठन बदलें"
@@ -3454,7 +3400,7 @@
         "accountMismatchDescriptionWorkspace": "आपका Okou खाता अभी {{workspace}} में Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
         "accountMismatchTitle": "Slack खाता बदलें?",
         "authorizationFailed": "Slack प्राधिकरण पूरा नहीं हुआ। आपका वर्तमान कनेक्शन नीचे दिखाया गया है। आप फिर कोशिश कर सकते हैं।",
-        "connectDescription": "अपने खाते को इस Slack वर्कस्पेस से लिंक करें ताकि आप Slack से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "Slack में Okou से चैट करने के लिए अपना खाता लिंक करें।",
         "connectTitle": "Slack से कनेक्ट करें",
         "currentConnection": "Slack कनेक्ट है",
         "errorFallback": "Slack कनेक्शन की जांच या शुरुआत नहीं हो सकी।",
@@ -3472,7 +3418,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams को अधिकृत करें",
-        "connectDescription": "अपने टीम खाते को लिंक करें ताकि आप Microsoft Teams से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "Microsoft Teams में Okou से चैट करने के लिए अपना खाता लिंक करें।",
         "connectedDescription": "आपका Teams खाता कनेक्ट है।",
         "connectTitle": "Microsoft Teams कनेक्ट करें",
         "identityMismatch": "अनुरोधित Teams खाता या कार्यक्षेत्र वर्तमान कनेक्शन से मेल नहीं खाता।",
@@ -3493,7 +3439,7 @@
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
         "conflictDescription": "आप {{current}} के रूप में जुड़े हैं, लेकिन यह लिंक {{requested}} का अनुरोध करता है। मौजूदा कनेक्शन बनाए रखें या दोबारा कोशिश करने से पहले उसे स्वयं प्रबंधित करें।",
         "conflictTitle": "कोई दूसरा Telegram खाता जुड़ा है",
-        "connectDescription": "अपने खाते को इस Telegram बॉट से लिंक करें ताकि आप Telegram से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "Telegram में Okou से चैट करने के लिए अपना खाता लिंक करें।",
         "connectionCheckFailed": "कनेक्शन की जाँच करने के लिए Telegram से संपर्क नहीं हो सका।",
         "connectTitle": "Telegram से कनेक्ट करें",
         "continue": "Telegram के साथ जारी रखें",
@@ -3548,7 +3494,6 @@
         "addBot": "बॉट जोड़ें",
         "addDialogDescription": "Agent प्रकार का एंटरप्राइज़ ऐप बनाएं, फिर Feishu डेवलपर कंसोल में ये चरण पूरे करें।",
         "addDialogTitle": "एक Feishu बॉट जोड़ें",
-        "agentDescription": "वह एजेंट चुनें जो इस बॉट को भेजे गए संदेशों को संभाले।",
         "backToIntegrations": "एकीकरण पर वापस जाएँ",
         "botFallback": "Feishu बॉट",
         "botIconAlt": "{{bot}} बॉट आइकन",
@@ -3575,12 +3520,9 @@
           "imageAlt": "Feishu ऐप निर्माण परिणाम दिखा रहा है कि ऐप ID और ऐप सीक्रेट कहां खोजें",
           "title": "ऐप क्रेडेंशियल जोड़ें"
         },
-        "defaultAgent": "डिफ़ॉल्ट एजेंट",
-        "defaultAgentAria": "{{appId}} के लिए डिफ़ॉल्ट एजेंट",
         "developerConsole": "Feishu डेवलपर कंसोल",
         "dialogAdminRequired": "संगठन व्यवस्थापक को ऐप को कॉन्फ़िगर करना होगा. सेटअप पूरा होने के बाद आप Feishu बॉट सूची से अपना खाता कनेक्ट कर सकते हैं।",
         "documentTitle": "Feishu",
-        "emptyAdmin": "किसी एजेंट को Feishu संदेशों को रूट करने के लिए एक कस्टम ऐप जोड़ें।",
         "emptyMember": "किसी संगठन व्यवस्थापक से Feishu बॉट जोड़ने के लिए कहें।",
         "emptyTitle": "अभी तक कोई Feishu बॉट नहीं है",
         "events": {
@@ -3638,8 +3580,6 @@
         "reviewGuide": "समीक्षा मार्गदर्शिका",
         "reviewGuideDescription": "इस Feishu बॉट के लिए पूर्ण सेटअप चरणों की समीक्षा करें।",
         "reviewGuideTitle": "Feishu समीक्षा मार्गदर्शिका",
-        "routeDescription": "Feishu संदेशों को एजेंटों तक रूट करें",
-        "selectAgent": "एक एजेंट चुनें",
         "setupIncomplete": "सेटअप अधूरा",
         "steps": {
           "back": "पीछे",
@@ -3680,7 +3620,6 @@
         "addBot": "बॉट जोड़ें",
         "addDialogDescription": "Agent प्रकार का एंटरप्राइज़ ऐप बनाएं, फिर Lark डेवलपर कंसोल में ये चरण पूरे करें।",
         "addDialogTitle": "एक Lark बॉट जोड़ें",
-        "agentDescription": "वह एजेंट चुनें जो इस बॉट को भेजे गए संदेशों को संभाले।",
         "backToIntegrations": "एकीकरण पर वापस जाएँ",
         "botFallback": "Lark बॉट",
         "botIconAlt": "{{bot}} बॉट आइकन",
@@ -3707,12 +3646,9 @@
           "imageAlt": "Feishu ऐप निर्माण परिणाम दिखा रहा है कि ऐप ID और ऐप सीक्रेट कहां खोजें",
           "title": "ऐप क्रेडेंशियल जोड़ें"
         },
-        "defaultAgent": "डिफ़ॉल्ट एजेंट",
-        "defaultAgentAria": "{{appId}} के लिए डिफ़ॉल्ट एजेंट",
         "developerConsole": "Lark डेवलपर कंसोल",
         "dialogAdminRequired": "संगठन व्यवस्थापक को ऐप को कॉन्फ़िगर करना होगा. सेटअप पूरा होने के बाद आप Lark बॉट सूची से अपना खाता कनेक्ट कर सकते हैं।",
         "documentTitle": "Lark",
-        "emptyAdmin": "किसी एजेंट को Lark संदेशों को रूट करने के लिए एक कस्टम ऐप जोड़ें।",
         "emptyMember": "किसी संगठन व्यवस्थापक से Lark बॉट जोड़ने के लिए कहें।",
         "emptyTitle": "अभी तक कोई Lark बॉट नहीं है",
         "events": {
@@ -3775,8 +3711,6 @@
         "reviewGuide": "समीक्षा मार्गदर्शिका",
         "reviewGuideDescription": "इस Lark बॉट के लिए पूर्ण सेटअप चरणों की समीक्षा करें।",
         "reviewGuideTitle": "Lark समीक्षा मार्गदर्शिका",
-        "routeDescription": "Lark संदेशों को एजेंटों तक रूट करें",
-        "selectAgent": "एक एजेंट चुनें",
         "setupIncomplete": "सेटअप अधूरा",
         "steps": {
           "back": "पीछे",
@@ -4006,6 +3940,364 @@
       "requestFailed": "अनुरोध विफल रहा"
     }
   },
+  "ideation": {
+    "all": "सभी",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "छवियों को थोक में अनुकूलित और रूपांतरित करें",
+            "title": "क्लाउडिनरी मीडिया ऑप्टिमाइज़र"
+          },
+          "fal-ai-image-generation": {
+            "description": "Notion में विवरण से उत्पाद छवियां बनाएं",
+            "title": "फाल AI छवि निर्माण"
+          }
+        },
+        "title": "रचनात्मक"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "एक सूची चिपकाएँ और {{assistantName}} आपके लिए मुद्दे खोल देगा",
+            "title": "बैच-निर्माण मुद्दे"
+          },
+          "browserbase-web-testing": {
+            "description": "आपके वेब ऐप के लिए स्वचालित ब्राउज़र परीक्षण",
+            "title": "ब्राउज़रबेस वेब परीक्षण"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "साप्ताहिक Slack यातायात और सुरक्षा घटनाओं का पुनर्कथन",
+            "title": "क्लाउडफ्लेयर ट्रैफ़िक और सुरक्षा रिपोर्ट"
+          },
+          "codebase-investigation": {
+            "description": "एक URL दें और {{assistantName}} रेपो के माध्यम से बग का पता लगाता है",
+            "title": "कोडबेस जांच"
+          },
+          "daily-standup-report": {
+            "description": "मॉर्निंग मेट्रिक्स Slack पर पोस्ट किया गया एक स्लाइड डेक बन जाता है",
+            "title": "दैनिक स्टैंडअप रिपोर्ट"
+          },
+          "deep-research-code-analysis": {
+            "description": "बताता है कि आपके कोडबेस में एक सबसिस्टम कैसे काम करता है",
+            "title": "गहन अनुसंधान कोड विश्लेषण"
+          },
+          "github-pr-summarizer": {
+            "description": "वैकल्पिक Slack पोस्ट के साथ Notion में मर्ज किए गए पुल रिक्वेस्ट सारांश",
+            "title": "GitHub PR सारांश"
+          },
+          "github-progress-weekly": {
+            "description": "साप्ताहिक रेपो गतिविधि को फीचर द्वारा संक्षेपित किया गया",
+            "title": "GitHub साप्ताहिक प्रगति"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "GitLab मुद्दों को प्रतिबिंबित करता है और अनुरोधों को GitHub में मर्ज करता है",
+            "title": "GitLab से GitHub माइग्रेशन सहायक"
+          },
+          "jira-github-issue-sync": {
+            "description": "Jira टिकट और GitHub इश्यू को समन्वयित रखता है",
+            "title": "Jira ↔ GitHub इश्यू समन्वयन"
+          },
+          "make-scenario-builder": {
+            "description": "मल्टी-स्टेप डिज़ाइन करें विवरण से परिदृश्य बनाएं",
+            "title": "परिदृश्य निर्माता बनाएं"
+          },
+          "security-dependency-alert-digest": {
+            "description": "GitHub से साप्ताहिक सुरक्षा और निर्भरता अलर्ट",
+            "title": "सुरक्षा एवं निर्भरता चेतावनी डाइजेस्ट"
+          },
+          "sentry-issue-digest": {
+            "description": "गंभीरता के आधार पर समूहीकृत मुद्दों का मॉर्निंग डाइजेस्ट",
+            "title": "संतरी मुद्दा डाइजेस्ट"
+          },
+          "vercel-deploy-digest": {
+            "description": "यह प्रत्येक परिनियोजन को उसकी प्रतिबद्धता से जोड़ता है और परिनियोजन विफल होने पर Slack को सचेत करता है",
+            "title": "वर्सेल परिनियोजन डाइजेस्ट"
+          },
+          "zapier-okou-migration": {
+            "description": "अपने Zapier वर्कफ़्लो को {{brandName}} में फिर से बनाएँ",
+            "title": "जैपियर → {{brandName}} माइग्रेशन"
+          }
+        },
+        "title": "इंजीनियरिंग"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "ब्राउज़र में एक पेज खोलता है और एक स्क्रीनशॉट लौटाता है",
+            "title": "ब्राउज़र स्क्रीनशॉट"
+          },
+          "calendar-optimizer": {
+            "description": "संघर्षों, अधिभार और ध्यान केंद्रित करने में मदद करता है",
+            "title": "कैलेंडर अनुकूलक"
+          },
+          "calendly-booking-sync": {
+            "description": "Slack पिंग के साथ आपके कैलेंडर पर नई बुकिंग",
+            "title": "कैलेंडली बुकिंग सिंक"
+          },
+          "email-assistant": {
+            "description": "सुझाए गए अगले चरणों के साथ सुबह का इनबॉक्स सारांश",
+            "title": "ईमेल सहायक"
+          },
+          "granola-notes-to-notion": {
+            "description": "ग्रेनोला मीटिंग नोट्स को Notion डेटाबेस से समन्वयित किया गया",
+            "title": "ग्रैनोला Notion को नोट करता है"
+          },
+          "lark-slack-message-relay": {
+            "description": "लार्क और Slack के बीच दोनों तरह से संदेश अग्रेषित करता है",
+            "title": "लार्क ↔ Slack संदेश रिले"
+          },
+          "line-message-relay": {
+            "description": "LINE संदेशों को Slack पर अग्रेषित करें और इसके विपरीत",
+            "title": "LINE संदेश रिले"
+          },
+          "meeting-notes-pipeline": {
+            "description": "जुगनू Slack में अनुवर्ती कार्रवाई के साथ Notion को नोट करते हैं",
+            "title": "मीटिंग नोट्स पाइपलाइन"
+          },
+          "morning-brief": {
+            "description": "ईमेल, कैलेंडर और नोट्स एक छोटी दैनिक योजना में बदल गए",
+            "title": "सुबह की संक्षिप्त जानकारी"
+          },
+          "perplexity-deep-research": {
+            "description": "AI-संचालित अनुसंधान सारांश Notion में सहेजे गए",
+            "title": "उलझन गहन शोध"
+          },
+          "personal-weekly-digest": {
+            "description": "एक Slack अपडेट में पुल रिक्वेस्ट, ईमेल और कैलेंडर",
+            "title": "व्यक्तिगत साप्ताहिक डाइजेस्ट"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "आपके लिए Slack पर टीम घोषणाएँ पोस्ट करता है",
+            "title": "अपनी ओर से संदेश भेजें"
+          },
+          "strava-team-fitness-digest": {
+            "description": "साप्ताहिक टीम गतिविधि सारांश Slack पर पोस्ट किया गया",
+            "title": "स्ट्रावा टीम फिटनेस डाइजेस्ट"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "वेब पर खोजें और निष्कर्षों को Notion में संकलित करें",
+            "title": "टैविली वेब अनुसंधान पाइपलाइन"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "मीटिंग रिकॉर्डिंग को कार्रवाई आइटम के साथ Notion में संक्षेपित किया गया है",
+            "title": "टीएल;डीवी मीटिंग पुनर्कथन"
+          }
+        },
+        "title": "सब लोग"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify साइटों को संरचित Google शीट पंक्तियों में स्क्रैप करता है",
+            "title": "शीट्स के लिए वेब स्क्रैपर को एपीफाई करें"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "CRM घटनाओं से स्वचालित ईमेल अनुक्रम",
+            "title": "ब्रेवो ईमेल पोषण अनुक्रम"
+          },
+          "competitive-intel-scraper": {
+            "description": "फायरक्रॉल प्रतिस्पर्धी साइटों पर नज़र रखता है और Notion में परिवर्तन लॉग करता है",
+            "title": "प्रतिस्पर्धी इंटेल स्क्रेपर"
+          },
+          "competitor-research-to-notion": {
+            "description": "X पर शोध को Notion में संरचित नोट्स के रूप में सहेजा गया है",
+            "title": "Notion के लिए प्रतियोगी अनुसंधान"
+          },
+          "content-planner": {
+            "description": "विषयों पर मंथन करें और एक संपादकीय कैलेंडर की रूपरेखा तैयार करें",
+            "title": "सामग्री योजनाकार"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Notion पोस्ट को Dev.to पर प्रकाशित करता है और उन्हें X पर लिंक करता है",
+            "title": "Dev.to स्वत: प्रकाशक"
+          },
+          "discord-community-insights": {
+            "description": "साप्ताहिक Slack डाइजेस्ट के साथ Notion में डिसॉर्डर फीडबैक",
+            "title": "Discord समुदाय अंतर्दृष्टि"
+          },
+          "instagram-engagement-tracker": {
+            "description": "साप्ताहिक Slack सारांश के साथ शीट्स में संलग्नता",
+            "title": "Instagram सगाई ट्रैकर"
+          },
+          "loops-email-campaign": {
+            "description": "लूप्स के माध्यम से लेन-देन संबंधी ईमेल ड्राफ्ट करें और भेजें",
+            "title": "लूप्स ईमेल अभियान"
+          },
+          "marketing-content-planning": {
+            "description": "योजनाएं Slack, साक्षात्कार और प्रतिस्पर्धियों से कहानियां लॉन्च करती हैं",
+            "title": "विपणन सामग्री योजना"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Slack और साक्षात्कार से ऑनबोर्डिंग कोण ढूँढता है",
+            "title": "ऑनबोर्डिंग ईमेल उपयोग के मामले"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "साप्ताहिक रूप से कीवर्ड रैंकिंग ट्रैक करें और शीट्स पर लॉग इन करें",
+            "title": "सर्पएपीआई कीवर्ड ट्रैकर"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "ट्रैफ़िक बेंचमार्क बनाम प्रतिस्पर्धियों को Notion में सहेजा गया",
+            "title": "समानवेब ट्रैफ़िक तुलना"
+          },
+          "social-media-content-calendar": {
+            "description": "प्रत्येक नेटवर्क के लिए शीट कैलेंडर को पोस्ट में बदल देता है",
+            "title": "सोशल मीडिया सामग्री कैलेंडर"
+          },
+          "x-brand-monitor": {
+            "description": "X पर ब्रांड उल्लेख टीम अलर्ट के साथ Notion में सहेजा गया",
+            "title": "एक्स ब्रांड मॉनिटर"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "जब कोई नया YouTube वीडियो प्रकाशित होता है, तो उसे बढ़ावा देने के लिए एक Notion सारांश और एक X थ्रेड जेनरेट करें",
+            "title": "YouTube से X थ्रेड रिपर्पोजर"
+          }
+        },
+        "title": "मार्केटिंग"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "AgentMail API के साथ इनबॉक्स बनाएं और प्रबंधित करें",
+            "title": "एजेंटमेल इनबॉक्स"
+          },
+          "clickup-slack-standups": {
+            "description": "दैनिक क्लिकअप कार्यों को Slack में स्टैंडअप के रूप में पोस्ट किया गया",
+            "title": "क्लिकअप → Slack स्टैंडअप"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google डॉक्स लेआउट संरक्षित के साथ Notion में बैच हो जाता है",
+            "title": "Google दस्तावेज़ → Notion प्रवासी"
+          },
+          "google-drive-file-organizer": {
+            "description": "नई फ़ाइलें स्वचालित रूप से फ़ोल्डरों में क्रमबद्ध हो गईं",
+            "title": "Google Drive फ़ाइल आयोजक"
+          },
+          "jotform-intake-to-notion": {
+            "description": "प्रपत्र उत्तर Slack अधिसूचनाओं के साथ Notion में आते हैं",
+            "title": "जोटफॉर्म सेवन से Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Slack में सोमवार.कॉम से साप्ताहिक बोर्ड प्रगति",
+            "title": "सोमवार.कॉम साप्ताहिक डाइजेस्ट"
+          },
+          "pdf-contract-processor": {
+            "description": "समाप्ति से पहले अनुस्मारक के साथ Notion में अनुबंध फ़ील्ड",
+            "title": "PDF अनुबंध प्रोसेसर"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Slack में मंथन अलर्ट के साथ शीट्स में सदस्यता मेट्रिक्स",
+            "title": "रेवेन्यूकैट सदस्यता डाइजेस्ट"
+          },
+          "todoist-notion-task-sync": {
+            "description": "टोडोइस्ट कार्यों को टीम के लिए Notion में प्रतिबिंबित किया गया",
+            "title": "टोडोइस्ट → Notion कार्य सिंक"
+          },
+          "wrike-project-reporter": {
+            "description": "Slack में साप्ताहिक व्रीके प्रगति सारांश",
+            "title": "व्रीके प्रोजेक्ट रिपोर्टर"
+          },
+          "xero-financial-summary": {
+            "description": "Slack में ज़ीरो से साप्ताहिक लाभ और नकदी प्रवाह",
+            "title": "Xero वित्तीय सारांश"
+          }
+        },
+        "title": "ऑप्स"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "आसन के मील के पत्थर और कार्य Notion में प्रतिबिंबित होते हैं",
+            "title": "आसन → Notion प्रोजेक्ट सिंक"
+          },
+          "feedback-router": {
+            "description": "Slack फीडबैक आपके नियमों के अनुसार सही स्थान पर भेजा गया",
+            "title": "फीडबैक राउटर"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion स्पेक्स रैखिक परियोजनाएं और मुद्दे बन जाते हैं",
+            "title": "रैखिक PRD कार्यान्वयनकर्ता"
+          },
+          "metabase-dashboard-digest": {
+            "description": "डैशबोर्ड स्नैपशॉट स्वचालित रूप से Slack पर पोस्ट किए गए",
+            "title": "Metabase डैशबोर्ड डाइजेस्ट"
+          },
+          "pricing-analysis": {
+            "description": "प्रतिस्पर्धी मूल्य निर्धारण रणनीतियों का विश्लेषण करें और समान उत्पादों के साथ तुलना करें",
+            "title": "मूल्य निर्धारण विश्लेषण"
+          },
+          "product-copy-naming": {
+            "description": "उत्पाद में तकनीकी शब्दों के लिए अनुकूल नाम",
+            "title": "उत्पाद की प्रतिलिपि और नामकरण"
+          }
+        },
+        "title": "उत्पाद"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "डील बंद होने पर शीट्स और Slack के साथ सिंक हो जाती हैं",
+            "title": "एयरटेबल डील ट्रैकर"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "नए बिट्रिक्स लीड को फॉलो-अप कार्य और Slack पिंग मिलते हैं",
+            "title": "Bitrix24 लीड पोषण"
+          },
+          "hubspot-sales-reporter": {
+            "description": "साप्ताहिक HubSpot सारांश संरचित रिपोर्ट के रूप में सहेजे गए",
+            "title": "HubSpot बिक्री रिपोर्टर"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Slack अलर्ट के साथ नई लीड HubSpot कार्य बन जाती हैं",
+            "title": "लीड फॉलो-अप पाइपलाइन"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Slack में साप्ताहिक सेल्सफोर्स अवसर अपडेट",
+            "title": "सेल्सफोर्स पाइपलाइन डाइजेस्ट"
+          },
+          "streak-pipeline-report": {
+            "description": "Slack में Gmail से साप्ताहिक CRM पाइपलाइन आँकड़े",
+            "title": "स्ट्रीक पाइपलाइन रिपोर्ट"
+          },
+          "win-loss-reporter": {
+            "description": "Slack में पाइपलाइन से जीत और हार के रुझान",
+            "title": "जीत-हार रिपोर्टर"
+          }
+        },
+        "title": "बिक्री"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "ग्राहक वार्तालापों को लॉग किया गया और Notion में वर्गीकृत किया गया",
+            "title": "चैटवूट → Notion समर्थन लॉग"
+          },
+          "customer-support-bot": {
+            "description": "ज्ञान के आधार से उत्तर और अंतराल के लिए कार्य",
+            "title": "ग्राहक सहायता बॉट"
+          },
+          "intercom-conversation-triager": {
+            "description": "इंटरकॉम चैट प्राथमिकता वाले Notion कार्य बन जाते हैं",
+            "title": "इंटरकॉम वार्तालाप ट्राइएजर"
+          },
+          "support-ticket-router": {
+            "description": "टिकट Notion पर जाते हैं और अत्यावश्यक टिकट Slack पर पिंग करते हैं",
+            "title": "समर्थन टिकट राउटर"
+          }
+        },
+        "title": "सहायता"
+      }
+    },
+    "categoryFilter": "श्रेणी के अनुसार फ़िल्टर करें",
+    "chat": "चैट",
+    "description": "बातचीत शुरू करने के लिए किसी भी कार्ड पर क्लिक करें। यह एक ऑन-डिमांड कार्य, एक आवर्ती वर्कफ़्लो, या एक सबएजेंट बन सकता है।",
+    "search": {
+      "accessibilityLabel": "उपयोग के मामले खोजें",
+      "empty": "कोई भी उपयोग का मामला आपकी खोज से मेल नहीं खाता।",
+      "placeholder": "खोज"
+    },
+    "title": "विचार एवं उपयोग के मामले"
+  },
   "invitationRedirect": {
     "accountMismatch": {
       "title": "किसी अन्य खाते के लिए आमंत्रण स्वीकार किया गया"
@@ -4102,7 +4394,6 @@
     }
   },
   "myOkou": {
-    "access": "इस कार्यक्षेत्र में आपकी पहुँच",
     "conflict": "आपके सहेजे गए निर्देश कहीं और बदल गए हैं। आपका ड्राफ़्ट सुरक्षित है। सहेजे गए निर्देश फिर लोड करने से पहले इसे देखें या कॉपी करें।",
     "description": "इस कार्यक्षेत्र में Okou के लिए आपके निर्देश",
     "discard": "छोड़ें",
@@ -4111,6 +4402,19 @@
     "loadError": "आपके निर्देश लोड नहीं हो सके। फिर कोशिश करें।",
     "markdown": "सादे टेक्स्ट या Markdown में लिखें",
     "placeholder": "Okou को बताएँ कि आप कैसे काम करना पसंद करते हैं…",
+    "proactiveSettings": {
+      "cardsOnly": "नए कार्ड चालू हैं। हर घंटे की जाँच और रोज़ाना प्रोफ़ाइल अपडेट बंद हैं। सभी के लिए एक सेटिंग चुनें।",
+      "choose": "चुनें…",
+      "description": "इस कार्यक्षेत्र में Okou के काम करने का तरीका तय करें।",
+      "hourlyOnly": "हर घंटे की जाँच और रोज़ाना प्रोफ़ाइल अपडेट चालू हैं। नए कार्ड बंद हैं। सभी के लिए एक सेटिंग चुनें।",
+      "offers": "“आपके लिए” में ऑफ़र कार्ड पाएँ।",
+      "sourcesHint": "किसी कार्ड स्रोत को बंद करने पर उससे नए कार्ड और अपठित कार्ड के अलर्ट आना बंद हो जाते हैं। मौजूदा कार्ड आपके लिए में बने रहते हैं।",
+      "suggestions": "हर घंटे जुड़े स्रोतों की जाँच करें, रोज़ अपनी प्रोफ़ाइल अपडेट करें और उपयोगी अगले कदमों के सुझाव पाएँ।",
+      "systemUpdates": "“आपके लिए” में सिस्टम की घोषणाएँ पाएँ।",
+      "turnOff": "दोनों बंद करें",
+      "turnOn": "दोनों चालू करें",
+      "whatsNew": "“आपके लिए” में Okou की नई सुविधाओं के अपडेट पाएँ।"
+    },
     "reload": "सहेजे गए निर्देश फिर लोड करें",
     "retry": "फिर कोशिश करें",
     "save": "सहेजें",
@@ -4856,18 +5160,29 @@
     }
   },
   "projects": {
+    "back": "Back",
     "close": "Close",
     "collapse": "संक्षिप्त करें",
+    "confirmDeleteThreads": "Permanently delete",
     "create": "Create Project",
     "delete": "Delete",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
+    "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
+    "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectOnly": "Delete project only",
+    "deleteThreadsDescription_one": "Permanently delete this Project and {{count}} thread, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
+    "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
+    "deleteThreadsError": "Deletion stopped. Some threads may already be permanently deleted. Check the Project and remaining threads before continuing.",
+    "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deletingThreads": "Deleting…",
+    "description": "संबंधित चैट को एक साथ रखें।",
     "empty": "No chats here yet",
     "expand": "विस्तृत करें",
     "fromChat": "Create a Project from this chat",
+    "loadingThreads": "Loading threads…",
+    "loadThreadsError": "Could not load all threads. Try again before deleting them.",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
@@ -4883,12 +5198,15 @@
     "removeFromNewChat": "{{name}} हटाएँ",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
+    "threadsChanged": "The threads in this Project have changed. Review the updated list and confirm again.",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project unavailable"
+    "unavailable": "Project unavailable",
+    "untitledThread": "Untitled thread"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} समवर्ती रन",
@@ -4920,15 +5238,14 @@
       "pro": "प्रो",
       "team": "टीम"
     },
-    "title": "आपका एजेंट लाइन में इंतज़ार कर रहा है",
+    "title": "आपका अनुरोध कतार में है",
     "upgrade": {
       "action": "{{plan}} में अपग्रेड करें",
       "features": {
         "creditsPerMonth": "{{credits}} क्रेडिट/माह",
         "emailSupport": "ई - मेल समर्थन",
         "payAsYouGo": "उसके बाद पे-एज़-यू-गो",
-        "prioritySupport": "प्राथमिकता सपोर्ट",
-        "unlimitedAgents": "असीमित कुल एजेंट्स"
+        "prioritySupport": "प्राथमिकता सपोर्ट"
       },
       "proDescription": "एकाधिक कार्य समानांतर में चलाएँ और कतार छोड़ें।",
       "recommended": "अनुशंसित",
@@ -5383,7 +5700,6 @@
         "startFailed": "निर्यात प्रारंभ करने में विफल"
       },
       "scope": {
-        "agentInstructions": "आपकी पहुँच वाले एजेंटों के निर्देश",
         "chatMessages": "आपके चैट संदेश",
         "chatThreads": "आपकी चैट बातचीत",
         "filesExcluded": "आर्टिफ़ैक्ट, अटैचमेंट और वर्कफ़्लो की सहायक फ़ाइलें शामिल नहीं हैं।",
@@ -5733,25 +6049,14 @@
         "conflict": "इंस्टॉलेशन स्थिति असंगत होने के कारण Morning Brief अस्थायी रूप से उपलब्ध नहीं है।",
         "description": "अपने समय क्षेत्र में सुबह 7:00 बजे से पहले दैनिक प्राथमिकताएँ प्राप्त करें।",
         "errorMessage": "Morning Brief सेटिंग लोड या अपडेट नहीं हो सकीं।",
-        "missingDefaultAgent": "इस वर्कस्पेस में Okou उपलब्ध नहीं है। वर्कस्पेस एडमिन से संपर्क करें।",
         "missingTimezone": "Morning Brief चालू करने से पहले एक मान्य समय क्षेत्र सेट करें।",
         "preparationFailed": "अभी उपलब्ध नहीं है।",
         "preparing": "आपका पहला मॉर्निंग ब्रीफ़ तैयार हो रहा है। आप इसे कभी भी बंद कर सकते हैं।",
         "title": "सुबह की संक्षिप्त जानकारी"
       },
-      "proactiveLearning": {
-        "description": "रात में आपकी गतिविधि की समीक्षा करें और व्यक्तिगत स्मृति बेहतर बनाएँ।",
-        "errorMessage": "यह सेटिंग लोड या अपडेट नहीं हो सकी।",
-        "missingDefaultAgent": "इस वर्कस्पेस में Okou उपलब्ध नहीं है। वर्कस्पेस एडमिन से संपर्क करें।",
-        "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
-        "preparationFailed": "यह कार्यप्रवाह अस्थायी रूप से उपलब्ध नहीं है।",
-        "preparing": "यह कार्यप्रवाह तैयार हो रहा है।",
-        "title": "सीखना"
-      },
       "proactiveSuggestions": {
-        "description": "Okou हर घंटे आपके जुड़े स्रोतों की जाँच करता है और होम पेज पर उपयोगी अगले कदम सुझाता है।",
+        "description": "हर घंटे जुड़े स्रोतों की जाँच करें, रोज़ अपनी प्रोफ़ाइल अपडेट करें और उपयोगी अगले कदमों के सुझाव पाएँ।",
         "errorMessage": "सेटिंग लोड या अपडेट नहीं हो सकीं।",
-        "missingDefaultAgent": "इस वर्कस्पेस में Okou उपलब्ध नहीं है। वर्कस्पेस एडमिन से संपर्क करें।",
         "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
         "preparationFailed": "अभी उपलब्ध नहीं है।",
         "preparing": "हर घंटे के सुझाव तैयार किए जा रहे हैं। आप इन्हें कभी भी बंद कर सकते हैं।",
@@ -5766,7 +6071,7 @@
       },
       "timezone": {
         "description": "समय आपको दिखाया गया है और ऑटोमेशन चलाने के लिए उपयोग किया जाता है।",
-        "rowDescription": "आपके एजेंट रन के दौरान इस समय क्षेत्र का उपयोग करेंगे",
+        "rowDescription": "Okou काम करते समय इस समय क्षेत्र का इस्तेमाल करता है।",
         "rowTitle": "समय क्षेत्र",
         "sectionTitle": "समय क्षेत्र",
         "zones": {
@@ -5820,7 +6125,7 @@
         "title": "Link में आपके कार्ड"
       },
       "connect": "कनेक्ट करें",
-      "description": "आपके एजेंट खरीदारी का अनुरोध कर सकते हैं और Link लेनदेन देख सकते हैं। आप हर खरीदारी को मंज़ूरी देते हैं।",
+      "description": "Okou को खरीदारी का अनुरोध करने और Link के लेनदेन देखने दें। हर खरीदारी को आप स्वीकृति देते हैं।",
       "disconnect": "डिस्कनेक्ट करें",
       "loadError": "आपका वॉलेट लोड नहीं हो सका।",
       "scope": "Okou को आपके लिए खरीदारी करने और Link गतिविधि देखने दें।",
@@ -6039,6 +6344,22 @@
     "signUp": "साइन अप करें",
     "tryItYourself": "खुद आज़माएं"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "सभी",
+    "markAllRead": "सभी को पढ़ा दिखाएं",
+    "noResults": "कोई परिणाम नहीं मिला",
+    "resultCount_one": "{{count}} परिणाम",
+    "resultCount_other": "{{count}} परिणाम",
+    "searching": "खोज जारी है...",
+    "searchWorkspace": "वर्कस्पेस में खोजें...",
+    "sections": {
+      "artifacts": "आर्टिफ़ैक्ट्स",
+      "chats": "चैट",
+      "messages": "संदेश",
+      "workflows": "वर्कफ़्लो"
+    }
+  },
   "ssh": {
     "add": "होस्ट जोड़ें",
     "cancel": "रद्द करें",
@@ -6084,8 +6405,8 @@
       "summary_other": "{{count}} क्रेडेंशियल कॉन्फ़िगर किए गए",
       "unused": "किसी होस्ट द्वारा उपयोग नहीं किया जा रहा"
     },
-    "deleteHelp": "यह होस्ट हटाएं? इसका क्रेडेंशियल बना रहेगा। Agents को यह होस्ट सूची में नहीं दिखेगा।",
-    "description": "अपने एजेंटों के लिए दूरस्थ कमांड चलाने हेतु SSH होस्ट कॉन्फ़िगर करें।",
+    "deleteHelp": "यह होस्ट हटाएँ? इसके क्रेडेंशियल सहेजे रहेंगे। Okou इस होस्ट को एक्सेस नहीं कर पाएगा।",
+    "description": "Okou को रिमोट कंप्यूटर पर कमांड चलाने दें।",
     "edit": "होस्ट संपादित करें",
     "editHelp": "दूसरे क्रेडेंशियल चुनने से केवल यह होस्ट बदलता है। सीधे कनेक्शन के गंतव्य में बदलाव सहेजी गई होस्ट कुंजी हटाते हैं; Cloudflare Access से जुड़े बदलाव उसे बनाए रखते हैं।",
     "errors": {
@@ -6131,7 +6452,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH प्रमाणीकरण विफल हुआ। सिस्टम उपयोगकर्ता नाम जाँचें, टैग वाले गंतव्य पर Tailscale SSH सक्षम करें और tailnet की SSH accept नीति में इस लॉगिन को अनुमति दें।",
-      "deleteHelp": "यह होस्ट हटाएँ? एजेंटों को यह होस्ट अब लाइव इन्वेंट्री में नहीं दिखेगा।",
+      "deleteHelp": "यह होस्ट हटाएँ? Okou इसे एक्सेस नहीं कर पाएगा।",
       "sshDocs": "Tailscale SSH दस्तावेज़",
       "sshHelp": "चुने हुए Tailscale नेटवर्क की पहचान से प्रमाणित करता है; SSH पासवर्ड या निजी कुंजी की ज़रूरत नहीं है। टैग वाले गंतव्य पर Tailscale SSH सक्षम करें और SSH accept नीति में इस सिस्टम उपयोगकर्ता नाम को अनुमति दें।",
       "sshTitle": "Tailscale SSH",
@@ -6166,6 +6487,9 @@
     },
     "title": "SSH ऐक्सेस",
     "unavailable": "यह अनुरोध उपलब्ध नहीं है। नया अनुरोध करें।"
+  },
+  "status": {
+    "unread": "अपठित"
   },
   "tailscale": {
     "changed": "यह Tailscale नेटवर्क बदल गया। आपके बदलाव सहेजे नहीं गए; आपका ड्राफ़्ट सुरक्षित है।",
@@ -6330,7 +6654,7 @@
       "usernamePasswordMethod": "उपयोगकर्ता नाम और पासवर्ड"
     },
     "deleteHelp": "इस सहेजे गए होस्ट को हटाएँ? इसके पुन: उपयोग योग्य क्रेडेंशियल सुरक्षित रखे जाएँगे।",
-    "description": "अपने एजेंटों को आपके रिमोट डेस्कटॉप देखने और नियंत्रित करने दें।",
+    "description": "Okou को रिमोट डेस्कटॉप देखने और नियंत्रित करने दें।",
     "edit": "होस्ट संपादित करें",
     "editHelp": "बदलाव इस सहेजे गए होस्ट पर लागू होते हैं और उसके मौजूदा कनेक्शन कॉन्फ़िगरेशन को अमान्य कर देते हैं।",
     "errors": {
@@ -6929,20 +7253,15 @@
       }
     },
     "common": {
-      "agents": "एजेंटों",
       "cancel": "रद्द करना",
       "close": "बंद करना",
-      "copyWorkflow": "वर्कफ़्लो कॉपी करें",
       "delete": "मिटाना",
       "deleteWorkflow": "वर्कफ़्लो हटाएँ",
       "instructions": "निर्देश",
       "manual": "नियमावली",
-      "others": "अन्य",
-      "pinned": "पिन की गई",
       "private": "निजी",
       "public": "सार्वजनिक",
       "settings": "सेटिंग्स",
-      "view": "देखना",
       "workflow": "वर्कफ़्लो",
       "workflows": "वर्कफ़्लो"
     },
@@ -6952,36 +7271,14 @@
     },
     "createDialog": {
       "addAutomation": "ऑटोमेशन जोड़ें",
-      "chooseAgentAutomation": "इस ऑटोमेशन के लिए एजेंट चुनें",
-      "chooseAgentWorkflow": "इस वर्कफ़्लो के लिए एजेंट चुनें.",
       "chooseWorkflow": "स्वचालित करने के लिए वर्कफ़्लो चुनें, या चैट में एक बनाएं।",
       "createAutomation": "ऑटोमेशन बनाएं",
       "createInChat": "चैट में बनाएं",
       "createInChatDescription": "जब कोई वर्कफ़्लो फ़िट न हो तो बातचीत से शुरुआत करें।",
       "createWorkflow": "वर्कफ़्लो बनाएँ",
-      "noAgents": "अभी तक कोई एजेंट नहीं",
-      "noAgentsFound": "कोई एजेंट नहीं मिला",
       "noWorkflows": "अभी तक कोई वर्कफ़्लो नहीं. जारी रखने के लिए चैट में एक बनाएं."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "एजेंट",
-        "copied": "{{agent}} में कॉपी किया गया",
-        "copyAndRemove": "कॉपी करें और हटा दें",
-        "description": "इस वर्कफ़्लो को नए निजी वर्कफ़्लो के रूप में किसी अन्य एजेंट के पास कॉपी करें।",
-        "moved": "{{agent}} में ले जाया गया",
-        "moveDescription": "मूल को {{agent}} से हटा दिया गया।",
-        "noAgents": "अभी तक कोई अन्य एजेंट नहीं है",
-        "privateReady": "एक निजी प्रति तैयार है.",
-        "removalAlert": "इससे मूल हटा दिया जाता है",
-        "removalNoAutomations": "यह वर्कफ़्लो {{agent}} से हटा दिया गया है।",
-        "removalWithAutomations_one": "{{agent}} पर {{count}} ऑटोमेशन रोक दिया गया है और यह वर्कफ़्लो हटा दिया गया है।",
-        "removalWithAutomations_other": "{{agent}} पर {{count}} ऑटोमेशन रोक दिया गया है और यह वर्कफ़्लो हटा दिया गया है।",
-        "removeOriginal": "कॉपी करने के बाद मूल को {{agent}} से हटा दें",
-        "selectAgent": "एक एजेंट चुनें",
-        "title": "वर्कफ़्लो कॉपी करें",
-        "to": "में कॉपी"
-      },
       "delete": {
         "confirm": "{{title}} और सभी बाउंड ऑटोमेशन हटा दिए जाएंगे।",
         "dangerDescription": "इस वर्कफ़्लो और इसके ऑटोमेशन को हटाएँ। इस एक्शन को वापस नहीं किया जा सकता।",
@@ -7003,16 +7300,10 @@
         "upload": "टेक्स्ट फ़ाइलें अपलोड करें",
         "uploadAria": "वर्कफ़्लो फ़ाइलें अपलोड करें"
       },
-      "info": {
-        "copyDescription": "इस वर्कफ़्लो को किसी अन्य एजेंट के पास कॉपी करें.",
-        "copyTitle": "वर्कफ़्लो कॉपी करें"
-      },
       "metadata": {
-        "agent": "एजेंट",
-        "agentDescription": "यह वर्कफ़्लो इस एजेंट का है.",
         "aria": "वर्कफ़्लो मेटाडेटा",
         "description": "विवरण",
-        "descriptionHelp": "एजेंट को बताएं कि इस वर्कफ़्लो का उपयोग कब करना है।",
+        "descriptionHelp": "बताएँ कि Okou को इस वर्कफ़्लो का इस्तेमाल कब करना चाहिए।",
         "name": "नाम",
         "nameHelp": "वर्कफ़्लो सूचियों में और वर्कफ़्लो चुनते समय दिखाया जाता है।",
         "namePlaceholder": "वर्कफ़्लो नाम",
@@ -7027,12 +7318,7 @@
       "notFound": "वर्कफ़्लो नहीं मिला.",
       "refineWith": "{{agent}} के साथ परिष्कृत करें",
       "sectionNavigation": "वर्कफ़्लो विवरण अनुभाग",
-      "shadow": {
-        "end": "आपके लिए। यह वर्कफ़्लो समान-स्लग प्राथमिकता नियम द्वारा छायांकित है।",
-        "resolvesTo": "वर्तमान में संकल्प करता है"
-      },
       "visibility": {
-        "adminRequired": "किसी ऐसे एजेंट के अंतर्गत वर्कफ़्लो प्रकाशित करने के लिए जिसके आप स्वामी नहीं हैं, संगठन व्यवस्थापक अनुमति की आवश्यकता होती है।",
         "automationWarning": "ऑटोमेशन बंद हो जाएगा",
         "confirmDescription": "यह एक खतरनाक ऑपरेशन है. हालाँकि यह वर्कफ़्लो निजी है, इस पर बने अन्य सदस्यों के ऑटोमेशन चलना बंद कर देते हैं।",
         "confirmTitle": "इस वर्कफ़्लो को निजी बनाएं?",
@@ -7043,8 +7329,8 @@
     },
     "editor": {
       "aria": "अनुदेश संपादक",
-      "footer": "अपने एजेंट के व्यवहार को अनुकूलित करने के लिए निर्देशों को सीधे संपादित करें।",
-      "placeholder": "अपने एजेंट के लिए निर्देश लिखें...",
+      "footer": "इस वर्कफ़्लो के निर्देश संपादित करें।",
+      "placeholder": "इस वर्कफ़्लो के लिए निर्देश लिखें…",
       "toolbar": {
         "blockquote": "ब्लॉककोट",
         "bold": "बोल्ड",
@@ -7060,9 +7346,7 @@
     },
     "list": {
       "actionRequired": "कार्रवाई आवश्यक",
-      "agentEmpty": "इस एजेंट के रूप में अभी तक कोई वर्कफ़्लो नहीं चलता है।",
       "all": "सभी",
-      "allAgents": "सभी एजेंट",
       "automated": "स्वचालित",
       "automations": "ऑटोमेशन",
       "createdBy": "के द्वारा बनाई गई",
@@ -7080,8 +7364,6 @@
       "openRecovery": "{{title}} की रिकवरी खोलें",
       "ownerLoading": "लेखक लोड हो रहा है…",
       "ownerUnavailable": "लेखक उपलब्ध नहीं है",
-      "runsAs": "के रूप में चलता है",
-      "runsAsAria": "{{agent}} के रूप में चलता है",
       "section": {
         "event": "ऑटोमेशन पर",
         "later": "बाद में",
@@ -7135,6 +7417,18 @@
       "uninstalling": "अनइंस्टॉल किया जा रहा है...",
       "updatePermissions": "अनुमतियाँ अद्यतन करें"
     },
+    "channelExamples": {
+      "email": "Okou को ईमेल फ़ॉरवर्ड करें और उसका सारांश या जवाब का ड्राफ़्ट माँगें।",
+      "feishu": "Feishu पर Okou को ड्राफ़्ट भेजें और टीम के लिए उसका छोटा संस्करण माँगें।",
+      "github": "पुल रिक्वेस्ट खुलने पर ऐसा वर्कफ़्लो चलाएँ जो समीक्षा के लिए चेकलिस्ट बनाए।",
+      "lark": "Lark पर Okou को ड्राफ़्ट भेजें और टीम के लिए उसका छोटा संस्करण माँगें।",
+      "phone": "अपने iPhone से {{assistantName}} को कोई विचार भेजें और उसका पहला ड्राफ़्ट माँगें।",
+      "slack": "Slack चैनल में Okou को मेंशन करें और अपने ड्राफ़्ट पर राय माँगें।",
+      "teams": "Teams में मीटिंग के नोट चिपकाएँ और Okou से आगे के कामों की सूची बनाने को कहें।",
+      "telegram": "Telegram पर Okou को दो विकल्प भेजें और दोनों के फ़ायदे और नुकसान पूछें।",
+      "wechat": "WeChat पर Okou को दो विकल्प भेजें और दोनों के फ़ायदे और नुकसान पूछें।",
+      "whatsapp": "WhatsApp पर Okou को दो विकल्प भेजें और दोनों के फ़ायदे और नुकसान पूछें।"
+    },
     "connected": "जुड़े हुए",
     "connectedWithDetail": "कनेक्टेड ({{detail}})",
     "discord": {
@@ -7143,7 +7437,7 @@
       "authorizationError": "Discord प्राधिकरण पूरा नहीं किया जा सका।",
       "cancelled": "Discord प्राधिकरण रद्द कर दिया गया।",
       "chooseWorkspace": "वर्कस्पेस चुनें",
-      "connectDescription": "अपने एजेंट से चैट करने के लिए अपना Discord खाता कनेक्ट करें।",
+      "connectDescription": "Discord में Okou से चैट करने के लिए अपना खाता लिंक करें।",
       "connectedTitle": "Discord से कनेक्ट है",
       "connectTitle": "Discord से कनेक्ट करें",
       "defaultWorkspace": "Discord के लिए डिफ़ॉल्ट वर्कस्पेस",
@@ -7221,17 +7515,16 @@
       "uninstallTitle": "Microsoft Teams एकीकरण अनइंस्टॉल करें?"
     },
     "telegram": {
-      "description": "एजेंटों को Telegram संदेश रूट करें",
+      "description": "Telegram को Okou से जोड़ें।",
       "title": "Telegram"
     },
     "wechat": {
       "accountLabel": "खाता",
-      "agentLabel": "एजेंट",
       "code": "सत्यापन कोड",
       "connect": "कनेक्ट करें",
       "connected": "कनेक्टेड",
       "creating": "QR कोड बनाया जा रहा है…",
-      "description": "WeChat पर अपने एजेंट से चैट करें।",
+      "description": "WeChat में Okou से चैट करें।",
       "disconnect": "डिस्कनेक्ट करें",
       "expired": "इस QR कोड की समय सीमा समाप्त हो गई है। नया बनाएँ।",
       "failed": "WeChat से कनेक्ट नहीं हो सका।",
@@ -7245,7 +7538,7 @@
       "restoreDescription": "WeChat को नीचे दिए गए खाते और कार्यस्थान से फिर से कनेक्ट करें।",
       "returnToWechat": "WeChat पर वापस जाएँ और बातचीत शुरू करने के लिए संदेश भेजें।",
       "scanned": "स्कैन हो गया। अपने फ़ोन पर पुष्टि करें।",
-      "scope": "केवल इस एजेंट को भेजे गए आपके सीधे संदेश कनेक्ट होते हैं। टेक्स्ट संदेश समर्थित हैं।",
+      "scope": "केवल Okou को भेजे गए आपके सीधे संदेश जोड़े जाते हैं। टेक्स्ट संदेश समर्थित हैं।",
       "title": "WeChat कनेक्ट करें",
       "unavailable": "कनेक्शन अभी कॉन्फ़िगर नहीं किया गया है।",
       "verification_blocked": "बहुत अधिक प्रयास हुए। नया QR कोड बनाएँ।",
@@ -7257,7 +7550,7 @@
     "whatsapp": {
       "codeError": "कनेक्शन कोड नहीं बनाया जा सका। फिर से कोशिश करें।",
       "connect": "WhatsApp कनेक्ट करें",
-      "connectDescription": "अपने एजेंट से चैट करने के लिए अपना WhatsApp खाता {{brandName}} से जोड़ें।",
+      "connectDescription": "Okou से चैट करने के लिए अपना WhatsApp खाता {{brandName}} से लिंक करें।",
       "connected": "WhatsApp कनेक्ट हो गया",
       "description": "WhatsApp से सीधे Okou के साथ चैट करें",
       "disconnected": "WhatsApp डिस्कनेक्ट हो गया",

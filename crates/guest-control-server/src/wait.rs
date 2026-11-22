@@ -107,6 +107,17 @@ pub(crate) fn collect_bounded_output<const N: usize>(
     })
 }
 
+/// Wait for a fixed helper while observing its owning connection cancellation.
+/// On natural exit, signal its process group before reaping the direct child
+/// so the child still owns the process-group identity.
+pub(crate) fn wait_for_helper_with_group_cleanup(
+    child: impl ChildProcess,
+    timeout_ms: u32,
+    connection_cancel: &AtomicBool,
+) -> WaitOutcome {
+    wait_with_kill_timeout_or_connection_cancelled(child, timeout_ms, connection_cancel, || true)
+}
+
 /// Wait for `child` while observing its owning connection cancellation flag
 /// and allowing direct-child-group cleanup before reap after natural exit.
 pub(crate) fn wait_with_kill_timeout_or_connection_cancelled(

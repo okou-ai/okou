@@ -12,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 
 import { mockApi } from "../msw-contract.ts";
+
 import {
   getMockWorkflowAutomations,
   setMockWorkflowAutomations,
@@ -30,9 +31,7 @@ function notFound(workflowId: string) {
 function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
   return {
     id: workflow.id,
-    agentId: workflow.agentId,
-    agentName: workflow.agentName,
-    agentDisplayName: workflow.agentDisplayName,
+
     name: workflow.name,
     displayName: workflow.displayName,
     description: workflow.description,
@@ -101,31 +100,21 @@ export function resetMockWorkflows(): void {
 }
 
 export const apiWorkflowsHandlers = [
-  mockApi(workflowsCollectionContract.list, ({ query, respond }) => {
-    const agentId = query.agentId;
-    const visible = agentId
-      ? mockWorkflows.filter((workflow) => {
-          return workflow.agentId === agentId;
-        })
-      : mockWorkflows;
-    return respond(200, visible.map(summary));
+  mockApi(workflowsCollectionContract.list, ({ respond }) => {
+    return respond(200, mockWorkflows.map(summary));
   }),
 
-  mockApi(workflowsCollectionContract.composer, ({ query, respond }) => {
+  mockApi(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(
       200,
-      mockWorkflows
-        .filter((workflow) => {
-          return workflow.agentId === query.agentId;
-        })
-        .map((workflow) => {
-          return {
-            id: workflow.id,
-            name: workflow.name,
-            displayName: workflow.displayName,
-            description: workflow.description,
-          };
-        }),
+      mockWorkflows.map((workflow) => {
+        return {
+          id: workflow.id,
+          name: workflow.name,
+          displayName: workflow.displayName,
+          description: workflow.description,
+        };
+      }),
     );
   }),
 
@@ -133,9 +122,7 @@ export const apiWorkflowsHandlers = [
     const now = new Date().toISOString();
     const created: WorkflowDetailResponse = {
       id: crypto.randomUUID(),
-      agentId: body.agentId,
-      agentName: null,
-      agentDisplayName: null,
+
       name: body.name,
       displayName: body.displayName ?? null,
       description: body.description ?? null,
@@ -232,7 +219,7 @@ export const apiWorkflowsHandlers = [
     return respond(204);
   }),
 
-  mockApi(workflowsDetailContract.copy, ({ body, params, respond }) => {
+  mockApi(workflowsDetailContract.copy, ({ params, respond }) => {
     const source = mockWorkflows.find((item) => {
       return item.id === params.workflowId;
     });
@@ -243,7 +230,7 @@ export const apiWorkflowsHandlers = [
     const copied: WorkflowDetailResponse = {
       ...source,
       id: crypto.randomUUID(),
-      agentId: body.toAgentId,
+
       visibility: "private",
       ownerUserId: "test-user-123",
       canPublish: true,

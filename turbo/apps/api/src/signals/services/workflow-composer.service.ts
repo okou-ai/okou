@@ -13,7 +13,6 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 export function composerWorkflows(args: {
   readonly orgId: string;
   readonly member: WorkflowMember;
-  readonly agentId?: string;
 }) {
   const visible$ = workflowList(args);
   return computed(async (get) => {

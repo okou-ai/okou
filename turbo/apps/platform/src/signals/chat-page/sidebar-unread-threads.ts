@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { chatThreadMarkAgentReadContract } from "@okouai/api-contracts/client/chat-threads";
+import { chatThreadMarkAllReadContract } from "@okouai/api-contracts/client/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { chatThreadIndicatorsFromWorker$ } from "../shared-database.ts";
@@ -54,12 +54,12 @@ export const sidebarUnreadThreadIds$ = computed(
   },
 );
 
-export const markAgentThreadsRead$ = command(
-  async ({ get }, agentId: string, signal: AbortSignal) => {
-    const client = get(apiClient$)(chatThreadMarkAgentReadContract);
+export const markWorkspaceThreadsRead$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    const client = get(apiClient$)(chatThreadMarkAllReadContract);
     await accept(
-      client.markAgentRead({
-        body: { agentId },
+      client.markAllRead({
+        body: {},
         fetchOptions: { signal },
       }),
       [204],

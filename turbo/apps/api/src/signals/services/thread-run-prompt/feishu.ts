@@ -5,14 +5,14 @@ import {
   feishuPromptFromContext,
   type FeishuThreadContext,
 } from "../feishu-queued-launch-context.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
 export function createFeishuThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<FeishuThreadContext>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (pickedEvent?.contextType !== "feishu") {
@@ -42,7 +42,6 @@ export function createFeishuThreadPrompt(
         integrationContext: appendSystemPrompt,
         channelUserIdentity: identity.join("\n"),
       },
-      skillVolumes: [],
     };
   });
 }

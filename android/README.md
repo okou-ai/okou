@@ -4,9 +4,16 @@ Native Kotlin/Jetpack Compose client shell inside the Okou monorepo. Open this
 directory in Android Studio, or use the checked-in Gradle Wrapper. No pnpm,
 database, API service, account credentials, or local Web server is needed.
 
-Signed-out launches open the native Clerk login page. After authoritative
-membership and workspace bootstrap, the application provides a native conversation
-list and history reader. The workspace chat list uses single-line rows, indented
+Signed-out launches open the native Clerk login page. A restored active session
+with a selected workspace opens the native conversation list while access is
+checked. The toolbar uses the bundled workspace logo and shows filter and
+Settings as soon as the selected workspace is identified. The tool shortcuts
+stay in place in the same shell, and a known optional update uses the toolbar.
+A fresh selected membership with known permissions allows cached conversations
+and Projects to appear while the app refreshes the list and loads workspace
+metadata and member preferences. The full membership check and organization
+gate still apply when selected permissions are unavailable.
+The workspace chat list uses single-line rows, indented
 Project chats, and separators within groups that have pins and ordinary chats.
 Collapsed Projects summarize unread or running chats. Selecting a chat opens
 its conversation, and Back restores the same list position, filter
@@ -23,13 +30,18 @@ Simplified and Traditional Chinese.
 
 Android reads a private cache of the last confirmed display mode and palette
 while the identified workspace loads. The cache is scoped to the API origin,
-account and workspace and is read off the main thread. The existing preference
-response takes precedence and refreshes the cache. Only the server-confirmed
-workspace can open workspace content.
+account and workspace and is read off the main thread. Settings can show those
+values after workspace authorization while its preference controls wait for
+the initial response. The server response takes precedence and refreshes the
+cache. Workspace content requires current authorization for the selected
+workspace.
+Temporary workspace metadata and preference failures after authorization retry
+in the foreground and on reconnect. Cached chats stay usable, and the workspace
+row in Settings shows preparation and temporary failures in its subtitle.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
-for the selected workspace. It uses the existing `singleAgent` availability and
-canonical Instructions API without blocking chat or Appearance while loading.
+for the selected workspace through the canonical Instructions API. Loading
+Instructions leaves chat and Appearance available.
 Saves always carry the displayed base version; a concurrent Web edit preserves
 the local draft and requires explicitly loading the latest version. Clearing the
 field and saving clears Instructions. A lost save response reads the server back;
@@ -70,17 +82,23 @@ application-owned Room/SQLite database under `noBackupFilesDir/chat-list`, exclu
 from backups. AndroidX's bundled SQLite driver avoids CursorWindow's single-row
 limit. Chat threads and Projects have independent snapshots, event tails and
 cursors. Snapshots are stored per entity, and confirmed tail events append through
-transactions with their synchronization position. Changed network datasets await
-persistence and readback before publication. Unchanged catch-up reuses the confirmed
-dataset without another disk transaction; changed Agent/settings references still
-persist independently. A storage failure leaves the network result usable with a
-visible cache warning, and a later refresh retries unsaved data.
+transactions with their synchronization position. Changed chat lists await the
+write transaction before publication and read back from disk if it kept a newer
+checkpoint. Changed Projects await persistence and readback. Unchanged catch-up
+reuses the confirmed chat rows without another disk transaction when the cache is
+current. A storage
+failure leaves the network result usable with a visible cache warning, and a later
+refresh retries unsaved data.
 Data is scoped to API origin/user/workspace and the current authorization snapshot;
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
-Agent/Project references keep the scoped list usable after a process restart while
-their network reads are unavailable. Cache display precedes network catch-up;
-chat tails over 100 events attempt a server-snapshot rebase after catch-up, with
-optional rebase server failures preserving the synchronized result, as on Web.
+chat and Project data keep the scoped list usable after a process restart while
+the network is unavailable. Cache display precedes network catch-up;
+chat tails over 100 events check the server's snapshot cursor in the background
+after publishing the incremental result. An advancing cursor triggers a download
+and replay. The workspace list worker applies that snapshot and its tail if a newer
+read has not superseded the operation. A pending local edit defers a snapshot
+that would cover events Android has yet to read. Server errors during the
+optional rebase leave the synchronized result usable.
 Project tails retain their event identities. Chat's absent cursor refreshes its
 snapshot; Project's valid zero cursor continues through events. An expired cursor
 rebuilds from the server and resumes catch-up. A freshly loaded
@@ -91,16 +109,50 @@ are decoded from streams without a full response byte-array/String copy.
 The versioned database contains only rebuildable server-confirmed data;
 unsupported local schemas may be recreated, never migrated together with drafts
 or credentials. Room exports its schema under `app/schemas` through its Gradle/KSP
-integration. A saved list and the last status refresh do not establish current
-network freshness. Signed archive URLs, credentials and transient indicators are
-not persisted in the chat cache. Personal Instructions drafts use the separate
-intent store described above.
+integration. The private chat cache also stores the last confirmed unread map
+for each workspace and account, with its authorization scope. After authorized
+startup, the unread dots, filter, and collapsed Project counts can use that
+snapshot for up to two minutes from confirmation. A successful indicators read
+replaces it. Running indicators and run controls still use live responses.
+Signed archive URLs are confined to a snapshot fetch, and credentials belong to
+the authentication owner. Personal Instructions drafts use the separate intent
+store described above.
+
+Pin, pin reorder, rename, mute, archive and delete project their visible result
+from memory before the request completes. Definitive refusals remove their
+local edits immediately, including any unsent reorder steps. Canonical event
+IDs settle submitted changes, including events observed before a snapshot
+rebase. Transient list reads retry in the background while the list is visible
+in the foreground. If an outcome stays unconfirmed, Refresh chats reads back
+the list and clears the unresolved projection once that read succeeds.
+
+Sending a first message adds a provisional inbox row that opens its pending
+conversation. The list adopts the confirmed row by thread ID. Sending in an
+existing chat updates its visible recency in memory while preserving pin and
+Project ordering. The list sort event confirms the move independently of the
+message receipt. Foreground reconciliation uses canonical order for completed
+attempts whose sort event is unavailable.
+
+Mark read, Mark unread, and Mark all as read immediately update chat list
+unread markers, filters, and collapsed Project counts. A pending read hides
+unread activity through its observed server watermark. A pending read on a
+locally marked unread chat without a server watermark displays as read until
+its own readback. The existing read
+endpoint still chooses the receipt watermark. Definitive write failures remove
+the local intent. A successful indicators read started after the write settles
+the current intent, including when the write response was lost. If both fail,
+the list keeps the projection until the next successful refresh. Bulk feedback
+counts receipts that cover the captured unread watermarks.
 
 Conversation history shares this cache and its workspace authorization lease.
-Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,
-paired cursor and confirmation time) and `history_events` (lossless raw event JSON,
-identity and sequence). Rebuildable v1 databases are recreated; there is no draft
-or credential migration. Snapshot replacement and tail appends commit atomically,
+The workspace retains the confirmed checkpoint and projected timeline for the
+active conversation and up to three recent inactive conversations. A revisit
+can display that timeline before Room or network work. Catch-up uses its
+canonical cursor and cached display alone never marks the conversation read.
+Room stores thread authorization, event format, paired cursor and confirmation
+time in `history_scopes`, and lossless raw event JSON, identity and sequence in
+`history_events`. Version 2 caches upgrade in place. Rebuildable v1 databases
+are recreated. Snapshot replacement and tail appends commit atomically,
 and disk readback precedes publication when storage succeeds. A failed write keeps
 the confirmed network result available and retries it on refresh. Thread-local
 403/404 clears that history without retiring the workspace.
@@ -109,14 +161,15 @@ The reader streams gzip NDJSON snapshots and follows canonical paired-cursor raw
 rows, including valid zero cold start, missing snapshot fallback, gap-tolerant
 sequences, an extra cold confirmation page and expired-cursor rebuild. Malformed
 or truncated data never publishes a partial checkpoint. Projection preserves
-revocation/rejection and queued/running/stopped/failure facts. CommonMark 0.24.0
-renders selectable native text/code; references and unsupported structured parts
+revocation/rejection and queued/running/stopped/failure facts. CommonMark
+renders selectable native text and code with horizontally scrolling tables.
+References and unsupported structured parts
 remain explicit with their original JSON. HTML remains literal text, and reading
 does not automatically download attachments or open links. Interactive viewers
 remain later work.
 
-An authorized, resumed, visible conversation marks read only after successful
-network confirmation and display. This calls the existing server mark-read POST
+An authorized, resumed conversation marks read after the latest confirmed content
+is visible at the reading edge. This calls the existing server mark-read POST
 and refreshes independent indicators; cached display, hidden navigation and held
 requests do not mark read. Local caches never establish server freshness.
 The workspace retains synchronization and confirmed content. Each visible visit
@@ -126,14 +179,17 @@ ends that session; reopening creates a fresh one even when event rows are unchan
 Display acknowledgments identify a captured network confirmation, not whatever
 state is newest when an effect runs. The existing server API selects its current
 run-finish watermark; it does not accept a displayed event cursor.
+An older reading position is stored as a message identifier and viewport offset
+for the local account, workspace and conversation. Returning to the latest
+content clears that anchor.
 
 ## Prerequisites and Setup
 
 Use JDK 21, Python 3.9+, curl and unzip on Linux/macOS. The build targets JVM 17.
 Versions are pinned in `gradle/libs.versions.toml` and
-`gradle/wrapper/gradle-wrapper.properties`: Gradle 9.8.2, Kotlin/Compose compiler
-2.4.21, AGP 9.5.0 with built-in Kotlin, Compose BOM 2026.06.01 and Clerk 1.4.1.
-Compile SDK/build tools are 36; targetSdk remains 35 and minSdk remains 24
+`gradle/wrapper/gradle-wrapper.properties`: Gradle 9.9.2, Kotlin/Compose compiler
+2.4.21, AGP 9.5.2 with built-in Kotlin, Compose BOM 2026.11.01 and Clerk 1.5.0.
+Compile SDK is 37.2 and build tools are 37.0.0. The app targets API 37 and supports API 24
 (Android 7.0). Java 21 runs the build; app bytecode targets JVM 17.
 These pins align with the Clerk SDK release and are validated together.
 
@@ -148,7 +204,7 @@ bash android/scripts/setup-sdk.sh --accept-licenses
 ```
 
 The script downloads checksum-verified command-line tools `13114758` and installs
-`platforms;android-36`, `build-tools;36.0.0`, and platform-tools. It installs no
+`platforms;android-37.2`, `build-tools;37.0.0`, and platform-tools. It installs no
 emulator, system image, NDK, IDE, Java, or global shell-profile changes. Set
 `ANDROID_HOME` for an existing/custom SDK; otherwise setup/check default to
 `${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk`.
@@ -175,8 +231,10 @@ bash android/scripts/check.sh
 
 This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting,
 state-holder tests, Robolectric Compose/lifecycle interactions, Android lint, and debug APK
-assembly. It uses two Gradle workers, a 1536 MB build heap and in-process Kotlin
-compilation by default for small sandboxes.
+assembly. Android Lint treats warnings as errors and reports newer dependency
+and Gradle toolchain versions as informational hints. Verification uses two Gradle
+workers, a 1536 MB build heap and in-process Kotlin compilation by default for
+small sandboxes.
 
 Run the app's local JVM tests through Android Gradle Plugin with the configured
 Android SDK; no emulator is needed:
@@ -321,104 +379,50 @@ native acceptance. Robolectric exercises host-side Compose interactions and
 does not establish those device properties. Linux sandboxes without `/dev/kvm`
 are useful for compilation/tests but do not provide accelerated emulator evidence.
 
-### Instrumented Android Tests
+### Debug Device Integration Tests
 
-For commit-addressed, PR-specific screenshot acceptance, see
-[feature screenshot recipes](screenshots/README.md). Temporary recipes are selected manually
-and removed in the same PR before merge; shared capture support stays available.
+The `androidTest` suite runs against Debug. It covers native navigation, the
+keyboard and system Back, Activity recreation, appearance, locale, and other
+interactions that need a device. The JVM and Robolectric tests cover the broader
+state and error matrix. The device suite and the
+[PR screenshot recipes](screenshots/README.md) use Debug fixtures, including a
+test-process trust provider for the local HTTPS fixtures.
 
-The `androidTest` suite launches the real Activity and uses UI Automator to
-exercise chat-list navigation and Back, appearance restoration with a new Activity
-owner, native system bars and live platform night-mode changes, plus palette/language
-changes through native app-language recreation. The existing JVM/Robolectric tests retain the
-broader state/error/localization matrix.
-
-On a Linux x64 host with readable/writable `/dev/kvm`, run from `android/`:
+On a Linux x64 host with read/write access to `/dev/kvm`, run from `android/`:
 
 ```bash
-bash scripts/test-release.sh \
+./gradlew :app:pixel2Api35DebugAndroidTest --no-daemon \
   -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
 ```
 
-AGP manages one Pixel 2, API 35, 64-bit AOSP device: emulator/image provisioning,
-snapshots, installation, test execution and teardown. Accept the SDK licenses
-using the setup procedure above before provisioning. Initial downloads take
-additional time and disk space. Software GPU rendering supports headless CI;
-CPU virtualization still requires KVM on Linux. This configuration targets the
-CI phone cohort, not a measured performance or physical-device matrix.
+Gradle configures the Pixel 2 API 35 device and owns its lifecycle. Use
+`:app:assembleDebugAndroidTest` to compile without starting the device. CI
+requires every case to pass and retains JUnit, Test Storage and logcat diagnostics
+in the `android-instrumentation-api35-<revision>` artifact.
 
-Compile/package the suite without starting a device:
+### Release Smoke Tests
 
-```bash
-./gradlew :app:assembleReleaseAndroidTest --no-daemon
-```
+The smoke test installs the R8-optimized APK signed with a disposable key. The
+shared publishing builder supplies the unsigned APK and R8 mapping. The harness
+verifies the signed payload and mapping, boots an isolated API 35 emulator and
+uses the launcher and platform UI Automator from the host to check initial startup
+and relaunch after stopping the process. CI uses the same public Sentry DSN as
+publishing. The offline emulator exercises the public unauthenticated surface
+with the production Application.
 
-The existing native suite targets the optimized, non-debuggable Release APK.
-It retains its test Application and external-service fixtures; it does not
-establish a real Clerk or Ably provider session. JVM/Robolectric tests continue
-to use Debug resources; they execute JVM classes rather than APK DEX.
-
-The helper creates a fresh PKCS12 test key for each invocation and removes it on
-exit. It owns the signing location independently of the runner's Android home.
-Normal Release builds remain unsigned until the production signing step. The
-helper first checks the native ABI rules, retains an unsigned APK and compressed
-mapping with the production build script, then assembles the signed app/driver.
-Both builds use the same intermediate APK filename so AGP can reuse the already
-optimized app. The helper copies the unsigned APK before assembling the signed one.
-It verifies that the signed app's DEX, resources and manifest and its mapping
-match the unsigned production build, both before and after running the suite.
-Its artifacts live under `build/reports/release/` and `app/build/` and are retained
-with the instrumentation artifact. The test APK is rewritten with AGP's app
-mapping. The checked-in `app/src/main/keepRules/native-instrumentation.keep` is
-generated by AGP's R8 TraceReferences from the test classes and test-only runtime
-dependencies to the unoptimized app and its libraries. It preserves concrete
-referenced members, including shared Kotlin/coroutines/OkHttp APIs, rather than
-all public members of application types or entire SDK packages.
-Tracing includes incoming virtual overrides and SAM callbacks as well as outgoing
-calls. Its library path contains only the SDK and compile-only annotations;
-compile API stubs would shadow the runtime targets and hide their virtual methods.
-This follows [Keeper's runtime-classpath approach](https://github.com/usefulness/keeper).
-`native-fixtures.keep` additionally preserves the coroutine probe name used by
-R8's generated test calls. Both apply unchanged
-to published Release builds; unrelated code remains eligible for optimization.
-
-After changing native tests or dependencies, regenerate and review the ABI:
+To run the smoke locally on Linux x64, set up the SDK, install the emulator
+packages and run the helper from `android/`:
 
 ```bash
-./gradlew :app:generateNativeTestKeepRules --no-daemon
-cp app/build/generated/native-test.keep app/src/main/keepRules/native-instrumentation.keep
+"$ANDROID_HOME/cmdline-tools/13114758/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+  emulator 'system-images;android-35;default;x86_64'
+bash scripts/test-release.sh
 ```
 
-Tracing reports missing legacy/hidden platform adapters in test libraries as
-warnings because the public SDK stubs cannot resolve them. It does not replace
-device execution. The helper rejects stale rules when changing fixture extension
-points or dependencies.
-Screenshot recipes use this same production ABI. The baseline check excludes
-their temporary driver overlay; recipes must use the existing exported fixture
-interfaces and UI controls rather than relying on unexported app internals.
-HTTP fixtures use TLS with a test-process trust provider instead of changing the
-Release HTTPS policy. The provider is removed when its last fixture closes.
-
-Use an isolated test emulator. The fixture snapshots/restores app preferences,
-platform night mode, app locale, fixture API preferences and chat-list cache,
-scopes its UI Automation shell permissions, and closes its Activity owners on
-success and failure. Fixtures use a local HTTPS server or external-service adapters
-without contacting a live backend. A new Activity owner is not a process-death
-restoration test.
-
-Managed-device HTML reports are under `app/build/reports/androidTests/`, with
-JUnit results/logcat under `app/build/outputs/androidTest-results/`. Official
-Test Storage retrieves failure screenshots and accessibility hierarchies under
-`app/build/outputs/managed_device_android_test_additional_output/` before device
-teardown. These images are diagnostics, not screenshot-golden assertions.
-The wrapper streams emulator logcat to `build/reports/instrumentation/logcat/`
-while Gradle owns the device. It gives the native command a 15-minute deadline
-within a 20-minute test step and 25-minute job budget so timeout diagnostics can finish before job
-termination. Nonzero exits, timeout and cancellation remain failures. CI also
-requires all ten distinct native cases with no failures, errors or skips.
-CI retains these outputs and the Gradle execution log for seven days in
-`android-instrumentation-api35-<revision>` artifacts. Reruns append
-`-attempt-<number>` so earlier diagnostics remain available.
+The emulator requires read/write access to `/dev/kvm` and port 5580. CI retains
+the unsigned APK and mapping for seven days. The
+`android-release-smoke-api35-<revision>` artifact contains the signed APK,
+payload verification receipt, UI hierarchy and emulator diagnostics.
 
 ## Components and Authority
 
@@ -443,13 +447,15 @@ selections, failed saves, retry, readback and retired work. PaletteColorsTest re
 mode/palette combinations from generated resources; LegacyLanguageSettingsTest
 exercises pre-Android13 app-language changes through the real Activity.
 Add modules and shared helpers for actual application boundaries.
-SessionModelTest also holds the workspace response to exercise cached
-appearance, confirmation and account and workspace isolation.
+SessionModelTest holds workspace responses to exercise cached appearance,
+confirmation and account and workspace isolation. PendingWorkspaceRootTest
+holds access, workspace metadata and chat sync to verify the first display with
+and without cached chats, along with late access removal.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
-vector retains the geometry from `ios/Assets/AppIcon.svg`. Native navigation
-vectors use Lucide geometry; its shared license is also packaged under
-`assets/licenses`. No runtime font or icon download is needed.
+vector retains the geometry from `ios/Assets/AppIcon.svg`. App controls use
+locally packaged [Material Symbols Outlined](../docs/android/android-development.md#interface-icons)
+and ship their license under `assets/licenses`.
 
 ## CI and Distribution
 
@@ -460,17 +466,14 @@ production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
 assets. One job runs the JVM tests and lint, then uploads the Debug APK for seven
-days. A separate Linux/KVM job uses the production unsigned-build script to
-assemble and verify the optimized Release APK, then runs the instrumented suite
-against its signed counterpart on the managed API 35 phone. That job also uploads
-the unsigned APK and compressed R8 map for seven days.
+days. Two separate Linux/KVM jobs run the Debug device integration tests and
+the Release smoke tests. The Release job uploads the unsigned APK and compressed
+R8 map for seven days.
 The final `ci-gate-android` check always reports an aggregate result. For
-non-release changes it requires successful change detection and both selected
-JVM/build and instrumentation jobs to succeed; only explicit unselected results
-permit skipped native checks.
-Cancellation, failure or an unexpected skip fails the gate. Emulator functional
-evidence does not establish OEM input-method behavior or physical-device startup
-budgets.
+non-release changes it requires successful change detection and all three jobs
+to pass when Android checks are selected. Cancellation, failure or an unexpected
+skip fails the gate. Emulator functional evidence does not establish OEM
+input-method behavior or physical-device startup budgets.
 
 The shared security workflow retains Semgrep scanning. Its result handler
 recognizes the intentionally public MAIN/LAUNCHER only after the strict source
@@ -490,7 +493,9 @@ from its source (`git rev-list --count HEAD`), generated by
 `scripts/version-code.sh`. Tasks that consume version metadata, including manifest
 and BuildConfig generation, require complete Git history (`git fetch --unshallow`
 for a shallow clone). Configuration and dependency-only queries do not calculate
-the version code. Release sources advance along `main` without
+the version code. CI checks dependency discovery on a shallow checkout when Gradle,
+version inputs, or the selecting workflow and scripts change, and on manual runs.
+Release sources advance along `main` without
 rewriting history so subsequent APK codes increase; rebuilding the same commit
 keeps the same code. Upgrade policy compares numeric components of `version`,
 independently of this Android installation identifier.
@@ -502,14 +507,22 @@ and dependency-provided consumer rules. Debug stays unoptimized. Run
 `app/build/outputs/mapping/release/mapping.txt` is required to retrace obfuscated
 stack traces; the release job publishes a versioned `.txt.gz` copy alongside the
 APK. Decompress that file with `gzip -d` before retracing a production stack trace.
-Add narrowly scoped rules under `app/src/main/keepRules/*.keep` only when an
-actual reflection/JNI or separately loaded instrumentation boundary requires them.
+Add narrowly scoped rules under `app/src/main/keepRules/*.keep` only when a
+runtime boundary such as reflection or JNI requires them.
 
-When native Release tests fail or are cancelled, CI retains their original diagnostics and runs
-the matching AGP Retrace against both app and test-driver logs. It validates the
-actual signed tested APK's R8 marker against the compressed mapping's compiler version and map ID,
-and verifies the mapping hash before restoring frames. Restored logs and byte
-identity receipts live under `build/reports/retraced/`. For a downloaded crash:
+The Release smoke artifact keeps separate `cold-start/` and `relaunch/` evidence.
+Each directory records the launcher response, latest UI probe and last readable
+hierarchy from that launch. On failure CI also attempts to capture foreground
+activity state and a screenshot before the emulator stops.
+
+CI retains the original Release smoke diagnostics before starting its separate
+retrace job. On failure it extracts app Java crash stacks from logcat and runs the
+matching R8 version from Google Maven with a 30-second command budget. It validates
+the tested APK's R8 marker and the mapping's version, map ID and content hash.
+When a crash stack is available, the separate restored-stack artifact includes
+the extracted input, output and identity receipt. The Android gate uses the
+original smoke result independently of retrace. A downloaded crash can be
+retraced locally with the matching APK and map.
 
 ```bash
 python3 scripts/retrace-release.py app.apk version-mapping.txt.gz crash.txt retraced
@@ -528,6 +541,21 @@ or conflicting mappings block update discovery. The job then uploads
 `okou-android-X.Y.Z.apk` to that release. The compatibility gate recognizes
 publication only after the APK upload completes. Store processing is not part
 of this distribution path.
+
+### Crash reporting
+
+Provision the Android project `android` in the `okou` Sentry organization and
+set the repository variable `SENTRY_DSN_ANDROID` to its public DSN. The production
+`SENTRY_AUTH_TOKEN` must have mapping upload access to that project. The signed
+APK carries the Sentry mapping UUID. The release job uploads the verified R8 map
+under that UUID before publishing the R2 update.
+
+Local Release builds can use the same public DSN through `SENTRY_DSN_ANDROID`.
+An unset DSN disables reporting on local builds. Debug and instrumentation test
+hosts skip initialization. For one-time acceptance, use a local minified Release
+build and upload its matching map with `scripts/upload-sentry-mapping.py`. Trigger
+a controlled uncaught exception in the local build, then verify its restored
+frames and the version and build in Sentry.
 
 ### Release Signing
 
@@ -586,13 +614,15 @@ release; only its exact GET recovery path bypasses installed-client exclusion.
 The release and `minimumSupportedVersion` use stable `x.y.z` versions, comparing
 each numeric component. APK `versionCode` is internal build/installation metadata
 and is absent from both the public response and the R2 manifest.
-Optional announcements follow available versions and the user's per-release
-deferral. Manual and required-update recovery remain available. Automatic checks
-run on foreground without holding the first native frame, at most once per day
-after success.
+Optional releases appear in the chat-list toolbar and app update settings.
+Required updates own the full-screen recovery flow. Automatic checks run on
+foreground without holding the first native frame and reuse successful discovery
+for 10 minutes, including across process restarts.
 
-Startup revalidates a saved package before offering download or installation
-actions. The last successful discovery and its timestamp are restored together.
+Startup retains and revalidates an eligible pending APK for the current
+installed version. It removes other updater-owned APKs, including the package
+left behind after an upgrade. The last successful discovery and its timestamp
+are restored together.
 Each transfer and installer action stays bound to its presented package; a click
 during preparation is not queued against a later version or recovery result.
 
@@ -654,7 +684,7 @@ separate evidence; a configured Secret name proves only its presence.
 
 The native text composer reads and saves the same server draft as Web. Existing
 conversations use their thread ID; My Okou and Project new-chat editors share the
-default agent draft. Project selection only changes the new conversation context.
+workspace composer draft. Project selection only changes the new conversation context.
 Draft GET does not delay the initial screen. Edits persist locally before PATCH,
 with Web's 500ms debounce and immediate explicit clears. Requests are serialized
 per target, and delayed hydration/save completions cannot replace newer local
@@ -671,6 +701,15 @@ and local text stays on this device. Retry rechecks the server before saving.
 Foreground/manual opening refreshes a clean editor; automatic live draft events
 remain later work. Sending and clearing a saved draft are separate operations;
 uncertain submissions retain their original identities and never replay on open.
+
+A sent text draft appears in the conversation immediately using its frozen input
+ID. The first send opens the timeline with its allocated thread ID while creation
+and list catch-up run. The editor keeps its recovery controls until the first send
+and chat row are confirmed. Canonical history replaces the local bubble by input
+ID, including rejection and revocation. The existing journal restores unresolved
+input after recreation. Receipt-backed bubbles stay in workspace memory until
+history arrives, with confirmed messages read from canonical history after process
+restart.
 
 Focused JVM/controlled HTTPS tests cover Web codec/204 responses, held hydration,
 serialized edits/clears, offline store reopening and send/recovery preservation.
@@ -839,7 +878,7 @@ pnpm -F @okouai/api-contracts lint-android-api-consumption
 Generation/checking also owns test-only chat read fixtures under
 `app/src/test/kotlin/ai/okou/android/api/fixtures` and
 `app/src/test/resources/api-bindings`. They are derived from the real canonical
-snapshot, lifecycle, indicator, agent, project and persisted-archive schemas.
+snapshot, lifecycle, indicator, Project and persisted-archive schemas.
 `ChatReadBindingsTest` compiles/decodes those generated types with the existing
 kotlinx.serialization and Retrofit/MockWebServer setup, including branch rejection,
 nullable/empty values and optional query construction. The archive fixture uses

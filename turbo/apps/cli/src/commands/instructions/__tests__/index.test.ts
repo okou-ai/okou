@@ -14,7 +14,7 @@ const saved = {
   version: "opaque-version-1",
 };
 
-function runToken(singleAgent?: true): string {
+function runToken(): string {
   return `vm0_sandbox_e30.${Buffer.from(
     JSON.stringify({
       scope: "okou",
@@ -22,7 +22,6 @@ function runToken(singleAgent?: true): string {
       orgId: saved.orgId,
       runId: "run-one",
       capabilities: ["instructions:read", "instructions:write"],
-      ...(singleAgent ? { singleAgent } : {}),
     }),
   ).toString("base64url")}.signature`;
 }
@@ -48,7 +47,7 @@ describe("personal Instructions CLI", () => {
     current = { ...saved };
     writes = [];
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", runToken(true));
+    vi.stubEnv("OKOU_TOKEN", runToken());
     vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
@@ -168,15 +167,12 @@ describe("personal Instructions CLI", () => {
     expect(stdout).not.toHaveBeenCalled();
   });
 
-  it.each(["--user", "--agent"])(
-    "rejects impersonation target %s before a write",
-    async (flag) => {
-      await expect(
-        run("edit", "--file", "unused", flag, "someone-else"),
-      ).rejects.toThrow();
-      expect(writes).toEqual([]);
-    },
-  );
+  it("rejects an impersonation target before a write", async () => {
+    await expect(
+      run("edit", "--file", "unused", "--user", "someone-else"),
+    ).rejects.toThrow();
+    expect(writes).toEqual([]);
+  });
 
   it("rejects mutually exclusive raw and JSON output", async () => {
     await expect(run("view", "--raw", "--json")).rejects.toThrow();
@@ -184,33 +180,9 @@ describe("personal Instructions CLI", () => {
     expect(stdout).not.toHaveBeenCalled();
   });
 
-  it("keeps captured enabled and legacy Run modes despite opposite live flags", async () => {
-    let featureReads = 0;
-    server.use(
-      http.get("*/api/feature-switches", () => {
-        featureReads++;
-        return HttpResponse.json({
-          switches: {},
-          effectiveSwitches: { singleAgent: true },
-        });
-      }),
-    );
-    await run("view", "--json");
-    vi.stubEnv("OKOU_TOKEN", runToken());
-    await expect(run("view", "--json")).rejects.toThrow("exit");
-    expect(featureReads).toBe(0);
-    expect(log).toHaveBeenCalledTimes(1);
-  });
-
   it("uses authenticated member mode outside a Run and surfaces API authorization failure", async () => {
     vi.stubEnv("OKOU_TOKEN", "member-token");
     server.use(
-      http.get("*/api/feature-switches", () => {
-        return HttpResponse.json({
-          switches: {},
-          effectiveSwitches: { singleAgent: true },
-        });
-      }),
       http.get("*/api/instructions", () => {
         return HttpResponse.json(
           { error: { code: "FORBIDDEN", message: "Membership revoked" } },

@@ -71,25 +71,11 @@ impl SystemLogState {
 
 fn write_line_with_newline(writer: &mut impl Write, line: &str) -> io::Result<()> {
     let mut bufs = [IoSlice::new(line.as_bytes()), IoSlice::new(b"\n")];
-    let mut bufs = &mut bufs[..];
-
-    while !bufs.is_empty() {
-        let written = match writer.write_vectored(bufs) {
-            Ok(written) => written,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(error),
-        };
-        if written == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::WriteZero,
-                "failed to write system log line",
-            ));
-        }
-
-        IoSlice::advance_slices(&mut bufs, written);
-    }
-
-    Ok(())
+    guest_contracts::log_append::write_all_vectored(
+        writer,
+        &mut bufs,
+        "failed to write system log line",
+    )
 }
 
 fn open_system_log_file(path: &Path) -> std::io::Result<File> {

@@ -7,7 +7,6 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockPrivateUrlSequence } from "./chat-attachment-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
-  ADA_AGENT_ID,
   findFastControl,
   queryFastControl,
   createMessageExperienceHelpers,
@@ -17,14 +16,13 @@ const context = testContext();
 const { installMessageExperienceChat } =
   createMessageExperienceHelpers(context);
 
-test("Loading older messages restores agent references and attachment navigation", async () => {
+test("Loading older messages restores attachment navigation", async () => {
   const firstImageUrl = "https://example.com/history-first.png";
   const secondImageUrl = "https://example.com/history-second.png";
   const historicalDocument = {
     version: 1,
     parts: [
-      { type: "text", text: "Historical launch notes for " },
-      { type: "agent", agentId: ADA_AGENT_ID, nameSnapshot: "Ada" },
+      { type: "text", text: "Historical launch notes" },
       {
         type: "file",
         fileId: "history-first",
@@ -83,7 +81,6 @@ test("Loading older messages restores agent references and attachment navigation
   await expect(
     screen.findByText("History answer 12"),
   ).resolves.toBeInTheDocument();
-  expect(queryFastControl("link", "Open agent Ada")).toBeNull();
   expect(queryFastControl("link", "Preview history-first.png")).toBeNull();
   const container = document.querySelector<HTMLElement>(
     `[data-chat-thread-container-id="${context.resourceId}"] [data-scroll-container]`,
@@ -94,16 +91,13 @@ test("Loading older messages restores agent references and attachment navigation
   Object.defineProperties(container, {
     clientHeight: { configurable: true, value: 300 },
     scrollHeight: { configurable: true, value: 2400 },
-    scrollTop: { configurable: true, value: 40, writable: true },
+    scrollTop: { configurable: true, value: 2100, writable: true },
   });
   fireEvent.scroll(container);
+  fireEvent.wheel(container, { deltaY: -2060 });
+  container.scrollTop = 40;
+  fireEvent.scroll(container);
 
-  const mention = await findFastControl("link", "Open agent Ada");
-  expect(mention).toHaveAttribute("href", `/agents/${ADA_AGENT_ID}/chat`);
-  expect(mention.querySelector("img")).toHaveAttribute(
-    "src",
-    "https://cdn.vm7.io/avatars/ada.png",
-  );
   const preview = await findFastControl("link", "Preview history-first.png");
   click(preview);
 

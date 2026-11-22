@@ -4,6 +4,7 @@ import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   bankingContract,
   bankingUserContract,
+  bankingWorkspaceContract,
 } from "@okouai/api-contracts/contracts/banking";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -46,6 +47,7 @@ interface BankingFixture {
 }
 
 interface BankingFixtureArgs {
+  readonly grantOnAnotherAgent?: boolean;
   readonly triggerSource?: (typeof UNATTENDED_TRIGGER_SOURCES)[number];
   readonly featureSwitchEnabled?: boolean;
   readonly bankingEnabledAtLaunch?: boolean;
@@ -89,7 +91,12 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   const workflows = createWorkflowsBddApi(context);
   const run =
     args.triggerSource === "automation-event"
-      ? await workflows.startEventAutomationRun(actor, agent.agentId)
+      ? await workflows.startEventAutomationRun(
+          actor,
+          await bdd.bootstrapLimitedFreeOnboarding(actor, {
+            displayName: "Okou",
+          }),
+        )
       : await api.createThreadRun(actor, {
           agentId: agent.agentId,
           prompt: "banking precondition",
@@ -248,11 +255,19 @@ async function connectBankingFixture(
   if (!accountId) {
     throw new Error("Expected a publicly connected banking account");
   }
+  const grantAgentId = args.grantOnAnotherAgent
+    ? (
+        await createBddApi(context).createAgent(actor, {
+          displayName: "Historical authorization",
+          visibility: "private",
+        })
+      ).agentId
+    : agentId;
   await accept(
     client.saveAgentGrant({
       headers,
       body: {
-        agentId,
+        agentId: grantAgentId,
         accountIds: [accountId],
         duration: "7d",
         purpose: "Read the connected checking account",
@@ -331,8 +346,8 @@ describe("/api/banking/*", () => {
     expect(authRequestCount).toBe(0);
   });
 
-  it("lists only accounts enabled for the current agent", async () => {
-    const fixture = await connectBankingFixture();
+  it("honors another historical agent grant for the same member and filters accounts", async () => {
+    const fixture = await connectBankingFixture({ grantOnAnotherAgent: true });
     let accountsRequestHeaders: Headers | undefined;
     server.use(
       finicityAuthHandler(),
@@ -833,11 +848,11 @@ describe("banking access request lifecycle", () => {
     const client = setupApp({ context, routes: bankingRoutes })(
       bankingUserContract,
     );
+    const workspaceClient = setupApp({ context, routes: bankingRoutes })(
+      bankingWorkspaceContract,
+    );
     const status = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-        params: { agentId: fixture.agentId },
-      }),
+      workspaceClient.accessRequestStatus({ headers: sessionHeaders() }),
       [200],
     );
     const accountId = status.body.connection?.accounts[0]?.id;
@@ -846,10 +861,9 @@ describe("banking access request lifecycle", () => {
     }
 
     const saved = await accept(
-      client.saveAgentGrant({
+      workspaceClient.saveGrant({
         headers: sessionHeaders(),
         body: {
-          agentId: fixture.agentId,
           accountIds: [accountId],
           duration: "7d",
           purpose: "Review recent household spending",
@@ -876,9 +890,9 @@ describe("banking access request lifecycle", () => {
     expect(savedStatus.body.connection).toStrictEqual(saved.body.connection);
 
     const revoked = await accept(
-      client.revokeAgentGrant({
+      workspaceClient.revokeGrant({
         headers: sessionHeaders(),
-        body: { agentId: fixture.agentId },
+        body: {},
       }),
       [200],
     );

@@ -9,8 +9,6 @@ const binding = object({
   revision: number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   deviceToken: apnsToken,
   environment: zEnum(["production", "sandbox"]),
-  /** Accepted for compatibility with builds that still send a widget token. */
-  widgetPushToken: apnsToken.optional(),
 });
 const responses = {
   200: object({ success: literal(true) }),

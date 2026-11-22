@@ -201,6 +201,22 @@ class HistoryProjectionTest {
     }
 
     @Test
+    fun queuedAutomationWithoutAUserDocumentKeepsItsActionTarget() {
+        val queued = event("automation", 1, "input.automation", run = null)
+        val pending = transcript(queued)
+        assertEquals(listOf(queued.id), pending.queuedEventIds)
+        val message = pending.messages.single()
+        assertEquals(queued.id, message.id)
+        assertTrue(message.queued)
+        assertTrue(message.blocks.isEmpty())
+
+        val delivered = event("delivered", 2, "input.automation", revoke = queued.id)
+        val consumed = transcript(queued, delivered)
+        assertTrue(consumed.queuedEventIds.isEmpty())
+        assertTrue(consumed.messages.isEmpty())
+    }
+
+    @Test
     fun internalInputsDoNotBecomeUserTurnsAndAutomationErrorsRemainVisible() {
         val scheduled =
             """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Scheduled work"}]}}"""

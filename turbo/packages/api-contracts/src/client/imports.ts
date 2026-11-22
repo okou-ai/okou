@@ -3,18 +3,8 @@
 
 export const clientContractImportManifest = [
   {
-    module: "agent-connector-access",
-    contracts: ["agentConnectorAccessContract"],
-    bindings: [],
-  },
-  {
-    module: "agent-custom-connectors",
-    contracts: ["agentCustomConnectorsContract"],
-    bindings: [],
-  },
-  {
     module: "agent-draft",
-    contracts: ["agentDraftContract"],
+    contracts: ["agentDraftContract", "composerDraftContract"],
     bindings: [
       {
         name: "agentDraftResponseSchema",
@@ -133,6 +123,7 @@ export const clientContractImportManifest = [
       "bankingContract",
       "bankingPublicContract",
       "bankingUserContract",
+      "bankingWorkspaceContract",
     ],
     bindings: [],
   },
@@ -300,7 +291,7 @@ export const clientContractImportManifest = [
       "chatThreadConnectorSelectionContract",
       "chatThreadDraftContract",
       "chatThreadEventsContract",
-      "chatThreadMarkAgentReadContract",
+      "chatThreadMarkAllReadContract",
       "chatThreadMarkReadContract",
       "chatThreadMarkUnreadContract",
       "chatThreadMetadataContract",
@@ -589,11 +580,6 @@ export const clientContractImportManifest = [
         imported: "connectorAccountTargetSchema",
       },
     ],
-  },
-  {
-    module: "connector-agent-access",
-    contracts: ["connectorAgentAccessContract"],
-    bindings: [],
   },
   {
     module: "connector-catalog",
@@ -1240,7 +1226,17 @@ export const clientContractImportManifest = [
   },
   {
     module: "mcp-chat-search",
-    contracts: ["mcpChatSearchContract"],
+    contracts: ["mcpProjectChatSearchContract"],
+    bindings: [],
+  },
+  {
+    module: "mcp-chat-snapshots",
+    contracts: ["mcpThreadSnapshotContract"],
+    bindings: [],
+  },
+  {
+    module: "mcp-chat-tools",
+    contracts: ["mcpChatCommandContract"],
     bindings: [],
   },
   {
@@ -1443,22 +1439,6 @@ export const clientContractImportManifest = [
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
     bindings: [],
-  },
-  {
-    module: "proactive-nightly",
-    contracts: ["proactiveLearningContract"],
-    bindings: [
-      {
-        name: "PROACTIVE_LEARNING_BLUEPRINT_KEY",
-        source: "contracts/proactive",
-        imported: "PROACTIVE_LEARNING_BLUEPRINT_KEY",
-      },
-      {
-        name: "PROACTIVE_LEARNING_DEFINITION_NAME",
-        source: "contracts/proactive",
-        imported: "PROACTIVE_LEARNING_DEFINITION_NAME",
-      },
-    ],
   },
   {
     module: "proactive-suggestions",
@@ -1957,6 +1937,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "transcribe",
+    contracts: ["transcribeContract"],
+    bindings: [],
+  },
+  {
     module: "uploads",
     contracts: ["uploadsContract"],
     bindings: [],
@@ -1972,11 +1957,6 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
-    module: "user-connectors",
-    contracts: ["userBuiltinConnectorsContract"],
-    bindings: [],
-  },
-  {
     module: "user-export",
     contracts: ["userExportContract"],
     bindings: [],
@@ -1985,27 +1965,6 @@ export const clientContractImportManifest = [
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
     bindings: [],
-  },
-  {
-    module: "user-permission-grants",
-    contracts: ["userPermissionGrantsContract"],
-    bindings: [
-      {
-        name: "userPermissionGrantBatchItemSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantBatchItemSchema",
-      },
-      {
-        name: "userPermissionGrantBatchItemsSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantBatchItemsSchema",
-      },
-      {
-        name: "userPermissionGrantExpiresInSchema",
-        source: "validators/user-permission-grants",
-        imported: "userPermissionGrantExpiresInSchema",
-      },
-    ],
   },
   {
     module: "user-preferences",

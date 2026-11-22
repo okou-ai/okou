@@ -49,7 +49,6 @@ describe("okou chat get command", () => {
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: "claude-sonnet-5",
           modelSettings: { "claude-sonnet-5": { effort: "extra" } },
@@ -65,7 +64,6 @@ describe("okou chat get command", () => {
     expect(output).toContain(
       `URL:    [Open chat](http://localhost:3000/chats/${THREAD_ID})`,
     );
-    expect(output).toContain(`Agent:  ${AGENT_ID}`);
     expect(output).toContain("Title:  Launch plan");
     expect(output).toContain(
       "Model:  Claude Sonnet 5 (claude-sonnet-5) · effort extra",
@@ -77,7 +75,6 @@ describe("okou chat get command", () => {
       http.get(GET_URL, () => {
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: "gpt-6-sol",
           modelSettings: {},
@@ -116,7 +113,6 @@ describe("okou chat get command", () => {
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
       {
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Launch plan",
         selectedModel: "claude-sonnet-5",
         hidden: true,
@@ -130,7 +126,6 @@ describe("okou chat get command", () => {
       http.get(GET_URL, () => {
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: null,
           selectedModel: null,
         });
@@ -150,7 +145,6 @@ describe("okou chat get command", () => {
       http.get(GET_URL, () => {
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: "Legacy thread",
           selectedModel: "claude-opus-4-8",
         });
@@ -172,7 +166,6 @@ describe("okou chat get command", () => {
       http.get(OTHER_GET_URL, () => {
         return HttpResponse.json({
           id: OTHER_THREAD_ID,
-          agentId: AGENT_ID,
           title: "Delegation source",
           selectedModel: "claude-sonnet-5",
         });

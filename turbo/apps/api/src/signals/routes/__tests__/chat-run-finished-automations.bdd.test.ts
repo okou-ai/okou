@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { randomUUID } from "node:crypto";
@@ -64,25 +65,19 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
   const runnerGroup = await api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
+  const { defaultAgentId: agentId } = await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   // Completion and queue fixtures use the retained native Claude route.
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Chat run finished automation agent",
-    description: "Exercises chat-run-finished automation dispatch.",
-    visibility: "private",
-  });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId: agent.agentId,
     name: "chat-run-finished-workflow",
   });
   context.mocks.s3.send.mockResolvedValue({});
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId: agent.agentId,
+    agentId,
     providerId,
     workflowId,
     runnerGroup,
@@ -105,9 +100,6 @@ function ownAutomationRuns(
         );
       }
     },
-    afterRuns: async () => {
-      await bdd.deleteAgent(fixture.actor, fixture.agentId);
-    },
   });
 }
 
@@ -126,7 +118,6 @@ async function createChatRunFinishedAutomation(
   options: { readonly workflowChatThreadId?: string } = {},
 ): Promise<string> {
   const workflowId = await wf.createWorkflow(fixture.actor, {
-    agentId: fixture.agentId,
     name: `crf-${randomUUID().slice(0, 8)}`,
     ...(options.workflowChatThreadId
       ? { chatThreadId: options.workflowChatThreadId }
@@ -181,7 +172,6 @@ async function startWatchedChatRun(
   const sent = await chat.requestSendEvent(
     fixture.actor,
     {
-      agentId: fixture.agentId,
       prompt,
       clientEventId: randomUUID(),
       model,
@@ -294,11 +284,7 @@ async function expectAutomationSourceAnnotation(
       event.eventType === "input.prompt" &&
       event.runId !== undefined &&
       event.userMessage.parts.some((part) => {
-        return (
-          part.type === "source" &&
-          part.kind === "agent" &&
-          part.runId === sourceRun.runId
-        );
+        return part.type === "chat_thread" && part.runId === sourceRun.runId;
       })
     );
   });
@@ -313,17 +299,18 @@ async function expectAutomationSourceAnnotation(
   }
   expect(
     automationInput.userMessage.parts.filter((part) => {
-      return part.type === "source" || part.type === "automation";
+      return (
+        part.type === "source" ||
+        part.type === "automation" ||
+        isChatRunReference(part)
+      );
     }),
   ).toStrictEqual([
     {
-      type: "source",
-      kind: "agent",
+      type: "chat_thread",
       runId: sourceRun.runId,
       threadId: sourceRun.threadId,
-      agentId: fixture.agentId,
       titleSnapshot: WATCHED_THREAD_TITLE,
-      href: `/chats/${sourceRun.threadId}#run-${sourceRun.runId}`,
     },
   ]);
   return {
@@ -336,7 +323,6 @@ describe("chat-run-finished workflow automations", () => {
   it("shares one created destination across concurrent creates and rebinds after deletion", async () => {
     const fixture = await setupChatAutomationFixture();
     const watched = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
       model: null,
     });
     const create = async () => {
@@ -443,12 +429,11 @@ describe("chat-run-finished workflow automations", () => {
       orgId: fixture.actor.orgId ?? undefined,
       orgRole: "org:member",
     });
-    const otherAgent = await bdd.createAgent(otherUser, {
+    await bdd.createAgent(otherUser, {
       displayName: "Other member agent",
       visibility: "private",
     });
     const otherThread = await chat.createThread(otherUser, {
-      agentId: otherAgent.agentId,
       model: null,
     });
     // Restore the fixture actor's session after acting as the other member.
@@ -475,11 +460,9 @@ describe("chat-run-finished workflow automations", () => {
   it("prevents a workflow from watching its own chat thread", async () => {
     const fixture = await setupChatAutomationFixture();
     const workflowThread = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
       model: null,
     });
     const workflowId = await wf.createWorkflow(fixture.actor, {
-      agentId: fixture.agentId,
       name: `self-watching-${randomUUID().slice(0, 8)}`,
       chatThreadId: workflowThread.id,
     });

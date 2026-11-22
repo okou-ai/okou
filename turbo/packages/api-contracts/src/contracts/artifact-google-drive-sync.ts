@@ -11,7 +11,6 @@ import {
 export const chatThreadArtifactGoogleDriveRecoverySchema = discriminatedUnion(
   "action",
   [
-    object({ action: literal("authorize") }),
     object({ action: literal("connect") }),
     object({
       action: literal("reconnect"),
@@ -21,20 +20,11 @@ export const chatThreadArtifactGoogleDriveRecoverySchema = discriminatedUnion(
   ],
 );
 
-const chatThreadArtifactGoogleDriveAccountReadyShape = {
-  /**
-   * Emitted after the thread account, credentials, and agent authorization
-   * resolve. The disconnected variant carries no readiness marker.
-   */
-  accountReady: literal(true),
-};
-
 export const chatThreadArtifactGoogleDriveSyncSchema = discriminatedUnion(
   "status",
   [
     object({
       status: literal("synced"),
-      ...chatThreadArtifactGoogleDriveAccountReadyShape,
       id: string(),
       name: string(),
       webViewLink: string().nullable(),
@@ -43,7 +33,6 @@ export const chatThreadArtifactGoogleDriveSyncSchema = discriminatedUnion(
     }),
     object({
       status: literal("not_synced"),
-      ...chatThreadArtifactGoogleDriveAccountReadyShape,
     }),
     object({
       status: literal("disconnected"),
@@ -51,7 +40,6 @@ export const chatThreadArtifactGoogleDriveSyncSchema = discriminatedUnion(
     }),
     object({
       status: literal("unknown"),
-      ...chatThreadArtifactGoogleDriveAccountReadyShape,
     }),
   ],
 );

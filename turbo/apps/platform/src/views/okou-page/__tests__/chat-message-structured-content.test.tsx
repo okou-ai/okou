@@ -8,10 +8,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  ADA_AGENT_ID,
   findFastControl,
-  MESSAGE_EXPERIENCE_AGENT_ID,
-  SOURCE_AGENT_ID,
   createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
 
@@ -43,51 +40,6 @@ function assertBefore(first: Element, second: Element): void {
     first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).not.toBe(0);
 }
-
-test("Agent mentions are recognizable links in messages and feedback", async () => {
-  const userMessage = {
-    version: 1,
-    parts: [
-      { type: "text", text: "Ask " },
-      { type: "agent", agentId: ADA_AGENT_ID, nameSnapshot: "Ada" },
-      { type: "text", text: " to review this." },
-      {
-        type: "feedback",
-        quote: "The launch plan needs a second look.",
-        note: [
-          { type: "text", text: "Please have " },
-          { type: "agent", agentId: ADA_AGENT_ID, nameSnapshot: "Ada" },
-          { type: "text", text: " check the dates." },
-        ],
-      },
-    ],
-  } satisfies UserMessageDocument;
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: [userEventWith(userMessage)],
-  });
-
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
-
-  const message = await waitFor(() => {
-    const element = documentRoot();
-    expect(element).toHaveTextContent("Ask Ada to review this.");
-    return element;
-  });
-  const mentions = queryAllByRoleFast("link", message).filter((link) => {
-    return link.getAttribute("aria-label") === "Open agent Ada";
-  });
-  expect(mentions).toHaveLength(2);
-  for (const mention of mentions) {
-    expect(mention).toHaveAttribute("href", `/agents/${ADA_AGENT_ID}/chat`);
-    expect(mention).toHaveTextContent("Ada");
-    expect(mention.querySelector("img")).toHaveAttribute(
-      "src",
-      "https://cdn.vm7.io/avatars/ada.png",
-    );
-  }
-  expect(message).not.toHaveTextContent(ADA_AGENT_ID);
-});
 
 test("MCP messages show the saved client name or generic marker with a local icon", async () => {
   const named = {
@@ -171,13 +123,11 @@ test("Delegated work links back to its source run", async () => {
     version: 1,
     parts: [
       {
-        type: "source",
-        kind: "agent",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
-        agentId: SOURCE_AGENT_ID,
+
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
       { type: "text", text: "Prepare the delegated launch analysis." },
     ],
@@ -195,10 +145,7 @@ test("Delegated work links back to its source run", async () => {
     "href",
     `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
   );
-  expect(sourceLink.querySelector("img")).toHaveAttribute(
-    "src",
-    "https://cdn.vm7.io/avatars/source-agent.png",
-  );
+  expect(sourceLink.querySelector("img")).not.toBeInTheDocument();
   const prompt = await screen.findByText(
     "Prepare the delegated launch analysis.",
   );
@@ -285,13 +232,11 @@ test("Forwarded feedback names its source chat", async () => {
         note: [],
       },
       {
-        type: "source",
-        kind: "agent",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
-        agentId: SOURCE_AGENT_ID,
+
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
     ],
   } satisfies UserMessageDocument;
@@ -358,13 +303,11 @@ async function openStructuredContextChat() {
     version: 1,
     parts: [
       {
-        type: "source",
-        kind: "agent",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
-        agentId: SOURCE_AGENT_ID,
+
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
       {
         type: "file",
@@ -384,14 +327,14 @@ async function openStructuredContextChat() {
     {
       id: context.resourceId,
       title: "Delegated work",
-      agent: { id: MESSAGE_EXPERIENCE_AGENT_ID, avatarUrl: null },
+
       createdAt: CREATED_AT,
       updatedAt: "2026-08-20T12:02:00.000Z",
     },
     {
       id: SECOND_THREAD_ID,
       title: "Companion chat",
-      agent: { id: MESSAGE_EXPERIENCE_AGENT_ID, avatarUrl: null },
+
       createdAt: CREATED_AT,
       updatedAt: "2026-08-20T12:01:00.000Z",
     },
@@ -409,9 +352,9 @@ async function openStructuredContextChat() {
 
 test("Structured message context survives navigation away and back", async () => {
   await openStructuredContextChat();
-  fireEvent.click(await findFastControl("link", "Agents"));
+  fireEvent.click(await findFastControl("link", "Workflows"));
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
   window.history.back();
   await waitFor(() => {

@@ -3,7 +3,6 @@ import Synchronization
 
 /// External API fixture shared by data-boundary and native transcript tests.
 public final class PermissionHTTPFixture: Sendable {
-  public static let agentID = "61000000-0000-4000-8000-000000000001"
   public static let threadID = "61000000-0000-4000-8000-000000000002"
   public static let messageID = "61000000-0000-4000-8000-000000000003"
   public struct State: Sendable {
@@ -12,7 +11,7 @@ public final class PermissionHTTPFixture: Sendable {
     public var metadataStatus = 200
     public var permission = "mail.send"
     public var defaultPolicy = "ask"
-    public var threadAgentID = PermissionHTTPFixture.agentID
+    public var metadataThreadID = PermissionHTTPFixture.threadID
     public var failApplyOnce = false
     public var loseApplyResponseOnce = false
     public var loseResumeResponseOnce = false
@@ -34,7 +33,8 @@ public final class PermissionHTTPFixture: Sendable {
     action: String = "allow", permission: String = "mail.send", callback: Bool = true,
     duration: String = "1h"
   ) -> String {
-    "/agents/\(agentID)/permissions?connectorSlug=gmail&permission=\(permission)&action=\(action)&expiresIn=\(duration)"
+    "/connectors/permissions?orgId=\(ChatHTTPFixture.workspaceID)&userId=\(ChatHTTPFixture.userID)"
+      + "&connectorSlug=gmail&permission=\(permission)&action=\(action)&expiresIn=\(duration)"
       + (callback ? "&threadId=\(threadID)&callbackPrompt=Continue%20after%20permission" : "")
   }
 
@@ -54,10 +54,6 @@ public final class PermissionHTTPFixture: Sendable {
       return try state.withLock { value in
         value.requests.append(request)
         let path = request.url!.path
-        if path == "/api/feature-switches" {
-          return ChatHTTPResponse(
-            body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
-        }
         let threadPath = "/api/chat-threads/\(Self.threadID)"
         if path == threadPath + "/activity-summary" {
           let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
@@ -69,12 +65,8 @@ public final class PermissionHTTPFixture: Sendable {
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
             body: """
-              {"id":"\(Self.threadID)","agentId":"\(value.threadAgentID)","computerUseHostId":null,"cloudBrowserEnabled":false}
+              {"id":"\(value.metadataThreadID)","computerUseHostId":null,"cloudBrowserEnabled":false}
               """)
-        }
-        if path == "/api/agents/\(Self.agentID)" {
-          return ChatHTTPResponse(
-            body: "{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Mail assistant\"}")
         }
         if path == "/api/connector-catalog/gmail/permissions" {
           if value.metadataStatus != 200 {
@@ -86,12 +78,11 @@ public final class PermissionHTTPFixture: Sendable {
               {"permissions":{"connectorSlug":"gmail","label":"Gmail","permissions":[{"name":"\(value.permission)","description":"Send email from your account"}],"defaultPolicy":{"permissionDefault":"\(value.defaultPolicy)","unknownPolicy":"ask"}}}
               """)
         }
-        if path == "/api/user-permission-grants" { return ChatHTTPResponse(body: value.grants) }
-        if path == "/api/user-permission-grants/apply" {
-          return try Self.applyPermission(request, state: &value)
-        }
-        if path == threadPath + "/connector-selections" {
-          return ChatHTTPResponse(body: "{\"selections\":[]}")
+        if path == "/api/connector-permissions" {
+          if request.httpMethod == "PUT" {
+            return try Self.applyPermission(request, state: &value)
+          }
+          return Self.memberPermissions(grants: value.grants)
         }
         if path == threadPath + "/event-snapshot" {
           return ChatHTTPResponse(
@@ -161,13 +152,18 @@ public final class PermissionHTTPFixture: Sendable {
       value.loseApplyResponseOnce = false
       return Self.error(503, "Permission response lost")
     }
-    return ChatHTTPResponse(body: value.grants)
+    return Self.memberPermissions(grants: value.grants)
+  }
+
+  private static func memberPermissions(grants: String) -> ChatHTTPResponse {
+    ChatHTTPResponse(
+      body: "{\"target\":{\"kind\":\"builtin\",\"connectorSlug\":\"gmail\"},\"grants\":\(grants)}")
   }
 
   public static func grant(
     action: String = "allow", permission: String = "mail.send", expiration: String? = nil
   ) -> String {
-    "[{\"agentId\":\"\(agentID)\",\"connectorSlug\":\"gmail\",\"permission\":\"\(permission)\",\"action\":\"\(action)\",\"expiresAt\":\(expiration.map { "\"\($0)\"" } ?? "null")}]"
+    "[{\"permission\":\"\(permission)\",\"action\":\"\(action)\",\"expiresAt\":\(expiration.map { "\"\($0)\"" } ?? "null")}]"
   }
 
   private static func error(_ status: Int, _ message: String) -> ChatHTTPResponse {

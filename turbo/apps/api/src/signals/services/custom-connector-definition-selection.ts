@@ -1,4 +1,4 @@
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { customConnectorNetworkBindingSelection } from "./custom-connector-network-binding";
 import type { infer as zInfer } from "zod";
@@ -51,7 +51,6 @@ export function customConnectorDefinitionSelection() {
     mcpEndpoint: orgCustomConnectors.mcpEndpoint,
     mcpTransport: orgCustomConnectors.mcpTransport,
     skillMarkdown: orgCustomConnectors.skillMarkdown,
-    skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
     storageVersion: orgCustomConnectors.storageVersion,
     createdBy: orgCustomConnectors.createdBy,
     createdAt: orgCustomConnectors.createdAt,
@@ -88,7 +87,6 @@ export function customConnectorExecutionDefinitionSelection() {
     permissionBundleRef: orgCustomConnectors.permissionBundleRef,
     mcpEndpoint: orgCustomConnectors.mcpEndpoint,
     mcpTransport: orgCustomConnectors.mcpTransport,
-    skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
     storageVersion: orgCustomConnectors.storageVersion,
   } as const;
 }

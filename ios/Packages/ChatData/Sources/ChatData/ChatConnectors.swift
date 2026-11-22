@@ -10,6 +10,7 @@ public struct ChatConnectorAccount: Decodable, Equatable, Sendable, Identifiable
   public let externalId: String?
   public let connectionStatus: String
   public let reconnectReason: String?
+  public let missingRequiredFields: [String]?
   public var label: String {
     displayName ?? externalEmail ?? externalUsername ?? externalId ?? "Account"
   }
@@ -58,6 +59,7 @@ public struct ChatCustomConnector: Decodable, Sendable {
   public let authMode: String
   public let permissionBundleRef: String?
   public let connected: Bool?
+  public let connectedAccountId: String?
   public let oauthConfig: OAuthConfig?
   public struct OAuthConfig: Decodable, Sendable { public let providerAdapter: String }
   public struct Field: Decodable, Sendable, Identifiable {
@@ -77,15 +79,17 @@ public struct ChatConnectorStatus: Sendable {
   public let builtin: ChatBuiltinConnector?
   public let custom: ChatCustomConnector?
   public let account: ChatConnectorAccount?
-  public let authorized: Bool
   public let selected: Bool
-  public let chatAccountAccess: Bool
   public var label: String { builtin?.label ?? custom?.displayName ?? "Connector" }
+  public var mutationConnectionID: String? {
+    if let custom, custom.managed {
+      return custom.connected == true ? custom.connectedAccountId : nil
+    }
+    return account?.id
+  }
   public var connected: Bool {
     custom?.managed == true ? custom?.connected == true : account?.ready == true
   }
-  public var requiresAgentAuthorization: Bool { !chatAccountAccess && !authorized }
-  public var complete: Bool { connected && !requiresAgentAuthorization }
 }
 
 /// Operation receipts never identify an account through a mutable default projection.
@@ -118,39 +122,41 @@ public struct ChatConnectorService: Sendable {
   public init(client: APIClient) { self.client = client }
 
   public func status(_ action: ChatConnectorAction) async throws -> ChatConnectorStatus? {
-    // The thread's current Agent is authoritative, including after reassignment.
-    struct Metadata: Decodable, Sendable { let agentId: String }
     do {
       if let threadID = action.threadID {
-        let metadata: Metadata = try await client.request("/api/chat-threads/\(threadID)/metadata")
-        guard metadata.agentId.lowercased() == action.agentID.lowercased() else { return nil }
-      } else {
-        let agent: Metadata = try await client.request("/api/agents/\(action.agentID)")
-        guard agent.agentId.lowercased() == action.agentID.lowercased() else { return nil }
+        let metadata: ThreadMetadata = try await client.request(
+          "/api/chat-threads/\(threadID)/metadata")
+        guard metadata.id.lowercased() == threadID.lowercased() else { return nil }
       }
-      let enabled = try await ChatComposerAccess(client: client).chatAccountAccessEnabled()
-      return try await readStatus(action, chatAccountAccess: enabled)
+      return try await readStatus(action)
     } catch let error as APIClientError where error.statusCode == 404 { return nil }
   }
 
   private func statusAccount(
     for action: ChatConnectorAction, target: ChatConnectorTarget, exactID: String?,
-    managed: Bool, chatAccountAccess: Bool
+    custom: ChatCustomConnector?
   ) async throws -> ChatConnectorAccount? {
+    if let custom, custom.managed {
+      switch action.kind {
+      case .connect: return nil
+      case .configuration:
+        if let exactID, exactID.lowercased() != custom.connectedAccountId?.lowercased() {
+          throw APIClientError.invalidResponse
+        }
+        return nil
+      default: break
+      }
+    }
     if let exactID {
       return try await self.account(id: exactID, target: target)
     } else if case .configuration = action.kind {
       return nil
-    } else if managed {
-      return nil
     } else {
-      return try await defaultAccount(target: target, chatAccountAccess: chatAccountAccess)
+      return try await defaultAccount(target: target)
     }
   }
 
-  private func readStatus(_ action: ChatConnectorAction, chatAccountAccess: Bool) async throws
-    -> ChatConnectorStatus?
-  {
+  private func readStatus(_ action: ChatConnectorAction) async throws -> ChatConnectorStatus? {
     var builtin: ChatBuiltinConnector?
     var custom: ChatCustomConnector?
     let target: ChatConnectorTarget
@@ -188,8 +194,7 @@ public struct ChatConnectorService: Sendable {
       guard custom?.id.lowercased() == id.lowercased() else { throw APIClientError.invalidResponse }
     }
     let account = try await statusAccount(
-      for: action, target: target, exactID: exactID, managed: custom?.managed == true,
-      chatAccountAccess: chatAccountAccess)
+      for: action, target: target, exactID: exactID, custom: custom)
     if case .reconnect = action.kind {
       guard let account,
         builtin?.authMethods.contains(where: {
@@ -205,74 +210,24 @@ public struct ChatConnectorService: Sendable {
       return nil
     }
     if custom?.managed == true, custom?.connected == nil { throw APIClientError.incompatibleData }
-    let authorized = try await isAuthorized(
-      target: target, agentID: action.agentID, chatAccountAccess: chatAccountAccess)
     var selected = false
     if case .select = action.kind {
-      guard chatAccountAccess || authorized, let threadID = action.threadID else { return nil }
-      if chatAccountAccess {
-        let access = try await ChatComposerAccess(client: client).connectorAccess(
-          target: target, threadID: threadID)
-        selected = access.currentConnectionId?.lowercased() == exactID
-      } else {
-        struct Selection: Decodable, Sendable {
-          let target: ChatConnectorTarget
-          let connectionId: String
-        }
-        struct Response: Decodable, Sendable { let selections: [Selection] }
-        let response: Response = try await client.request(
-          "/api/chat-threads/\(threadID)/connector-selections")
-        selected = response.selections.contains {
-          $0.target == target && $0.connectionId.lowercased() == exactID
-        }
-      }
+      guard let threadID = action.threadID else { return nil }
+      let access = try await ChatComposerAccess(client: client).connectorAccess(
+        target: target, threadID: threadID)
+      selected = access.currentConnectionId?.lowercased() == exactID
     }
     return ChatConnectorStatus(
-      target: target, builtin: builtin, custom: custom, account: account, authorized: authorized,
-      selected: selected, chatAccountAccess: chatAccountAccess)
+      target: target, builtin: builtin, custom: custom, account: account, selected: selected)
   }
 
-  private func isAuthorized(target: ChatConnectorTarget, agentID: String, chatAccountAccess: Bool)
-    async throws -> Bool
-  {
-    if chatAccountAccess {
-      return false
-    } else if let slug = target.connectorSlug {
-      struct Response: Decodable, Sendable { let enabledConnectorSlugs: [String] }
-      let response: Response = try await client.request(
-        "/api/agents/\(agentID)/user-connectors")
-      return response.enabledConnectorSlugs.contains(slug)
-    } else {
-      struct Grant: Decodable, Sendable { let customConnectorId: String }
-      struct Response: Decodable, Sendable { let grants: [Grant] }
-      let response: Response = try await client.request(
-        "/api/agents/\(agentID)/custom-connectors")
-      return response.grants.contains {
-        $0.customConnectorId.lowercased() == target.customConnectorId?.lowercased()
-      }
+  private func defaultAccount(target: ChatConnectorTarget) async throws -> ChatConnectorAccount? {
+    var query = target.query + [URLQueryItem(name: "limit", value: "1")]
+    if target.connectorSlug != nil {
+      query.append(URLQueryItem(name: "includeScopeMismatch", value: "true"))
     }
-  }
-
-  private func defaultAccount(
-    target: ChatConnectorTarget, chatAccountAccess: Bool
-  ) async throws -> ChatConnectorAccount? {
-    struct Response: Decodable, Sendable {
-      let connections: [ChatConnectorAccount]
-      let nextCursor: String?
-      let defaultConnection: ChatConnectorAccount?
-      enum CodingKeys: String, CodingKey { case connections, nextCursor, defaultConnection }
-      // A missing nullable field cannot establish an empty account inventory.
-      init(from decoder: any Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        connections = try values.decode([ChatConnectorAccount].self, forKey: .connections)
-        nextCursor = try values.decode(String?.self, forKey: .nextCursor)
-        defaultConnection = try values.decode(
-          ChatConnectorAccount?.self, forKey: .defaultConnection)
-      }
-    }
-    let response: Response = try await client.request(
-      "/api/connector-accounts/connections",
-      query: target.query + [URLQueryItem(name: "limit", value: "1")])
+    let response: ChatConnectorAccounts = try await client.request(
+      "/api/connector-accounts/connections", query: query)
     guard
       response.connections.allSatisfy({
         $0.target == target && UUID(uuidString: $0.id) != nil
@@ -283,12 +238,8 @@ public struct ChatConnectorService: Sendable {
       guard account.target == target, UUID(uuidString: account.id) != nil else {
         throw APIClientError.invalidResponse
       }
-    } else if !chatAccountAccess, !response.connections.isEmpty || response.nextCursor != nil {
-      throw APIClientError.http(
-        status: 409,
-        message:
-          "This connector has saved accounts but no default. Choose an account on the web, then refresh."
-      )
+    } else if !response.connections.isEmpty {
+      throw ChatConnectorInputError.noDefaultAccount
     }
     return account
   }
@@ -303,59 +254,22 @@ public struct ChatConnectorService: Sendable {
     }
     return account
   }
-  public func authorize(_ action: ChatConnectorAction, status: ChatConnectorStatus) async throws {
-    guard !status.chatAccountAccess else { return }
-    if let slug = status.target.connectorSlug {
-      struct Body: Encodable {
-        let enabledConnectorSlugs: [String]
-        let operation = "add"
-      }
-      try await client.data(
-        "/api/agents/\(action.agentID)/user-connectors", method: "PUT",
-        body: JSONEncoder().encode(Body(enabledConnectorSlugs: [slug])))
-    } else if let id = status.target.customConnectorId {
-      guard status.custom?.permissionBundleRef == nil else {
-        throw APIClientError.http(
-          status: 409, message: "Authorize this connector's permissions on the web, then refresh.")
-      }
-      struct Grant: Encodable {
-        let customConnectorId: String
-        let permissionNames: [String] = []
-      }
-      struct Body: Encodable {
-        let grants: [Grant]
-        let operation = "add"
-      }
-      try await client.data(
-        "/api/agents/\(action.agentID)/custom-connectors", method: "PUT",
-        body: JSONEncoder().encode(Body(grants: [Grant(customConnectorId: id)])))
-    }
-  }
   public func select(_ action: ChatConnectorAction, status: ChatConnectorStatus) async throws {
     guard case .select(let target, let id) = action.kind, target == status.target,
       let threadID = action.threadID
     else {
       throw APIClientError.invalidResponse
     }
-    struct Body: Encodable {
-      let target: ChatConnectorTarget
-      let connectionId: String
+    let selection = ChatConnectorSelection(target: target, connectionId: id)
+    let result: ChatConnectorSelection = try await client.request(
+      "/api/chat-threads/\(threadID)/connector-account-approval", method: "POST",
+      body: JSONEncoder().encode(selection))
+    guard result.target == target, result.connectionId.lowercased() == id.lowercased() else {
+      throw APIClientError.invalidResponse
     }
-    if status.chatAccountAccess {
-      let result: ChatConnectorSelection = try await client.request(
-        "/api/chat-threads/\(threadID)/connector-account-approval", method: "POST",
-        body: JSONEncoder().encode(Body(target: target, connectionId: id)))
-      guard result.target == target, result.connectionId.lowercased() == id.lowercased() else {
-        throw APIClientError.invalidResponse
-      }
-      return
-    }
-    try await client.data(
-      "/api/chat-threads/\(threadID)/connector-selections", method: "PUT",
-      body: JSONEncoder().encode(Body(target: target, connectionId: id)))
   }
   public func start(
-    _ action: ChatConnectorAction, status: ChatConnectorStatus, method: ChatConnectorMethod?,
+    status: ChatConnectorStatus, method: ChatConnectorMethod?,
     values: [String: String], options: [String: String]
   ) async throws -> ChatConnectorReceipt {
     struct Account: Encodable {
@@ -364,20 +278,24 @@ public struct ChatConnectorService: Sendable {
     }
     struct Body: Encodable {
       let account: Account
-      let agentId: String?
-      var authorizeAgent: Bool?
-      var authMethod: String?
+      let authMethod: String
+      var callbackTarget: String?
       var values: [String: String]?
       var options: [String: String]?
     }
+    let connectionID = status.mutationConnectionID
     let account = Account(
-      intent: status.account == nil ? "add" : "reconnect", connectionId: status.account?.id)
+      intent: connectionID == nil ? "add" : "reconnect", connectionId: connectionID)
     if let slug = status.target.connectorSlug, let method {
+      guard status.builtin?.authMethods.contains(method) == true,
+        status.account == nil || status.account?.authMethod == method.id,
+        method.hasRequiredInputs(values: values, options: options)
+      else { throw ChatConnectorInputError.settingsChanged }
       let body = Body(
-        account: account, agentId: status.chatAccountAccess ? nil : action.agentID,
-        authorizeAgent: status.chatAccountAccess ? nil : true, authMethod: method.id,
-        values: method.grantKind == "manual" ? values : nil,
-        options: method.grantKind == "device-auth" ? options : nil)
+        account: account, authMethod: method.id,
+        callbackTarget: method.grantKind == "auth-code" ? "app" : nil,
+        values: method.grantKind == "manual" ? method.manualValues(values) : nil,
+        options: method.grantKind == "device-auth" ? method.deviceOptions(options) : nil)
       let data = try JSONEncoder().encode(body)
       switch method.grantKind {
       case "auth-code":
@@ -405,17 +323,21 @@ public struct ChatConnectorService: Sendable {
       }
     }
     guard let custom = status.custom else { throw APIClientError.invalidResponse }
+    if custom.managed && status.connected, connectionID.flatMap(UUID.init(uuidString:)) == nil {
+      throw APIClientError.incompatibleData
+    }
+    guard custom.canSubmit(values: values, account: status.account) else {
+      throw ChatConnectorInputError.settingsChanged
+    }
     if custom.usesBrowserAuthorization {
       struct Body: Encodable {
         let account: Account
-        let agentId: String?
       }
       return try await client.request(
         "/api/custom-connectors/\(custom.id)/oauth2/start", method: "POST",
-        body: JSONEncoder().encode(
-          Body(account: account, agentId: status.chatAccountAccess ? nil : action.agentID)))
+        body: JSONEncoder().encode(Body(account: account)))
     }
-    return try await configureCustom(custom, connectionID: status.account?.id, values: values)
+    return try await configureCustom(custom, connectionID: connectionID, values: values)
   }
   private func configureCustom(
     _ custom: ChatCustomConnector, connectionID: String?, values: [String: String]
@@ -424,22 +346,14 @@ public struct ChatConnectorService: Sendable {
       let intent: String
       let connectionId: String?
     }
-    struct Value: Encodable {
-      let key: String
-      let kind: String
-      let value: String
-    }
     struct Body: Encodable {
       let account: Account
-      let values: [Value]
+      let values: [ChatCustomConnector.Value]
     }
     let body = Body(
       account: Account(
         intent: connectionID == nil ? "add" : "reconnect", connectionId: connectionID),
-      values: custom.fields.compactMap { field in
-        guard let value = values[field.key], !value.isEmpty else { return nil }
-        return Value(key: field.key, kind: field.kind, value: value)
-      })
+      values: custom.submittedValues(values))
     return try await client.request(
       "/api/custom-connectors/\(custom.id)/values", method: "PUT", body: JSONEncoder().encode(body))
   }

@@ -1,6 +1,6 @@
 import { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import {
-  agentDraftContract,
+  composerDraftContract,
   type AgentDraftRequest,
 } from "@okouai/api-contracts/contracts/agent-draft";
 import {
@@ -23,7 +23,6 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const WEEKLY_SYNC_THREAD_ID = "b0000000-0000-4000-a000-000000000091";
 const UNTITLED_THREAD_ID = "b0000000-0000-4000-a000-000000000092";
 const SPECIAL_TITLE_THREAD_ID = "b0000000-0000-4000-a000-000000000093";
@@ -37,7 +36,6 @@ function referencedThread(
 ): ChatThreadSnapshotProjection {
   return {
     id,
-    agentId: AGENT_ID,
     title,
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -53,11 +51,10 @@ function referencedThread(
   };
 }
 
-function configureAgentDraft(
+function configureWorkspaceDraft(
   draft: UserMessageInputDocument,
   referencedThreads: readonly ChatThreadSnapshotProjection[],
 ): void {
-  context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
     selectedModel: "claude-sonnet-5",
     serviceTier: null,
@@ -65,7 +62,7 @@ function configureAgentDraft(
     selectedImageModel: null,
     updatedAt: null,
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: userMessageInputDocumentSchema.parse(draft),
       draftAttachments: null,
@@ -113,7 +110,7 @@ function getLink(name: string): HTMLElement {
 }
 
 test("A conversation reference renders as a recognizable chip", async () => {
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [
@@ -131,7 +128,7 @@ test("A conversation reference renders as a recognizable chip", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -152,7 +149,7 @@ test("A conversation reference renders as a recognizable chip", async () => {
 
 test("Ordinary links are not mistaken for conversation mentions", async () => {
   const externalLink = "https://example.com/launch-notes";
-  const agentLink = `/agents/${AGENT_ID}/chat`;
+  const agentLink = `/`;
   const invalidConversationLink = "[Broken](/chats/not-a-conversation)";
   const conversationWithoutTitle = `/chats/${UNTITLED_THREAD_ID}`;
   const ordinaryText = [
@@ -162,7 +159,7 @@ test("Ordinary links are not mistaken for conversation mentions", async () => {
     conversationWithoutTitle,
   ].join(" | ");
 
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [
@@ -182,7 +179,7 @@ test("Ordinary links are not mistaken for conversation mentions", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -207,7 +204,7 @@ test("Special characters in a conversation title survive saving and restoring", 
   const specialTitle = String.raw`Release [QA] \ notes`;
   let savedDraft: AgentDraftRequest | undefined;
 
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [
@@ -222,14 +219,14 @@ test("Special characters in a conversation title survive saving and restoring", 
     },
     [referencedThread(SPECIAL_TITLE_THREAD_ID, specialTitle)],
   );
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
     savedDraft = body;
     return respond(204);
   });
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -253,16 +250,16 @@ test("Special characters in a conversation title survive saving and restoring", 
     titleSnapshot: specialTitle,
   });
 
-  const agentsLink = await waitFor(() => {
-    return getLink("Agents");
+  const workflowsLink = await waitFor(() => {
+    return getLink("Workflows");
   });
-  click(agentsLink);
+  click(workflowsLink);
   await waitFor(() => {
-    expect(pathname()).toBe("/agents");
+    expect(pathname()).toBe("/workflows");
   });
   window.history.back();
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    expect(pathname()).toBe("/");
   });
 
   const restoredComposer = await screen.findByRole("textbox", {

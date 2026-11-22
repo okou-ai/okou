@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
 import { array, number, object, record, string } from "zod";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -17,7 +16,6 @@ import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -51,13 +49,6 @@ async function project(actor: ApiTestUser, name: string) {
   if (!actor.orgId) {
     throw new Error("Project requires an organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  );
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
@@ -77,12 +68,11 @@ async function project(actor: ApiTestUser, name: string) {
 
 async function thread(actor: ApiTestUser) {
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Native OAuth",
     visibility: "private",
   });
   return await chat.createThread(actor, {
-    agentId: agent.agentId,
     model: null,
   });
 }
@@ -146,6 +136,44 @@ describe("native organization OAuth grants", () => {
     expect(
       (await request(token, `/api/projects/${owned.id}`, "DELETE", {})).status,
     ).toBe(401);
+  });
+
+  it("creates one owned thread for repeated requests with the same client thread ID", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await bdd.createAgent(actor, {
+      displayName: "Native Chat Creation",
+      visibility: "private",
+    });
+    const authorize = mcp.authorize(actor);
+    const token = authorize({ scope: "okou:chat:send okou:chat:read" });
+    const readOnlyToken = authorize({
+      scope: "okou:chat:read",
+    });
+    const payload = { clientThreadId: randomUUID(), title: "Cardputer Zero" };
+    expect(
+      (await request(readOnlyToken, "/api/chat-threads", "POST", payload))
+        .status,
+    ).toBe(403);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await request(
+        token,
+        "/api/chat-threads",
+        "POST",
+        payload,
+      );
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({
+        id: payload.clientThreadId,
+        title: payload.title,
+      });
+    }
+    const metadata = await request(
+      token,
+      `/api/chat-threads/${payload.clientThreadId}/metadata`,
+    );
+    expect(metadata.status).toBe(200);
+    expect(metadata.body).toMatchObject({ id: payload.clientThreadId });
   });
 
   it("reads metadata and marks only same-workspace owned threads read", async () => {

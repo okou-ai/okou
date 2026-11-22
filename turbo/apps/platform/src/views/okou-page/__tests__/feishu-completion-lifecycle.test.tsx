@@ -32,8 +32,6 @@ test.each(["feishu", "lark"] as const)(
       messageReceived: true,
       tenantKey: "first-tenant",
       tenantName: "First bot",
-      defaultAgentId: null,
-      defaultAgentName: "Okou",
       setupCompleted: false,
     };
     const status: FeishuConnectStatus = {

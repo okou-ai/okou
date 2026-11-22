@@ -75,10 +75,7 @@ type InlineRenameSignals = Pick<
   | "inlineRenameInputRef$"
 >;
 
-function createInlineRenameSignals(
-  threadId: string,
-  meta$: ReturnType<typeof threadMeta>,
-): InlineRenameSignals {
+function createInlineRenameSignals(threadId: string): InlineRenameSignals {
   const commitInlineRename$ = command(
     async ({ get, set }, value: string, signal: AbortSignal) => {
       // Escape ends the edit before focus leaves the field, and a committed
@@ -87,11 +84,7 @@ function createInlineRenameSignals(
         return;
       }
       set(inlineRenameThreadId$, null);
-      await set(
-        renameChatThreadFromInput$,
-        { threadId, input: value, agentId: get(meta$)?.agentId },
-        signal,
-      );
+      await set(renameChatThreadFromInput$, { threadId, input: value }, signal);
     },
   );
 
@@ -268,7 +261,7 @@ function createSidebarChatThreadItemSignals(
     openRename$: command(({ set }, signal: AbortSignal) => {
       set(openRenameChatThreadDialogForThreadId$, threadId, signal);
     }),
-    ...createInlineRenameSignals(threadId, meta$),
+    ...createInlineRenameSignals(threadId),
     requestDelete$: command(({ set }) => {
       set(setPendingDeleteThreadId$, threadId);
     }),

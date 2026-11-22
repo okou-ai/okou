@@ -1,18 +1,17 @@
+import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
 } from "./chat-event-publication.service";
 import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import { connectors } from "@okouai/db/schema/connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
-import { agents } from "@okouai/db/schema/agent";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
@@ -73,10 +72,7 @@ import {
   formatFeishuConversationHistory,
   feishuMessageReceivedValues,
   feishuMessageReceivedCondition,
-  replyFeishuAgentUnavailable$,
   replyToUnconnectedFeishuMessage$,
-  feishuEffectiveAgentReadPlan,
-  feishuEffectiveAgentFromRows,
   type FeishuDispatchConnection,
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
@@ -176,7 +172,6 @@ type ClaimedFeishuIngress = Pick<
     | "messageReceivedAt"
   > & {
     ingressId: typeof feishuChatIngress.$inferSelect.id;
-    defaultAgentId: typeof orgMetadata.$inferSelect.defaultAgentId;
   };
 
 function parseMatchingMessage(
@@ -432,7 +427,6 @@ const persistCanonicalFeishuIngress$ = command(
       readonly installation: FeishuDispatchInstallation;
       readonly connection: FeishuDispatchConnection;
       readonly message: CanonicalFeishuInboundMessage;
-      readonly agentId: string;
       readonly reactionId: string | undefined;
       readonly launchContext: CanonicalFeishuLaunchContext;
     },
@@ -456,7 +450,6 @@ const persistCanonicalFeishuIngress$ = command(
         threadId: routeThreadId,
         userId: args.connection.userId,
         orgId: args.installation.orgId,
-        agentId: args.agentId,
         currentTime: args.ingress.createdAt,
       },
       signal,
@@ -592,43 +585,7 @@ const finishUnconnectedFeishuIngress$ = command(
     const db = set(writeDb$);
     await set(
       replyToUnconnectedFeishuMessage$,
-      {
-        message: args.message,
-        botName: args.botName,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const processedIngressDb = db;
-    const processedIngressId = args.ingressId;
-    await (async (): Promise<void> => {
-      await processedIngressDb
-        .update(feishuChatIngress)
-        .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-        .where(
-          and(
-            eq(feishuChatIngress.id, processedIngressId),
-            eq(feishuChatIngress.status, "processing"),
-          ),
-        );
-    })();
-  },
-);
-
-const finishUnavailableAgentFeishuIngress$ = command(
-  async (
-    { set },
-    args: {
-      readonly ingressId: string;
-      readonly message: CanonicalFeishuInboundMessage;
-      readonly status: "not_accessible" | "not_found";
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    await set(
-      replyFeishuAgentUnavailable$,
-      { message: args.message, status: args.status },
+      { message: args.message, botName: args.botName },
       signal,
     );
     signal.throwIfAborted();
@@ -667,7 +624,6 @@ const loadFeishuIngressDispatchContext$ = command(
           platform: feishuOrgInstallations.platform,
           installationType: feishuOrgInstallations.installationType,
           setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
-          defaultAgentId: orgMetadata.defaultAgentId,
           botName: feishuOrgInstallations.botName,
           messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
         })
@@ -675,10 +631,6 @@ const loadFeishuIngressDispatchContext$ = command(
         .innerJoin(
           feishuOrgInstallations,
           eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
-        )
-        .leftJoin(
-          orgMetadata,
-          eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
         )
         .where(
           and(
@@ -709,14 +661,10 @@ const loadFeishuIngressDispatchContext$ = command(
       throw new Error("Lark integration is not enabled");
     }
     const message = parseMatchingMessage(ingress);
-    if (ingress.defaultAgentId === null) {
-      return { ingress, message, installation: null, connection: null };
-    }
     const installation: FeishuDispatchInstallation = {
       orgId: ingress.orgId,
       platform: ingress.platform,
       ownerUserId: ingress.ownerUserId,
-      defaultAgentId: ingress.defaultAgentId,
       botName: ingress.botName,
       messageReceivedAt: ingress.messageReceivedAt,
     };
@@ -895,36 +843,13 @@ const processClaimedIngress$ = command(
       args.ingressId,
       signal,
     );
-    if (!installation) {
-      await set(
-        finishUnavailableAgentFeishuIngress$,
-        {
-          ingressId: ingress.ingressId,
-          message,
-          status: "not_found",
-        },
+    const commandHandled =
+      connection &&
+      (await set(
+        dispatchConnectedFeishuCommand$,
+        { installation, connection, message },
         signal,
-      );
-      return null;
-    }
-    if (!connection) {
-      await set(
-        finishUnconnectedFeishuIngress$,
-        {
-          ingressId: ingress.ingressId,
-          message,
-          botName: installation.botName,
-        },
-        signal,
-      );
-      return null;
-    }
-
-    const commandHandled = await set(
-      dispatchConnectedFeishuCommand$,
-      { installation, connection, message },
-      signal,
-    );
+      ));
     signal.throwIfAborted();
     if (commandHandled) {
       await db
@@ -940,34 +865,23 @@ const processClaimedIngress$ = command(
       return null;
     }
 
-    const effectiveAgent = await (async () => {
-      const plan = feishuEffectiveAgentReadPlan({ installation, connection });
-      const agent = await (async () => {
-        const [visibleAgent] = await db
-          .select(plan.visibleColumns)
-          .from(agents)
-          .where(plan.visibleCondition)
-          .limit(1);
-        return visibleAgent;
-      })();
-      if (agent) {
-        return feishuEffectiveAgentFromRows(agent, undefined);
-      }
-      const [existing] = await db
-        .select(plan.existingColumns)
-        .from(agents)
-        .where(plan.existingCondition)
-        .limit(1);
-      return feishuEffectiveAgentFromRows(agent, existing);
-    })();
-    signal.throwIfAborted();
-    if (effectiveAgent.status !== "resolved") {
+    if (
+      !connection ||
+      (
+        await set(
+          getMemberRoleAndUpdateCache$,
+          installation.orgId,
+          connection.userId,
+          signal,
+        )
+      ).kind !== "member"
+    ) {
       await set(
-        finishUnavailableAgentFeishuIngress$,
+        finishUnconnectedFeishuIngress$,
         {
           ingressId: ingress.ingressId,
           message,
-          status: effectiveAgent.status,
+          botName: installation.botName,
         },
         signal,
       );
@@ -997,7 +911,6 @@ const processClaimedIngress$ = command(
       installation,
       connection,
       message,
-      agentId: effectiveAgent.agent.id,
       reactionId,
       launchContext: canonicalFeishuLaunchContext({
         message,

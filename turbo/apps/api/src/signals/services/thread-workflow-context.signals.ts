@@ -18,8 +18,10 @@ import {
   isRetiredProactiveWorkflow,
   proactiveWorkflowKind,
 } from "./proactive-workflow-definitions";
-import type { createThreadAutomationContext } from "./thread-automation-context.service";
-import type { ThreadAutomationTarget } from "./thread-context.signals";
+import type {
+  createThreadAutomationSnapshot,
+  ThreadAutomationTarget,
+} from "./thread-automation-context.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 function assertOfficialManualEvent(
@@ -53,7 +55,6 @@ function officialObservationFromTarget(
     automation.ownerUserId !== scope.userId ||
     workflow.orgId !== scope.orgId ||
     workflow.ownerUserId !== scope.userId ||
-    workflow.agentId !== scope.agentId ||
     workflow.visibility !== "private" ||
     workflow.officialInstallationState !== "installed" ||
     automationContext.workflowName !== workflow.name
@@ -89,8 +90,7 @@ function officialObservationFromTarget(
 export function createThreadWorkflowContext(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationContext$: ReturnType<typeof createThreadAutomationContext>,
-  automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
+  automationSnapshot$: ReturnType<typeof createThreadAutomationSnapshot>,
 ) {
   const officialWorkflowObservation$ = computed(
     async (get): Promise<OfficialWorkflowObservation | undefined> => {
@@ -98,13 +98,11 @@ export function createThreadWorkflowContext(
       if (event?.contextType !== "automation") {
         return undefined;
       }
-      const [context, target] = await Promise.all([
-        get(automationContext$),
-        get(automationTarget$),
-      ]);
-      if (!context || !target) {
+      const snapshot = await get(automationSnapshot$);
+      if (!snapshot?.target) {
         return undefined;
       }
+      const { event: context, target } = snapshot;
       const { automation, workflow } = target;
       if (workflow.officialDefinitionName === null) {
         if (automation.officialBlueprintKey !== null) {
@@ -126,9 +124,7 @@ export function createThreadWorkflowContext(
       if (kind !== null) {
         if (
           !isFeatureEnabled(
-            kind === "suggestions"
-              ? FeatureSwitchKey.AgentSuggestion
-              : FeatureSwitchKey.ProactiveLearning,
+            FeatureSwitchKey.AgentSuggestion,
             await get(bootstrap.featureSwitches$),
           )
         ) {
@@ -137,10 +133,7 @@ export function createThreadWorkflowContext(
           });
         }
         const preferences = target.proactivePreferences;
-        const enabled =
-          kind === "suggestions"
-            ? preferences?.suggestionsEnabled
-            : preferences?.learningEnabled;
+        const enabled = preferences?.suggestionsEnabled;
         if (
           !preferences ||
           (context.eventType !== "manual" && (!automation.enabled || !enabled))

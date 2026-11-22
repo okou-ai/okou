@@ -313,9 +313,7 @@ describe("agent mail notifications", () => {
     const { actor } = await workflows.setupWorkflowOrg({
       model: "claude-fable-5-1",
     });
-    const { agentId } = await workflows.createAgent(actor);
     const workflowId = await workflows.createWorkflow(actor, {
-      agentId,
       name: "morning-brief",
     });
     const automation = await accept(

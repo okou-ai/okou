@@ -22,15 +22,16 @@ import body_decoding
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_response_classification
+import model_usage_request
 import model_websocket_usage
 import response_inspection
 import run_usage
-import runtime_url_parsing
 import stream_capture
 import usage
 import websocket_handshake
 from body_limits import STREAM_BUFFER_LIMIT
 from logging_utils import log_proxy_entry
+from usage.parse_error_diagnostics import ParseErrorWarningBudget
 from usage.providers.connectors.response_parser import ConnectorResponseParser
 from usage.underbilling import log_usage_underbilling
 
@@ -47,7 +48,6 @@ _RESPONSE_INSPECTION = "_response_inspection"
 _ANTHROPIC_MESSAGES_SSE_PROTOCOL = "anthropic_messages_sse"
 _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
 _OPENAI_RESPONSES_SSE_PROTOCOL = "openai_responses_sse"
-_MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 _ResponseChunkParser = Callable[[bytes], None]
 _SseUsageParseErrorLogger = Callable[[str, str], None]
@@ -57,6 +57,25 @@ class _ResponseStreamSetup(NamedTuple):
     parser: _ResponseChunkParser | None
     needs_buffered_fallback: bool
     reject_uninspectable: bool = False
+
+
+def _log_response_inspection_interruption(
+    flow: http.HTTPFlow,
+    message: str,
+    error: str,
+    *,
+    usage_protocol: str | None = None,
+) -> None:
+    log_usage_underbilling(
+        flow_metadata.proxy_log_path(flow.metadata),
+        message,
+        "response_inspection_interrupted",
+        "risk",
+        run_id=flow_metadata.run_id(flow.metadata),
+        firewall_name=flow_metadata.firewall_name(flow.metadata),
+        **({"usage_protocol": usage_protocol} if usage_protocol is not None else {}),
+        parse_error=error,
+    )
 
 
 class _ConnectorResponseFinalizer:
@@ -91,14 +110,10 @@ class _ConnectorResponseFinalizer:
 
     def interrupt(self, error: str) -> None:
         self.fail_decode(error)
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(self._flow.metadata),
+        _log_response_inspection_interruption(
+            self._flow,
             "Deferred connector response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(self._flow.metadata),
-            firewall_name=flow_metadata.firewall_name(self._flow.metadata),
-            parse_error=error,
+            error,
         )
 
     def finish(self) -> None:
@@ -114,12 +129,10 @@ class _ConnectorResponseFinalizer:
 
 def model_usage_protocol(flow: http.HTTPFlow) -> usage.ModelUsageProtocol:
     """Classify model usage from the observed request and CLI fallback."""
-    request_target = flow_metadata.original_url(flow.metadata) or flow.request.path
-    request_path = runtime_url_parsing.strip_url_query_and_fragment(request_target).rstrip("/")
-    if request_path.endswith("/chat/completions"):
-        return "openai_chat_completions"
-    if request_path.endswith("/responses"):
-        return "openai_responses"
+    target = model_usage_request.normalized_target(flow)
+    protocol = model_usage_request.openai_protocol(target)
+    if protocol is not None:
+        return protocol
     if flow_metadata.cli_agent_type(flow.metadata) == "codex":
         return "openai_responses"
     return "anthropic_messages"
@@ -135,7 +148,7 @@ def uses_model_json_fallback(
     if (
         response is None
         or not http_response_classification.can_have_body(flow, response)
-        or not flow_metadata.firewall_name(flow.metadata).startswith("model-provider:")
+        or not flow_metadata.is_model_provider_firewall(flow_metadata.firewall_name(flow.metadata))
     ):
         return False
     if http_response_classification.has_event_stream_media_type(response):
@@ -165,15 +178,13 @@ def _make_model_sse_parse_error_logger(
     usage_protocol: str,
 ) -> _SseUsageParseErrorLogger:
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
-    diagnostics_remaining = _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT
+    warning_budget = ParseErrorWarningBudget()
 
     def log_parse_error(event: str, error: str) -> None:
-        nonlocal diagnostics_remaining
-        if diagnostics_remaining == _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT:
+        if warning_budget.is_unused:
             run_usage.mark(flow, "parse_error")
-        if diagnostics_remaining == 0:
+        if not warning_budget.take():
             return
-        diagnostics_remaining -= 1
         log_proxy_entry(
             proxy_log_path,
             "warn",
@@ -314,15 +325,11 @@ def _configure_model_sse_inspection(
         run_usage.observe(flow, usage_dict)
         run_usage.mark(flow, "parse_error")
         run_usage.mark(flow, "interrupted")
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(flow.metadata),
+        _log_response_inspection_interruption(
+            flow,
             "Deferred model SSE response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(flow.metadata),
-            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            error,
             usage_protocol=usage_protocol,
-            parse_error=error,
         )
 
     sse_inspection = response_inspection.CooperativeResponseInspection(
@@ -408,15 +415,11 @@ def _configure_model_json_inspection(
         finished = True
         run_usage.mark(flow, "parse_error")
         run_usage.mark(flow, "interrupted")
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(flow.metadata),
+        _log_response_inspection_interruption(
+            flow,
             "Deferred model JSON response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(flow.metadata),
-            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            error,
             usage_protocol=model_protocol,
-            parse_error=error,
         )
 
     if decode_session is not None:
@@ -561,7 +564,9 @@ def _configure_response_inspection_stream(
     # Connector extraction remains gated by the billing flag.
     is_billable_flow = flow_metadata.is_firewall_billable(flow.metadata)
     is_billable_model_provider = usage.is_model_provider_usage_billable(flow)
-    extract_model_usage = flow_metadata.firewall_name(flow.metadata).startswith("model-provider:")
+    extract_model_usage = flow_metadata.is_model_provider_firewall(
+        flow_metadata.firewall_name(flow.metadata)
+    )
     model_protocol = model_usage_protocol(flow) if extract_model_usage else None
     if (
         model_protocol == "openai_responses"
@@ -628,7 +633,7 @@ def configure_response_stream(
     if not flow.response:
         return
 
-    metrics = {"total_bytes": 0}
+    metrics = stream_capture.empty_stream_byte_count()
     setup = _configure_response_inspection_stream(
         flow,
         websocket_header_work_limit=websocket_header_work_limit,
@@ -699,10 +704,9 @@ def streamed_response_size(flow: http.HTTPFlow) -> int | None:
     ``metadata_keys.RESPONSE_STREAM_STATE`` and returns ``None`` when
     ``responseheaders()`` did not configure streaming for this flow.
     """
-    state = flow.metadata.get(metadata_keys.RESPONSE_STREAM_STATE)
-    if state is None:
-        return None
-    return int(state["total_bytes"])
+    return stream_capture.streamed_byte_count(
+        flow.metadata.get(metadata_keys.RESPONSE_STREAM_STATE)
+    )
 
 
 def finalize_model_json_usage(flow: http.HTTPFlow, proxy_log_path: str) -> None:
@@ -807,5 +811,4 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINALIZER, None)
-    if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
-        flow.response.stream = False
+    stream_capture.replace_owned_stream(flow.response, stream_callback)

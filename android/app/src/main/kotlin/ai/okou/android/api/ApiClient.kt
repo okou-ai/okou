@@ -1,17 +1,18 @@
 package ai.okou.android.api
 
 import ai.okou.android.BuildConfig
-import ai.okou.android.api.generated.Agents
+import ai.okou.android.api.generated.ActivateModelAccountRequest
 import ai.okou.android.api.generated.AndroidUpgradeRequired
 import ai.okou.android.api.generated.ApiError
 import ai.okou.android.api.generated.ApiHeaders
+import ai.okou.android.api.generated.ArtifactCatalogQuery
+import ai.okou.android.api.generated.ArtifactDetailQuery
 import ai.okou.android.api.generated.CanonicalApi
 import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ComposerDraft
 import ai.okou.android.api.generated.CreateThreadRequest
-import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.HistoryCatchUpRequestItem
 import ai.okou.android.api.generated.HistoryRowsQueryVariant1
 import ai.okou.android.api.generated.HistoryRowsQueryVariant2
@@ -22,24 +23,26 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.RealtimeTokenRequest
+import ai.okou.android.api.generated.RenameProjectRequest
 import ai.okou.android.api.generated.RenameThreadRequest
 import ai.okou.android.api.generated.ReorderPinnedThreadRequest
-import ai.okou.android.api.generated.SaveAgentDraft
+import ai.okou.android.api.generated.ResolveArtifactReferenceQuery
 import ai.okou.android.api.generated.SaveThreadDraft
+import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.api.generated.artifactCatalog
+import ai.okou.android.api.generated.artifactDetail
 import ai.okou.android.api.generated.historyRows
+import ai.okou.android.api.generated.resolveArtifactReference
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.plainDraftDocument
 import ai.okou.android.updates.isAndroidVersion
 import java.io.Closeable
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
@@ -174,9 +177,9 @@ class ApiClient(
 
     suspend fun chatEvents(since: Long?): ChatEvents = execute { reads.chatEvents(it, since) }
 
-    suspend fun indicators(): Indicators = execute { reads.indicators(it) }
-
-    suspend fun agents(): Agents = execute { reads.agents(it) }
+    suspend fun indicators(): Indicators = execute {
+        reads.indicators(it, queryIncludeActiveUnread = "true")
+    }
 
     suspend fun createThread(body: CreateThreadRequest) =
         execute(201) { api.createThread(it, body) }
@@ -190,19 +193,20 @@ class ApiClient(
     suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
 
     suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = execute {
-        if (target.thread) reads.threadDraft(it, target.id) else reads.agentDraft(it, target.id)
+        if (target.threadId != null) reads.threadDraft(it, target.threadId)
+        else reads.workspaceDraft(it)
     }
 
     suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) {
         val body = plainDraftDocument(text)
         executeResponse(204) {
-            if (target.thread)
+            if (target.threadId != null)
                 api.saveThreadDraft(
                     it,
-                    target.id,
+                    target.threadId,
                     json.decodeFromJsonElement<SaveThreadDraft>(body),
                 )
-            else api.saveAgentDraft(it, target.id, json.decodeFromJsonElement<SaveAgentDraft>(body))
+            else api.saveWorkspaceDraft(it, json.decodeFromJsonElement<SaveWorkspaceDraft>(body))
         }
     }
 
@@ -213,6 +217,12 @@ class ApiClient(
     suspend fun recoverySubscriptions() = execute { reads.recoverySubscriptions(it) }
 
     suspend fun recoveryBilling() = execute { reads.recoveryBilling(it) }
+
+    suspend fun usagePackCredits() = execute { reads.usagePackCredits(it) }
+
+    suspend fun activateModelAccount(accountId: String) = execute {
+        api.activateModelAccount(it, accountId, ActivateModelAccountRequest)
+    }
 
     suspend fun resetSubscription(accountId: String, idempotencyKey: String) = execute {
         api.resetSubscription(
@@ -227,8 +237,6 @@ class ApiClient(
     suspend fun projectEvents(since: Long): ProjectEvents = execute {
         reads.projectEvents(it, since)
     }
-
-    suspend fun featureSwitches(): FeatureSwitches = execute { reads.featureSwitches(it) }
 
     suspend fun historySnapshot(threadId: String) = execute { reads.historySnapshot(it, threadId) }
 
@@ -252,6 +260,26 @@ class ApiClient(
 
     suspend fun threadDetail(threadId: String) = execute { reads.threadDetail(it, threadId) }
 
+    internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = execute {
+        reads.artifactCatalog(it, query)
+    }
+
+    internal suspend fun artifactDetail(id: String) = execute {
+        reads.artifactDetail(it, id, ArtifactDetailQuery())
+    }
+
+    internal suspend fun resolveArtifactReference(reference: String) = execute {
+        reads.resolveArtifactReference(it, reference, ResolveArtifactReferenceQuery())
+    }
+
+    internal suspend fun artifactDownload(reference: String) = execute {
+        reads.artifactDownload(it, reference)
+    }
+
+    internal suspend fun artifactSitePreview(slug: String, host: String) = execute {
+        reads.artifactSitePreview(it, slug, host)
+    }
+
     suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
 
     suspend fun markUnread(threadId: String) = execute { api.markUnread(it, threadId) }
@@ -267,6 +295,16 @@ class ApiClient(
         executeResponse(204) {
             if (archived) api.archiveThread(it, threadId, eventId)
             else api.unarchiveThread(it, threadId, eventId)
+        }
+    }
+
+    suspend fun deleteThread(threadId: String, eventId: String) {
+        executeResponse(204) { api.deleteThread(it, threadId, eventId) }
+    }
+
+    suspend fun renameProject(projectId: String, name: String, eventId: String) {
+        execute {
+            api.renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
         }
     }
 
@@ -363,22 +401,5 @@ class ApiClient(
         } catch (_: SerializationException) {
             null
         }
-    }
-}
-
-private fun retryAfter(value: String?): Long? {
-    if (value == null) return null
-    value.toLongOrNull()?.let {
-        return it.coerceAtLeast(0)
-    }
-    val formatter = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US)
-    formatter.timeZone = TimeZone.getTimeZone("GMT")
-    formatter.isLenient = false
-    return try {
-        ((formatter.parse(value)?.time ?: return null) - System.currentTimeMillis()).coerceAtLeast(
-            0
-        ) / 1000
-    } catch (_: java.text.ParseException) {
-        null
     }
 }

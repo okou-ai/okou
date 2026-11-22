@@ -296,24 +296,20 @@ async function setupFixture(): Promise<CalendarScenario> {
   const runnerGroup = await runsApi.configureRunnerGroup();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
-  const { actor } = await wf.setupWorkflowOrg();
+  const { actor, defaultAgentId: agentId } = await wf.setupWorkflowOrg();
   await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  const agent = await wf.createAgent(actor, {
-    displayName: "Calendar Webhook Agent",
-  });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId: agent.agentId,
     name: WORKFLOW_NAME,
   });
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
   context.mocks.s3.send.mockResolvedValue({});
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId: agent.agentId,
+    agentId,
     runnerGroup,
     workflowId,
   };
@@ -364,7 +360,6 @@ async function addGoogleCalendarAccount(
     scenario.actor,
     "google-calendar",
     "oauth",
-    scenario.agentId,
     { intent: "add", displayName: args.email },
   );
   const state = new URL(start.authorizationUrl).searchParams.get("state");
@@ -676,208 +671,198 @@ describe("POST /api/webhooks/google-calendar", () => {
     });
   });
 
-  describe.each([false, true])(
-    "after switching Calendar accounts (Chat access: %s)",
-    (chatAccountAccess) => {
-      async function prepareScenario() {
-        const firstAccessToken = "calendar-first-access-token";
-        const secondAccessToken = "calendar-second-access-token";
-        const calendar = configureAccountAwareGoogleCalendarApiMock({
-          resourcePrefix: "calendar-selected",
-          stopStatus: 500,
-          incrementalItems: (accessToken) => {
-            return accessToken === secondAccessToken
-              ? [
-                  {
-                    id: "selected-account-event",
-                    etag: '"selected-account-version"',
-                    status: "confirmed",
-                    summary: "Selected account event",
-                    created: "2026-08-01T09:00:00.000Z",
-                    updated: "2026-08-01T09:00:00.000Z",
-                  },
-                ]
-              : [];
-          },
-        });
-
-        const scenario = await setupFixture();
-        await updateFeatureSwitchesForUser(context, scenario.actor, {
-          connectorChatAccountAccess: chatAccountAccess,
-        });
-        mockGoogleCalendarConnectorOAuth({
-          accessToken: firstAccessToken,
-          email: "calendar-first@example.com",
-          subject: "calendar-first-subject",
-        });
-        await wf.connectConnector(scenario.actor, "google-calendar");
-        const secondConnectorId = await addGoogleCalendarAccount(scenario, {
-          accessToken: secondAccessToken,
-          email: "calendar-second@example.com",
-          subject: "calendar-second-subject",
-        });
-
-        const created = await accept(
-          automationsClient().create({
-            headers: authHeaders(),
-            params: { workflowId: scenario.workflowId },
-            body: {
-              kind: "event",
-              eventType: "google-calendar-event-created",
-            },
-          }),
-          [201],
-        );
-        const chatThreadId = created.body.chatThreadId;
-        if (!chatThreadId) {
-          throw new Error("Expected the Calendar automation thread");
-        }
-        await accept(
-          chatThreadConnectorSelectionsClient().update({
-            headers: authHeaders(),
-            params: { id: chatThreadId },
-            body: {
-              connectionId: secondConnectorId,
-              target: { kind: "builtin", connectorSlug: "google-calendar" },
-            },
-          }),
-          [200],
-        );
-        const firstWatch = calendar.channels.find((channel) => {
-          return channel.accessToken === firstAccessToken;
-        });
-        const secondWatch = calendar.channels.find((channel) => {
-          return channel.accessToken === secondAccessToken;
-        });
-        if (!firstWatch || !secondWatch) {
-          throw new Error("Expected one watch for each Calendar account");
-        }
-        return {
-          firstWatch,
-          calendar,
-          secondWatch,
-          secondAccessToken,
-          scenario,
-          secondConnectorId,
-          created,
-          chatThreadId,
-        };
-      }
-      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-      beforeEach(async () => {
-        preparedScenario = await prepareScenario();
-      });
-      it.runIf(chatAccountAccess)(
-        "does not restore a denied Calendar default after deleting the last allowed account",
-        async () => {
-          const {
-            scenario,
-            firstWatch,
-            secondWatch,
-            secondConnectorId,
-            created,
-            chatThreadId,
-          } = preparedScenario;
-          const first = await connectorsApi.readDefaultBuiltinAccount(
-            scenario.actor,
-            "google-calendar",
-          );
-          const target = {
-            kind: "builtin",
-            connectorSlug: "google-calendar",
-          } as const;
-          const access = setupApp({
-            context,
-            routes: chatConnectorAccessRoutes,
-          })(chatConnectorAccessContract);
-          await accept(
-            access.setThreadOverride({
-              headers: authHeaders(),
-              params: { threadId: chatThreadId, connectionId: first.id },
-              body: { target, enabled: false },
-            }),
-            [200],
-          );
-          await connectorsApi.deleteBuiltinConnectorAccount(
-            scenario.actor,
-            "google-calendar",
-            secondConnectorId,
-          );
-          const current = await accept(
-            access.getThread({
-              headers: authHeaders(),
-              params: { threadId: chatThreadId },
-              query: target,
-            }),
-            [200],
-          );
-          expect(current.body).toMatchObject({
-            currentConnectionId: null,
-            available: false,
-          });
-          expect(
-            (await postGoogleCalendarWebhook(webhookHeaders(firstWatch)))
-              .status,
-          ).toBe(401);
-          expect(
-            (await postGoogleCalendarWebhook(webhookHeaders(secondWatch)))
-              .status,
-          ).toBe(401);
-          await accept(
-            automationsClient().disable({
-              headers: authHeaders(),
-              params: { id: created.body.id },
-            }),
-            [200],
-          );
-          await accept(
-            automationsClient().enable({
-              headers: authHeaders(),
-              params: { id: created.body.id },
-            }),
-            [400],
-          );
+  describe("after switching Calendar accounts", () => {
+    async function prepareScenario() {
+      const firstAccessToken = "calendar-first-access-token";
+      const secondAccessToken = "calendar-second-access-token";
+      const calendar = configureAccountAwareGoogleCalendarApiMock({
+        resourcePrefix: "calendar-selected",
+        stopStatus: 500,
+        incrementalItems: (accessToken) => {
+          return accessToken === secondAccessToken
+            ? [
+                {
+                  id: "selected-account-event",
+                  etag: '"selected-account-version"',
+                  status: "confirmed",
+                  summary: "Selected account event",
+                  created: "2026-08-01T09:00:00.000Z",
+                  updated: "2026-08-01T09:00:00.000Z",
+                },
+              ]
+            : [];
         },
-      );
-      it("rejects the retired source and dispatches from the selected account even when remote stop fails", async () => {
-        const { firstWatch, secondWatch, scenario, secondConnectorId } =
-          preparedScenario;
-
-        const oldSource = await postGoogleCalendarWebhook(
-          webhookHeaders(firstWatch),
-        );
-        // The selected-account API retires the old local channel immediately;
-        // failure of best-effort remote stop does not preserve its authority.
-        expect(oldSource).toStrictEqual({
-          status: 401,
-          body: { error: "Unauthorized" },
-        });
-        expect(runsApi.receivedDispatches(scenario.runnerGroup)).toStrictEqual(
-          [],
-        );
-
-        const selectedSource = await postGoogleCalendarWebhook(
-          webhookHeaders(secondWatch),
-        );
-        expect(selectedSource).toStrictEqual({
-          status: 200,
-          body: {
-            success: true,
-            watchStates: 1,
-            dispatched: 1,
-            duplicates: 0,
-          },
-        });
-        await flushWaitUntilForTest();
-        const receivedExecution = receivedCalendarRun(scenario.runnerGroup);
-        expect(
-          Object.values(receivedExecution.secretConnectorMetadataMap ?? {}),
-        ).toContainEqual(
-          expect.objectContaining({ sourceId: secondConnectorId }),
-        );
       });
-    },
-  );
+
+      const scenario = await setupFixture();
+
+      mockGoogleCalendarConnectorOAuth({
+        accessToken: firstAccessToken,
+        email: "calendar-first@example.com",
+        subject: "calendar-first-subject",
+      });
+      await wf.connectConnector(scenario.actor, "google-calendar");
+      const secondConnectorId = await addGoogleCalendarAccount(scenario, {
+        accessToken: secondAccessToken,
+        email: "calendar-second@example.com",
+        subject: "calendar-second-subject",
+      });
+
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId: scenario.workflowId },
+          body: {
+            kind: "event",
+            eventType: "google-calendar-event-created",
+          },
+        }),
+        [201],
+      );
+      const chatThreadId = created.body.chatThreadId;
+      if (!chatThreadId) {
+        throw new Error("Expected the Calendar automation thread");
+      }
+      await accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: authHeaders(),
+          params: { id: chatThreadId },
+          body: {
+            connectionId: secondConnectorId,
+            target: { kind: "builtin", connectorSlug: "google-calendar" },
+          },
+        }),
+        [200],
+      );
+      const firstWatch = calendar.channels.find((channel) => {
+        return channel.accessToken === firstAccessToken;
+      });
+      const secondWatch = calendar.channels.find((channel) => {
+        return channel.accessToken === secondAccessToken;
+      });
+      if (!firstWatch || !secondWatch) {
+        throw new Error("Expected one watch for each Calendar account");
+      }
+      return {
+        firstWatch,
+        calendar,
+        secondWatch,
+        secondAccessToken,
+        scenario,
+        secondConnectorId,
+        created,
+        chatThreadId,
+      };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("does not restore a denied Calendar default after deleting the last allowed account", async () => {
+      const {
+        scenario,
+        firstWatch,
+        secondWatch,
+        secondConnectorId,
+        created,
+        chatThreadId,
+      } = preparedScenario;
+      const first = await connectorsApi.readDefaultBuiltinAccount(
+        scenario.actor,
+        "google-calendar",
+      );
+      const target = {
+        kind: "builtin",
+        connectorSlug: "google-calendar",
+      } as const;
+      const access = setupApp({
+        context,
+        routes: chatConnectorAccessRoutes,
+      })(chatConnectorAccessContract);
+      await accept(
+        access.setThreadOverride({
+          headers: authHeaders(),
+          params: { threadId: chatThreadId, connectionId: first.id },
+          body: { target, enabled: false },
+        }),
+        [200],
+      );
+      await connectorsApi.deleteBuiltinConnectorAccount(
+        scenario.actor,
+        "google-calendar",
+        secondConnectorId,
+      );
+      const current = await accept(
+        access.getThread({
+          headers: authHeaders(),
+          params: { threadId: chatThreadId },
+          query: target,
+        }),
+        [200],
+      );
+      expect(current.body).toMatchObject({
+        currentConnectionId: null,
+        available: false,
+      });
+      expect(
+        (await postGoogleCalendarWebhook(webhookHeaders(firstWatch))).status,
+      ).toBe(401);
+      expect(
+        (await postGoogleCalendarWebhook(webhookHeaders(secondWatch))).status,
+      ).toBe(401);
+      await accept(
+        automationsClient().disable({
+          headers: authHeaders(),
+          params: { id: created.body.id },
+        }),
+        [200],
+      );
+      await accept(
+        automationsClient().enable({
+          headers: authHeaders(),
+          params: { id: created.body.id },
+        }),
+        [400],
+      );
+    });
+    it("rejects the retired source and dispatches from the selected account even when remote stop fails", async () => {
+      const { firstWatch, secondWatch, scenario, secondConnectorId } =
+        preparedScenario;
+
+      const oldSource = await postGoogleCalendarWebhook(
+        webhookHeaders(firstWatch),
+      );
+      // The selected-account API retires the old local channel immediately;
+      // failure of best-effort remote stop does not preserve its authority.
+      expect(oldSource).toStrictEqual({
+        status: 401,
+        body: { error: "Unauthorized" },
+      });
+      expect(runsApi.receivedDispatches(scenario.runnerGroup)).toStrictEqual(
+        [],
+      );
+
+      const selectedSource = await postGoogleCalendarWebhook(
+        webhookHeaders(secondWatch),
+      );
+      expect(selectedSource).toStrictEqual({
+        status: 200,
+        body: {
+          success: true,
+          watchStates: 1,
+          dispatched: 1,
+          duplicates: 0,
+        },
+      });
+      await flushWaitUntilForTest();
+      const receivedExecution = receivedCalendarRun(scenario.runnerGroup);
+      expect(
+        Object.values(receivedExecution.secretConnectorMetadataMap ?? {}),
+      ).toContainEqual(
+        expect.objectContaining({ sourceId: secondConnectorId }),
+      );
+    });
+  });
 
   it("recovers when account selection changes during old-source event retrieval", async () => {
     const firstAccessToken = "calendar-admission-first-token";
@@ -1136,7 +1121,6 @@ describe("POST /api/webhooks/google-calendar", () => {
       scenario.actor,
       "google-calendar",
       "oauth",
-      scenario.agentId,
       { intent: "reconnect", connectionId: initialConnection.id },
     );
     const reconnectState = new URL(reconnect.authorizationUrl).searchParams.get(

@@ -2,7 +2,6 @@ import { command, computed } from "ccstate";
 import { integrationsWechatContract } from "@okouai/api-contracts/client/integrations-wechat";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
-import { defaultAgentName$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { currentOrgInfo$ } from "../auth.ts";
@@ -30,15 +29,11 @@ export const wechatConnectPageStatus$ = computed(async (get) => {
     if (!result.body.available) {
       return { kind: "invalid" } as const;
     }
-    const [org, agent] = await Promise.all([
-      get(currentOrgInfo$),
-      get(defaultAgentName$),
-    ]);
+    const org = await get(currentOrgInfo$);
     return {
       kind: "reconnect",
       account: identity.email ?? identity.userId,
       workspace: org?.name,
-      agent,
     } as const;
   }
   return { kind: "overview", data: await get(wechatStatus$) } as const;

@@ -1,3 +1,5 @@
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { instructionsRoutes } from "../instructions";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
@@ -15,7 +17,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { holdDownloadSigning } from "./helpers/hold-download-signing";
 import { mailRoutes } from "../mail";
-import { createBddApi, expectApiError } from "./helpers/api-bdd";
+import { expectApiError } from "./helpers/api-bdd";
 import { mockGmailConnectorOAuth } from "./helpers/api-bdd-connectors";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createPublicChatAdmissionFixture } from "./helpers/public-chat-admission-fixture";
@@ -40,6 +42,7 @@ const {
   connectors,
   entitledChatActor: createEntitledChatActor,
   sendChatRun,
+  queueChatRun,
   runExecution,
   waitForThreadMessages,
   waitForRunStatus,
@@ -106,14 +109,13 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         memoryInitialized: true,
       });
 
-      const agent = await bdd.createAgent(member, {
+      await bdd.createAgent(member, {
         displayName: "Member memory agent",
         visibility: "private",
       });
       // The member runs with their own connected subscription, never the owner's
       // account. Memory initialization remains independent of provider ownership.
       const launched = await sendChatRun(member, {
-        agentId: agent.agentId,
         model: "claude-fable-5-1",
         prompt: "run after on-demand memory initialization",
       });
@@ -142,7 +144,6 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         [200],
       );
       const next = await sendChatRun(member, {
-        agentId: agent.agentId,
         model: "claude-fable-5-1",
         prompt: "Observe repeated memory initialization",
       });
@@ -217,7 +218,7 @@ describe("CHAT-02: web chat send and client ids", () => {
   });
 
   it("creates a web chat run with client-provided ids", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const clientThreadId = randomUUID();
     const clientEventId = randomUUID();
@@ -227,7 +228,6 @@ describe("CHAT-02: web chat send and client ids", () => {
       chatEventsClient().send({
         headers: sessionHeaders(actor),
         body: {
-          agentId,
           prompt,
           userMessage: {
             version: 1,
@@ -252,7 +252,6 @@ describe("CHAT-02: web chat send and client ids", () => {
       const forged = await chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: clientThreadId,
           clientEventId: forgedEventId,
           prompt,
@@ -352,7 +351,6 @@ describe("CHAT-02: web chat send and client ids", () => {
     // A pre-created client thread with no runs cannot be sent into.
     const emptyClientThreadId = randomUUID();
     const created = await chat.createThread(actor, {
-      agentId,
       title: "Pre-created client thread",
       clientThreadId: emptyClientThreadId,
     });
@@ -360,7 +358,6 @@ describe("CHAT-02: web chat send and client ids", () => {
     const emptyThreadSend = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         prompt: "send into the pre-created thread",
         clientThreadId: emptyClientThreadId,
       },
@@ -372,67 +369,39 @@ describe("CHAT-02: web chat send and client ids", () => {
     );
   }, 90_000);
 
-  it("rejects unauthenticated, unknown-agent, and foreign private-agent sends", async () => {
+  it("requires authentication and accepts a member without a default executor", async () => {
     const unauthenticated = await chat.requestSendEvent(
       null,
-      { agentId: randomUUID(), prompt: "hello" },
+      { prompt: "hello" },
       [401],
     );
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Private chat-send guard agent",
-      visibility: "private",
-    });
-
-    const unknownAgent = await chat.requestSendEvent(
+    const missingDefault = await chat.requestSendEvent(
       actor,
-      { agentId: randomUUID(), prompt: "hello" },
-      [404],
+      { prompt: "hello" },
+      [201],
     );
-    expectApiError(unknownAgent.body);
-    expect(unknownAgent.body.error.code).toBe("NOT_FOUND");
-
-    const peer = bdd.user({ orgId: actor.orgId });
-    const forbidden = await chat.requestSendEvent(
-      peer,
-      { agentId: agent.agentId, prompt: "hello" },
-      [403],
-    );
-    expectApiError(forbidden.body);
-    expect(forbidden.body.error.message).toBe(
-      "Only the private agent owner can run this agent",
-    );
+    expect(missingDefault.body).toHaveProperty("threadId");
   }, 30_000);
 
-  it("authorizes existing-thread sends against the thread's agent", async () => {
+  it("authorizes existing-thread sends by owner", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const threadAgent = await bdd.createAgent(actor, {
-      displayName: "Thread owner agent",
-    });
-    const otherAgent = await bdd.createAgent(actor, {
-      displayName: "Other agent in the same org",
-    });
-    const thread = await chat.createThread(actor, {
-      agentId: threadAgent.agentId,
-      title: "Agent mismatch thread",
-    });
+    const thread = await chat.createThread(actor, { title: "Owner thread" });
 
-    const mismatched = await chat.requestSendEvent(
-      actor,
+    const peer = bdd.user({ orgId: actor.orgId });
+    const denied = await chat.requestSendEvent(
+      peer,
       {
-        agentId: otherAgent.agentId,
         threadId: thread.id,
-        prompt: "send through the wrong agent",
+        prompt: "send to another member’s thread",
       },
       [404],
     );
-    expectApiError(mismatched.body);
-    expect(mismatched.body.error.message).toBe("Chat thread not found");
+    expectApiError(denied.body);
+    expect(denied.body.error.message).toBe("Chat thread not found");
     const events = await chat.listThreadEvents(actor, thread.id);
     expect(events.events).toStrictEqual([]);
 
@@ -440,10 +409,9 @@ describe("CHAT-02: web chat send and client ids", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId: threadAgent.agentId,
         threadId: thread.id,
         clientEventId,
-        prompt: "send through the owning agent",
+        prompt: "send through the existing thread",
       },
       [201],
     );
@@ -456,10 +424,9 @@ describe("CHAT-02: web chat send and client ids", () => {
 
 describe("CHAT-02: interrupting active chat runs", () => {
   it("interrupts an active run, guards interrupt ids, and feeds cancelled rounds into the next run", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "long task to interrupt",
     });
     await api.heartbeatRunner(runnerGroup);
@@ -470,7 +437,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     const foreignInterrupt = await chat.requestSendEvent(
       peer,
       {
-        agentId,
         threadId: first.threadId,
         interruptsRunId: first.runId.toUpperCase(),
         clientEventId: randomUUID(),
@@ -484,7 +450,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     const interrupted = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         interruptsRunId: first.runId.toUpperCase(),
         clientEventId: interruptId,
@@ -563,7 +528,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     const replayedInterrupt = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         interruptsRunId: first.runId,
         clientEventId: interruptId,
@@ -576,7 +540,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         interruptsRunId: first.runId.toUpperCase(),
         clientEventId: randomUUID(),
@@ -595,7 +558,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
 
     // A run that went terminal without an interrupt row cannot be interrupted.
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "cancelled through the cancel api",
     });
@@ -605,7 +567,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     const lateInterrupt = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         interruptsRunId: second.runId,
         clientEventId: randomUUID(),
@@ -622,7 +583,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         prompt: "reuse the interrupt client id",
         clientEventId: interruptId,
@@ -641,7 +601,6 @@ describe("CHAT-02: interrupting active chat runs", () => {
     // With the same model and runtime, both cancelled rounds are carried
     // forward as incomplete context even without a native history.
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "resume after interruptions",
     });
@@ -659,7 +618,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
 
 describe("CHAT-02: dispatch failure", () => {
   it("rejects the picked input and releases the lease when run preparation cannot configure dispatch", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
     const messageId = randomUUID();
@@ -667,7 +626,6 @@ describe("CHAT-02: dispatch failure", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         prompt: "fail before worker start",
         clientEventId: messageId,
       },
@@ -728,7 +686,6 @@ describe("CHAT-02: dispatch failure", () => {
     // immediately, without waiting for lease expiry.
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", runnerGroup);
     const next = await sendChatRun(actor, {
-      agentId,
       threadId,
       prompt: "send again after the rejection",
     });
@@ -747,15 +704,16 @@ describe("CHAT-02: admission without spendable credits", () => {
       fixture.captureStorageMocks();
       const completed = await bdd.completeOnboarding(actor);
       expect(completed.status).toBe(200);
-      const agent = await bdd.createAgent(actor, {
+      await bdd.createAgent(actor, {
         displayName: "Suspended chat agent",
       });
+      const thread = await chat.createThread(actor, {});
       await fixture.activateWithoutCredits();
       await fixture.suspend(0);
 
       const clientEventId = randomUUID();
       const sendBody: ChatRunSendBody = {
-        agentId: agent.agentId,
+        threadId: thread.id,
         prompt: "blocked by suspended plan",
         model: null,
         clientEventId,
@@ -869,18 +827,23 @@ describe("CHAT-02: admission without spendable credits", () => {
   it("settles a send right after cancelling a pending run with one rejection", async () => {
     const fixture = createPublicChatAdmissionFixture(context);
     await fixture.run(async () => {
-      const { actor, agentId } = await fixture.createPaidNativeActor();
-      await createBddApi(context).updateAgentInstructions(
-        actor,
-        agentId,
-        `Pending ${randomUUID()}`,
+      const { actor } = await fixture.createPaidNativeActor();
+      await accept(
+        setupApp({ context, routes: instructionsRoutes })(
+          instructionsContract,
+        ).update({
+          headers: sessionHeaders(actor),
+          body: { content: `Pending ${randomUUID()}` },
+        }),
+        [200],
       );
+      const thread = await chat.createThread(actor, {});
       const signing = holdDownloadSigning(context);
       const pendingEventId = randomUUID();
       const accepted = await chat.requestSendEvent(
         actor,
         {
-          agentId,
+          threadId: thread.id,
           clientEventId: pendingEventId,
           prompt: "never started",
         },
@@ -911,7 +874,6 @@ describe("CHAT-02: admission without spendable credits", () => {
       const sent = await chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: pending.threadId,
           prompt: "sent right after the cancel",
           clientEventId,
@@ -948,7 +910,7 @@ describe("CHAT-02: admission without spendable credits", () => {
 
 describe("CHAT-02: Okou Mail link delivery", () => {
   it("delivers a linked Gmail draft exactly once through the agent reply", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, defaultAgentId: agentId } = await entitledChatActor();
     mockGmailConnectorOAuth({
       accessToken: "gmail-agent-reply-token",
       email: "sender@example.com",
@@ -964,10 +926,8 @@ describe("CHAT-02: Okou Mail link delivery", () => {
       code: "gmail-agent-reply-code",
       state: oauthState,
     });
-    await api.enableAgentConnectors(actor, agentId, ["gmail"]);
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "Create a Gmail draft and let me review it",
     });
     const { execution, sandboxHeaders } = await runExecution(run.runId);
@@ -1053,10 +1013,9 @@ describe("CHAT-02: Okou Mail link delivery", () => {
 
 describe("CHAT-02: network body capture", () => {
   it("carries a send's network body capture into the run the pick launches", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const captured = await sendChatRun(actor, {
-      agentId,
       prompt: "capture this run's network bodies",
       captureNetworkBodies: true,
     });
@@ -1069,11 +1028,22 @@ describe("CHAT-02: network body capture", () => {
     );
 
     const plain = await sendChatRun(actor, {
-      agentId,
       prompt: "do not capture network bodies",
     });
     const plainExecution = await runExecution(plain.runId);
     expect(plainExecution.execution.captureNetworkBodies).toBeFalsy();
     await cancelChatRun(actor, plain.runId, plainExecution.sandboxHeaders);
+  });
+
+  it("carries a queued input's network body capture into a later pick", async () => {
+    const { actor } = await entitledChatActor();
+    const queued = await queueChatRun(actor, {
+      prompt: "capture this queued run's network bodies",
+      captureNetworkBodies: true,
+    });
+    const { runId } = await queued.launch();
+    const { execution, sandboxHeaders } = await runExecution(runId);
+    expect(execution.captureNetworkBodies).toBeTruthy();
+    await cancelChatRun(actor, runId, sandboxHeaders);
   });
 });

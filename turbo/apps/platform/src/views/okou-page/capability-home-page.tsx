@@ -22,11 +22,7 @@ import { ChatComposer } from "./composer.tsx";
 import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
-import {
-  CapabilityGround,
-  CapabilityObjects,
-  CapabilityStage,
-} from "./capability-illustrations.tsx";
+import { CapabilityArt } from "./capability-illustrations.tsx";
 import { CREATE_TASKS, WORKFLOW_KINDS } from "./composer-capabilities.ts";
 import {
   CapabilityTray,
@@ -34,10 +30,10 @@ import {
 } from "./composer-capability-tray.tsx";
 
 /**
- * Every capability card shares one anatomy: copy at the top left, its objects
- * on a faint ground of the card's hue at the right, and its actions along the
- * bottom. The cards are flat tone with no stroke or shadow; the composer stays
- * the one outlined surface on the page.
+ * Every capability card shares one anatomy: copy at the top left, its drawing
+ * in the card's one hue at the right, and its actions along the bottom. The
+ * cards are flat tone with no stroke or shadow; the composer stays the one
+ * outlined surface on the page.
  */
 const CAPABILITY_CARD =
   "group/card relative isolate flex min-w-0 flex-col items-start overflow-hidden rounded-surface bg-muted px-6 py-5 text-left";
@@ -49,7 +45,7 @@ function CapabilityCopy({
 }: {
   readonly title: string;
   readonly description: string;
-  /** The copy column's width, which stops short of the card's objects. */
+  /** The copy column's width, which stops short of the card's drawing. */
   readonly className: string;
 }) {
   return (
@@ -68,7 +64,7 @@ function CapabilityCopy({
 
 /**
  * Every card opens from anywhere on it, not only from its buttons: this
- * button covers the whole card, above its copy and objects and below its row
+ * button covers the whole card, above its copy and drawing and below its row
  * of choices, which keep their own actions. A click elsewhere on the card
  * does what the card's first choice does. Those choices stay the card's
  * keyboard and assistive-technology controls, so the cover repeats one of
@@ -118,7 +114,7 @@ const GREETING_ROW = "flex min-h-14 [view-transition-name:capability-greeting]";
 /**
  * Find people and Research open their Explore tray from anywhere on the card;
  * the Explore button along the bottom gives them the same anatomy as Create
- * and Workflow. It takes only the left column, so the objects keep the right
+ * and Workflow. It takes only the left column, so the drawing keeps the right
  * column's full height.
  */
 function ExploreCapabilityCard({
@@ -146,13 +142,7 @@ function ExploreCapabilityCard({
       aria-label={title}
     >
       <CapabilityCardCover onClick={explore} />
-      <CapabilityGround card={art} />
-      <CapabilityStage
-        card={art}
-        className="motion-safe:animate-capability-art-in"
-      >
-        <CapabilityObjects art={art} />
-      </CapabilityStage>
+      <CapabilityArt card={art} />
       <CapabilityCopy
         title={title}
         description={description}
@@ -211,7 +201,7 @@ function WorkflowCapabilityCard({
   const swap = useHomeSwap(signals);
   return (
     <section
-      className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-8")}
+      className={cn(CAPABILITY_CARD, "min-h-48 @2xl:col-span-8")}
       aria-label={title}
     >
       <CapabilityCardCover
@@ -219,19 +209,7 @@ function WorkflowCapabilityCard({
           swap({ kind: "workflow", workflow: WORKFLOW_KINDS[0].kind });
         }}
       />
-      <CapabilityGround card="workflow" />
-      <CapabilityStage card="workflow">
-        {WORKFLOW_KINDS.map(({ art, visibility, loading }) => {
-          return (
-            <CapabilityObjects
-              key={art}
-              art={art}
-              className={visibility}
-              loading={loading}
-            />
-          );
-        })}
-      </CapabilityStage>
+      <CapabilityArt card="workflow" />
       <CapabilityCopy
         title={title}
         description={t(($) => {
@@ -240,13 +218,12 @@ function WorkflowCapabilityCard({
         className="max-w-33"
       />
       <div className={cn(CHOICE_ROW, "flex-wrap gap-1.5")}>
-        {WORKFLOW_KINDS.map(({ kind, art }) => {
+        {WORKFLOW_KINDS.map(({ kind }) => {
           return (
             <Button
               key={kind}
               variant="neutral"
               size="sm"
-              data-art={art}
               aria-label={t(($) => {
                 return $.chat.capabilityHome.workflow[kind].title;
               })}
@@ -265,13 +242,7 @@ function WorkflowCapabilityCard({
   );
 }
 
-function CapabilityCards({
-  signals,
-  entrance,
-}: {
-  readonly signals: ComposerSignals;
-  readonly entrance: boolean;
-}) {
+function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
   const { t } = useTranslation();
   const createTitle = t(($) => {
     return $.chat.capabilityHome.create.title;
@@ -285,15 +256,10 @@ function CapabilityCards({
   const swap = useHomeSwap(signals);
   // Explore takes the top row in halves. Below it the row runs 5:4, which still
   // fits Create's five choices on one line and gives Workflow the width its
-  // wide flow drawing needs. On the first home of the session the rows rise in
-  // one 70ms step after the greeting: the top row at 140ms, the bottom at 210.
+  // wide flow drawing needs.
   return (
     <div
-      className={cn(
-        "grid min-w-0 gap-3 @2xl:grid-cols-18",
-        entrance &&
-          "[&>*]:motion-safe:animate-capability-row-in [&>*:nth-child(-n+2)]:[--capability-row-delay:140ms] [&>*:nth-child(n+3)]:[--capability-row-delay:210ms]",
-      )}
+      className="grid min-w-0 gap-3 @2xl:grid-cols-18"
       role="group"
       aria-label={t(($) => {
         return $.chat.capabilityHome.capabilities;
@@ -302,7 +268,7 @@ function CapabilityCards({
       <ExploreCapabilityCard signals={signals} kind="search" />
       <ExploreCapabilityCard signals={signals} kind="research" />
       <section
-        className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-10")}
+        className={cn(CAPABILITY_CARD, "min-h-48 @2xl:col-span-10")}
         aria-label={createTitle}
       >
         <CapabilityCardCover
@@ -310,19 +276,7 @@ function CapabilityCards({
             swap({ kind: "task", task: CREATE_TASKS[0].task });
           }}
         />
-        <CapabilityGround card="create" />
-        <CapabilityStage card="create">
-          {CREATE_TASKS.map(({ art, visibility, loading }) => {
-            return (
-              <CapabilityObjects
-                key={art}
-                art={art}
-                className={visibility}
-                loading={loading}
-              />
-            );
-          })}
-        </CapabilityStage>
+        <CapabilityArt card="create" />
         <CapabilityCopy
           title={createTitle}
           description={t(($) => {
@@ -331,13 +285,12 @@ function CapabilityCards({
           className="max-w-70"
         />
         <div className={cn(CHOICE_ROW, "flex-wrap gap-1.5")}>
-          {CREATE_TASKS.map(({ task, art }) => {
+          {CREATE_TASKS.map(({ task }) => {
             const button = (
               <Button
                 key={task}
                 variant="neutral"
                 size="sm"
-                data-art={art}
                 onClick={() => {
                   swap({ kind: "task", task });
                 }}
@@ -372,12 +325,9 @@ function CapabilityCards({
 export function CapabilityHomeContent({
   signals,
   heading,
-  entrance = false,
 }: {
   readonly signals: ComposerSignals;
   readonly heading?: ReactNode;
-  /** Whether the cards rise in, as the greeting does on the session's first home. */
-  readonly entrance?: boolean;
 }) {
   const selected = useGet(signals.taskChips.home.task$);
   const focusEditor = useSet(signals.editor.focus$);
@@ -432,9 +382,8 @@ export function CapabilityHomeContent({
               // showing it never pushes the cards or the composer down.
               <div className={cn(GREETING_ROW, "items-center")}>{heading}</div>
             )}
-            <CapabilityCards signals={signals} entrance={entrance} />
+            <CapabilityCards signals={signals} />
             <CapabilityHomeCompliance
-              entrance={entrance}
               // The block takes its focused hide control with it; the
               // composer is where the page's focus starts, so it goes there.
               onHidden={focusEditor}
@@ -469,11 +418,9 @@ export function CapabilityHomeContent({
 export function CapabilityHomePage({
   signals,
   heading,
-  entrance,
 }: {
   readonly signals: ComposerSignals;
   readonly heading: ReactNode;
-  readonly entrance: boolean;
 }) {
   return (
     <ChatPageLayout
@@ -489,11 +436,7 @@ export function CapabilityHomePage({
         </ChatComposerFooter>
       }
     >
-      <CapabilityHomeContent
-        signals={signals}
-        heading={heading}
-        entrance={entrance}
-      />
+      <CapabilityHomeContent signals={signals} heading={heading} />
     </ChatPageLayout>
   );
 }

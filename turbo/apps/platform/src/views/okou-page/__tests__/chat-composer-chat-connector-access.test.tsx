@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatConnectorAccessContract,
   type ChatConnectorAccess,
@@ -10,8 +9,6 @@ import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/co
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorByIdContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
@@ -29,7 +26,6 @@ import {
   createComposerConnectorHelpers,
   permissionDetail,
   noAuthMethod,
-  SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   OTHER_THREAD_ID,
   chatConnectorOverviewFixture,
@@ -81,12 +77,10 @@ function installAccess(
             {
               id: SCOUT_THREAD_ID,
               title: "Scout chat",
-              agentId: SCOUT_AGENT_ID,
             },
             {
               id: OTHER_THREAD_ID,
               title: "Other chat",
-              agentId: SCOUT_AGENT_ID,
             },
           ],
           threadId: SCOUT_THREAD_ID,
@@ -289,15 +283,11 @@ function installAccess(
   };
 }
 
-async function setup(path = `/chats/${SCOUT_THREAD_ID}`, singleAgent = false) {
+async function setup(path = `/chats/${SCOUT_THREAD_ID}`) {
   await setupPage({
     context,
     path,
     locale: "en-US",
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorChatAccountAccess]: true,
-      [FeatureSwitchKey.SingleAgent]: singleAgent,
-    },
   });
   await findComposer();
 }
@@ -356,73 +346,70 @@ async function openDirectory(user: ReturnType<typeof userEvent.setup>) {
   return await findDirectory();
 }
 
-test.each([false, true])(
-  "Directory permissions preserve connector-wide rules and disabled accounts with personal mode %s",
-  async (singleAgent) => {
-    // Keep pointer/focus behavior without hovering before the roundtrip's clicks.
-    const user = userEvent.setup({ delay: null, skipHover: true });
-    installAccess({ allOff: true });
-    await setup(undefined, singleAgent);
-    const trigger = await findFastControl("button", "Connectors");
-    await user.click(trigger);
-    click(await findFastControl("button", "Add connectors"));
-    const directory = await findDirectory();
-    await fill(
-      within(directory).getByPlaceholderText("Find connectors..."),
-      "GitHub",
-    );
-    click(await findFastControl("button", "Open GitHub details", directory));
-    click(await findFastControl("button", "Configure", directory));
-    const editor = await screen.findByRole("dialog", {
-      name: "GitHub permissions",
-    });
+test("Directory permissions preserve connector-wide rules and disabled accounts", async () => {
+  // Keep pointer/focus behavior without hovering before the roundtrip's clicks.
+  const user = userEvent.setup({ delay: null, skipHover: true });
+  installAccess({ allOff: true });
+  await setup();
+  const trigger = await findFastControl("button", "Connectors");
+  await user.click(trigger);
+  click(await findFastControl("button", "Add connectors"));
+  const directory = await findDirectory();
+  await fill(
+    within(directory).getByPlaceholderText("Find connectors..."),
+    "GitHub",
+  );
+  click(await findFastControl("button", "Open GitHub details", directory));
+  click(await findFastControl("button", "Configure", directory));
+  const editor = await screen.findByRole("dialog", {
+    name: "GitHub permissions",
+  });
+  expect(
+    within(editor).getByText(
+      "These rules apply to this connector across your chats and accounts.",
+    ),
+  ).toBeInTheDocument();
+  const permission = await within(editor).findByLabelText("repos|write", {
+    selector: '[role="group"]',
+  });
+  await waitFor(() => {
+    expect(editor.contains(document.activeElement)).toBeTruthy();
+  });
+  click(await findFastControl("button", "Deny", permission));
+  await user.click(await findFastControl("button", "Apply", editor));
+  await waitFor(() => {
     expect(
-      within(editor).getByText(
-        "These rules apply to this connector across your chats and accounts.",
-      ),
-    ).toBeInTheDocument();
-    const permission = await within(editor).findByLabelText("repos|write", {
-      selector: '[role="group"]',
-    });
-    await waitFor(() => {
-      expect(editor.contains(document.activeElement)).toBeTruthy();
-    });
-    click(await findFastControl("button", "Deny", permission));
-    await user.click(await findFastControl("button", "Apply", editor));
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "GitHub permissions" }),
-      ).toBeNull();
-      expect(trigger).toHaveFocus();
-    });
-    const row = await openMenu();
-    expect(row).toHaveTextContent("2 accounts");
-    click(row);
-    await expect(
-      screen.findByRole("switch", { name: "Work access" }),
-    ).resolves.not.toBeChecked();
+      screen.queryByRole("dialog", { name: "GitHub permissions" }),
+    ).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+  const row = await openMenu();
+  expect(row).toHaveTextContent("2 accounts");
+  click(row);
+  await expect(
+    screen.findByRole("switch", { name: "Work access" }),
+  ).resolves.not.toBeChecked();
+  expect(
+    screen.getByRole("switch", { name: "Personal access" }),
+  ).not.toBeChecked();
+  click(await findFastControl("button", "Permissions"));
+  const saved = await screen.findByRole("dialog", {
+    name: "GitHub permissions",
+  });
+  const savedPermission = await within(saved).findByLabelText("repos|write", {
+    selector: '[role="group"]',
+  });
+  await expect(
+    findFastControl("button", "Deny", savedPermission),
+  ).resolves.toHaveAttribute("aria-pressed", "true");
+  await user.keyboard("{Escape}{Escape}");
+  await waitFor(() => {
     expect(
-      screen.getByRole("switch", { name: "Personal access" }),
-    ).not.toBeChecked();
-    click(await findFastControl("button", "Permissions"));
-    const saved = await screen.findByRole("dialog", {
-      name: "GitHub permissions",
-    });
-    const savedPermission = await within(saved).findByLabelText("repos|write", {
-      selector: '[role="group"]',
-    });
-    await expect(
-      findFastControl("button", "Deny", savedPermission),
-    ).resolves.toHaveAttribute("aria-pressed", "true");
-    await user.keyboard("{Escape}{Escape}");
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "GitHub permissions" }),
-      ).toBeNull();
-      expect(trigger).toHaveFocus();
-    });
-  },
-);
+      screen.queryByRole("dialog", { name: "GitHub permissions" }),
+    ).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+});
 
 test("Account navigation retains computer controls, Remote access and Add connectors", async () => {
   const user = userEvent.setup({ delay: null });
@@ -499,7 +486,7 @@ test("Directory details omit unavailable permission configuration", async () => 
 });
 
 test.each([false, true])(
-  "Connect an account without Agent authorization, custom=%s",
+  "Connect and enable a no-auth account in Chat, custom=%s",
   async (custom) => {
     const user = userEvent.setup({ delay: null });
     const label = custom ? "Public Custom" : "Public Tools";
@@ -526,23 +513,7 @@ test.each([false, true])(
           ]
         : [],
     });
-    context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "Agent connector settings unavailable",
-        },
-      });
-    });
-    context.mocks.api(agentCustomConnectorsContract.update, ({ respond }) => {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "Agent connector settings unavailable",
-        },
-      });
-    });
-    await setup(`/agents/${SCOUT_AGENT_ID}/chat`);
+    await setup("/");
     const directory = await openDirectory(user);
     if (custom) {
       await user.click(await findFastControl("radio", "Custom", directory));
@@ -571,8 +542,6 @@ test.each([false, true])(
             {
               connectorSlug: "public-tools",
               authMethod: "public",
-              agentId: undefined,
-              authorizeAgent: undefined,
             },
           ],
     );
@@ -626,9 +595,15 @@ test("Release a pending account save and its cached state when leaving the Chat"
   await user.click(await screen.findByRole("switch", { name: "Work access" }));
   const requestSignal = await started.promise;
   await user.keyboard("{Escape}{Escape}");
-  click(await findFastControl("button", "New chat"));
+  const newChat = screen
+    .getByTestId("chat-list-column")
+    .querySelector<HTMLAnchorElement>('a[href="/"]');
+  if (!newChat) {
+    throw new Error("Expected the new chat link in the chat list");
+  }
+  click(newChat);
   await waitFor(() => {
-    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
+    expect(window.location.pathname).toBe("/");
     expect(requestSignal.aborted).toBeTruthy();
   });
   response.resolve();
@@ -863,7 +838,7 @@ test("Preserve the internally resolved account when enabling several accounts be
       createdAt: "2026-11-03T00:00:00Z",
     });
   });
-  await setup(`/agents/${SCOUT_AGENT_ID}/chat`);
+  await setup("/");
   await user.click(await openMenu());
   await chooseAccess(user, "Personal", "On");
   await expect(
@@ -913,7 +888,7 @@ test.each([false, true])(
         createdAt: "2026-11-03T00:00:00Z",
       });
     });
-    const path = `/agents/${SCOUT_AGENT_ID}/chat`;
+    const path = "/";
     await setup(path);
     await user.click(await openMenu());
     await expect(

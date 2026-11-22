@@ -6,30 +6,28 @@ import {
   agentsMainContract,
   type AgentRequest,
 } from "@okouai/api-contracts/contracts/agents";
-import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import { deliverOrganizationCreated } from "./helpers/api-bdd-webhooks";
 import { createStore } from "ccstate";
 
 import { mockNow } from "../../../lib/time";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { cliAuthRoutes } from "../cli-auth";
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { agentsRoutes } from "../agents";
-import { onboardingStatusRoutes } from "../onboarding-status";
-import { workflowsRoutes } from "../workflows";
 
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
+const workflows = createWorkflowsBddApi(context);
 
 interface OrgUser {
   readonly orgId: string;
@@ -94,12 +92,6 @@ function agentsCollectionClient() {
   return setupApp({ context, routes: agentsRoutes })(agentsMainContract);
 }
 
-function onboardingStatusClient() {
-  return setupApp({ context, routes: onboardingStatusRoutes })(
-    onboardingStatusContract,
-  );
-}
-
 function instructionsClient() {
   return setupApp({ context, routes: agentInstructionsRoutes })(
     agentInstructionsContract,
@@ -123,24 +115,10 @@ async function createAgentAs(
   return { agentId: response.body.agentId };
 }
 
-/** Binds a workflow to the agent through POST /api/workflows. */
-async function createWorkflowFor(
-  user: OrgUser,
-  agentId: string,
-  name: string,
-): Promise<void> {
-  // Agent metadata and instructions keep their retained Workflow bindings.
-  await updateFeatureSwitchesForUser(context, user, { singleAgent: false });
+/** Create a member-owned workflow alongside the legacy profile. */
+async function createWorkflowFor(user: OrgUser, name: string): Promise<void> {
+  await workflows.createWorkflow(workflows.user(user), { name });
   mocks.clerk.session(user.userId, user.orgId);
-  await accept(
-    setupApp({ context, routes: workflowsRoutes })(
-      workflowsCollectionContract,
-    ).create({
-      headers: authHeaders(),
-      body: { agentId, name },
-    }),
-    [201],
-  );
 }
 
 describe("PUT /api/agents/:id", () => {
@@ -199,10 +177,10 @@ describe("PUT /api/agents/:id", () => {
     expect(fetched.body.displayName).toBe("Updated Agent");
   });
 
-  it("updates an agent that has workflow bindings", async () => {
+  it("updates a legacy profile in a workspace with workflows", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user);
-    await createWorkflowFor(user, agent.agentId, "existing-skill");
+    await createWorkflowFor(user, "existing-skill");
 
     const response = await accept(
       agentsClient().update({
@@ -368,13 +346,16 @@ describe("PUT /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    const onboarding = await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+    await deliverOrganizationCreated(context, owner);
+    const listed = await accept(
+      agentsCollectionClient().list({ headers: authHeaders() }),
       [200],
     );
-    const agentId = onboarding.body.defaultAgentId;
+    const agentId = listed.body.find((entry) => {
+      return entry.isDefaultAgent;
+    })?.agentId;
     if (!agentId) {
-      throw new Error("Expected onboarding to create a default Agent");
+      throw new Error("Expected workspace creation to publish a default Agent");
     }
     const configured = await accept(
       agentsClient().update({
@@ -547,7 +528,7 @@ describe("PATCH /api/agents/:id", () => {
       sound: "calm",
       avatarUrl: "preset:4",
     });
-    await createWorkflowFor(user, agent.agentId, "existing-skill");
+    await createWorkflowFor(user, "existing-skill");
 
     const response = await accept(
       agentsClient().updateMetadata({
@@ -655,13 +636,16 @@ describe("PATCH /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    const onboarding = await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+    await deliverOrganizationCreated(context, owner);
+    const listed = await accept(
+      agentsCollectionClient().list({ headers: authHeaders() }),
       [200],
     );
-    const agentId = onboarding.body.defaultAgentId;
+    const agentId = listed.body.find((entry) => {
+      return entry.isDefaultAgent;
+    })?.agentId;
     if (!agentId) {
-      throw new Error("Expected onboarding to create a default agent");
+      throw new Error("Expected workspace creation to publish a default agent");
     }
 
     mocks.clerk.session(`user_${randomUUID()}`, owner.orgId, "org:member");
@@ -819,13 +803,16 @@ describe("PATCH /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    const onboarding = await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+    await deliverOrganizationCreated(context, owner);
+    const listed = await accept(
+      agentsCollectionClient().list({ headers: authHeaders() }),
       [200],
     );
-    const agentId = onboarding.body.defaultAgentId;
+    const agentId = listed.body.find((entry) => {
+      return entry.isDefaultAgent;
+    })?.agentId;
     if (!agentId) {
-      throw new Error("Expected onboarding to create a default Agent");
+      throw new Error("Expected workspace creation to publish a default Agent");
     }
     const saved = await accept(
       agentsClient().updateMetadata({
@@ -953,12 +940,12 @@ describe("PUT /api/agents/:id/instructions", () => {
     });
   });
 
-  it("updates instructions and preserves Agent metadata with workflow bindings", async () => {
+  it("updates instructions and preserves Agent metadata in a workspace with workflows", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user, {
       displayName: "Instructions Agent",
     });
-    await createWorkflowFor(user, agent.agentId, "existing-skill");
+    await createWorkflowFor(user, "existing-skill");
     const response = await accept(
       instructionsClient().update({
         params: { id: agent.agentId },

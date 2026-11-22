@@ -37,8 +37,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     mockFeishu(context, overrides, platform);
   }
   const INSTALLATION_ID = "00000000-0000-4000-8000-000000000001";
-  const AGENT_ID = "00000000-0000-4000-8000-000000000002";
-  const HOME_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
   function completedInstallation(
     overrides: Partial<FeishuInstallationStatus> = {},
@@ -52,8 +50,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       messageReceived: true,
       tenantKey: "tenant-feishu",
       tenantName: `Okou ${provider.name}`,
-      defaultAgentId: AGENT_ID,
-      defaultAgentName: "Okou",
       setupCompleted: true,
       ...overrides,
     };
@@ -312,8 +308,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       messageReceived: true,
       tenantKey: "tenant-feishu",
       tenantName: `Okou ${provider.name}`,
-      defaultAgentId: AGENT_ID,
-      defaultAgentName: "Okou",
       installations: [
         completedInstallation({
           connectedUserName: `${provider.name} User`,
@@ -327,9 +321,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     await expect(
       screen.findByText(`${provider.name}`),
     ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText(`Route ${provider.name} messages to agents`),
-    ).toBeInTheDocument();
     click(getFeishuSettingsLink());
 
     await expect(
@@ -417,8 +408,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       messageReceived: true,
       tenantKey: "tenant-admin",
       tenantName: "Completed admin bot",
-      defaultAgentId: AGENT_ID,
-      defaultAgentName: "Okou",
       installations: [
         completedInstallation({
           isConnected: false,
@@ -509,8 +498,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       messageReceived: true,
       tenantKey: "tenant-member",
       tenantName: "Member bot",
-      defaultAgentId: AGENT_ID,
-      defaultAgentName: "Okou",
       installations: [
         completedInstallation({
           appId: "cli_member",
@@ -549,7 +536,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     });
 
     await waitFor(() => {
-      expect(pathname()).toBe(`/agents/${HOME_AGENT_ID}/chat`);
+      expect(pathname()).toBe("/");
     });
     expect(screen.queryByText(`${provider.name} bots`)).not.toBeInTheDocument();
   });
@@ -565,8 +552,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       messageReceived: true,
       tenantKey: "tenant-member",
       tenantName: "Member bot",
-      defaultAgentId: AGENT_ID,
-      defaultAgentName: "Okou",
       installations: [
         completedInstallation({
           isConnected: false,
@@ -624,8 +609,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
         messageReceived: false,
         tenantKey: null,
         tenantName: null,
-        defaultAgentId: AGENT_ID,
-        defaultAgentName: "Okou",
         installations: [installation],
       });
     });
@@ -714,8 +697,6 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       messageReceived: false,
       tenantKey: "tenant-member",
       tenantName: "Member bot",
-      defaultAgentId: AGENT_ID,
-      defaultAgentName: "Okou",
       installations: [
         completedInstallation({
           isConnected: false,

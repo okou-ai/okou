@@ -152,10 +152,6 @@ def load_configured_catalog_snapshot() -> BuiltinFirewallCatalogSnapshot:
     return load_catalog_snapshot(configured_catalog_cache_path())
 
 
-def _path_key(path: Path) -> str:
-    return str(path.absolute())
-
-
 def _state_for_path(path_key: str) -> _CatalogCacheState:
     if _cache_state.path_key != path_key:
         _cache_state.reset(path_key)
@@ -173,13 +169,7 @@ def catalog_file_key(cache_path: str | None) -> CatalogFileKey | None:
         return None
     if not _cache_file_stat_is_trusted(st):
         return None
-    return CatalogFileKey(
-        absolute_path=_path_key(path),
-        st_dev=st.st_dev,
-        st_ino=st.st_ino,
-        st_mtime_ns=st.st_mtime_ns,
-        st_size=st.st_size,
-    )
+    return state_file.identity_from_stat(path, st)
 
 
 def load_catalog_snapshot(cache_path: str | None) -> BuiltinFirewallCatalogSnapshot:
@@ -192,7 +182,7 @@ def load_catalog_snapshot(cache_path: str | None) -> BuiltinFirewallCatalogSnaps
         )
 
     path = Path(cache_path)
-    path_key = _path_key(path)
+    path_key = state_file.absolute_path_key(path)
     state = _state_for_path(path_key)
 
     try:

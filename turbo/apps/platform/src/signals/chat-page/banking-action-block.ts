@@ -1,6 +1,6 @@
-import { bankingUserContract } from "@okouai/api-contracts/client/banking";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/client/banking";
 import type {
-  BankingAccessRequestStatusResponse,
+  BankingWorkspaceStatus,
   BankingConnectSessionRequest,
   BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
@@ -15,10 +15,9 @@ import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
 } from "./action-callback.ts";
-import {
-  chatActionIdMatches,
-  type ChatActionContext,
-  type ChatActionParseResult,
+import type {
+  ChatActionContext,
+  ChatActionParseResult,
 } from "./chat-action-context.ts";
 import {
   createCardSignalsRegistry,
@@ -27,7 +26,6 @@ import {
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
 
 export interface BankingActionDescriptor {
-  readonly agentId: string;
   readonly reason: string;
   readonly originalUrl: string;
   readonly callbackPrompt: string;
@@ -55,7 +53,7 @@ export interface BankingCardUiState {
 }
 
 export interface BankingSignals extends BankingActionDescriptor {
-  readonly status$: Computed<Promise<BankingAccessRequestStatusResponse>>;
+  readonly status$: Computed<Promise<BankingWorkspaceStatus>>;
   readonly subscribe$: Command<void, [AbortSignal]>;
   readonly uiState$: Computed<BankingCardUiState>;
   readonly runAction$: Command<Promise<void>, [BankingCardAction, AbortSignal]>;
@@ -81,17 +79,13 @@ export function parseBankingActionUrl(
   if (!url) {
     return { status: "unrelated" };
   }
-  const match = url.pathname.match(/^\/agents\/([^/]+)\/banking$/u);
-  if (!match) {
+  if (url.pathname !== "/banking/access") {
     return { status: "unrelated" };
   }
-  const agentId = match[1] ?? "";
   const reason = url.searchParams.get("reason")?.trim() ?? "";
   const callback = context ? chatActionCallbackFromUrl(url, context) : null;
   if (
     !context ||
-    !agentId ||
-    !chatActionIdMatches(agentId, context.agentId) ||
     !reason ||
     reason.length > 500 ||
     !callback?.callbackPrompt ||
@@ -102,7 +96,6 @@ export function parseBankingActionUrl(
   return {
     status: "valid",
     descriptor: {
-      agentId: context.agentId,
       reason,
       originalUrl: value,
       callbackPrompt: callback.callbackPrompt,
@@ -111,17 +104,12 @@ export function parseBankingActionUrl(
   };
 }
 
-function createBankingStatusSignals(descriptor: BankingActionDescriptor) {
+function createBankingStatusSignals() {
   const reload$ = state(0);
   const status$ = computed(async (get) => {
     get(reload$);
-    const client = get(apiClient$)(bankingUserContract);
-    const result = await accept(
-      client.accessRequestStatus({
-        params: { agentId: descriptor.agentId },
-      }),
-      [200],
-    );
+    const client = get(apiClient$)(bankingWorkspaceContract);
+    const result = await accept(client.accessRequestStatus({}), [200]);
     return result.body;
   });
   const refresh$ = command(({ set }) => {
@@ -145,11 +133,10 @@ function createBankingMutationSignals(
       },
       signal: AbortSignal,
     ): Promise<string> => {
-      const client = get(apiClient$)(bankingUserContract);
+      const client = get(apiClient$)(bankingWorkspaceContract);
       const result = await accept(
         client.createConnectSession({
           body: {
-            agentId: descriptor.agentId,
             mode: args.mode,
             ...(args.institutionLoginId
               ? { institutionLoginId: args.institutionLoginId }
@@ -172,12 +159,11 @@ function createBankingMutationSignals(
         readonly duration: BankingGrantDuration;
       },
       signal: AbortSignal,
-    ): Promise<BankingAccessRequestStatusResponse> => {
-      const client = get(apiClient$)(bankingUserContract);
+    ): Promise<BankingWorkspaceStatus> => {
+      const client = get(apiClient$)(bankingWorkspaceContract);
       const result = await accept(
-        client.saveAgentGrant({
+        client.saveGrant({
           body: {
-            agentId: descriptor.agentId,
             accountIds: [...args.accountIds],
             duration: args.duration,
             purpose: descriptor.reason,
@@ -195,11 +181,11 @@ function createBankingMutationSignals(
     async (
       { get, set },
       signal: AbortSignal,
-    ): Promise<BankingAccessRequestStatusResponse> => {
-      const client = get(apiClient$)(bankingUserContract);
+    ): Promise<BankingWorkspaceStatus> => {
+      const client = get(apiClient$)(bankingWorkspaceContract);
       const result = await accept(
-        client.revokeAgentGrant({
-          body: { agentId: descriptor.agentId },
+        client.revokeGrant({
+          body: {},
           fetchOptions: { signal },
         }),
         [200],
@@ -228,7 +214,6 @@ function createBankingContinueSignal(descriptor: BankingActionDescriptor) {
       runChatActionCallback$,
       {
         threadId: descriptor.threadId,
-        agentId: descriptor.agentId,
         callbackPrompt: descriptor.callbackPrompt,
         callbackIds,
       },
@@ -280,10 +265,10 @@ function createBankingUiSignals(): Pick<
   return { uiState$, updateUiState$ };
 }
 
-function createBankingSignals(
+export function createBankingSignals(
   descriptor: BankingActionDescriptor,
 ): BankingSignals {
-  const statusSignals = createBankingStatusSignals(descriptor);
+  const statusSignals = createBankingStatusSignals();
   const mutationSignals = createBankingMutationSignals(
     descriptor,
     statusSignals.refresh$,

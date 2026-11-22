@@ -8,9 +8,9 @@ import {
 } from "../chat-page/optimistic-chat-thread-page.ts";
 import type { ChatForwardContext } from "../chat-page/chat-forward.ts";
 import {
-  createAgentDraftSignals,
-  type EnsuredAgentDraft,
-} from "./agent-draft.ts";
+  createWorkspaceDraftSignals,
+  type WorkspaceDraftEntry,
+} from "./workspace-draft.ts";
 import type { DraftSignals } from "./chat-draft.ts";
 import {
   createComposerSignals,
@@ -88,7 +88,6 @@ const noOpEventAction$ = command(
 
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
-  readonly title?: string;
   /**
    * A dialog composer sends from its own unsaved draft and keeps the current
    * page, leaving the Agent's saved composer untouched.
@@ -96,11 +95,15 @@ interface AgentComposerOptions {
   readonly inPlace?: boolean;
   /** The initial Project for a page's new chat or an in-place fork. */
   readonly projectId?: string;
-  readonly onOptimisticSend?: (threadId: string) => void;
+  /** Names the new thread instead of deriving its title from the message. */
+  readonly title?: string;
+  readonly onOptimisticSend?: (
+    threadId: string,
+    submission: ComposerSubmission,
+  ) => void;
 }
 
 function createAgentSubmitMessage(
-  agentId: string,
   draft: DraftSignals,
   connector: ReturnType<typeof createComposerConnectorSignals>,
   pendingRemoteAccess: ReturnType<typeof createPendingRemoteAccessSignals>,
@@ -122,17 +125,12 @@ function createAgentSubmitMessage(
       const initialPhoneUse = features[FeatureSwitchKey.PhoneUse]
         ? get(connector.phoneAccess.pending$)
         : null;
-      const chatAccessEnabled =
-        features[FeatureSwitchKey.ConnectorChatAccountAccess];
-      const connectorPreference = chatAccessEnabled
-        ? null
-        : await get(connector.accounts.preferenceState$);
+
       signal.throwIfAborted();
       const send = options.inPlace
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
       const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
-      const connectorSelections = connectorPreference?.selections ?? [];
       const pendingConnectorAccess = get(connector.chatAccess.pending$);
       const hasPendingConnectorAccess =
         pendingConnectorAccess.overrides.length > 0 ||
@@ -140,9 +138,8 @@ function createAgentSubmitMessage(
       const sent = await set(
         send,
         {
-          agentId,
-          title: options.title,
           ...(options.projectId ? { projectId: options.projectId } : {}),
+          ...(options.title ? { title: options.title } : {}),
           draft,
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
@@ -150,7 +147,7 @@ function createAgentSubmitMessage(
           // An in-place send stays on this page, so only a send that opens the
           // new thread hands the selection over to it.
           ...(options.inPlace
-            ? { preserveAgentDraft: true }
+            ? { preserveWorkspaceDraft: true }
             : { composerTask: submission.taskSelection }),
           // Omit untouched draft preferences so the server applies the current
           // member default. Explicit "none" must also override a true default.
@@ -162,11 +159,12 @@ function createAgentSubmitMessage(
                 cloudBrowserEnabled: access.kind === "cloudBrowser",
               }),
           ...(options.forward ? { forward: options.forward } : {}),
-          ...(options.onOptimisticSend
-            ? { onOptimisticSend: options.onOptimisticSend }
-            : {}),
-          ...(connectorSelections.length > 0 ? { connectorSelections } : {}),
-          ...(chatAccessEnabled && hasPendingConnectorAccess
+          onOptimisticSend: options.onOptimisticSend
+            ? (threadId) => {
+                options.onOptimisticSend?.(threadId, submission);
+              }
+            : undefined,
+          ...(hasPendingConnectorAccess
             ? { initialConnectorAccess: pendingConnectorAccess }
             : {}),
           ...(initialRemoteAccessOverrides.length > 0
@@ -179,7 +177,6 @@ function createAgentSubmitMessage(
       if (sent) {
         set(resetNewThreadComputerAccess$);
         set(resetChatPageModelSelection$);
-        set(connector.accounts.resetPendingSelections$);
         set(connector.chatAccess.resetPending$);
         set(connector.phoneAccess.resetPending$);
         set(pendingRemoteAccess.reset$);
@@ -190,15 +187,13 @@ function createAgentSubmitMessage(
 }
 
 function createAgentComposerSignalsWithDraft(
-  agentId: string,
-  agentDraft: EnsuredAgentDraft,
+  workspaceDraft: WorkspaceDraftEntry,
   options: AgentComposerOptions = {},
 ) {
-  const connector = createComposerConnectorSignals(agentId);
+  const connector = createComposerConnectorSignals();
   const pendingRemoteAccess = createPendingRemoteAccessSignals();
   const submitMessage$ = createAgentSubmitMessage(
-    agentId,
-    agentDraft.draft,
+    workspaceDraft.draft,
     connector,
     pendingRemoteAccess,
     options,
@@ -208,19 +203,18 @@ function createAgentComposerSignalsWithDraft(
   // initial Project for creation without exposing that picker.
   const project = options.inPlace
     ? undefined
-    : createComposerProjectSignals(agentId, options.projectId ?? null);
+    : createComposerProjectSignals(options.projectId ?? null);
   const composer = createComposerSignals({
-    agentId,
     ...(project ? { project } : {}),
     connector,
     pendingRemoteAccess,
     draft: {
-      signals: agentDraft.draft,
-      load$: options.inPlace ? noOpAction$ : agentDraft.load$,
-      save$: options.inPlace ? noOpAction$ : agentDraft.queueDraftSync$,
+      signals: workspaceDraft.draft,
+      load$: options.inPlace ? noOpAction$ : workspaceDraft.load$,
+      save$: options.inPlace ? noOpAction$ : workspaceDraft.queueDraftSync$,
     },
     eventSignals: createChatEventProjectionSignals(chatEvents$),
-    voiceDraftTarget: `agent:${agentId}`,
+    voiceDraftTarget: "new-chat",
     singleLineOnMobile: false,
     forwardComposer: options.inPlace === true,
     modelSelection$: chatPageModelSelection$,
@@ -240,27 +234,28 @@ function createAgentComposerSignalsWithDraft(
   return project ? { ...composer, project } : composer;
 }
 
-export function createForwardAgentComposerSignals(
-  agentId: string,
+export function createForwardChatComposerSignals(
   forward: ChatForwardContext,
   onOptimisticSend: () => void,
   projectId?: string,
 ) {
-  return createAgentComposerSignalsWithDraft(
-    agentId,
-    createAgentDraftSignals(agentId),
-    { forward, inPlace: true, onOptimisticSend, projectId },
-  );
+  return createAgentComposerSignalsWithDraft(createWorkspaceDraftSignals(), {
+    forward,
+    inPlace: true,
+    onOptimisticSend,
+    projectId,
+  });
 }
 
-/** A dialog composer for a prepared draft that starts a new thread in place. */
+/**
+ * A dialog composer that starts a new thread from its own unsaved
+ * draft and keeps the current page.
+ */
 export function createInPlaceAgentComposerSignals(
-  agentId: string,
-  agentDraft: EnsuredAgentDraft,
-  onOptimisticSend: (threadId: string) => void,
+  onOptimisticSend: (threadId: string, submission: ComposerSubmission) => void,
   title: string,
 ) {
-  return createAgentComposerSignalsWithDraft(agentId, agentDraft, {
+  return createAgentComposerSignalsWithDraft(createWorkspaceDraftSignals(), {
     inPlace: true,
     onOptimisticSend,
     title,
@@ -268,8 +263,7 @@ export function createInPlaceAgentComposerSignals(
 }
 
 interface AgentComposerContext {
-  readonly agentId: string;
-  readonly agentDraft: EnsuredAgentDraft;
+  readonly workspaceDraft: WorkspaceDraftEntry;
   readonly projectId?: string;
 }
 
@@ -284,11 +278,10 @@ export const setAgentComposerContext$ = command(
 export const agentChatComposerSignals$ = computed((get) => {
   const context = get(internalAgentComposerContext$);
   if (!context) {
-    throw new Error("Chat composer requires an initialized agent context");
+    throw new Error("Chat composer requires an initialized draft context");
   }
   return createAgentComposerSignalsWithDraft(
-    context.agentId,
-    context.agentDraft,
+    context.workspaceDraft,
     context.projectId ? { projectId: context.projectId } : {},
   );
 });

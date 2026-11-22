@@ -33,19 +33,18 @@ const RESEED_FAILED_MARKER: &str = "guest-state-restore failed";
 const TIMEZONE_SYNC_FAILED_MARKER: &str = "guest timezone sync failed";
 const TIMEZONE_UNAVAILABLE_MARKER: &str = "guest timezone unavailable";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RestoreTimezoneMode {
+#[derive(Debug, Eq, PartialEq)]
+enum RestoreTimezone {
     None,
-    BestEffort,
-    Required,
+    BestEffort(String),
+    Required(String),
 }
 
 #[derive(Debug, Eq, PartialEq)]
 struct RestoreArgs {
     seconds: u64,
     nanoseconds: u32,
-    timezone_mode: RestoreTimezoneMode,
-    timezone: Option<String>,
+    timezone: RestoreTimezone,
 }
 
 fn read_entropy(mut input: impl Read) -> io::Result<Vec<u8>> {
@@ -189,35 +188,29 @@ fn parse_restore_args(args: &[OsString]) -> Result<RestoreArgs, &'static str> {
         .and_then(|value| value.parse::<u32>().ok())
         .filter(|value| *value < 1_000_000_000)
         .ok_or("invalid restore nanoseconds")?;
-    let timezone_mode = match args.get(3).and_then(|arg| arg.to_str()) {
-        Some("none") => RestoreTimezoneMode::None,
-        Some("best-effort") => RestoreTimezoneMode::BestEffort,
-        Some("required") => RestoreTimezoneMode::Required,
+    let timezone = match args.get(3).and_then(|arg| arg.to_str()) {
+        Some("none") if args.len() == 4 => RestoreTimezone::None,
+        Some("none") => return Err("restore timezone is not allowed for none mode"),
+        Some(mode @ ("best-effort" | "required")) => {
+            let timezone = args
+                .get(4)
+                .and_then(|arg| arg.to_str())
+                .filter(|timezone| args.len() == 5 && is_safe_timezone_name(timezone))
+                .ok_or("restore timezone is missing or invalid")?
+                .to_owned();
+            if mode == "required" {
+                RestoreTimezone::Required(timezone)
+            } else {
+                RestoreTimezone::BestEffort(timezone)
+            }
+        }
         _ => return Err("invalid restore timezone mode"),
     };
-    let timezone = args.get(4).and_then(|arg| arg.to_str());
-    match timezone_mode {
-        RestoreTimezoneMode::None if args.len() == 4 => Ok(RestoreArgs {
-            seconds,
-            nanoseconds,
-            timezone_mode,
-            timezone: None,
-        }),
-        RestoreTimezoneMode::BestEffort | RestoreTimezoneMode::Required
-            if args.len() == 5 && timezone.is_some_and(is_safe_timezone_name) =>
-        {
-            Ok(RestoreArgs {
-                seconds,
-                nanoseconds,
-                timezone_mode,
-                timezone: timezone.map(ToOwned::to_owned),
-            })
-        }
-        RestoreTimezoneMode::None => Err("restore timezone is not allowed for none mode"),
-        RestoreTimezoneMode::BestEffort | RestoreTimezoneMode::Required => {
-            Err("restore timezone is missing or invalid")
-        }
-    }
+    Ok(RestoreArgs {
+        seconds,
+        nanoseconds,
+        timezone,
+    })
 }
 
 fn parse_timezone_args(args: &[OsString]) -> Result<&str, &'static str> {
@@ -349,14 +342,12 @@ where
         return 1;
     }
 
-    let Some(timezone) = restore.timezone.as_deref() else {
-        return 0;
+    let (timezone, required) = match restore.timezone {
+        RestoreTimezone::None => return 0,
+        RestoreTimezone::BestEffort(timezone) => (timezone, false),
+        RestoreTimezone::Required(timezone) => (timezone, true),
     };
-    report_timezone_result(
-        timezone_fn(timezone),
-        restore.timezone_mode == RestoreTimezoneMode::Required,
-        &mut stderr,
-    )
+    report_timezone_result(timezone_fn(&timezone), required, &mut stderr)
 }
 
 fn report_timezone_result(result: io::Result<bool>, required: bool, mut stderr: impl Write) -> i32 {

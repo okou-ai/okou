@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.18.22](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.21...runner-lifecycle-v0.18.22) (2026-11-21)
+
+## [0.18.21](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.20...runner-lifecycle-v0.18.21) (2026-11-21)
+
+## [0.18.20](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.19...runner-lifecycle-v0.18.20) (2026-11-21)
+
+## [0.18.19](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.18...runner-lifecycle-v0.18.19) (2026-11-21)
+
+## [0.18.18](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.17...runner-lifecycle-v0.18.18) (2026-11-20)
+
+## [0.18.17](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.16...runner-lifecycle-v0.18.17) (2026-11-20)
+
+## [0.18.16](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.15...runner-lifecycle-v0.18.16) (2026-11-20)
+
+## [0.18.15](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.14...runner-lifecycle-v0.18.15) (2026-11-20)
+
+## [0.18.14](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.13...runner-lifecycle-v0.18.14) (2026-11-20)
+
+## [0.18.13](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.12...runner-lifecycle-v0.18.13) (2026-11-20)
+
+## [0.18.12](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.11...runner-lifecycle-v0.18.12) (2026-11-20)
+
+## [0.18.11](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.10...runner-lifecycle-v0.18.11) (2026-11-19)
+
+
+### Refactoring
+
+* **runner:** unify home image preparation ([#49131](https://github.com/okou-ai/okou/issues/49131)) ([e831cb1](https://github.com/okou-ai/okou/commit/e831cb18e971db5b85ed819460d282d632c62c21))
+
+## [0.18.10](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.9...runner-lifecycle-v0.18.10) (2026-11-19)
+
+## [0.18.9](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.8...runner-lifecycle-v0.18.9) (2026-11-19)
+
+
+### Bug Fixes
+
+* **runner:** defer preferred dispatch on home checkout contention ([#48947](https://github.com/okou-ai/okou/issues/48947)) ([1e9c38b](https://github.com/okou-ai/okou/commit/1e9c38ba98266756be0ffd55f1ed09b1ef816b59))
+
 ## [0.18.8](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.7...runner-lifecycle-v0.18.8) (2026-11-19)
 
 ## [0.18.7](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.6...runner-lifecycle-v0.18.7) (2026-11-19)

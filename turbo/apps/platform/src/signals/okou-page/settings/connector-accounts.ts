@@ -1,7 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../external/feature-switch.ts";
+
 import { onRef, resetSignal } from "../../utils.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
 import { invalidateConnectorAccountProjection$ } from "../connector-account-projection.ts";
@@ -36,7 +35,8 @@ export async function readConnectorAccountPage(
     createClient(connectorAccountsContract).connections({
       query: {
         ...target,
-        limit: options.limit ?? 50,
+        // The API returns the default separately. One row also detects saved accounts without a default.
+        limit: options.limit ?? 1,
         ...(target.kind === "builtin" && options.includeBuiltinScopeMismatch
           ? { includeScopeMismatch: "true" as const }
           : {}),
@@ -47,36 +47,6 @@ export async function readConnectorAccountPage(
     signal,
   );
   return result.body;
-}
-
-export async function hasSavedConnectorAccounts(
-  createClient: ApiClientFactory,
-  target: ConnectorAccountTarget,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const page = await readConnectorAccountPage(createClient, target, signal, {
-    limit: 1,
-  });
-  return page.connections.length > 0;
-}
-
-/** Check the current default when the user explicitly grants account access. */
-export async function requireCustomConnectorAccountReady(
-  createClient: ApiClientFactory,
-  customConnectorId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const page = await readConnectorAccountPage(
-    createClient,
-    { kind: "custom", customConnectorId },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (page.defaultConnection?.connectionStatus !== "connected") {
-    throw new Error(
-      "This connector needs a connected, fully configured default account. Review its accounts in Connectors settings and try again.",
-    );
-  }
 }
 
 /** Local connection requirements, distinct from HTTP request failures. */
@@ -211,12 +181,7 @@ export function createConnectorAccountDefaultSignals(
   const resetSave$ = resetSignal();
   const defaults$ = computed(async (get) => {
     const request = get(request$);
-    if (
-      !request ||
-      !(await get(featureSwitches$))[
-        FeatureSwitchKey.ConnectorChatAccountAccess
-      ]
-    ) {
+    if (!request) {
       return null;
     }
     await get(settingsConnectorAccounts.accounts$);
@@ -302,29 +267,6 @@ export const renameConnectorAccount$ = command(
     );
     signal.throwIfAborted();
     set(invalidateConnectorAccounts$, signal);
-  },
-);
-
-export const setDefaultConnectorAccount$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly target: ConnectorAccountTarget;
-      readonly connectionId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await accept(
-      get(apiClient$)(connectorAccountsContract).setDefault({
-        params: { connectionId: args.connectionId },
-        body: { target: args.target },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
-    set(invalidateConnectorAccounts$, signal);
-    set(invalidateConnectorAccountProjection$, args.target);
   },
 );
 

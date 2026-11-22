@@ -1,17 +1,31 @@
-import type { Root, RootContent } from "hast";
+import type { Element, Root, RootContent } from "hast";
 
+import { resolvePlatformEnvironment } from "../platform-host.ts";
 import { fetchAppAsset } from "../resource-fetch.ts";
-import { platformMessagePdfFontUrls } from "../static-assets.ts";
+import {
+  platformMessagePdfFontUrls,
+  platformPreviewMessagePdfFontUrls,
+} from "../static-assets.ts";
 import { preparePdfAssets } from "./assets.ts";
 import { parseMessagePdfTree } from "./document.ts";
 import type { PdfWorkerRequest } from "./types.ts";
+import { readPdfResource } from "./urls.ts";
 import { runDocumentExportWorker } from "./worker-client.ts";
 
 async function loadFont(
   url: string,
+  production: boolean,
   signal: AbortSignal,
 ): Promise<ArrayBuffer> {
-  const response = await fetchAppAsset(url, signal);
+  if (production) {
+    return (await readPdfResource(url, "default", signal)).arrayBuffer();
+  }
+  // The preview gateway serves the bundled font at the same asset path.
+  const asset = new URL(url, location.href);
+  const response = await fetchAppAsset(
+    `${asset.pathname}${asset.search}`,
+    signal,
+  );
   if (!response.ok) {
     throw new Error(`PDF font could not be loaded (${response.status})`);
   }
@@ -46,10 +60,45 @@ function requiredExtraFonts(tree: Root) {
   return needed;
 }
 
+/** Use the same document tree for font selection and rendering of file labels. */
+function linkFileCards(
+  parent: Root | Element,
+  fileCards: ReadonlyMap<string, string>,
+  insideLink = false,
+): void {
+  for (const node of parent.children) {
+    if (node.type !== "element") {
+      continue;
+    }
+    const { src, alt } = node.properties;
+    const filename =
+      node.tagName === "img" && typeof src === "string"
+        ? fileCards.get(src)
+        : undefined;
+    if (filename !== undefined) {
+      // An enclosing Markdown link retains its authored destination. Otherwise
+      // link the original artifact reference, never its temporary storage URL.
+      node.tagName = insideLink ? "span" : "a";
+      node.properties = insideLink ? {} : { href: src };
+      node.children = [
+        {
+          type: "text",
+          value: typeof alt === "string" && alt.trim() ? alt : filename,
+        },
+      ];
+    } else {
+      linkFileCards(node, fileCards, insideLink || node.tagName === "a");
+    }
+  }
+}
+
 /** Export independently parsed Markdown responses. Invoke only from the export command. */
 export async function generateMessagePdfBlob(
   contents: readonly string[],
-  imageUrls: ReadonlyMap<string, string>,
+  resources: {
+    readonly imageUrls: ReadonlyMap<string, string>;
+    readonly fileCards?: ReadonlyMap<string, string>;
+  },
   signal: AbortSignal,
   baseUrl = location.href,
 ): Promise<Blob> {
@@ -61,21 +110,25 @@ export async function generateMessagePdfBlob(
       return parseMessagePdfTree(content).children;
     }),
   };
+  if (resources.fileCards?.size) {
+    linkFileCards(tree, resources.fileCards);
+  }
   const needed = requiredExtraFonts(tree);
+  const production = resolvePlatformEnvironment() === "production";
+  const fontUrls = production
+    ? platformMessagePdfFontUrls
+    : platformPreviewMessagePdfFontUrls;
+  const readFont = (url: string) => {
+    return loadFont(url, production, signal);
+  };
   const [assets, regularFont, boldFont, italicFont, boldItalicFont, emojiFont] =
     await Promise.all([
-      preparePdfAssets(tree, imageUrls, signal),
-      loadFont(platformMessagePdfFontUrls.regular, signal),
-      loadFont(platformMessagePdfFontUrls.bold, signal),
-      needed.italic
-        ? loadFont(platformMessagePdfFontUrls.italic, signal)
-        : undefined,
-      needed.boldItalic
-        ? loadFont(platformMessagePdfFontUrls.boldItalic, signal)
-        : undefined,
-      needed.emoji
-        ? loadFont(platformMessagePdfFontUrls.emoji, signal)
-        : undefined,
+      preparePdfAssets(tree, resources.imageUrls, signal),
+      readFont(fontUrls.regular),
+      readFont(fontUrls.bold),
+      needed.italic ? readFont(fontUrls.italic) : undefined,
+      needed.boldItalic ? readFont(fontUrls.boldItalic) : undefined,
+      needed.emoji ? readFont(fontUrls.emoji) : undefined,
     ]);
   const request: PdfWorkerRequest = {
     baseUrl,

@@ -1,6 +1,4 @@
 import java.net.URI
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 plugins {
     alias(libs.plugins.android.application)
@@ -8,6 +6,17 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+    alias(libs.plugins.sentry.android)
+}
+
+sentry {
+    ignoredBuildTypes.set(setOf("debug"))
+    autoUploadProguardMapping.set(false)
+    autoInstallation.enabled.set(false)
+    includeDependenciesReport.set(false)
+    runtimeOptimizations.enabled.set(false)
+    tracingInstrumentation.enabled.set(false)
+    telemetry.set(false)
 }
 
 val appVersion = rootProject.file("version.txt").readText().trim()
@@ -16,6 +25,11 @@ val apiOrigin = providers.gradleProperty("okou.apiOrigin").getOrElse("https://ap
 val webOrigin = providers.gradleProperty("okou.webOrigin").getOrElse("https://app.okou.ai")
 val clerkPublishableKey =
     providers.gradleProperty("okou.clerkPublishableKey").getOrElse("pk_live_Y2xlcmsub2tvdS5haSQ")
+val sentryDsn = providers.environmentVariable("SENTRY_DSN_ANDROID").getOrElse("")
+
+require(sentryDsn.matches(Regex("(https://[A-Za-z0-9]+@[A-Za-z0-9.-]+/[0-9]+)?"))) {
+    "SENTRY_DSN_ANDROID must be a public HTTPS Sentry DSN"
+}
 
 for (origin in listOf(apiOrigin, webOrigin)) {
     val uri = URI(origin)
@@ -51,11 +65,13 @@ val appVersionCode =
 
 android {
     namespace = "ai.okou.android"
-    compileSdk = 36
+    compileSdk = 37
+    compileSdkMinor = 2
+    buildToolsVersion = "37.0.0"
     defaultConfig {
         applicationId = "ai.okou.android"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 37
         versionName = appVersion
         testInstrumentationRunner = "ai.okou.android.OkouTestRunner"
         testInstrumentationRunnerArguments["useTestStorageService"] = "true"
@@ -65,10 +81,16 @@ android {
         buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"$clerkPublishableKey\"")
     }
     buildTypes {
-        debug { applicationIdSuffix = ".debug" }
-        release { optimization { enable = true } }
+        debug {
+            applicationIdSuffix = ".debug"
+            buildConfigField("String", "SENTRY_DSN", "\"\"")
+        }
+        release {
+            optimization { enable = true }
+            buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
+        }
     }
-    testBuildType = if (screenshotScenarioDir == null) "release" else "debug"
+    testBuildType = "debug"
     buildFeatures {
         compose = true
         buildConfig = true
@@ -91,6 +113,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+    lint {
+        warningsAsErrors = true
+        // Upstream releases can change version suggestions without a source change.
+        informational += "NewerVersionAvailable"
+        informational += "GradleDependency"
+        informational += "AndroidGradlePluginVersion"
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -129,75 +158,6 @@ abstract class PrepareBrandFiles : DefaultTask() {
     }
 }
 
-abstract class TraceNativeTestReferences : DefaultTask() {
-    @get:Classpath abstract val appJars: ListProperty<RegularFile>
-    @get:Classpath abstract val appDirectories: ListProperty<Directory>
-    @get:Classpath abstract val testJars: ListProperty<RegularFile>
-    @get:Classpath abstract val testDirectories: ListProperty<Directory>
-    @get:Classpath abstract val appLibraries: ConfigurableFileCollection
-    @get:Classpath abstract val testLibraries: ConfigurableFileCollection
-    @get:Classpath abstract val compileLibraries: ConfigurableFileCollection
-    @get:Classpath abstract val androidJar: RegularFileProperty
-    @get:Classpath abstract val r8: ConfigurableFileCollection
-    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val driver: RegularFileProperty
-    @get:OutputFile abstract val rules: RegularFileProperty
-    @get:Inject abstract val execOperations: ExecOperations
-
-    @TaskAction
-    fun trace() {
-        fun pack(name: String, directories: List<Directory>): File {
-            val jar = temporaryDir.resolve(name)
-            ZipOutputStream(jar.outputStream()).use { output ->
-                for (directory in directories) {
-                    for (file in
-                        directory.asFile.walkTopDown().filter { it.extension == "class" }) {
-                        output.putNextEntry(
-                            ZipEntry(file.relativeTo(directory.asFile).invariantSeparatorsPath)
-                        )
-                        file.inputStream().use { it.copyTo(output) }
-                        output.closeEntry()
-                    }
-                }
-            }
-            return jar
-        }
-        val targets =
-            appLibraries.files +
-                appJars.get().map { it.asFile } +
-                pack("app.jar", appDirectories.get())
-        val sources =
-            (testLibraries.files - appLibraries.files) +
-                testJars.get().map { it.asFile } +
-                pack("test.jar", testDirectories.get())
-        val libraries = (compileLibraries.files - targets - sources) + androidJar.get().asFile
-        val output = rules.get().asFile
-        output.parentFile.mkdirs()
-        execOperations.javaexec {
-            classpath(r8)
-            // JDK source-file mode keeps this small R8 adapter outside app code.
-            mainClass.set(driver.get().asFile.absolutePath)
-            maxHeapSize = "512m"
-            args("--keep-rules", "--allowobfuscation", "--output", output.absolutePath)
-            for ((flag, files) in
-                listOf("--target" to targets, "--source" to sources, "--lib" to libraries)) {
-                for (file in files.sorted()) args(flag, file.absolutePath)
-            }
-        }
-    }
-}
-
-// Compile API jars duplicate runtime target classes and hide their virtual methods
-// from TraceReferences. Only compile-only annotations belong on its library path.
-val nativeTestTraceCompileOnly =
-    configurations.create("nativeTestTraceCompileOnly") {
-        isCanBeConsumed = false
-        isCanBeResolved = true
-        extendsFrom(
-            configurations.getByName("compileOnly"),
-            configurations.getByName("androidTestCompileOnly"),
-        )
-    }
-
 val generateBrandFonts =
     tasks.register<PrepareBrandFiles>("generateBrandFonts") {
         sourceFiles.from("../../ios/Okou/Resources/Fonts/Geist.ttf")
@@ -208,24 +168,13 @@ val generateBrandFonts =
 val generateLicenseAssets =
     tasks.register<PrepareBrandFiles>("generateLicenseAssets") {
         sourceFiles.from(fileTree("../../ios/Okou/Resources/Fonts") { include("*-LICENSE.txt") })
-        sourceFiles.from("../../ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt")
         outputDirectory.set(layout.buildDirectory.dir("generated/brand/assets"))
         fonts.set(false)
     }
 
-androidComponents {
-    // Host tests keep Debug-only resource fixtures when the native suite targets Release.
-    beforeVariants(selector().withBuildType("debug")) { variant ->
-        variant.hostTests.values
-            .single { it.type == com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE }
-            .enable = true
-    }
-}
-
 androidComponents.onVariants { variant ->
     variant.outputs.forEach { it.versionCode.set(appVersionCode) }
-    // AGP includes this filename in the inputs of tasks upstream of packaging.
-    // Keep those inputs stable when the native test build adds a signing key.
+    // The shared publishing builder consumes this unsigned APK filename.
     if (variant.buildType == "release") {
         variant.outputs.single().outputFileName.set("app-release.apk")
     }
@@ -250,66 +199,10 @@ androidComponents.onVariants { variant ->
             )
         }
     tasks.matching { it.name == "assemble$variantName" }.configureEach { dependsOn(audit) }
-    val nativeTest = variant.androidTest
-    if (variant.buildType == "release" && nativeTest != null) {
-        fun classes(configuration: String) =
-            configurations
-                .getByName(configuration)
-                .incoming
-                .artifactView {
-                    attributes.attribute(
-                        Attribute.of("artifactType", String::class.java),
-                        "android-classes-jar",
-                    )
-                }
-                .files
-        val trace =
-            tasks.register<TraceNativeTestReferences>("generateNativeTestKeepRules") {
-                appLibraries.from(classes("releaseRuntimeClasspath"))
-                testLibraries.from(classes("releaseAndroidTestRuntimeClasspath"))
-                compileLibraries.from(nativeTestTraceCompileOnly)
-                androidJar.set(
-                    androidComponents.sdkComponents.sdkDirectory.map {
-                        it.file("platforms/android-36/android.jar")
-                    }
-                )
-                r8.from(
-                    File(
-                        com.android.tools.r8.retrace.Retrace::class
-                            .java
-                            .protectionDomain
-                            .codeSource
-                            .location
-                            .toURI()
-                    )
-                )
-                driver.set(
-                    rootProject.layout.projectDirectory.file(
-                        "scripts/TraceNativeTestReferences.java"
-                    )
-                )
-                rules.set(layout.buildDirectory.file("generated/native-test.keep"))
-            }
-        variant.artifacts
-            .forScope(com.android.build.api.variant.ScopedArtifacts.Scope.PROJECT)
-            .use(trace)
-            .toGet(
-                com.android.build.api.artifact.ScopedArtifact.CLASSES,
-                { it.appJars },
-                { it.appDirectories },
-            )
-        nativeTest.artifacts
-            .forScope(com.android.build.api.variant.ScopedArtifacts.Scope.PROJECT)
-            .use(trace)
-            .toGet(
-                com.android.build.api.artifact.ScopedArtifact.CLASSES,
-                { it.testJars },
-                { it.testDirectories },
-            )
-    }
 }
 
 dependencies {
+    implementation(libs.sentry.android.core)
     implementation(libs.appcompat)
     implementation(libs.clerk.ui)
     implementation(platform(libs.compose.bom))
@@ -324,11 +217,13 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.serialization.json)
     implementation(libs.commonmark)
+    implementation(libs.commonmarkTables)
     implementation(libs.ably.device) {
         // This client owns foreground realtime only; FCM adds an unused public receiver/provider.
         exclude(group = "com.google.firebase", module = "firebase-messaging")
     }
     implementation(libs.room.runtime)
+    implementation(libs.datastore.preferences.core)
     implementation(libs.sqlite.bundled)
     ksp(libs.room.compiler)
     testImplementation(libs.junit)

@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import chalk from "chalk";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,8 +8,6 @@ import { chatCommand } from "../index";
 
 const CURRENT_THREAD_ID = "00000000-0000-4000-8000-000000000001";
 const NEW_THREAD_ID = "00000000-0000-4000-8000-000000000002";
-const AGENT_ID = "00000000-0000-4000-8000-000000000010";
-const OTHER_AGENT_ID = "00000000-0000-4000-8000-000000000011";
 const CREATE_URL = "http://localhost:3000/api/chat-threads";
 
 function metadataUrl(threadId: string): string {
@@ -27,7 +26,7 @@ describe("okou chat create command", () => {
   beforeEach(() => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["chat-thread:write"]));
     vi.stubEnv("OKOU_CHAT_THREAD_ID", CURRENT_THREAD_ID);
   });
 
@@ -38,22 +37,23 @@ describe("okou chat create command", () => {
     vi.unstubAllEnvs();
   });
 
-  it("creates a thread under this chat's agent and inherits run settings", async () => {
+  it("creates a member thread outside a chat and returns the selected run settings", async () => {
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
     server.use(
       http.get(metadataUrl(CURRENT_THREAD_ID), () => {
         return HttpResponse.json({
           id: CURRENT_THREAD_ID,
-          agentId: AGENT_ID,
           title: "Current chat",
           selectedModel: "claude-sonnet-5",
           serviceTier: "priority",
         });
       }),
       http.post(CREATE_URL, async ({ request }) => {
-        expect(request.headers.get("authorization")).toBe("Bearer test-token");
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer " + capturedRunToken(["chat-thread:write"]),
+        );
         const body = (await request.json()) as Record<string, unknown>;
         expect(body).toStrictEqual({
-          agentId: AGENT_ID,
           title: "Deep dive on P2",
         });
         return HttpResponse.json(
@@ -84,7 +84,6 @@ describe("okou chat create command", () => {
         title: "Deep dive on P2",
         selectedModel: "claude-sonnet-5",
         serviceTier: "priority",
-        agentId: AGENT_ID,
       },
     );
   });
@@ -94,7 +93,6 @@ describe("okou chat create command", () => {
       http.get(metadataUrl(NEW_THREAD_ID), () => {
         return HttpResponse.json({
           id: NEW_THREAD_ID,
-          agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: null,
           modelSettings: {},
@@ -103,7 +101,6 @@ describe("okou chat create command", () => {
       }),
       http.post(CREATE_URL, async ({ request }) => {
         expect(await request.json()).toStrictEqual({
-          agentId: AGENT_ID,
           title: "Launch plan",
           model: null,
         });
@@ -125,8 +122,6 @@ describe("okou chat create command", () => {
       "cli",
       "create",
       "Launch plan",
-      "--agent",
-      AGENT_ID,
       "--model",
       "auto",
     ]);
@@ -136,12 +131,11 @@ describe("okou chat create command", () => {
     );
   });
 
-  it("guides to the first send with an explicit agent, model, and priority", async () => {
+  it("guides to the first send with an explicit model and priority", async () => {
     server.use(
       http.get(metadataUrl(NEW_THREAD_ID), () => {
         return HttpResponse.json({
           id: NEW_THREAD_ID,
-          agentId: OTHER_AGENT_ID,
           title: "Launch plan",
           selectedModel: "claude-sonnet-5",
           modelSettings: {},
@@ -151,7 +145,6 @@ describe("okou chat create command", () => {
       http.post(CREATE_URL, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
         expect(body).toStrictEqual({
-          agentId: OTHER_AGENT_ID,
           title: "Launch plan",
           model: "claude-sonnet-5",
           serviceTier: "priority",
@@ -174,8 +167,6 @@ describe("okou chat create command", () => {
       "cli",
       "create",
       "Launch plan",
-      "--agent",
-      OTHER_AGENT_ID,
       "--model",
       "claude-sonnet-5",
       "--priority",
@@ -189,7 +180,6 @@ describe("okou chat create command", () => {
       "Model:  Claude Sonnet 5 (claude-sonnet-5) · effort high",
     );
     expect(output).toContain("Priority: enabled");
-    expect(output).toContain(`Agent:  ${OTHER_AGENT_ID}`);
     expect(output).toContain(
       `okou chat send --thread-id ${NEW_THREAD_ID} --text "<message>"`,
     );
@@ -200,7 +190,6 @@ describe("okou chat create command", () => {
       http.get(metadataUrl(NEW_THREAD_ID), () => {
         return HttpResponse.json({
           id: NEW_THREAD_ID,
-          agentId: OTHER_AGENT_ID,
           title: "Standard thread",
           selectedModel: "claude-sonnet-5",
           modelSettings: {},
@@ -208,7 +197,6 @@ describe("okou chat create command", () => {
       }),
       http.post(CREATE_URL, async ({ request }) => {
         expect(await request.json()).toStrictEqual({
-          agentId: OTHER_AGENT_ID,
           title: "Standard thread",
           model: "claude-sonnet-5",
           serviceTier: null,
@@ -231,8 +219,6 @@ describe("okou chat create command", () => {
       "cli",
       "create",
       "Standard thread",
-      "--agent",
-      OTHER_AGENT_ID,
       "--model",
       "claude-sonnet-5",
       "--no-priority",
@@ -247,7 +233,6 @@ describe("okou chat create command", () => {
     server.use(
       http.post(CREATE_URL, async ({ request }) => {
         expect(await request.json()).toStrictEqual({
-          agentId: OTHER_AGENT_ID,
           title: "Debate",
           model: "gpt-6-sol",
           reasoningEffort: "xhigh",
@@ -266,7 +251,6 @@ describe("okou chat create command", () => {
       http.get(metadataUrl(NEW_THREAD_ID), () => {
         return HttpResponse.json({
           id: NEW_THREAD_ID,
-          agentId: OTHER_AGENT_ID,
           title: "Debate",
           selectedModel: "gpt-6-sol",
           modelSettings: { "gpt-6-sol": { effort: "xhigh" } },
@@ -279,8 +263,6 @@ describe("okou chat create command", () => {
       "cli",
       "create",
       "Debate",
-      "--agent",
-      OTHER_AGENT_ID,
       "--model",
       "gpt-6-sol",
       "--effort",
@@ -310,7 +292,6 @@ describe("okou chat create command", () => {
     server.use(
       http.post(CREATE_URL, async ({ request }) => {
         expect(await request.json()).toStrictEqual({
-          agentId: OTHER_AGENT_ID,
           title: "Inherited",
           reasoningEffort: "extra",
         });
@@ -331,8 +312,6 @@ describe("okou chat create command", () => {
       "cli",
       "create",
       "Inherited",
-      "--agent",
-      OTHER_AGENT_ID,
       "--effort",
       "extra",
       "--json",
@@ -364,8 +343,6 @@ describe("okou chat create command", () => {
         "cli",
         "create",
         "Inherited",
-        "--agent",
-        OTHER_AGENT_ID,
         "--effort",
         "xhigh",
       ]),
@@ -389,8 +366,6 @@ describe("okou chat create command", () => {
         "cli",
         "create",
         "Debate",
-        "--agent",
-        OTHER_AGENT_ID,
         "--model",
         "claude-opus-5-5",
         "--effort",
@@ -401,18 +376,5 @@ describe("okou chat create command", () => {
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
       "claude-opus-5-5 supports: low, medium, high, extra, max, ultracode",
     );
-  });
-
-  it("requires an agent when it runs outside a web chat thread", async () => {
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
-
-    await expect(async () => {
-      await chatCommand.parseAsync(["node", "cli", "create", "Launch plan"]);
-    }).rejects.toThrow("process.exit called");
-
-    const stderr = mockConsoleError.mock.calls.flat().join("\n");
-    expect(stderr).toContain("OKOU_CHAT_THREAD_ID is not set");
-    expect(stderr).toContain("Pass --agent <agent-id>");
-    expect(mockExit).toHaveBeenCalledWith(1);
   });
 });

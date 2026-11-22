@@ -22,22 +22,7 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it("defaults new workspace memberships to My Okou and honors retained overrides", () => {
-    const key = FeatureSwitchKey.SingleAgent;
-    for (const orgId of ["external-org", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"]) {
-      const identity = { userId: "existing-account", orgId };
-      expect(isFeatureEnabled(key, identity)).toBe(true);
-      expect(getAllFeatureStates(identity)[key]).toBe(true);
-      for (const enabled of [true, false]) {
-        const context = { ...identity, overrides: { [key]: enabled } };
-        expect(isFeatureEnabled(key, context)).toBe(enabled);
-        expect(getAllFeatureStates(context)[key]).toBe(enabled);
-      }
-    }
-  });
-
   it.each([
-    FeatureSwitchKey.ConnectorChatAccountAccess,
     FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewActionGroup,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
@@ -53,6 +38,36 @@ describe("isFeatureEnabled", () => {
     ] as const) {
       expect(isFeatureEnabled(key, context)).toBe(enabled);
       expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("enables Markdown document typography only in staff workspaces and honors staff overrides", () => {
+    const key = FeatureSwitchKey.MarkdownDocumentTypography;
+    const staff = {
+      userId: "staff-colleague",
+      orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+    };
+    expect(isFeatureSwitchAvailable(key, staff)).toBe(true);
+    expect(isFeatureEnabled(key, staff)).toBe(true);
+    expect(getAllFeatureStates(staff)[key]).toBe(true);
+    for (const enabled of [false, true]) {
+      const context = { ...staff, overrides: { [key]: enabled } };
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+
+    for (const identity of [
+      {},
+      { userId: "external-user" },
+      { userId: "external-user", orgId: "external-org" },
+      { email: "bingjie@okou.ai", orgId: "external-org" },
+    ]) {
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
+      for (const overrides of [{}, { [key]: true }]) {
+        const context = { ...identity, overrides };
+        expect(isFeatureEnabled(key, context)).toBe(false);
+        expect(getAllFeatureStates(context)[key]).toBe(false);
+      }
     }
   });
 
@@ -485,9 +500,6 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
       "alpha",
     );
-    expect(
-      metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
-    ).toBe("beta");
     expect(
       metadata[FeatureSwitchKey.PresentationOutputFormat].rolloutStage,
     ).toBe("beta");

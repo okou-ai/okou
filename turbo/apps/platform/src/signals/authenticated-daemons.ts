@@ -8,12 +8,11 @@ import { subscribeTailscaleChanged$ } from "./tailscale.ts";
 import { setupRunModelRealtime$ } from "./external/run-model-realtime.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
-import { subscribeAgentConnectorAccess$ } from "./okou-page/composer-agent-connectors.ts";
 import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-library.ts";
 import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
-import { hydrateProjects$ } from "./projects/projects.ts";
+import { hydrateProjectCache$ } from "./projects/projects.ts";
 import { setSharedWorkerRealtimeBridge$, setupRealtime$ } from "./realtime.ts";
 import {
   bridgeConnected$,
@@ -38,7 +37,6 @@ const runAppRealtimeDaemons$ = command(
     set(setupBillingRealtime$, signal);
     set(setupUserPreferenceRealtime$, signal);
     set(setupRunModelRealtime$, signal);
-    set(subscribeAgentConnectorAccess$, signal);
     set(subscribeCustomTemplatesChanged$, signal);
     set(subscribeVncObservations$, signal);
     set(subscribeCloudflareAccessChanged$, signal);
@@ -121,7 +119,8 @@ export const setupAuthenticatedBootstrapData$ = command(
     signal.throwIfAborted();
     await Promise.all([
       set(initializeChatThreadEventSource$, signal),
-      set(hydrateProjects$, signal),
+      // Restore the sidebar early; its route owns the canonical catch-up.
+      set(hydrateProjectCache$, signal),
     ]);
     signal.throwIfAborted();
   },

@@ -1,6 +1,6 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type {
-  BankingAccessRequestStatusResponse,
+  BankingWorkspaceStatus,
   BankingConnectSessionRequest,
   BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
@@ -34,11 +34,9 @@ import type {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { Reason, detach } from "../../signals/utils.ts";
 
-type BankingConnection = NonNullable<
-  BankingAccessRequestStatusResponse["connection"]
->;
+type BankingConnection = NonNullable<BankingWorkspaceStatus["connection"]>;
 type BankingAccount = BankingConnection["accounts"][number];
-type BankingGrant = NonNullable<BankingAccessRequestStatusResponse["grant"]>;
+type BankingGrant = NonNullable<BankingWorkspaceStatus["grant"]>;
 type UpdateBankingUi = (patch: Partial<BankingCardUiState>) => void;
 type OpenBankingConnect = (
   mode: BankingConnectSessionRequest["mode"],
@@ -54,7 +52,7 @@ const BANKING_GRANT_DURATIONS: readonly BankingGrantDuration[] = [
 const BANKING_CARD_HEIGHT_CLASS = "h-[136px] @[640px]:h-[88px]";
 
 interface BankingCardController {
-  readonly status: BankingAccessRequestStatusResponse;
+  readonly status: BankingWorkspaceStatus;
   readonly activeGrant: BankingGrant | null;
   readonly activeGrantAccountCount: number;
   readonly grantMatchesRequest: boolean;
@@ -92,7 +90,7 @@ function isBankingGrantDuration(value: string): value is BankingGrantDuration {
 
 function useBankingCardController(
   signals: BankingSignals,
-  status: BankingAccessRequestStatusResponse,
+  status: BankingWorkspaceStatus,
 ): BankingCardController {
   const pageSignal = useGet(pageSignal$);
   const ui = useGet(signals.uiState$);
@@ -243,7 +241,7 @@ function LoadedBankingActionCard({
   status,
 }: {
   readonly signals: BankingSignals;
-  readonly status: BankingAccessRequestStatusResponse;
+  readonly status: BankingWorkspaceStatus;
 }) {
   const { t } = useTranslation();
   const controller = useBankingCardController(signals, status);
@@ -270,21 +268,13 @@ function LoadedBankingActionCard({
       data-testid="banking-action-card"
       className="flex h-full w-full flex-col justify-between gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center"
     >
-      <BankingCardHeader
-        agentName={status.agent.name}
-        reason={summary}
-        compact
-      />
+      <BankingCardHeader reason={summary} compact />
       <ChatCardDetails
         title={t(($) => {
           return $.chat.banking.title;
         })}
       >
-        <BankingCardHeader
-          agentName={status.agent.name}
-          reason={signals.reason}
-          compact={false}
-        />
+        <BankingCardHeader reason={signals.reason} compact={false} />
         <BankingCardErrorMessage message={controller.error} />
         <BankingCardContent controller={controller} compact={false} />
       </ChatCardDetails>
@@ -293,11 +283,9 @@ function LoadedBankingActionCard({
 }
 
 function BankingCardHeader({
-  agentName,
   reason,
   compact,
 }: {
-  readonly agentName: string;
   readonly reason: string;
   readonly compact: boolean;
 }) {
@@ -319,8 +307,6 @@ function BankingCardHeader({
             compact && "truncate",
           )}
         >
-          <span className="font-medium text-foreground/80">{agentName}</span>
-          <span aria-hidden="true"> · </span>
           <span>{reason}</span>
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">

@@ -15,12 +15,17 @@ import {
 import {
   pendingWorkflowScheduleTickCondition,
   type workflowAutomationQueueEventPlan,
+  type WorkflowRecurringScheduleClaim,
   type WorkflowScheduleClaimPlan,
 } from "./workflow-automation-enqueue.service";
-import type { WorkflowSourceAdmissionPlan } from "./workflow-input-queue.service";
+import type {
+  WorkflowAutomationBinding,
+  WorkflowSourceAdmissionPlan,
+} from "./workflow-input-queue.service";
 import type { threadModelReplacementWritePlan } from "./chat-input-model.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
 import {
+  consumeRecurringWorkflowScheduleCtes,
   consumeWorkflowScheduleAnchorSql,
   journalWorkflowScheduleClaimSql,
 } from "./workflow-schedule-queue.service";
@@ -125,11 +130,11 @@ function modelReplacementCtes(statement: SQL, scope: ModelEventScope) {
     )`,
     sql`workflow_model_events AS (
       INSERT INTO ${chatThreadEvents} (
-        id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+        id, user_id, org_id, seq_id, chat_thread_id, kind,
         selected_model, service_tier, cloud_browser_enabled, created_at
       ) SELECT event.id, ${replacement.userId}, ${replacement.orgId},
         reserved.last_seq_id - ${count} + event.ordinal + 1,
-        ${replacement.chatThreadId}::uuid, event.kind, ${replacement.agentId}::uuid,
+        ${replacement.chatThreadId}::uuid, event.kind,
         event.selected_model, event.service_tier, false, ${updatedAt.toISOString()}::timestamp
       FROM workflow_model_reserved AS reserved
       CROSS JOIN (VALUES ${sql.join(rows, sql`, `)})
@@ -150,6 +155,10 @@ export function workflowInputCommitSql(args: {
   readonly replacePendingTicks: boolean;
   readonly automationId: string;
   readonly currentTime: Date;
+  readonly recurringScheduleClaim?: {
+    readonly binding: WorkflowAutomationBinding;
+    readonly claim: WorkflowRecurringScheduleClaim;
+  };
   readonly scheduleClaim?: WorkflowScheduleClaimPlan;
   readonly queueStatement: SQL;
   readonly replacement?: {
@@ -198,7 +207,15 @@ export function workflowInputCommitSql(args: {
     FROM inserted ON CONFLICT DO NOTHING RETURNING id
   )`);
   const guards = [sql`WHEN NOT (${accepted}) THEN '__TX0333_V1_DUPLICATE__'`];
-  if (args.scheduleClaim) {
+  if (args.recurringScheduleClaim) {
+    const { binding, claim } = args.recurringScheduleClaim;
+    ctes.push(
+      ...consumeRecurringWorkflowScheduleCtes(binding, claim, accepted),
+    );
+    guards.push(
+      sql`WHEN NOT EXISTS (SELECT 1 FROM workflow_consumed_claim) THEN '__TX0333_V1_SCHEDULE__'`,
+    );
+  } else if (args.scheduleClaim) {
     ctes.push(
       sql`workflow_consumed_claim AS (${consumeWorkflowScheduleAnchorSql(args.scheduleClaim, currentTime, accepted)})`,
     );

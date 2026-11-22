@@ -17,7 +17,7 @@ import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
@@ -53,19 +53,6 @@ function agentsByIdClient() {
   return setupApp({ context, routes: agentsRoutes })(agentsByIdContract);
 }
 
-const trackCreatedAgent = createFixtureTracker(
-  async (agent: AgentsFixture & { readonly agentId: string }) => {
-    mocks.clerk.session(agent.userId, agent.orgId);
-    await accept(
-      agentsByIdClient().delete({
-        headers: authHeaders(),
-        params: { id: agent.agentId },
-      }),
-      [204],
-    );
-  },
-);
-
 describe("POST /api/agents", () => {
   it("reuses the published instruction bundle when concurrent creation cannot rewrite it", async () => {
     const fixture = agentsFixture("shared-instruction-bundle");
@@ -93,9 +80,7 @@ describe("POST /api/agents", () => {
       agentsClient().create({ headers: authHeaders(), body: {} }),
       [201],
     );
-    await trackCreatedAgent(
-      Promise.resolve({ ...fixture, agentId: first.body.agentId }),
-    );
+
     const created = await Promise.all(
       [1, 2, 3].map(async (index) => {
         const result = await accept(
@@ -105,9 +90,7 @@ describe("POST /api/agents", () => {
           }),
           [201],
         );
-        await trackCreatedAgent(
-          Promise.resolve({ ...fixture, agentId: result.body.agentId }),
-        );
+
         return result;
       }),
     );
@@ -180,9 +163,7 @@ describe("POST /api/agents", () => {
         }
         return result.value;
       });
-      await trackCreatedAgent(
-        Promise.resolve({ ...fixture, agentId: clientAgentId }),
-      );
+
       for (const response of responses) {
         expect(response.body).toMatchObject({
           agentId: clientAgentId,
@@ -245,9 +226,7 @@ describe("POST /api/agents", () => {
         }),
         [201],
       );
-      await trackCreatedAgent(
-        Promise.resolve({ ...fixture, agentId: clientAgentId }),
-      );
+
       mocks.clerk.session(
         scope === "member" ? `user_${randomUUID()}` : fixture.userId,
         scope === "organization" ? `org_${randomUUID()}` : fixture.orgId,
@@ -302,9 +281,7 @@ describe("POST /api/agents", () => {
         }),
         [201],
       );
-      await trackCreatedAgent(
-        Promise.resolve({ ...fixture, agentId: existing.body.agentId }),
-      );
+
       await expect(
         agentsClient().create({
           headers: authHeaders(),
@@ -339,9 +316,7 @@ describe("POST /api/agents", () => {
       agentsClient().create({ headers: authHeaders(), body: {} }),
       [201],
     );
-    await trackCreatedAgent(
-      Promise.resolve({ ...fixture, agentId: created.body.agentId }),
-    );
+
     expect(created.body).toMatchObject({
       isDefaultAgent: false,
       ownerId: fixture.userId,
@@ -554,8 +529,8 @@ describe("POST /api/agents", () => {
     expect(publicResponse.body.error.code).toBe("CONFLICT");
   });
 
-  it("allows creating another public agent after one is deleted", async () => {
-    const fixture = agentsFixture("delete-limit");
+  it("allows creating another public agent after one is made private", async () => {
+    const fixture = agentsFixture("visibility-limit");
     mocks.clerk.session(fixture.userId, fixture.orgId);
     context.mocks.s3.send.mockClear();
     context.mocks.s3.send.mockResolvedValue({});
@@ -581,27 +556,28 @@ describe("POST /api/agents", () => {
     );
     expect(blocked.body.error.code).toBe("CONFLICT");
 
-    const deletedAgentId = createdAgentIds[0];
-    if (!deletedAgentId) {
+    const privateAgentId = createdAgentIds[0];
+    if (!privateAgentId) {
       throw new Error("Expected a created agent");
     }
-    const deleteResponse = await accept(
-      agentsByIdClient().delete({
-        params: { id: deletedAgentId },
+    const demoted = await accept(
+      agentsByIdClient().updateMetadata({
+        params: { id: privateAgentId },
         headers: authHeaders(),
+        body: { visibility: "private" },
       }),
-      [204],
+      [200],
     );
-    expect(deleteResponse.body).toBeUndefined();
+    expect(demoted.body.visibility).toBe("private");
 
     const response = await accept(
       agentsClient().create({
         headers: authHeaders(),
-        body: { displayName: "After Delete", visibility: "public" },
+        body: { displayName: "After Demotion", visibility: "public" },
       }),
       [201],
     );
-    expect(response.body.displayName).toBe("After Delete");
+    expect(response.body.displayName).toBe("After Demotion");
   });
 
   it("keeps concurrent public creates consistent and rejects later creates once full", async () => {

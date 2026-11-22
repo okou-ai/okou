@@ -88,16 +88,14 @@ async function prepareShare(content = selectedContent) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, { displayName: "Sharing test" });
+  await bdd.createAgent(actor, { displayName: "Sharing test" });
   const { threadId, runId } = await chat.sendAndLaunch(actor, {
-    agentId: agent.agentId,
     prompt: content,
   });
   await chat.renameThread(actor, threadId, privateTitle);
   await chat.requestSendEvent(
     actor,
     {
-      agentId: agent.agentId,
       threadId,
       prompt: privateContent,
     },
@@ -276,14 +274,11 @@ describe("optional shared-thread titles", () => {
       displayName: "Forwarded share test",
     });
     const source = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "Source message",
     });
     const sourceTitle = "Private source thread title";
     await chat.renameThread(actor, source.threadId, sourceTitle);
-    const targetThread = await chat.createThread(actor, {
-      agentId: agent.agentId,
-    });
+    const targetThread = await chat.createThread(actor, {});
     const quote = "The deployment window is fifteen minutes.";
     const mailId = randomUUID();
     const sentId = `gmail-${randomUUID()}`;
@@ -299,7 +294,6 @@ describe("optional shared-thread titles", () => {
       ],
     };
     const forwarded = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       threadId: targetThread.id,
       prompt: "legacy fallback",
       userMessage,

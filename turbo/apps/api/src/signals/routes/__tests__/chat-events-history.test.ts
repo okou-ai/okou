@@ -94,10 +94,9 @@ function recommendedFollowupEvents(
 
 describe("CHAT-02: incomplete-round context", () => {
   it("injects incomplete rounds and truncates old content chronologically", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "establish native session history",
     });
     const anchorExecution = await runExecution(anchor.runId);
@@ -112,7 +111,6 @@ describe("CHAT-02: incomplete-round context", () => {
     });
 
     const first = await sendChatRun(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: "first incomplete",
     });
@@ -122,7 +120,6 @@ describe("CHAT-02: incomplete-round context", () => {
 
     const longPrompt = `second ${"x".repeat(4100)}`;
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: longPrompt,
     });
@@ -130,7 +127,6 @@ describe("CHAT-02: incomplete-round context", () => {
     await failChatRun(second.runId, secondExecution.sandboxHeaders, "boom two");
 
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "retry after two failures",
     });
@@ -230,7 +226,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     );
 
     const firstPrompt = "plan the API migration";
-    const first = await sendChatRun(actor, { agentId, prompt: firstPrompt });
+    const first = await sendChatRun(actor, { prompt: firstPrompt });
     await waitForThreadTitle(actor, first.threadId, "Migration Plan");
     expect(titleRequests).toBe(1);
     expect(upstreamAuthorization).toBe("Bearer synthetic-google-token");
@@ -288,7 +284,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     );
 
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "follow-up question",
     });
@@ -307,7 +302,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
 
     await chat.renameThread(actor, first.threadId, "Manual Migration Title");
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "manual title should stay",
     });
@@ -380,7 +374,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
   }, 90_000);
 
   it("steers an active-run recommended follow-up", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     mockGoogleText();
     server.use(
       http.post(VERTEX_TEXT_URL, async ({ request }) => {
@@ -413,7 +407,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     );
 
     const completed = await sendChatRun(actor, {
-      agentId,
       prompt: "prepare a recommended follow-up",
     });
     const completedExecution = await runExecution(completed.runId);
@@ -449,7 +442,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     }
 
     const active = await sendChatRun(actor, {
-      agentId,
       threadId: completed.threadId,
       prompt: "keep working while the follow-up is steered",
     });
@@ -458,7 +450,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     const followup = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: completed.threadId,
         prompt: "steer the recommended follow-up",
         revokesEventId: recommender.id,

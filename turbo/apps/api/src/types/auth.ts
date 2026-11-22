@@ -73,7 +73,6 @@ export type AuthContext =
       readonly expiresAt: number;
       readonly scopes: readonly string[];
       readonly clientId: string;
-      readonly clientName?: string;
       readonly userId: string;
       readonly orgId: string;
       readonly orgRole: ApiOrgRole;
@@ -136,7 +135,6 @@ export interface ComposeJobAuth {
 export interface SkillImportAuth {
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   /** The tool the session's prompt was written for, tagged on each import. */
   readonly provider: WorkflowImportSource;
   readonly sessionId: string;

@@ -111,12 +111,12 @@ export interface EntitledChatActor {
   readonly actor: ApiTestUser;
   readonly customerId: string;
   readonly agentId: string;
+  readonly defaultAgentId: string;
   readonly runnerGroup: string;
   readonly providerId: string;
 }
 
 export interface ChatRunSendBody {
-  readonly agentId: string;
   readonly prompt: string;
   readonly userMessage?: UserMessageInputDocument;
   readonly threadId?: string;
@@ -374,15 +374,18 @@ export function createChatEventsFixture(context: TestContext) {
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     chatCallbacks.disableVapid();
     const runnerGroup = await api.configureRunnerGroup();
-    const { customerId } = await api.grantProEntitlement(actor, {
-      ...(options.orgId === STAFF_ORG_ID
-        ? {
-            customerId: "cus_bdd_chat_events_staff",
-            subscriptionId: "sub_bdd_chat_events_staff",
-          }
-        : {}),
-      tier,
-    });
+    const { customerId, defaultAgentId } = await api.grantProEntitlement(
+      actor,
+      {
+        ...(options.orgId === STAFF_ORG_ID
+          ? {
+              customerId: "cus_bdd_chat_events_staff",
+              subscriptionId: "sub_bdd_chat_events_staff",
+            }
+          : {}),
+        tier,
+      },
+    );
     const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD chat messages agent",
@@ -392,6 +395,7 @@ export function createChatEventsFixture(context: TestContext) {
     return {
       actor,
       customerId,
+      defaultAgentId,
       agentId: agent.agentId,
       runnerGroup,
       providerId,
@@ -762,7 +766,6 @@ export function createChatEventsFixture(context: TestContext) {
     }) => void,
   ) {
     const blocker = await sendChatRun(actor, {
-      agentId: body.agentId,
       model: body.model,
       prompt: "Hold the following input until its configuration is ready",
     });
@@ -879,7 +882,6 @@ export function createChatEventsFixture(context: TestContext) {
   async function requestSendEventWithBearer(
     token: string,
     body: {
-      readonly agentId: string;
       readonly clientEventId?: string;
       readonly clientThreadId?: string;
       readonly prompt: string;
@@ -1137,6 +1139,7 @@ export function createChatEventsFixture(context: TestContext) {
       createAgent: bdd.createAgent,
       readMe: bdd.readMe,
       readOnboardingStatus: bdd.readOnboardingStatus,
+      readDefaultAgentId: bdd.readDefaultAgentId,
       updateAgentMetadata: bdd.updateAgentMetadata,
       user: bdd.user,
     },
@@ -1149,7 +1152,6 @@ export function createChatEventsFixture(context: TestContext) {
       createPersonalModelProvider: api.createPersonalModelProvider,
       createThreadRun: api.createThreadRun,
       declareSteeredInput: api.declareSteeredInput,
-      enableAgentConnectors: api.enableAgentConnectors,
       ensurePersonalSubscriptionModel: api.ensurePersonalSubscriptionModel,
       grantProEntitlement: api.grantProEntitlement,
       heartbeatRunner: api.heartbeatRunner,

@@ -1,3 +1,4 @@
+import { visibleWorkflowCondition } from "./workflow-visibility";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -63,7 +64,10 @@ import {
   ChatRunFinishedAutomationAlreadyAdmittedError,
   type WorkflowSourceAdmissionPlan,
 } from "./workflow-input-queue.service";
-import { gmailQueueAdmissionSql } from "./workflow-gmail-queue.service";
+import {
+  GmailAutomationAlreadyAdmittedError,
+  gmailQueueAdmissionPlan,
+} from "./workflow-gmail-queue.service";
 import { googleCalendarQueueAdmissionSql } from "./workflow-google-calendar-queue.service";
 import {
   googleFormsQueueReceiptPlan,
@@ -119,12 +123,12 @@ export const publishEnqueuedWorkflowInput$ = command(
 );
 
 function workflowEnqueueResult(
-  journaled: boolean,
+  claimsScheduleOccurrence: boolean,
   enqueued: boolean,
 ): RunWorkflowAutomationResult {
   return {
     kind: "enqueued",
-    scheduleOccurrence: journaled
+    scheduleOccurrence: claimsScheduleOccurrence
       ? enqueued
         ? "claimed"
         : "superseded"
@@ -160,14 +164,14 @@ async function flushWorkflowAdmission<T>(
 /**
  * Workflow entry for every trigger. Entry-owned state stays here: an automated
  * schedule tick coalesces this automation's older unconsumed ticks, and a
- * journaled Morning Brief occurrence and any trigger-source transition commit
- * with the queue event. This owner commits the prepared context, input and
+ * schedule claim or trigger-source transition commits with the queue event.
+ * This owner commits the prepared context, input and
  * queue row, and the thread is picked in the background: no
  * trigger waits for a launch, and a launch rejection appears in the thread as
  * `input.rejected`.
  */
 function pendingTickReplacement(args: RunWorkflowAutomationNowArgs) {
-  const { automation, chatThreadId } = args.due;
+  const { automation, chatThreadId } = args;
   return automation.kind === "schedule" &&
     args.replacePendingScheduleTick !== false
     ? { chatThreadId, automationId: automation.id }
@@ -177,15 +181,18 @@ function pendingTickReplacement(args: RunWorkflowAutomationNowArgs) {
 const workflowAutomationInputModel$ = command(
   async (
     { set },
-    due: RunWorkflowAutomationNowArgs["due"],
+    {
+      automation,
+      chatThreadId,
+    }: Pick<RunWorkflowAutomationNowArgs, "automation" | "chatThreadId">,
     signal: AbortSignal,
   ) => {
     const official = await set(
       synchronizeOfficialWorkflowThread$,
       {
-        workflowId: due.automation.workflowId,
-        orgId: due.automation.orgId,
-        userId: due.automation.ownerUserId,
+        workflowId: automation.workflowId,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
       },
       signal,
     );
@@ -202,9 +209,9 @@ const workflowAutomationInputModel$ = command(
     return await set(
       resolveEnqueuedChatInputModel$,
       {
-        threadId: due.chatThreadId,
-        orgId: due.automation.orgId,
-        userId: due.automation.ownerUserId,
+        threadId: chatThreadId,
+        orgId: automation.orgId,
+        userId: automation.ownerUserId,
       },
       signal,
     );
@@ -274,20 +281,13 @@ const prepareWorkflowQueueSource$ = command(
         return { steps: [] };
       }
       case "chat-run-finished": {
-        return workflowCallbackReceiptPlan(plan, args.due.automation.id);
+        return workflowCallbackReceiptPlan(plan, args);
       }
       case "webhook": {
-        return workflowWebhookReceiptPlan(plan, args.due.automation.id);
+        return workflowWebhookReceiptPlan(plan, args.automation.id);
       }
       case "gmail": {
-        return {
-          steps: [
-            {
-              statement: gmailQueueAdmissionSql(plan.source),
-              failure: { kind: "gmail" },
-            },
-          ],
-        };
+        return gmailQueueAdmissionPlan(plan.source);
       }
       case "google-calendar": {
         return {
@@ -359,7 +359,7 @@ const commitProactiveWorkflowInput$ = command(
     signal: AbortSignal,
   ): Promise<ChatInputEnqueueCommit | null> => {
     const { args, plan, source, model } = input;
-    const { automation, chatThreadId, agentId } = args.due;
+    const { automation, chatThreadId } = args;
     if (
       source.steps.length !== 0 ||
       automation.officialBlueprintKey === null ||
@@ -400,7 +400,7 @@ const commitProactiveWorkflowInput$ = command(
             ? isNull(workflowAutomations.nextRunAt)
             : eq(workflowAutomations.nextRunAt, automation.nextRunAt),
           sql`${workflowAutomations.lastRunAt} IS NOT DISTINCT FROM ${automation.lastRunAt}::timestamp`,
-          proactiveWorkflowOwnerEnabledSql(owner, agentId, kind),
+          proactiveWorkflowOwnerEnabledSql(owner),
           sql`EXISTS (SELECT 1 FROM org_members_metadata AS preference
                 WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
                   AND preference.timezone = ${automation.timezone})`,
@@ -434,7 +434,7 @@ const commitProactiveWorkflowInput$ = command(
 
 function usesProactiveWorkflowInput(args: RunWorkflowAutomationNowArgs) {
   const proactiveKind =
-    args.due.automation.officialBlueprintKey === null
+    args.automation.officialBlueprintKey === null
       ? null
       : proactiveWorkflowKind(args.automationContext.workflowName);
   return (
@@ -444,7 +444,7 @@ function usesProactiveWorkflowInput(args: RunWorkflowAutomationNowArgs) {
 }
 
 function workflowRewardSource({ args, plan }: PreparedWorkflowInputCommit) {
-  const { automation } = args.due;
+  const { automation } = args;
   return {
     orgId: automation.orgId,
     userId: automation.ownerUserId,
@@ -509,7 +509,7 @@ const commitWorkflowInput$ = command(
     }
     signal.throwIfAborted();
     const { args, plan, source, replacePendingTicks, model, timing } = input;
-    const { automation, chatThreadId } = args.due;
+    const { automation, chatThreadId } = args;
     const database = set(writeDb$);
     const startedAt = now();
     const currentTime = nowDate();
@@ -548,6 +548,9 @@ const commitWorkflowInput$ = command(
       automationId: automation.id,
       currentTime,
       replacePendingTicks: replacePendingTicks !== undefined,
+      recurringScheduleClaim: args.recurringScheduleClaim
+        ? { binding: args, claim: args.recurringScheduleClaim }
+        : undefined,
       scheduleClaim: args.scheduleClaim,
       queueStatement,
       replacement: replacementPlan,
@@ -606,6 +609,17 @@ const commitWorkflowInput$ = command(
             throw new ChatRunFinishedAutomationAlreadyAdmittedError();
           }
         }
+        if (
+          failed.failure.kind === "gmail-receipt" &&
+          source.gmailDuplicateSql
+        ) {
+          const duplicate = (await database.execute(source.gmailDuplicateSql))
+            .rowCount;
+          signal.throwIfAborted();
+          if (duplicate !== 0) {
+            throw new GmailAutomationAlreadyAdmittedError();
+          }
+        }
         throw workflowSourceAdmissionError(failed.failure);
       }
       throw result.error;
@@ -617,7 +631,10 @@ const commitWorkflowInput$ = command(
 const workflowQueueDisplayName$ = command(
   async (
     { get },
-    workflowId: string,
+    owner: Pick<
+      RunWorkflowAutomationNowArgs["automation"],
+      "orgId" | "workflowId" | "ownerUserId"
+    >,
     timing: ApiDispatchTimingCollector,
     signal: AbortSignal,
   ): Promise<string | null> => {
@@ -626,7 +643,13 @@ const workflowQueueDisplayName$ = command(
     const [workflow] = await database
       .select({ displayName: workflows.displayName })
       .from(workflows)
-      .where(eq(workflows.id, workflowId))
+      .where(
+        and(
+          eq(workflows.id, owner.workflowId),
+          eq(workflows.orgId, owner.orgId),
+          visibleWorkflowCondition(owner.ownerUserId),
+        ),
+      )
       .limit(1)
       .finally(() => {
         safeSync(() => {
@@ -639,7 +662,7 @@ const workflowQueueDisplayName$ = command(
       });
     signal.throwIfAborted();
     if (!workflow) {
-      throw new Error(`Workflow not found: ${workflowId}`);
+      throw new Error(`Workflow not found: ${owner.workflowId}`);
     }
     return workflow.displayName;
   },
@@ -662,23 +685,21 @@ function workflowQueueArgs(
   args: RunWorkflowAutomationNowArgs,
   model: EnqueuedChatInputModel,
   displayName: string | null,
-  automation: RunWorkflowAutomationNowArgs["due"]["automation"],
-  chatThreadId: string,
 ) {
   return {
     displayName,
     modelSelection: model.modelSelection,
-    automation,
+    automation: args.automation,
     queueEventId: args.queueEventId,
     workflowName: args.automationContext.workflowName,
     displayPrompt: workflowAutomationDisplayMessage(args.automationContext),
-    agentRunSource: args.agentRunSource,
+    chatRunSource: args.chatRunSource,
     workflowAutomationEventType: args.automationContext.eventType,
     workflowAutomationEventPayload: persistedWorkflowAutomationEventPayload(
       args.automationContext.event,
     ),
     connectorSourceId: args.connectorSourceId,
-    chatThreadId,
+    chatThreadId: args.chatThreadId,
     triggerBrief: args.triggerBrief,
   };
 }
@@ -690,17 +711,21 @@ const prepareWorkflowAdmission$ = command(
     timing: ApiDispatchTimingCollector,
     signal: AbortSignal,
   ) => {
-    const { automation, chatThreadId } = args.due;
-    const model = await set(workflowAutomationInputModel$, args.due, signal);
+    const { automation, chatThreadId } = args;
+    const model = await set(
+      workflowAutomationInputModel$,
+      { automation, chatThreadId },
+      signal,
+    );
     const displayName = await set(
       workflowQueueDisplayName$,
-      automation.workflowId,
+      automation,
       timing,
       signal,
     );
     const source = await set(prepareWorkflowQueueSource$, args, signal);
     const plan = workflowAutomationQueueEventPlan(
-      workflowQueueArgs(args, model, displayName, automation, chatThreadId),
+      workflowQueueArgs(args, model, displayName),
     );
     signal.throwIfAborted();
     return {
@@ -718,10 +743,13 @@ export const runWorkflowAutomationNow$ = command(
     args: RunWorkflowAutomationNowArgs,
     signal: AbortSignal,
   ): Promise<RunWorkflowAutomationResult> => {
-    const { automation, chatThreadId } = args.due;
+    const { automation, chatThreadId } = args;
     const timing = workflowAutomationAdmissionTiming(args);
 
     const { scheduleClaim } = args;
+    const claimsUnjournaledSchedule =
+      args.recurringScheduleClaim !== undefined ||
+      usesProactiveWorkflowInput(args);
     const { model, source, plan, replacePendingTicks } = await set(
       prepareWorkflowAdmission$,
       args,
@@ -764,7 +792,7 @@ export const runWorkflowAutomationNow$ = command(
                 }
                 throw attempt.error;
               }
-              if (attempt.value === null && usesProactiveWorkflowInput(args)) {
+              if (attempt.value === null && claimsUnjournaledSchedule) {
                 admissionOutcome = "superseded";
                 return false;
               }
@@ -838,7 +866,7 @@ export const runWorkflowAutomationNow$ = command(
       waitUntil(set(notifyRunningChatRunOfPendingInput$, chatThreadId, signal));
     }
     return workflowEnqueueResult(
-      scheduleClaim !== undefined || usesProactiveWorkflowInput(args),
+      scheduleClaim !== undefined || claimsUnjournaledSchedule,
       enqueued,
     );
   },

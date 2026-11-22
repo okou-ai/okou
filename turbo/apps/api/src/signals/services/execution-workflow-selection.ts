@@ -1,6 +1,9 @@
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CANONICAL_CODEX_HOME_DIR,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
   PI_SKILLS_ROOT,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
@@ -8,40 +11,24 @@ import {
   contentBundleSchema,
   type ContentBundle,
 } from "@okouai/api-contracts/contracts/content-bundle";
-import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import {
   STAFF_SINGLE_AGENT_ORG_ID,
   staffWorkflowCopyId,
 } from "@okouai/core/single-agent-migration";
-import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
-import { array, object, string, unknown, uuid, type infer as Infer } from "zod";
-import { zodDriverValueDecoder } from "../../lib/db-structured-result";
-import {
-  memberInstructionsSelectionSql,
-  type ExecutionPackageScope,
-} from "./execution-instructions-selection";
+import { logger } from "../../lib/log";
+import type {
+  ExecutionPackageScope,
+  ExecutionPackageSources,
+} from "./execution-package-sources";
 import type { OfficialWorkflowObservation } from "./official-workflow-run.service";
 import {
   resolveRunSkillVolumes,
   type SkillVolume,
 } from "./run-prompt-and-skills";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
-import type { ThreadAutomationTarget } from "./thread-context.signals";
+import type { ThreadAutomationTarget } from "./thread-automation-context.service";
 
-export const executionPackageSourcesSchema = object({
-  memberInstructions: unknown(),
-  workflows: array(
-    object({ id: uuid(), name: string(), contentBundle: unknown() }),
-  ),
-});
-export type ExecutionPackageSources = Infer<
-  typeof executionPackageSourcesSchema
->;
-
-export const executionPackageSourcesDecoder = zodDriverValueDecoder(
-  executionPackageSourcesSchema,
-);
+const log = logger("api:execution-workflows");
 
 export interface CapturedExecutionPackages {
   readonly workflows: readonly {
@@ -51,37 +38,10 @@ export interface CapturedExecutionPackages {
   readonly instructionsBundle: ContentBundle;
 }
 
-/**
- * Shared projection for prompt picks and the Automation target statement.
- * Mount exclusions apply to the captured winner for each Workflow name.
- */
-export function executionPackageSourcesSql(scope: ExecutionPackageScope) {
-  return sql`(
-    WITH selected_workflows AS (
-      SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id,
-        ${workflows.name} AS name, ${workflows.contentBundle} AS "contentBundle"
-      FROM ${workflows}
-      WHERE ${and(
-        eq(workflows.orgId, scope.orgId),
-        eq(workflows.agentId, scope.agentId),
-        isNull(workflows.officialDefinitionName),
-        or(
-          eq(workflows.visibility, "public"),
-          eq(workflows.ownerUserId, scope.userId),
-        ),
-        notInArray(workflows.name, [...BUILT_IN_SKILLS]),
-      )}
-      ORDER BY ${workflows.name},
-        (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = ${scope.userId}) DESC,
-        ${workflows.createdAt}, ${workflows.id}
-    )
-    SELECT jsonb_build_object(
-      'memberInstructions', ${memberInstructionsSelectionSql(scope)},
-      'workflows', (SELECT COALESCE(jsonb_agg(to_jsonb(selected_workflows) ORDER BY name), '[]'::jsonb)
-        FROM selected_workflows)
-    )
-  )`;
-}
+export type ExecutionPackageMounts = Pick<
+  PreparedExecutionContext,
+  "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
+>;
 
 export function resolveOrdinaryAutomationWorkflowName(
   target: Pick<ThreadAutomationTarget, "automation" | "workflow">,
@@ -105,6 +65,7 @@ export function resolveOrdinaryAutomationWorkflowName(
   }
   // Pre-cutover queued input can still mount the authorized legacy winner
   // after its Automation has been moved to that Workflow's stable copy.
+  // https://github.com/okou-ai/okou/issues/46783
   if (scope.orgId !== STAFF_SINGLE_AGENT_ORG_ID) {
     return null;
   }
@@ -118,8 +79,6 @@ export function resolveOrdinaryAutomationWorkflowName(
 export function selectExecutionPackages(
   sources: ExecutionPackageSources | null,
   input: {
-    readonly singleAgent: boolean;
-    readonly agentInstructions: ContentBundle | null;
     readonly skillRoot: string;
     readonly protectedMountPaths: readonly string[];
     readonly ordinaryAutomation: Pick<
@@ -127,25 +86,20 @@ export function selectExecutionPackages(
       "ordinaryWorkflowName"
     > | null;
   },
-): CapturedExecutionPackages | null {
+): CapturedExecutionPackages | { readonly error: string } {
   if (!sources) {
-    return null;
+    return { error: "Run package source authorization is unavailable" };
   }
   const protectedPaths = new Set(input.protectedMountPaths);
   const isProtected = (name: string) => {
     return protectedPaths.has(`${input.skillRoot}/${name}`);
   };
-  if (input.ordinaryAutomation) {
-    const name = input.ordinaryAutomation.ordinaryWorkflowName;
-    if (name === null || isProtected(name)) {
-      return null;
-    }
-  }
+  const requiredWorkflow = input.ordinaryAutomation?.ordinaryWorkflowName;
   const instructionsBundle = contentBundleSchema.safeParse(
-    input.singleAgent ? sources.memberInstructions : input.agentInstructions,
+    sources.memberInstructions,
   );
   if (!instructionsBundle.success) {
-    return null;
+    return { error: "Run Instructions package is unavailable" };
   }
   const selectedWorkflows: CapturedExecutionPackages["workflows"][number][] =
     [];
@@ -155,12 +109,23 @@ export function selectExecutionPackages(
     }
     const contentBundle = contentBundleSchema.safeParse(workflow.contentBundle);
     if (!contentBundle.success) {
-      return null;
+      log.warn("Workflow Skill bundle is unavailable", {
+        workflowId: workflow.id,
+      });
+      continue;
     }
     selectedWorkflows.push({
       name: workflow.name,
       contentBundle: contentBundle.data,
     });
+  }
+  if (
+    input.ordinaryAutomation &&
+    !selectedWorkflows.some(({ name }) => {
+      return name === requiredWorkflow;
+    })
+  ) {
+    return { error: "The Automation's Workflow package is unavailable" };
   }
   return {
     instructionsBundle: instructionsBundle.data,
@@ -168,30 +133,64 @@ export function selectExecutionPackages(
   };
 }
 
-/** Resolve package destinations for this Run's accepted launch framework. */
+// Workflow packages mount under the skills root. Each framework reserves a
+// separate Memory destination and applies it after the package mounts.
+const frameworkMountPaths = {
+  "claude-code": {
+    skillRoot: `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`,
+    memoryMountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  },
+  codex: {
+    skillRoot: `${CANONICAL_CODEX_HOME_DIR}/skills`,
+    memoryMountPath: CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  },
+  pi: {
+    skillRoot: PI_SKILLS_ROOT,
+    memoryMountPath: CANONICAL_PI_MEMORY_MOUNT_PATH,
+  },
+} as const;
+
 export function prepareRunPackageMounts(args: {
-  readonly framework: PreparedExecutionContext["cliAgentType"];
+  readonly framework: keyof typeof frameworkMountPaths;
   readonly skillVolumes: readonly SkillVolume[];
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
 }) {
-  const skillRoot =
-    args.framework === "pi"
-      ? PI_SKILLS_ROOT
-      : args.framework === "codex"
-        ? `${CANONICAL_CODEX_HOME_DIR}/skills`
-        : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-  const skillMounts = normalizeMountOverlay(
+  const { skillRoot, memoryMountPath } = frameworkMountPaths[args.framework];
+  const packageMounts = normalizeMountOverlay(
     resolveRunSkillVolumes(args.skillVolumes, skillRoot),
-  );
+  ).filter(({ mountPath }) => {
+    return mountPath !== memoryMountPath;
+  });
   return {
     skillRoot,
-    skillMounts,
-    protectedMountPaths: skillMounts.flatMap((mount) => {
+    memoryMountPath,
+    protectedMountPaths: packageMounts.flatMap((mount) => {
       return "templateGuidanceBundle" in mount ? [mount.mountPath] : [];
     }),
-    officialWorkflowBundles:
-      args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
-        return { ...contentBundle, mountPath: `${skillRoot}/${name}` };
-      }) ?? [],
+    mounts: {
+      officialWorkflowBundles:
+        args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
+          return { ...contentBundle, mountPath: `${skillRoot}/${name}` };
+        }) ?? [],
+      seedSkillBundles: packageMounts.flatMap((mount) => {
+        return "contentBundle" in mount
+          ? [{ ...mount.contentBundle, mountPath: mount.mountPath }]
+          : [];
+      }),
+      templateGuidanceBundles: packageMounts.flatMap((mount, index) => {
+        if (!("templateGuidanceBundle" in mount)) {
+          return [];
+        }
+        const laterPaths = packageMounts.slice(index + 1).map((later) => {
+          return later.mountPath;
+        });
+        return [
+          {
+            ...mount.templateGuidanceBundle,
+            beforeMountPaths: [...laterPaths, memoryMountPath],
+          },
+        ];
+      }),
+    } satisfies ExecutionPackageMounts,
   };
 }

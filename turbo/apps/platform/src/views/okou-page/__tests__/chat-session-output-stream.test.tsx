@@ -141,7 +141,9 @@ test("A growing action URL becomes a card as soon as a boundary arrives", async 
   ].entries()) {
     url += delta;
     push(index + 1, delta);
-    await expect(screen.findByText(url)).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTitle(url).closest("a")).toHaveAttribute("href", url);
+    });
     expect(screen.queryByText("Computer Use authorization")).toBeNull();
   }
 
@@ -150,7 +152,7 @@ test("A growing action URL becomes a card as soon as a boundary arrives", async 
   await waitFor(() => {
     expect(
       document.querySelector("[data-chat-thread-container-id]"),
-    ).toHaveTextContent(`${url}.`);
+    ).toHaveTextContent(`${url.slice(0, 77)}....`);
   });
   expect(screen.queryByText("Computer Use authorization")).toBeNull();
 
@@ -299,7 +301,7 @@ test("Wallet cards preserve the complete signed URL across streamed chunks", asy
       screen
         .getByText(partial, { exact: false })
         .closest('[data-slot="markdown"]'),
-    ).toHaveTextContent(url);
+    ).toHaveTextContent(url.slice(0, 77) + "...");
   });
   expect(screen.queryByLabelText("Review purchase")).toBeNull();
 
@@ -423,9 +425,9 @@ test("Changing runs replaces the channel and leaving the thread cancels the subs
     expect(hasSubscriptionOnChannel(nextChannel, nextRunId)).toBeTruthy();
     expect(hasSubscriptionOnChannel(CHANNEL, RUN_ID)).toBeFalsy();
   });
-  click(await findLink("Agents"));
+  click(await findLink("Workflows"));
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
   expect(hasSubscriptionOnChannel(nextChannel, nextRunId)).toBeFalsy();
 });

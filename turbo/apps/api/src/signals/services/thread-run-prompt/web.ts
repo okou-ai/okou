@@ -2,14 +2,14 @@ import type { BootstrapFeatureSwitchContext } from "../agent-run-context.signals
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { computed, type Computed } from "ccstate";
 import {
-  agentRunSourceAnnotation,
+  chatRunSourceAnnotation,
   projectUserMessage,
   requiredUserMessageForEvent,
   userMessageReferences,
 } from "../chat-user-message.service";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import { buildWebChatAppendSystemPrompt } from "../web-chat-session-prompt.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 import type { ThreadProjectContext } from "../thread-project-context.service";
 
@@ -22,7 +22,7 @@ export function createWebThreadPrompt(
   framework$: Computed<Promise<SupportedFramework>>,
   singleAgent$: Computed<Promise<boolean>>,
   projectContext$: Computed<Promise<ThreadProjectContext | null>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (
@@ -64,7 +64,7 @@ export function createWebThreadPrompt(
             generationTemplatePrompt: "",
             computerUseHostDisplayName: null,
             triggerSource,
-            agentRunSource: agentRunSourceAnnotation(message),
+            chatRunSource: chatRunSourceAnnotation(message),
             references: userMessageReferences(message),
             integrationNote: resolveIntegrationNotePrompt({
               triggerSource,
@@ -73,7 +73,6 @@ export function createWebThreadPrompt(
           },
         }),
       },
-      skillVolumes: [],
     };
   });
 }

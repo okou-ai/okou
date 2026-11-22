@@ -58,11 +58,6 @@ public struct ChatConnectorAccessOverride: Codable, Equatable, Sendable {
 }
 
 extension ChatComposerAccess {
-  public func chatAccountAccessEnabled() async throws -> Bool {
-    let features: SidebarFeatureSwitches = try await client.request("/api/feature-switches")
-    return features.effectiveSwitches["connectorChatAccountAccess"] == true
-  }
-
   public func accountDefaults(target: ChatConnectorTarget) async throws
     -> [ChatConnectorAccountDefault]
   {

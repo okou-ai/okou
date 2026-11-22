@@ -1,3 +1,6 @@
+import { createApp } from "../../../../app-factory";
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
+import { instructionsRoutes } from "../../instructions";
 import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
@@ -5,7 +8,6 @@ import { authContract } from "@okouai/api-contracts/contracts/auth";
 import {
   onboardingCompleteContract,
   onboardingStatusContract,
-  type OnboardingStatusResponse,
 } from "@okouai/api-contracts/contracts/onboarding";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -32,6 +34,7 @@ import { onboardingCompleteRoutes } from "../../onboarding-complete";
 import { onboardingStatusRoutes } from "../../onboarding-status";
 import { orgReadRoutes } from "../../org-read";
 import { userPreferencesRoutes } from "../../user-preferences";
+import { deliverOrganizationCreated } from "./api-bdd-webhooks";
 import { createRouteMocks } from "./route-test";
 
 type ClerkOrgRole = "org:admin" | "org:member";
@@ -139,6 +142,30 @@ export function createBddApi(context: TestContext) {
     })(agentsMainContract);
   }
 
+  async function provisionWorkspace(creator: ApiTestUser) {
+    authenticate(creator);
+    await deliverOrganizationCreated(context, creator);
+  }
+
+  async function listedDefaultAgentId(headers: AuthHeaders) {
+    const listed = await accept(agentsClient().list({ headers }), [200]);
+    return (
+      listed.body.find((entry) => {
+        return entry.isDefaultAgent;
+      })?.agentId ?? null
+    );
+  }
+
+  async function readDefaultAgentId(user: ApiTestUser) {
+    const headers = authenticate(user);
+    const id = await listedDefaultAgentId(headers);
+    if (id || user.orgRole !== "org:admin") {
+      return id;
+    }
+    await deliverOrganizationCreated(context, user);
+    return await listedDefaultAgentId(headers);
+  }
+
   function agentsByIdClient() {
     return setupAppWithRoutes({
       context,
@@ -221,9 +248,10 @@ export function createBddApi(context: TestContext) {
       );
     },
 
-    async readOnboardingStatus(
-      nextUser: ApiTestUser,
-    ): Promise<OnboardingStatusResponse> {
+    readDefaultAgentId,
+    provisionWorkspace,
+
+    async readOnboardingStatus(nextUser: ApiTestUser) {
       const response = await accept(
         onboardingStatusClient().getStatus({
           headers: authenticate(nextUser),
@@ -231,18 +259,6 @@ export function createBddApi(context: TestContext) {
         [200],
       );
       return response.body;
-    },
-
-    async requestReadOnboardingStatus(
-      nextUser: ApiTestUser | null,
-      statuses: readonly (200 | 401)[],
-    ) {
-      return await accept(
-        onboardingStatusClient().getStatus({
-          headers: authenticate(nextUser),
-        }),
-        statuses,
-      );
     },
 
     async completeOnboarding(
@@ -290,15 +306,8 @@ export function createBddApi(context: TestContext) {
       options: OnboardingBootstrapOptions,
     ): Promise<string> {
       const headers = authenticate(nextUser);
-      await accept(agentsClient().list({ headers }), [200]);
-      const statusResponse = await accept(
-        onboardingStatusClient().getStatus({
-          headers,
-        }),
-        [200],
-      );
-      const status = statusResponse.body;
-      if (!status.defaultAgentId) {
+      const defaultAgentId = await readDefaultAgentId(nextUser);
+      if (!defaultAgentId) {
         throw new Error("Expected onboarding bootstrap to create an agent");
       }
 
@@ -320,7 +329,7 @@ export function createBddApi(context: TestContext) {
         [200],
       );
 
-      return status.defaultAgentId;
+      return defaultAgentId;
     },
 
     async requestReadOrg(
@@ -430,6 +439,20 @@ export function createBddApi(context: TestContext) {
       return response.body;
     },
 
+    async updatePersonalInstructions(
+      nextUser: ApiTestUser,
+      content: string,
+    ): Promise<void> {
+      const client = setupAppWithRoutes({
+        context,
+        routes: instructionsRoutes,
+      })(instructionsContract);
+      await accept(
+        client.update({ headers: authenticate(nextUser), body: { content } }),
+        [200],
+      );
+    },
+
     async updateAgentInstructions(
       nextUser: ApiTestUser,
       agentId: string,
@@ -446,28 +469,14 @@ export function createBddApi(context: TestContext) {
       return response.body;
     },
 
-    async deleteAgent(nextUser: ApiTestUser, agentId: string): Promise<void> {
-      await accept(
-        agentsByIdClient().delete({
-          params: { id: agentId },
-          headers: authenticate(nextUser),
-        }),
-        [204],
-      );
-    },
-
-    async requestDeleteAgent(
-      nextUser: ApiTestUser | null,
-      agentId: string,
-      statuses: readonly (204 | 400 | 401 | 403 | 404 | 409)[],
-    ): Promise<{ readonly status: number; readonly body: unknown }> {
-      return await accept(
-        agentsByIdClient().delete({
-          params: { id: agentId },
-          headers: authenticate(nextUser),
-        }),
-        statuses,
-      );
+    async expectAgentDeleteUnavailable(actor: ApiTestUser, agentId: string) {
+      authenticate(actor);
+      const app = createApp({ signal: context.signal, routes: agentsRoutes });
+      const response = await app.request(`/api/agents/${agentId}`, {
+        method: "DELETE",
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      expect(response.status).toBe(404);
     },
   };
 }

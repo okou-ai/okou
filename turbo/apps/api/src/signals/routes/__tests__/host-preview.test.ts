@@ -515,7 +515,6 @@ describe("sandbox hosted previews", () => {
     }
     const actor = { ...entitled.actor, orgId: entitled.actor.orgId };
     const run = await fixture.sendChatRun(actor, {
-      agentId: entitled.agentId,
       prompt: "Publish a site with a preview",
     });
     const { execution } = await fixture.runExecution(run.runId);
@@ -613,7 +612,6 @@ describe("sandbox hosted previews", () => {
     }
     const actor = { ...entitled.actor, orgId: entitled.actor.orgId };
     const run = await fixture.sendChatRun(actor, {
-      agentId: entitled.agentId,
       prompt: "Publish a site with a retryable preview",
     });
     const { execution } = await fixture.runExecution(run.runId);

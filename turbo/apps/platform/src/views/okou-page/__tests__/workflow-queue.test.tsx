@@ -28,7 +28,6 @@ import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 
 const context = testContext();
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000081";
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000081";
 const ACTIVE_PROMPT_THREAD_ID = "b0000000-0000-4000-a000-000000000091";
 const SKIP_EVENT_THREAD_ID = "b0000000-0000-4000-a000-000000000092";
@@ -98,17 +97,9 @@ function installWorkflowQueueFixture(
   rows: readonly ChatEventRow[],
 ): { readonly revokedEventIds: string[] } {
   const revokedEventIds: string[] = [];
-  testContextValue.mocks.data.agents([
-    {
-      agentId: AGENT_ID,
-      displayName: "Queue agent",
-      visibility: "private",
-    },
-  ]);
   testContextValue.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(200, {
       id: threadId,
-      agentId: AGENT_ID,
       title: "Workflow queue",
       selectedModel: "claude-sonnet-5",
       modelSettings: {},
@@ -127,7 +118,7 @@ function installWorkflowQueueFixture(
         chatThreads: [
           {
             id: threadId,
-            agentId: AGENT_ID,
+
             title: "Workflow queue",
             sortAt: "2026-08-01T00:00:00.000Z",
             createdAt: "2026-08-01T00:00:00.000Z",

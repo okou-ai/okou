@@ -47,14 +47,6 @@ export const chatThreads = pgTable(
         "chat_threads_computer_access_check",
         sql`NOT (${table.cloudBrowserEnabled} AND ${table.computerUseHostId} IS NOT NULL)`,
       ),
-      index("idx_chat_threads_user_agent_pinned")
-        .on(table.userId, table.agentId)
-        .where(sql`${table.pinnedAt} IS NOT NULL`),
-      index("idx_chat_threads_user_agent_last_message").on(
-        table.userId,
-        table.agentId,
-        table.lastMessageAt.desc(),
-      ),
       index("idx_chat_threads_user_last_message_id").on(
         table.userId,
         table.lastMessageAt.desc(),

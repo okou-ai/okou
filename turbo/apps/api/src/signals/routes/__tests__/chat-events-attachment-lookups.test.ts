@@ -28,7 +28,7 @@ const {
 
 describe("chat attachment lookup ownership", () => {
   it("reuses the original shared by annotated and plain file parts", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const files = [
       { id: randomUUID(), filename: "screen.png", size: 42 },
       { id: randomUUID(), filename: "screen.annotated.png", size: 54 },
@@ -73,7 +73,6 @@ describe("chat attachment lookup ownership", () => {
     };
     const parts = [marked, plain, marked];
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "compare marked and original",
       userMessage: { version: 1, parts },
     });
@@ -104,7 +103,7 @@ describe("chat attachment lookup ownership", () => {
   });
 
   it("shares storage reads across different filename hints and retains their snapshots", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const fileId = randomUUID();
     const storedFilename = "current.png";
     const storedKey = buildArtifactKeyV2(fileId, storedFilename);
@@ -163,7 +162,6 @@ describe("chat attachment lookup ownership", () => {
       },
     );
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "keep the filename snapshots",
       userMessage: { version: 1, parts },
     });
@@ -212,7 +210,6 @@ describe("chat attachment lookup ownership", () => {
         ],
       };
       const allowed = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "read my private file",
         userMessage,
       });
@@ -221,11 +218,8 @@ describe("chat attachment lookup ownership", () => {
       );
       await cancelChatRun(owner.actor, allowed.runId);
 
-      const thread = await chat.createThread(other.actor, {
-        agentId: other.agentId,
-      });
+      const thread = await chat.createThread(other.actor, {});
       const denied = await requestSendEventRaw(other.actor, {
-        agentId: other.agentId,
         threadId: thread.id,
         prompt: "deny another identity's file",
         userMessage,
@@ -246,8 +240,8 @@ describe("chat attachment lookup ownership", () => {
   it.each(["failure", "cancellation"] as const)(
     "stops refilling and joins four in-flight lookups on %s without publishing input",
     async (outcome) => {
-      const { actor, agentId } = await entitledNativeChatActor();
-      const thread = await chat.createThread(actor, { agentId });
+      const { actor } = await entitledNativeChatActor();
+      const thread = await chat.createThread(actor, {});
       const files = Array.from({ length: 8 }, (_, index) => {
         return { id: randomUUID(), filename: `file-${index}.txt`, size: 42 };
       });
@@ -285,7 +279,6 @@ describe("chat attachment lookup ownership", () => {
       const sending = requestSendEventRaw(
         actor,
         {
-          agentId,
           threadId: thread.id,
           prompt: "do not publish a partial attachment input",
           userMessage: {
@@ -331,8 +324,8 @@ describe("chat attachment lookup ownership", () => {
   );
 
   it("joins later reads already started before a slow first attachment fails", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    const thread = await chat.createThread(actor, { agentId });
+    const { actor } = await entitledNativeChatActor();
+    const thread = await chat.createThread(actor, {});
     const files = Array.from({ length: 8 }, (_, index) => {
       return {
         id: randomUUID(),
@@ -369,7 +362,6 @@ describe("chat attachment lookup ownership", () => {
       return await originalSend(request);
     });
     const sending = requestSendEventRaw(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "fail atomically after later lookups have used free slots",
       userMessage: {

@@ -78,7 +78,6 @@ export function buildFeishuLoginMessage(args: {
 
 export function buildFeishuWelcomeMessage(args: {
   readonly platform?: FeishuPlatform;
-  readonly agentName: string | null;
   readonly botName: string | null;
 }): FeishuOutboundMessage {
   const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
@@ -86,9 +85,6 @@ export function buildFeishuWelcomeMessage(args: {
   // Provider bot metadata is unavailable until Feishu discovery succeeds, so
   // keep the fallback provider-neutral while botName is nullable.
   const botName = args.botName ?? `your ${platformName} bot`;
-  const agentLine = args.agentName
-    ? `\n\nYour current agent is **${args.agentName}**.`
-    : "";
   return cardMessage({
     title: "You're connected! 🎉",
     template: "green",
@@ -96,7 +92,7 @@ export function buildFeishuWelcomeMessage(args: {
     elements: [
       {
         tag: "markdown",
-        content: `👋 **Hi! I'm ${botName}.**\n\nI connect ${platformName} conversations to AI agents to help with your tasks.${agentLine}`,
+        content: `👋 **Hi! I'm ${botName}.**\n\nYour ${platformName} account is connected to ${brandName}.`,
       },
       {
         tag: "hr",

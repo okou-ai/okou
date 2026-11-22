@@ -43,7 +43,6 @@ describe("selected Kotlin chat readers", () => {
     )!;
     expect(models).toContain("sealed interface ChatSnapshot");
     expect(models).toContain("sealed interface ChatEventsEventsItem");
-    expect(models).toContain("typealias Agents = List<AgentsItem>");
     expect(models).toContain(
       "typealias IndicatorMap = Map<String, IndicatorMapValue>",
     );

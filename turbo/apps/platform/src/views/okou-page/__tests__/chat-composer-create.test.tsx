@@ -3,7 +3,7 @@ import {
   readSingleRichClipboardWrite,
 } from "./chat-clipboard-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
@@ -20,7 +20,6 @@ import {
 import { openTemplatePicker } from "./chat-composer-template-gallery-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
-  AGENT_ID,
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   THREAD_ID,
   composerInlineTemplates,
@@ -32,11 +31,10 @@ import { buildRunModel } from "./chat-model-builders.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 function setupModels(): void {
-  mockAgent();
   mockPersonalModelRoutes();
   context.mocks.data.availableRunModels([
     buildRunModel({
@@ -71,7 +69,7 @@ function button(label: string, container: ParentNode = document): HTMLElement {
 async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   return await findComposerEditor();
 }
@@ -302,7 +300,7 @@ async function setupEditedDraftTemplate(
   if (!first || !second || !replacement) {
     throw new Error(`Expected three ${mode} templates`);
   }
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
         version: 1,
@@ -379,7 +377,7 @@ async function setupSavedPresentationDraft() {
   if (!first || !second) {
     throw new Error("Expected two presentation templates");
   }
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
         version: 1,
@@ -453,7 +451,7 @@ async function setupCreateModeWithTemplate() {
   if (!template) {
     throw new Error("Expected a presentation template");
   }
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
         version: 1,

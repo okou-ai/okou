@@ -14,14 +14,13 @@ use tokio::time::{self, Instant};
 
 use crate::operation_tracker::{
     NormalOperationRejection, NormalOperationToken, NormalOperationTransitionError,
-    NormalOperationTransitionHandle,
+    NormalOperationTransitionHandle, PendingNormalOperation,
 };
+use crate::protocol_error;
 use crate::request_progress::RequestWriteProgress;
 use crate::{FrameWriteObserver, GuestControlClient, RequestTimeoutError, RequestTimeoutStage};
 
-use super::{
-    ConnectionState, FrameWriteDecision, PendingNormalOperation, PendingResponse, RouteId, Shared,
-};
+use super::{ConnectionState, FrameWriteDecision, OutboundFrame, PendingResponse, RouteId, Shared};
 
 struct PendingRequestGuard {
     shared: Arc<Shared>,
@@ -114,17 +113,15 @@ pub(crate) async fn request_on_shared(
 
 async fn write_request_frame(
     shared: &Arc<Shared>,
-    prefix: &[u8],
-    suffix: &[u8],
+    frame: OutboundFrame<'_>,
     budget: &RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     progress: &RequestWriteProgress,
     timing: Option<&mut RequestTiming>,
 ) -> io::Result<()> {
     let decision = shared
-        .write_frame_parts(
-            prefix,
-            suffix,
+        .write_outbound_frame(
+            frame,
             || {
                 // A ready lock can be polled before timeout_at notices expiry.
                 // Reject before tracker/observer side effects or partial writes.
@@ -167,7 +164,7 @@ pub(crate) async fn write_request_frame_with_builder(
     write_request_frame_with_builder_and_progress(
         shared,
         seq,
-        |seq, frame| build_frame(seq, frame).map(|()| &[][..]),
+        contiguous_frame_builder(build_frame),
         &budget,
         before_write,
         &progress,
@@ -179,7 +176,7 @@ pub(crate) async fn write_request_frame_with_builder(
 async fn write_request_frame_with_builder_and_progress<'a>(
     shared: &Arc<Shared>,
     seq: u32,
-    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<&'a [u8]>,
+    build_frame: impl FnOnce(u32) -> io::Result<OutboundFrame<'a>>,
     budget: &RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     progress: &RequestWriteProgress,
@@ -193,31 +190,28 @@ async fn write_request_frame_with_builder_and_progress<'a>(
     if budget.is_expired() {
         return Err(budget.before_write_timeout());
     }
-    let mut frame = Vec::new();
     let encode_started = timing.as_ref().map(|_| Instant::now());
-    let encoded = build_frame(seq, &mut frame);
+    let frame = build_frame(seq);
     if let (Some(timing), Some(started)) = (timing.as_deref_mut(), encode_started) {
         timing.frame_encode = Some(started.elapsed());
     }
-    let suffix = encoded?;
-    let result = write_request_frame(
-        shared,
-        &frame,
-        suffix,
-        budget,
-        before_write,
-        progress,
-        timing,
-    )
-    .await;
-    drop(frame);
+    let result = write_request_frame(shared, frame?, budget, before_write, progress, timing).await;
     drop(frame_builder_guard);
     result
 }
 
+fn contiguous_frame_builder(
+    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<()>,
+) -> impl FnOnce(u32) -> io::Result<OutboundFrame<'static>> {
+    move |seq| {
+        let mut frame = Vec::new();
+        build_frame(seq, &mut frame)?;
+        Ok(OutboundFrame::bytes(frame, &[]))
+    }
+}
+
 fn encode_request_frame(msg_type: u8, seq: u32, payload: &[u8]) -> io::Result<Vec<u8>> {
-    guest_control_proto::encode(msg_type, seq, payload)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))
+    guest_control_proto::encode(msg_type, seq, payload).map_err(protocol_error::invalid_input)
 }
 
 fn register_pending_response(
@@ -271,7 +265,14 @@ async fn write_registered_request_and_wait(
     let budget = RequestBudget { deadline, timeout };
     time::timeout_at(
         deadline,
-        write_request_frame(shared, data, &[], &budget, before_write, &progress, None),
+        write_request_frame(
+            shared,
+            OutboundFrame::bytes(data, &[]),
+            &budget,
+            before_write,
+            &progress,
+            None,
+        ),
     )
     .await
     .map_err(|_| request_timeout_error(progress.timeout_stage(), timeout))??;
@@ -282,7 +283,7 @@ async fn write_registered_request_and_wait(
 async fn write_registered_request_and_wait_with_frame_builder<'a>(
     shared: &Arc<Shared>,
     seq: u32,
-    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<&'a [u8]>,
+    build_frame: impl FnOnce(u32) -> io::Result<OutboundFrame<'a>>,
     budget: RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     rx: oneshot::Receiver<RawMessage>,
@@ -378,19 +379,19 @@ pub(crate) async fn normal_request_on_shared_with_write_observer_frame_builder(
         terminal_msg_types,
         timeout,
         write_observer,
-        |seq, frame| build_frame(seq, frame).map(|()| &[][..]),
+        contiguous_frame_builder(build_frame),
         None,
     )
     .await
 }
 
-/// Build the frame into the owned buffer and return any borrowed suffix.
+/// Build the frame under the builder gate and retain it until writing completes.
 pub(crate) async fn normal_request_on_shared_with_timing_frame_builder<'a>(
     shared: &Arc<Shared>,
     terminal_msg_types: &'static [u8],
     timeout: Duration,
     write_observer: FrameWriteObserver,
-    build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<&'a [u8]>,
+    build_frame: impl FnOnce(u32) -> io::Result<OutboundFrame<'a>>,
     mut timing: Option<&mut RequestTiming>,
 ) -> io::Result<RawMessage> {
     if timeout.is_zero() {
@@ -465,7 +466,7 @@ pub(crate) async fn request_on_shared_with_composite_operation_and_observer_fram
     write_registered_request_and_wait_with_frame_builder(
         shared,
         seq,
-        |seq, frame| build_frame(seq, frame).map(|()| &[][..]),
+        contiguous_frame_builder(build_frame),
         RequestBudget { deadline, timeout },
         || {
             mark_pending_normal_operation_possible_guest_write(shared, route_id, |_| Ok(()))?;
@@ -505,38 +506,14 @@ fn mark_pending_normal_operation_possible_guest_write(
                     "normal request missing operation token",
                 ));
             };
-            mark_pending_normal_operation_possible_guest_write_started(normal_operation)
+            normal_operation
+                .mark_possible_guest_write_started()
+                .map_err(normal_operation_transition_error)
         }
         ConnectionState::Closed(_) => Err(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "connection closed",
         )),
-    }
-}
-
-fn mark_pending_normal_operation_possible_guest_write_started(
-    normal_operation: &mut PendingNormalOperation,
-) -> io::Result<()> {
-    match normal_operation {
-        PendingNormalOperation::Owned(normal_operation) => normal_operation
-            .mark_possible_guest_write_started()
-            .map_err(normal_operation_transition_error),
-        PendingNormalOperation::Composite(normal_operation) => normal_operation
-            .mark_possible_guest_write_started()
-            .map_err(normal_operation_transition_error),
-    }
-}
-
-pub(super) fn complete_pending_normal_operation(
-    normal_operation: PendingNormalOperation,
-) -> io::Result<()> {
-    match normal_operation {
-        PendingNormalOperation::Owned(normal_operation) => normal_operation
-            .complete()
-            .map_err(normal_operation_transition_error),
-        PendingNormalOperation::Composite(normal_operation) => normal_operation
-            .mark_possible_guest_write_completed()
-            .map_err(normal_operation_transition_error),
     }
 }
 
@@ -559,14 +536,10 @@ pub(crate) fn normal_operation_transition_error(
     )
 }
 
-fn protocol_invalid_data(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
-}
-
 fn guest_error_from_response(response: &RawMessage) -> io::Error {
     match guest_control_proto::decode_error(&response.payload) {
         Ok(message) => io::Error::other(message.to_owned()),
-        Err(error) => protocol_invalid_data(error),
+        Err(error) => protocol_error::invalid_data(error),
     }
 }
 
@@ -580,10 +553,13 @@ pub(crate) fn validate_fixed_helper_response(
         return Err(guest_error_from_response(response));
     }
     if response.msg_type != expected_response_type {
-        return Err(protocol_invalid_data(format!(
-            "unexpected {operation} response type: 0x{:02X}",
-            response.msg_type,
-        )));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "unexpected {operation} response type: 0x{:02X}",
+                response.msg_type,
+            ),
+        ));
     }
     Ok(())
 }
@@ -593,7 +569,7 @@ fn validate_empty_lifecycle_response(
     payload_name: &'static str,
 ) -> io::Result<()> {
     guest_control_proto::decode_empty_payload(payload_name, &response.payload)
-        .map_err(protocol_invalid_data)
+        .map_err(protocol_error::invalid_data)
 }
 
 pub(super) fn deadline_after(
@@ -628,10 +604,13 @@ impl GuestControlClient {
             return Err(guest_error_from_response(&response));
         }
         if response.msg_type != expected_response_type {
-            return Err(protocol_invalid_data(format!(
-                "unexpected lifecycle response type: expected 0x{expected_response_type:02X}, got 0x{:02X}",
-                response.msg_type,
-            )));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unexpected lifecycle response type: expected 0x{expected_response_type:02X}, got 0x{:02X}",
+                    response.msg_type,
+                ),
+            ));
         }
         validate_empty_lifecycle_response(&response, response_payload_name)
     }
@@ -685,13 +664,16 @@ impl GuestControlClient {
             return Err(guest_error_from_response(&response));
         }
         if response.msg_type != MSG_MEMORY_SNAPSHOT_RESULT {
-            return Err(protocol_invalid_data(format!(
-                "unexpected lifecycle response type: expected 0x{MSG_MEMORY_SNAPSHOT_RESULT:02X}, got 0x{:02X}",
-                response.msg_type,
-            )));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unexpected lifecycle response type: expected 0x{MSG_MEMORY_SNAPSHOT_RESULT:02X}, got 0x{:02X}",
+                    response.msg_type,
+                ),
+            ));
         }
         guest_control_proto::decode_memory_snapshot(&response.payload)
-            .map_err(protocol_invalid_data)
+            .map_err(protocol_error::invalid_data)
     }
 
     /// Resume guest operations after a failed or aborted quiesce attempt.

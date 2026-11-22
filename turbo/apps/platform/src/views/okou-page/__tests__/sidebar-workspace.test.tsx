@@ -1,25 +1,16 @@
 import {
-  AGENT_ID,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
   createSidebarHelpers,
   createThread,
-  EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
-  menuItemByText,
-  openChatListMenu,
-  pinnedAgentLink,
-  queryMenuItemByText,
-  RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
   setupSidebarPage,
-  sidebar,
-  SUPPORT_AGENT_ID,
 } from "./sidebar-test-helpers.tsx";
 
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
 
 import {
   chatSearchContract,
@@ -33,7 +24,7 @@ import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const { mockSidebarThreadStory, prepareAgents } = createSidebarHelpers(context);
+const { mockSidebarThreadStory } = createSidebarHelpers(context);
 
 async function setupWorkspaceSearch({
   runningThreadIds = [],
@@ -42,18 +33,12 @@ async function setupWorkspaceSearch({
   readonly runningThreadIds?: readonly string[];
   readonly unreadThreadIds?: readonly string[];
 } = {}) {
-  prepareAgents();
   mockSidebarThreadStory([
-    createThread(RESEARCH_THREAD_ID, "Deployment notes", {
-      agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-    }),
-    createThread(INCIDENT_THREAD_ID, "Incident response", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
+    createThread(RESEARCH_THREAD_ID, "Deployment notes"),
+    createThread(INCIDENT_THREAD_ID, "Incident response"),
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: Object.fromEntries([
         ...runningThreadIds.map((threadId) => {
           return [threadId, "active" as const];
@@ -76,7 +61,6 @@ async function setupWorkspaceSearch({
           ? [
               {
                 chatThreadId: INCIDENT_THREAD_ID,
-                agentName: "Support Agent",
                 matchedMessage: {
                   chatThreadId: INCIDENT_THREAD_ID,
                   role: "user" as const,
@@ -97,7 +81,7 @@ async function setupWorkspaceSearch({
 
   await setupSidebarPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const list = await screen.findByTestId("chat-list-column");
@@ -177,7 +161,6 @@ test("Filter workspace search to chats and navigate", async () => {
 test("Show useful search-result ages and an illustrated empty state", async () => {
   const now = Date.parse("2026-03-10T12:00:00.000Z");
   mockNow(now, context.signal);
-  prepareAgents();
   mockSidebarThreadStory([
     createThread(RESEARCH_THREAD_ID, "Minutes old", {
       sortAt: new Date(now - 5 * 60 * 1000).toISOString(),
@@ -201,7 +184,7 @@ test("Show useful search-result ages and an illustrated empty state", async () =
 
   await setupSidebarPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const list = await screen.findByTestId("chat-list-column");
@@ -251,134 +234,4 @@ test("Show useful search-result ages and an illustrated empty state", async () =
     "src",
     emptySearchImg,
   );
-});
-
-test("Toggle unread chats by reselecting an unread pinned agent", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID],
-  });
-  mockSidebarThreadStory([
-    createThread(EXISTING_THREAD_ID, "Default unread"),
-    createThread(RESEARCH_THREAD_ID, "Default read"),
-    createThread(INCIDENT_THREAD_ID, "Support unread", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
-    createThread(AUTOMATION_THREAD_ID, "Support read", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
-  ]);
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      agents: {
-        [AGENT_ID]: "unread",
-        [SUPPORT_AGENT_ID]: "unread",
-      },
-      threads: {
-        [EXISTING_THREAD_ID]: "unread",
-        [INCIDENT_THREAD_ID]: "unread",
-      },
-      unreadAt: {
-        [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z",
-        [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z",
-      },
-    });
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Default unread")).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Default read")).toBeInTheDocument();
-  });
-  openChatListMenu();
-  click(menuItemByText("Unread"));
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Default unread")).toBeInTheDocument();
-    expect(
-      within(sidebar()).queryByText("Default read"),
-    ).not.toBeInTheDocument();
-  });
-
-  const pinnedAgent = (name: string): HTMLAnchorElement => {
-    return pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), name);
-  };
-
-  click(pinnedAgent("Support Agent"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-    expect(within(sidebar()).getByText("Support unread")).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Support read")).toBeInTheDocument();
-  });
-
-  const navigationCount = vi.mocked(window.history.pushState).mock.calls.length;
-  click(pinnedAgent("Support Agent"));
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Support unread")).toBeInTheDocument();
-    expect(
-      within(sidebar()).queryByText("Support read"),
-    ).not.toBeInTheDocument();
-  });
-  expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-  expect(vi.mocked(window.history.pushState)).toHaveBeenCalledTimes(
-    navigationCount,
-  );
-
-  click(pinnedAgent("Support Agent"));
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Support unread")).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Support read")).toBeInTheDocument();
-  });
-  expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-  expect(vi.mocked(window.history.pushState)).toHaveBeenCalledTimes(
-    navigationCount,
-  );
-});
-
-test("Use context actions on pinned agents", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID],
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  const grid = await screen.findByTestId("pinned-agents-grid");
-  const researchAgent = await waitFor(() => {
-    return pinnedAgentLink(grid, "Research Agent");
-  });
-
-  fireEvent.contextMenu(researchAgent);
-  expect(menuItemByText("Unpin")).toBeInTheDocument();
-  click(menuItemByText("Unpin"));
-  await waitFor(() => {
-    expect(within(grid).queryByText("Research Agent")).toBeNull();
-  });
-
-  const supportAgent = pinnedAgentLink(grid, "Support Agent");
-  fireEvent.touchStart(supportAgent, {
-    touches: [{ identifier: 1, clientX: 12, clientY: 12 }],
-  });
-  await waitFor(() => {
-    expect(menuItemByText("Unpin")).toBeInTheDocument();
-  });
-  fireEvent.touchEnd(supportAgent, {
-    touches: [],
-    changedTouches: [{ identifier: 1, clientX: 12, clientY: 12 }],
-  });
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
-  await waitFor(() => {
-    expect(queryMenuItemByText("Unpin")).toBeNull();
-  });
-
-  click(supportAgent);
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-  });
 });

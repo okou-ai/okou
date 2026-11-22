@@ -88,30 +88,6 @@ teardown() {
     ' <<<"$output"
     assert_success
 
-    local grants_payload
-    grants_payload=$(jq -nc \
-        --arg customConnectorId "$CUSTOM_CONNECTOR_ID" \
-        '{
-            operation: "replace",
-            grants: [{
-                customConnectorId: $customConnectorId,
-                permissionNames: []
-            }]
-        }')
-    run runner_api_curl "/api/agents/${AGENT_ID}/custom-connectors" \
-        -X PUT \
-        -d "$grants_payload"
-    echo "$output"
-    assert_success
-    run jq -e \
-        --arg customConnectorId "$CUSTOM_CONNECTOR_ID" '
-            .grants == [{
-                customConnectorId: $customConnectorId,
-                permissionNames: []
-            }]
-        ' <<<"$output"
-    assert_success
-
     local prompt
     prompt=$(cat <<'EOF'
 set -euo pipefail
@@ -298,24 +274,6 @@ EOF
     echo "$output"
     assert_success
 
-    local grants_payload
-    grants_payload=$(jq -nc \
-        --arg customConnectorId "$CUSTOM_CONNECTOR_ID" \
-        '{
-            operation: "replace",
-            grants: [{
-                customConnectorId: $customConnectorId,
-                permissionNames: []
-            }]
-        }')
-    run runner_api_curl "/api/agents/${AGENT_ID}/custom-connectors" \
-        -X PUT \
-        -d "$grants_payload"
-    echo "$output"
-    assert_success
-    local grants_response="$output"
-    public_surfaces+="$grants_response"$'\n'
-
     local account_probe_template
     account_probe_template=$(cat <<'EOF'
 set -euo pipefail
@@ -331,7 +289,7 @@ connection_id=$(jq -er --arg connectorId '__CUSTOM_CONNECTOR_ID__' '
         .diagnostic.run.status == "configured" and
         .connector.target == {kind: "custom", customConnectorId: $connectorId} and
         .account.state == "available" and
-        .authorization.authorized == true
+        .allowedInChat == true
     )
     | .account.connectionId
     | select(type == "string" and length > 0)
@@ -442,16 +400,11 @@ EOF
     run jq -e \
         --arg connectionId "$selected_connection_id" \
         --arg customConnectorId "$CUSTOM_CONNECTOR_ID" '
-            .selections == [{
-                connectionId: $connectionId,
-                target: {
-                    kind: "custom",
-                    customConnectorId: $customConnectorId
-                }
-            }] and
-            (.selectedConnections | length) == 1 and
-            .selectedConnections[0].id == $connectionId and
-            .selectedConnections[0].isDefault == false
+            def target:
+                .kind == "custom" and .customConnectorId == $customConnectorId;
+            [.selections[] | select(.target | target) | .connectionId] == [$connectionId] and
+            [.selectedConnections[] | select(.target | target) | {id, isDefault}]
+                == [{id: $connectionId, isDefault: false}]
         ' <<<"$selection_read_response"
     echo "$output"
     assert_success

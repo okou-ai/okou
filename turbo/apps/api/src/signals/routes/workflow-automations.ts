@@ -1,11 +1,9 @@
-import { workflowNamespace$ } from "../services/workflow-namespace.service";
 import { command } from "ccstate";
 import {
   GMAIL_LABEL_NOT_FOUND_ERROR_CODE,
   workflowAutomationsContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq, isNotNull } from "drizzle-orm";
 
@@ -22,10 +20,8 @@ import {
 } from "../../lib/error";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "../services/autonomy-budget.service";
-import {
-  visibleWorkflowCondition,
-  type WorkflowMember,
-} from "../services/workflow-data.service";
+import type { WorkflowMember } from "../services/workflow-data.service";
+import { visibleWorkflowCondition } from "../services/workflow-visibility";
 import {
   createWorkflowAutomation$,
   deleteWorkflowAutomation$,
@@ -125,21 +121,10 @@ const workspaceWorkflowAutomationEntries$ = command(
 );
 
 const listWorkspaceAutomationsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const namespace = await get(workflowNamespace$);
-    signal.throwIfAborted();
+  async ({ set }, signal: AbortSignal) => {
     const entries = await set(workspaceWorkflowAutomationEntries$, signal);
     signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: entries.filter((entry) => {
-        return (
-          !namespace ||
-          entry.workflow.official !== null ||
-          entry.workflow.agentId === namespace
-        );
-      }),
-    };
+    return { status: 200 as const, body: [...entries] };
   },
 );
 
@@ -172,12 +157,11 @@ const listAutomationsInner$ = command(
     const [visible] = await db
       .select({ id: workflows.id })
       .from(workflows)
-      .innerJoin(agents, eq(workflows.agentId, agents.id))
       .where(
         and(
           eq(workflows.orgId, auth.orgId),
           eq(workflows.id, params.workflowId),
-          visibleWorkflowCondition(memberFromAuth(auth)),
+          visibleWorkflowCondition(auth.userId),
         ),
       )
       .limit(1);

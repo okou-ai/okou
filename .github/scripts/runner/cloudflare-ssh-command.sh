@@ -688,6 +688,8 @@ caller_event caller-result "$operation_status"
 trap - EXIT HUP INT TERM
 operation_pid=""
 if [ "$operation_status" -ne 0 ]; then
+  # The operation finished. Diagnostics must not keep its streams open.
+  exec 0<&- 1>&-
   # A failed caller may have executed remotely. Diagnostics must neither
   # reconnect nor replay it, and must not change its stdout or exit status.
   {

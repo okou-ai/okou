@@ -8,9 +8,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-
-def values(path):
-    return dict(line.split() for line in path.read_text().splitlines())
+from packaged_accounting import read_cgroup_counters
 
 
 @contextmanager
@@ -134,24 +132,24 @@ print(json.dumps({'observations':observations,'overLimitStatus':413,'concurrentL
 
 
 def probe(resources, cgroup, fixture, env, as_role, record, process, identity):
-    cpu_before = int(values(cgroup / "cpu.stat")["usage_usec"])
+    cpu_before = int(read_cgroup_counters(cgroup / "cpu.stat")["usage_usec"])
     result = as_role("agent", ["/usr/bin/python3", "-c", CLIENT], env=env, timeout=30)
     observed = json.loads(result.stdout) if result.returncode == 0 else {}
     record(
         "gateway_bounded_streaming_accounting",
         result.returncode == 0
         and observed.get("directUpstreamDenied") is True
-        and int(values(cgroup / "cpu.stat")["usage_usec"]) > cpu_before
+        and int(read_cgroup_counters(cgroup / "cpu.stat")["usage_usec"]) > cpu_before
         and 32 * 1024**2 <= int((cgroup / "memory.peak").read_text()) <= 256 * 1024**2
         and 18 <= int((cgroup / "pids.peak").read_text()) <= 64,
         identity=identity,
         observed=observed,
         memoryPeakBytes=int((cgroup / "memory.peak").read_text()),
         pidsPeak=int((cgroup / "pids.peak").read_text()),
-        cpu=values(cgroup / "cpu.stat"),
+        cpu=read_cgroup_counters(cgroup / "cpu.stat"),
         stderr=result.stderr[-2000:],
     )
-    before = int(values(cgroup / "memory.events")["oom_kill"])
+    before = int(read_cgroup_counters(cgroup / "memory.events")["oom_kill"])
     (cgroup / "memory.max").write_text("1")
     process.wait(timeout=10)
     unavailable = as_role(
@@ -166,12 +164,12 @@ def probe(resources, cgroup, fixture, env, as_role, record, process, identity):
     record(
         "gateway_local_oom_fails_closed",
         process.returncode == -9
-        and int(values(cgroup / "memory.events")["oom_kill"]) > before
-        and values(cgroup / "cgroup.events")["populated"] == "0"
+        and int(read_cgroup_counters(cgroup / "memory.events")["oom_kill"]) > before
+        and read_cgroup_counters(cgroup / "cgroup.events")["populated"] == "0"
         and unavailable.returncode == 0
         and Path("/sys/fs/selinux/enforce").read_text().strip() == "1",
         exit=process.returncode,
-        events=values(cgroup / "memory.events"),
+        events=read_cgroup_counters(cgroup / "memory.events"),
         policy="abort active gateway IO; no direct fallback; controller-owned restart only",
         stderr=unavailable.stderr[-1000:],
     )

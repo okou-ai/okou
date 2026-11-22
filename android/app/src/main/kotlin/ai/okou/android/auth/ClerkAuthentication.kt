@@ -6,6 +6,7 @@ import android.content.Context
 import com.clerk.api.Clerk
 import com.clerk.api.ClerkConfigurationOptions
 import com.clerk.api.network.serialization.ClerkResult
+import com.clerk.api.session.Session
 import com.clerk.api.session.SessionTaskKey
 import com.clerk.api.session.pendingTaskKey
 import com.clerk.api.user.getOrganizationMemberships
@@ -17,12 +18,18 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /** Application-lifetime SDK adapter. Its encrypted storage is the only credential owner. */
 class ClerkAuthentication(private val context: Context) : Authentication {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val setupFailed = MutableStateFlow(false)
+
+    override val account =
+        Clerk.userFlow.map { user ->
+            user?.primaryEmailAddress?.emailAddress?.let { NativeAccount(user.id, it) }
+        }
 
     override val state =
         combine(
@@ -85,8 +92,10 @@ class ClerkAuthentication(private val context: Context) : Authentication {
         }
     }
 
-    private fun requireSession(expected: NativeSession) {
-        val session = Clerk.session
+    private fun requireSession(
+        expected: NativeSession,
+        session: Session? = Clerk.session,
+    ): Session {
         if (
             session?.id != expected.sessionId ||
                 session.user?.id != expected.userId ||
@@ -94,13 +103,26 @@ class ClerkAuthentication(private val context: Context) : Authentication {
         ) {
             throw ApiFailure.Unauthenticated()
         }
+        return session
     }
 
-    override suspend fun refresh(expected: NativeSession) {
+    override suspend fun refresh(expected: NativeSession): MembershipAccess? {
         requireSession(expected)
-        Clerk.refreshClient().required()
+        val client = Clerk.refreshClient().required()
         currentCoroutineContext().ensureActive()
         requireSession(expected)
+        val refreshed =
+            requireSession(
+                expected,
+                client.sessions.firstOrNull { it.id == client.lastActiveSessionId },
+            )
+        if (expected.active && refreshed.status != Session.SessionStatus.ACTIVE) {
+            throw ApiFailure.Unauthenticated()
+        }
+        return refreshed.user
+            ?.organizationMemberships
+            ?.firstOrNull { it.organization.id == expected.workspaceId }
+            ?.let { MembershipAccess(it.organization.id, it.role, it.permissions?.sorted()) }
     }
 
     override suspend fun memberships(expected: NativeSession): List<WorkspaceMembership> {

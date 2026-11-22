@@ -1,26 +1,12 @@
 import {
-  bigint,
-  boolean,
   check,
+  index,
   pgTable,
-  uuid,
-  varchar,
-  text,
-  jsonb,
-  timestamp,
   unique,
   uniqueIndex,
-  index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type {
-  OrgCustomConnectorFields,
-  OrgCustomConnectorHeaderInjections,
-  OrgCustomConnectorPrefixTemplates,
-  OrgCustomConnectorQueryInjections,
-} from "@okouai/db/jsonb-contracts/org-custom-connector";
-
-import { connectorSkillBundleColumns } from "../columns/connector-skill-bundle";
+import { orgCustomConnectorColumns } from "../columns/org-custom-connector";
 
 export type {
   OrgCustomConnectorField,
@@ -28,9 +14,10 @@ export type {
   OrgCustomConnectorQueryInjection,
 } from "@okouai/db/jsonb-contracts/org-custom-connector";
 
-export type OrgCustomConnectorAuthMode =
-  "none" | "manual" | "oauth" | "automatic";
-export type OrgCustomConnectorMcpTransport = "streamable-http";
+export type {
+  OrgCustomConnectorAuthMode,
+  OrgCustomConnectorMcpTransport,
+} from "../columns/org-custom-connector";
 
 /**
  * Org-defined custom connectors (v1 of the connector gallery).
@@ -41,52 +28,7 @@ export type OrgCustomConnectorMcpTransport = "streamable-http";
  */
 export const orgCustomConnectors = pgTable(
   "org_custom_connectors",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    orgId: text("org_id").notNull(),
-    slug: varchar("slug", { length: 64 }).notNull(),
-    displayName: varchar("display_name", { length: 128 }).notNull(),
-    prefixTemplates: jsonb("prefix_templates")
-      .notNull()
-      .default(sql`'[]'::jsonb`)
-      .$type<OrgCustomConnectorPrefixTemplates>(),
-    fields: jsonb("fields")
-      .notNull()
-      .default(sql`'[]'::jsonb`)
-      .$type<OrgCustomConnectorFields>(),
-    headerInjections: jsonb("header_injections")
-      .notNull()
-      .default(sql`'[]'::jsonb`)
-      .$type<OrgCustomConnectorHeaderInjections>(),
-    queryInjections: jsonb("query_injections")
-      .notNull()
-      .default(sql`'[]'::jsonb`)
-      .$type<OrgCustomConnectorQueryInjections>(),
-    authMode: varchar("auth_mode", { length: 16 })
-      .$type<OrgCustomConnectorAuthMode>()
-      .notNull()
-      .default("manual"),
-    enabled: boolean("enabled").notNull().default(true),
-    permissionBundleRef: varchar("permission_bundle_ref", { length: 128 }),
-    mcpEndpoint: text("mcp_endpoint"),
-    mcpTransport: varchar("mcp_transport", {
-      length: 32,
-    }).$type<OrgCustomConnectorMcpTransport>(),
-    skillMarkdown: text("skill_markdown"),
-    skillStorageVersionId: varchar("skill_storage_version_id", {
-      length: 64,
-    }),
-    // Retain the source-ID column for preceding claim readers. New publishers
-    // use the complete bundle SHA-256; historical Storage-derived IDs stay valid.
-    // The field no longer references the generic Storage registry.
-    ...connectorSkillBundleColumns(),
-    storageVersion: bigint("storage_version", { mode: "number" })
-      .notNull()
-      .default(1),
-    createdBy: text("created_by").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
+  orgCustomConnectorColumns(),
   (table) => {
     return [
       index("idx_org_custom_connectors_org").on(table.orgId),
@@ -95,9 +37,6 @@ export const orgCustomConnectors = pgTable(
         table.slug,
       ),
       unique("idx_org_custom_connectors_id_org").on(table.id, table.orgId),
-      index("idx_org_custom_connectors_skill_storage_version").on(
-        table.skillStorageVersionId,
-      ),
       check(
         "chk_org_custom_connectors_slug",
         sql`left(${table.slug}, 1) = '_'`,
@@ -200,14 +139,8 @@ export const orgCustomConnectors = pgTable(
         ) IS TRUE`,
       ),
       check(
-        "chk_org_custom_connectors_skill_version_pair",
-        sql`(
-          (${table.skillMarkdown} IS NULL AND ${table.skillStorageVersionId} IS NULL)
-          OR (
-            ${table.skillMarkdown} IS NOT NULL
-            AND ${table.skillStorageVersionId} IS NOT NULL
-          )
-        )`,
+        "chk_org_custom_connectors_skill_publication_pair",
+        sql`(${table.skillMarkdown} IS NULL) = (${table.skillContentBundleSourceVersionId} IS NULL)`,
       ),
     ];
   },

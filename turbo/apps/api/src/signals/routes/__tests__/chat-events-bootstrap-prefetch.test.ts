@@ -9,13 +9,15 @@ import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { testContext } from "../../../__tests__/test-context";
-import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { commitMemoryVersion } from "./helpers/memory";
+import { installS3Fixture } from "./helpers/template-publish-fixture";
 
 const context = testContext();
 const {
@@ -25,18 +27,67 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   runExecution,
+  completeChatRunOk,
   cancelAndCompleteChatRun,
   cancelChatRun,
   waitForThreadMessages,
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
 
+async function deferAttachmentMetadata(actor: ApiTestUser, filename: string) {
+  const storage = installS3Fixture(context);
+  const contentType = "text/plain";
+  const bytes = Buffer.from("Attachment contents");
+  const upload = await chat.prepareUpload(actor, {
+    filename,
+    contentType,
+    size: bytes.length,
+  });
+  if (!("uploadUrl" in upload)) {
+    throw new Error("Expected a single-part upload");
+  }
+  // Leave the upload uncompleted so the Chat send verifies the object.
+  storage.put(upload.uploadUrl, bytes, contentType);
+  const key = storage.signedKey(upload.uploadUrl);
+  if (!key) {
+    throw new Error("Expected the signed attachment key");
+  }
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  const originalSend = context.mocks.s3.send.getMockImplementation();
+  if (!originalSend) {
+    throw new Error("Expected the fixture's S3 implementation");
+  }
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    if (
+      command instanceof HeadObjectCommand &&
+      command.input.Key === key &&
+      !entered.settled()
+    ) {
+      entered.resolve(undefined);
+      await release.promise;
+    }
+    return await originalSend(command);
+  });
+  return {
+    part: {
+      type: "file" as const,
+      fileId: upload.id,
+      filenameSnapshot: filename,
+      contentType,
+    },
+    entered: entered.promise,
+    release: () => {
+      release.resolve(undefined);
+    },
+  };
+}
+
 describe("chat agent bootstrap prefetch", () => {
   it("mounts user memory published through the Sandbox API in matching and independent picks", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const webhooks = createWebhookCallbackApi(context);
     const seed = await sendChatRun(actor, {
-      agentId,
       prompt: "publish my memory",
     });
     const seedExecution = await runExecution(seed.runId);
@@ -76,7 +127,6 @@ describe("chat agent bootstrap prefetch", () => {
     );
     await cancelChatRun(actor, seed.runId, seedExecution.sandboxHeaders);
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "mount the published memory",
     });
     const firstExecution = await runExecution(first.runId);
@@ -93,7 +143,6 @@ describe("chat agent bootstrap prefetch", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: eventId,
         prompt: "independent memory pick",
@@ -132,7 +181,7 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
   it("preserves a non-default member model preference through prefetch and an independent pick", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -141,7 +190,6 @@ describe("chat agent bootstrap prefetch", () => {
     });
     await api.updateUserModelPreference(actor, "claude-sonnet-5-5");
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "use my saved non-default model",
     });
     const firstExecution = await runExecution(first.runId);
@@ -152,7 +200,6 @@ describe("chat agent bootstrap prefetch", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: eventId,
         prompt: "independent pick keeps my selected model",
@@ -185,13 +232,18 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
 
-  it("selects the same current Workflow from prefetch and a later independent pick", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+  it("uses the captured Workflow for the sending pick and the newer version for an independent pick", async () => {
+    const { actor } = await entitledNativeChatActor();
     const misc = createMiscRoutesApi(context);
-    const s3 = installWorkflowVolumeS3Fixture(context);
+    const attachment = await deferAttachmentMetadata(
+      actor,
+      "workflow-snapshot.txt",
+    );
+    const s3 = installWorkflowVolumeS3Fixture(context, new Map(), {
+      bundlesOnly: true,
+    });
     const workflow = await misc.createWorkflow(
       actor,
-      agentId,
       `context-${randomUUID().slice(0, 8)}`,
       { content: "# Context storage\nKeep this published skill mounted." },
       [201],
@@ -199,10 +251,26 @@ describe("chat agent bootstrap prefetch", () => {
     if (workflow.status !== 201) {
       throw new Error("Expected workflow publication");
     }
-    const first = await sendChatRun(actor, {
-      agentId,
+    const sending = sendChatRun(actor, {
       prompt: "prefetched skill",
+      userMessage: {
+        version: 1,
+        parts: [attachment.part, { type: "text", text: "prefetched skill" }],
+      },
     });
+    const [first] = await Promise.all([
+      sending,
+      (async () => {
+        await attachment.entered;
+        await flushWaitUntilForTest();
+        await misc.updateWorkflow(
+          actor,
+          workflow.body.id,
+          "# Context storage\nMount the newer Workflow on the next independent pick.",
+          [200],
+        );
+      })().finally(attachment.release),
+    ]);
     const firstExecution = await runExecution(first.runId);
     const firstMount = firstExecution.execution.contentBundles.skills.find(
       (mount) => {
@@ -221,7 +289,6 @@ describe("chat agent bootstrap prefetch", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: queuedId,
         prompt: "independent skill context",
@@ -253,31 +320,27 @@ describe("chat agent bootstrap prefetch", () => {
         return mount.mountPath === firstMount.mountPath;
       },
     );
-    expect(nextMount).toMatchObject({
-      sha256: firstMount.sha256,
-      archiveBytes: firstMount.archiveBytes,
-      mountPath: firstMount.mountPath,
-    });
     if (!nextMount) {
       throw new Error("Expected the independently selected Workflow bundle");
     }
-    expect(readExecutionContentBundle(s3.objects, nextMount)).toStrictEqual(
-      firstDownload,
-    );
+    expect(nextMount.sha256).not.toBe(firstMount.sha256);
+    expect(
+      readExecutionContentBundle(s3.objects, nextMount)
+        .get("SKILL.md")
+        ?.toString(),
+    ).toContain("Mount the newer Workflow on the next independent pick.");
     await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
 
   it("loads the same read-only context when a later request drains queued input", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "context anchor",
     });
     const queuedId = randomUUID();
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: queuedId,
         prompt: "context without the enqueue request",
@@ -312,7 +375,7 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, promoted.runId, execution.sandboxHeaders);
   });
   it("preserves the custom account through prefetch and a later independent pick", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const connector = await connectors.createCustomConnector(
       actor,
       manualHttpCustomConnectorCreateBody({
@@ -326,9 +389,6 @@ describe("chat agent bootstrap prefetch", () => {
       connector.id,
       "synthetic-context-secret",
     );
-    await connectors.updateAgentCustomConnectors(actor, agentId, [
-      connector.id,
-    ]);
     const [account] = await connectors.listCustomConnectorAccounts(
       actor,
       connector.id,
@@ -343,7 +403,6 @@ describe("chat agent bootstrap prefetch", () => {
       baseUrlVars: {},
     };
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "prefetched custom account",
     });
     const firstExecution = await runExecution(first.runId);
@@ -354,7 +413,6 @@ describe("chat agent bootstrap prefetch", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: queuedId,
         prompt: "custom account without the enqueue context",
@@ -389,56 +447,31 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("keeps the captured model selection when the member preference changes during attachment resolution", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    const fileId = randomUUID();
-    const filename = "model-snapshot.txt";
-    const key = buildArtifactKeyV2(fileId, filename);
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const originalSend = context.mocks.s3.send.getMockImplementation();
-    if (!originalSend) {
-      throw new Error("Expected the fixture's S3 implementation");
-    }
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      if (command instanceof HeadObjectCommand && command.input.Key === key) {
-        entered.resolve(undefined);
-        await release.promise;
-        return {
-          ContentLength: 42,
-          ContentType: "text/plain",
-          LastModified: new Date("2026-10-02T00:00:00Z"),
-          Metadata: {
-            "artifact-id": fileId,
-            filename: encodeURIComponent(filename),
-            "user-id": encodeURIComponent(actor.userId),
-          },
-        };
-      }
-      return await originalSend(command);
-    });
+    const { actor } = await entitledNativeChatActor();
+    const attachment = await deferAttachmentMetadata(
+      actor,
+      "model-snapshot.txt",
+    );
     const sending = sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "use the captured model selection",
       userMessage: {
         version: 1,
         parts: [
-          {
-            type: "file",
-            fileId,
-            filenameSnapshot: filename,
-            contentType: "text/plain",
-          },
+          attachment.part,
           { type: "text", text: "use the captured model selection" },
         ],
       },
     });
-    await entered.promise;
-    // Attachment metadata is an external response awaited after model capture.
-    // Change the member preference through its API before enqueue and admission.
-    await api.updateUserModelPreference(actor, null);
-    release.resolve(undefined);
-    const sent = await sending;
+    // Object lookup starts with the member settings already captured.
+    const [sent] = await Promise.all([
+      sending,
+      attachment.entered.then(() => {
+        return api
+          .updateUserModelPreference(actor, null)
+          .finally(attachment.release);
+      }),
+    ]);
     expect((await api.readRun(actor, sent.runId)).source).toMatchObject({
       model: "claude-fable-5-1",
       providerType: "claude-code-oauth-token",
@@ -448,12 +481,94 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
   });
 
+  it("continues the predecessor session with the Memory it published during follow-up preparation", async () => {
+    const { actor } = await entitledNativeChatActor();
+    const model = "claude-fable-5-1";
+    const first = await sendChatRun(actor, {
+      model,
+      prompt: "Start a session",
+    });
+    const { execution, sandboxHeaders } = await runExecution(first.runId);
+    const attachment = await deferAttachmentMetadata(actor, "follow-up.txt");
+    const clientEventId = randomUUID();
+    const prompt = "Continue this session with the attachment";
+    const sending = chat.requestSendEvent(
+      actor,
+      {
+        threadId: first.threadId,
+        clientEventId,
+        model,
+        prompt,
+        userMessage: {
+          version: 1,
+          parts: [attachment.part, { type: "text", text: prompt }],
+        },
+      },
+      [201],
+      {},
+    );
+    const sessionId = `bdd-cli-${first.runId}`;
+    const [, memory] = await Promise.all([
+      sending,
+      (async () => {
+        await attachment.entered;
+        await flushWaitUntilForTest();
+        const memory = await commitMemoryVersion(
+          context,
+          {
+            runId: first.runId,
+            sandboxHeaders,
+            storageManifest: execution.storageManifest,
+          },
+          [
+            {
+              path: "MEMORY.md",
+              content: "Written while preparing the follow-up",
+            },
+          ],
+        );
+        await completeChatRunOk(first.runId, sandboxHeaders, {
+          cliAgentSessionId: sessionId,
+        });
+        return memory;
+      })().finally(attachment.release),
+    ]);
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, first.threadId);
+    const successor = userMessages(events).find((message) => {
+      return message.revokesEventId === clientEventId;
+    });
+    expect(successor).toMatchObject({
+      eventType: "input.prompt",
+      runId: expect.any(String),
+    });
+    if (!successor?.runId) {
+      throw new Error("Expected the follow-up Run");
+    }
+    const next = await runExecution(successor.runId);
+    expect(next.execution.nativeContinuation).toMatchObject({
+      sessionId,
+      generationRunId: first.runId,
+    });
+    expect(
+      expectCanonicalStorageManifest(
+        next.execution.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === "memory";
+      }),
+    ).toMatchObject({
+      storageId: memory.storageId,
+      versionId: memory.versionId,
+    });
+    await cancelChatRun(actor, successor.runId, next.sandboxHeaders);
+  });
+
   it.each(["web", "cli"] as const)(
     "preserves the queued input and claimable run through %s",
     async (entry) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
       const clientEventId = randomUUID();
-      const body = { agentId, prompt: "prepare my agent", clientEventId };
+      const body = { prompt: "prepare my agent", clientEventId };
       const sent =
         entry === "web"
           ? await chat.requestSendEvent(actor, body, [201])
@@ -479,7 +594,7 @@ describe("chat agent bootstrap prefetch", () => {
       const run = await api.readRun(actor, associated.runId);
       expect(run).toMatchObject({ prompt: "prepare my agent" });
       const metadata = await chat.readThreadMetadata(actor, sent.body.threadId);
-      expect(metadata.agentId).toBe(agentId);
+      expect(metadata.id).toBe(sent.body.threadId);
       const execution = await runExecution(associated.runId);
       expect(execution.execution.platformEnvironment).toHaveProperty(
         "OKOU_TOKEN",
@@ -489,20 +604,18 @@ describe("chat agent bootstrap prefetch", () => {
   );
 
   it("uses the selected default account for each successive pick", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await connectors.connectManualGrant(
       actor,
       "openai",
       "api-token",
       { apiKey: `first-${randomUUID()}` },
-      agentId,
     );
     const second = await connectors.connectManualGrant(
       actor,
       "openai",
       "api-token",
       { apiKey: `second-${randomUUID()}` },
-      agentId,
     );
     await connectors.setDefaultBuiltinConnectorAccount(
       actor,
@@ -510,7 +623,6 @@ describe("chat agent bootstrap prefetch", () => {
       first.id,
     );
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "use the first default",
     });
     const execution = await runExecution(sent.runId);
@@ -524,7 +636,6 @@ describe("chat agent bootstrap prefetch", () => {
       second.id,
     );
     const next = await sendChatRun(actor, {
-      agentId,
       threadId: sent.threadId,
       prompt: "use the next default",
     });
@@ -536,9 +647,8 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("delivers a steer input to the active authenticated Runner", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, runnerGroup } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "keep working",
     });
     const execution = await runExecution(active.runId);
@@ -552,7 +662,6 @@ describe("chat agent bootstrap prefetch", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "steer the existing run",
         clientEventId,

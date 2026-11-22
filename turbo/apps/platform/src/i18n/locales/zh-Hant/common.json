@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "關閉"
+  },
   "activity": {
     "codex": {
       "codexError": "Codex 錯誤",
@@ -86,7 +89,6 @@
           "title": "提供方暫時不可用"
         }
       },
-      "fallbackAgent": "智能體",
       "fields": {
         "duration": "時長",
         "model": "模型",
@@ -333,15 +335,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "無法載入智慧體",
       "back": "返回",
       "backToChats": "返回聊天列表",
       "chatListUnavailable": "無法載入聊天",
       "chats": "聊天",
       "me": "我",
-      "navigation": "主導覽",
-      "searchAgents": "搜尋智慧體",
-      "switchAgent": "切換智慧體"
+      "navigation": "主導覽"
     },
     "shortcutHelp": {
       "close": "關閉快捷鍵面板",
@@ -358,10 +357,8 @@
         "collapseProject": "收合 Project",
         "expandProject": "展開 Project",
         "newChat": "新建聊天",
-        "nextAgent": "下一個智能體",
         "nextThread": "下一個會話",
         "openFirstThread": "開啟第一個會話",
-        "previousAgent": "上一個智能體",
         "previousThread": "上一個會話",
         "renameChat": "重新命名聊天",
         "scrollBottom": "滾動到底部",
@@ -383,7 +380,6 @@
         "openAutomations": "開啟自動化面板"
       },
       "navigation": {
-        "agents": "智能體",
         "artifacts": "成果",
         "connectors": "連接器",
         "settings": "設定",
@@ -524,10 +520,7 @@
       "video": "影片"
     },
     "googleDrive": {
-      "agentLoading": "智能體還在載入",
       "connect": "連線 Google Drive",
-      "connectTooltip": "連線 Google Drive 後即可上傳成果",
-      "conversionNotice": "建立可編輯副本，格式可能有所變更。",
       "conversionUnconfirmed": "無法確認 Google 轉換結果，請檢查雲端硬碟後再重試。",
       "openDocs": "在 Google 文件中開啟",
       "openSheets": "在 Google 試算表中開啟",
@@ -997,11 +990,9 @@
         "twentyFourHours": "24 小時"
       },
       "errors": {
-        "agentNotFound": "未找到智能體",
-        "loadAgent": "載入智能體失敗",
         "loadGrants": "載入權限授予失敗",
+        "loadMember": "無法載入工作區成員資料。",
         "loadMetadata": "載入權限資訊失敗",
-        "missingAgentId": "URL 參數中缺少智能體 ID",
         "missingPermission": "URL 參數中缺少權限",
         "unknownAction": "未知的權限操作：{{action}}",
         "unknownConnector": "未知的連接器：{{connector}}",
@@ -1047,13 +1038,10 @@
       "invalid": "此權限連結無效或無法使用。",
       "loadFailed": "無法驗證所有請求的權限，因此無法變更任何權限。",
       "loading": "正在載入權限",
-      "myOkouScopeNote": "適用於你在本工作區使用 Okou，不限於目前任務。",
       "myOkouSharedScopeNote": "適用於你在本工作區所有聊天中使用此連接器。同事的授權各自獨立。",
       "notNow": "暫不允許",
       "pending_other": "待允許 {{count}} 項權限",
       "review": "檢視並授權",
-      "scopeNote": "適用於此代理程式，而不僅限於目前的任務。",
-      "sharedScopeNote": "此連接器的權限由你的所有聊天和智能體共用。",
       "title": "允許以下權限"
     }
   },
@@ -1526,7 +1514,6 @@
           "action": "簽到",
           "description": "每天簽到一次，UTC 00:00 重置。",
           "name": "每日簽到",
-          "pendingDescription": "簽到已儲存，確認後積分會自動更新。",
           "unit": "每天"
         },
         "connector": {
@@ -1543,12 +1530,6 @@
         },
         "inReview": "稽核中",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} 積分",
-            "confirm": "回去幹活",
-            "description": "積分用來支付真正的工作：每一次執行、每一份成果、每一個按時間執行的工作流。",
-            "title": "今天這一步完成了"
-          },
           "connector": {
             "confirm": "瀏覽全部連接器",
             "connected": "已連線",
@@ -1633,8 +1614,7 @@
         "whatsCooking": "在忙什麼呢，{{userName}}？",
         "whatsOnYourMind": "在想些什麼，{{userName}}？",
         "whatsTheMove": "下一步怎麼走，{{userName}}？"
-      },
-      "viewAgentProfile": "檢視智能體資料"
+      }
     },
     "agentSuggestions": {
       "addReason": "補充原因",
@@ -1646,9 +1626,19 @@
       "dismiss": "忽略",
       "dismissRecorded": "已收起這則建議",
       "doneRecorded": "已記下，這件事已經處理了",
+      "dontNudge": "別催了",
+      "dontNudgeRecorded": "已記錄，請不要再催這件事",
+      "editDraft": "在原對話中準備草稿",
       "editReason": "修改原因",
+      "feedbackPrompt": "這則建議怎麼樣？",
       "feedLabel": "動態",
       "forYou": {
+        "cover": {
+          "change": "更換封面",
+          "default": "預設",
+          "gallery": "封面",
+          "option": "封面 {{index}}"
+        },
         "loading": "正在載入建議",
         "next": "下一則建議",
         "previous": "上一則建議",
@@ -1661,10 +1651,11 @@
           "title": "為你推薦的來源",
           "whatsNew": "新功能"
         },
-        "subtitle": "一次處理一件事",
+        "subtitle": "Okou 為你挑出的待處理事項",
         "title": "為你推薦"
       },
       "homeCard": {
+        "completeDescription": "有值得你花時間的事時，Okou 會把下一件帶到這裡。",
         "completeTitle": "全部處理完了",
         "feedback": "建議操作",
         "navigation": "切換建議",
@@ -1680,9 +1671,12 @@
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
       "sending": "正在傳送…",
+      "sendNew": "傳送到新對話",
       "sent": "已傳送到新聊天",
+      "sentToChat": "已傳送到該聊天",
       "unavailable": "這則建議已無法使用，建議清單已重新整理。",
-      "undoFeedback": "復原"
+      "undoFeedback": "復原",
+      "viewSource": "查看來源"
     },
     "attachments": {
       "attach": "新增附件",
@@ -1818,7 +1812,7 @@
       "repair": "修復",
       "repairRequired": "{{institution}} 需要修復",
       "revoke": "撤銷",
-      "revokeConfirm": "撤銷這個智能體的銀行訪問權限？",
+      "revokeConfirm": "撤銷此工作區的銀行存取權限？",
       "selectAccounts": "選擇帳戶",
       "sevenDays": "7 天",
       "thirtyDays": "30 天",
@@ -1876,7 +1870,7 @@
       "optional": "（選填）",
       "required": "（必填）",
       "savedPasswordsChrome": "Chrome（電腦）：在使用者名稱或密碼欄位按右鍵，選擇「選取密碼」，搜尋目標網站。",
-      "savedPasswordsHelp": "如何填入？",
+      "savedPasswordsHelp": "如何使用已儲存的密碼",
       "savedPasswordsHint": "可使用瀏覽器中儲存的帳號密碼。",
       "savedPasswordsSafari": "Safari（Mac）：點選輸入欄位中的鑰匙圖示，選擇「其他密碼⋯」。",
       "savedPasswordsSite": "瀏覽器可能優先推薦 Okou 的帳號，請搜尋並選擇上方網站對應的帳號。",
@@ -1999,7 +1993,6 @@
     },
     "composer": {
       "add": "新增",
-      "agentSuggestions": "智能體",
       "configureModel": "配置模型",
       "create": {
         "addStyle": "新增風格",
@@ -2011,7 +2004,7 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
       },
-      "mentionHint": "搜尋智慧體或聊天…",
+      "mentionHint": "搜尋聊天或專案…",
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",
       "placeholder": "讓我自動化工作流、管理任務…",
@@ -2098,13 +2091,8 @@
       "unavailableTitle": "帳戶不可用"
     },
     "connectors": {
-      "accountForThread": "本次對話使用的帳戶",
-      "add": "新增 {{connectorName}}",
       "addConnectors": "新增連接器",
-      "authorized": "{{connectorName}} 已連線，並已授權給 {{agentName}}",
       "back": "返回",
-      "configurePermissions": "配置 {{connectorName}} 權限",
-      "customAuthorizeDescription": "檢視並連線這個自定義連接器，然後授權給智能體。",
       "directory": {
         "allCategories": "全部",
         "askAdmin": "請管理員開啟",
@@ -2131,14 +2119,8 @@
         "tabCustom": "自定義",
         "tabDiscover": "發現"
       },
-      "fallsBackTo": "回退到 {{account}}",
       "find": "查詢連接器…",
-      "loadFailed": "無法載入連接器。",
-      "noUsableAccount": "沒有可用帳戶",
-      "remove": "移除 {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · 已選帳戶：{{account}}",
-      "title": "連接器",
-      "useDefault": "使用預設"
+      "title": "連接器"
     },
     "documentTitle": "聊天",
     "errors": {
@@ -2227,16 +2209,7 @@
       "sent": "已建立新聊天"
     },
     "forward": {
-      "action": "轉發",
-      "agents": "智能體",
-      "back": "返回",
       "composerPlaceholder": "新增留言",
-      "content": "內容",
-      "description": "把選中的內容發給某個智能體或聊天，繼續處理。",
-      "noResults": "未找到智能體或聊天",
-      "search": "搜尋智能體和聊天…",
-      "sent": "轉發成功",
-      "threads": "聊天",
       "title": "轉發到"
     },
     "mail": {
@@ -2302,10 +2275,11 @@
       "unavailable": "這封郵件已不可用。"
     },
     "messageDocument": {
-      "agent": "[智能體：{{name}}]",
       "chatThread": "[聊天會話：{{title}}]",
       "file": "[檔案：{{filename}}]",
-      "template": "[模板：{{title}}]"
+      "template": "[模板：{{title}}]",
+      "voice": "語音訊息",
+      "voiceClip": "第 {{index}} 段語音"
     },
     "newChat": "新建聊天",
     "origins": {
@@ -2333,7 +2307,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}}{{permissionName}}",
-      "agentNotFound": "未找到智能體",
       "allow": "允許",
       "alreadyAllowed": "已允許",
       "alreadyDenied": "已拒絕",
@@ -2348,6 +2321,7 @@
       "expiresInHours_one": "{{count}} 小時後過期",
       "expiresInHours_other": "{{count}} 小時後過期",
       "loadFailed": "無法載入權限狀態",
+      "memberNotFound": "工作區成員無法使用。",
       "otherEndpoints": "其他介面",
       "unknown": "未知權限",
       "updated": "權限已更新",
@@ -2495,18 +2469,26 @@
       "workingFor": "已工作 {{duration}}"
     },
     "sharing": {
+      "accessNote": "只有你能修改權限。",
       "cancel": "取消",
       "close": "關閉",
       "copyFailed": "無法複製連結",
       "create": "分享",
       "createFailed": "無法建立分享對話。",
+      "createLink": "建立連結",
+      "deselectAll": "取消全選",
       "deselectGroup": "取消選擇該組訊息",
+      "done": "完成",
       "everyone": "所有人",
       "linkCopied": "連結已複製",
+      "linkCreated_other": "已為 {{count}} 則訊息建立連結",
       "messageShareFailed": "分享連結建立失敗。",
       "organizationDescription": "僅限組織內成員",
+      "selectAll": "全選",
       "selectedCount_other": "已選 {{count}} 條",
+      "selectedOfTotal_other": "已選 {{count}}/{{total}} 條",
       "selectGroup": "選擇該組訊息",
+      "selectPrompt": "選擇要分享的訊息",
       "shareLink": "分享對話連結",
       "start": "分享訊息",
       "tooLarge": "選擇的訊息過多，請減少後再分享",
@@ -2806,7 +2788,6 @@
       "noEmojiFound": "沒有找到表情",
       "notFound": "找不到該聊天會話",
       "openBrowser": "開啟瀏覽器",
-      "openNamedAgent": "開啟智能體 {{name}}",
       "openNamedChat": "開啟聊天 {{title}}",
       "pickEmoji": "選擇表情",
       "scrollToBottom": "滾動到底部",
@@ -2937,28 +2918,12 @@
     "totalAccounts": "{{value}} 個帳號"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}}{{agent}}的{{connector}}訪問權限",
-      "accessUpdated": "{{connector}}訪問權限已更新",
-      "clearSearch": "清除智能體搜尋",
-      "description": "選擇哪些智能體可以使用這個連接器。",
-      "loading": "正在載入智能體…",
-      "managePermissions": "管理權限",
-      "managePermissionsFor": "管理{{agent}}的{{connector}}權限",
-      "noAgents": "沒有找到智能體",
-      "noMatchingAgents": "沒有匹配「{{search}}」的智能體",
-      "permissionsUpdated": "權限已更新",
-      "search": "查詢智能體",
-      "title": "管理{{connector}}訪問權限",
-      "unnamedAgent": "未命名"
-    },
     "accounts": {
       "accountName": "帳號名稱",
       "accountsUnavailable": "這個連接器不支援帳號管理。",
       "actions": "帳號操作",
       "addAccount": "新增帳號",
       "connected": "已連線",
-      "default": "預設",
       "disconnectAccount": "斷開帳號連線",
       "disconnectDescription": "這會把該帳號與 Okou 斷開。使用它的會話將回到預設繼承。對方平臺上的帳號不會被刪除。",
       "disconnectDescriptionWithCount": "這會把該帳號與 Okou 斷開。{{value}} 個會話將回到預設繼承。對方平臺上的帳號不會被刪除。",
@@ -2973,8 +2938,6 @@
       "find": "查詢帳號",
       "loading": "正在載入帳號…",
       "loadMore": "載入更多",
-      "makeDefault": "設為預設",
-      "managerDescription": "新的執行會使用你的預設帳號。",
       "managerTitle": "管理{{connector}}帳號",
       "namePromptDescription": "可以跳過，稍後再命名。",
       "namePromptTitle": "給你的{{connector}}帳號起個名字",
@@ -2988,7 +2951,6 @@
     },
     "actions": {
       "apply": "應用",
-      "authorize": "授權",
       "cancel": "取消",
       "close": "關閉",
       "closeWindow": "關閉視窗",
@@ -3035,7 +2997,6 @@
     },
     "card": {
       "accessFor": "{{action}}{{connector}}訪問權限",
-      "authorized": "已授權",
       "connectAria": "連線{{connector}}",
       "connected": "已連線",
       "connectionExpired": "連線已過期",
@@ -3048,11 +3009,7 @@
     },
     "catalog": {
       "access": {
-        "add": "新增訪問權限",
-        "manage": "管理{{connector}}訪問權限",
-        "summaryMany": "{{value}} 個智能體",
-        "unavailable": "無法訪問",
-        "usedBy": "使用方： "
+        "manage": "管理{{connector}}訪問權限"
       },
       "categories": {
         "ai": {
@@ -3108,8 +3065,6 @@
           "menu": "銷售與業務"
         }
       },
-      "description": "連線第三方服務，供你的智能體使用。",
-      "descriptionWithCount": "連線 {{value}} 個服務，供你的智能體使用。",
       "directory": {
         "browse": "瀏覽",
         "builtin": "內建連接器",
@@ -3123,18 +3078,13 @@
         "searchAll": "搜尋全部連接器"
       },
       "empty": {
-        "agent": "此智能體暫無連接器",
         "connected": "暫無已連線的連接器",
-        "search": "沒有與「{{search}}」匹配的連接器",
-        "unshared": "每個連接器都已共享給智能體"
+        "search": "沒有與「{{search}}」匹配的連接器"
       },
       "filterCategory": "分類",
       "filters": {
-        "agents": "智能體",
         "all": "全部",
-        "allAgents": "全部智能體",
-        "aria": "篩選連接器",
-        "unshared": "未共享給任何智能體"
+        "aria": "篩選連接器"
       },
       "filterWith": "篩選：{{category}}",
       "myOkouDescription": "連結第三方服務，供你的 Okou 使用。",
@@ -3164,8 +3114,7 @@
         "seeMore_other": "檢視{{names}}及其他 {{count}} 個",
         "top": "熱門連接器"
       },
-      "title": "連接器",
-      "unnamedAgent": "未命名"
+      "title": "連接器"
     },
     "connectDialog": {
       "connectedAs": "已以{{username}}身份連線",
@@ -3286,7 +3235,7 @@
         "tokenUrl": "令牌 URL"
       },
       "delete": {
-        "description": "此操作會刪除該連接器，以及每位成員為它儲存的金鑰。已授權使用該連接器的智能體將立即失去訪問權限。此操作無法撤銷。",
+        "description": "刪除後，工作區成員將立即失去此連接器的存取權，所有成員儲存的密鑰也會移除。此操作無法復原。",
         "title": "刪除{{connector}}？"
       },
       "edit": {
@@ -3309,9 +3258,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "授權{{agent}}",
-      "authorized": "{{connector}}已授權",
-      "authorizeDocumentTitle": "授權{{connector}}",
       "connectDocumentTitle": "連線{{connector}}",
       "connected": "{{connector}}已連線",
       "needsConnector": "{{agent}}需要{{connector}}才能繼續",
@@ -3339,10 +3285,8 @@
       "allowOptions": "{{permission}}的允許選項",
       "always": "始終",
       "clearSearch": "清除權限搜尋",
-      "descriptionAgent": "設定此智能體可以透過該連接器執行哪些操作。",
       "find": "查詢權限",
       "findPlaceholder": "查詢權限…",
-      "forTarget": "用於{{target}}",
       "loadError": "無法載入權限資訊",
       "loading": "正在載入權限…",
       "metadataMissing": "未找到{{connector}}的權限資訊",
@@ -3399,13 +3343,13 @@
       },
       "github": {
         "accountFallback": "此 GitHub 帳號",
-        "alreadyDescription": "你已以{{account}}身份連線。在 GitHub issue 或 pull request 中@你的智能體，即可開始對話。",
+        "alreadyDescription": "已以 {{account}} 身分連線。在 GitHub 議題或提取要求中提及 Okou 即可聊天。",
         "alreadyTitle": "已連線到 GitHub",
         "back": "返回工作流",
         "checkingConnectionDescription": "我們正在檢查你的 GitHub 連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
         "checkingSession": "我們正在驗證你的 {{brandName}} 登入狀態，請稍候。",
-        "connectDescription": "把你的 {{brandName}} 帳號關聯到{{account}}，就可以在 issue 和 pull request 中透過@提及執行你的智能體。",
+        "connectDescription": "將 {{brandName}} 帳號連結至 {{account}}，即可從 GitHub 議題或提取要求開始聊天。",
         "connectTitle": "連線到 GitHub",
         "errorFallback": "我們無法連線 GitHub。請從 GitHub 重試。",
         "invalidInstallation": "此連結中的 GitHub 安裝資訊無效。",
@@ -3423,7 +3367,7 @@
         "signInCheckFailed": "無法檢查登入狀態",
         "signInDescription": "連線此 GitHub 使用者前，請先登入你的 {{brandName}} 帳號。",
         "signInTitle": "登入後繼續",
-        "successDescription": "你已以{{account}}身份連線。在 GitHub issue 或 pull request 中@你的智能體，即可開始對話。",
+        "successDescription": "已以 {{account}} 身分連線。在 GitHub 議題或提取要求中提及 Okou 即可聊天。",
         "successTitle": "已連線到 GitHub！",
         "wrongOrganizationDescription": "你當前所在的組織與此 GitHub 安裝不匹配。請切換到正確的組織，然後重新開啟連結。",
         "wrongOrganizationTitle": "切換組織"
@@ -3438,7 +3382,7 @@
         "accountMismatchDescriptionWorkspace": "你的 Okou 帳號目前在{{workspace}}使用 Slack 帳號{{currentAccount}}。要切換到開啟此連結的{{requestedAccount}}嗎？",
         "accountMismatchTitle": "切換 Slack 帳號？",
         "authorizationFailed": "Slack 授權未完成。下方顯示目前連線狀態，你可以重試。",
-        "connectDescription": "把你的帳號關聯到這個 Slack 工作區，就可以直接在 Slack 裡與你的智能體交流。",
+        "connectDescription": "連結帳號後，即可在 Slack 中與 Okou 聊天。",
         "connectTitle": "連線到 Slack",
         "currentConnection": "Slack 已連線",
         "errorFallback": "無法檢查或開始 Slack 連線。",
@@ -3456,7 +3400,7 @@
       },
       "teams": {
         "authorize": "授權 Microsoft Teams",
-        "connectDescription": "關聯你的 Teams 帳號，就可以直接在 Microsoft Teams 裡與你的智能體交流。",
+        "connectDescription": "連結帳號後，即可在 Microsoft Teams 中與 Okou 聊天。",
         "connectedDescription": "你的 Teams 帳號已連線。",
         "connectTitle": "連線 Microsoft Teams",
         "identityMismatch": "此連結指定的 Teams 帳號或工作區與目前連線不一致。",
@@ -3477,7 +3421,7 @@
         "checkingConnectionTitle": "正在檢查連線…",
         "conflictDescription": "目前連接的是 {{current}}，但此連結要求連接 {{requested}}。你可以保留目前連接，或先手動管理連接再重試。",
         "conflictTitle": "已連接其他 Telegram 帳號",
-        "connectDescription": "把你的帳號關聯到這個 Telegram 機器人，就可以直接在 Telegram 裡與你的智能體交流。",
+        "connectDescription": "連結帳號後，即可在 Telegram 中與 Okou 聊天。",
         "connectionCheckFailed": "暫時無法存取 Telegram 以檢查連線。",
         "connectTitle": "連線到 Telegram",
         "continue": "使用 Telegram 繼續",
@@ -3532,7 +3476,6 @@
         "addBot": "新增機器人",
         "addDialogDescription": "建立一個 Agent 型別的企業自建應用，然後在飛書開發者後臺完成以下步驟。",
         "addDialogTitle": "新增飛書機器人",
-        "agentDescription": "選擇由哪個智能體處理傳送給此機器人的訊息。",
         "backToIntegrations": "返回整合",
         "botFallback": "飛書機器人",
         "botIconAlt": "{{bot}}機器人圖示",
@@ -3559,12 +3502,9 @@
           "imageAlt": "飛書應用建立結果頁，顯示 App ID 和 App Secret 的位置",
           "title": "填寫應用憑證"
         },
-        "defaultAgent": "預設智能體",
-        "defaultAgentAria": "{{appId}}的預設智能體",
         "developerConsole": "飛書開發者後臺",
         "dialogAdminRequired": "該應用需要由組織管理員配置。配置完成後，你可以在飛書機器人列表中連線自己的帳號。",
         "documentTitle": "飛書",
-        "emptyAdmin": "新增自建應用，把飛書訊息路由給智能體。",
         "emptyMember": "請組織管理員新增飛書機器人。",
         "emptyTitle": "還沒有飛書機器人",
         "events": {
@@ -3622,8 +3562,6 @@
         "reviewGuide": "檢視指南",
         "reviewGuideDescription": "檢視此飛書機器人已完成的配置步驟。",
         "reviewGuideTitle": "飛書配置指南",
-        "routeDescription": "把飛書訊息路由給智能體",
-        "selectAgent": "選擇智能體",
         "setupIncomplete": "配置未完成",
         "steps": {
           "back": "上一步",
@@ -3664,7 +3602,6 @@
         "addBot": "新增機器人",
         "addDialogDescription": "建立一個 Agent 型別的企業自建應用，然後在 Lark 開發者後臺完成以下步驟。",
         "addDialogTitle": "新增 Lark 機器人",
-        "agentDescription": "選擇由哪個智能體處理傳送給此機器人的訊息。",
         "backToIntegrations": "返回整合",
         "botFallback": "Lark 機器人",
         "botIconAlt": "{{bot}}機器人圖示",
@@ -3691,12 +3628,9 @@
           "imageAlt": "飛書應用建立結果頁，顯示 App ID 和 App Secret 的位置",
           "title": "填寫應用憑證"
         },
-        "defaultAgent": "預設智能體",
-        "defaultAgentAria": "{{appId}}的預設智能體",
         "developerConsole": "Lark 開發者後臺",
         "dialogAdminRequired": "該應用需要由組織管理員配置。配置完成後，你可以在 Lark 機器人列表中連線自己的帳號。",
         "documentTitle": "Lark",
-        "emptyAdmin": "新增自建應用，把 Lark 訊息路由給智能體。",
         "emptyMember": "請組織管理員新增 Lark 機器人。",
         "emptyTitle": "還沒有 Lark 機器人",
         "events": {
@@ -3759,8 +3693,6 @@
         "reviewGuide": "檢視指南",
         "reviewGuideDescription": "檢視此 Lark 機器人已完成的配置步驟。",
         "reviewGuideTitle": "Lark 配置指南",
-        "routeDescription": "把 Lark 訊息路由給智能體",
-        "selectAgent": "選擇智能體",
         "setupIncomplete": "配置未完成",
         "steps": {
           "back": "上一步",
@@ -3990,6 +3922,364 @@
       "requestFailed": "請求失敗"
     }
   },
+  "ideation": {
+    "all": "全部",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "批次最佳化和轉換圖片",
+            "title": "Cloudinary 媒體最佳化"
+          },
+          "fal-ai-image-generation": {
+            "description": "根據 Notion 裡的描述生成產品圖",
+            "title": "Fal AI 影像生成"
+          }
+        },
+        "title": "創意"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "貼上一份清單，{{assistantName}} 就替你把 issue 逐條建好",
+            "title": "批次建立 issue"
+          },
+          "browserbase-web-testing": {
+            "description": "為你的網頁應用做自動化瀏覽器測試",
+            "title": "Browserbase 網頁測試"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "每週在 Slack 彙總流量與安全事件",
+            "title": "Cloudflare 流量與安全報告"
+          },
+          "codebase-investigation": {
+            "description": "給一個 URL，{{assistantName}} 就在程式碼庫裡追查這個缺陷",
+            "title": "程式碼庫排查"
+          },
+          "daily-standup-report": {
+            "description": "把早間資料做成投影片，發到 Slack",
+            "title": "每日站會報告"
+          },
+          "deep-research-code-analysis": {
+            "description": "講清楚你的程式碼庫裡某個子系統是怎麼運作的",
+            "title": "深度程式碼分析"
+          },
+          "github-pr-summarizer": {
+            "description": "已合併的 PR 摘要寫進 Notion，也可以同步發到 Slack",
+            "title": "GitHub PR 摘要"
+          },
+          "github-progress-weekly": {
+            "description": "按功能彙總每週的倉庫動態",
+            "title": "GitHub 每週進展"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "把 GitLab 的 issue 和合並請求同步到 GitHub",
+            "title": "GitLab 遷移到 GitHub 助手"
+          },
+          "jira-github-issue-sync": {
+            "description": "讓 Jira 工單和 GitHub issue 保持同步",
+            "title": "Jira ↔ GitHub 問題同步"
+          },
+          "make-scenario-builder": {
+            "description": "用一段描述設計多步驟的 Make 場景",
+            "title": "Make 場景搭建"
+          },
+          "security-dependency-alert-digest": {
+            "description": "每週彙總 GitHub 的安全與依賴告警",
+            "title": "安全與依賴告警摘要"
+          },
+          "sentry-issue-digest": {
+            "description": "每天早上按嚴重程度分組彙總報錯",
+            "title": "Sentry 報錯摘要"
+          },
+          "vercel-deploy-digest": {
+            "description": "把每次部署關聯到對應提交，部署失敗時在 Slack 告警",
+            "title": "Vercel 部署摘要"
+          },
+          "zapier-okou-migration": {
+            "description": "在 {{brandName}} 中重建你的 Zapier 工作流程",
+            "title": "Zapier → {{brandName}} 遷移"
+          }
+        },
+        "title": "工程"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "用瀏覽器開啟頁面並返回截圖",
+            "title": "瀏覽器截圖"
+          },
+          "calendar-optimizer": {
+            "description": "幫你處理日程衝突、超載和專注時間",
+            "title": "日程最佳化"
+          },
+          "calendly-booking-sync": {
+            "description": "新預約自動進日曆，並在 Slack 提醒",
+            "title": "Calendly 預約同步"
+          },
+          "email-assistant": {
+            "description": "早間收件箱摘要，附下一步建議",
+            "title": "郵件助理"
+          },
+          "granola-notes-to-notion": {
+            "description": "把 Granola 會議筆記同步到 Notion 資料庫",
+            "title": "Granola 筆記同步到 Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "在 Lark 和 Slack 之間雙向轉發訊息",
+            "title": "Lark ↔ Slack 訊息互轉"
+          },
+          "line-message-relay": {
+            "description": "把 LINE 訊息轉發到 Slack，反向同樣可以",
+            "title": "LINE 訊息轉發"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies 記錄進 Notion，跟進事項發到 Slack",
+            "title": "會議紀要流水線"
+          },
+          "morning-brief": {
+            "description": "把郵件、日曆和筆記整理成簡短的當日計劃",
+            "title": "晨間簡報"
+          },
+          "perplexity-deep-research": {
+            "description": "AI 調研摘要自動存入 Notion",
+            "title": "Perplexity 深度調研"
+          },
+          "personal-weekly-digest": {
+            "description": "PR、郵件和日曆彙總成一條 Slack 週報",
+            "title": "個人每週摘要"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "替你把團隊公告發到 Slack",
+            "title": "代你傳送訊息"
+          },
+          "strava-team-fitness-digest": {
+            "description": "每週把團隊運動資料彙總發到 Slack",
+            "title": "Strava 團隊運動摘要"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "搜尋網頁，並把結果整理進 Notion",
+            "title": "Tavily 網頁調研流水線"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "會議錄影在 Notion 裡生成摘要和待辦事項",
+            "title": "tl;dv 會議回顧"
+          }
+        },
+        "title": "通用"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify 抓取網站，整理成 Google Sheets 的結構化行",
+            "title": "Apify 網頁抓取到 Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "根據 CRM 事件自動傳送郵件序列",
+            "title": "Brevo 郵件培育序列"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl 盯住競品網站，把變化記進 Notion",
+            "title": "競品情報抓取"
+          },
+          "competitor-research-to-notion": {
+            "description": "把 X 上的調研整理成 Notion 結構化筆記",
+            "title": "競品調研存入 Notion"
+          },
+          "content-planner": {
+            "description": "頭腦風暴選題，規劃內容日曆",
+            "title": "內容規劃"
+          },
+          "dev-to-auto-publisher": {
+            "description": "把 Notion 文章發布到 Dev.to，並在 X 上帶連結推廣",
+            "title": "Dev.to 自動發布"
+          },
+          "discord-community-insights": {
+            "description": "Discord 反饋匯入 Notion，每週在 Slack 出摘要",
+            "title": "Discord 社群洞察"
+          },
+          "instagram-engagement-tracker": {
+            "description": "互動資料進 Sheets，每週在 Slack 彙總",
+            "title": "Instagram 互動追蹤"
+          },
+          "loops-email-campaign": {
+            "description": "用 Loops 起草併傳送事務性郵件",
+            "title": "Loops 郵件活動"
+          },
+          "marketing-content-planning": {
+            "description": "結合 Slack、訪談和競品規劃發布內容",
+            "title": "市場內容規劃"
+          },
+          "onboarding-email-use-cases": {
+            "description": "從 Slack 和訪談裡挖新手引導的切入點",
+            "title": "新手引導郵件用例"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "每週追蹤關鍵詞排名並記錄到 Sheets",
+            "title": "SerpAPI 關鍵詞追蹤"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "與競品的流量對比存入 Notion",
+            "title": "SimilarWeb 流量對比"
+          },
+          "social-media-content-calendar": {
+            "description": "把 Sheets 裡的日曆變成各平臺的貼文",
+            "title": "社交內容日曆"
+          },
+          "x-brand-monitor": {
+            "description": "X 上的品牌提及存入 Notion，並提醒團隊",
+            "title": "X 品牌監測"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "有新的 YouTube 影片發布時，生成 Notion 摘要和一條 X 長帖來推廣",
+            "title": "YouTube 轉 X 長帖"
+          }
+        },
+        "title": "市場"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "用 AgentMail API 建立和管理收件箱",
+            "title": "AgentMail 收件箱"
+          },
+          "clickup-slack-standups": {
+            "description": "每天把 ClickUp 任務作為站會發到 Slack",
+            "title": "ClickUp → Slack 站會"
+          },
+          "google-docs-notion-migrator": {
+            "description": "批次把 Google Docs 搬進 Notion，排版原樣保留",
+            "title": "Google Docs → Notion 遷移"
+          },
+          "google-drive-file-organizer": {
+            "description": "新檔案自動歸入對應資料夾",
+            "title": "Google Drive 檔案整理"
+          },
+          "jotform-intake-to-notion": {
+            "description": "表單答覆進入 Notion，並在 Slack 通知",
+            "title": "Jotform 表單收集到 Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "每週在 Slack 彙報 Monday.com 的看板進展",
+            "title": "Monday.com 每週摘要"
+          },
+          "pdf-contract-processor": {
+            "description": "合同欄位進 Notion，到期前提醒",
+            "title": "PDF 合同處理"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "訂閱資料進 Sheets，流失異常在 Slack 告警",
+            "title": "RevenueCat 訂閱摘要"
+          },
+          "todoist-notion-task-sync": {
+            "description": "把 Todoist 任務同步到 Notion，團隊隨時能看",
+            "title": "Todoist → Notion 任務同步"
+          },
+          "wrike-project-reporter": {
+            "description": "每週在 Slack 彙總 Wrike 的專案進展",
+            "title": "Wrike 專案播報"
+          },
+          "xero-financial-summary": {
+            "description": "每週把 Xero 的利潤和現金流發到 Slack",
+            "title": "Xero 財務摘要"
+          }
+        },
+        "title": "運營"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana 的里程碑和任務同步到 Notion",
+            "title": "Asana → Notion 專案同步"
+          },
+          "feedback-router": {
+            "description": "按你的規則把 Slack 裡的反饋分發到對應位置",
+            "title": "反饋分發"
+          },
+          "linear-prd-implementer": {
+            "description": "把 Notion 裡的需求文件變成 Linear 專案和 issue",
+            "title": "Linear 需求落地"
+          },
+          "metabase-dashboard-digest": {
+            "description": "自動把儀表板快照發到 Slack",
+            "title": "Metabase 儀表板摘要"
+          },
+          "pricing-analysis": {
+            "description": "分析競品的定價策略，並與同類產品對比",
+            "title": "定價分析"
+          },
+          "product-copy-naming": {
+            "description": "給產品裡的技術術語換個更好懂的說法",
+            "title": "產品文案與命名"
+          }
+        },
+        "title": "產品"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "交易成交時同步到 Sheets 並通知 Slack",
+            "title": "Airtable 商機追蹤"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "新的 Bitrix 線索自動生成跟進任務，並在 Slack 提醒",
+            "title": "Bitrix24 線索培育"
+          },
+          "hubspot-sales-reporter": {
+            "description": "每週把 HubSpot 資料整理成結構化報告",
+            "title": "HubSpot 銷售播報"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "新線索變成 HubSpot 任務，並在 Slack 提醒",
+            "title": "線索跟進流水線"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "每週在 Slack 更新 Salesforce 的商機進展",
+            "title": "Salesforce 商機管道摘要"
+          },
+          "streak-pipeline-report": {
+            "description": "每週把 Gmail 裡的 CRM 管道資料發到 Slack",
+            "title": "Streak 管道報告"
+          },
+          "win-loss-reporter": {
+            "description": "在 Slack 彙報管道里的贏單與丟單趨勢",
+            "title": "贏單/丟單播報"
+          }
+        },
+        "title": "銷售"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "客戶對話在 Notion 裡記錄並歸類",
+            "title": "Chatwoot → Notion 支援記錄"
+          },
+          "customer-support-bot": {
+            "description": "用知識庫作答，答不上來的自動建任務",
+            "title": "客服機器人"
+          },
+          "intercom-conversation-triager": {
+            "description": "把 Intercom 對話變成帶優先順序的 Notion 任務",
+            "title": "Intercom 對話分診"
+          },
+          "support-ticket-router": {
+            "description": "工單進 Notion，緊急的在 Slack 提醒",
+            "title": "工單分發"
+          }
+        },
+        "title": "客戶支援"
+      }
+    },
+    "categoryFilter": "按分類篩選",
+    "chat": "聊天",
+    "description": "點選任意卡片即可開始對話。它可以變成一次性任務、定期執行的工作流，或者一個子智能體。",
+    "search": {
+      "accessibilityLabel": "搜尋用例",
+      "empty": "沒有匹配的用例。",
+      "placeholder": "搜尋"
+    },
+    "title": "靈感與用例"
+  },
   "invitationRedirect": {
     "accountMismatch": {
       "title": "邀請已由另一個帳號接受"
@@ -4084,7 +4374,6 @@
     }
   },
   "myOkou": {
-    "access": "你在此工作區的存取權限",
     "conflict": "指令已在其他地方更新。本機草稿已保留，請先檢視或複製，再重新載入已儲存的內容。",
     "description": "在此工作區中，專屬於你的 Okou 指令",
     "discard": "捨棄",
@@ -4093,6 +4382,19 @@
     "loadError": "無法載入指令，請重試。",
     "markdown": "支援純文字和 Markdown",
     "placeholder": "告訴 Okou 你喜歡怎樣工作…",
+    "proactiveSettings": {
+      "cardsOnly": "目前僅接收新卡片，每小時檢查與每日使用者輪廓更新已關閉。請選擇統一開啟或關閉。",
+      "choose": "請選擇…",
+      "description": "自訂 Okou 在此工作區中的運作方式。",
+      "hourlyOnly": "目前已開啟每小時檢查與每日使用者輪廓更新，新卡片已關閉。請選擇統一開啟或關閉。",
+      "offers": "在「為你推薦」中接收優惠卡片。",
+      "sourcesHint": "關閉卡片來源後，就會停止接收該來源的新卡片和未讀提醒。現有卡片會保留在「為你推薦」中。",
+      "suggestions": "每小時檢查已連接的資訊來源，每天更新使用者畫像，並推薦有用的下一步行動。",
+      "systemUpdates": "在「為你推薦」中接收系統公告。",
+      "turnOff": "同時關閉",
+      "turnOn": "同時開啟",
+      "whatsNew": "在「為你推薦」中查看 Okou 的新功能。"
+    },
     "reload": "重新載入已儲存的指令",
     "retry": "重試",
     "save": "儲存",
@@ -4837,18 +5139,27 @@
     }
   },
   "projects": {
+    "back": "返回",
     "close": "Close",
     "collapse": "收合",
+    "confirmDeleteThreads": "永久刪除",
     "create": "创建 Project",
     "delete": "删除",
-    "deleteDescription": "僅刪除 Project，聊天及其歷史記錄會保留。",
+    "deleteChoiceDescription": "可以只刪除 Project 並保留聊天，也可以同時刪除其中的聊天。",
     "deleteError": "无法删除 Project",
-    "deleteProject": "删除 Project",
+    "deleteProjectAndThreads_other": "刪除 Project 和 {{count}} 個聊天…",
+    "deleteProjectOnly": "僅刪除 Project",
+    "deleteThreadsDescription_other": "永久刪除此 Project 和 {{count}} 個聊天，包括封存聊天及其歷史記錄。正在執行的任務會停止，關聯的自動化會暫停。此操作無法復原。",
+    "deleteThreadsError": "刪除已停止。部分聊天可能已被永久刪除，請檢查 Project 和剩餘聊天後再繼續。",
+    "deleteThreadsTitle": "刪除 Project 及其中的聊天？",
     "deleteTitle": "删除 Project？",
-    "description": "将不同 Agent 的相关聊天归到一起",
+    "deletingThreads": "正在刪除…",
+    "description": "將相關的聊天集中在同一個專案。",
     "empty": "暂无聊天",
     "expand": "展開",
     "fromChat": "从此聊天创建 Project",
+    "loadingThreads": "正在載入聊天…",
+    "loadThreadsError": "無法載入全部聊天，請重試後再刪除。",
     "move": "移至 Project",
     "moveError": "无法移动聊天",
     "moveTitle": "移动聊天",
@@ -4864,12 +5175,15 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "retryThreads": "重新載入聊天",
     "save": "保存",
     "saveError": "无法保存 Project",
     "saving": "正在保存…",
     "search": "Search projects…",
+    "threadsChanged": "此 Project 中的聊天已發生變化，請檢查更新後的清單並再次確認。",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project 不可用"
+    "unavailable": "Project 不可用",
+    "untitledThread": "未命名聊天"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} 個併發執行",
@@ -4901,15 +5215,14 @@
       "pro": "Pro",
       "team": "Team"
     },
-    "title": "你的智能體正在排隊",
+    "title": "你的請求正在排隊",
     "upgrade": {
       "action": "升級到{{plan}}",
       "features": {
         "creditsPerMonth": "每月 {{credits}} 積分",
         "emailSupport": "郵件支援",
         "payAsYouGo": "超出後按量付費",
-        "prioritySupport": "優先支援",
-        "unlimitedAgents": "智能體總數不限"
+        "prioritySupport": "優先支援"
       },
       "proDescription": "並行執行多個任務，無需排隊。",
       "recommended": "推薦",
@@ -5364,7 +5677,6 @@
         "startFailed": "匯出啟動失敗"
       },
       "scope": {
-        "agentInstructions": "你可訪問的智能體指令",
         "chatMessages": "你的聊天訊息",
         "chatThreads": "你的聊天會話",
         "filesExcluded": "不包含成果、附件和工作流的相關檔案。",
@@ -5713,25 +6025,14 @@
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。",
         "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
         "errorMessage": "晨報設定無法載入或更新。",
-        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
         "title": "晨報"
       },
-      "proactiveLearning": {
-        "description": "夜間回顧你的資訊和工作，整理個人記憶、更新理解。",
-        "errorMessage": "無法載入或更新此設定。",
-        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
-        "missingTimezone": "請在偏好設定中設定時區。",
-        "preparationFailed": "此工作流程暫不可用。",
-        "preparing": "正在準備此工作流程。",
-        "title": "主動學習"
-      },
       "proactiveSuggestions": {
-        "description": "讓 Okou 每小時檢查已連接的資訊來源，並在首頁推薦實用的下一步行動。",
+        "description": "每小時檢查已連接的資訊來源，每天更新使用者畫像，並推薦有用的下一步行動。",
         "errorMessage": "無法載入或更新主動建議設定。",
-        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
@@ -5746,7 +6047,7 @@
       },
       "timezone": {
         "description": "用於介面顯示時間和自動化執行時間。",
-        "rowDescription": "你的智能體在執行時會使用該時區",
+        "rowDescription": "Okou 執行時會使用這個時區。",
         "rowTitle": "時區",
         "sectionTitle": "時區",
         "zones": {
@@ -5800,7 +6101,7 @@
         "title": "你的 Link 卡片"
       },
       "connect": "連線",
-      "description": "讓代理程式提出購買請求並查看 Link 交易。每筆購買均由你核准。",
+      "description": "允許 Okou 提出購買請求並查看 Link 交易。每筆購買都由你核准。",
       "disconnect": "中斷連線",
       "loadError": "無法載入錢包。",
       "scope": "讓 Okou 代你購買並查看 Link 交易。",
@@ -6019,6 +6320,21 @@
     "signUp": "註冊",
     "tryItYourself": "自己試一試"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "全部",
+    "markAllRead": "全部標為已讀",
+    "noResults": "沒有找到結果",
+    "resultCount_other": "{{count}} 條結果",
+    "searching": "搜尋中…",
+    "searchWorkspace": "搜尋工作區…",
+    "sections": {
+      "artifacts": "成果",
+      "chats": "聊天",
+      "messages": "訊息",
+      "workflows": "工作流"
+    }
+  },
   "ssh": {
     "add": "新增主機",
     "cancel": "取消",
@@ -6062,8 +6378,8 @@
       "summary_other": "已配置 {{count}} 個憑據",
       "unused": "未被任何主機使用"
     },
-    "deleteHelp": "確定刪除該主機？它的憑據會保留。智能體將不再在可用主機列表中看到它。",
-    "description": "讓你的智能體在遠端機器上執行命令。",
+    "deleteHelp": "刪除這台主機？憑證會保留，Okou 將無法再存取這台主機。",
+    "description": "允許 Okou 在遠端主機上執行命令。",
     "edit": "編輯主機",
     "editHelp": "選擇其他憑據只會影響該主機。修改直連地址會清除已記錄的主機金鑰；涉及 Cloudflare Access 的修改則會保留它。",
     "errors": {
@@ -6109,7 +6425,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH 身分驗證失敗。請檢查系統使用者名稱，在帶標籤的目標裝置上啟用 Tailscale SSH，並在 tailnet 的 SSH accept 原則中允許此登入。",
-      "deleteHelp": "確定刪除此主機？智慧體將不再於可用主機清單中看到它。",
+      "deleteHelp": "刪除這台主機？Okou 將無法再存取它。",
       "sshDocs": "Tailscale SSH 官方文件",
       "sshHelp": "使用所選 Tailscale 網路的身分驗證，無需 SSH 密碼或私鑰。請在帶標籤的目標裝置上啟用 Tailscale SSH，並透過 SSH accept 原則允許此系統使用者名稱。",
       "sshTitle": "Tailscale SSH",
@@ -6144,6 +6460,9 @@
     },
     "title": "SSH 存取",
     "unavailable": "此申請無法使用，請重新申請。"
+  },
+  "status": {
+    "unread": "未讀"
   },
   "tailscale": {
     "changed": "此 Tailscale 網路已發生變更。變更未儲存，草稿已保留。",
@@ -6307,7 +6626,7 @@
       "usernamePasswordMethod": "使用者名稱和密碼"
     },
     "deleteHelp": "刪除這臺已儲存的主機？它使用的可複用憑據會保留。",
-    "description": "讓你的智能體檢視和控制遠端桌面。",
+    "description": "允許 Okou 檢視及控制遠端桌面。",
     "edit": "編輯主機",
     "editHelp": "更改會應用到這臺已儲存的主機，並使其當前的連線配置失效。",
     "errors": {
@@ -6905,20 +7224,15 @@
       }
     },
     "common": {
-      "agents": "智能體",
       "cancel": "取消",
       "close": "關閉",
-      "copyWorkflow": "複製工作流",
       "delete": "刪除",
       "deleteWorkflow": "刪除工作流",
       "instructions": "指令",
       "manual": "手動",
-      "others": "其他",
-      "pinned": "已置頂",
       "private": "私有",
       "public": "公開",
       "settings": "設定",
-      "view": "檢視",
       "workflow": "工作流",
       "workflows": "工作流"
     },
@@ -6928,36 +7242,14 @@
     },
     "createDialog": {
       "addAutomation": "新增自動化",
-      "chooseAgentAutomation": "選擇執行這個自動化的智能體",
-      "chooseAgentWorkflow": "選擇執行這個工作流的智能體。",
       "chooseWorkflow": "選擇要自動化的工作流，或在對話中建立一個。",
       "createAutomation": "建立自動化",
       "createInChat": "在對話中建立",
       "createInChatDescription": "還沒有合適的工作流時，從一段對話開始。",
       "createWorkflow": "建立工作流",
-      "noAgents": "還沒有智能體",
-      "noAgentsFound": "未找到智能體",
       "noWorkflows": "還沒有工作流。在對話中建立一個即可繼續。"
     },
     "detail": {
-      "copy": {
-        "agentFallback": "該智能體",
-        "copied": "已複製到{{agent}}",
-        "copyAndRemove": "複製並移除",
-        "description": "把這個工作流複製給另一個智能體，作為新的私有工作流。",
-        "moved": "已移動到{{agent}}",
-        "moveDescription": "原工作流已從{{agent}}移除。",
-        "noAgents": "還沒有其他智能體",
-        "privateReady": "私有副本已建立。",
-        "removalAlert": "原工作流會被刪除",
-        "removalNoAutomations": "這個工作流會從{{agent}}刪除。",
-        "removalWithAutomations_one": "{{agent}}上的 {{count}} 個自動化會暫停，這個工作流會被刪除。",
-        "removalWithAutomations_other": "{{agent}}上的 {{count}} 個自動化會暫停，這個工作流會被刪除。",
-        "removeOriginal": "複製後從{{agent}}移除原工作流",
-        "selectAgent": "選擇智能體",
-        "title": "複製工作流",
-        "to": "複製到"
-      },
       "delete": {
         "confirm": "{{title}}及其綁定的所有自動化都會被刪除。",
         "dangerDescription": "刪除這個工作流及其自動化。此操作無法撤銷。",
@@ -6979,16 +7271,10 @@
         "upload": "上傳文字檔案",
         "uploadAria": "上傳工作流檔案"
       },
-      "info": {
-        "copyDescription": "把這個工作流複製給另一個智能體。",
-        "copyTitle": "複製工作流"
-      },
       "metadata": {
-        "agent": "智能體",
-        "agentDescription": "這個工作流屬於該智能體。",
         "aria": "工作流資訊",
         "description": "描述",
-        "descriptionHelp": "告訴智能體什麼時候該用這個工作流。",
+        "descriptionHelp": "說明 Okou 應在什麼情況下使用此工作流程。",
         "name": "名稱",
         "nameHelp": "會顯示在工作流列表中，以及選擇工作流時。",
         "namePlaceholder": "工作流名稱",
@@ -7003,12 +7289,7 @@
       "notFound": "未找到該工作流。",
       "refineWith": "用{{agent}}最佳化",
       "sectionNavigation": "工作流詳情欄目",
-      "shadow": {
-        "end": "（對你生效）。這個工作流因識別符號相同的優先順序規則被遮蔽。",
-        "resolvesTo": "當前指向"
-      },
       "visibility": {
-        "adminRequired": "在不屬於你的智能體下發布工作流，需要組織管理員權限。",
         "automationWarning": "自動化將停止",
         "confirmDescription": "這是危險操作。工作流設為私有後，其他成員基於它建立的自動化會停止執行。",
         "confirmTitle": "把這個工作流設為私有？",
@@ -7019,8 +7300,8 @@
     },
     "editor": {
       "aria": "指令編輯器",
-      "footer": "直接編輯指令，就能定製智能體的行為。",
-      "placeholder": "為你的智能體寫下指令…",
+      "footer": "編輯這個工作流程的指令。",
+      "placeholder": "為這個工作流程撰寫指令…",
       "toolbar": {
         "blockquote": "引用",
         "bold": "加粗",
@@ -7036,9 +7317,7 @@
     },
     "list": {
       "actionRequired": "需要處理",
-      "agentEmpty": "還沒有以這個智能體身份執行的工作流。",
       "all": "全部",
-      "allAgents": "全部智能體",
       "automated": "已自動化",
       "automations": "自動化",
       "createdBy": "建立者",
@@ -7056,8 +7335,6 @@
       "openRecovery": "開啟{{title}}的恢復",
       "ownerLoading": "正在載入作者…",
       "ownerUnavailable": "無法獲取作者",
-      "runsAs": "執行身份",
-      "runsAsAria": "以{{agent}}身份執行",
       "section": {
         "event": "由自動化觸發",
         "later": "更久以後",
@@ -7111,6 +7388,18 @@
       "uninstalling": "正在解除安裝…",
       "updatePermissions": "更新權限"
     },
+    "channelExamples": {
+      "email": "將郵件轉寄給 Okou，請它整理重點或草擬回覆。",
+      "feishu": "把草稿傳給飛書裡的 Okou，請它改寫成方便分享的團隊近況。",
+      "github": "有人建立提取要求時，執行工作流程，準備一份程式碼審查清單。",
+      "lark": "把草稿傳給 Lark 裡的 Okou，請它改寫成方便分享的團隊近況。",
+      "phone": "用 iPhone 傳簡訊給 {{assistantName}}，說說你的想法，請它寫份初稿。",
+      "slack": "在 Slack 頻道裡 @Okou，貼上草稿，請它提供修改建議。",
+      "teams": "在 Teams 聊天中貼上會議筆記，請 Okou 幫你列出待辦事項。",
+      "telegram": "把兩個方案傳給 Telegram 裡的 Okou，請它幫你比較各自的優缺點。",
+      "wechat": "把兩個方案傳給微信裡的 Okou，請它幫你比較各自的優缺點。",
+      "whatsapp": "把兩個方案傳給 WhatsApp 裡的 Okou，請它幫你比較各自的優缺點。"
+    },
     "connected": "已連線",
     "connectedWithDetail": "已連線（{{detail}}）",
     "discord": {
@@ -7119,7 +7408,7 @@
       "authorizationError": "未能完成 Discord 授權。",
       "cancelled": "Discord 授權已取消。",
       "chooseWorkspace": "選擇工作區",
-      "connectDescription": "連接 Discord 帳號，與智慧代理聊天。",
+      "connectDescription": "連結帳號後，即可在 Discord 中與 Okou 聊天。",
       "connectedTitle": "已連接 Discord",
       "connectTitle": "連接 Discord",
       "defaultWorkspace": "Discord 預設工作區",
@@ -7197,17 +7486,16 @@
       "uninstallTitle": "解除安裝 Microsoft Teams 整合？"
     },
     "telegram": {
-      "description": "把 Telegram 訊息轉給智能體",
+      "description": "連接 Telegram 與 Okou。",
       "title": "Telegram"
     },
     "wechat": {
       "accountLabel": "帳號",
-      "agentLabel": "Agent",
       "code": "驗證碼",
       "connect": "連接",
       "connected": "已連接",
       "creating": "正在產生 QR code…",
-      "description": "在微信中與智能體對話。",
+      "description": "在微信中與 Okou 聊天。",
       "disconnect": "中斷連接",
       "expired": "QR code 已過期，請重新產生。",
       "failed": "連接微信失敗。",
@@ -7221,7 +7509,7 @@
       "restoreDescription": "將微信重新連接至以下帳號和工作區。",
       "returnToWechat": "返回微信，傳送訊息即可開始對話。",
       "scanned": "已掃碼，請在手機上確認。",
-      "scope": "只連接你與此智能體的單聊，目前支援文字訊息。",
+      "scope": "僅連接你與 Okou 的私人對話，支援文字訊息。",
       "title": "連接微信",
       "unavailable": "連接服務尚未配置。",
       "verification_blocked": "驗證碼嘗試次數過多，請重新產生 QR code。",
@@ -7233,7 +7521,7 @@
     "whatsapp": {
       "codeError": "無法產生連接碼，請重試。",
       "connect": "連接 WhatsApp",
-      "connectDescription": "將你的 WhatsApp 帳號連接到 {{brandName}}，即可與你的智慧代理聊天。",
+      "connectDescription": "將 WhatsApp 帳號連結至 {{brandName}}，即可與 Okou 聊天。",
       "connected": "WhatsApp 已連接",
       "description": "在 WhatsApp 中直接與 Okou 對話",
       "disconnected": "WhatsApp 已斷開",

@@ -115,8 +115,6 @@ describe("builtin Automatic firewall credential destinations", () => {
         body: {
           authMethod: catalog.methodId,
           account: { intent: "add" },
-          agentId: agent.agentId,
-          authorizeAgent: true,
         },
       }),
       [200],
@@ -223,7 +221,6 @@ describe("builtin Automatic firewall credential destinations", () => {
       catalog.slug,
       connectionId,
     );
-    await bdd.deleteAgent(actor, agent.agentId);
   });
 
   it("rejects a DCR retired through public reconnect while refresh discovery is pending", async () => {
@@ -275,8 +272,6 @@ describe("builtin Automatic firewall credential destinations", () => {
         body: {
           authMethod: catalog.methodId,
           account: { intent: "add" },
-          agentId: agent.agentId,
-          authorizeAgent: true,
         },
       }),
       [200],
@@ -446,7 +441,6 @@ describe("builtin Automatic firewall credential destinations", () => {
       catalog.slug,
       connectionId,
     );
-    await bdd.deleteAgent(actor, agent.agentId);
     if (!observed.ok) {
       throw observed.error;
     }
@@ -515,8 +509,6 @@ describe("builtin Automatic firewall credential destinations", () => {
           body: {
             authMethod: catalog.methodId,
             account: { intent: "add" },
-            agentId: agent.agentId,
-            authorizeAgent: true,
           },
         }),
         [200],
@@ -713,7 +705,6 @@ describe("builtin Automatic firewall credential destinations", () => {
       await runs.requestCancelRun(actor, run.runId, [200]);
       // Cancellation callbacks must release lifecycle locks before deletion.
       await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, agent.agentId);
     },
   );
 
@@ -818,8 +809,6 @@ describe("builtin Automatic firewall credential destinations", () => {
         body: {
           authMethod: catalog.methodId,
           account: { intent: "add" },
-          agentId: agent.agentId,
-          authorizeAgent: true,
         },
       }),
       [200],
@@ -990,7 +979,6 @@ describe("builtin Automatic firewall credential destinations", () => {
       catalog.slug,
       connectionId,
     );
-    await bdd.deleteAgent(actor, agent.agentId);
     if (!outcome.ok) {
       throw outcome.error;
     }

@@ -53,18 +53,18 @@ function preferenceClient() {
   );
 }
 
-async function setup() {
+function setup() {
   // The rollout's real allowed identity, with a unique workspace per case.
-  // Agent/workflow creation does not initialize this member's model preferences.
+  // Workflow creation does not initialize this member's model preferences.
   const actor = wf.user({ userId: BINGJIE_USER_ID });
-  const { agentId } = await wf.createAgent(actor);
-  return { actor, agentId };
+  installWorkflowVolumeS3Fixture(context);
+  return { actor };
 }
 
-async function composer(actor: ApiTestUser, agentId: string) {
+async function composer(actor: ApiTestUser) {
   return (
     await accept(
-      client().composer({ headers: headers(actor), query: { agentId } }),
+      client().composer({ headers: headers(actor), query: {} }),
       [200],
     )
   ).body;
@@ -86,13 +86,11 @@ function marker(index: number) {
 
 describe("POST /api/workflows/recency/migrate", () => {
   it("imports into an absent member preference row and exposes only relative legacy order", async () => {
-    const { actor, agentId } = await setup();
+    const { actor } = setup();
     const first = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-zulu",
     });
     const second = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-alpha",
     });
     const before = await accept(
@@ -120,7 +118,7 @@ describe("POST /api/workflows/recency/migrate", () => {
       }),
     ];
     expect((await migrate(actor, ids)).body).toStrictEqual({ migrated: true });
-    await expect(composer(actor, agentId)).resolves.toStrictEqual([
+    await expect(composer(actor)).resolves.toStrictEqual([
       expect.objectContaining({ id: second, lastUsedAt: marker(1) }),
       expect.objectContaining({ id: first, lastUsedAt: marker(0) }),
     ]);
@@ -141,15 +139,12 @@ describe("POST /api/workflows/recency/migrate", () => {
     );
   });
 
-  it("imports empty history across agents without changing existing model preferences", async () => {
-    const { actor, agentId } = await setup();
-    const { agentId: secondAgentId } = await wf.createAgent(actor);
+  it("imports empty workspace history without changing existing model preferences", async () => {
+    const { actor } = setup();
     const first = await wf.createWorkflow(actor, {
-      agentId: secondAgentId,
       name: "legacy-first",
     });
     const second = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-second",
     });
     const before = await accept(
@@ -166,10 +161,10 @@ describe("POST /api/workflows/recency/migrate", () => {
     expect((await migrate(actor, [first, second])).body).toStrictEqual({
       migrated: true,
     });
-    await expect(composer(actor, secondAgentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: first, lastUsedAt: marker(0) }),
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: second, lastUsedAt: marker(1) }),
     );
     const after = await accept(
@@ -180,13 +175,11 @@ describe("POST /api/workflows/recency/migrate", () => {
   });
 
   it("accepts only one concurrent import and leaves nonempty history unchanged on replay", async () => {
-    const { actor, agentId } = await setup();
+    const { actor } = setup();
     const first = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-one",
     });
     const second = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-two",
     });
     await flushWaitUntilForTest();
@@ -205,7 +198,7 @@ describe("POST /api/workflows/recency/migrate", () => {
     const winnerIds = imports[0]?.body.migrated
       ? [first, second]
       : [second, first];
-    const imported = await composer(actor, agentId);
+    const imported = await composer(actor);
     for (const [index, id] of winnerIds.entries()) {
       expect(imported).toContainEqual(
         expect.objectContaining({ id, lastUsedAt: marker(index) }),
@@ -217,40 +210,38 @@ describe("POST /api/workflows/recency/migrate", () => {
     expect((await migrate(actor, [second])).body).toStrictEqual({
       migrated: false,
     });
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(imported);
+    await expect(composer(actor)).resolves.toStrictEqual(imported);
     await flushWaitUntilForTest();
     expect(context.mocks.ably.publish).not.toHaveBeenCalled();
   });
 
   it("filters inaccessible, deleted, foreign-workspace and shadowed IDs before choosing ten unique workflows", async () => {
-    const { actor, agentId } = await setup();
+    const { actor } = setup();
     const peer = wf.user({ orgId: actor.orgId, orgRole: "org:admin" });
     const peerPrivate = await wf.createWorkflow(peer, {
-      agentId,
       name: "legacy-peer-private",
       visibility: "private",
     });
     const peerPublic = await wf.createWorkflow(peer, {
-      agentId,
       name: "legacy-peer-public",
       visibility: "public",
     });
-    const { agentId: hiddenAgentId } = await wf.createAgent(peer, {
+    const hiddenPrivate = await wf.createWorkflow(peer, {
+      name: "legacy-hidden-workflow",
       visibility: "private",
     });
-    const hiddenPublic = await wf.createWorkflow(peer, {
-      agentId: hiddenAgentId,
-      name: "legacy-hidden-agent",
-      visibility: "public",
-    });
+    await accept(
+      detailClient().get({
+        headers: headers(actor),
+        params: { workflowId: hiddenPrivate },
+      }),
+      [404],
+    );
     const foreign = wf.user({ userId: BINGJIE_USER_ID });
-    const { agentId: foreignAgentId } = await wf.createAgent(foreign);
     const foreignId = await wf.createWorkflow(foreign, {
-      agentId: foreignAgentId,
       name: "legacy-other-workspace",
     });
     const deleted = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-deleted",
     });
     await accept(
@@ -261,12 +252,10 @@ describe("POST /api/workflows/recency/migrate", () => {
       [204],
     );
     const shadowed = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-shadow",
       visibility: "public",
     });
     const privateWinner = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-shadow",
       visibility: "private",
     });
@@ -274,7 +263,6 @@ describe("POST /api/workflows/recency/migrate", () => {
     for (let index = 0; index < 10; index += 1) {
       valid.push(
         await wf.createWorkflow(actor, {
-          agentId,
           name: `legacy-valid-${index}`,
         }),
       );
@@ -284,7 +272,7 @@ describe("POST /api/workflows/recency/migrate", () => {
         return randomUUID();
       }),
       peerPrivate,
-      hiddenPublic,
+      hiddenPrivate,
       foreignId,
       deleted,
       shadowed,
@@ -298,7 +286,7 @@ describe("POST /api/workflows/recency/migrate", () => {
     expect((await migrate(actor, supplied)).body).toStrictEqual({
       migrated: true,
     });
-    const imported = (await composer(actor, agentId)).filter((workflow) => {
+    const imported = (await composer(actor)).filter((workflow) => {
       return workflow.lastUsedAt !== null;
     });
     expect(imported).toHaveLength(10);
@@ -307,10 +295,10 @@ describe("POST /api/workflows/recency/migrate", () => {
         expect.objectContaining({ id, lastUsedAt: marker(index) }),
       );
     }
-    await expect(composer(foreign, foreignAgentId)).resolves.toContainEqual(
+    await expect(composer(foreign)).resolves.toContainEqual(
       expect.objectContaining({ id: foreignId, lastUsedAt: null }),
     );
-    await expect(composer(peer, agentId)).resolves.toStrictEqual(
+    await expect(composer(peer)).resolves.toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: peerPrivate, lastUsedAt: null }),
         expect.objectContaining({ id: peerPublic, lastUsedAt: null }),
@@ -319,9 +307,8 @@ describe("POST /api/workflows/recency/migrate", () => {
   });
 
   it("rejects the entire malformed or oversized request instead of partially importing valid IDs", async () => {
-    const { actor, agentId } = await setup();
+    const { actor } = setup();
     const workflowId = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-validation",
     });
     const invalidBodies = [
@@ -354,7 +341,7 @@ describe("POST /api/workflows/recency/migrate", () => {
       });
       expect(response.status).toBe(400);
     }
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
     expect((await migrate(actor, [workflowId])).body).toStrictEqual({
@@ -363,9 +350,8 @@ describe("POST /api/workflows/recency/migrate", () => {
   });
 
   it("returns before parsing or validating migration bodies when opted out, without changing history", async () => {
-    const { actor, agentId } = await setup();
+    const { actor } = setup();
     const workflowId = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-disabled-validation",
     });
     if (!actor.orgId) {
@@ -420,7 +406,7 @@ describe("POST /api/workflows/recency/migrate", () => {
       { ...actor, orgId: actor.orgId },
       { [FeatureSwitchKey.WorkflowRecency]: true },
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
     expect((await migrate(actor, [workflowId])).body).toStrictEqual({
@@ -492,15 +478,13 @@ describe("POST /api/workflows/recency/migrate", () => {
     expect((await migrate(actor, [official.id])).body).toStrictEqual({
       migrated: false,
     });
-    const { agentId } = await wf.createAgent(actor);
     const workflowId = await wf.createWorkflow(actor, {
-      agentId,
       name: "legacy-ordinary",
     });
     expect(
       (await migrate(actor, [official.id, workflowId])).body,
     ).toStrictEqual({ migrated: true });
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: marker(0) }),
     );
   });

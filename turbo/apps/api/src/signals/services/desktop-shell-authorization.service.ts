@@ -20,7 +20,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { desktopShellAuthorizations } from "@okouai/db/schema/desktop-shell-authorization";
 import { computerUseCommands } from "@okouai/db/schema/computer-use-host";
-import { agents } from "@okouai/db/schema/agent";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { env } from "../../lib/env";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -79,12 +78,9 @@ export const readDesktopShellAuthorization$ = command(
         chatThreads,
         and(
           eq(chatThreads.id, desktopShellAuthorizations.chatThreadId),
+          eq(chatThreads.orgId, owner.orgId),
           eq(chatThreads.userId, owner.userId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
       )
       .innerJoin(
         computerUseHosts,
@@ -167,13 +163,10 @@ export const createDesktopShellAuthorization$ = command(
         chatThreads,
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.userId, args.userId),
           eq(chatThreads.computerUseHostId, args.computerUseHostId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
       )
       .innerJoin(
         computerUseHosts,
@@ -278,7 +271,6 @@ function pendingApprovalCondition(
       new QueryBuilder()
         .select({ id: chatThreads.id })
         .from(chatThreads)
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .innerJoin(
           computerUseHosts,
           eq(computerUseHosts.id, chatThreads.computerUseHostId),
@@ -287,7 +279,7 @@ function pendingApprovalCondition(
           and(
             eq(chatThreads.id, authorization.chatThreadId),
             eq(chatThreads.userId, owner.userId),
-            eq(agents.orgId, owner.orgId),
+            eq(chatThreads.orgId, owner.orgId),
             eq(chatThreads.computerUseHostId, authorization.computerUseHostId),
             eq(computerUseHosts.orgId, owner.orgId),
             eq(computerUseHosts.userId, owner.userId),

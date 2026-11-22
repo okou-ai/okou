@@ -14,8 +14,7 @@ import type { CustomConnectorSlug } from "@okouai/api-contracts/contracts/custom
 import { uuid } from "zod";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { pathParams$, searchParams$ } from "../route.ts";
-import { agents$ } from "../agent.ts";
+import { pathParams$ } from "../route.ts";
 import {
   resetBuiltinManualGrantForm$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -36,6 +35,7 @@ import {
 } from "../external/connectors.ts";
 import { customConnectors$ } from "../okou-page/settings/custom-connectors.ts";
 import { createConnectorAccountListSignals } from "../okou-page/connector-accounts.ts";
+import { readConnectorAccountPage } from "../okou-page/settings/connector-accounts.ts";
 
 const directedConnectAccounts = createConnectorAccountListSignals({
   includeBuiltinScopeMismatch: true,
@@ -164,35 +164,29 @@ export const directedConnectExactAccount$ = computed(
   },
 );
 
-/**
- * Agent ID extracted from `?agentId=` query parameter on the connect page.
- * When present, the connect page will auto-authorize the agent after connecting.
- */
-export const directedConnectAgentId$ = computed((get): string | null => {
-  return get(searchParams$).get("agentId");
-});
-
-/** Agent display name resolved from agentId query param on connect page. */
-export const directedConnectAgentName$ = computed(async (get) => {
-  const agentId = get(directedConnectAgentId$);
-  if (!agentId) {
-    return { agentId: null, displayName: null };
-  }
-  const agents = await get(agents$);
-  const agent = agents.find((a) => {
-    return a.agentId === agentId;
-  });
-  return { agentId, displayName: agent?.displayName ?? null };
-});
+/** The agent of the chat that requested the connection. */
+export const continueConnectedConnector$ = command(
+  async ({ get, set }, slug: ConnectorSlug, signal: AbortSignal) => {
+    const callback = get(routeChatActionCallback$);
+    const accounts = await readConnectorAccountPage(
+      get(apiClient$),
+      { kind: "builtin", connectorSlug: slug },
+      signal,
+      { includeBuiltinScopeMismatch: true },
+    );
+    if (accounts.defaultConnection?.connectionStatus !== "connected") {
+      throw new Error("The default account still needs attention.");
+    }
+    await set(completeDirectedConnectorAction$, callback, signal);
+  },
+);
 
 interface DirectedConnectTarget {
   readonly connectorSlug: ConnectorSlug;
-  readonly agentId: string | null;
 }
 
 interface DirectedConnectCustomTarget {
   readonly connectorSlug: CustomConnectorSlug;
-  readonly agentId: string | null;
 }
 
 type DirectedConnectManualGrantDialogKey = DirectedConnectTarget & {
@@ -253,13 +247,12 @@ export const connectDirectedConnector$ = command(
   async (
     { get, set },
     item: PlatformConnectorCatalogStatusItem,
-    agentId: string | null,
     accountOptions: ConnectorAccountMutationOptions,
     signal: AbortSignal,
   ): Promise<void> => {
     const callback = get(routeChatActionCallback$);
     const launchMode = getBuiltinConnectorStatusConnectLaunchMode(item);
-    const key = { connectorSlug: item.slug, agentId };
+    const key = { connectorSlug: item.slug };
     if (launchMode === "modal") {
       const manualMethod = getOnlyManualBuiltinConnectorStatusAuthMethod(item);
       if (
@@ -275,16 +268,10 @@ export const connectDirectedConnector$ = command(
     }
     const options = {
       connectorLabel: item.label,
-      ...(agentId ? { agentId } : { authorizeVisibleAgents: true }),
       ...accountOptions,
     };
     const onSuccess = (_connectionId: string, attemptSignal: AbortSignal) => {
-      return set(
-        completeDirectedConnectorAction$,
-        agentId,
-        callback,
-        attemptSignal,
-      );
+      return set(completeDirectedConnectorAction$, callback, attemptSignal);
     };
     if (launchMode === "browser-auth") {
       const method =

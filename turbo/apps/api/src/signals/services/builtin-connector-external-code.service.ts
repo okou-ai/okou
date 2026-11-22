@@ -54,11 +54,6 @@ import {
   upsertBuiltinConnectorTokenConnection$,
 } from "./connector-data.service";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
-import {
-  authorizeConnectedConnector$,
-  connectorAgentAuthorizationRequested,
-  validateConnectorAuthorizationTarget$,
-} from "./connected-connector-authorization.service";
 import { storedConnectorAccountMutationSelection } from "./connector-account-mutation.service";
 
 const SUPERSEDABLE_EXTERNAL_CODE_SESSION_STATUSES = ["pending"] as const;
@@ -73,8 +68,6 @@ const externalCodeSessionSelection = Object.freeze({
   id: builtinConnectorExternalCodeSessions.id,
   orgId: builtinConnectorExternalCodeSessions.orgId,
   userId: builtinConnectorExternalCodeSessions.userId,
-  agentId: builtinConnectorExternalCodeSessions.agentId,
-  authorizeAgent: builtinConnectorExternalCodeSessions.authorizeAgent,
   connectorSlug: builtinConnectorExternalCodeSessions.connectorSlug,
   authMethod: builtinConnectorExternalCodeSessions.authMethod,
   status: builtinConnectorExternalCodeSessions.status,
@@ -475,36 +468,6 @@ function terminalErrorResponse(
   }
 }
 
-const authorizeExternalCodeSessionConnector$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly session: BuiltinConnectorExternalCodeSessionRow;
-      readonly connectorSlug: ConnectorSlug;
-    },
-    signal: AbortSignal,
-  ) => {
-    if (!args.session.authorizeAgent) {
-      return null;
-    }
-    const authorization = await set(
-      authorizeConnectedConnector$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        agentId: args.session.agentId,
-        connectorSlug: args.connectorSlug,
-      },
-      signal,
-    );
-    return authorization.status === "agentNotFound"
-      ? badRequestMessage(authorization.message)
-      : null;
-  },
-);
-
 const completedExternalCodeSessionResponse$ = command(
   async (
     { set },
@@ -515,7 +478,7 @@ const completedExternalCodeSessionResponse$ = command(
       readonly method: ResolvedConnectorActionMethod;
     },
     signal: AbortSignal,
-  ): Promise<CompleteSuccess | ReturnType<typeof badRequestMessage>> => {
+  ): Promise<CompleteSuccess> => {
     if (!args.session.completedConnectorId) {
       throw new Error(
         "Completed external-code session is missing its connector ID",
@@ -535,17 +498,10 @@ const completedExternalCodeSessionResponse$ = command(
     if (!connector) {
       throw new Error("Completed external-code connector not found");
     }
-    const error = await set(
-      authorizeExternalCodeSessionConnector$,
-      { ...args, connectorSlug: args.method.connectorSlug },
-      signal,
-    );
-    return (
-      error ?? {
-        status: 200,
-        body: { status: "complete", connectionId: connector.id },
-      }
-    );
+    return {
+      status: 200,
+      body: { status: "complete", connectionId: connector.id },
+    };
   },
 );
 
@@ -696,8 +652,6 @@ const createExternalCodeSession$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly agentId: string | undefined;
-      readonly authorizeAgent: true | undefined;
       readonly connectorSlug: ConnectorSlug;
       readonly authMethod: ConnectorAuthMethodId;
       readonly account: ConnectorAccountMutationIntent;
@@ -735,8 +689,6 @@ const createExternalCodeSession$ = command(
       .values({
         orgId: args.orgId,
         userId: args.userId,
-        agentId: args.agentId,
-        authorizeAgent: connectorAgentAuthorizationRequested(args),
         connectorSlug: args.connectorSlug,
         authMethod: args.authMethod,
         status: "pending",
@@ -802,23 +754,12 @@ export const startBuiltinConnectorExternalCodeSession$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly agentId: string | undefined;
-      readonly authorizeAgent: true | undefined;
       readonly connectorSlug: ConnectorSlug;
       readonly authMethod: ConnectorAuthMethodId;
       readonly account: ConnectorAccountMutationIntent;
     },
     signal: AbortSignal,
   ) => {
-    const agentTarget = await set(
-      validateConnectorAuthorizationTarget$,
-      args,
-      signal,
-    );
-    if (!agentTarget.ok) {
-      return badRequestMessage(agentTarget.message);
-    }
-
     const resolver = await set(readConnectorResolver$, [args.connectorSlug]);
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
@@ -869,8 +810,6 @@ export const startBuiltinConnectorExternalCodeSession$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        agentId: args.agentId,
-        authorizeAgent: args.authorizeAgent,
         connectorSlug: resolved.connectorSlug,
         authMethod: resolved.authMethodId,
         account: args.account,
@@ -1042,7 +981,7 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
       );
     }
 
-    const response = await set(
+    return await set(
       completeClaimedExternalCodeSession$,
       {
         ...resolvedClient,
@@ -1054,17 +993,5 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
       },
       signal,
     );
-    if (response.status !== 200) {
-      return response;
-    }
-    const authorizationError = await set(
-      authorizeExternalCodeSessionConnector$,
-      { ...args, session, connectorSlug: resolvedMethod.connectorSlug },
-      signal,
-    );
-    return {
-      ...(authorizationError ?? response),
-      marketingRewardEventId: response.marketingRewardEventId,
-    };
   },
 );

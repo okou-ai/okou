@@ -1,3 +1,5 @@
+import { ROUTES } from "../../signals/route-paths.ts";
+import { detachedNavigateTo$ } from "../../signals/route.ts";
 // The chat actions the slash menu offers when the slash-actions switch is on.
 // Each one consumes the slash token, closes the menu, and then hands over to
 // the control that already owns the action elsewhere in the product.
@@ -46,7 +48,6 @@ import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../signals/external/run-models.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { navigateToAgentChat$ } from "../../signals/okou-page/agent-chat-navigation.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   formatChatEffort,
@@ -354,7 +355,6 @@ function useComposerActions(
   composer: ComposerSignals,
   leave: () => void,
 ): SlashAction[] {
-  const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
   const openConnectors = useSet(composer.connector.openAddConnectorsDialog$);
   const insertText = useSet(composer.editor.insertText$);
@@ -372,7 +372,7 @@ function useComposerActions(
       keywords: ["connect", "connector", "integration"],
       run: () => {
         leave();
-        detach(openConnectors(pageSignal), Reason.DomCallback);
+        openConnectors();
       },
     },
     {
@@ -403,7 +403,7 @@ function useThreadActions(
 ): SlashAction[] {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const navigateToAgentChat = useSet(navigateToAgentChat$);
+  const navigateHome = useSet(detachedNavigateTo$);
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
   const pin = useSet(pinChatThread$);
   const unpin = useSet(unpinChatThread$);
@@ -428,10 +428,7 @@ function useThreadActions(
       keywords: ["new", "chat"],
       run: () => {
         leave();
-        detach(
-          navigateToAgentChat(composer.agentId, undefined, pageSignal),
-          Reason.DomCallback,
-        );
+        navigateHome(ROUTES.home);
       },
     },
     {

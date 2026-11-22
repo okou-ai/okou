@@ -6,7 +6,6 @@ import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 
 import {
   buildSlackSystemPrompt,
@@ -147,10 +146,13 @@ export function createSlackLaunchContext(args: SlackLaunchSource) {
           ),
         ),
       )
-      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
       .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+        chatThreads,
+        and(
+          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.orgId, args.orgId),
+          eq(chatThreads.userId, args.userId),
+        ),
       )
       .where(
         and(
@@ -177,6 +179,23 @@ function mentionUserInfoMap(
   );
 }
 
+function slackDeliveryFromContext(context: NonNullable<SlackThreadContext>) {
+  return {
+    ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
+    channelId: context.channelId,
+    threadTs: context.threadTs,
+    ...(context.routeThreadTs ? { routeThreadTs: context.routeThreadTs } : {}),
+  };
+}
+
+export function createSlackQueuedDelivery(args: SlackLaunchSource) {
+  const context$ = createSlackLaunchContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context ? slackDeliveryFromContext(context) : null;
+  });
+}
+
 export const loadSlackQueuedLaunchMaterial$ = command(
   async (
     { get },
@@ -188,35 +207,12 @@ export const loadSlackQueuedLaunchMaterial$ = command(
     if (!context) {
       return null;
     }
-    const messagePrompt = resolveUserMentions(
-      context.messageText,
-      mentionUserInfoMap(context.mentionDisplayNames),
-    );
     return {
-      prompt: canonicalSlackAgentPrompt(
-        messagePrompt,
-        context.messageFiles,
-        context.messageAssets,
-      ),
-      appendSystemPrompt: buildSlackSystemPrompt({
-        botUserId: context.botUserId,
-        channelId: context.channelId,
-        channelType: context.channelType,
-        threadTs: context.threadTs,
-        integrationNote: resolveIntegrationNotePrompt({
-          triggerSource: "slack",
-          featureSwitchContext: args.featureSwitchContext,
-        }),
-        executionContext: context.conversationContext,
+      ...slackPromptFromContext({
+        context,
+        featureSwitchContext: args.featureSwitchContext,
       }),
-      slackDelivery: {
-        ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
-        channelId: context.channelId,
-        threadTs: context.threadTs,
-        ...(context.routeThreadTs
-          ? { routeThreadTs: context.routeThreadTs }
-          : {}),
-      },
+      slackDelivery: slackDeliveryFromContext(context),
       userInfoExtras:
         context.senderDisplayName || context.senderUserId
           ? {
@@ -231,3 +227,34 @@ export const loadSlackQueuedLaunchMaterial$ = command(
     };
   },
 );
+
+export function slackPromptFromContext({
+  context,
+  featureSwitchContext,
+}: {
+  readonly context: NonNullable<SlackThreadContext>;
+  readonly featureSwitchContext: FeatureSwitchContext;
+}) {
+  const messagePrompt = resolveUserMentions(
+    context.messageText,
+    mentionUserInfoMap(context.mentionDisplayNames),
+  );
+  return {
+    prompt: canonicalSlackAgentPrompt(
+      messagePrompt,
+      context.messageFiles,
+      context.messageAssets,
+    ),
+    appendSystemPrompt: buildSlackSystemPrompt({
+      botUserId: context.botUserId,
+      channelId: context.channelId,
+      channelType: context.channelType,
+      threadTs: context.threadTs,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: "slack",
+        featureSwitchContext,
+      }),
+      executionContext: context.conversationContext,
+    }),
+  };
+}

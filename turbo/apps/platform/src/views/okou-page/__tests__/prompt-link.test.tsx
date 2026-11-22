@@ -1,11 +1,10 @@
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   marketingHandoffsContract,
   type MarketingHandoffManifest,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -36,12 +35,8 @@ import { buildRunModel } from "./chat-model-builders.ts";
 
 const context = testContext();
 
-const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-const DESIGN_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
-
 interface PromptLaunchCapture {
   readonly createdThreads: {
-    readonly connectorSelections: readonly unknown[] | undefined;
     readonly model: string | null | undefined;
     readonly reasoningEffort: string | undefined;
     readonly serviceTier: string | null | undefined;
@@ -58,7 +53,6 @@ function capturePromptLaunch(
   const capture: PromptLaunchCapture = { createdThreads: [], sends: [] };
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     capture.createdThreads.push({
-      connectorSelections: body.connectorSelections,
       model: body.model,
       reasoningEffort: body.reasoningEffort,
       serviceTier: body.serviceTier,
@@ -142,28 +136,6 @@ function templatePart(send: ChatEventSendBody): UserMessagePart {
   return part;
 }
 
-test("A prompt link prefills a specific agent's chat", async () => {
-  const user = userEvent.setup();
-  const capture = capturePromptLaunch();
-  context.mocks.data.agents([
-    { agentId: DEFAULT_AGENT_ID, displayName: "General" },
-    { agentId: DESIGN_AGENT_ID, displayName: "Design" },
-  ]);
-  await setupPage({
-    context,
-    path: `/agents/${DESIGN_AGENT_ID}/chat?prompt=Draft%20a%20launch%20brief`,
-  });
-
-  const composer = await waitForDraft("Draft a launch brief");
-  await user.type(composer, " for Friday");
-
-  expect(composer).toHaveTextContent("Draft a launch brief for Friday");
-  expect(pathname()).toBe(`/agents/${DESIGN_AGENT_ID}/chat`);
-  expect(search()).toBe("");
-  expect(capture.createdThreads).toHaveLength(0);
-  expect(capture.sends).toHaveLength(0);
-});
-
 test("A prompt link prefills a new chat from Home", async () => {
   const user = userEvent.setup();
   const capture = capturePromptLaunch();
@@ -178,42 +150,6 @@ test("A prompt link prefills a new chat from Home", async () => {
   expect(composer).toHaveTextContent(
     "Outline the customer interview questions",
   );
-  expect(pathname()).toBe(`/agents/${DEFAULT_AGENT_ID}/chat`);
-  expect(search()).toBe("");
-  expect(capture.createdThreads).toHaveLength(0);
-  expect(capture.sends).toHaveLength(0);
-});
-
-test("My Okou prefills a prompt link on its chat page at Home", async () => {
-  const capture = capturePromptLaunch();
-  await setupPage({
-    context,
-    path: "/?prompt=Outline%20the%20customer%20interview",
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
-  });
-
-  await waitForDraft("Outline the customer interview");
-
-  expect(pathname()).toBe("/");
-  expect(search()).toBe("");
-  expect(capture.createdThreads).toHaveLength(0);
-  expect(capture.sends).toHaveLength(0);
-});
-
-test("My Okou moves an agent chat prompt link to Home", async () => {
-  const capture = capturePromptLaunch();
-  context.mocks.data.agents([
-    { agentId: DEFAULT_AGENT_ID, displayName: "General" },
-    { agentId: DESIGN_AGENT_ID, displayName: "Design" },
-  ]);
-  await setupPage({
-    context,
-    path: `/agents/${DESIGN_AGENT_ID}/chat?prompt=Draft%20a%20launch%20brief`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
-  });
-
-  await waitForDraft("Draft a launch brief");
-
   expect(pathname()).toBe("/");
   expect(search()).toBe("");
   expect(capture.createdThreads).toHaveLength(0);
@@ -249,7 +185,6 @@ test("A prompt route starts a chat with its selected personal subscription model
   const parts = userMessageParts(send);
 
   expect(capture.createdThreads[0]).toStrictEqual({
-    connectorSelections: undefined,
     model: "gpt-6-astra",
     reasoningEffort: undefined,
     serviceTier: null,
@@ -338,7 +273,7 @@ test("Completing a prompt link preserves a model chosen in a later composer", as
   await waitForPromptLaunch("Finish the linked task", capture);
 
   act(() => {
-    window.history.pushState(null, "", `/agents/${DEFAULT_AGENT_ID}/chat`);
+    window.history.pushState(null, "", `/`);
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
   await expect(
@@ -430,7 +365,7 @@ test("A retired video template link keeps its brief as an editable draft", async
   expect(composer).toHaveTextContent(
     "Create a cinematic product film for launch",
   );
-  expect(pathname()).toBe(`/agents/${DEFAULT_AGENT_ID}/chat`);
+  expect(pathname()).toBe("/");
   expect(search()).toBe("");
   expect(document.querySelector("[data-composer-inline-template]")).toBeNull();
   expect(capture.createdThreads).toHaveLength(0);
@@ -467,13 +402,13 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   };
   const draftUpdates: unknown[] = [];
   context.mocks.data.availableRunModels([]);
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: savedDraft,
       draftAttachments: null,
     });
   });
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
     draftUpdates.push(body);
     return respond(204);
   });

@@ -168,6 +168,22 @@ def validate_phase_clock(value, begin, end, message):
     return value
 
 
+def witness_identity(event):
+    """Return the recorded sandbox and backing generation in witness order."""
+    return event["sandbox_id"], event["backing_generation"]
+
+
+def witness_identity_changed(events, identity):
+    """Stop at the first witness with a different original identity."""
+    return any(witness_identity(event) != identity for event in events)
+
+
+def validate_witness_phases(events, phases, message):
+    """Require the exact declared phase sequence in witness order."""
+    if tuple(event["phase"] for event in events) != phases:
+        raise ValueError(message)
+
+
 def validate_witness_clock_order(events, message):
     """Require strict two-clock order in an already-admitted witness sequence."""
     for field in ("monotonic_ns", "unix_ns"):
@@ -356,20 +372,24 @@ def _validate_receipts(directory, cases, phases, collector):
     results = {}
     sandbox_ids, backing_generations = set(), set()
     for case, events in sorted(receipts.items()):
-        if tuple(e["phase"] for e in events) != phases:
-            raise ValueError(f"missing, duplicate or unordered native phases: {case}")
+        validate_witness_phases(
+            events, phases, f"missing, duplicate or unordered native phases: {case}",
+        )
         if events[0]["evidence"].get("artifacts") != expected:
             raise ValueError("native source/artifact/input identity mismatch")
         times = [e["monotonic_ns"] for e in events]
         by_phase = {e["phase"]: e for e in events}
         if any(a >= b for a, b in zip(times, times[1:])):
             raise ValueError("native phase clocks do not positively order the work")
-        identity = (events[1]["sandbox_id"], events[1]["backing_generation"])
+        identity = witness_identity(events[1])
         for value in identity:
             if not is_canonical_uuid(value):
                 raise ValueError("native identity is not one canonical original generation")
-        if identity[0] in sandbox_ids or identity[1] in backing_generations or any(
-                (e["sandbox_id"], e["backing_generation"]) != identity for e in events[2:]):
+        if (
+            identity[0] in sandbox_ids
+            or identity[1] in backing_generations
+            or witness_identity_changed(events[2:], identity)
+        ):
             raise ValueError("native backing was reused or changed across phases")
         sandbox_ids.add(identity[0])
         backing_generations.add(identity[1])
@@ -409,8 +429,13 @@ def _validate_receipts(directory, cases, phases, collector):
     return result, collector, receipts
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+def run_cli(validate, description, *, sort_keys=False):
+    """Run one Guarded Idle directory reader and print its JSON report."""
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("directory", type=pathlib.Path)
     args = parser.parse_args()
-    print(json.dumps(validate(args.directory), indent=2))
+    print(json.dumps(validate(args.directory), indent=2, sort_keys=sort_keys))
+
+
+if __name__ == "__main__":
+    run_cli(validate, __doc__)

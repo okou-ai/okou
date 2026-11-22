@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
@@ -18,11 +19,41 @@ import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
-    @GET("/api/agents/{id}/draft")
-    suspend fun `agentDraft`(
+    @GET("/api/artifacts/catalog")
+    suspend fun `artifactCatalogWire`(
         @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-    ): Response<ComposerDraft>
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ArtifactCatalog>
+
+    @GET("/api/artifacts/catalog/{artifactId}")
+    suspend fun `artifactDetailWire`(
+        @Header("Authorization") token: String,
+        @Path("artifactId") `pathArtifactId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ArtifactDetail>
+
+    @GET("/api/artifact-references/{reference}")
+    suspend fun `resolveArtifactReferenceWire`(
+        @Header("Authorization") token: String,
+        @Path("reference") `pathReference`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ArtifactReference>
+
+    @GET("/api/artifact-references/{reference}/download")
+    suspend fun `artifactDownload`(
+        @Header("Authorization") token: String,
+        @Path("reference") `pathReference`: String,
+    ): Response<ArtifactDownload>
+
+    @GET("/api/host/sites/{publicSlug}/preview")
+    suspend fun `artifactSitePreview`(
+        @Header("Authorization") token: String,
+        @Path("publicSlug") `pathPublicSlug`: String,
+        @Query("hostname") `queryHostname`: String,
+    ): Response<ArtifactSitePreview>
+
+    @GET("/api/chat-drafts/composer")
+    suspend fun `workspaceDraft`(@Header("Authorization") token: String): Response<ComposerDraft>
 
     @GET("/api/chat-threads/{id}/draft")
     suspend fun `threadDraft`(
@@ -30,11 +61,10 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
     ): Response<ComposerDraft>
 
-    @PATCH("/api/agents/{id}/draft")
-    suspend fun `saveAgentDraft`(
+    @PATCH("/api/chat-drafts/composer")
+    suspend fun `saveWorkspaceDraft`(
         @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Body body: SaveAgentDraft,
+        @Body body: SaveWorkspaceDraft,
     ): Response<Unit>
 
     @PATCH("/api/chat-threads/{id}")
@@ -57,6 +87,18 @@ internal interface CanonicalApi {
 
     @GET("/api/billing/status")
     suspend fun `recoveryBilling`(@Header("Authorization") token: String): Response<RecoveryBilling>
+
+    @GET("/api/billing/usage-pack-credits")
+    suspend fun `usagePackCredits`(
+        @Header("Authorization") token: String
+    ): Response<UsagePackCredits>
+
+    @POST("/api/me/model-provider-accounts/{id}/activate")
+    suspend fun `activateModelAccount`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: ActivateModelAccountRequest,
+    ): Response<ActivatedModelAccount>
 
     @POST("/api/me/model-provider-accounts/{id}/subscription-reset")
     suspend fun `resetSubscription`(
@@ -136,10 +178,10 @@ internal interface CanonicalApi {
     ): Response<ChatEvents>
 
     @GET("/api/indicators")
-    suspend fun `indicators`(@Header("Authorization") token: String): Response<Indicators>
-
-    @GET("/api/agents")
-    suspend fun `agents`(@Header("Authorization") token: String): Response<Agents>
+    suspend fun `indicators`(
+        @Header("Authorization") token: String,
+        @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
+    ): Response<Indicators>
 
     @GET("/api/projects/snapshot")
     suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>
@@ -149,9 +191,6 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Query("sinceSeqId") `querySinceSeqId`: Long,
     ): Response<ProjectEvents>
-
-    @GET("/api/feature-switches")
-    suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
 
     @POST("/api/chat/events/catch-up")
     suspend fun `historyCatchUp`(
@@ -225,6 +264,20 @@ internal interface CanonicalApi {
         @Body body: RenameThreadRequest,
     ): Response<Unit>
 
+    @PATCH("/api/projects/{id}")
+    suspend fun `renameProject`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: RenameProjectRequest,
+    ): Response<RenamedProject>
+
+    @DELETE("/api/chat-threads/{id}")
+    suspend fun `deleteThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
+    ): Response<Unit>
+
     @POST("/api/chat-threads/{id}/pin")
     suspend fun `pinThread`(
         @Header("Authorization") token: String,
@@ -246,6 +299,131 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
         @Body body: ReorderPinnedThreadRequest,
     ): Response<Unit>
+}
+
+internal suspend fun CanonicalApi.`artifactCatalog`(
+    token: String,
+    query: ArtifactCatalogQuery,
+): Response<ArtifactCatalog> = `artifactCatalogWire`(token, query.toQueryParameters())
+
+internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(ArtifactCatalogQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all {
+                    it in setOf("limit", "cursor", "kind", "chatThreadId", "keyword")
+                } &&
+                    (!value.containsKey("limit") ||
+                        value["limit"].let { field ->
+                            (field is JsonPrimitive &&
+                                !field.isString &&
+                                field.doubleOrNull?.let {
+                                    it.isFinite() && it % 1.0 == 0.0 && it <= 200.0 && it > 0.0
+                                } == true)
+                        }) &&
+                    (!value.containsKey("cursor") ||
+                        value["cursor"].let { field ->
+                            (field is JsonPrimitive && field.isString)
+                        }) &&
+                    (!value.containsKey("kind") ||
+                        value["kind"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content in
+                                    setOf(
+                                        "file",
+                                        "hosted-site",
+                                        "image",
+                                        "video",
+                                        "avatar",
+                                        "presentation",
+                                        "shared-thread",
+                                    ))
+                        }) &&
+                    (!value.containsKey("chatThreadId") ||
+                        value["chatThreadId"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                Regex(
+                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    )
+                                    .containsMatchIn(field.content))
+                        }) &&
+                    (!value.containsKey("keyword") ||
+                        value["keyword"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content.length >= 1 &&
+                                field.content.length <= 256)
+                        }))
+            )
+            .count { it } == 1
+    ) {
+        "Invalid ArtifactCatalogQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
+internal suspend fun CanonicalApi.`artifactDetail`(
+    token: String,
+    `pathArtifactId`: String,
+    query: ArtifactDetailQuery,
+): Response<ArtifactDetail> =
+    `artifactDetailWire`(token, `pathArtifactId`, query.toQueryParameters())
+
+internal fun ArtifactDetailQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(ArtifactDetailQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("sourceKind", "chatThreadId") } &&
+                    (!value.containsKey("sourceKind") ||
+                        value["sourceKind"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content == "shared-thread")
+                        }) &&
+                    (!value.containsKey("chatThreadId") ||
+                        value["chatThreadId"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                Regex(
+                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    )
+                                    .containsMatchIn(field.content))
+                        }))
+            )
+            .count { it } == 1
+    ) {
+        "Invalid ArtifactDetailQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
+internal suspend fun CanonicalApi.`resolveArtifactReference`(
+    token: String,
+    `pathReference`: String,
+    query: ResolveArtifactReferenceQuery,
+): Response<ArtifactReference> =
+    `resolveArtifactReferenceWire`(token, `pathReference`, query.toQueryParameters())
+
+internal fun ResolveArtifactReferenceQuery.toQueryParameters(): Map<String, String> {
+    val value =
+        Json.encodeToJsonElement(ResolveArtifactReferenceQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind") } &&
+                    (!value.containsKey("kind") ||
+                        value["kind"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content in setOf("file", "html", "artifact"))
+                        }))
+            )
+            .count { it } == 1
+    ) {
+        "Invalid ResolveArtifactReferenceQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }
 
 internal suspend fun CanonicalApi.`historyRows`(

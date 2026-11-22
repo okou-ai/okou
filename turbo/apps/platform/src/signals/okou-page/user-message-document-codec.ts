@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
@@ -29,13 +30,8 @@ import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
-import {
-  serializeAgentMention,
-  splitAgentMentionSegments,
-} from "./composer-agent-suggestion-domain.ts";
 
 export const PROJECT_MENTION_NODE_NAME = "projectMention";
-export const AGENT_MENTION_NODE_NAME = "agentMention";
 export const CHAT_THREAD_MENTION_NODE_NAME = "chatThreadMention";
 export const TEMPLATE_ATTACHMENT_NODE_NAME = "templateAttachment";
 export const INLINE_TEMPLATE_NODE_NAME = "inlineTemplate";
@@ -80,12 +76,18 @@ export function prependMessageDocument(
     return userMessageDocumentSchema.parse(prefix);
   }
   const hasCurrentSource = current.parts.some((part) => {
-    return part.type === "source" || part.type === "automation";
+    return (
+      part.type === "source" ||
+      part.type === "automation" ||
+      isChatRunReference(part)
+    );
   });
   const parts: UserMessagePart[] = prefix.parts.map((part) => {
     if (
       hasCurrentSource &&
-      (part.type === "source" || part.type === "automation")
+      (part.type === "source" ||
+        part.type === "automation" ||
+        isChatRunReference(part))
     ) {
       return {
         type: "additional_info",
@@ -132,21 +134,6 @@ function chatThreadPart(
     type: "chat_thread",
     threadId,
     titleSnapshot: title,
-  };
-}
-
-function agentPart(
-  node: ProseMirrorNode,
-): Extract<UserMessagePart, { type: "agent" }> | null {
-  const agentId: unknown = node.attrs.agentId;
-  const name: unknown = node.attrs.name;
-  if (typeof agentId !== "string" || typeof name !== "string") {
-    return null;
-  }
-  return {
-    type: "agent",
-    agentId,
-    nameSnapshot: name,
   };
 }
 
@@ -214,14 +201,6 @@ function appendParagraphParts(
         return false;
       }
       parts.push(parsed.data);
-      continue;
-    }
-    if (node.type.name === AGENT_MENTION_NODE_NAME) {
-      const part = agentPart(node);
-      if (!part) {
-        return false;
-      }
-      parts.push(part);
       continue;
     }
     if (node.type.name === CHAT_THREAD_MENTION_NODE_NAME) {
@@ -377,7 +356,6 @@ function feedbackPart(node: ProseMirrorNode): UserMessagePart | null {
         part.type === "text" ||
         part.type === "chat_thread" ||
         part.type === "project" ||
-        part.type === "agent" ||
         part.type === "template"
       );
     })
@@ -692,32 +670,6 @@ function templateNode(part: Extract<UserMessagePart, { type: "template" }>) {
   } satisfies JSONContent;
 }
 
-function agentMentionNode(part: Extract<UserMessagePart, { type: "agent" }>) {
-  return {
-    type: AGENT_MENTION_NODE_NAME,
-    attrs: {
-      agentId: part.agentId,
-      name: part.nameSnapshot,
-      avatarUrl: null,
-    },
-  } satisfies JSONContent;
-}
-
-function agentMentionInlineContent(line: string): JSONContent[] {
-  return splitAgentMentionSegments(line).map((segment): JSONContent => {
-    return segment.type === "text"
-      ? { type: "text", text: segment.text }
-      : {
-          type: AGENT_MENTION_NODE_NAME,
-          attrs: {
-            agentId: segment.agentId,
-            name: segment.name,
-            avatarUrl: null,
-          },
-        };
-  });
-}
-
 function feedbackNoteToPrompt(note: readonly FeedbackNotePart[]): string {
   return note
     .map((part) => {
@@ -729,9 +681,6 @@ function feedbackNoteToPrompt(note: readonly FeedbackNotePart[]): string {
       }
       if (part.type === "project") {
         return `[${part.nameSnapshot}](/projects/${part.projectId})`;
-      }
-      if (part.type === "agent") {
-        return serializeAgentMention(part.agentId, part.nameSnapshot);
       }
       return `Select ${part.titleSnapshot} ${part.template.type} template`;
     })
@@ -777,15 +726,13 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
       trailingParagraph = false;
       continue;
     }
-    if (part.type === "agent") {
-      paragraphContent.push(agentMentionNode(part));
-      trailingParagraph = false;
-      continue;
-    }
     const lines = part.text.split("\n");
     for (const [index, line] of lines.entries()) {
       if (line.length > 0) {
-        paragraphContent.push(...agentMentionInlineContent(line));
+        paragraphContent.push({
+          type: "text",
+          text: line,
+        });
         trailingParagraph = false;
       }
       if (index < lines.length - 1) {
@@ -803,7 +750,7 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
 
 function formattedFeedbackParts(
   parts: readonly Extract<UserMessagePart, { type: "feedback" }>[],
-  agentRunSourceTitle: string | undefined,
+  chatRunSourceTitle: string | undefined,
 ): string {
   return formatFeedbackPrompt(
     parts.map((part) => {
@@ -813,15 +760,15 @@ function formattedFeedbackParts(
         ...(part.source ? { source: part.source } : {}),
       };
     }),
-    agentRunSourceTitle,
+    chatRunSourceTitle,
   );
 }
 
-function agentRunSourceTitle(
+function chatRunSourceTitle(
   parts: readonly UserMessagePart[],
 ): string | undefined {
   return parts.find((part) => {
-    return part.type === "source" && part.kind === "agent";
+    return isChatRunReference(part);
   })?.titleSnapshot;
 }
 
@@ -851,7 +798,10 @@ function appendRestoredText(state: RestoredEditorState, text: string): void {
   const lines = text.split("\n");
   for (const [index, line] of lines.entries()) {
     if (line.length > 0) {
-      state.paragraphContent.push(...agentMentionInlineContent(line));
+      state.paragraphContent.push({
+        type: "text",
+        text: line,
+      });
       state.trailingParagraph = false;
     }
     if (index < lines.length - 1) {
@@ -874,6 +824,9 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
   }).length;
 
   for (const [partIndex, part] of parts.entries()) {
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "text") {
       appendRestoredText(state, part.text);
       continue;
@@ -894,11 +847,6 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
         type: PROJECT_MENTION_NODE_NAME,
         attrs: { projectId: part.projectId, name: part.nameSnapshot },
       });
-      state.trailingParagraph = false;
-      continue;
-    }
-    if (part.type === "agent") {
-      state.paragraphContent.push(agentMentionNode(part));
       state.trailingParagraph = false;
       continue;
     }
@@ -997,7 +945,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
-  const sourceTitle = agentRunSourceTitle(parsed.data.parts);
+  const sourceTitle = chatRunSourceTitle(parsed.data.parts);
   const flushInlineText = () => {
     if (inlineText.length > 0) {
       blocks.push(inlineText);
@@ -1012,6 +960,9 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   };
 
   for (const part of parsed.data.parts) {
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "feedback") {
       flushInlineText();
       feedbackParts.push(part);
@@ -1027,8 +978,6 @@ export function messageDocumentToPrompt(value: unknown): string | null {
       );
     } else if (part.type === "project") {
       inlineText += `[${part.nameSnapshot}](/projects/${part.projectId})`;
-    } else if (part.type === "agent") {
-      inlineText += serializeAgentMention(part.agentId, part.nameSnapshot);
     } else if (part.type === "template") {
       inlineText += `Select ${part.titleSnapshot} ${part.template.type} template`;
     }
@@ -1053,7 +1002,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
-  const sourceTitle = agentRunSourceTitle(parsed.data.parts);
+  const sourceTitle = chatRunSourceTitle(parsed.data.parts);
   const flushInlineText = () => {
     if (inlineText.length > 0) {
       blocks.push(inlineText);
@@ -1068,6 +1017,9 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   };
 
   for (const part of parsed.data.parts) {
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "feedback") {
       flushInlineText();
       const context = suggestionContexts.get(part);
@@ -1095,15 +1047,6 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
       );
       continue;
     }
-    if (part.type === "agent") {
-      inlineText += i18n.t(
-        ($) => {
-          return $.chat.messageDocument.agent;
-        },
-        { name: part.nameSnapshot },
-      );
-      continue;
-    }
     if (
       part.type === "source" ||
       part.type === "automation" ||
@@ -1124,6 +1067,16 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
         { title: part.titleSnapshot },
       );
       inlineText += templateLabel;
+      continue;
+    }
+
+    if (part.type === "voice") {
+      flushInlineText();
+      blocks.push(
+        i18n.t(($) => {
+          return $.chat.messageDocument.voice;
+        }),
+      );
       continue;
     }
 

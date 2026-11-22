@@ -1,17 +1,17 @@
 import { array, object, string, type infer as zInfer } from "zod";
 
-import { permissionSchema } from "../validators/user-permission-grants";
+import {
+  applyUserPermissionGrantSchema,
+  permissionSchema,
+  userPermissionGrantActionSchema,
+  userPermissionGrantApplyModeSchema,
+} from "../validators/user-permission-grants";
 import { authHeadersSchema, initContract } from "./base";
 import {
   connectorAccountTargetQuerySchema,
   connectorAccountTargetSchema,
 } from "./connector-accounts";
 import { apiErrorSchema } from "./errors";
-import {
-  applyUserPermissionGrantSchema,
-  userPermissionGrantActionSchema,
-  userPermissionGrantApplyModeSchema,
-} from "./user-permission-grants";
 
 const c = initContract();
 const connectorPermissionsSchema = object({

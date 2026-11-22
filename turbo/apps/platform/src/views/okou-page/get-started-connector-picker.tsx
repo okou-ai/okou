@@ -213,7 +213,6 @@ export function QuestConnectorPicker({
           connectorIcon: connector.icon,
           // The quest is about giving the assistant something to work on, so
           // the agents this workspace can already see get the new connector.
-          authorizeVisibleAgents: true,
           ...accountOptions,
         },
         pageSignal,

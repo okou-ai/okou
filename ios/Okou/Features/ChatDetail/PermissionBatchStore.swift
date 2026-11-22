@@ -112,17 +112,14 @@ final class PermissionBatchStore {
         let cached = try await read.load()
         try Task.checkCancellation()
         guard !closed, self.generation == generation else { return }
-        guard cached.complete, cached.connectorScoped == reviewed.connectorScoped else {
-          throw ChatError.invalidContract("Permission scope changed. Review the request again.")
+        guard cached.complete else {
+          throw ChatError.invalidContract("These permissions are no longer available.")
         }
         let verified: ChatPermissionBatchSnapshot
         if reviewed.allAllowed {
           // "Continue chat" never silently re-grants a permission revoked after review.
           try await commands.batchPermissions.validateContext(action)
           let current = try await commands.batchPermissions.load(action)
-          guard current.connectorScoped == reviewed.connectorScoped else {
-            throw ChatError.invalidContract("Permission scope changed. Review the request again.")
-          }
           guard current.allAllowed else {
             throw ChatError.invalidContract("Some permissions are no longer allowed. Review again.")
           }
@@ -145,12 +142,12 @@ final class PermissionBatchStore {
           }
           if !delivered {
             let thread = ChatThread(
-              id: action.threadID, agentID: action.agentID, title: "", createdAt: .now,
+              id: action.threadID, agentID: nil, title: "", createdAt: .now,
               updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
             continuationUncertain = true
             _ = try await commands.send(
               thread: thread, text: prompt, clientEventID: clientEventID,
-              chatThreadSortEventID: sortEventID, expectedAgentID: action.agentID)
+              chatThreadSortEventID: sortEventID)
           }
           try Task.checkCancellation()
           guard !closed, self.generation == generation else { return }

@@ -1,20 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import { createProjectOperationId } from "@okouai/core/project-operation-id";
+import { projectRoutes } from "../projects";
+import { mcpProjectChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { withMockNowForTest } from "../../../lib/time";
+import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRouteMocks } from "./helpers/route-test";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
 
 const context = testContext();
@@ -43,15 +46,15 @@ describe("chat search publication", () => {
     await createRunsApi(context).configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    await bdd.readOnboardingStatus(owner);
+    await bdd.provisionWorkspace(owner);
     await bdd.completeOnboarding(owner);
-    const agent = await bdd.createAgent(owner, {
+    await bdd.createAgent(owner, {
       displayName: "Recalled search publication",
       visibility: "private",
     });
     const opened = await chat.requestSendEvent(
       owner,
-      { agentId: agent.agentId, model: null, prompt: "Start the conversation" },
+      { model: null, prompt: "Start the conversation" },
       [201],
     );
     if (opened.status !== 201) {
@@ -63,7 +66,7 @@ describe("chat search publication", () => {
     const threadId = opened.body.threadId;
     await chat.requestSendEvent(
       owner,
-      { agentId: agent.agentId, threadId, clientEventId, prompt: keyword },
+      { threadId, clientEventId, prompt: keyword },
       [201],
     );
     await flushWaitUntilForTest();
@@ -76,7 +79,7 @@ describe("chat search publication", () => {
 
     await chat.requestSendEvent(
       owner,
-      { agentId: agent.agentId, threadId, revokesEventId: clientEventId },
+      { threadId, revokesEventId: clientEventId },
       [201],
     );
     await flushWaitUntilForTest();
@@ -87,7 +90,6 @@ describe("chat search publication", () => {
     await chat.requestSendEvent(
       owner,
       {
-        agentId: agent.agentId,
         threadId,
         clientEventId: racingEventId,
         prompt: keyword,
@@ -99,12 +101,12 @@ describe("chat search publication", () => {
     await Promise.all([
       chat.requestSendEvent(
         owner,
-        { agentId: agent.agentId, threadId, revokesEventId: racingEventId },
+        { threadId, revokesEventId: racingEventId },
         [201],
       ),
       chat.requestSendEvent(
         owner,
-        { agentId: agent.agentId, threadId, prompt: survivingKeyword },
+        { threadId, prompt: survivingKeyword },
         [201],
       ),
     ]);
@@ -134,14 +136,13 @@ describe("chat search publication", () => {
       );
     });
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    await bdd.readOnboardingStatus(owner);
+    await bdd.provisionWorkspace(owner);
     await bdd.completeOnboarding(owner);
     const named = await bdd.createAgent(owner, {
       displayName: "MCP Research",
       visibility: "private",
     });
     const peer = bdd.user({ orgId: owner.orgId });
-    await bdd.readOnboardingStatus(peer);
     await bdd.completeOnboarding(peer);
     const shared = await bdd.createAgent(peer, {
       displayName: "Shared research",
@@ -150,7 +151,7 @@ describe("chat search publication", () => {
       userId: owner.userId,
       orgId: `org_${randomUUID()}`,
     });
-    await bdd.readOnboardingStatus(otherOrg);
+    await bdd.provisionWorkspace(otherOrg);
     await bdd.completeOnboarding(otherOrg);
     const foreign = await bdd.createAgent(otherOrg, {
       displayName: "Other organization",
@@ -164,7 +165,7 @@ describe("chat search publication", () => {
     for (const agentId of [named.agentId, shared.agentId]) {
       const sent = await chat.requestSendEvent(
         owner,
-        { agentId, model: null, prompt: `${keyword} owner ${agentId}` },
+        { model: null, prompt: `${keyword} owner ${agentId}` },
         [201],
       );
       if (sent.status !== 201) {
@@ -179,13 +180,28 @@ describe("chat search publication", () => {
     ] as const) {
       await chat.requestSendEvent(
         actor,
-        { agentId, model: null, prompt: `${keyword} isolated ${agentId}` },
+        { model: null, prompt: `${keyword} isolated ${agentId}` },
         [201],
       );
       await flushWaitUntilForTest();
     }
     const native = await chat.searchChat(owner, keyword);
-    expect(native.results.length).toBeGreaterThan(0);
+    expect(
+      new Set(
+        native.results.map(({ chatThreadId }) => {
+          return chatThreadId;
+        }),
+      ),
+    ).toStrictEqual(
+      new Set(
+        ownerInputs.map(({ threadId }) => {
+          return threadId;
+        }),
+      ),
+    );
+    await expect(
+      chat.searchChat(owner, keyword, { agentId: foreign.agentId }),
+    ).resolves.toStrictEqual(native);
     const token = mcp.authorize(owner);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [owner.orgId, otherOrg.orgId].map((orgId) => {
@@ -209,18 +225,16 @@ describe("chat search publication", () => {
         JSON.parse(response.content[0]?.text ?? "null");
       return raw;
     }
-    const listed = agentsMainContract.list.responses[200].parse(
-      await call(token(), "list_agents"),
-    );
-    async function search(accessToken: string, agentId?: string) {
+    async function search(accessToken: string, projectId?: string) {
       const raw = await call(accessToken, "search_chat_messages", {
         keyword,
-        ...(agentId ? { agentId } : {}),
+        projectId,
       });
-      return { raw, ...mcpChatSearchContract.search.responses[200].parse(raw) };
+      return mcpProjectChatSearchContract.search.responses[200].parse(raw)
+        .results;
     }
     const result = await search(token());
-    const hit = result.results[0];
+    const hit = result[0];
     if (!hit) {
       throw new Error("Expected an indexed MCP hit");
     }
@@ -243,78 +257,87 @@ describe("chat search publication", () => {
         }),
       }),
     );
-    expect(result.raw).toStrictEqual({
-      results: native.results.map(
-        ({ agentName: _name, chatThreadId, matchedMessage, ...hit }) => {
-          const input = ownerInputs.find((item) => {
-            return item.threadId === chatThreadId;
-          });
-          const agent = listed.find((item) => {
-            return item.agentId === input?.agentId;
-          });
-          if (!agent) {
-            throw new Error("Expected the indexed input's visible Agent");
-          }
-          const { chatThreadId: messageThreadId, ...message } = matchedMessage;
-          return {
-            ...hit,
-            agentId: agent.agentId,
-            displayName: agent.displayName,
-            threadId: chatThreadId,
-            matchedMessage: { ...message, threadId: messageThreadId },
-          };
-        },
-      ),
-    });
-    expect(
-      new Set(
-        result.results.map((hit) => {
-          return hit.agentId;
-        }),
-      ),
-    ).toStrictEqual(
-      new Set(
-        ownerInputs.map((input) => {
-          return input.agentId;
-        }),
-      ),
-    );
-    const filtered = await search(token(), named.agentId);
-    expect(filtered.results.length).toBeGreaterThan(0);
-    expect(
-      filtered.results.every((hit) => {
-        return hit.agentId === named.agentId;
+    expect(result).toStrictEqual(
+      native.results.map(({ chatThreadId, matchedMessage, matchedRanges }) => {
+        const { chatThreadId: messageThreadId, ...message } = matchedMessage;
+        return {
+          threadId: chatThreadId,
+          projectId: null,
+          projectName: null,
+          matchedRanges,
+          matchedMessage: { ...message, threadId: messageThreadId },
+        };
       }),
-    ).toBeTruthy();
-    expect(
-      new Set(
-        (await search(token({ sub: peer.userId }))).results.map((hit) => {
-          return hit.agentId;
-        }),
-      ),
-    ).toStrictEqual(new Set([shared.agentId]));
-    expect(
-      new Set(
-        (await search(token({ org_id: otherOrg.orgId }))).results.map((hit) => {
-          return hit.agentId;
-        }),
-      ),
-    ).toStrictEqual(new Set([foreign.agentId]));
+    );
 
+    createRouteMocks(context).clerk.session(
+      owner.userId,
+      owner.orgId,
+      owner.orgRole,
+    );
+    const projects = setupApp({ context, routes: projectRoutes })(
+      projectsContract,
+    );
+    const headers = { authorization: "Bearer clerk-session" };
+    const thread = ownerInputs.find((input) => {
+      return input.agentId === named.agentId;
+    });
+    if (!thread) {
+      throw new Error("Expected indexed owner thread");
+    }
+    const first = createProjectOperationId(now(), randomUUID());
+    const second = createProjectOperationId(now(), randomUUID());
+    for (const [id, name] of [
+      [first, "First Project"],
+      [second, "Second Project"],
+    ] as const) {
+      await accept(
+        projects.create({ headers, body: { id, eventId: id, name } }),
+        [201],
+      );
+      await accept(
+        projects.membership({
+          headers,
+          params: { id: thread.threadId },
+          body: {
+            projectId: id,
+            eventId: createProjectOperationId(now(), randomUUID()),
+          },
+        }),
+        [200],
+      );
+      await expect(search(token(), id)).resolves.toStrictEqual([
+        expect.objectContaining({
+          threadId: thread.threadId,
+          projectId: id,
+          projectName: name,
+        }),
+      ]);
+    }
+    await expect(search(token(), first)).resolves.toStrictEqual([]);
+    await expect(
+      search(token({ sub: peer.userId }), second),
+    ).resolves.toStrictEqual([]);
+    await expect(
+      search(token({ org_id: otherOrg.orgId }), second),
+    ).resolves.toStrictEqual([]);
     await bdd.updateAgentMetadata(peer, shared.agentId, {
       visibility: "private",
     });
     expect(
-      (await search(token())).results.some((hit) => {
-        return hit.agentId === shared.agentId;
-      }),
-    ).toBeFalsy();
-    expect((await search(token({ sub: peer.userId }))).results).toContainEqual(
-      expect.objectContaining({
-        agentId: shared.agentId,
-        displayName: "Shared research",
-      }),
+      new Set(
+        (await search(token())).map(({ threadId }) => {
+          return threadId;
+        }),
+      ),
+    ).toStrictEqual(
+      new Set(
+        ownerInputs.map(({ threadId }) => {
+          return threadId;
+        }),
+      ),
     );
+    await expect(search(token({ sub: peer.userId }))).resolves.toHaveLength(1);
   }, 60_000);
 
   it.each(["UTF-16 ranges", "the documented token policy"] as const)(
@@ -326,7 +349,7 @@ describe("chat search publication", () => {
       await createRunsApi(context).configureRunnerGroup();
       bdd.acceptAgentStorageWrites();
       const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-      await bdd.readOnboardingStatus(owner);
+      await bdd.provisionWorkspace(owner);
       await bdd.completeOnboarding(owner);
       const agent = await bdd.createAgent(owner, {
         displayName: "Unicode research",
@@ -389,7 +412,7 @@ describe("chat search publication", () => {
         examples.map(async (example) => {
           const sent = await chat.requestSendEvent(
             owner,
-            { agentId: agent.agentId, model: null, prompt: example.content },
+            { model: null, prompt: example.content },
             [201],
           );
           if (sent.status !== 201) {
@@ -403,10 +426,9 @@ describe("chat search publication", () => {
       async function search(keyword: string) {
         const response = await mcp.call(token(), "search_chat_messages", {
           keyword,
-          agentId: agent.agentId,
         });
         expect(response.isError).not.toBeTruthy();
-        const result = mcpChatSearchContract.search.responses[200].parse(
+        const result = mcpProjectChatSearchContract.search.responses[200].parse(
           response.structuredContent,
         );
         const native = await chat.searchChat(owner, keyword, {
@@ -509,7 +531,7 @@ describe("chat search publication", () => {
       async () => {
         const opened = await chat.requestSendEvent(
           owner,
-          { agentId: agent.agentId, model: null, prompt: "Ordering setup" },
+          { model: null, prompt: "Ordering setup" },
           [201],
         );
         if (opened.status !== 201) {
@@ -528,7 +550,6 @@ describe("chat search publication", () => {
         await chat.requestSendEvent(
           owner,
           {
-            agentId: agent.agentId,
             threadId,
             prompt: `${keyword} ${marker.label}`,
           },
@@ -541,10 +562,9 @@ describe("chat search publication", () => {
     const token = mcp.authorize(owner);
     const response = await mcp.call(token(), "search_chat_messages", {
       keyword,
-      agentId: agent.agentId,
     });
     expect(response.isError).not.toBeTruthy();
-    const viaMcp = mcpChatSearchContract.search.responses[200].parse(
+    const viaMcp = mcpProjectChatSearchContract.search.responses[200].parse(
       response.structuredContent,
     ).results;
     expect(

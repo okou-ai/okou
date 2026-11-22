@@ -4,7 +4,6 @@ import { deleteMarketingContentGrants$ } from "./marketing-handoff.service";
 import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
@@ -133,13 +132,7 @@ const stopClerkDeletedOwnerRuns$ = command(
         and(
           owner.kind === "user"
             ? eq(chatThreads.userId, owner.userId)
-            : inArray(
-                chatThreads.agentId,
-                db
-                  .select({ id: agents.id })
-                  .from(agents)
-                  .where(eq(agents.orgId, owner.orgId)),
-              ),
+            : eq(chatThreads.orgId, owner.orgId),
           pendingChatQueueEventCondition(),
         ),
       );

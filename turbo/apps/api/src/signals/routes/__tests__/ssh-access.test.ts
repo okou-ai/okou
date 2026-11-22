@@ -118,7 +118,7 @@ describe("live chat SSH Run inventory", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const { defaultAgentId: agentId } = await bdd.readOnboardingStatus(actor);
+    const agentId = await bdd.readDefaultAgentId(actor);
     if (!agentId) {
       throw new Error("Expected onboarding to provide the default Agent");
     }
@@ -417,7 +417,7 @@ describe("live chat SSH Run inventory", () => {
     ).toStrictEqual([listed.body.hosts[1]]);
   });
 
-  it("uses only the Run user's hosts for shared Agents and rejects current visibility loss", async () => {
+  it("uses only the Run owner's hosts regardless of legacy Agent visibility", async () => {
     const runnerSecret = "c".repeat(64);
     mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
     const creatorOwner = {
@@ -497,13 +497,20 @@ describe("live chat SSH Run inventory", () => {
       [200],
     );
     authenticate(user);
-    await accept(inventory().list({ headers: user.token() }), [404]);
-    expect((await accept(runner.resolve(request), [200])).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect((await accept(runner.pin(pin), [200])).body).toStrictEqual({
-      outcome: "unavailable",
-    });
+    const ownedHosts = await accept(
+      inventory().list({ headers: user.token() }),
+      [200],
+    );
+    expect(
+      ownedHosts.body.hosts.map((item) => {
+        return item.id;
+      }),
+    ).toStrictEqual([host.body.id]);
+    expect((await accept(runner.resolve(request), [200])).body.outcome).toBe(
+      "resolved",
+    );
+    const verified = await accept(runner.pin(pin), [200]);
+    expect(verified.body.outcome).toBe("matched");
   });
 
   it("keeps the Run inventory Agent-token and capability scoped", async () => {

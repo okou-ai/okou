@@ -17,6 +17,7 @@ import {
 import { mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
+import { projectRoutes } from "../../projects";
 import { agentsRoutes } from "../../agents";
 import { chatEventsRoutes } from "../../chat-events";
 import { chatThreadRoutes } from "../../chat-threads";
@@ -26,7 +27,7 @@ import { runsCancelRoutes } from "../../runs-cancel";
 import type { ApiTestUser } from "./api-bdd";
 
 export const MCP_WEB_SCOPES =
-  "user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel";
+  "user:org:read okou:chat:read okou:project:read okou:chat:send okou:chat:manage okou:run:cancel";
 const version = "2026-07-28";
 
 export function createMcpWebApi(context: TestContext) {
@@ -157,6 +158,7 @@ export function createMcpWebApi(context: TestContext) {
     context,
     routes: [
       ...agentsRoutes,
+      ...projectRoutes,
       ...runModelsRoutes,
       ...chatThreadRoutes,
       ...chatEventsRoutes,

@@ -15,6 +15,7 @@ import batch_replacement_report as replacement
 import batch_replacement_report_test as replacement_test
 import dual_history_report as dual
 import report
+import report_test
 
 
 def session(thread, message):
@@ -80,8 +81,14 @@ class DualHistoryReportTests(unittest.TestCase):
                     "home_cache_promoted":True,"full_lease_released":True,"tracker_joined":True,
                     "remaining_activation_owners":0,"allocated":released}
             for phase,value,offset in zip(dual.PHASES,values,(.5,4.5,43,43.5,44,47,48,55)):
-                self.duals.append({"version":1,"case":case,"phase":phase,"monotonic_ns":at(offset),
-                    "unix_ns":at(offset)+1000,"sandbox_id":old,"backing_generation":backing,"evidence":value})
+                self.duals.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(offset),
+                    unix_ns=at(offset)+1000,
+                    sandbox_id=old,
+                    backing_generation=backing,
+                    evidence=value,
+                ))
 
     def event(self, phase):
         return next(e for e in self.duals if e["phase"] == phase)

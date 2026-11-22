@@ -15,9 +15,9 @@ function pushedUrls(): string[] {
 
 test("A relative chat notification opens its conversation", async () => {
   const serviceWorker = context.mocks.browser.serviceWorker();
-  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
+  await setupPage({ context, path: "/workflows", host: "app.okou.ai" });
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
 
   serviceWorker.dispatchMessage({
@@ -32,9 +32,9 @@ test("A relative chat notification opens its conversation", async () => {
 
 test("An untrusted or non-chat notification does not navigate Platform", async () => {
   const serviceWorker = context.mocks.browser.serviceWorker();
-  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
+  await setupPage({ context, path: "/workflows", host: "app.okou.ai" });
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
   const navigationCount = pushedUrls().length;
 
@@ -48,10 +48,10 @@ test("An untrusted or non-chat notification does not navigate Platform", async (
   });
   serviceWorker.dispatchMessage({
     type: "NOTIFICATION_CLICK",
-    url: "https://app.okou.ai/agents",
+    url: "https://app.okou.ai/",
   });
 
   expect(pushedUrls()).toHaveLength(navigationCount);
-  expect(window.location.pathname).toBe("/agents");
-  expect(screen.getByRole("heading", { name: "Agents" })).toBeVisible();
+  expect(window.location.pathname).toBe("/workflows");
+  expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
 });

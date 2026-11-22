@@ -20,6 +20,7 @@
     "dotenv": "^18.0.10"
   },
   "devDependencies": {
+    "standardwebhooks": "1.1.1",
     "tsx": "^4.23.15",
     "typescript": "7.0.2"
   }

@@ -1,14 +1,13 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import {
   chatThreadByIdContract,
   chatThreadDraftContract,
   chatThreadPinOrderContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   queryAllByRoleFast,
@@ -117,13 +116,13 @@ function installProjects(
   context.mocks.api(projectsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
   context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {
@@ -138,12 +137,10 @@ async function openChatList(
 ) {
   const workspace = installContinuityWorkspace(context, { caseId, threads });
   installProjects();
-  context.mocks.data.onboardingStatus({ defaultAgentId: threads[0].agentId });
   await setupPage({
     context,
     path,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await waitFor(() => {
     expect(projectToggle("Launch")).toBeInTheDocument();
@@ -219,12 +216,10 @@ test.each([false, true])(
       threads: [archived],
     });
     installProjects([]);
-    context.mocks.data.onboardingStatus({ defaultAgentId: archived.agentId });
     await setupPage({
       context,
       path: "/",
       ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
 
     await expect(
@@ -350,13 +345,13 @@ test("Pinned chats in a Project move among themselves", async () => {
   });
 });
 
-test("A pinned chat moves past another Agent's pin in the same Project", async () => {
+test("A pinned chat moves past another pinned chat in the same Project", async () => {
   const pinnedAt = "2026-09-01T00:00:00Z";
   const ordinary = continuityThread(307, 1, "Ordinary chat");
   const first = {
-    ...continuityThread(307, 2, "Other Agent pin"),
+    ...continuityThread(307, 2, "First pin"),
     projectId: launchId,
-    agentId: "c7000000-0000-4000-a000-000000000009",
+
     pinnedAt,
     pinOrder: "a0",
   };
@@ -371,16 +366,13 @@ test("A pinned chat moves past another Agent's pin in the same Project", async (
   });
   await openChatList(307, [ordinary, first, second], `/chats/${ordinary.id}`);
   await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
-  expect(projectChatTitles()).toStrictEqual(["Other Agent pin", "Second pin"]);
+  expect(projectChatTitles()).toStrictEqual(["First pin", "Second pin"]);
 
   click(chatMenuButton(second.id));
   await screen.findByRole("menu");
   click(menuItemByText("Move up"));
   await waitFor(() => {
-    expect(projectChatTitles()).toStrictEqual([
-      "Second pin",
-      "Other Agent pin",
-    ]);
+    expect(projectChatTitles()).toStrictEqual(["Second pin", "First pin"]);
   });
 });
 
@@ -391,16 +383,19 @@ test("Clicking an expanded, unselected Project title folds its chats and keeps t
     projectId: launchId,
   };
   // A Project page lists the default Agent's chats, so these belong to it.
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
   await openChatList(306, [ordinary, member], `/chats/${ordinary.id}`);
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 
   click(button("Launch", projectRows()));
-  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  await waitFor(() => {
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  });
   expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
 
   click(button("Launch", projectRows()));
-  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  await waitFor(() => {
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  });
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
   expect(threadLink(ordinary.id)).toHaveAttribute("aria-current", "page");
 });

@@ -46,6 +46,16 @@ describe("iOS API consumption CLI", () => {
     expect(output.join("\n")).toContain("inventory covers all Swift API calls");
   });
 
+  it("rejects legacy Agent profile and draft requests on mobile", async () => {
+    await source(String.raw`
+      try await client.request("/api/agents")
+      try await client.request("/api/agents/\(id)")
+      try await client.data("/api/agents/\(id)/draft", method: "PATCH", body: body)
+    `);
+    expect(await lint()).toBe(1);
+    expect(errors).toHaveLength(3);
+  });
+
   it("rejects a newly consumed endpoint with an actionable source location", async () => {
     await source(String.raw`
       try await api.request("/api/host/sites/\(id)/new-operation")
@@ -104,15 +114,15 @@ describe("iOS API consumption CLI", () => {
       let bytes = try JSONSerialization.data(withJSONObject: object)
       let result = try await URLSession.shared.data(from: signedURL)
       if path == "/api/recognized-url" { recognize() }
-      try await client.request("/api/agents")
+      try await client.request("/api/chat-drafts/composer")
     `);
     expect(await lint()).toBe(0);
   });
 
   it("checks raw strings and nested interpolation expressions", async () => {
     await source(String.raw`
-      try await client.request(#"/api/agents/\#(identifier("value"))"#)
-      try await request("/api/agents/\(identifier("value"))")
+      try await client.request(#"/api/chat-threads/\#(identifier("value"))/metadata"#)
+      try await request("/api/chat-threads/\(identifier("value"))/metadata")
     `);
     expect(await lint()).toBe(0);
   });

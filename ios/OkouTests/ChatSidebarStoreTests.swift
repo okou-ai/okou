@@ -12,7 +12,7 @@ final class ChatSidebarStoreTests: XCTestCase {
     let fixture = SidebarProjectionFixture()
     let workspace = fixture.workspace()
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.list.refresh()
     await workspace.projects.activate()
 
@@ -20,7 +20,7 @@ final class ChatSidebarStoreTests: XCTestCase {
     XCTAssertEqual(recent.filter, .recent)
     XCTAssertTrue(recent.isInbox)
     // Pins lead the chats outside Projects; the others follow by activity.
-    XCTAssertEqual(recent.chats.rows.map(\.id), [1, 5, 3].map(SidebarProjectionFixture.id))
+    XCTAssertEqual(recent.chats.rows.map(\.id), [1, 6, 5, 3].map(SidebarProjectionFixture.id))
     let pinned = try XCTUnwrap(recent.chats.rows.first)
     XCTAssertTrue(pinned.isPinned)
     XCTAssertEqual(pinned.title, "Active pinned")
@@ -73,13 +73,13 @@ final class ChatSidebarStoreTests: XCTestCase {
     workspace.sidebar.select(.recent)
     workspace.selectChat(SidebarProjectionFixture.id(6))
     let otherAgent = try snapshot(workspace)
-    XCTAssertEqual(otherAgent.chats.rows.map(\.id), [SidebarProjectionFixture.id(6)])
+    XCTAssertEqual(otherAgent.chats.rows.map(\.id), recent.chats.rows.map(\.id))
     XCTAssertEqual(
       otherAgent.projects.first?.section.rows.map(\.id), [2, 8].map(SidebarProjectionFixture.id))
     workspace.startNewChat()
     workspace.newChatDraft = "Keep this unrelated input"
     XCTAssertEqual(
-      try snapshot(workspace).chats.rows.map(\.id), [1, 5, 3].map(SidebarProjectionFixture.id))
+      try snapshot(workspace).chats.rows.map(\.id), [1, 6, 5, 3].map(SidebarProjectionFixture.id))
     XCTAssertEqual(workspace.newChatDraft, "Keep this unrelated input")
   }
 
@@ -87,7 +87,7 @@ final class ChatSidebarStoreTests: XCTestCase {
     let fixture = SidebarProjectionFixture()
     let workspace = fixture.workspace()
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.list.refresh()
     await workspace.projects.activate()
     workspace.sidebar.select(.unread)
@@ -121,20 +121,20 @@ final class ChatSidebarStoreTests: XCTestCase {
       old.close()
       replacement.close()
     }
-    await old.refreshNavigation()
+    await old.prepareWorkspaceComposer()
     await old.list.refresh()
     old.sidebar.select(.archived)
     XCTAssertEqual(try snapshot(old).filter, .archived)
     old.close()
     XCTAssertThrowsError(try snapshot(old))
 
-    await replacement.refreshNavigation()
+    await replacement.prepareWorkspaceComposer()
     await replacement.list.refresh()
     old.sidebar.select(.muted)
     XCTAssertEqual(try snapshot(replacement).filter, .recent)
     XCTAssertEqual(
       try snapshot(replacement).chats.rows.filter(\.isPinned).map(\.id),
-      [SidebarProjectionFixture.id(1)])
+      [1, 2].map(SidebarProjectionFixture.id))
   }
 
   private func snapshot(_ workspace: WorkspaceStore) throws -> ChatSidebarPresentation {

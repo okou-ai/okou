@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou connector permission-request command.
  *
@@ -128,6 +129,8 @@ function stubDiagnostic(
   );
 }
 
+const CHAT_THREAD_ID = "20000000-0000-4000-8000-000000000001";
+
 describe("okou connector permission-request command", () => {
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
@@ -139,6 +142,15 @@ describe("okou connector permission-request command", () => {
 
   beforeEach(() => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    server.use(
+      http.get("*/api/auth/me", () => {
+        return HttpResponse.json({
+          orgId: "test-org",
+          userId: "test-user",
+          email: "member@example.com",
+        });
+      }),
+    );
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     const result = resolvedUrlDiagnostic();
@@ -221,7 +233,6 @@ describe("okou connector permission-request command", () => {
     "resolves custom selector %s to settings guidance without builtin approval",
     async (selector) => {
       const customId = "33333333-3333-4333-8333-333333333333";
-      vi.stubEnv("OKOU_AGENT_ID", "agent-1");
       vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-1");
       server.use(
         stubCustomConnectors([customConnector()], "https://app.okou.ai"),
@@ -260,7 +271,6 @@ describe("okou connector permission-request command", () => {
 
   it("outputs an allow grant link without choosing the user's duration", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     let diagnosticRequest:
       | ReturnType<typeof connectorCheckTargetAwareUrlRequestSchema.parse>
       | undefined;
@@ -293,7 +303,7 @@ describe("okou connector permission-request command", () => {
       `You can allow the "${SLACK_READ_PERMISSION}" permission for your connector access`,
     );
     expect(logCalls).toContain("[Manage Slack permissions]");
-    expect(logCalls).toContain("/agents/agent-abc-123/permissions?");
+    expect(logCalls).toContain("/connectors/permissions?");
     expect(logCalls).toContain("connectorSlug=slack");
     expect(logCalls).toContain(
       `permission=${encodeURIComponent(SLACK_READ_PERMISSION)}`,
@@ -307,7 +317,6 @@ describe("okou connector permission-request command", () => {
 
   it("preserves explicit AWS selectors while checking the requested permission", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     let diagnosticRequest:
       | ReturnType<typeof connectorCheckTargetAwareUrlRequestSchema.parse>
       | undefined;
@@ -364,10 +373,10 @@ describe("okou connector permission-request command", () => {
     expect(output).toContain("[Manage AWS permissions]");
   });
 
-  it("includes the current thread and callback prompt in the grant URL", async () => {
+  it("includes the current thread and callback prompt in the Run member grant URL", async () => {
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", CHAT_THREAD_ID);
 
     await permissionRequestCommand.parseAsync([
       "node",
@@ -385,11 +394,13 @@ describe("okou connector permission-request command", () => {
     expect(
       Array.from(permissionActionUrl(logCalls).searchParams.entries()),
     ).toStrictEqual([
+      ["orgId", "test-org"],
+      ["userId", "test-user"],
       ["connectorSlug", "slack"],
       ["permission", SLACK_READ_PERMISSION],
       ["action", "allow"],
       ["callbackPrompt", "Re-check permission & continue"],
-      ["threadId", "thread-abc-123"],
+      ["threadId", CHAT_THREAD_ID],
     ]);
     expect(logCalls).toContain("end the current turn");
     expect(logCalls).toContain("exact callback URL above verbatim");
@@ -400,8 +411,8 @@ describe("okou connector permission-request command", () => {
   it.each(["a", "继", "😀"])(
     "accepts a trimmed callback prompt of exactly 200 characters (%s)",
     async (character) => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
-      vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", CHAT_THREAD_ID);
       const callbackPrompt = character.repeat(200);
 
       await permissionRequestCommand.parseAsync([
@@ -427,8 +438,7 @@ describe("okou connector permission-request command", () => {
   it.each(["a", "继", "😀"])(
     "rejects a callback prompt over 200 characters with shortening guidance (%s)",
     async (character) => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
-      vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", CHAT_THREAD_ID);
       const callbackPrompt = character.repeat(201);
 
       await expect(
@@ -459,10 +469,21 @@ describe("okou connector permission-request command", () => {
     },
   );
 
-  it("rejects callback prompts outside the current web chat", async () => {
-    vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
+  it.each([
+    { name: "a Run without a Chat", token: capturedRunToken([]), threadId: "" },
+    {
+      name: "a Run with a malformed Chat ID",
+      token: capturedRunToken([]),
+      threadId: "invalid-chat",
+    },
+    {
+      name: "a standalone session with a Chat ID",
+      token: "test-token",
+      threadId: CHAT_THREAD_ID,
+    },
+  ])("rejects callback prompts in $name", async ({ token, threadId }) => {
+    vi.stubEnv("OKOU_TOKEN", token);
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", threadId);
 
     await expect(async () => {
       await permissionRequestCommand.parseAsync([
@@ -483,38 +504,13 @@ describe("okou connector permission-request command", () => {
         "--callback-prompt requires the current web chat and its execution context",
       ),
     );
-  });
-
-  it("rejects callback prompts for a different agent", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "agent-current");
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
-
-    await expect(async () => {
-      await permissionRequestCommand.parseAsync([
-        "node",
-        "cli",
-        "slack",
-        "--permission",
-        SLACK_READ_PERMISSION,
-        "--url",
-        SLACK_READ_URL,
-        "--agent",
-        "agent-other",
-        "--callback-prompt",
-        "Continue",
-      ]);
-    }).rejects.toThrow("process.exit called");
-
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "--agent agent-other conflicts with the current run's Agent agent-current",
-      ),
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "action=allow",
     );
   });
 
   it("outputs an allow grant link for unknown endpoints", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     const unknownUrl = "https://api.cloudflare.com/client/v4/example";
     stubDiagnostic(
       resolvedUrlDiagnostic({
@@ -550,9 +546,8 @@ describe("okou connector permission-request command", () => {
     expect(logCalls).not.toContain("expiresIn=");
   });
 
-  it("uses the agents landing page when OKOU_AGENT_ID is not set", async () => {
+  it("uses the authenticated member for a standalone permission request", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "");
 
     await permissionRequestCommand.parseAsync([
       "node",
@@ -565,55 +560,12 @@ describe("okou connector permission-request command", () => {
     ]);
 
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("/agents?");
+    expect(logCalls).toContain("/connectors/permissions?");
     expect(logCalls).not.toContain("/agents/permissions");
-  });
-
-  it("uses --agent when OKOU_AGENT_ID is not set", async () => {
-    vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "");
-
-    await permissionRequestCommand.parseAsync([
-      "node",
-      "cli",
-      "slack",
-      "--permission",
-      SLACK_READ_PERMISSION,
-      "--url",
-      SLACK_READ_URL,
-      "--agent",
-      "target-agent-123",
-    ]);
-
-    const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("/agents/target-agent-123/permissions?");
-    expect(logCalls).toContain("connectorSlug=slack");
-    expect(logCalls).toContain("action=allow");
-  });
-
-  it("accepts --agent when it matches the current run's Agent", async () => {
-    vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "target-agent-123");
-
-    await permissionRequestCommand.parseAsync([
-      "node",
-      "cli",
-      "slack",
-      "--permission",
-      SLACK_READ_PERMISSION,
-      "--url",
-      SLACK_READ_URL,
-      "--agent",
-      "target-agent-123",
-    ]);
-
-    const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("/agents/target-agent-123/permissions?");
   });
 
   it("transforms www.okou.ai to app.okou.ai", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://www.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-1");
 
     await permissionRequestCommand.parseAsync([
       "node",
@@ -626,14 +578,11 @@ describe("okou connector permission-request command", () => {
     ]);
 
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain(
-      "https://app.okou.ai/agents/agent-1/permissions?",
-    );
+    expect(logCalls).toContain("https://app.okou.ai/connectors/permissions?");
   });
 
   it("prints sensitive Slack user-token guidance for chat:write enable", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     const url = "https://slack.com/api/chat.postMessage";
     stubDiagnostic(
       resolvedUrlDiagnostic({
@@ -671,7 +620,6 @@ describe("okou connector permission-request command", () => {
 
   it("prints sensitive Gmail sending guidance for messages.send enable", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
     const url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
     stubDiagnostic(
       resolvedUrlDiagnostic({
@@ -1081,9 +1029,8 @@ describe("okou connector permission-request command", () => {
     "adds the standard optional callback to %s authorization",
     async (target) => {
       vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-      vi.stubEnv("OKOU_TOKEN", "run-token");
-      vi.stubEnv("OKOU_AGENT_ID", "agent-1");
-      vi.stubEnv("OKOU_CHAT_THREAD_ID", "20000000-0000-4000-8000-000000000001");
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", CHAT_THREAD_ID);
       const original = `https://app.okou.ai/${target}/authorize/request-token`;
       server.use(
         http.post(

@@ -35,12 +35,10 @@ export interface BrowserPresenceSignals {
  * ended, so a member who signed in for a finished Run continues it in one step.
  */
 export function createBrowserPresenceSignals({
-  agentId,
   latestRunId$,
   liveRunId$,
   sendEvent$,
 }: {
-  readonly agentId: string;
   readonly latestRunId$: Computed<string | null>;
   readonly liveRunId$: Computed<string | null>;
   readonly sendEvent$: ChatEventSignals["sendEvent$"];
@@ -81,7 +79,6 @@ export function createBrowserPresenceSignals({
         {
           kind: "input",
           delivery: get(liveRunId$) === null ? "run" : "queue",
-          agentId,
           prompt: message,
           hasTextContent: true,
           userMessage,

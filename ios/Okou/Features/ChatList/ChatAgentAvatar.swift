@@ -3,45 +3,6 @@ import ChatData
 import ChatDomain
 import SwiftUI
 
-/// Read identity inside the hosted row so metadata updates refresh existing cells.
-struct ChatAgentAvatar: View {
-  let agents: ThreadListStore?
-  let agentID: String
-  var size: CGFloat = OkouAvatarSize.message
-
-  var body: some View {
-    if let agents {
-      StoreProvider(agents.stateStore) {
-        ChatAgentAvatarContent(agents: agents, agentID: agentID, size: size)
-          .id(ObjectIdentifier(agents))
-      }
-    } else {
-      OkouAgentAvatar(avatarURL: nil, name: "Agent", isDefault: false, size: size)
-    }
-  }
-}
-
-private struct ChatAgentAvatarContent: View {
-  let agents: ThreadListStore
-  let agentID: String
-  let size: CGFloat
-  @ResolvedValue private var current: [AgentRecord]?
-
-  init(agents: ThreadListStore, agentID: String, size: CGFloat) {
-    self.agents = agents
-    self.agentID = agentID
-    self.size = size
-    _current = ResolvedValue(task: agents.navigationValue)
-  }
-
-  var body: some View {
-    let agent = (current ?? agents.agents).first(where: { $0.agentId == agentID })
-    OkouAgentAvatar(
-      avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Agent",
-      isDefault: agent?.isDefaultAgent ?? false, size: size)
-  }
-}
-
 extension ChatThread {
   /// The title's status emoji (the web's ✅ Done, ⏳ Waiting, …) split from its text,
   /// matching the web's first-emoji rule so both clients agree on the same title.

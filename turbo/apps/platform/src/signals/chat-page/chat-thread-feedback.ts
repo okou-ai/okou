@@ -16,11 +16,8 @@ import type {
   FeedbackSource,
 } from "../okou-page/chat-feedback.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
-import { clearChatListQuery$ } from "../okou-page/sidebar-state.ts";
-import { defaultAgentId$ } from "../agent.ts";
+
 import { ASSISTANT_NAME } from "../branding.ts";
-import { singleAgentEnabled$ } from "../single-agent.ts";
-import { projectsEnabled$ } from "../projects/projects.ts";
 import {
   chatThreadMetaMap$,
   eventDrivenChatThreads$,
@@ -116,10 +113,6 @@ export interface ChatThreadFeedbackSignals {
   readonly forwardSelection$: Computed<ChatForwardSelection | null>;
   readonly forwardTarget$: Computed<ChatForwardTarget | null>;
   readonly forwardComposer$: Computed<Promise<ChatForwardComposerState> | null>;
-  readonly prepareForwardComposer$: ReturnType<
-    typeof createForwardState
-  >["prepareForwardComposer$"];
-  readonly resetForwardTarget$: Command<void, []>;
   readonly startForward$: Command<Promise<boolean>, [AbortSignal]>;
   readonly closeForward$: Command<void, []>;
   readonly setListenersRef$: Command<
@@ -498,7 +491,6 @@ export type ChatForwardComposerFactory = (
 interface ForwardComposerRequest {
   readonly target: ChatForwardTarget;
   readonly forward: ChatForwardContext;
-  readonly fork?: boolean;
   readonly projectId?: string;
 }
 
@@ -509,7 +501,6 @@ function forwardContextFrom(
 ): ChatForwardContext {
   return {
     ...selection,
-    agentId: source.agentId,
     titleSnapshot:
       source.title ??
       i18n.t(($) => {
@@ -518,10 +509,10 @@ function forwardContextFrom(
   };
 }
 
-function showForwardSent(fork: boolean): void {
+function showForkSent(): void {
   toast.success(
     i18n.t(($) => {
-      return fork ? $.chat.fork.sent : $.chat.forward.sent;
+      return $.chat.fork.sent;
     }),
   );
 }
@@ -569,22 +560,19 @@ function createForwardState(
   });
   const openForward$ = command(
     ({ set }, selection: ChatForwardSelection): void => {
-      set(clearChatListQuery$);
       set(internalForwardSelection$, selection);
       set(resetForwardTarget$);
       set(closeSelection$);
     },
   );
   const closeForward$ = command(({ set }): void => {
-    set(clearChatListQuery$);
     set(internalForwardSelection$, null);
     set(resetForwardTarget$);
   });
   // An accepted forward ends the dialog; the member stays on the source thread.
-  const finishForward$ = command(({ get, set }): void => {
-    const fork = get(request$)?.fork === true;
+  const finishForward$ = command(({ set }): void => {
     set(closeForward$);
-    showForwardSent(fork);
+    showForkSent();
   });
   const prepareRequest$ = command(
     async (
@@ -609,34 +597,11 @@ function createForwardState(
       return await result;
     },
   );
-  /** Writes the open forward's passage into the composer of `target`. */
-  const prepareForwardComposer$ = command(
-    async (
-      { get, set },
-      target: ChatForwardTarget,
-      signal: AbortSignal,
-    ): Promise<ChatForwardComposerState> => {
-      const selection = get(internalForwardSelection$);
-      const source = selection
-        ? get(chatThreadMetaMap$).get(selection.threadId)
-        : undefined;
-      if (!selection || !source) {
-        throw new Error("Forward source is unavailable");
-      }
-      return await set(
-        prepareRequest$,
-        { target, forward: forwardContextFrom(selection, source) },
-        signal,
-      );
-    },
-  );
   return {
     forwardSelection$,
     forwardTarget$,
     forwardComposer$,
-    prepareForwardComposer$,
     prepareRequest$,
-    resetForwardTarget$,
     openForward$,
     closeForward$,
   };
@@ -661,31 +626,26 @@ function createStartForward(
           : {}),
         ...(selection.source ? { source: selection.source } : {}),
       };
-      if (await get(singleAgentEnabled$)) {
-        const agentId = await get(defaultAgentId$);
-        signal.throwIfAborted();
-        const source = get(chatThreadMetaMap$).get(captured.threadId);
-        if (!agentId || !source) {
-          throw new Error("Fork source or default Okou is unavailable");
-        }
-        set(forward.openForward$, captured);
-        await set(
-          forward.prepareRequest$,
-          {
-            target: { kind: "agent", id: agentId, title: ASSISTANT_NAME },
-            forward: forwardContextFrom(captured, source),
-            fork: true,
-            projectId: (await get(projectsEnabled$))
-              ? (get(eventDrivenChatThreads$).find((thread) => {
-                  return thread.id === captured.threadId;
-                })?.projectId ?? undefined)
-              : undefined,
-          },
-          signal,
-        );
-      } else {
-        set(forward.openForward$, captured);
+
+      signal.throwIfAborted();
+      const source = get(chatThreadMetaMap$).get(captured.threadId);
+      if (!source) {
+        throw new Error("Fork source is unavailable");
       }
+      set(forward.openForward$, captured);
+      await set(
+        forward.prepareRequest$,
+        {
+          target: { title: ASSISTANT_NAME },
+          forward: forwardContextFrom(captured, source),
+          projectId:
+            get(eventDrivenChatThreads$).find((thread) => {
+              return thread.id === captured.threadId;
+            })?.projectId ?? undefined,
+        },
+        signal,
+      );
+
       return true;
     },
   );
@@ -958,8 +918,6 @@ export function createChatThreadFeedbackSignals(
     forwardSelection$: forward.forwardSelection$,
     forwardTarget$: forward.forwardTarget$,
     forwardComposer$: forward.forwardComposer$,
-    prepareForwardComposer$: forward.prepareForwardComposer$,
-    resetForwardTarget$: forward.resetForwardTarget$,
     startForward$,
     closeForward$: forward.closeForward$,
     setListenersRef$,

@@ -1,7 +1,10 @@
 use super::support::*;
 use crate::support::*;
+use guest_agent::paths::CANONICAL_GUEST_HOME_DIR;
 use httpmock::prelude::*;
 use serde_json::json;
+
+const RETAINED_HOME_FIXTURE_ENV: &str = "OKOU_TEST_FINALIZATION_RETAINED_HOME";
 
 #[tokio::test]
 async fn other_artifact_and_memory_prepare_conflicts_still_fail_finalization() {
@@ -141,12 +144,14 @@ async fn combined_finalization_accepts_terminal_acknowledgement_without_finaliza
 #[tokio::test]
 async fn success_finalization_uses_explicit_runtime_with_conflicting_process_env() {
     let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir_in(CANONICAL_GUEST_HOME_DIR).unwrap();
     let mut command = finalization_child_command(
         "integration_cases::finalization::success::explicit_runtime_with_conflicting_process_env_child",
     )
     .unwrap();
     command
         .env("TMPDIR", tmp.path())
+        .env(RETAINED_HOME_FIXTURE_ENV, home.path())
         .env(guest_contracts::env::RUN_ID_ENV, "stale-run")
         .env(
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
@@ -170,7 +175,7 @@ async fn explicit_runtime_with_conflicting_process_env_child() {
         std::env::var(guest_contracts::env::RUN_ID_ENV).unwrap(),
         "stale-run"
     );
-    let home_dir = tmp.path().join("home");
+    let home_dir = std::path::PathBuf::from(std::env::var_os(RETAINED_HOME_FIXTURE_ENV).unwrap());
     let paths = guest_agent::paths::GuestPaths::from_runtime_dir(&runtime_dir);
     let run_payload_file = crate::common::write_run_payload_file_for_test(
         &runtime_dir,

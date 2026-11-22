@@ -98,6 +98,10 @@ async fn guest_state_restore_rejects_empty_named_timezones_without_sending_reque
             .await
             .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            error.to_string(),
+            "invalid payload: guest_state_restore timezone must not be empty"
+        );
     }
 
     let (result, ()) = tokio::join!(
@@ -173,6 +177,10 @@ async fn guest_state_restore_surfaces_guest_error_and_malformed_result() {
         .await
         .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(
+        error.to_string(),
+        "invalid payload: invalid exec termination tag"
+    );
     assert_eq!(
         normal_operation_readiness(&host),
         NormalOperationReadiness::Idle

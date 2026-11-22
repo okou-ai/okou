@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use guest_contracts::home_mount::HOME_DRIVE_MOUNT_REQUEST_DEADLINE;
 use guest_control_client::{
-    ConnectionClosedAtAdmission, ExecOwnedCapturedOutput, FencedExecError, FrameWriteObserver,
-    GuestControlClient, GuestStateRestoreResult, GuestStorageManifestResult, HomeDriveMountResult,
+    ConnectionClosedAtAdmission, FencedExecError, FrameWriteObserver, GuestControlClient,
+    GuestStateRestoreResult, GuestStorageManifestResult, HomeDriveMountResult,
     NormalOperationFence, NormalOperationFenceRejection, SupervisedExecControl,
     SupervisedExecRequest, SupervisedExecStartTiming,
 };
@@ -372,6 +372,11 @@ impl SandboxRuntimeHandles {
             process.kill();
         }
     }
+}
+
+enum TerminationMode {
+    Graceful,
+    Immediate,
 }
 
 #[derive(Clone, Copy)]
@@ -2149,13 +2154,6 @@ fn process_stream_queue_capacity(output: ProcessOutputMode) -> Option<usize> {
     }
 }
 
-fn captured_output_bytes(output: ExecOwnedCapturedOutput) -> (Vec<u8>, bool) {
-    match output {
-        ExecOwnedCapturedOutput::Discarded => (Vec::new(), false),
-        ExecOwnedCapturedOutput::Captured { bytes, truncated } => (bytes, truncated),
-    }
-}
-
 fn exec_result_from_operation_result(
     result: guest_control_client::ExecOperationResult,
 ) -> io::Result<ExecResult> {
@@ -2176,8 +2174,8 @@ fn supervised_exec_result_to_process_exit(
     guest_pid: u32,
     result: guest_control_client::ExecOperationResult,
 ) -> ProcessExit {
-    let (stdout, stdout_truncated) = captured_output_bytes(result.stdout);
-    let (stderr, stderr_truncated) = captured_output_bytes(result.stderr);
+    let (stdout, stdout_truncated) = result.stdout.into_captured().unwrap_or_default();
+    let (stderr, stderr_truncated) = result.stderr.into_captured().unwrap_or_default();
 
     ProcessExit {
         guest_pid,
@@ -2645,6 +2643,91 @@ impl FirecrackerSandbox {
         )
     }
 
+    async fn terminate(&mut self, mode: TerminationMode) -> sandbox::Result<()> {
+        self.join_retained_park().await?;
+        self.join_retained_unpark().await?;
+        drop(self.guest_rpc_endpoint.take());
+
+        let entered_stopping = self.transition(SandboxState::Running, SandboxState::Stopping);
+        if !entered_stopping && self.current_state() != SandboxState::Crashed {
+            return Ok(());
+        }
+
+        // Await the control server so its socket path is undiscoverable
+        // before teardown continues.
+        self.runtime.shutdown_services().await;
+        let was_parked = self.is_parked;
+        let guest = {
+            let mut slot = self.guest.lock().await;
+            let guest = slot.take();
+            if entered_stopping && matches!(mode, TerminationMode::Graceful) {
+                guest
+            } else {
+                drop(guest);
+                None
+            }
+        };
+
+        // Parked vCPUs cannot process a graceful shutdown request. A partial
+        // unpark can leave running vCPUs marked as parked. That guest is still
+        // idle and can proceed directly to process termination.
+        if !was_parked && let Some(guest) = guest {
+            let started_at = tokio::time::Instant::now();
+            if let Err(error) = guest.shutdown(SHUTDOWN_TIMEOUT).await {
+                let closed = ConnectionClosedAtAdmission::from_error(&error)
+                    .map(ConnectionClosedAtAdmission::close_info);
+                if let Some(close) = closed
+                    && let Some(owner) = close.cancelled_owner()
+                {
+                    info!(
+                        sandbox_id = %self.id,
+                        connection_id = %close.connection_id(),
+                        run_id = owner.run_id(),
+                        owner_phase = owner.phase(),
+                        close_origin = close.reason().as_str(),
+                        outcome = "already_closed_after_owner_cancellation",
+                        "graceful shutdown skipped for cancelled guest connection"
+                    );
+                } else {
+                    let failure_kind = if closed.is_some() {
+                        "already_closed_at_admission"
+                    } else {
+                        match error.kind() {
+                            io::ErrorKind::TimedOut => "timeout",
+                            io::ErrorKind::InvalidData => "unexpected_response",
+                            _ => "request_failure",
+                        }
+                    };
+                    warn!(
+                        sandbox_id = %self.id,
+                        connection_id = %guest.connection_id(),
+                        close_origin = closed.map(|close| close.reason().as_str()),
+                        timeout_ms = duration_ms(SHUTDOWN_TIMEOUT),
+                        elapsed_ms = duration_ms(started_at.elapsed()),
+                        failure_kind,
+                        error = %error,
+                        "graceful shutdown failed"
+                    );
+                }
+            }
+        }
+        release_park_state_for_termination(
+            &mut self.is_parked,
+            &mut self.park_outcome,
+            &mut self.park_fence,
+        );
+        self.runtime.kill_process().await;
+
+        if entered_stopping {
+            self.publish_state(SandboxState::Stopped);
+            match mode {
+                TerminationMode::Graceful => info!(id = %self.id, "sandbox stopped"),
+                TerminationMode::Immediate => info!(id = %self.id, "sandbox killed"),
+            }
+        }
+        Ok(())
+    }
+
     async fn join_retained_park(&mut self) -> sandbox::Result<()> {
         let Some(custody) = &self.park_attempt else {
             return Ok(());
@@ -2809,117 +2892,11 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn stop(&mut self) -> sandbox::Result<()> {
-        self.join_retained_park().await?;
-        self.join_retained_unpark().await?;
-        drop(self.guest_rpc_endpoint.take());
-        if !self.transition(SandboxState::Running, SandboxState::Stopping) {
-            if self.current_state() == SandboxState::Crashed {
-                self.runtime.shutdown_services().await;
-                self.guest.lock().await.take();
-                release_park_state_for_termination(
-                    &mut self.is_parked,
-                    &mut self.park_outcome,
-                    &mut self.park_fence,
-                );
-                self.runtime.kill_process().await;
-            }
-            return Ok(());
-        }
-
-        self.runtime.shutdown_services().await;
-        // The control server is awaited so its socket path becomes
-        // undiscoverable before teardown continues.
-
-        // Skip vsock graceful shutdown for parked sandboxes — vCPUs are
-        // paused and cannot process the message. No in-flight user work
-        // to clean up. Go straight to force-kill.
-        //
-        // Edge case: after a partial unpark failure (resume succeeded but
-        // deflate failed), is_parked is true but vCPUs are actually running.
-        // Skipping graceful shutdown is still correct — the sandbox was idle
-        // with no user workload.
-        let was_parked = self.is_parked;
-        let guest = self.guest.lock().await.take();
-        if !was_parked && let Some(guest) = guest {
-            let started_at = tokio::time::Instant::now();
-            if let Err(error) = guest.shutdown(SHUTDOWN_TIMEOUT).await {
-                let closed = ConnectionClosedAtAdmission::from_error(&error)
-                    .map(ConnectionClosedAtAdmission::close_info);
-                if let Some(close) = closed
-                    && let Some(owner) = close.cancelled_owner()
-                {
-                    info!(
-                        sandbox_id = %self.id,
-                        connection_id = %close.connection_id(),
-                        run_id = owner.run_id(),
-                        owner_phase = owner.phase(),
-                        close_origin = close.reason().as_str(),
-                        outcome = "already_closed_after_owner_cancellation",
-                        "graceful shutdown skipped for cancelled guest connection"
-                    );
-                } else {
-                    let failure_kind = if closed.is_some() {
-                        "already_closed_at_admission"
-                    } else {
-                        match error.kind() {
-                            io::ErrorKind::TimedOut => "timeout",
-                            io::ErrorKind::InvalidData => "unexpected_response",
-                            _ => "request_failure",
-                        }
-                    };
-                    warn!(
-                        sandbox_id = %self.id,
-                        connection_id = %guest.connection_id(),
-                        close_origin = closed.map(|close| close.reason().as_str()),
-                        timeout_ms = duration_ms(SHUTDOWN_TIMEOUT),
-                        elapsed_ms = duration_ms(started_at.elapsed()),
-                        failure_kind,
-                        error = %error,
-                        "graceful shutdown failed"
-                    );
-                }
-            }
-        }
-        release_park_state_for_termination(
-            &mut self.is_parked,
-            &mut self.park_outcome,
-            &mut self.park_fence,
-        );
-
-        self.runtime.kill_process().await;
-        self.publish_state(SandboxState::Stopped);
-        info!(id = %self.id, "sandbox stopped");
-        Ok(())
+        self.terminate(TerminationMode::Graceful).await
     }
 
     async fn kill(&mut self) -> sandbox::Result<()> {
-        self.join_retained_park().await?;
-        self.join_retained_unpark().await?;
-        drop(self.guest_rpc_endpoint.take());
-        if !self.transition(SandboxState::Running, SandboxState::Stopping) {
-            if self.current_state() == SandboxState::Crashed {
-                self.runtime.shutdown_services().await;
-                self.guest.lock().await.take();
-                release_park_state_for_termination(
-                    &mut self.is_parked,
-                    &mut self.park_outcome,
-                    &mut self.park_fence,
-                );
-                self.runtime.kill_process().await;
-            }
-            return Ok(());
-        }
-        self.runtime.shutdown_services().await;
-        self.guest.lock().await.take();
-        release_park_state_for_termination(
-            &mut self.is_parked,
-            &mut self.park_outcome,
-            &mut self.park_fence,
-        );
-        self.runtime.kill_process().await;
-        self.publish_state(SandboxState::Stopped);
-        info!(id = %self.id, "sandbox killed");
-        Ok(())
+        self.terminate(TerminationMode::Immediate).await
     }
 
     // -- idle transitions --

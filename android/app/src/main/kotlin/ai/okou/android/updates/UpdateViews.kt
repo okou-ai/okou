@@ -1,280 +1,830 @@
 package ai.okou.android.updates
 
+import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
+import ai.okou.android.SettingsModal
 import ai.okou.android.SettingsRow
 import ai.okou.android.api.generated.AndroidUpdatesRelease
+import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
-import androidx.compose.foundation.Image
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.inset
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.text.NumberFormat
+
+internal data class UpdateToolbarAction(
+    val label: String,
+    val activate: (() -> Unit)?,
+    @DrawableRes val icon: Int = R.drawable.ic_download,
+    val progress: String? = null,
+    val installsPackage: Boolean = false,
+)
+
+private fun UpdateTransfer.Downloading.fraction(): Float? =
+    downloadedBytes?.let { (it.toDouble() / release.size).coerceIn(0.0, 1.0).toFloat() }
 
 @Composable
-fun UpdateHost(
+private fun updatePercent(fraction: Float): String {
+    val locale = LocalConfiguration.current.locales[0]
+    val format = remember(locale) { NumberFormat.getPercentInstance(locale) }
+    return format.format((fraction * 100).toInt() / 100.0)
+}
+
+@Composable
+private fun downloadLabel(fraction: Float?): String =
+    if (fraction == null) stringResource(R.string.updates_preparing)
+    else stringResource(R.string.updates_downloading, updatePercent(fraction))
+
+private val UpdateUiState.interrupted
+    get() = transfer is UpdateTransfer.Failed || transfer is UpdateTransfer.Interrupted
+
+private val UpdateUiState.installFailed
+    get() = problem == UpdateProblem.Install
+
+@Composable
+internal fun updateToolbarAction(
     state: UpdateUiState,
-    check: () -> Unit,
     download: (AndroidUpdatesRelease) -> Unit,
-    cancel: (AndroidUpdatesRelease) -> Unit,
-    defer: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
-    sourceAuthorized: Boolean,
-    showAnnouncement: Boolean,
-    content: @Composable (openUpdates: () -> Unit) -> Unit,
-) {
-    var details by remember { mutableStateOf(false) }
-    val controls: @Composable () -> Unit = {
-        UpdateActions(state, check, download, cancel, install, sourceAuthorized)
-    }
-    if (state.required) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
-                Column(
-                    Modifier.widthIn(max = 560.dp).fillMaxSize().padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    Column(
-                        Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
-                    ) {
-                        Image(painterResource(R.drawable.okou_mark), null, Modifier.size(56.dp))
-                        Text(
-                            stringResource(R.string.updates_required),
-                            style = MaterialTheme.typography.headlineMedium,
-                            modifier = Modifier.semantics { heading() },
-                        )
-                        Text(stringResource(R.string.updates_required_description))
-                        UpdateDetails(state, sourceAuthorized, showNotes = false)
-                    }
-                    controls()
-                }
-            }
+    @StringRes installProgress: Int?,
+    openDetails: () -> Unit,
+): UpdateToolbarAction? {
+    if (state.preparing || state.required || !state.available) return null
+    val transfer = state.transfer
+    return when {
+        transfer is UpdateTransfer.Downloading -> {
+            val fraction = transfer.fraction()
+            UpdateToolbarAction(
+                downloadLabel(fraction),
+                openDetails,
+                progress = fraction?.let { updatePercent(it) },
+            )
         }
-    } else {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            if (showAnnouncement && state.announce) {
-                val release = checkNotNull(state.displayedRelease)
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                        Text(
-                            stringResource(R.string.updates_available, release.version),
-                            Modifier.fillMaxWidth(),
-                        )
-                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            ActionText(stringResource(R.string.updates_view), { details = true })
-                            if (
-                                state.transfer !is UpdateTransfer.Downloading &&
-                                    state.transfer !is UpdateTransfer.Ready
-                            )
-                                ActionText(
-                                    stringResource(R.string.updates_later),
-                                    { defer(release) },
-                                )
-                        }
-                    }
-                }
-            }
-            Box(Modifier.weight(1f)) { content { details = true } }
+        transfer is UpdateTransfer.Ready && state.canInstall ->
+            UpdateToolbarAction(
+                stringResource(installProgress ?: R.string.updates_ready),
+                if (installProgress == null) ({ install(transfer.release) }) else null,
+                R.drawable.ic_refresh,
+                installsPackage = true,
+            )
+        state.canDownload -> {
+            val release = checkNotNull(state.candidate)
+            val label =
+                if (state.interrupted) R.string.updates_retry_download else R.string.updates_toolbar
+            UpdateToolbarAction(
+                stringResource(label),
+                if (state.offline) openDetails else ({ download(release) }),
+            )
         }
-    }
-    if (details && !state.required) {
-        AlertDialog(
-            onDismissRequest = { details = false },
-            title = { Text(stringResource(R.string.updates_title)) },
-            text = {
-                Column(
-                    Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    UpdateDetails(state, sourceAuthorized)
-                }
-            },
-            confirmButton = controls,
-            dismissButton = {
-                ActionText(
-                    stringResource(R.string.updates_later),
-                    {
-                        details = false
-                        state.displayedRelease?.let(defer)
-                    },
-                    enabled = !state.preparing,
-                )
-            },
-        )
+        else -> UpdateToolbarAction(stringResource(R.string.updates_toolbar), openDetails)
     }
 }
 
 @Composable
-internal fun AppUpdateSettings(state: UpdateUiState, open: () -> Unit) {
+internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
+    val shape = RoundedCornerShape(12.dp)
+    val colors = MaterialTheme.colorScheme
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    val focus = rememberInstallControlFocus(inProgress = action.activate == null)
+    val maxTextSize = with(LocalDensity.current) { 16.dp.toSp() }
+    TextButton(
+        onClick = {
+            if (action.installsPackage) focus.rememberTrigger()
+            action.activate?.invoke()
+        },
+        enabled = action.activate != null,
+        modifier =
+            Modifier.size(48.dp)
+                .then(focus.modifier)
+                .updateFocusOutline(shape, colors.inverseOnSurface)
+                .semantics { contentDescription = action.label },
+        shape = shape,
+        contentPadding = PaddingValues(0.dp),
+        interactionSource = interactions,
+        colors =
+            ButtonDefaults.textButtonColors(
+                containerColor = if (pressed) colors.onSurfaceVariant else colors.inverseSurface,
+                contentColor = colors.inverseOnSurface,
+                disabledContainerColor = colors.surfaceVariant,
+                disabledContentColor = colors.onSurfaceVariant,
+            ),
+    ) {
+        if (action.progress == null) {
+            Icon(painterResource(action.icon), contentDescription = null, Modifier.size(24.dp))
+        } else {
+            Text(
+                action.progress,
+                style =
+                    MaterialTheme.typography.labelMedium.copy(
+                        fontSize = minOf(12f, maxTextSize.value).sp,
+                        letterSpacing = 0.sp,
+                        fontFeatureSettings = "tnum",
+                    ),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun UpdateHost(
+    state: UpdateUiState,
+    check: () -> Unit,
+    download: (AndroidUpdatesRelease) -> Unit,
+    install: (AndroidUpdatesRelease) -> Unit,
+    @StringRes installProgress: Int?,
+    automaticInstall: AndroidUpdatesRelease?,
+    windowFocused: Boolean,
+    startAutomaticInstall: (AndroidUpdatesRelease, fromDetails: Boolean) -> Unit,
+    detailsOpen: MutableState<Boolean>,
+    onDetailsFocusChanged: (Boolean) -> Unit = {},
+    content: @Composable (openUpdates: () -> Unit) -> Unit,
+) {
+    var details by detailsOpen
+    val savedUi = rememberUpdateWorkspaceState()
+    var returningToDetails by remember { mutableStateOf(false) }
+    if (details && installProgress != null) SideEffect { returningToDetails = true }
+    val showDetails = details && !state.required
+    LaunchedEffect(automaticInstall, state.required, windowFocused) {
+        if (automaticInstall != null && state.required && windowFocused)
+            startAutomaticInstall(automaticInstall, false)
+    }
+    if (state.required) {
+        LaunchedEffect(Unit) {
+            details = false
+            returningToDetails = false
+            savedUi.removeState("update-details")
+        }
+        RequiredUpdateScreen(state, check, download, install, installProgress)
+    } else {
+        Box(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .safeDrawingPadding()
+        ) {
+            // Retain navigation metadata while the required screen owns the task.
+            savedUi.SaveableStateProvider("workspace") { content { details = true } }
+        }
+    }
+    if (showDetails) {
+        savedUi.SaveableStateProvider("update-details") {
+            UpdateSheet(
+                state,
+                check,
+                download,
+                install,
+                installProgress,
+                automaticInstall,
+                startAutomaticInstall = { startAutomaticInstall(it, true) },
+                restoreInstallFocus = returningToDetails && installProgress == null,
+                onInstallFocusRestored = { returningToDetails = false },
+                onFocusChanged = onDetailsFocusChanged,
+                close = {
+                    details = false
+                    returningToDetails = false
+                    savedUi.removeState("update-details")
+                },
+            )
+        }
+    }
+}
+
+@Composable
+internal fun AppUpdateSettings(
+    state: UpdateUiState,
+    @StringRes installProgress: Int?,
+    open: () -> Unit,
+    detailsOpen: Boolean = false,
+) {
+    val transfer = state.transfer
+    val newVersion = state.canDownload && !state.interrupted
     val summary =
         when {
             state.preparing -> stringResource(R.string.updates_preparing)
-            state.check == UpdateCheck.Checking -> stringResource(R.string.updates_checking)
-            state.available ->
+            transfer is UpdateTransfer.Downloading -> downloadLabel(transfer.fraction())
+            state.canInstall ->
                 stringResource(
-                    R.string.updates_available,
-                    checkNotNull(state.displayedRelease).version,
+                    installProgress
+                        ?: if (state.installFailed) R.string.updates_install_failed
+                        else R.string.updates_ready
                 )
-            state.check == UpdateCheck.Failed -> stringResource(R.string.updates_error_check)
+            (transfer is UpdateTransfer.Failed || transfer is UpdateTransfer.Waiting) &&
+                state.available -> stringResource(R.string.updates_download_failed)
+            transfer is UpdateTransfer.Interrupted && state.available ->
+                stringResource(R.string.updates_interrupted)
+            newVersion -> stringResource(R.string.updates_new_version)
+            state.offline && !state.available ->
+                stringResource(R.string.updates_waiting_for_connection)
+            state.check == UpdateCheck.Checking ->
+                stringResource(R.string.updates_check_in_progress)
+            state.available -> stringResource(R.string.updates_new_version)
+            state.check == UpdateCheck.Failed || state.check == UpdateCheck.Waiting ->
+                stringResource(R.string.updates_check_failed)
             state.check == UpdateCheck.Checked -> stringResource(R.string.updates_current)
             else -> state.installedVersion
         }
+    val focus = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    var restoreFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(detailsOpen) {
+        if (!detailsOpen && restoreFocus) {
+            restoreFocus = false
+            focus.requestFocus()
+        }
+    }
     SettingsRow(
         stringResource(R.string.updates_title),
-        leading = { SettingsIcon(R.drawable.ic_settings_updates) },
+        leading = {
+            SettingsIcon(if (state.canInstall) R.drawable.ic_refresh else R.drawable.ic_download)
+        },
+        modifier =
+            Modifier.focusRequester(focus)
+                .onFocusChanged { focused = it.isFocused }
+                .updateFocusOutline(RoundedCornerShape(12.dp), LocalActivityStatusColor.current),
         value = summary,
-        onClick = open,
+        valueMaxLines = 1,
+        onClick = {
+            restoreFocus = focused
+            open()
+        },
+        valueLeading =
+            if (newVersion) {
+                {
+                    Box(
+                        Modifier.size(8.dp)
+                            .background(LocalActivityStatusColor.current, CircleShape)
+                    )
+                }
+            } else null,
     )
 }
 
 @Composable
-private fun UpdateDetails(
-    state: UpdateUiState,
-    sourceAuthorized: Boolean,
-    showNotes: Boolean = true,
-) {
-    Text(stringResource(R.string.updates_installed, state.installedVersion))
-    state.displayedRelease?.let { release ->
-        Text(
-            stringResource(R.string.updates_target, release.version),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            Formatter.formatShortFileSize(LocalContext.current, release.size),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (showNotes && release.notes.isNotBlank()) Text(release.notes)
-        if ((state.available || state.required) && !state.isEligible(release))
-            Text(
-                stringResource(
-                    if (release.minimumSdk > state.sdk) R.string.updates_android_unsupported
-                    else R.string.updates_unavailable
-                ),
-                color = MaterialTheme.colorScheme.error,
-            )
-    }
-    if (state.check == UpdateCheck.Checking) Text(stringResource(R.string.updates_checking))
-    if (
-        !state.preparing &&
-            state.check == UpdateCheck.Checked &&
-            !state.available &&
-            !state.required
-    )
-        Text(stringResource(R.string.updates_current))
-    val transfer = state.transfer
-    if (transfer is UpdateTransfer.Downloading) {
-        val fraction = (transfer.downloadedBytes.toFloat() / transfer.release.size).coerceIn(0f, 1f)
-        LinearProgressIndicator(
-            progress = { fraction },
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(stringResource(R.string.updates_downloading, (fraction * 100).toInt()))
-    }
-    if (transfer is UpdateTransfer.Ready && !sourceAuthorized)
-        Text(stringResource(R.string.updates_permission))
-    state.problem?.let { problem ->
-        val message =
-            when (problem) {
-                UpdateProblem.Check -> R.string.updates_error_check
-                UpdateProblem.Download -> R.string.updates_error_download
-                UpdateProblem.Integrity -> R.string.updates_error_integrity
-                UpdateProblem.Identity -> R.string.updates_error_identity
-                UpdateProblem.Storage -> R.string.updates_error_storage
-                UpdateProblem.Interrupted -> R.string.updates_error_interrupted
-                UpdateProblem.Install -> R.string.updates_error_install
-            }
-        Text(
-            stringResource(message),
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
-    }
-}
-
-@Composable
-private fun UpdateActions(
+private fun UpdateSheet(
     state: UpdateUiState,
     check: () -> Unit,
     download: (AndroidUpdatesRelease) -> Unit,
-    cancel: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
-    sourceAuthorized: Boolean,
+    @StringRes installProgress: Int?,
+    automaticInstall: AndroidUpdatesRelease?,
+    startAutomaticInstall: (AndroidUpdatesRelease) -> Unit,
+    restoreInstallFocus: Boolean,
+    onInstallFocusRestored: () -> Unit,
+    onFocusChanged: (Boolean) -> Unit,
+    close: () -> Unit,
 ) {
-    val transfer = state.transfer
-    when {
-        transfer is UpdateTransfer.Recovering ->
-            Button(onClick = check, enabled = false) {
-                Text(stringResource(R.string.updates_preparing))
+    val window = currentWindowSizeDp()
+    val bars = WindowInsets.systemBars
+    val windowHeight =
+        with(LocalDensity.current) {
+            window.height.dp - (bars.getTop(this) + bars.getBottom(this)).toDp()
+        }
+    SettingsModal(close) { centered ->
+        val focused = LocalWindowInfo.current.isWindowFocused
+        DisposableEffect(focused) {
+            onFocusChanged(focused)
+            onDispose { onFocusChanged(false) }
+        }
+        val installFocus = remember { FocusRequester() }
+        val inputMode = LocalInputModeManager.current
+        LaunchedEffect(restoreInstallFocus, focused) {
+            if (restoreInstallFocus && focused) {
+                if (inputMode.inputMode == InputMode.Keyboard) installFocus.requestFocus()
+                onInstallFocusRestored()
             }
-        transfer is UpdateTransfer.Downloading ->
-            ActionText(stringResource(R.string.updates_cancel), { cancel(transfer.release) })
-        transfer is UpdateTransfer.Ready && state.canInstall ->
-            Button(onClick = { install(transfer.release) }) {
+        }
+        LaunchedEffect(automaticInstall, focused) {
+            if (automaticInstall != null && focused) startAutomaticInstall(automaticInstall)
+        }
+        val release = state.displayedRelease?.takeIf { state.available }
+        val base = with(LocalDensity.current) { 16.sp.toDp() }
+        val compact = windowHeight < base * 13
+        val short = windowHeight < base * 9
+        val inset = if (compact) 16.dp else 24.dp
+        BoxWithConstraints(
+            Modifier.fillMaxWidth()
+                .heightIn(max = windowHeight * 0.8f)
+                .padding(horizontal = inset)
+                .padding(top = if (centered) inset else 0.dp)
+                .padding(bottom = if (short) 8.dp else if (compact) 12.dp else 24.dp)
+        ) {
+            val actions = measureUpdateSheetActions(maxWidth)
+            val headingStyle =
+                if (compact)
+                    MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
+                else MaterialTheme.typography.headlineSmall
+            val titleLineHeight = with(LocalDensity.current) { headingStyle.lineHeight.toDp() }
+            val scroll = rememberScrollState()
+            val contentSpacing = if (short) 8.dp else if (compact) 12.dp else 16.dp
+            val scrollWholePanel = maxHeight < actions.height + contentSpacing * 2 + titleLineHeight
+            Column(
+                if (scrollWholePanel) Modifier.fillMaxWidth().verticalScroll(scroll)
+                else Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(contentSpacing),
+            ) {
                 Text(
-                    stringResource(
-                        if (sourceAuthorized) R.string.updates_install
-                        else R.string.updates_allow_install
-                    )
+                    stringResource(R.string.updates_title),
+                    style = headingStyle.copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier.semantics { heading() },
                 )
+                Column(
+                    if (scrollWholePanel) Modifier
+                    else Modifier.weight(1f, fill = false).verticalScroll(scroll)
+                ) {
+                    UpdateCopy(
+                        stringResource(R.string.updates_installed, state.installedVersion),
+                        muted = true,
+                    )
+                    Spacer(Modifier.height(if (short) 4.dp else 8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        if (release != null) {
+                            UpdateMetadata(release)
+                        } else if (state.check == UpdateCheck.Checked && !state.offline) {
+                            UpdateCopy(stringResource(R.string.updates_current))
+                        }
+                        UpdateProblemText(state)
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(updateSheetActionGap),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ActionText(
+                        stringResource(R.string.updates_close),
+                        close,
+                        Modifier.width(actions.dismissWidth).heightIn(min = actions.height),
+                    )
+                    UpdateAction(
+                        state,
+                        check,
+                        download,
+                        install,
+                        installProgress = installProgress,
+                        Modifier.weight(1f)
+                            .heightIn(min = actions.height)
+                            .focusRequester(installFocus),
+                    )
+                }
             }
-        state.canDownload ->
-            Button(onClick = { download(checkNotNull(state.candidate)) }) {
-                Text(stringResource(R.string.updates_download))
-            }
-        else ->
-            Button(onClick = check, enabled = state.check != UpdateCheck.Checking) {
-                Text(stringResource(R.string.updates_check))
-            }
+        }
     }
-    if (state.problem != null && (state.canDownload || state.canInstall))
-        ActionText(
-            stringResource(R.string.updates_check),
-            check,
-            state.check != UpdateCheck.Checking,
-        )
 }
 
 @Composable
-private fun ActionText(label: String, action: () -> Unit, enabled: Boolean = true) {
+private fun RequiredUpdateScreen(
+    state: UpdateUiState,
+    check: () -> Unit,
+    download: (AndroidUpdatesRelease) -> Unit,
+    install: (AndroidUpdatesRelease) -> Unit,
+    @StringRes installProgress: Int?,
+) {
+    val window = currentWindowSizeDp()
+    val base = with(LocalDensity.current) { 16.sp.toDp() }
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        BoxWithConstraints(
+            Modifier.fillMaxSize().safeDrawingPadding(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            val compact = maxHeight < base * 13
+            Column(
+                Modifier.widthIn(max = 560.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = if (compact) 16.dp else 24.dp)
+                    .padding(
+                        top =
+                            if (compact) 8.dp
+                            else (window.height.dp * 0.08f).coerceIn(24.dp, 72.dp),
+                        bottom = if (compact) 12.dp else 24.dp,
+                    )
+            ) {
+                if (!compact) {
+                    Icon(
+                        painterResource(R.drawable.okou_wordmark),
+                        contentDescription = null,
+                        modifier = Modifier.size(80.dp, 24.dp),
+                        tint = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
+                Text(
+                    stringResource(
+                        if (compact) R.string.updates_required_short else R.string.updates_required
+                    ),
+                    style =
+                        MaterialTheme.typography.headlineSmall.copy(
+                            fontSize = if (compact) 22.sp else 28.sp,
+                            lineHeight = if (compact) 28.sp else 36.sp,
+                            fontWeight = FontWeight(650),
+                        ),
+                    modifier = Modifier.semantics { heading() },
+                )
+                Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    UpdateProblemText(state, Modifier.padding(bottom = 8.dp))
+                    Text(
+                        stringResource(R.string.updates_required_description),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        UpdateCopy(
+                            stringResource(R.string.updates_installed, state.installedVersion),
+                            muted = true,
+                        )
+                        state.displayedRelease?.let { UpdateMetadata(it) }
+                    }
+                }
+                Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
+                UpdateAction(
+                    state,
+                    check,
+                    download,
+                    install,
+                    installProgress,
+                    Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateMetadata(release: AndroidUpdatesRelease) {
+    UpdateCopy(stringResource(R.string.updates_version, release.version), muted = true)
+    UpdateCopy(
+        stringResource(
+            R.string.updates_package_size,
+            Formatter.formatShortFileSize(LocalContext.current, release.size),
+        ),
+        muted = true,
+    )
+}
+
+@Composable
+private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifier) {
+    val offline =
+        state.offline && !state.canInstall && state.transfer !is UpdateTransfer.Downloading
+    val availability =
+        state.displayedRelease
+            ?.takeIf { (state.available || state.required) && !state.isEligible(it) }
+            ?.let {
+                if (it.minimumSdk > state.sdk) R.string.updates_android_unsupported
+                else R.string.updates_unavailable
+            }
+    val latestProblem =
+        when (state.problem) {
+            UpdateProblem.Check -> R.string.updates_error_check
+            UpdateProblem.Download -> R.string.updates_error_download
+            UpdateProblem.Integrity -> R.string.updates_error_integrity
+            UpdateProblem.Identity -> R.string.updates_error_identity
+            UpdateProblem.Storage -> R.string.updates_error_storage
+            UpdateProblem.Interrupted -> R.string.updates_error_interrupted
+            UpdateProblem.Install -> R.string.updates_error_install
+            null -> null
+        }
+    val message =
+        when {
+            offline && (state.canDownload || state.transfer is UpdateTransfer.Waiting) ->
+                R.string.updates_connect_to_download
+            offline -> R.string.updates_connect_to_check
+            latestProblem != null -> latestProblem
+            (state.check == UpdateCheck.Failed || state.check == UpdateCheck.Waiting) &&
+                !state.canDownload &&
+                !state.canInstall &&
+                state.transfer !is UpdateTransfer.Downloading -> R.string.updates_error_check
+            else -> availability ?: return
+        }
+    Text(
+        stringResource(message),
+        color =
+            if (offline) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+    )
+}
+
+@Composable
+private fun UpdateCopy(label: String, muted: Boolean = false) {
+    Text(
+        label,
+        color =
+            if (muted) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurface,
+        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+    )
+}
+
+@Composable
+private fun UpdateAction(
+    state: UpdateUiState,
+    check: () -> Unit,
+    download: (AndroidUpdatesRelease) -> Unit,
+    install: (AndroidUpdatesRelease) -> Unit,
+    @StringRes installProgress: Int?,
+    modifier: Modifier,
+) {
+    val transfer = state.transfer
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    val focus = rememberInstallControlFocus(inProgress = installProgress != null)
+    val checking =
+        state.check == UpdateCheck.Checking &&
+            !state.offline &&
+            !state.canInstall &&
+            !state.canDownload
+    val progress =
+        when {
+            transfer is UpdateTransfer.Downloading -> downloadLabel(transfer.fraction())
+            state.preparing -> stringResource(R.string.updates_preparing)
+            state.canInstall && installProgress != null -> stringResource(installProgress)
+            checking -> stringResource(R.string.updates_check_in_progress)
+            else -> null
+        }
+    if (progress != null) {
+        val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
+        Box(
+            modifier
+                .heightIn(min = updateActionMinHeight)
+                .clip(shape)
+                .background(colors.surfaceVariant)
+                .semantics {
+                    progressBarRangeInfo =
+                        if (fraction == null) ProgressBarRangeInfo.Indeterminate
+                        else ProgressBarRangeInfo(fraction, 0f..1f)
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                progress,
+                modifier = Modifier.padding(updateActionPadding),
+                color = if (checking) colors.onSurfaceVariant else colors.onBackground,
+                style = updateProgressStyle(),
+                textAlign = TextAlign.Center,
+            )
+            if (fraction != null) {
+                Box(Modifier.align(Alignment.BottomStart).matchParentSize()) {
+                    Box(
+                        Modifier.align(Alignment.BottomStart)
+                            .fillMaxWidth(fraction)
+                            .height(2.dp)
+                            .background(LocalActivityStatusColor.current)
+                    )
+                }
+            }
+        }
+        return
+    }
+    val (label, action) =
+        when {
+            transfer is UpdateTransfer.Ready && state.canInstall ->
+                R.string.updates_ready to { install(transfer.release) }
+            transfer is UpdateTransfer.Waiting -> R.string.updates_waiting_to_download to {}
+            state.canDownload ->
+                (if (state.interrupted) R.string.updates_retry_download
+                else R.string.updates_download) to ({ download(checkNotNull(state.candidate)) })
+            state.check == UpdateCheck.Failed -> R.string.updates_retry_check to check
+            state.check == UpdateCheck.Waiting || state.offline ->
+                R.string.updates_waiting_to_check to {}
+            else -> R.string.updates_check to check
+        }
+    Button(
+        onClick = {
+            if (state.canInstall) focus.rememberTrigger()
+            action()
+        },
+        enabled =
+            state.canInstall ||
+                !state.offline &&
+                    transfer !is UpdateTransfer.Waiting &&
+                    (state.check != UpdateCheck.Waiting || state.canDownload),
+        modifier =
+            modifier
+                .heightIn(min = updateActionMinHeight)
+                .then(focus.modifier)
+                .updateFocusOutline(shape, colors.inverseOnSurface),
+        shape = shape,
+        contentPadding = updateActionPadding,
+        colors =
+            ButtonDefaults.buttonColors(
+                containerColor = colors.inverseSurface,
+                contentColor = colors.inverseOnSurface,
+                disabledContainerColor = colors.surfaceVariant,
+                disabledContentColor = colors.onSurfaceVariant,
+            ),
+    ) {
+        Text(stringResource(label), style = updateActionLabelStyle(), textAlign = TextAlign.Center)
+    }
+}
+
+private class InstallControlFocus {
+    private val requester = FocusRequester()
+    private var focused = false
+    private var restore = false
+
+    val modifier = Modifier.focusRequester(requester).onFocusChanged { focused = it.isFocused }
+
+    fun rememberTrigger() {
+        restore = focused
+    }
+
+    fun restoreTrigger() {
+        if (restore) requester.requestFocus()
+        restore = false
+    }
+}
+
+@Composable
+private fun rememberInstallControlFocus(inProgress: Boolean): InstallControlFocus {
+    val focus = remember { InstallControlFocus() }
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(inProgress, windowFocused) {
+        if (!inProgress && windowFocused) focus.restoreTrigger()
+    }
+    return focus
+}
+
+@Composable
+private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = Modifier) {
     TextButton(
         onClick = action,
-        enabled = enabled,
+        modifier =
+            modifier
+                .heightIn(min = updateActionMinHeight)
+                .updateFocusOutline(ButtonDefaults.shape, LocalActivityStatusColor.current),
+        contentPadding = updateActionPadding,
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Text(label)
+        Text(label, style = updateActionLabelStyle(), textAlign = TextAlign.Center)
     }
+}
+
+private val updateActionMinHeight = 48.dp
+private val updateActionHorizontalPadding = 12.dp
+private val updateActionVerticalPadding = 8.dp
+private val updateSheetActionGap = 8.dp
+private val updateActionPadding =
+    PaddingValues(updateActionHorizontalPadding, updateActionVerticalPadding)
+
+@Composable
+private fun updateActionLabelStyle() =
+    MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight(550))
+
+@Composable
+private fun updateProgressStyle() =
+    MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
+
+private data class UpdateSheetActionSize(val dismissWidth: Dp, val height: Dp)
+
+// Reserve room for both buttons and progress so localized wrapping cannot move the footer.
+@Composable
+private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
+    val measurer = rememberTextMeasurer()
+    val dismissLabel = stringResource(R.string.updates_close)
+    val mainLabels =
+        listOf(
+            stringResource(R.string.updates_download),
+            stringResource(R.string.updates_retry_download),
+            stringResource(R.string.updates_check),
+            stringResource(R.string.updates_waiting_to_check),
+            stringResource(R.string.updates_waiting_to_download),
+            stringResource(R.string.updates_retry_check),
+            stringResource(R.string.updates_ready),
+        )
+    val progressLabels = listOf(downloadLabel(null), downloadLabel(1f))
+    val labelStyle = updateActionLabelStyle()
+    val progressStyle = updateProgressStyle()
+    return with(LocalDensity.current) {
+        val dismissWidth =
+            (measurer.measure(dismissLabel, labelStyle, softWrap = false).size.width.toDp() +
+                    updateActionHorizontalPadding * 2)
+                .coerceAtLeast(72.dp)
+                .coerceAtMost((width - updateSheetActionGap - 48.dp).coerceAtLeast(0.dp))
+        val mainWidth = width - dismissWidth - updateSheetActionGap
+        fun textHeight(label: String, style: TextStyle, slotWidth: Dp): Dp {
+            val available =
+                (slotWidth - updateActionHorizontalPadding * 2).roundToPx().coerceAtLeast(0)
+            return measurer
+                .measure(label, style, constraints = Constraints(maxWidth = available))
+                .size
+                .height
+                .toDp()
+        }
+        val textHeight =
+            maxOf(
+                textHeight(dismissLabel, labelStyle, dismissWidth),
+                mainLabels.maxOf { textHeight(it, labelStyle, mainWidth) },
+                progressLabels.maxOf { textHeight(it, progressStyle, mainWidth) },
+            )
+        UpdateSheetActionSize(
+            dismissWidth,
+            (textHeight + updateActionVerticalPadding * 2).coerceAtLeast(updateActionMinHeight),
+        )
+    }
+}
+
+@Composable
+internal fun Modifier.updateFocusOutline(shape: Shape, color: Color): Modifier {
+    val focused = remember { mutableStateOf(false) }
+    return onFocusChanged { focused.value = it.isFocused }
+        .drawWithContent {
+            drawContent()
+            if (focused.value) {
+                val width = 2.dp.toPx()
+                inset(width) {
+                    drawOutline(
+                        shape.createOutline(size, layoutDirection, this),
+                        color,
+                        style = Stroke(width),
+                    )
+                }
+            }
+        }
 }

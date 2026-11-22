@@ -12,6 +12,24 @@ export function platformStaticAssetUrl(path: string) {
 }
 
 export const platformMessagePdfFontUrls = Object.freeze({
+  regular: platformStaticAssetUrl(
+    "message-pdf/fonts/NotoSansCJKsc-Regular-2c76254f6fc3.otf",
+  ),
+  bold: platformStaticAssetUrl(
+    "message-pdf/fonts/NotoSansCJKsc-Bold-b5f0d1a190a7.otf",
+  ),
+  italic: platformStaticAssetUrl(
+    "message-pdf/fonts/sarasa-gothic-sc-italic-11c04388a84c.ttf",
+  ),
+  boldItalic: platformStaticAssetUrl(
+    "message-pdf/fonts/sarasa-gothic-sc-bolditalic-434c2425d173.ttf",
+  ),
+  emoji: platformStaticAssetUrl(
+    "message-pdf/fonts/noto-emoji-emoji-400-normal-61c7949ebb9d.woff",
+  ),
+});
+
+export const platformPreviewMessagePdfFontUrls = Object.freeze({
   regular: pdfRegularFontUrl,
   bold: pdfBoldFontUrl,
   italic: pdfItalicFontUrl,
@@ -19,9 +37,6 @@ export const platformMessagePdfFontUrls = Object.freeze({
   emoji: pdfEmojiFontUrl,
 });
 
-export const platformEmptyPrivateAgentsImg = platformStaticAssetUrl(
-  "views/agents-page/assets/empty-private-agents-scene-a5ddc79eedd5.webp",
-);
 export const platformOkouWordmarkDarkImg =
   "https://static.okou.io/public/okou-logo-wordmark-dark-8ac16c9eb76d.svg";
 export const platformOkouWordmarkLightImg =

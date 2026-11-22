@@ -1,16 +1,17 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Layers } from "lucide-react";
+import { Edit, HandHeart } from "lucide-react";
 import { cn, getShortcutLabel } from "@okouai/ui";
-import { defaultAgentChatPageActive$ } from "../../signals/agent.ts";
-import { activeRoute$ } from "../../signals/active-route.ts";
+import {
+  activeRoute$,
+  agentChatPageActive$,
+} from "../../signals/active-route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
-import { assistantName$ } from "../../signals/branding.ts";
 import {
   followForYouFeedOnRef$,
   suggestionsEnabled$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
+import { okouRailEntryEnabled$ } from "../../signals/okou-page/okou-rail-entry.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
@@ -51,21 +52,17 @@ function RestingShortcutHint({ label }: { label: string | null }) {
 
 /** New chat leads the conversation list; suggestions have their own entry. */
 export function OkouChatListRow() {
-  const enabled = useLastResolved(suggestionsEnabled$) ?? false;
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  const active = useLastResolved(defaultAgentChatPageActive$) === true;
-  const assistantName = useGet(assistantName$);
+  const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
+  const active = useGet(agentChatPageActive$);
   const { t } = useTranslation();
-  if (!enabled && !singleAgent) {
-    return null;
-  }
+
   const newChat = GLOBAL_KEYBOARD_SHORTCUTS.newChat;
-  const shortcutLabel = singleAgent ? getShortcutLabel(newChat.binding) : null;
+  const shortcutLabel = getShortcutLabel(newChat.binding);
   return (
     <Link
       pathname="/"
       aria-current={active ? "page" : undefined}
-      aria-keyshortcuts={singleAgent ? newChat.ariaKeyShortcuts : undefined}
+      aria-keyshortcuts={newChat.ariaKeyShortcuts}
       className={cn(
         "group/okou-row",
         ENTRY_ROW,
@@ -73,14 +70,17 @@ export function OkouChatListRow() {
       )}
     >
       <span className="flex w-8 shrink-0 items-center justify-center px-2">
-        <OkouLogomark className="size-4 shrink-0 opacity-70" />
+        {/* The rail entry carries the Okou mark, so New chat reads as an action. */}
+        {okouEntry ? (
+          <Edit aria-hidden className="size-4 shrink-0 opacity-70" />
+        ) : (
+          <OkouLogomark className="size-4 shrink-0 opacity-70" />
+        )}
       </span>
       <span className="min-w-0 flex-1 truncate">
-        {singleAgent
-          ? t(($) => {
-              return $.chat.newChat;
-            })
-          : assistantName}
+        {t(($) => {
+          return $.chat.newChat;
+        })}
       </span>
       <RestingShortcutHint label={shortcutLabel} />
     </Link>
@@ -113,7 +113,10 @@ export function ForYouChatListRow({
       )}
     >
       <span className="flex w-8 shrink-0 items-center justify-center px-2">
-        <Layers aria-hidden className="size-4 shrink-0 text-nav-copy-muted" />
+        <HandHeart
+          aria-hidden
+          className="size-4 shrink-0 text-nav-copy-muted"
+        />
       </span>
       <span className="min-w-0 flex-1 truncate">
         {t(($) => {

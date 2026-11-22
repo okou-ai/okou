@@ -144,14 +144,19 @@ async def prepare_prefetch_miss(flow: http.HTTPFlow) -> None:
     await prepare_miss(flow, expected_encoding="br")
 
 
-async def finish_response(flow: http.HTTPFlow) -> dict[str, object]:
+async def finish_response(
+    flow: http.HTTPFlow, *, wire_chunks: tuple[bytes, bytes] | None = None
+) -> dict[str, object]:
+    """Finish a response using its wire body or pre-split chunks from that body."""
     assert flow.response is not None
     wire_body = flow.response.raw_content or b""
     mitm_addon.responseheaders(flow)
     if callable(flow.response.stream):
         stream = response_stream(flow)
-        split = len(wire_body) // 2
-        for chunk in (wire_body[:split], wire_body[split:]):
+        if wire_chunks is None:
+            split = len(wire_body) // 2
+            wire_chunks = (wire_body[:split], wire_body[split:])
+        for chunk in wire_chunks:
             assert stream(chunk) == chunk
             await mitm_addon.responseinspection(flow)
     finalization = catalog_cache.finalize_response(flow)

@@ -1,4 +1,6 @@
 mod dispatcher;
+#[cfg(target_os = "linux")]
+mod large_frame;
 
 use std::io::{self, Read};
 use std::os::unix::net::UnixStream;
@@ -556,14 +558,58 @@ fn handle_connection_with_outcome(
     .map_err(|error| session.failure(error))?;
     let mut buf = [0u8; READ_BUFFER_SIZE];
     loop {
-        // Read from stream (reader is separate, no lock needed)
-        let n = reader
-            .read(&mut buf)
+        #[cfg(target_os = "linux")]
+        let trailing = if let Some(frame) =
+            decoder.take_incomplete_frame(MSG_WRITE_FILES, large_frame::STREAMED_BATCH_MIN_BYTES..)
+        {
+            let Some((file, retained)) = large_frame::receive_write(&mut reader, &mut buf, &frame)
+                .map_err(|error| session.failure(error))?
+            else {
+                break;
+            };
+            dispatcher
+                .dispatch_sealed_write(frame.seq, file)
+                .map_err(|error| session.failure(error))?;
+            session.mark_real_host_work(MSG_WRITE_FILES);
+            Some(retained)
+        } else if let Some(frame) = decoder.take_incomplete_frame(
+            MSG_GUEST_STORAGE_MANIFEST,
+            large_frame::STREAMED_STORAGE_PAYLOAD_BYTES,
+        ) {
+            let Some((payload, retained)) =
+                large_frame::receive_storage(&mut reader, &mut buf, &frame)
+                    .map_err(|error| session.failure(error))?
+            else {
+                break;
+            };
+            match payload {
+                large_frame::ReceivedStorage::Buffered(bytes) => {
+                    dispatcher.dispatch_owned_storage(frame.seq, bytes)
+                }
+                large_frame::ReceivedStorage::Sealed { file, mapping } => {
+                    dispatcher.dispatch_streamed_storage(frame.seq, file, mapping)
+                }
+            }
             .map_err(|error| session.failure(error))?;
+            session.mark_real_host_work(MSG_GUEST_STORAGE_MANIFEST);
+            Some(retained)
+        } else {
+            None
+        };
+        #[cfg(not(target_os = "linux"))]
+        let trailing = None;
 
-        if n == 0 {
-            break;
-        }
+        let n = if let Some(retained) = trailing {
+            retained
+        } else {
+            let n = reader
+                .read(&mut buf)
+                .map_err(|error| session.failure(error))?;
+            if n == 0 {
+                break;
+            }
+            n
+        };
 
         // n <= buf.len() is guaranteed by read()
         match decoder.decode_with(buf.get(..n).unwrap_or_default(), |msg| {

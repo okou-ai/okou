@@ -1,9 +1,33 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
+import {
+  memberMemories,
+  memoryVersions,
+} from "@okouai/db/schema/member-memory";
+import { phoneUseDevices, phoneUseGrants } from "@okouai/db/schema/phone-use";
+import { projects } from "@okouai/db/schema/project";
+import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { computed } from "ccstate";
-import { and, asc, count, eq, exists, lt, not, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import {
@@ -18,22 +42,25 @@ import {
 } from "./canonical-chat-event-read.service";
 import { queuedThreadInputCondition } from "./chat-queued-event.service";
 import {
-  chatThreadRequestSelection,
-  type ChatThreadRequestFacts,
-} from "./chat-thread-request-facts";
+  pickedThreadColumns,
+  type EnqueuedChatInputFacts,
+  type ProjectReferenceRow,
+} from "./chat-run-preparation-facts";
 import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
+import {
+  memberMemoryArchiveCondition,
+  memberMemoryHeadFields,
+  memberMemoryOwnerCondition,
+  memberMemoryRevisionCondition,
+} from "./member-memory-head.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
-
-/** Preparation facts only: neither a connector grant nor commit-time authority. */
-export interface ChatRunPreparationFacts {
-  readonly isOfficialWorkflowThread: boolean;
-}
 
 function buildPreparationTables(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   capacity: number,
-  requestInputId: string | undefined,
+  requestInput: EnqueuedChatInputFacts | undefined,
 ) {
+  const requestInputId = requestInput?.id;
   const builder = new QueryBuilder();
   const occupancy = builder.$with("preparation_occupancy").as(
     builder
@@ -90,6 +117,9 @@ function buildPreparationTables(
         and(
           eq(chatEvents.contextType, "agent_run"),
           eq(agentRuns.id, chatEvents.contextId),
+          requestInput?.sourceAutonomyBudget === undefined
+            ? undefined
+            : ne(chatEvents.id, requestInput.id),
         ),
       )
       .where(queuedThreadInputCondition(claim.chatThreadId))
@@ -99,11 +129,108 @@ function buildPreparationTables(
   return { occupancy, head };
 }
 
-/** Read the FIFO head and its owned Thread in one availability statement. */
+function pickedPromptColumns(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+  owner: Parameters<typeof officialWorkflowThreadCondition>[0],
+  requestInput?: EnqueuedChatInputFacts,
+) {
+  // These policies apply only to prompts with capacity to launch.
+  const hasPromptCapacity = and(
+    hasCapacity,
+    eq(head.eventType, "input.prompt"),
+  );
+  const storedCapture = exists(
+    new QueryBuilder()
+      .select({ id: chatNetworkBodyCaptures.chatEventId })
+      .from(chatNetworkBodyCaptures)
+      .where(eq(chatNetworkBodyCaptures.chatEventId, head.id)),
+  );
+  const capture = requestInput
+    ? sql`CASE WHEN ${eq(head.id, requestInput.id)}
+        THEN ${requestInput.captureNetworkBodies} ELSE ${storedCapture} END`
+    : storedCapture;
+  return {
+    isOfficialWorkflowThread:
+      sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(owner)}
+        ELSE false END`.mapWith(pgBooleanDecoder),
+    captureNetworkBodies:
+      sql`CASE WHEN ${hasPromptCapacity} THEN ${capture} ELSE false END`.mapWith(
+        pgBooleanDecoder,
+      ),
+  };
+}
+
+function pickedPhoneUseGrant(hasCapacity: SQL) {
+  return new QueryBuilder()
+    .select({ deviceId: phoneUseGrants.deviceId, grantId: phoneUseGrants.id })
+    .from(phoneUseGrants)
+    .innerJoin(
+      phoneUseDevices,
+      and(
+        eq(phoneUseDevices.id, phoneUseGrants.deviceId),
+        eq(phoneUseDevices.orgId, phoneUseGrants.orgId),
+        eq(phoneUseDevices.userId, phoneUseGrants.userId),
+        eq(phoneUseDevices.generation, phoneUseGrants.deviceGeneration),
+      ),
+    )
+    .where(
+      and(
+        hasCapacity,
+        eq(phoneUseGrants.orgId, chatThreads.orgId),
+        eq(phoneUseGrants.userId, chatThreads.userId),
+        eq(phoneUseGrants.threadId, chatThreads.id),
+      ),
+    )
+    .as("preparation_phone_use_grant");
+}
+
+function pickedProjectJoin(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+  requestInput: EnqueuedChatInputFacts | undefined,
+) {
+  const needsCurrentProject = requestInput?.projectReferences?.length
+    ? or(
+        ne(head.id, requestInput.id),
+        notInArray(
+          chatThreads.projectId,
+          requestInput.projectReferences.map(({ id }) => {
+            return id;
+          }),
+        ),
+      )
+    : undefined;
+  return and(
+    hasCapacity,
+    inArray(head.contextType, ["web", "agent_run"]),
+    eq(projects.id, chatThreads.projectId),
+    eq(projects.userId, chatThreads.userId),
+    eq(projects.orgId, chatThreads.orgId),
+    needsCurrentProject,
+  );
+}
+
+function pickedProjectFacts(
+  projectId: string | null,
+  current: ProjectReferenceRow | null,
+  owned: EnqueuedChatInputFacts | undefined,
+) {
+  const references = owned?.projectReferences;
+  return {
+    currentProject:
+      references?.find(({ id }) => {
+        return id === projectId;
+      }) ?? current,
+    ...(references ? { projectReferences: references } : {}),
+  };
+}
+
+/** Capture availability and launch facts for the actual FIFO head together. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
-  requestFacts?: ChatThreadRequestFacts,
+  requestInput?: EnqueuedChatInputFacts,
 ) {
   return computed(async (get) => {
     const database = get(db$);
@@ -112,10 +239,11 @@ export function createChatRunPreparationSnapshot(
     const { occupancy, head } = buildPreparationTables(
       claim,
       capacity,
-      requestFacts?.input.id,
+      requestInput,
     );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
+    const phoneGrant = pickedPhoneUseGrant(hasCapacity);
     const [row] = await database
       .with(occupancy, head)
       .select({
@@ -126,77 +254,100 @@ export function createChatRunPreparationSnapshot(
             .from(activeAgentRuns)
             .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
         ).mapWith(pgBooleanDecoder),
-        // An immediate send already owns its Thread snapshot.
-        ...(requestFacts ? {} : { thread: chatThreadRequestSelection() }),
-        head: {
-          id: head.id,
-          chatThreadId: head.chatThreadId,
-          createdAt: head.createdAt,
-          seqId: head.seqId,
-          eventType: head.eventType,
-          contextType: head.contextType,
-          contextId: head.contextId,
-          userMessage: head.userMessage,
-          requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
-          modelSelection: head.modelSelection,
-          sourceAutonomyBudget: head.sourceAutonomyBudget,
+        memory: memberMemoryHeadFields.memory,
+        revision: memberMemoryHeadFields.revision,
+        archiveCache: memberMemoryHeadFields.archiveCache,
+        thread: pickedThreadColumns,
+        computerUseHostGrant: {
+          hostId: computerUseHosts.id,
+          displayName: computerUseHosts.displayName,
         },
-        // No head/full queues do not inspect policy; automation
-        // inputs bypass the prompt-only Official thread policy as before.
-        isOfficialWorkflowThread: sql`CASE WHEN ${not(hasCapacity)} THEN false
-            WHEN ${eq(head.eventType, "input.prompt")} THEN ${officialWorkflowThreadCondition(
-              {
-                threadId: claim.chatThreadId,
-                orgId: claim.orgId,
-                userId: bootstrap.userId,
-              },
-            )} ELSE false END`.mapWith(pgBooleanDecoder),
+        phoneUseGrant: {
+          deviceId: phoneGrant.deviceId,
+          grantId: phoneGrant.grantId,
+        },
+        currentProject: { id: projects.id, name: projects.name },
+        head: { ...head._.selectedFields },
+        ...pickedPromptColumns(
+          head,
+          hasCapacity,
+          {
+            threadId: claim.chatThreadId,
+            orgId: claim.orgId,
+            userId: bootstrap.userId,
+          },
+          requestInput,
+        ),
       })
       .from(occupancy)
       .leftJoin(head, sql`true`)
       .leftJoin(
         chatThreads,
-        requestFacts
-          ? sql`false`
-          : and(
-              eq(chatThreads.id, head.chatThreadId),
-              eq(chatThreads.userId, bootstrap.userId),
-              eq(chatThreads.agentId, bootstrap.agentId),
-            ),
-      );
+        and(
+          eq(chatThreads.id, head.chatThreadId),
+          eq(chatThreads.userId, bootstrap.userId),
+          eq(chatThreads.orgId, bootstrap.orgId),
+        ),
+      )
+      .leftJoin(
+        computerUseHosts,
+        and(
+          hasCapacity,
+          eq(computerUseHosts.id, chatThreads.computerUseHostId),
+          eq(computerUseHosts.orgId, chatThreads.orgId),
+          eq(computerUseHosts.userId, chatThreads.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .leftJoinLateral(phoneGrant, sql`true`)
+      .leftJoin(projects, pickedProjectJoin(head, hasCapacity, requestInput))
+      .leftJoin(
+        memberMemories,
+        and(
+          isNotNull(chatThreads.id),
+          hasCapacity,
+          memberMemoryOwnerCondition(bootstrap),
+        ),
+      )
+      .leftJoin(memoryVersions, memberMemoryRevisionCondition)
+      .leftJoin(systemStoragePresignedUrlCache, memberMemoryArchiveCondition());
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
-    const thread = requestFacts?.thread ?? row.thread;
-    const picked = row.head;
+    const snapshot = {
+      hasCapacity: row.hasCapacity,
+      threadHasActiveRun: row.threadHasActiveRun,
+      memoryHead: {
+        memory: row.memory,
+        revision: row.revision,
+        archiveCache: row.archiveCache,
+      },
+    };
+    const { thread, head: picked } = row;
     if (!thread || !picked) {
-      return {
-        hasCapacity: row.hasCapacity,
-        threadHasActiveRun: row.threadHasActiveRun,
-        pickedEvent: null,
-      };
+      return { ...snapshot, pickedEvent: null };
     }
     // Only this request's actual FIFO head may use its canonical input facts.
-    const owned =
-      requestFacts?.input.id === picked.id ? requestFacts.input : undefined;
+    const owned = requestInput?.id === picked.id ? requestInput : undefined;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
+      sourceAutonomyBudget:
+        owned?.sourceAutonomyBudget ?? picked.sourceAutonomyBudget,
       userMessage: owned ? owned.userMessage : picked.userMessage,
       modelSelection: owned ? owned.modelSelection : picked.modelSelection,
       requiredOfficialWorkflowIds: owned
         ? (owned.requiredOfficialWorkflowIds ?? null)
         : picked.requiredOfficialWorkflowIds,
       userId: thread.userId,
-      agentId: thread.agentId,
       thread,
       preparation: {
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
+        captureNetworkBodies: row.captureNetworkBodies,
+        computerUseHostGrant: row.computerUseHostGrant,
+        phoneUseGrant: row.phoneUseGrant,
+        ...pickedProjectFacts(thread.projectId, row.currentProject, owned),
       },
     };
-    return {
-      hasCapacity: row.hasCapacity,
-      threadHasActiveRun: row.threadHasActiveRun,
-      pickedEvent,
-    };
+    return { ...snapshot, pickedEvent };
   });
 }

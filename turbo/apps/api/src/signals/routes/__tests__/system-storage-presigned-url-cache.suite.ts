@@ -82,12 +82,10 @@ describe("system storage presigned URL cache", () => {
       });
     });
     const published = readPublishedArchive(context, publicationStart);
-    await owned.run(() => {
-      return connectors.updateAgentCustomConnectors(
-        owned.actor,
-        owned.agentId,
-        [connector.id],
-      );
+    const account = await owned.run(() => {
+      return connectors.setCustomConnectorValues(owned.actor, connector.id, [
+        { key: "secret", kind: "secret", value: "readonly-cache-test-token" },
+      ]);
     });
     const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`;
     const signedCount = mockUniquePresignedUrls();
@@ -101,7 +99,6 @@ describe("system storage presigned URL cache", () => {
           return api.registerDirectRunner(owned.runnerGroup);
         });
         const run = await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt,
         });
         const execution = await owned.runExecution(run.runId);
@@ -120,10 +117,11 @@ describe("system storage presigned URL cache", () => {
         expect(mount.mountPath).toBe(
           `/home/user/.claude/skills/custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
         );
-        expect(execution.execution.connectorRuntimeTargets).not.toContainEqual(
+        expect(execution.execution.connectorRuntimeTargets).toContainEqual(
           expect.objectContaining({
             kind: "custom",
             customConnectorId: connector.id,
+            sourceId: account.connectionId,
           }),
         );
         // Settle the real dispatched Run before advancing application time. A failed
@@ -258,7 +256,6 @@ describe("system storage presigned URL cache", () => {
     const fixtures = await readonlyConnectorSkills(
       context,
       actor,
-      runFixture.agentId,
       Array.from({ length: 51 }, (_, index) => {
         return `cache batch ${String(index)}`;
       }),

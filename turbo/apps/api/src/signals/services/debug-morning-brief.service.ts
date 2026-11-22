@@ -3,13 +3,12 @@ import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/mo
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { workflows } from "@okouai/db/schema/workflow";
 import { command, computed, state, type Computed } from "ccstate";
-import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { conflict } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
@@ -17,10 +16,7 @@ import { db$, writeDb$ } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import {
-  loadMorningBriefDefaultAgentId$,
-  loadMorningBriefState$,
-} from "./morning-brief-state.service";
+import { loadMorningBriefState$ } from "./morning-brief-state.service";
 import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import { workflowAutomationQueueEventPlan } from "./workflow-automation-enqueue.service";
@@ -60,7 +56,6 @@ function createDebugMorningBriefReceipt(
           chatThreads,
           eq(chatThreads.id, chatAutomationContext.chatThreadId),
         )
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .innerJoin(
           chatEvents,
           and(
@@ -80,8 +75,7 @@ function createDebugMorningBriefReceipt(
             eq(chatAutomationContext.id, requestId),
             eq(chatAutomationContext.eventType, "morning-brief-debug"),
             eq(chatThreads.userId, owner.userId),
-            eq(agents.orgId, owner.orgId),
-            or(eq(agents.visibility, "public"), eq(agents.owner, owner.userId)),
+            eq(chatThreads.orgId, owner.orgId),
           ),
         )
         .orderBy(desc(chatEvents.seqId))
@@ -168,17 +162,8 @@ const prepareDebugMorningBrief$ = command(
     signal: AbortSignal,
   ) => {
     const state = await set(loadMorningBriefState$, owner, signal);
-    const defaultAgentId = await set(
-      loadMorningBriefDefaultAgentId$,
-      owner,
-      signal,
-    );
     signal.throwIfAborted();
-    if (
-      state.kind !== "installed" ||
-      !state.automation.enabled ||
-      state.installation.agentId !== defaultAgentId
-    ) {
+    if (state.kind !== "installed" || !state.automation.enabled) {
       return {
         kind: "error" as const,
         response: conflict(
@@ -223,7 +208,6 @@ const prepareDebugMorningBrief$ = command(
       selectDueMorningBriefWorkflow$,
       {
         automation: target.automation,
-        agentId: state.installation.agentId,
         workflowName: target.name,
       },
       signal,
@@ -242,7 +226,6 @@ const prepareDebugMorningBrief$ = command(
       {
         ...owner,
         workflowId: state.installation.id,
-        agentId: state.installation.agentId,
         workflowTitle: target.displayName ?? "Morning Brief",
         currentTime,
       },

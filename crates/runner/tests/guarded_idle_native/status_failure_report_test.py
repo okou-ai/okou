@@ -14,22 +14,13 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report as failure
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class StatusFailureReportTests(unittest.TestCase):
     def setUp(self):
         report_test.NativeReportTests.setUp(self)
-        gib = 1024**3
-        self.policy = {
-            "host_total_bytes": 64*gib, "operating_floor_bytes": gib,
-            "cleanup_reserve_bytes": 256*1024**2, "critical_available_bytes": 12*gib,
-            "recovery_available_bytes": 20*gib, "live_growth_bytes": 4*1024**2,
-            "tail_growth_bytes": 65*1024**2, "replacement_preparation_bytes": 32*1024**2,
-            "max_sample_age_millis": 1000, "max_operations": 8, "max_cleanup_inflight": 2,
-            "pressure_sample_period_millis": 50, "pressure_recovery_sustain_millis": 100,
-            "pressure_wave_cooldown_millis": 100, "pressure_optional_start_interval_millis": 100,
-            "pressure_max_wave_entries": 1,
-        }
+        self.policy = report_test.pressure_policy_fixture()
         raw = json.dumps(self.policy)
         self.artifacts["policy_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
         self.collector["metadata"]["native_status_failure_policy_json"] = raw
@@ -54,11 +45,6 @@ class StatusFailureReportTests(unittest.TestCase):
             first = copy.deepcopy(covered)
             first["accounting"]["closed"] = False
             runner = str(uuid.uuid4())
-            def heartbeat(sequence, received, finished, allocated):
-                return {"receipt": {"received_ns": at(received), "acknowledgement_status": 204,
-                    "state": {"runnerId": runner, "snapshotGeneration": 1, "snapshotSequence": sequence,
-                        "group": "native-foreground", "mode": "running", "allocatedVcpu": allocated[0],
-                        "allocatedMemoryMb": allocated[1]}}, "send_joined": True, "completed_ns": at(finished)}
             baseline = {"mode": "starting", "max_concurrent": 1, "active_runs": [],
                 "started_at": "2026-10-18T16:00:00Z", "updated_at": "2026-10-18T16:00:10Z",
                 "idle_sandboxes": [{"reuse_key": "thread:native-guarded-"+str(uuid.uuid4()),
@@ -70,17 +56,16 @@ class StatusFailureReportTests(unittest.TestCase):
                 {"policy": self.policy, "published_status": baseline, "status_path": status_path,
                     "receiver_polled_pending": True, "coverage": first},
                 {"pool_held_ns": at(6), "status_held_ns": at(7), "heartbeat_pending_ns": at(8),
-                    "heartbeat_polled_pending": True, "observer": {"started_ns": at(9),
-                        "completed_ns": at(10), "available_bytes": 32*gib, "age_ns": 2,
-                        "read_duration_ns": 1, "joined": True}, "tracker_shutdown_pending": True,
+                    "heartbeat_polled_pending": True, "observer": joined_observer(at(9), at(10)), "tracker_shutdown_pending": True,
                     "accounting_shutdown_pending": True, "coverage": covered},
                 {"pool_released_ns": at(13), "status_held_ns": at(7),
-                    "heartbeat": heartbeat(1,14,15,(2,4096)), "receiver_polled_pending": True,
+                    "heartbeat": foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
+                    "receiver_polled_pending": True,
                     "tracker_shutdown_pending": True, "accounting_shutdown_pending": True, "coverage": covered},
                 {"io_released_ns": at(17), "status_held_ns": at(7), "status_wait_polled_ns": at(21),
                     "status_waits_before": 0, "status_waits_after": 1, "receiver_polled_pending": True,
                     "tracker_shutdown_pending": True, "accounting_joined": True, "accounting": accounts,
-                    "allocated": [0,0,0], "heartbeat": heartbeat(2,22,23,(0,0)),
+                    "allocated": [0,0,0], "heartbeat": foreground_heartbeat(runner, 2, at(22), at(23), (0, 0)),
                     "fault_injected_ns": at(24), "status_destination_directory": True},
                 {"status_released_ns": at(26), "batch_joined_ns": at(27), "selected": 1, "completed": 1,
                     "uncertain": 0, "not_started": 0, "is_complete": False, "status_error_kind": "write",
@@ -93,10 +78,14 @@ class StatusFailureReportTests(unittest.TestCase):
                     "allocated": [0,0,0], "accounting": accounts},
             )
             for phase, value, clock in zip(failure.PHASES, values, (4,12,16,25,30,40,45)):
-                self.witnesses.append({"version": 1, "case": case, "phase": phase,
-                    "monotonic_ns": at(clock), "unix_ns": at(clock)+1000,
-                    "sandbox_id": terminal[1]["sandbox_id"], "backing_generation": terminal[1]["backing_generation"],
-                    "evidence": copy.deepcopy(value)})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(clock),
+                    unix_ns=at(clock)+1000,
+                    sandbox_id=terminal[1]["sandbox_id"],
+                    backing_generation=terminal[1]["backing_generation"],
+                    evidence=copy.deepcopy(value),
+                ))
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

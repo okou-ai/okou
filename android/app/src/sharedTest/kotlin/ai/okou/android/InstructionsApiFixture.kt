@@ -19,9 +19,9 @@ class InstructionsApiFixture : Closeable {
     private val transport = FixtureHttpsServer()
     val server = transport.server
     val requests = ConcurrentLinkedQueue<RecordedRequest>()
-    @Volatile var enabled = true
     @Volatile var denied = false
     @Volatile var disconnectSave = false
+    @Volatile var rejectSave = false
     @Volatile var beforeRead: () -> Unit = {}
     @Volatile var responseOwner: String? = null
     private val lock = Any()
@@ -53,14 +53,10 @@ class InstructionsApiFixture : Closeable {
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requests.add(request)
-                    if (request.path == "/api/feature-switches")
-                        return json(
-                            """{"switches":{},"effectiveSwitches":{"singleAgent":$enabled}}"""
-                        )
                     if (request.path != "/api/instructions")
                         return MockResponse().setResponseCode(404)
                     if (request.method == "GET") beforeRead()
-                    if (!enabled || denied)
+                    if (denied)
                         return json("""{"error":{"code":"FORBIDDEN","message":"Unavailable"}}""")
                             .setResponseCode(403)
                     if (request.method == "PUT")
@@ -71,7 +67,7 @@ class InstructionsApiFixture : Closeable {
                                 return json("""{"error":{"code":"CONFLICT","message":"Changed"}}""")
                                     .setResponseCode(409)
                             val content = input.getValue("content").jsonPrimitive.content
-                            if (content.contains('\u0000'))
+                            if (rejectSave || content.contains('\u0000'))
                                 return MockResponse().setResponseCode(400)
                             externalEdit(content)
                         }

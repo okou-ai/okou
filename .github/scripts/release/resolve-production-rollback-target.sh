@@ -9,6 +9,9 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 readonly IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT=01d21f7c5857795104c27cd54e724f2ced2d683e
 # App saves now require #44980's reserved twelve-character address in responses.
 readonly MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT=046a7bac03cc5f5a94cc67394756f69be2eaf111
+# #48939 makes Marketing the sole campaign owner without the retired routing
+# variable. Rollback must preserve that ownership after the variable is removed.
+readonly MARKETING_REWARD_OWNERSHIP_COMMIT=d1739bed31dcde34fead64d82e54489fda10549f
 # The App refreshes chat indicators only on #45712's chatIndicatorsChanged
 # signal; earlier APIs never publish it.
 readonly CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT=ac0609591b2a0a5f159afb50b7561df46a23f6a4
@@ -137,6 +140,9 @@ readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
 readonly BUILT_IN_SKILL_CATALOG_API_PATH=.github/rollback-floors/built-in-skill-catalog-api
+# API 2.100.5 (#49780) is the first released writer and ORM mapping that
+# can run after org_custom_connectors.skill_storage_version_id is dropped.
+readonly CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_COMMIT=ced5af12a0a881d545d7b6f571fb107365ea9c65
 readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
 readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-character-skill-bundle-reader
 readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
@@ -232,11 +238,17 @@ if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
 fi
 
+if ! git merge-base --is-ancestor "$CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the mirror-free custom connector Skill API: ${CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_COMMIT}."
+fi
 if ! git merge-base --is-ancestor "$IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates immutable default Agent identity: ${IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates Marketing handoff short-address responses: ${MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$MARKETING_REWARD_OWNERSHIP_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target cannot preserve sole Marketing reward ownership: ${MARKETING_REWARD_OWNERSHIP_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates chat indicator change signals: ${CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT}."
@@ -288,6 +300,16 @@ fi
 
 if ! git merge-base --is-ancestor "$STAFF_SINGLE_AGENT_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates staff Single Agent preparation: ${STAFF_SINGLE_AGENT_READER_COMMIT}."
+fi
+
+# Older releases still read or write agents and cannot serve the contracted schema.
+agent_contraction_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- turbo/packages/db/src/migrations/1616_retire_agents_table.sql | sed -n '1p')
+if [[ ! "$agent_contraction_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Agent storage contraction on main."
+fi
+if ! git merge-base --is-ancestor "$agent_contraction_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Agent storage contraction: ${agent_contraction_commit}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
@@ -976,7 +998,7 @@ if ! git merge-base --is-ancestor "$seed_skill_bundle_only_api_commit" "$TARGET_
   fail "Rollback target predates the Seed Skill bundle-only publisher: ${seed_skill_bundle_only_api_commit}."
 fi
 
-# The preparation API follows the activated catalog even when its old mirror is stale.
+# The rollback API must publish to the independent catalog without the legacy skills mirror.
 if ! built_in_skill_catalog_api_commit=$(git show "origin/main:${BUILT_IN_SKILL_CATALOG_API_PATH}"); then
   fail "Cannot read the built-in Skill catalog API rollback floor from main."
 fi
@@ -987,7 +1009,7 @@ if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" origin/ma
   fail "Built-in Skill catalog API rollback floor is not on main."
 fi
 if ! git merge-base --is-ancestor "$built_in_skill_catalog_api_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the built-in Skill catalog reader: ${built_in_skill_catalog_api_commit}."
+  fail "Rollback target predates the independent built-in Skill publisher: ${built_in_skill_catalog_api_commit}."
 fi
 
 # Captured Connector bundles must retain Workflow precedence, even after the
@@ -1224,6 +1246,21 @@ if ! git merge-base --is-ancestor "$widget_push_columns_floor" origin/main; then
 fi
 if ! git merge-base --is-ancestor "$widget_push_columns_floor" "$TARGET_COMMIT"; then
   fail "Rollback target predates the iOS widget push columns retirement: ${widget_push_columns_floor}."
+fi
+
+# Only artifacts with Agent connector SQL retirement support the contracted schema.
+agent_connector_schema_floor_path=.github/rollback-floors/agent-connector-schema-independent-api
+if ! agent_connector_schema_floor=$(git show "origin/main:${agent_connector_schema_floor_path}"); then
+  fail "Cannot read the Agent connector schema rollback floor from main."
+fi
+if [[ ! "$agent_connector_schema_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Agent connector schema rollback floor."
+fi
+if ! git merge-base --is-ancestor "$agent_connector_schema_floor" origin/main; then
+  fail "Agent connector schema rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$agent_connector_schema_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Agent connector schema retirement: ${agent_connector_schema_floor}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

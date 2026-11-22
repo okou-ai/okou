@@ -1,33 +1,25 @@
 import { computed, type Computed } from "ccstate";
-import type { createThreadAutomationContext } from "../thread-automation-context.service";
 import {
-  restoredWorkflowAutomationEventPayload,
   storedWorkflowAutomationContext,
   workflowAutomationAgentPrompt,
   workflowAutomationEventTypeSchema,
 } from "../workflow-automation-context.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
-import type { PickedThreadInputEvent } from "./types";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { ThreadContext } from "../thread-context.signals";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 
 export function createAutomationThreadPrompt(
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  context$: ReturnType<typeof createThreadAutomationContext>,
-  target$: ThreadContext["automationTarget$"],
+  snapshot$: ThreadContext["automationSnapshot$"],
+  payload$: ThreadContext["automationPayload$"],
   singleAgent$: Computed<Promise<boolean>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
-    const pickedEvent = await get(pickedEvent$);
-    if (
-      pickedEvent?.contextType !== "automation" ||
-      pickedEvent.contextId === null
-    ) {
+    const snapshot = await get(snapshot$);
+    if (!snapshot) {
       return null;
     }
-    const context = await get(context$);
+    const { event: context, target } = snapshot;
     if (
-      !context ||
       context.workflowName === null ||
       context.eventType === null ||
       context.eventPayload === null
@@ -37,15 +29,14 @@ export function createAutomationThreadPrompt(
     const eventType = workflowAutomationEventTypeSchema.parse(
       context.eventType,
     );
-    const eventPayload = restoredWorkflowAutomationEventPayload(
-      context.eventPayload,
-    );
+    const eventPayload = await get(payload$);
     if (!eventPayload) {
       return null;
     }
     // Invoke the same ordinary Workflow name that the Runner will mount.
-    // Official Workflow names retain the staff cutover's compatibility rule.
-    const target = await get(target$);
+    // A queued staff event can still carry the old name. Use the live Official
+    // Workflow name until those events drain.
+    // https://github.com/okou-ai/okou/issues/46783
     const workflowName =
       target?.ordinaryWorkflowName ??
       (target?.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
@@ -67,7 +58,7 @@ export function createAutomationThreadPrompt(
           JSON.stringify(
             {
               automationId: context.automationId,
-              automationEventId: pickedEvent.contextId,
+              automationEventId: context.id,
             },
             null,
             2,
@@ -81,7 +72,6 @@ export function createAutomationThreadPrompt(
           "- Use integration-specific messaging or file commands only when the task names an explicit delivery target or the current surface provides one.",
         ].join("\n"),
       },
-      skillVolumes: [],
     };
   });
 }

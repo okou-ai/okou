@@ -27,7 +27,6 @@ describe("CHAT-02: model-first routing", () => {
     const {
       run: own,
       actor,
-      agentId,
       runExecution,
       sendChatRun,
     } = await publicChatActor(context);
@@ -39,7 +38,6 @@ describe("CHAT-02: model-first routing", () => {
     const answer = "the last complete canonical answer";
     const firstPrompt = "create the last complete history";
     const first = await sendChatRun(actor, {
-      agentId,
       model: "gpt-6-luna",
       prompt: firstPrompt,
     });
@@ -60,7 +58,6 @@ describe("CHAT-02: model-first routing", () => {
     expect(blobEntriesOf(objects)).toStrictEqual([]);
 
     const resumed = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue the preserved canonical session with tools",
     });
@@ -85,7 +82,6 @@ describe("CHAT-02: model-first routing", () => {
     const {
       run: own,
       actor,
-      agentId,
       runExecution,
       sendChatRun,
       requestSendEvent,
@@ -98,7 +94,6 @@ describe("CHAT-02: model-first routing", () => {
     const historyObjects = mockPiObjectStore();
     const firstPrompt = "establish original subscription history";
     const first = await sendChatRun(actor, {
-      agentId,
       model: "gpt-6-luna",
       prompt: firstPrompt,
     });
@@ -116,7 +111,6 @@ describe("CHAT-02: model-first routing", () => {
     });
     const prompt = "resume from the settled subscription H0";
     const run = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       model: "gpt-6-luna",
       prompt,
@@ -126,7 +120,6 @@ describe("CHAT-02: model-first routing", () => {
     await requestSendEvent(
       actor,
       {
-        agentId,
         threadId: run.threadId,
         prompt: "preserve this in-flight active input",
         clientEventId: activeInputEventId,

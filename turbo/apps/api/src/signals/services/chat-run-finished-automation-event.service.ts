@@ -1,13 +1,11 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
 } from "./chat-event-publication.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import {
-  chatRunFinishedEventConfigSchema,
-  type ChatRunFinishedEventConfig,
-} from "@okouai/api-contracts/contracts/workflows";
+import { chatRunFinishedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import {
   workflows,
@@ -35,10 +33,13 @@ import {
   pickEnqueuedChatThread$,
 } from "./chat-thread-queue-drain.service";
 import { waitUntil } from "../context/wait-until";
-import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
+import { chatRunSourceTitleSnapshot } from "./chat-user-message.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { ChatRunFinishedAutomationAlreadyAdmittedError } from "./workflow-input-queue.service";
+import {
+  ChatRunFinishedAutomationAlreadyAdmittedError,
+  ChatRunFinishedAutomationBindingChangedError,
+} from "./workflow-input-queue.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 const CHAT_RUN_FINISHED_EVENT_TYPE = "chat-run-finished";
@@ -134,9 +135,16 @@ function chatRunFinishedPatternMatches(pattern: string, text: string): boolean {
 }
 
 function automationMatchesEvent(
-  config: ChatRunFinishedEventConfig,
+  automation: typeof workflowAutomations.$inferSelect,
   event: ChatRunFinishedEvent,
 ): boolean {
+  const parsed = chatRunFinishedEventConfigSchema.safeParse(
+    automation.eventConfig,
+  );
+  if (!parsed.success) {
+    return false;
+  }
+  const config = parsed.data;
   const statuses = config.runStatuses ?? ["completed", "failed", "cancelled"];
   if (!statuses.includes(event.runStatus)) {
     return false;
@@ -226,13 +234,12 @@ const admitChatRunFinishedAutomation$ = command(
     args: {
       readonly event: ChatRunFinishedEvent;
       readonly automation: typeof workflowAutomations.$inferSelect;
-      readonly agentId: string;
       readonly chatThreadId: string;
       readonly workflowName: string;
     },
     signal: AbortSignal,
   ) => {
-    const { event, automation, agentId, chatThreadId, workflowName } = args;
+    const { event, automation, chatThreadId, workflowName } = args;
     const context = chatRunFinishedTriggerContext({
       workflowName,
       automationId: automation.id,
@@ -242,11 +249,8 @@ const admitChatRunFinishedAutomation$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation,
-            agentId,
-            chatThreadId,
-          },
+          automation,
+          chatThreadId,
           automationContext: context,
           queueEventId: uuidv5(
             `${automation.id}:${event.runId}`,
@@ -258,11 +262,10 @@ const admitChatRunFinishedAutomation$ = command(
             runId: event.runId,
           },
           apiStartTime: now(),
-          agentRunSource: {
+          chatRunSource: {
             runId: event.runId,
             threadId: event.chatThreadId,
-            agentId: event.sourceAgentId,
-            titleSnapshot: agentRunSourceTitleSnapshot(event.sourceThreadTitle),
+            titleSnapshot: chatRunSourceTitleSnapshot(event.sourceThreadTitle),
           },
           triggerSource: "automation-event",
           triggerBrief: `Chat run ${event.runStatus} in watched thread`,
@@ -295,17 +298,20 @@ const admitChatRunFinishedAutomation$ = command(
 );
 
 const loadChatRunFinishedAutomationTargets$ = command(
-  async ({ set }, chatThreadId: string, signal: AbortSignal) => {
+  async (
+    { set },
+    target: { readonly chatThreadId: string; readonly automationId?: string },
+    signal: AbortSignal,
+  ) => {
     const automationRows = await set(writeDb$)
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -327,12 +333,91 @@ const loadChatRunFinishedAutomationTargets$ = command(
           eq(workflowAutomations.eventType, CHAT_RUN_FINISHED_EVENT_TYPE),
           eq(
             sql`${workflowAutomations.eventConfig}->>'chatThreadId'`,
-            chatThreadId,
+            target.chatThreadId,
           ),
+          target.automationId === undefined
+            ? undefined
+            : eq(workflowAutomations.id, target.automationId),
         ),
       );
     signal.throwIfAborted();
     return automationRows;
+  },
+);
+
+interface ChatRunFinishedAutomationTarget {
+  readonly automation: typeof workflowAutomations.$inferSelect;
+  readonly chatThreadId: string | null;
+  readonly workflowName: string;
+  readonly workflowDisplayName: string | null;
+}
+
+const resolveChatRunFinishedAutomationThread$ = command(
+  async (
+    { set },
+    row: ChatRunFinishedAutomationTarget,
+    currentTime: Date,
+    signal: AbortSignal,
+  ) => {
+    return (
+      row.chatThreadId ??
+      (await set(
+        ensureWorkflowUserAutomationThread$,
+        {
+          orgId: row.automation.orgId,
+          userId: row.automation.ownerUserId,
+          workflowId: row.automation.workflowId,
+          workflowTitle: row.workflowDisplayName ?? row.workflowName,
+          currentTime,
+        },
+        signal,
+      ))
+    );
+  },
+);
+
+const admitChatRunFinishedWithBindingRetry$ = command(
+  async (
+    { set },
+    target: ChatRunFinishedAutomationTarget & { readonly chatThreadId: string },
+    event: ChatRunFinishedEvent,
+    currentTime: Date,
+    signal: AbortSignal,
+  ) => {
+    const admission = await settle(
+      set(admitChatRunFinishedAutomation$, { ...target, event }, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (admission.ok) {
+      return;
+    }
+    if (
+      !(admission.error instanceof ChatRunFinishedAutomationBindingChangedError)
+    ) {
+      throw admission.error;
+    }
+    // Reload only this consumer. The existing callback and queue input IDs
+    // deduplicate the retry if another dispatch admitted the same event.
+    const [current] = await set(
+      loadChatRunFinishedAutomationTargets$,
+      { chatThreadId: event.chatThreadId, automationId: target.automation.id },
+      signal,
+    );
+    if (!current || !automationMatchesEvent(current.automation, event)) {
+      return;
+    }
+    const chatThreadId = await set(
+      resolveChatRunFinishedAutomationThread$,
+      current,
+      currentTime,
+      signal,
+    );
+    await set(
+      admitChatRunFinishedAutomation$,
+      { ...current, event, chatThreadId },
+      signal,
+    );
   },
 );
 
@@ -350,7 +435,7 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
     }
     const automationRows = await set(
       loadChatRunFinishedAutomationTargets$,
-      event.chatThreadId,
+      { chatThreadId: event.chatThreadId },
       signal,
     );
     signal.throwIfAborted();
@@ -364,10 +449,7 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
     const currentTime = nowDate();
     const exhaustedThreadIds = new Set<string>();
     for (const row of automationRows) {
-      const config = chatRunFinishedEventConfigSchema.safeParse(
-        row.automation.eventConfig,
-      );
-      if (!config.success || !automationMatchesEvent(config.data, event)) {
+      if (!automationMatchesEvent(row.automation, event)) {
         continue;
       }
 
@@ -389,20 +471,12 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         continue;
       }
 
-      const chatThreadId =
-        row.chatThreadId ??
-        (await set(
-          ensureWorkflowUserAutomationThread$,
-          {
-            orgId: row.automation.orgId,
-            userId: row.automation.ownerUserId,
-            workflowId: row.automation.workflowId,
-            agentId: row.agentId,
-            workflowTitle: row.workflowDisplayName ?? row.workflowName,
-            currentTime,
-          },
-          signal,
-        ));
+      const chatThreadId = await set(
+        resolveChatRunFinishedAutomationThread$,
+        row,
+        currentTime,
+        signal,
+      );
       signal.throwIfAborted();
 
       if (sourceBudget === 0) {
@@ -446,14 +520,10 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
       }
 
       await set(
-        admitChatRunFinishedAutomation$,
-        {
-          event,
-          automation: row.automation,
-          agentId: row.agentId,
-          chatThreadId,
-          workflowName: row.workflowName,
-        },
+        admitChatRunFinishedWithBindingRetry$,
+        { ...row, chatThreadId },
+        event,
+        currentTime,
         signal,
       );
       signal.throwIfAborted();

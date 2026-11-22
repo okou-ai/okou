@@ -9,23 +9,10 @@ load '../../helpers/runner-api'
 setup_file() {
     runner_e2e_use_mock_codex_profile
     require_runner_api_credentials
-
-    export RUNNER_AGENT_ID
-    RUNNER_AGENT_ID="$(create_runner_agent \
-        "e2e-codex-resume-$(date +%s%3N)-$RANDOM")"
-    set_runner_agent_instructions \
-        "$RUNNER_AGENT_ID" \
-        "Codex resume test instructions."
-}
-
-teardown_file() {
-    if [[ -n "${RUNNER_AGENT_ID:-}" ]]; then
-        delete_runner_agent_for_stage0_teardown "$RUNNER_AGENT_ID"
-    fi
 }
 
 @test "second chat turn resumes the mock codex session" {
-    run runner_chat_start_mock_codex "$RUNNER_AGENT_ID" "first turn"
+    run runner_chat_start_mock_codex "" "first turn"
 
     assert_success
     assert_output --partial '"status":"completed"'
@@ -36,7 +23,7 @@ teardown_file() {
     thread_id="$(runner_chat_field "$first_output" '.threadId')"
     first_session_id="$(runner_chat_field "$first_output" '.sessionId')"
 
-    run runner_chat_continue "$RUNNER_AGENT_ID" "$thread_id" "second turn"
+    run runner_chat_continue "" "$thread_id" "second turn"
 
     assert_success
     assert_output --partial '"status":"completed"'

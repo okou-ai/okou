@@ -17,7 +17,6 @@ setup() {
 }
 
 teardown() {
-    # The workspace default Agent is borrowed, not owned by this test.
     runner_e2e_teardown_test
     if [[ -n "$WORKFLOW_ID" ]]; then
         runner_e2e_delete_workflow "$WORKFLOW_ID" >/dev/null 2>&1 || true
@@ -39,14 +38,12 @@ teardown() {
 }
 
 @test "runner refreshes workspace workflow files and mounts personal instructions" {
-    run runner_api_curl "/api/onboarding/status"
+    run create_runner_agent "runner-context-${TEST_ID}"
     echo "$output"
     assert_success
-    local agent_id
-    agent_id=$(jq -er '.defaultAgentId | select(type == "string" and length > 0)' <<<"$output")
+    AGENT_ID="$output"
 
-    # This is the mock profile's sole personal-Instructions writer. Parallel
-    # shards run their own non-default Agents and retain Agent instructions.
+    # Both turns share one member. Restore the saved version during teardown.
     run runner_api_curl "/api/instructions"
     echo "$output"
     assert_success
@@ -64,11 +61,9 @@ teardown() {
     local workflow_marker="WORKFLOW_FILE_${TEST_ID}"
     local workflow_payload
     workflow_payload=$(jq -nc \
-        --arg agentId "$agent_id" \
         --arg name "$workflow_name" \
         --arg marker "$workflow_marker" '
         {
-            agentId: $agentId,
             name: $name,
             instruction: "Use the supplementary context files.",
             files: [
@@ -92,7 +87,6 @@ grep -F '__INSTRUCTION_MARKER__' "$HOME/.codex/AGENTS.md"
 grep -F '__WORKFLOW_MARKER__' "$HOME/.codex/skills/__WORKFLOW_NAME__/context.txt"
 test ! -s "$HOME/.codex/skills/__WORKFLOW_NAME__/empty.txt"
 test -n "$OKOU_APP_URL"
-test -n "$OKOU_AGENT_ID"
 test -n "$OKOU_CHAT_THREAD_ID"
 test -n "$OKOU_TOKEN"
 node -e '
@@ -112,7 +106,7 @@ EOF
     prompt=${prompt//__WORKFLOW_NAME__/$workflow_name}
     prompt=${prompt//__OUTPUT_MARKER__/$output_marker}
 
-    run runner_e2e_start_mock_shell_chat_run "$agent_id" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -122,6 +116,8 @@ EOF
     echo "$output"
     assert_success
 
+    local first_run_response="$output"
+
     run runner_e2e_wait_for_chat_text \
         "$THREAD_ID" \
         "$RUN_ID" \
@@ -130,6 +126,19 @@ EOF
     assert_success
     assert_output --partial "$PERSONAL_INSTRUCTIONS_MARKER"
     assert_output --partial "$workflow_marker"
+
+    local first_run_id="$RUN_ID"
+    local initial_marker="$PERSONAL_INSTRUCTIONS_MARKER"
+    local first_session_id
+    first_session_id=$(jq -er '.result.frameworkSessionId | strings | select(length > 0)' <<<"$first_run_response")
+    run runner_api_curl "/api/instructions"
+    assert_success
+    local next_content="UPDATED_PERSONAL_${TEST_ID}"
+    local next_payload
+    next_payload=$(jq -nc --arg content "$next_content" --argjson current "$output" '{content: $content, ifVersion: $current.version}')
+    run runner_api_curl "/api/instructions" -X PUT -d "$next_payload"
+    assert_success
+    PERSONAL_INSTRUCTIONS_MARKER="$next_content"
 
     local updated_workflow_marker="WORKFLOW_FILE_UPDATED_${TEST_ID}"
     local update_payload
@@ -154,6 +163,8 @@ EOF
     local continuation_prompt
     continuation_prompt=$(cat <<'EOF'
 set -euo pipefail
+grep -F '__UPDATED_PERSONAL__' "$HOME/.codex/AGENTS.md"
+if grep -F '__INITIAL_PERSONAL__' "$HOME/.codex/AGENTS.md"; then exit 1; fi
 grep -F '__UPDATED_WORKFLOW_MARKER__' "$HOME/.codex/skills/__WORKFLOW_NAME__/context.txt"
 grep -F 'added-after-update' "$HOME/.codex/skills/__WORKFLOW_NAME__/added.txt"
 test ! -s "$HOME/.codex/skills/__WORKFLOW_NAME__/empty.txt"
@@ -161,20 +172,24 @@ printf '__CONTINUATION_MARKER__\n'
 EOF
 )
     continuation_prompt=${continuation_prompt//__UPDATED_WORKFLOW_MARKER__/$updated_workflow_marker}
+    continuation_prompt=${continuation_prompt//__UPDATED_PERSONAL__/$PERSONAL_INSTRUCTIONS_MARKER}
+    continuation_prompt=${continuation_prompt//__INITIAL_PERSONAL__/$initial_marker}
     continuation_prompt=${continuation_prompt//__WORKFLOW_NAME__/$workflow_name}
     continuation_prompt=${continuation_prompt//__CONTINUATION_MARKER__/$continuation_marker}
 
     run runner_e2e_continue_chat_run \
-        "$agent_id" \
+        "$AGENT_ID" \
         "$THREAD_ID" \
         "$continuation_prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
 
+    [[ "$RUN_ID" != "$first_run_id" ]]
     run runner_wait_for_run "$RUN_ID" 180
     echo "$output"
     assert_success
+    [[ "$(jq -er '.result.frameworkSessionId' <<<"$output")" == "$first_session_id" ]]
 
     run runner_e2e_wait_for_chat_text \
         "$THREAD_ID" \

@@ -6,7 +6,7 @@ import { sshCommand } from "../index";
 const helper = vi.hoisted(() => {
   return {
     replies: [] as { data: unknown; mode?: "hang" | "extra"; exit?: number }[],
-    requests: [] as string[],
+    requests: [] as unknown[],
   };
 });
 
@@ -26,6 +26,7 @@ vi.mock("node:child_process", async (importOriginal) => {
         const child = original.spawn(
           "python3",
           [
+            "-S",
             fileURLToPath(
               new URL(
                 "../../../test/fixtures/ssh-read-helper.py",
@@ -37,16 +38,17 @@ vi.mock("node:child_process", async (importOriginal) => {
             stdio: ["pipe", "pipe", "pipe", "ipc"],
             env: {
               ...process.env,
-              SSH_READ_RESPONSE: Buffer.from(
-                `${JSON.stringify({ type: "result", data: reply.data })}\n`,
-              ).toString("base64"),
+              SSH_READ_RESPONSE: JSON.stringify({
+                type: "result",
+                data: reply.data,
+              }),
               SSH_READ_MODE: reply.mode ?? "normal",
               SSH_READ_EXIT: String(reply.exit ?? 0),
             },
           },
         );
         child.on("message", (message: unknown) => {
-          if (typeof message === "string") helper.requests.push(message);
+          helper.requests.push(message);
         });
         return child;
       },
@@ -84,23 +86,30 @@ function page(cursor: number, bytes: Buffer, end: number, chunkSize = 4096) {
 }
 const stdout: Buffer[] = [];
 const stderr: Buffer[] = [];
+let activeRead: ReturnType<typeof sshCommand.parseAsync> | undefined;
+
 function result(): unknown {
   return JSON.parse(Buffer.concat(stdout).toString());
 }
-async function read(...args: string[]) {
-  await sshCommand.parseAsync(["session", "read", id, "--json", ...args], {
+
+async function runRead(args: readonly string[]) {
+  const work = sshCommand.parseAsync(["session", "read", id, ...args], {
     from: "user",
   });
+  activeRead = work;
+  try {
+    await work;
+  } finally {
+    activeRead = undefined;
+  }
 }
-async function plain(...args: string[]) {
-  await sshCommand.parseAsync(["session", "read", id, ...args], {
-    from: "user",
-  });
+
+function read(...args: string[]) {
+  return runRead(["--json", ...args]);
 }
-function requests(): unknown[] {
-  return helper.requests.map((request) => {
-    return JSON.parse(request);
-  });
+
+function plain(...args: string[]) {
+  return runRead(args);
 }
 
 beforeEach(() => {
@@ -139,7 +148,13 @@ beforeEach(() => {
     for (const option of command.options)
       command.setOptionValue(option.attributeName(), option.defaultValue);
 });
-afterEach(() => {
+afterEach(async () => {
+  // A timed-out test can still own a read and its helper process.
+  const work = activeRead;
+  if (work) {
+    process.emit("SIGINT");
+    await Promise.allSettled([work]);
+  }
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   process.exitCode = 0;
@@ -173,8 +188,8 @@ describe("okou ssh session read", () => {
         await plain("--wait", "0");
         expect(Buffer.concat(stderr).toString()).toContain(message);
       }
-      expect(requests()).toHaveLength(1);
-      expect(requests()[0]).toMatchObject({
+      expect(helper.requests).toHaveLength(1);
+      expect(helper.requests[0]).toMatchObject({
         method: "ssh.session.read",
         params: { sessionId: id },
       });
@@ -196,7 +211,7 @@ describe("okou ssh session read", () => {
       limits: { wait_seconds: 10, max_bytes: 16384 },
       next_command: `okou ssh session read ${id} --cursor 0 --wait 10 --max-bytes 16384 --json`,
     });
-    expect(requests()).toEqual([
+    expect(helper.requests).toEqual([
       {
         version: 1,
         method: "ssh.session.read",
@@ -221,7 +236,9 @@ describe("okou ssh session read", () => {
       chunks: [],
       failure: null,
     });
-    expect(requests()).toMatchObject([{ params: { cursor: 17, waitMs: 0 } }]);
+    expect(helper.requests).toMatchObject([
+      { params: { cursor: 17, waitMs: 0 } },
+    ]);
   });
 
   it("auto-pages without another wait and preserves binary bytes and lost ranges", async () => {
@@ -246,7 +263,7 @@ describe("okou ssh session read", () => {
       lost: [{ from: 0, to: 10 }],
       failure: null,
     });
-    expect(requests()).toMatchObject([
+    expect(helper.requests).toMatchObject([
       { params: { cursor: 0, waitMs: 25, maxBytes: 8192 } },
       { params: { cursor: 8202, waitMs: 0, maxBytes: 8192 } },
     ]);
@@ -271,7 +288,7 @@ describe("okou ssh session read", () => {
       session: { state: { type: "finished", exit: { code: 7 } } },
       next_command: expect.stringContaining("--cursor 8196"),
     });
-    expect(requests()).toMatchObject([
+    expect(helper.requests).toMatchObject([
       { params: { maxBytes: 8192 } },
       { params: { maxBytes: 4, waitMs: 0 } },
     ]);
@@ -406,7 +423,7 @@ describe("okou ssh session read", () => {
       stop_reason: "failed",
       failure: { failure_reason: "cancelled" },
     });
-    expect(requests()).toMatchObject([
+    expect(helper.requests).toMatchObject([
       { method: "ssh.session.read" },
       { method: "ssh.session.read" },
     ]);

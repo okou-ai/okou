@@ -32,8 +32,7 @@ function status(connected = false): DiscordOrgStatus {
     guildId: connected ? guildId : null,
     guildName: connected ? "Verified server" : null,
     discordUserId: connected ? "234567890123456789" : null,
-    defaultAgentId: null,
-    defaultAgentName: null,
+
     onboarding: "oauth",
     dmSelectionConnectionId: null,
     dmBindings: [],

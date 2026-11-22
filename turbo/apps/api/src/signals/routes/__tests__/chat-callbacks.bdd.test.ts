@@ -125,7 +125,7 @@ async function configureClaudeCodeSubscriptionProvider(
 async function startChatRun(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
+    readonly agentId?: string;
     readonly prompt: string;
     readonly clientEventId?: string;
     readonly threadId?: string;
@@ -142,7 +142,6 @@ async function startChatRun(
   const messageId = body.clientEventId ?? randomUUID();
   const selectedModel = body.selectedModel;
   const requestBody = {
-    agentId: body.agentId,
     prompt: body.prompt,
     clientEventId: messageId,
     ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
@@ -197,7 +196,6 @@ async function queueChatEvent(
   const sent = await chat.requestSendEvent(
     actor,
     {
-      agentId: body.agentId,
       threadId: body.threadId,
       prompt: body.prompt,
       clientEventId: messageId,
@@ -1677,11 +1675,9 @@ describe("CHAT-02: completed chat callback", () => {
 
       // A Web run in a Slack-created thread still notifies and becomes unread:
       // this policy belongs to the current Run, not the thread's history.
-      const { agentId } = await chat.readThreadMetadata(actor, threadId);
       await chatCallbacks.registerPushSubscription(actor);
       chatCallbacks.enableVapid();
       const webRun = await startChatRun(actor, {
-        agentId,
         threadId,
         prompt: "Leave an earlier Web result unread",
       });
@@ -1749,7 +1745,6 @@ describe("CHAT-02: completed chat callback", () => {
       }
       expect(indicators.body.threads[threadId]).toBeUndefined();
       expect(indicators.body.unreadAt[threadId]).toBeUndefined();
-      expect(indicators.body.agents[agentId]).toBeUndefined();
       expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
       await expect(
         chat.readThreadMetadata(actor, threadId),
@@ -1831,7 +1826,6 @@ describe("CHAT-02: completed chat callback", () => {
       const indicators = await readIndicators();
       expect(indicators.threads[run.threadId]).toBeUndefined();
       expect(indicators.unreadAt[run.threadId]).toBeUndefined();
-      expect(indicators.agents[agentId]).toBeUndefined();
       expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
       await expect(
         chat.readThreadMetadata(actor, run.threadId),
@@ -1850,7 +1844,7 @@ describe("CHAT-02: completed chat callback", () => {
           );
         }),
       ).toHaveLength(0);
-      await chat.markAgentThreadsRead(actor, agentId);
+      await chat.markAllThreadsRead(actor);
       await chat.requestSetThreadMuted(actor, run.threadId, false, [204]);
       expect((await readIndicators()).threads[run.threadId]).toBe("unread");
       await expect(
@@ -5306,7 +5300,7 @@ describe("CHAT-02: push notification gating", () => {
     expect(provider.requests.at(-1)?.payload).toStrictEqual({
       aps: { badge: 1 },
     });
-    await chat.markAgentThreadsRead(actor, agentId);
+    await chat.markAllThreadsRead(actor);
     await flushWaitUntilForTest();
     expect(provider.requests.at(-1)?.payload).toStrictEqual({
       aps: { badge: 0 },

@@ -1,3 +1,9 @@
+import { isChatRunReference } from "../contracts/chat-run-reference";
+import {
+  externalMessageSourceKinds,
+  readStoredMessageParts,
+} from "../contracts/stored-message-parts";
+import { MAX_VOICE_CLIPS } from "../contracts/voice-clips";
 import {
   modelSettingsPatchSchema,
   modelSettingsSchema,
@@ -169,8 +175,10 @@ export const indicatorSchema = zEnum(["active", "unread"]);
  * precedence, so an unread Agent can still have an active thread.
  *
  * Reads are non-atomic and may observe different states during Run transitions.
- * They cover up to 128 newest visible Agents, 50 active threads and 50 unread
- * threads. Unread selection examines up to 128 newest unmuted candidate threads
+ * They cover up to 50 recent active threads and 50 unread threads. The opt-in
+ * selects unread watermarks independently of the active window. A thread in
+ * both windows shows activity and still has an unread watermark.
+ * Unread selection examines up to 128 newest unmuted candidate threads
  * with messages after their read watermark within seven days, and terminal
  * markers within that lookback. Missing entries do not prove inactivity,
  * completion, complete output or that all messages are read. No refresh deadline
@@ -184,9 +192,8 @@ export const indicatorSchema = zEnum(["active", "unread"]);
  * indicators or event history does not advance the thread's read watermark.
  */
 export const indicatorsSchema = object({
-  agents: record(uuid(), indicatorSchema),
   threads: record(uuid(), indicatorSchema),
-  /** Latest unread marker for each thread marked unread above. */
+  /** Latest unread terminal marker. With includeActiveUnread, threads can also be active. */
   unreadAt: record(uuid(), iso.datetime()),
 });
 
@@ -203,7 +210,6 @@ export const chatThreadSnapshotProjectionSchema = object({
    * retained snapshots are rewritten and those API rollback targets retire (#44591).
    */
   projectId: uuid().nullable().optional(),
-  agentId: uuid(),
   title: string().nullable(),
   sortAt: string(),
   createdAt: string(),
@@ -247,9 +253,6 @@ const ordinaryChatThreadEventSchema = object({
   ]),
   chatThreadId: uuid(),
   projectId: uuid().nullable().optional(),
-  agentId: uuid(),
-  /** On sort_touched, an explicit canonical agent reassignment. */
-  reassignedAgentId: uuid().optional(),
   title: string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: string().nullable().optional(),
@@ -404,6 +407,13 @@ export const generationTemplateRequestSchema = discriminatedUnion("type", [
   documentGenerationTemplateRequestSchema,
 ]);
 
+const userMessageVoicePartSchema = object({
+  type: literal("voice"),
+  clips: array(object({ fileId: uuid() }).strict())
+    .min(1)
+    .max(MAX_VOICE_CLIPS),
+}).strict();
+
 const userMessageTextPartSchema = object({
   type: literal("text"),
   text: string().min(1),
@@ -413,12 +423,6 @@ const userMessageChatThreadPartSchema = object({
   type: literal("chat_thread"),
   threadId: uuid(),
   titleSnapshot: string().min(1),
-}).strict();
-
-const userMessageAgentPartSchema = object({
-  type: literal("agent"),
-  agentId: uuid(),
-  nameSnapshot: string().min(1),
 }).strict();
 
 export const projectMentionSchema = object({
@@ -436,7 +440,6 @@ const userMessageTemplatePartSchema = object({
 export const feedbackNotePartSchema = discriminatedUnion("type", [
   userMessageTextPartSchema,
   userMessageChatThreadPartSchema,
-  userMessageAgentPartSchema,
   userMessageTemplatePartSchema,
   projectMentionSchema,
 ]);
@@ -457,17 +460,7 @@ const feedbackRangeSchema = object({
 
 const userMessageExternalSourcePartSchema = object({
   type: literal("source"),
-  kind: zEnum([
-    "slack",
-    "discord",
-    "wechat",
-    "feishu",
-    "lark",
-    "teams",
-    "telegram",
-    "github",
-    "agentphone",
-  ]),
+  kind: zEnum(externalMessageSourceKinds),
   href: url().optional(),
 }).strict();
 
@@ -485,26 +478,14 @@ const userMessageMcpSourcePartSchema = object({
   clientName: string().trim().min(1).max(120).optional(),
 }).strict();
 
-const userMessageAgentSourcePartSchema = object({
-  type: literal("source"),
-  kind: literal("agent"),
-  runId: uuid(),
-  threadId: uuid(),
-  agentId: uuid(),
-  titleSnapshot: string().min(1),
-  href: string().min(1),
-}).strict();
-
 const userMessageSourcePartSchema = discriminatedUnion("kind", [
   userMessageExternalSourcePartSchema,
   userMessageMcpSourcePartSchema,
-  userMessageAgentSourcePartSchema,
 ]);
 
 export const userMessageInputPartSchema = discriminatedUnion("type", [
   userMessageTextPartSchema,
-  userMessageChatThreadPartSchema,
-  userMessageAgentPartSchema,
+  userMessageChatThreadPartSchema.extend({ runId: uuid().optional() }),
   userMessageTemplatePartSchema,
   projectMentionSchema,
   userMessageSourcePartSchema,
@@ -555,6 +536,7 @@ export const userMessageInputPartSchema = discriminatedUnion("type", [
         message: "Feedback eventId and range must be provided together",
       },
     ),
+  userMessageVoicePartSchema,
 ]);
 
 const userMessageModelPartSchema = object({
@@ -571,12 +553,15 @@ export const userMessagePartSchema = discriminatedUnion("type", [
 export const userMessageDocumentSchema = object({
   version: literal(1),
   parts: array(userMessagePartSchema)
-    .min(1)
     .refine(
       (parts) => {
         return (
           parts.filter((part) => {
-            return part.type === "source" || part.type === "automation";
+            return (
+              part.type === "source" ||
+              part.type === "automation" ||
+              isChatRunReference(part)
+            );
           }).length <= 1
         );
       },
@@ -602,13 +587,31 @@ export const userMessageInputDocumentSchema = object({
       (parts) => {
         return (
           parts.filter((part) => {
-            return part.type === "source" || part.type === "automation";
+            return (
+              part.type === "source" ||
+              part.type === "automation" ||
+              isChatRunReference(part)
+            );
           }).length <= 1
         );
       },
       { message: "A user message may contain at most one non-content part" },
     ),
 }).strict();
+
+export function readStoredDraftMessage(value: unknown) {
+  if (value == null) return null;
+  const message = readStoredMessageParts(value);
+  if (
+    typeof message === "object" &&
+    message !== null &&
+    "parts" in message &&
+    Array.isArray(message.parts) &&
+    message.parts.length === 0
+  )
+    return null;
+  return userMessageInputDocumentSchema.parse(message);
+}
 
 const chatEventRecommendedFollowupShape = {
   prompt: string(),

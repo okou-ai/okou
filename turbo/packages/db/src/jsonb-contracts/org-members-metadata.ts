@@ -1,5 +1,3 @@
-export type OrgMembersPinnedAgentIds = string[];
-
 export interface OrgMembersRecentWorkflow {
   workflowId: string;
   /** Accepted-input UTC time; imported legacy IDs use epoch-based order markers. */

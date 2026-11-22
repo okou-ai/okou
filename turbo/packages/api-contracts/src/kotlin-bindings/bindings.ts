@@ -20,12 +20,10 @@ import {
   chatThreadPinOrderContract,
   chatThreadDraftContract,
 } from "../contracts/chat-threads";
-import { agentDraftContract } from "../contracts/agent-draft";
+import { composerDraftContract } from "../contracts/agent-draft";
 import { chatEventRowSchema } from "../contracts/chat-event-rows";
-import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
-import { featureSwitchesContract } from "../contracts/feature-switches";
 import { instructionsContract } from "../contracts/instructions";
 import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
@@ -35,7 +33,14 @@ import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
-import { billingStatusContract } from "../contracts/billing";
+import {
+  billingStatusContract,
+  billingUsagePackCreditsContract,
+} from "../contracts/billing";
+import { artifactCatalogContract } from "../contracts/artifact-catalog";
+import { artifactDownloadsContract } from "../contracts/artifact-downloads";
+import { artifactReferencesContract } from "../contracts/artifact-references";
+import { hostContract } from "../contracts/host";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
 
 export interface KotlinRouteBinding {
@@ -69,7 +74,6 @@ const chatReadBindings = [
     response: "Indicators",
     route: chatThreadsContract.indicators,
   },
-  { name: "agents", response: "Agents", route: agentsMainContract.list },
   {
     name: "projectSnapshot",
     response: "ProjectSnapshot",
@@ -79,11 +83,6 @@ const chatReadBindings = [
     name: "projectEvents",
     response: "ProjectEvents",
     route: projectsContract.events,
-  },
-  {
-    name: "featureSwitches",
-    response: "FeatureSwitches",
-    route: featureSwitchesContract.get,
   },
 ] satisfies readonly KotlinRouteBinding[];
 
@@ -119,9 +118,34 @@ const historyReadBindings = [
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
-    name: "agentDraft",
+    name: "artifactCatalog",
+    response: "ArtifactCatalog",
+    route: artifactCatalogContract.list,
+  },
+  {
+    name: "artifactDetail",
+    response: "ArtifactDetail",
+    route: artifactCatalogContract.get,
+  },
+  {
+    name: "resolveArtifactReference",
+    response: "ArtifactReference",
+    route: artifactReferencesContract.resolve,
+  },
+  {
+    name: "artifactDownload",
+    response: "ArtifactDownload",
+    route: artifactDownloadsContract.download,
+  },
+  {
+    name: "artifactSitePreview",
+    response: "ArtifactSitePreview",
+    route: hostContract.sitePreview,
+  },
+  {
+    name: "workspaceDraft",
     response: "ComposerDraft",
-    route: agentDraftContract.get,
+    route: composerDraftContract.get,
   },
   {
     name: "threadDraft",
@@ -129,10 +153,10 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadDraftContract.get,
   },
   {
-    name: "saveAgentDraft",
-    request: "SaveAgentDraft",
+    name: "saveWorkspaceDraft",
+    request: "SaveWorkspaceDraft",
     response: "Unit",
-    route: agentDraftContract.patch,
+    route: composerDraftContract.patch,
   },
   {
     name: "saveThreadDraft",
@@ -159,6 +183,17 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     name: "recoveryBilling",
     response: "RecoveryBilling",
     route: billingStatusContract.get,
+  },
+  {
+    name: "usagePackCredits",
+    response: "UsagePackCredits",
+    route: billingUsagePackCreditsContract.get,
+  },
+  {
+    name: "activateModelAccount",
+    request: "ActivateModelAccountRequest",
+    response: "ActivatedModelAccount",
+    route: personalModelProviderAccountsByIdContract.activate,
   },
   {
     name: "resetSubscription",
@@ -263,6 +298,17 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "renameProject",
+    request: "RenameProjectRequest",
+    response: "RenamedProject",
+    route: projectsContract.update,
+  },
+  {
+    name: "deleteThread",
+    response: "Unit",
+    route: chatThreadByIdContract.delete,
+  },
+  {
     name: "pinThread",
     response: "Unit",
     route: chatThreadPinContract.pin,
@@ -284,11 +330,50 @@ export interface KotlinTypeBinding {
   readonly name: string;
   readonly schema: ZodType;
   readonly direction: "input" | "output";
+  /** Native response projection. Route validation still uses the full schema. */
+  readonly readSchema?: ZodType;
   /** Raw transport/cache envelopes retain all JSON members; their consumer owns decoding. */
   readonly representation?: "raw-object";
+  /** Response fields where explicit null and omission have distinct meanings. */
+  readonly preserveOptionalNullable?: readonly string[];
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "ArtifactCatalog",
+    schema: artifactCatalogContract.list.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactDetail",
+    schema: artifactCatalogContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactReference",
+    schema: artifactReferencesContract.resolve.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactDownload",
+    schema: artifactDownloadsContract.download.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactSitePreview",
+    schema: hostContract.sitePreview.responses[200],
+    direction: "output",
+  },
+  {
+    name: "RenameProjectRequest",
+    schema: projectsContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "RenamedProject",
+    schema: projectsContract.update.responses[200],
+    direction: "output",
+  },
   {
     name: "RenameThreadRequest",
     schema: chatThreadRenameContract.rename.body,
@@ -301,13 +386,13 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   },
   {
     name: "ComposerDraft",
-    schema: agentDraftContract.get.responses[200],
+    schema: composerDraftContract.get.responses[200],
     direction: "output",
     representation: "raw-object",
   },
   {
-    name: "SaveAgentDraft",
-    schema: agentDraftContract.patch.body,
+    name: "SaveWorkspaceDraft",
+    schema: composerDraftContract.patch.body,
     direction: "input",
   },
   {
@@ -329,10 +414,36 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "RecoverySubscriptions",
     schema: thirdPartySubscriptionsMainContract.list.responses[200],
     direction: "output",
+    preserveOptionalNullable: ["subscriptionCredits"],
   },
   {
     name: "RecoveryBilling",
     schema: billingStatusContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UsagePackCredits",
+    schema: billingUsagePackCreditsContract.get.responses[200],
+    readSchema: billingUsagePackCreditsContract.get.responses[200].pick({
+      totalCredits: true,
+      purchasedCredits: true,
+      bonusCredits: true,
+    }),
+    direction: "output",
+  },
+  {
+    name: "ActivateModelAccountRequest",
+    schema: personalModelProviderAccountsByIdContract.activate.body,
+    direction: "input",
+  },
+  {
+    name: "ActivatedModelAccount",
+    schema: personalModelProviderAccountsByIdContract.activate.responses[200],
+    readSchema:
+      personalModelProviderAccountsByIdContract.activate.responses[200].pick({
+        id: true,
+        isActive: true,
+      }),
     direction: "output",
   },
   {

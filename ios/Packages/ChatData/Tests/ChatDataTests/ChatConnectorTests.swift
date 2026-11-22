@@ -133,6 +133,7 @@ final class ChatConnectorTests: XCTestCase {
             connectorQuery(custom ? "customConnectorId" : "connectorSlug", in: request),
             custom ? FixtureData.customID : "slack")
           XCTAssertEqual(connectorQuery("limit", in: request), "1")
+          XCTAssertEqual(connectorQuery("includeScopeMismatch", in: request), custom ? nil : "true")
           return ChatHTTPResponse(
             body: """
               {"connections":[\(FixtureData.account(id: FixtureData.siblingID, custom: custom, isDefault: false))],"nextCursor":"next-page","defaultConnection":\(FixtureData.account(custom: custom))}
@@ -146,7 +147,9 @@ final class ChatConnectorTests: XCTestCase {
       XCTAssertTrue(try XCTUnwrap(status).connected)
     }
   }
-  func testSavedAccountsWithoutDefaultRemainAnActionableFailure() async throws {
+  func testDirectedConnectWithSavedAccountsRequiresAnExplicitAccountWhenThereIsNoDefault()
+    async throws
+  {
     for custom in [false, true] {
       let fixture = ChatHTTPFixture { request in
         if request.url?.path == "/api/connector-accounts/connections" {
@@ -157,13 +160,17 @@ final class ChatConnectorTests: XCTestCase {
         }
         return try XCTUnwrap(FixtureData.response(request))
       }
+      let service = ChatConnectorService(client: fixture.client)
       do {
-        _ = try await ChatConnectorService(client: fixture.client).status(
+        _ = try await service.status(
           action(custom ? "/connectors/_internal/connect" : "/connectors/slack/connect"))
-        XCTFail("Expected an explicit default-account choice")
-      } catch let error as APIClientError {
-        XCTAssertEqual(error.statusCode, 409)
-      }
+        XCTFail("Expected the user to choose an account")
+      } catch ChatConnectorInputError.noDefaultAccount {}
+      let add = ChatConnectorAction.configuration(
+        target: custom ? .custom(FixtureData.customID) : .builtin("slack"),
+        agentID: FixtureData.agentID, threadID: FixtureData.threadID)
+      let explicit = try await service.status(add)
+      XCTAssertNil(try XCTUnwrap(explicit).account)
     }
   }
   func testMalformedAccountInventoryCannotBecomeAnAddIntent() async throws {
@@ -238,10 +245,12 @@ final class ChatConnectorTests: XCTestCase {
       }
     }
   }
-  func testThreadReassignmentRejectsAnOldActionBeforeConnectorReads() async throws {
+  func testMismatchedThreadRejectsAnOldActionBeforeConnectorReads() async throws {
     let fixture = ChatHTTPFixture { request in
       XCTAssertTrue(request.url!.path.hasSuffix("/metadata"))
-      return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.siblingID)\"}")
+      return ChatHTTPResponse(
+        body: FixtureData.metadata.replacingOccurrences(
+          of: FixtureData.threadID, with: FixtureData.siblingID))
     }
     let status = try await ChatConnectorService(client: fixture.client).status(action())
     XCTAssertNil(status)
@@ -252,40 +261,37 @@ final class ChatConnectorTests: XCTestCase {
       "automatic": "automatic/start", "openid-auth": "openid/start",
       "device-auth": "oauth/device/sessions", "external-code": "external-code/sessions"
     ]
-    for chatAccountAccess in [false, true] {
-      for (kind, route) in routes {
-        let fixture = ChatHTTPFixture { request in
-          if request.url?.path == "/api/feature-switches" {
-            return ChatHTTPResponse(
-              body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":\(chatAccountAccess)}}")
-          }
-          if request.httpMethod == "POST" {
-            XCTAssertEqual(request.url!.path, "/api/connectors/slack/\(route)")
-            let body = try XCTUnwrap(
-              JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
-            if chatAccountAccess {
-              XCTAssertNil(body["authorizeAgent"])
-              XCTAssertNil(body["agentId"])
-            } else {
-              XCTAssertEqual(body["authorizeAgent"] as? Bool, true)
-              XCTAssertEqual(body["agentId"] as? String, FixtureData.agentID)
-            }
-            let account = try XCTUnwrap(body["account"] as? [String: String])
-            XCTAssertEqual(account["connectionId"], FixtureData.accountID)
-            XCTAssertEqual(account["intent"], "reconnect")
-            return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
-          }
-          return try XCTUnwrap(FixtureData.response(request, grantKind: kind))
+    for (kind, route) in routes {
+      let fixture = ChatHTTPFixture { request in
+        if request.httpMethod == "POST" {
+          XCTAssertEqual(request.url!.path, "/api/connectors/slack/\(route)")
+          let body = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
+          var expected: [String: Any] = [
+            "account": ["intent": "reconnect", "connectionId": FixtureData.accountID],
+            "authMethod": "oauth"
+          ]
+          if kind == "auth-code" { expected["callbackTarget"] = "app" }
+          if kind == "manual" { expected["values"] = ["key": "synthetic-key"] }
+          XCTAssertEqual(body as NSDictionary, expected as NSDictionary, kind)
+          return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
         }
-        let service = ChatConnectorService(client: fixture.client)
-        let descriptor = try action("/connectors/slack/reconnect/\(FixtureData.accountID)")
-        let response = try await service.status(descriptor)
-        let status = try XCTUnwrap(response)
-        let receipt = try await service.start(
-          descriptor, status: status, method: status.builtin?.authMethods.first,
-          values: ["key": "synthetic-key"], options: [:])
-        XCTAssertEqual(try receipt.operatedID, FixtureData.accountID)
+        if kind == "manual", request.url?.path == "/api/connector-catalog/slack" {
+          let field = #"{"id":"key","label":"Key","required":true,"inputType":"password"}"#
+          let catalog = FixtureData.catalog(grantKind: kind, manualFieldsJSON: "[\(field)]")
+          return ChatHTTPResponse(body: catalog)
+        }
+        return try XCTUnwrap(FixtureData.response(request, grantKind: kind))
       }
+      let service = ChatConnectorService(client: fixture.client)
+      let descriptor = try action("/connectors/slack/reconnect/\(FixtureData.accountID)")
+      let response = try await service.status(descriptor)
+      let status = try XCTUnwrap(response)
+      let receipt = try await service.start(
+        status: status, method: status.builtin?.authMethods.first,
+        values: ["key": " synthetic-\u{FEFF}key\n", "other-method": "unused"],
+        options: ["other-method": "unused"])
+      XCTAssertEqual(try receipt.operatedID, FixtureData.accountID)
     }
   }
   func testCustomManualNoAuthAndOAuthUseOwnedCustomTarget() async throws {
@@ -296,15 +302,29 @@ final class ChatConnectorTests: XCTestCase {
             request.url!.path,
             "/api/custom-connectors/\(FixtureData.customID)/\(["oauth", "automatic"].contains(mode) ? "oauth2/start" : "values")"
           )
-          let body = try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8))
-          XCTAssertTrue(body.contains(FixtureData.agentID) || body.contains("\"values\":[]"))
-          XCTAssertFalse(body.contains("authorizeAgent"))
-          XCTAssertTrue(body.contains("\"intent\":\"add\""))
+          let body = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
+          let keys: Set<String> =
+            ["oauth", "automatic"].contains(mode)
+            ? ["account"] : ["account", "values"]
+          XCTAssertEqual(Set(body.keys), keys)
+          XCTAssertEqual(body["account"] as? [String: String], ["intent": "add"])
+          if mode == "manual" {
+            XCTAssertEqual(
+              body["values"] as? [[String: String]],
+              [["key": "token", "kind": "secret", "value": "demo"]])
+          }
+          if mode == "none" { XCTAssertEqual(body["values"] as? [[String: String]], []) }
           return ChatHTTPResponse(
             body: ["oauth", "automatic"].contains(mode)
               ? "{\"result\":\"connected\",\"connector\":\(FixtureData.custom(mode: mode)),\"connectionId\":\"\(FixtureData.accountID)\"}"
               : String(FixtureData.custom(mode: mode).dropLast())
                 + ",\"connectionId\":\"\(FixtureData.accountID)\"}")
+        }
+        if mode == "manual", request.url?.path == "/api/custom-connectors" {
+          let token = #"{"key":"token","label":"Token","kind":"secret","required":true}"#
+          let custom = FixtureData.custom(mode: mode, fieldsJSON: "[\(token)]")
+          return ChatHTTPResponse(body: "{\"connectors\":[\(custom)]}")
         }
         return try XCTUnwrap(FixtureData.response(request, connected: false, customMode: mode))
       }
@@ -313,17 +333,17 @@ final class ChatConnectorTests: XCTestCase {
       let response = try await service.status(descriptor)
       let status = try XCTUnwrap(response)
       let receipt = try await service.start(
-        descriptor, status: status, method: nil, values: [:], options: [:])
+        status: status, method: nil, values: ["token": " de\nmo "], options: [:])
       XCTAssertEqual(try receipt.operatedID, FixtureData.accountID)
     }
   }
-  func testContinuationRejectsThreadReassignmentBeforeMutatingSettingsOrSending() async throws {
+  func testContinuationRejectsMismatchedThreadBeforeMutatingSettingsOrSending() async throws {
     let fixture = ChatHTTPFixture { request in
       XCTAssertEqual(request.httpMethod, "GET")
       XCTAssertTrue(request.url!.path.hasSuffix("/metadata"))
       return ChatHTTPResponse(
         body: FixtureData.metadata.replacingOccurrences(
-          of: FixtureData.agentID, with: FixtureData.siblingID))
+          of: FixtureData.threadID, with: FixtureData.siblingID))
     }
     let sync = ChatSync(client: fixture.client)
     let commands = ChatCommands(client: fixture.client, sync: sync)
@@ -334,8 +354,8 @@ final class ChatConnectorTests: XCTestCase {
     do {
       _ = try await commands.send(
         thread: thread, text: "Continue", expectedAgentID: FixtureData.agentID)
-      XCTFail("Expected reassigned Agent rejection")
-    } catch ChatError.agentUnavailable {}
+      XCTFail("Expected mismatched thread rejection")
+    } catch APIClientError.incompatibleData {}
   }
   func testOAuthCompletionAndOperationReceiptDoNotBorrowDefaultIdentity() async throws {
     let fixture = ChatHTTPFixture { request in

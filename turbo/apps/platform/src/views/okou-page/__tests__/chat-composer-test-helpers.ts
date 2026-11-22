@@ -1,9 +1,5 @@
 import { buildProvider, buildRunModel } from "./chat-model-builders.ts";
 import {
-  agentInstructionsContract,
-  agentsByIdContract,
-} from "@okouai/api-contracts/contracts/agents";
-import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
@@ -32,10 +28,6 @@ import {
 } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
-
-export const AGENT_ID = "e0000000-0000-4000-a000-000000000010";
-
-const OTHER_AGENT_ID = "e0000000-0000-4000-a000-000000000011";
 
 export const THREAD_ID = "b1000000-0000-4000-a000-000000000101";
 
@@ -233,46 +225,6 @@ export function createChatComposerHelpers(context: TestContext) {
     });
   }
 
-  function mockAgent(options?: { includeOtherAgent?: boolean }): void {
-    const agents = [
-      {
-        agentId: AGENT_ID,
-        displayName: "Scout",
-        description: null,
-        sound: null,
-        avatarUrl: null,
-      },
-      ...(options?.includeOtherAgent
-        ? [
-            {
-              agentId: OTHER_AGENT_ID,
-              displayName: "Other Agent",
-              description: null,
-              sound: null,
-              avatarUrl: null,
-            },
-          ]
-        : []),
-    ];
-    context.mocks.data.agents(agents);
-    context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-      const isOtherAgent = params.id === OTHER_AGENT_ID;
-      return respond(200, {
-        isDefaultAgent: false,
-        agentId: params.id,
-        ownerId: "test-user-123",
-        displayName: isOtherAgent ? "Other Agent" : "Scout",
-        description: null,
-        sound: null,
-        avatarUrl: null,
-        visibility: "public",
-      });
-    });
-    context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
-      return respond(200, { content: null, filename: null });
-    });
-  }
-
   function mockThread(options?: {
     selectedModel?: string | null;
     activeRunIds?: string[];
@@ -291,7 +243,7 @@ export function createChatComposerHelpers(context: TestContext) {
           chatThreads: [
             {
               id: THREAD_ID,
-              agentId: AGENT_ID,
+
               title: "My thread",
               sortAt: "2026-03-10T00:00:00Z",
               createdAt: "2026-03-10T00:00:00Z",
@@ -314,7 +266,6 @@ export function createChatComposerHelpers(context: TestContext) {
     });
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
       return respond(200, {
-        agents: {},
         threads:
           options?.activeRunIds && options.activeRunIds.length > 0
             ? { [THREAD_ID]: "active" }
@@ -356,7 +307,6 @@ export function createChatComposerHelpers(context: TestContext) {
   return {
     mockPersonalModelRoutes,
     mockBillingCapabilities,
-    mockAgent,
     mockThread,
     mockActiveTemplateThread,
   };

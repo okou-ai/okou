@@ -1,45 +1,36 @@
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { setResHeader$ } from "../context/hono";
+import { db$ } from "../external/db";
+import {
+  setChatConnectorCurrent$,
+  setChatConnectorAccessOverride$,
+} from "../services/chat-connector-access.service";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { and, eq } from "drizzle-orm";
 import { command, computed } from "ccstate";
 
 import { badRequestMessage, notFound } from "../../lib/error";
-import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { setResHeader$ } from "../context/hono";
-import { db$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { activeMemberConnectorPermissionCondition } from "../services/member-connector-selection";
 import type { RouteEntry } from "../route-entry";
-import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
+
 import {
   chatConnectorExecutionReadPlan,
   chatConnectorExecutionFromRows,
 } from "../services/chat-connector-execution";
-import {
-  setChatConnectorCurrent$,
-  setChatConnectorAccessOverride$,
-} from "../services/chat-connector-access.service";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
 
 const identity$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   return Promise.resolve({ orgId: auth.orgId, userId: auth.userId });
-});
-const features$ = createUserFeatureSwitchContext(identity$);
-const enabled$ = computed(async (get) => {
-  return isFeatureEnabled(
-    FeatureSwitchKey.ConnectorChatAccountAccess,
-    await get(features$),
-  );
 });
 const missing = notFound("Chat connector account access is unavailable");
 const run$ = computed(async (get) => {
@@ -57,13 +48,9 @@ const run$ = computed(async (get) => {
       chatThreads,
       and(
         eq(chatThreads.id, agentRuns.chatThreadId),
-        eq(chatThreads.agentId, agentRuns.agentId),
+        eq(chatThreads.orgId, agentRuns.orgId),
         eq(chatThreads.userId, auth.userId),
       ),
-    )
-    .innerJoin(
-      agents,
-      and(eq(agents.id, agentRuns.agentId), eq(agents.orgId, auth.orgId)),
     )
     .where(
       and(
@@ -77,9 +64,6 @@ const run$ = computed(async (get) => {
   return run ?? null;
 });
 const inventory$ = computed(async (get) => {
-  if (!(await get(enabled$))) {
-    return null;
-  }
   const run = await get(run$);
   if (!run) {
     return null;
@@ -168,9 +152,6 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   return inventory ? { status: 200 as const, body: inventory } : missing;
 });
 const select$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(enabled$))) {
-    return missing;
-  }
   signal.throwIfAborted();
   const body = await get(bodyResultOf(runConnectorAccountsContract.select));
   signal.throwIfAborted();
@@ -205,9 +186,6 @@ const select$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: body.data };
 });
 const approve$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(enabled$))) {
-    return missing;
-  }
   signal.throwIfAborted();
   const body = await get(bodyResultOf(runConnectorAccountsContract.approve));
   signal.throwIfAborted();

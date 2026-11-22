@@ -51,7 +51,13 @@ test.each(["missing", "forbidden"] as const)(
     const popup = authorizationWindow();
     context.mocks.api(
       builtinConnectorOauthStartContract.start,
-      ({ respond }) => {
+      ({ body, params, respond }) => {
+        expect(params.connectorSlug).toBe("stripe");
+        expect(body).toStrictEqual({
+          account: { intent: "add" },
+          authMethod: "oauth",
+          callbackTarget: "app",
+        });
         return respond(200, {
           authorizationUrl: "https://oauth.test/stripe/authorize",
           oauthAttemptId,

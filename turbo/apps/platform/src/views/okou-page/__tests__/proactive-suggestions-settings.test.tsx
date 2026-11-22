@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   proactiveSuggestionsContract,
@@ -15,11 +16,19 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
     status: "paused",
     unavailableReason: null,
   };
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, {
+      suggestions: preference.enabled,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
     return respond(200, preference);
   });
   context.mocks.api(
-    proactiveSuggestionsContract.update,
+    proactiveSuggestionsContract.updateWithFeed,
     ({ body, respond }) => {
       preference = {
         ...preference,
@@ -31,10 +40,9 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   });
   const toggle = await screen.findByRole("switch", {
@@ -57,47 +65,6 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
   ).resolves.not.toBeChecked();
 });
 
-test("keeps a pending opt-in cancellable when the primary Agent is unavailable", async () => {
-  let preference: ProactiveSuggestionsPreference = {
-    enabled: true,
-    status: "preparing",
-    unavailableReason: "missing-default-agent",
-  };
-  context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
-    return respond(200, preference);
-  });
-  context.mocks.api(
-    proactiveSuggestionsContract.update,
-    ({ body, respond }) => {
-      preference = { ...preference, enabled: body.enabled, status: "paused" };
-      return respond(200, preference);
-    },
-  );
-  await setupPage({
-    context,
-    path: "/agents?settings=preference",
-    featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveLearning]: false,
-    },
-  });
-  const card = await screen.findByTestId("proactive-suggestions-preference");
-  await expect(
-    within(card).findByText(
-      "Okou is unavailable in this workspace. Contact a workspace administrator.",
-    ),
-  ).resolves.toBeInTheDocument();
-  const toggle = within(card).getByRole("switch", {
-    name: "Suggestions",
-  });
-  expect(toggle).toBeChecked();
-  expect(toggle).toBeEnabled();
-  click(toggle);
-  await waitFor(() => {
-    return expect(toggle).not.toBeChecked();
-  });
-});
-
 test("a failed opt-out preserves the current preference", async () => {
   const preference: ProactiveSuggestionsPreference = {
     enabled: true,
@@ -105,11 +72,19 @@ test("a failed opt-out preserves the current preference", async () => {
     unavailableReason: null,
   };
   const choices: boolean[] = [];
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, {
+      suggestions: preference.enabled,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
     return respond(200, preference);
   });
   context.mocks.api(
-    proactiveSuggestionsContract.update,
+    proactiveSuggestionsContract.updateWithFeed,
     ({ body, respond }) => {
       choices.push(body.enabled);
       return respond(500, {
@@ -122,10 +97,9 @@ test("a failed opt-out preserves the current preference", async () => {
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");
@@ -145,11 +119,19 @@ test("keeps suggestions opted in during platform recovery without asking the use
     status: "error",
     unavailableReason: null,
   };
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, {
+      suggestions: preference.enabled,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
+  });
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
     return respond(200, preference);
   });
   context.mocks.api(
-    proactiveSuggestionsContract.update,
+    proactiveSuggestionsContract.updateWithFeed,
     ({ body, respond }) => {
       preference = { ...preference, enabled: body.enabled, status: "paused" };
       return respond(200, preference);
@@ -157,10 +139,9 @@ test("keeps suggestions opted in during platform recovery without asking the use
   );
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=my-okou",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ProactiveLearning]: false,
     },
   });
   const card = await screen.findByTestId("proactive-suggestions-preference");

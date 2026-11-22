@@ -17,7 +17,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  CAPABILITY_AGENT_ID,
   findButton,
   readyChat,
   RUN_PATH,
@@ -40,7 +39,6 @@ function workflow(
 ): ChatThreadWorkflowAutomation["workflow"] {
   return {
     id,
-    agentId: CAPABILITY_AGENT_ID,
     name,
     displayName,
     description: null,

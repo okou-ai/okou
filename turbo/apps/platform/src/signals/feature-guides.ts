@@ -1,7 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { featureGuidesContract } from "@okouai/api-contracts/client/feature-guides";
 import type { FeatureGuideEdition } from "@okouai/api-contracts/contracts/feature-guides";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../lib/accept.ts";
 import { searchParams$ } from "./route.ts";
 import { agentChatPageActive$ } from "./active-route.ts";
@@ -62,12 +61,11 @@ export const featureGuide$ = computed(
     const searchParams = get(searchParams$);
     const preview = searchParams.get("featureGuidePreview") === "1";
     const edition = searchParams.get("featureGuideEdition") ?? undefined;
-    const enabled = (await get(featureSwitches$))[
-      FeatureSwitchKey.FeatureGuides
-    ];
-    if (!owner || !enabled) {
+    if (!owner) {
       return null;
     }
+    // Refresh item-level delivery when the workspace's effective switches change.
+    await get(featureSwitches$);
     const response = await accept(
       get(apiClient$)(featureGuidesContract).current({
         query: preview ? { preview: "1", edition } : undefined,
@@ -89,16 +87,13 @@ export const featureGuide$ = computed(
   },
 );
 
-export const featureGuideReady$ = computed(async (get) => {
-  if (
-    !(await get(featureSwitches$))[FeatureSwitchKey.FeatureGuides] ||
-    !get(appContentReady$)
-  ) {
+export const featureGuideReady$ = computed((get) => {
+  if (!get(appContentReady$)) {
     return false;
   }
   const draft = get(talkDraft$);
   return (
-    (await get(agentChatPageActive$)) &&
+    get(agentChatPageActive$) &&
     !get(settingsDialogOpen$) &&
     !get(forceUpgradeDialogOpen$) &&
     !get(draft.input$).trim() &&

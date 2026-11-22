@@ -4,9 +4,11 @@ import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -31,22 +33,21 @@ describe("chat-thread connector account ownership", () => {
       routes: [
         ...chatThreadCreateRoutes,
         ...chatThreadConnectorSelectionRoutes,
+        ...chatConnectorAccessRoutes,
         ...connectorAccountRoutes,
       ],
     });
     const threads = app(chatThreadsContract);
     const selections = app(chatThreadConnectorSelectionContract);
+    const access = app(chatConnectorAccessContract);
     const accounts = app(connectorAccountsContract);
     const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
     await runs.ensurePersonalSubscriptionModel(owner);
-    const agent = await bdd.createAgent(owner);
     const builtin = await connectors.connectManualGrant(
       owner,
       "openai",
       "api-token",
       { apiKey: "ownership-openai-key" },
-      agent.agentId,
     );
     const definition = await connectors.createCustomConnector(
       owner,
@@ -64,10 +65,6 @@ describe("chat-thread connector account ownership", () => {
     if (!custom.connectionId) {
       throw new Error("Expected the API-created custom connector account");
     }
-    await connectors.updateAgentCustomConnectors(owner, agent.agentId, [
-      definition.id,
-    ]);
-
     const sameOrg = await connectors.connectManualGrant(
       bdd.user({ orgId: owner.orgId }),
       "openai",
@@ -95,15 +92,25 @@ describe("chat-thread connector account ownership", () => {
       { connectionId: custom.connectionId, target: customTarget },
     ];
     const createBody = {
-      agentId: agent.agentId,
       model: "claude-fable-5-1",
-      connectorSelections: requested,
     };
     const created = await accept(
       threads.create({ headers, body: createBody }),
       [201],
     );
     const params = { id: created.body.id };
+    const threadParams = { threadId: created.body.id };
+    for (const selection of requested) {
+      const updated = await accept(
+        access.setThreadCurrent({
+          headers,
+          params: threadParams,
+          body: selection,
+        }),
+        [200],
+      );
+      expect(updated.body.currentConnectionId).toBe(selection.connectionId);
+    }
     const initial = await accept(selections.get({ headers, params }), [200]);
     expect(initial.body.selections).toHaveLength(2);
     expect(initial.body.selections).toStrictEqual(
@@ -123,13 +130,6 @@ describe("chat-thread connector account ownership", () => {
       }),
     );
     expect(initial.body.selectedConnections).toStrictEqual(accountResponses);
-    for (const selection of requested) {
-      const updated = await accept(
-        selections.update({ headers, params, body: selection }),
-        [200],
-      );
-      expect(updated.body).toStrictEqual(selection);
-    }
 
     const rejected = [
       { connectionId: sameOrg.id, target: builtinTarget },
@@ -137,26 +137,27 @@ describe("chat-thread connector account ownership", () => {
       { connectionId: builtin.id, target: customTarget },
       { connectionId: custom.connectionId, target: builtinTarget },
     ];
-    const mismatch = {
-      error: {
-        code: "BAD_REQUEST",
-        message: "Connector account does not match the requested target",
-      },
-    };
     for (const selection of rejected) {
-      const deniedCreate = await accept(
-        threads.create({
+      const deniedUpdate = await accept(
+        access.setThreadCurrent({
           headers,
-          body: { ...createBody, connectorSelections: [selection] },
+          params: threadParams,
+          body: selection,
         }),
         [400],
       );
-      expect(deniedCreate.body).toStrictEqual(mismatch);
-      const deniedUpdate = await accept(
-        selections.update({ headers, params, body: selection }),
-        [400],
+      expect(deniedUpdate.body.error).toStrictEqual({
+        code: "BAD_REQUEST",
+        message: "Account is not allowed or available in this chat",
+      });
+      await accept(
+        access.setThreadOverride({
+          headers,
+          params: { ...threadParams, connectionId: selection.connectionId },
+          body: { target: selection.target, enabled: true },
+        }),
+        [404],
       );
-      expect(deniedUpdate.body).toStrictEqual(mismatch);
       const retained = await accept(selections.get({ headers, params }), [200]);
       expect(retained.body).toStrictEqual(initial.body);
     }
@@ -175,48 +176,56 @@ describe("chat-thread connector account ownership", () => {
       expect(denied.body.error.message).toBe("Chat thread not found");
 
       const deniedUpdate = await accept(
-        selections.update({
+        access.setThreadCurrent({
           headers,
-          params,
+          params: threadParams,
           body: { connectionId: builtin.id, target: builtinTarget },
         }),
         [404],
       );
       const missingUpdate = await accept(
-        selections.update({
+        access.setThreadCurrent({
           headers,
-          params: { id: randomUUID() },
+          params: { threadId: randomUUID() },
           body: { connectionId: builtin.id, target: builtinTarget },
         }),
         [404],
       );
       expect(deniedUpdate.body).toStrictEqual(missingUpdate.body);
-      expect(deniedUpdate.body).toStrictEqual(missing.body);
 
-      const deniedClear = await accept(
-        selections.clear({ headers, params, body: builtinTarget }),
-        [404],
-      );
-      const missingClear = await accept(
-        selections.clear({
+      const deniedOverride = await accept(
+        access.setThreadOverride({
           headers,
-          params: { id: randomUUID() },
-          body: builtinTarget,
+          params: { ...threadParams, connectionId: builtin.id },
+          body: { target: builtinTarget, enabled: false },
         }),
         [404],
       );
-      expect(deniedClear.body).toStrictEqual(missingClear.body);
-      expect(deniedClear.body).toStrictEqual(missing.body);
+      const missingOverride = await accept(
+        access.setThreadOverride({
+          headers,
+          params: { threadId: randomUUID(), connectionId: builtin.id },
+          body: { target: builtinTarget, enabled: false },
+        }),
+        [404],
+      );
+      expect(deniedOverride.body).toStrictEqual(missingOverride.body);
+      expect(deniedOverride.body).toStrictEqual(missingUpdate.body);
     }
     mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);
     const retained = await accept(selections.get({ headers, params }), [200]);
     expect(retained.body).toStrictEqual(initial.body);
 
     for (const selection of requested) {
-      await accept(
-        selections.clear({ headers, params, body: selection.target }),
-        [204],
+      const disabled = await accept(
+        access.setThreadOverride({
+          headers,
+          params: { ...threadParams, connectionId: selection.connectionId },
+          body: { target: selection.target, enabled: false },
+        }),
+        [200],
       );
+      expect(disabled.body.currentConnectionId).toBeNull();
       const withoutSelection = await accept(
         selections.get({ headers, params }),
         [200],
@@ -230,11 +239,19 @@ describe("chat-thread connector account ownership", () => {
         }),
       });
       await accept(
-        selections.clear({ headers, params, body: selection.target }),
-        [204],
+        access.setThreadCurrent({
+          headers,
+          params: threadParams,
+          body: selection,
+        }),
+        [400],
       );
       await accept(
-        selections.update({ headers, params, body: selection }),
+        access.setThreadOverride({
+          headers,
+          params: { ...threadParams, connectionId: selection.connectionId },
+          body: { target: selection.target, enabled: null },
+        }),
         [200],
       );
       const restored = await accept(selections.get({ headers, params }), [200]);

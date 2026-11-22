@@ -1,7 +1,7 @@
 import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
 import type { AgentPhoneLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import type { ReactNode } from "react";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -11,6 +11,7 @@ import {
   Coins,
   Hash,
   Link2,
+  Loader2,
   MessageCircle,
   Route,
   UserPlus,
@@ -30,6 +31,8 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
   checkInGetStarted$,
+  checkinRequest$,
+  getStartedMenuOpen$,
   getStartedQuests$,
   getStartedSummary$,
   rewardsNoteOpen$,
@@ -48,7 +51,6 @@ import {
 } from "../../signals/okou-page/agentphone.ts";
 import { AgentPhoneConnectDialog } from "./agentphone-connect-dialog.tsx";
 import {
-  GetStartedCheckinDialog,
   GetStartedQuestIntroDialog,
   questHasIntro,
 } from "./get-started-quest-intro-dialog.tsx";
@@ -237,17 +239,24 @@ function QuestReward({
  * two cannot drift, and every action is drawn at 76px -- "Check in" is the
  * widest label -- so the left edges line up with the right edges.
  */
-function QuestAction({ label }: { label: string }) {
+function QuestAction({
+  label,
+  pending = false,
+}: {
+  label: string;
+  pending?: boolean;
+}) {
   return (
     <span
       aria-hidden="true"
       className={buttonVariants({
         variant: "neutral",
         size: "xs",
-        className: "pointer-events-none w-[76px] shrink-0 px-0",
+        className: "pointer-events-none relative w-[76px] shrink-0 px-0",
       })}
     >
-      {label}
+      <span className={pending ? "invisible" : undefined}>{label}</span>
+      {pending && <Loader2 className="absolute animate-spin" />}
     </span>
   );
 }
@@ -313,13 +322,15 @@ function QuestRowBody({
   quest,
   copy,
   checkinStreak,
+  pending,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
   checkinStreak: number;
+  pending: boolean;
 }) {
   const { t } = useTranslation();
-  const done = quest.status === "done" && !quest.canEarnMore;
+  const done = quest.status === "done" && !quest.canEarnMore && !pending;
   const actionable = quest.canEarnMore && quest.status !== "inReview";
   const state = useQuestState(quest, checkinStreak);
   // The check-in is the one quest whose name depends on its state: every other
@@ -356,16 +367,16 @@ function QuestRowBody({
       </span>
       {/* One trailing slot, one meaning: finished, waiting, or pressable. */}
       <span className="flex items-center justify-end">
-        {done && <Check className="shrink-0 text-chart-green" />}
-        {quest.status === "inReview" && (
+        {!pending && done && <Check className="shrink-0 text-chart-green" />}
+        {!pending && quest.status === "inReview" && (
           <span className="text-xs text-muted-foreground">
             {t(($) => {
               return $.chat.agentPage.getStarted.inReview;
             })}
           </span>
         )}
-        {actionable && copy.action !== null && (
-          <QuestAction label={copy.action} />
+        {(actionable || pending) && copy.action !== null && (
+          <QuestAction label={copy.action} pending={pending} />
         )}
       </span>
     </>
@@ -389,7 +400,12 @@ function QuestRow({
   pending?: boolean;
 }) {
   const body = (
-    <QuestRowBody quest={quest} copy={copy} checkinStreak={checkinStreak} />
+    <QuestRowBody
+      quest={quest}
+      copy={copy}
+      checkinStreak={checkinStreak}
+      pending={pending}
+    />
   );
   const testId = `get-started-quest-${quest.key}`;
 
@@ -397,7 +413,7 @@ function QuestRow({
   // renders without a hover state rather than as a menu item that does nothing.
   if (onSelect === null) {
     return (
-      <div className={QUEST_ROW_CLASS} data-testid={testId}>
+      <div className={QUEST_ROW_CLASS} aria-busy={pending} data-testid={testId}>
         {body}
       </div>
     );
@@ -424,6 +440,7 @@ function QuestRow({
       onClick={onSelect}
       disabled={pending}
       aria-busy={pending}
+      closeOnClick={quest.key !== "checkin"}
       data-testid={testId}
     >
       {body}
@@ -525,9 +542,8 @@ function GetStartedPanel({
   const { t } = useTranslation();
   const copy = useQuestCopy();
   const pageSignal = useGet(pageSignal$);
-  // This component stays mounted when its dropdown content closes. Keep the
-  // action's loading updates here so they do not rerender the reward dialog.
-  const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
+  const checkinLoadable = useLoadable(checkinRequest$);
+  const checkIn = useSet(checkInGetStarted$);
   const actions = useQuestActions(handoffs, () => {
     detach(checkIn(pageSignal), Reason.DomCallback);
   });
@@ -603,6 +619,7 @@ export function GetStartedEntry() {
   const { t } = useTranslation();
   const questsLoadable = useLastLoadable(getStartedQuests$);
   const summaryLoadable = useLastLoadable(getStartedSummary$);
+  const menuOpen = useGet(getStartedMenuOpen$);
   const setMenuOpen = useSet(setGetStartedMenuOpen$);
   // The phone dialog outlives the dropdown that opened it, so its connection
   // code stays with this shared owner.
@@ -662,16 +679,13 @@ export function GetStartedEntry() {
   if (summary.total === 0) {
     return null;
   }
-  const checkinQuest = questsLoadable.data.find((quest) => {
-    return quest.key === "checkin";
-  });
   const imessageQuest = questsLoadable.data.find((quest) => {
     return quest.key === "imessage";
   });
 
   return (
     <>
-      <DropdownMenu onOpenChange={setMenuOpen}>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           render={
             <Button
@@ -706,14 +720,6 @@ export function GetStartedEntry() {
         />
       </DropdownMenu>
       <GetStartedQuestIntroDialog onInvite={handoffs.invite} />
-      {/* The quest the dialog reports on is the one the panel just checked in,
-          so the dialog exists exactly when that quest does. */}
-      {checkinQuest && (
-        <GetStartedCheckinDialog
-          reward={checkinQuest.rewardAmount}
-          streak={summary.checkinStreak}
-        />
-      )}
       {/* The link is only read where the quest is offered. */}
       {imessageQuest && (
         <ImessageQuestDialog

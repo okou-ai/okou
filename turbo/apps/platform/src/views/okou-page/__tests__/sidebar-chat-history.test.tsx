@@ -1,5 +1,4 @@
 import {
-  AGENT_ID,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
@@ -12,15 +11,12 @@ import {
   mockSidebarViewport,
   openChatListMenu,
   openThreadMenu,
-  pinnedAgentLink,
   queryMenuItemByText,
-  RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
   scrollToArchivedContext,
   setupSidebarPage,
   sidebar,
   type SidebarThread,
-  SUPPORT_AGENT_ID,
   threadLinkByTitle,
   titleRevealClip,
   visibleThreadTitles,
@@ -39,7 +35,7 @@ import { expect, test } from "vitest";
 import {
   chatThreadByIdContract,
   chatThreadEventsContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
   chatThreadsContract,
@@ -57,15 +53,16 @@ import {
 import { pathname } from "../../../signals/location.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
 import { mockChatEventRows } from "./chat-event-test-helpers.ts";
-import { changeChatThreadReadCursor } from "../../../mocks/mock-helpers.ts";
+import {
+  changeChatIndicators,
+  changeChatThreadReadCursor,
+} from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
 const {
   mockChatThreadSnapshot,
   mockLongSidebarHistory,
   mockSidebarThreadStory,
-  prepareAgents,
-  prepareDefaultAgent,
 } = createSidebarHelpers(context);
 
 function pressArchiveShortcut(): void {
@@ -92,7 +89,6 @@ test("Browse a long sidebar chat history", async () => {
 });
 
 test("Delete a chat after reviewing the impact", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
@@ -101,7 +97,6 @@ test("Delete a chat after reviewing the impact", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   await waitFor(() => {
@@ -151,44 +146,36 @@ test("Delete a chat after reviewing the impact", async () => {
   });
 });
 
-test.each([true, false])(
-  "Deleting the last chat opens a new chat (My Okou: %s)",
-  async (singleAgent) => {
-    prepareDefaultAgent();
-    mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+test("Deleting the last chat opens a new chat", async () => {
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
-    await setupSidebarPage({
-      context,
-      path: `/chats/${EXISTING_THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
-    });
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+  });
 
-    await screen.findByRole("textbox", { name: "Message" });
-    await waitFor(() => {
-      expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
-    });
-    openThreadMenu("Release plan");
-    click(menuItemByText("Delete chat"));
-    const dialog = await screen.findByRole("dialog", {
-      name: "Delete chat?",
-    });
-    click(buttonByText("Delete", dialog));
+  await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
+  });
+  openThreadMenu("Release plan");
+  click(menuItemByText("Delete chat"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete chat?",
+  });
+  click(buttonByText("Delete", dialog));
 
-    await expect(
-      screen.findByText("Chat deleted"),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(pathname()).toBe(singleAgent ? "/" : `/agents/${AGENT_ID}/chat`);
-    });
-    await expect(
-      screen.findByRole("textbox", { name: "Message" }),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByText("Chat thread not found")).not.toBeInTheDocument();
-  },
-);
+  await expect(screen.findByText("Chat deleted")).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Chat thread not found")).not.toBeInTheDocument();
+});
 
 test("Deleting another chat keeps the current chat open", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
@@ -259,7 +246,6 @@ test("Reveal chat titles from whole-link pointer and keyboard intent", async () 
       }),
     ),
   );
-  prepareDefaultAgent();
   mockSidebarThreadStory(
     titles.map(({ id, title }) => {
       return createThread(id, title);
@@ -312,7 +298,6 @@ test("Reveal chat titles from whole-link pointer and keyboard intent", async () 
 });
 
 test("Filter unread conversations using indicator timestamps", async () => {
-  prepareDefaultAgent();
   const pinnedUnreadThread = createThread(
     AUTOMATION_THREAD_ID,
     "Pinned incident",
@@ -340,7 +325,6 @@ test("Filter unread conversations using indicator timestamps", async () => {
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: {
         [AUTOMATION_THREAD_ID]: "unread",
         [INCIDENT_THREAD_ID]: "unread",
@@ -381,7 +365,6 @@ test("Filter unread conversations using indicator timestamps", async () => {
 });
 
 test("Filter chats by Inbox, Unread, or Archived", async () => {
-  prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
   // A check-mark icon is an ordinary emoji; only the archived flag archives.
   const checkMarkThread = createThread(RESEARCH_THREAD_ID, "✅ Shipped notes");
@@ -403,7 +386,6 @@ test("Filter chats by Inbox, Unread, or Archived", async () => {
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: { [INCIDENT_THREAD_ID]: "unread" },
       unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
@@ -475,7 +457,6 @@ test("Filter chats by Inbox, Unread, or Archived", async () => {
 });
 
 test("Selecting a filter skips the chat open in the right pane", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(ARCHIVED_THREAD_ID, "Archived context", { archived: true }),
@@ -501,7 +482,6 @@ test("Selecting a filter skips the chat open in the right pane", async () => {
 });
 
 test("Mute and unmute a chat without hiding or reordering it", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Quiet task"),
@@ -530,7 +510,6 @@ test("Mute and unmute a chat without hiding or reordering it", async () => {
 function mockUnreadThreads(threadIds: readonly string[]): void {
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: Object.fromEntries(
         threadIds.map((threadId) => {
           return [threadId, "unread"] as const;
@@ -545,9 +524,7 @@ function mockUnreadThreads(threadIds: readonly string[]): void {
   });
 }
 
-test("Archive an unread chat without retaining its agent reminder or changing reading state", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({ pinnedAgentIds: [AGENT_ID] });
+test("Archive an unread chat without changing reading state", async () => {
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Review later"),
@@ -561,12 +538,6 @@ test("Archive an unread chat without retaining its agent reminder or changing re
       "Review later Unread",
     );
   });
-  const agentLink = () => {
-    return pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), "Nova");
-  };
-  await waitFor(() => {
-    expect(within(agentLink()).getByLabelText("Unread")).toBeInTheDocument();
-  });
   openChatListMenu();
   expect(menuItemByText("Mark all read")).not.toHaveAttribute(
     "aria-disabled",
@@ -579,11 +550,6 @@ test("Archive an unread chat without retaining its agent reminder or changing re
   await expect(
     screen.findByText("Chat archived."),
   ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      within(agentLink()).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
-  });
   openChatListMenu();
   await waitFor(() => {
     expect(menuItemByText("Mark all read")).not.toHaveAttribute(
@@ -597,7 +563,6 @@ test("Archive an unread chat without retaining its agent reminder or changing re
     expect(threadLinkByTitle("Review later", list)).toHaveAccessibleName(
       "Review later Unread",
     );
-    expect(within(agentLink()).getByLabelText("Unread")).toBeInTheDocument();
   });
   openChatListMenu();
   await waitFor(() => {
@@ -609,7 +574,6 @@ test("Archive an unread chat without retaining its agent reminder or changing re
 });
 
 test("Mute an unread chat with feedback and undo it from the toast", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Quiet task"),
@@ -646,7 +610,6 @@ test("Mute an unread chat with feedback and undo it from the toast", async () =>
 });
 
 test("Unmute a chat without resurfacing replies that arrived while it was muted", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(RESEARCH_THREAD_ID, "Incident notes"),
@@ -678,7 +641,6 @@ test("Unmute a chat without resurfacing replies that arrived while it was muted"
 });
 
 async function prepareMutedChatFilter() {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(RESEARCH_THREAD_ID, "Quiet task", { muted: true }),
@@ -771,7 +733,6 @@ test("Switch from muted chats to Inbox without losing filter state", async () =>
 });
 
 test("Show an empty muted filter after unmuting its last chat", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
@@ -803,7 +764,6 @@ test("Show an empty muted filter after unmuting its last chat", async () => {
 });
 
 test("Running indicators take precedence over the muted icon", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory(
     [
       createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -824,7 +784,6 @@ test("Running indicators take precedence over the muted icon", async () => {
 });
 
 test("Hide the current chat after archiving it without changing its title", async () => {
-  prepareDefaultAgent();
   const untitledThread: SidebarThread = {
     ...createThread(EXISTING_THREAD_ID, "Unused title"),
     title: null,
@@ -837,7 +796,7 @@ test("Hide the current chat after archiving it without changing its title", asyn
   });
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
+    expect(threadLinkByTitle("New chat", sidebar())).toBeInTheDocument();
   });
   openThreadMenu("New chat");
   click(menuItemByText("Archive chat"));
@@ -846,7 +805,9 @@ test("Hide the current chat after archiving it without changing its title", asyn
     expect(
       within(sidebar()).getByText("Your inbox is empty"),
     ).toBeInTheDocument();
-    expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
+    expect(
+      sidebar().querySelector('a[href="/chats/' + EXISTING_THREAD_ID + '"]'),
+    ).not.toBeInTheDocument();
   });
   expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
   await expect(
@@ -855,11 +816,9 @@ test("Hide the current chat after archiving it without changing its title", asyn
   click(buttonByText("Show archived chats", sidebar()));
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
+    expect(threadLinkByTitle("New chat", sidebar())).toBeInTheDocument();
   });
-  expect(
-    within(sidebar()).getByText("Archived · Chats with Okou"),
-  ).toBeInTheDocument();
+  expect(within(sidebar()).getByText("Archived")).toBeInTheDocument();
   openThreadMenu("New chat");
   click(menuItemByText("Unarchive chat"));
 
@@ -867,7 +826,9 @@ test("Hide the current chat after archiving it without changing its title", asyn
     expect(
       within(sidebar()).getByText("No archived chats"),
     ).toBeInTheDocument();
-    expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
+    expect(
+      sidebar().querySelector('a[href="/chats/' + EXISTING_THREAD_ID + '"]'),
+    ).not.toBeInTheDocument();
   });
 
   click(buttonByText("Show all chats", sidebar()));
@@ -880,7 +841,6 @@ test("Hide the current chat after archiving it without changing its title", asyn
 });
 
 test("Archive and unarchive the current chat with the keyboard shortcut", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
   await setupSidebarPage({
@@ -928,7 +888,6 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
 });
 
 test("Undo an archive from its toast and explain the muted exception", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
@@ -956,7 +915,6 @@ test("Undo an archive from its toast and explain the muted exception", async () 
 });
 
 test("Find archived chats in All and Chats workspace search results", async () => {
-  prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
   const archivedThread = createThread(ARCHIVED_THREAD_ID, "Archived context", {
     archived: true,
@@ -999,20 +957,15 @@ test("Find archived chats in All and Chats workspace search results", async () =
 });
 
 test("Find conversations by title in workspace search", async () => {
-  prepareAgents();
   const defaultThread = createThread(EXISTING_THREAD_ID, "Incident notes");
-  const researchThread = createThread(RESEARCH_THREAD_ID, "Research kickoff", {
-    agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-  });
-  const supportThread = createThread(INCIDENT_THREAD_ID, "Support escalation", {
-    agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-  });
+  const researchThread = createThread(RESEARCH_THREAD_ID, "Research kickoff");
+  const supportThread = createThread(INCIDENT_THREAD_ID, "Support escalation");
   mockSidebarThreadStory(
     [defaultThread, researchThread, supportThread],
     [],
     [INCIDENT_THREAD_ID],
   );
-  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupSidebarPage({ context, path: `/` });
 
   await waitFor(() => {
     expect(sidebar()).toBeInTheDocument();
@@ -1059,12 +1012,9 @@ test("Find conversations by title in workspace search", async () => {
   });
 });
 
-test("Route New chat to the current agent and Chat to the default agent", async () => {
-  prepareAgents();
+test("Open a new My Okou Chat from a retained conversation", async () => {
   mockSidebarThreadStory([
-    createThread(RESEARCH_THREAD_ID, "Research conversation", {
-      agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-    }),
+    createThread(RESEARCH_THREAD_ID, "Research conversation"),
   ]);
 
   await setupSidebarPage({
@@ -1079,25 +1029,19 @@ test("Route New chat to the current agent and Chat to the default agent", async 
       "Research conversation",
     ),
   ).toBeInTheDocument();
-  await screen.findByText("Chats with Research Agent");
 
   const list = screen.getByTestId("chat-list-column");
-  const searchButton = within(list).getByLabelText("Search workspace");
-  if (!searchButton.parentElement) {
-    throw new Error("Chat header not found");
-  }
-  click(within(searchButton.parentElement).getByLabelText("New chat"));
-
+  click(newChatRow(list));
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
+    expect(pathname()).toBe("/");
   });
 
   const chatLink = within(rail).getByLabelText("Chat");
-  expect(chatLink).toHaveAttribute("href", `/agents/${AGENT_ID}/chat`);
+  expect(chatLink).toHaveAttribute("href", "/");
   click(chatLink);
 
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    expect(pathname()).toBe("/");
     expect(screen.getByPlaceholderText(PLACEHOLDER)).toBeInTheDocument();
   });
 });
@@ -1113,15 +1057,11 @@ function newChatRow(list: HTMLElement): HTMLElement {
   return found;
 }
 test("My Okou's header holds the toggle, search, New Project and list menu while New chat leads the list", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
   await setupSidebarPage({
     context,
     path: "/",
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
 
   const list = await screen.findByTestId("chat-list-column");
@@ -1184,7 +1124,6 @@ test("My Okou's header holds the toggle, search, New Project and list menu while
 });
 
 test("My Okou's Chat link and new chat shortcut open its chat page at /", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Existing conversation"),
   ]);
@@ -1192,7 +1131,6 @@ test("My Okou's Chat link and new chat shortcut open its chat page at /", async 
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   const rail = await screen.findByTestId("labeled-nav-rail");
@@ -1224,7 +1162,6 @@ test("My Okou's Chat link and new chat shortcut open its chat page at /", async 
 });
 
 test("My Okou's Chat link returns a filtered chat list to the inbox", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(ARCHIVED_THREAD_ID, "Archived context", { archived: true }),
@@ -1233,7 +1170,6 @@ test("My Okou's Chat link returns a filtered chat list to the inbox", async () =
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
   const rail = await screen.findByTestId("labeled-nav-rail");
@@ -1264,18 +1200,46 @@ test("My Okou's Chat link returns a filtered chat list to the inbox", async () =
   expect(header).toHaveTextContent(/^$/);
 });
 
-test("Mark all current-agent chats read from the chat-list menu", async () => {
-  prepareDefaultAgent();
+test("The Okou rail entry opens My Okou's chat page at /", async () => {
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Existing conversation"),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.OkouRailEntry]: true,
+    },
+  });
+
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  await screen.findByPlaceholderText(PLACEHOLDER);
+  const okouLink = within(rail).getByLabelText("Okou");
+  expect(okouLink).toHaveTextContent("Okou");
+  expect(okouLink).toHaveAttribute("href", "/");
+  expect(within(rail).queryByLabelText("Chat")).toBeNull();
+
+  click(okouLink);
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  const newChat = queryAllByRoleFast("link", sidebar()).find((link) => {
+    return link.textContent?.startsWith("New chat");
+  });
+  expect(newChat).toHaveAttribute("aria-current", "page");
+});
+
+test("Mark all workspace chats read from the chat-list menu", async () => {
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Existing conversation"),
     createThread(INCIDENT_THREAD_ID, "Unread conversation"),
   ]);
 
   let hasUnread = true;
-  const markedAgentIds: string[] = [];
+  let markReadRequests = 0;
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
       threads: hasUnread ? { [INCIDENT_THREAD_ID]: "unread" } : {},
       unreadAt: hasUnread
         ? { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" }
@@ -1283,25 +1247,18 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
     });
   });
   context.mocks.api(
-    chatThreadMarkAgentReadContract.markAgentRead,
-    ({ body, respond }) => {
-      markedAgentIds.push(body.agentId);
+    chatThreadMarkAllReadContract.markAllRead,
+    ({ respond }) => {
+      markReadRequests += 1;
       hasUnread = false;
-      // More cursors moved than one payload carries, so the server publishes an
-      // agent-scoped invalidation with no ids. Authoritative indicators still
-      // have to reload from it: this list never depends on the id array.
-      changeChatThreadReadCursor({
-        agentId: AGENT_ID,
-        threadIds: [],
-        scope: "agent",
-      });
+      changeChatIndicators();
       return respond(204);
     },
   );
 
   await setupSidebarPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const list = await screen.findByTestId("chat-list-column");
@@ -1349,7 +1306,7 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
 
   await within(list).findByText("No unread chats");
   await waitFor(() => {
-    expect(markedAgentIds).toStrictEqual([AGENT_ID]);
+    expect(markReadRequests).toBe(1);
     expect(
       within(list).queryByText("Unread conversation"),
     ).not.toBeInTheDocument();
@@ -1384,7 +1341,6 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
 });
 
 async function setupReadUnreadSidebar() {
-  prepareDefaultAgent();
   const unreadIndicatorsRefreshed = context.mocks.deferred<void>();
   const unreadThreadIds = new Set<string>();
   const unreadAt = "2026-03-10T00:05:00Z";
@@ -1406,7 +1362,6 @@ async function setupReadUnreadSidebar() {
       unreadIndicatorsRefreshed.resolve();
     }
     return respond(200, {
-      agents: unreads.length > 0 ? { [AGENT_ID]: "unread" } : {},
       threads: Object.fromEntries(
         unreads.map(({ threadId }) => {
           return [threadId, "unread" as const];
@@ -1425,7 +1380,7 @@ async function setupReadUnreadSidebar() {
       unreadThreadIds.add(params.id);
       changeChatThreadReadCursor({
         threadId: params.id,
-        agentId: AGENT_ID,
+
         lastReadAt: null,
       });
       return respond(200, {

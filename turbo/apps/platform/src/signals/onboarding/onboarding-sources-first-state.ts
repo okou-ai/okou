@@ -156,6 +156,8 @@ function restoredDraft(
   };
 }
 
+// Keep importing these keys until seven days after the Web version floor
+// excludes the last build that wrote them (#48819).
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const stepStorage = localStorageSignals("onboarding:sources-first-step");
 const onboardingStorages = [draftStorage, stepStorage] as const;
@@ -280,8 +282,7 @@ const syncSourcesFirstDraft$ = command(
 
 export const saveSourcesFirstStep$ = command(
   ({ get, set }, step: SourcesFirstStep): void => {
-    const identity = get(internalDraftIdentity$);
-    if (identity === null) {
+    if (get(internalDraftIdentity$) === null) {
       return;
     }
     set(internalStep$, step);
@@ -291,8 +292,6 @@ export const saveSourcesFirstStep$ = command(
         Reason.Deferred,
         "save onboarding step",
       );
-    } else {
-      set(stepStorage.set$, JSON.stringify({ ...identity, step }));
     }
   },
 );
@@ -381,21 +380,11 @@ export const updateSourcesFirstDraft$ = command(
       next.startingPromptOutput = null;
     }
     set(internalDraft$, next);
-    const identity = get(internalDraftIdentity$);
-    if (identity === null) {
-      return;
-    }
     if (get(serverSync$)) {
       detach(
         set(syncSourcesFirstDraft$, get(rootSignal$)),
         Reason.Deferred,
         "save onboarding answers",
-      );
-    } else {
-      // Keep browser fallback drafts readable by previous app builds.
-      set(
-        draftStorage.set$,
-        JSON.stringify({ version: 2, ...identity, ...draftAnswers(next) }),
       );
     }
   },

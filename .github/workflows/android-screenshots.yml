@@ -56,13 +56,23 @@ jobs:
         run: >-
           git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
           --unshallow --filter=tree:0 origin "$TARGET_SHA"
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "21"
+      - name: Restore Android Gradle dependencies
+        id: gradle-dependencies
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Match the cache published by instrumentation in android.yml.
+          path: |
+            ~/.gradle/wrapper/dists
+            ~/.gradle/caches/modules-2/files-2.1
+            ~/.gradle/caches/modules-2/metadata-*
+          key: android-instrumentation-gradle-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle', 'android/**/*.gradle.kts', 'android/**/gradle.properties', 'android/gradle/**/*.toml', 'android/gradle/wrapper/gradle-wrapper.properties') }}
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
-          cache-read-only: true
+          cache-provider: external
       - name: Install Android SDK
         run: bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Enable emulator hardware acceleration

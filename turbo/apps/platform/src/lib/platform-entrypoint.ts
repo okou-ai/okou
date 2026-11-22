@@ -43,7 +43,6 @@ function startApplication(
           });
         });
       },
-      store.watch,
       rootSignal,
     );
   }

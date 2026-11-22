@@ -19,7 +19,6 @@ import {
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { runnerState } from "@okouai/db/runtime/runner-state";
 import type {
   RunnerHeldSandboxState as PersistedRunnerHeldSandboxState,
@@ -239,7 +238,6 @@ interface RunNetworkPolicyScope {
   readonly runId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly status: RunStatus;
 }
 
@@ -255,12 +253,9 @@ const getRunNetworkPolicyScope$ = command(
         runId: agentRuns.id,
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
-        agentId: agents.id,
         status: agentRuns.status,
       })
       .from(agentRuns)
-
-      .innerJoin(agents, eq(agents.id, agentRuns.agentId))
       .where(eq(agentRuns.id, runId))
       .limit(1);
     signal.throwIfAborted();
@@ -344,7 +339,6 @@ const connectorRuntimeSyncInner$ = command(
       scope: {
         orgId: run.orgId,
         userId: run.userId,
-        agentId: run.agentId,
         runId: run.runId,
       },
       targets: body.data.targets,

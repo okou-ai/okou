@@ -32,8 +32,13 @@ class ComposerApiFixture : Closeable {
     private val inputOrder = CopyOnWriteArrayList<String>()
     val created = CopyOnWriteArrayList<JsonObject>()
     @Volatile var disconnectSend = false
+    @Volatile var rejectSend = false
+    @Volatile var beforeCreateReturn: () -> Unit = {}
     @Volatile var beforeSendReturn: () -> Unit = {}
+    @Volatile var beforeListReturn: () -> Unit = {}
+    @Volatile var beforeHistoryReturn: (String) -> Unit = {}
     @Volatile var beforeContextReturn: () -> Unit = {}
+    @Volatile var beforeInputStatusReturn: () -> Unit = {}
     @Volatile var inputDisposition = "queued"
     val drafts = ConcurrentHashMap<String, JsonObject>()
     @Volatile var beforeDraftRead: (String) -> Unit = {}
@@ -41,33 +46,33 @@ class ComposerApiFixture : Closeable {
     @Volatile var draftReadStatus = 200
 
     init {
-        chats.flags = {
-            json("""{"switches":{},"effectiveSwitches":{"projects":true,"singleAgent":true}}""")
-        }
         chats.commandResponse = { request ->
             val path = request.requestUrl?.encodedPath.orEmpty()
             when {
-                request.method == "GET" && path.endsWith("/draft") -> {
+                request.method == "GET" &&
+                    (path == "/api/chat-drafts/composer" || path.endsWith("/draft")) -> {
                     requests += request
                     val body = drafts[path] ?: plainDraftDocument("")
                     beforeDraftRead(path)
                     json(body.toString()).setResponseCode(draftReadStatus)
                 }
                 request.method == "PATCH" &&
-                    (path.startsWith("/api/agents/") && path.endsWith("/draft") ||
+                    (path == "/api/chat-drafts/composer" ||
                         path.startsWith("/api/chat-threads/") &&
                             !path.removePrefix("/api/chat-threads/").contains('/')) -> {
                     requests += request
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                     beforeDraftWrite(path)
-                    drafts[if (path.endsWith("/draft")) path else "$path/draft"] = body
+                    drafts[
+                        if ((path == "/api/chat-drafts/composer" || path.endsWith("/draft"))) path
+                        else "$path/draft"] = body
                     MockResponse().setResponseCode(204)
                 }
                 path == "/api/onboarding/status" -> {
                     requests += request
                     beforeContextReturn()
                     json(
-                        """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true,"hasDefaultAgent":true,"defaultAgentId":"$CHAT_AGENT","defaultAgentMetadata":null}"""
+                        """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}"""
                     )
                 }
                 path == "/api/chat-threads" && request.method == "POST" -> {
@@ -76,6 +81,7 @@ class ComposerApiFixture : Closeable {
                     val id = body.getValue("clientThreadId").jsonPrimitive.content
                     if (created.none { it.getValue("clientThreadId").jsonPrimitive.content == id })
                         created += body
+                    beforeCreateReturn()
                     json(
                             buildJsonObject {
                                     put("id", JsonPrimitive(id))
@@ -88,6 +94,12 @@ class ComposerApiFixture : Closeable {
                                 .toString()
                         )
                         .setResponseCode(201)
+                }
+                path == "/api/chat/events" && request.method == "POST" && rejectSend -> {
+                    requests += request
+                    beforeSendReturn()
+                    json("""{"error":{"code":"BAD_REQUEST","message":"Input rejected"}}""")
+                        .setResponseCode(400)
                 }
                 path == "/api/chat/events" && request.method == "POST" -> {
                     requests += request
@@ -112,6 +124,7 @@ class ComposerApiFixture : Closeable {
                 }
                 path.contains("/inputs/") && path.endsWith("/status") -> {
                     requests += request
+                    beforeInputStatusReturn()
                     val parts = checkNotNull(request.requestUrl).pathSegments
                     val input = inputs[parts[4]]
                     val status =
@@ -167,7 +180,6 @@ class ComposerApiFixture : Closeable {
                                 thread = CHAT_IN_PROJECT,
                                 extra = ",\"projectId\":\"$CHAT_PROJECT\"",
                                 title = "Project chat",
-                                agent = CHAT_OTHER_AGENT,
                             )
                         )
                         .jsonObject
@@ -180,7 +192,6 @@ class ComposerApiFixture : Closeable {
                                     id = body.getValue("eventId").jsonPrimitive.content,
                                     seq = seq,
                                     thread = body.getValue("clientThreadId").jsonPrimitive.content,
-                                    agent = body.getValue("agentId").jsonPrimitive.content,
                                     title = "New conversation",
                                     extra =
                                         body["projectId"]?.let { ",\"projectId\":$it" }.orEmpty(),
@@ -188,6 +199,7 @@ class ComposerApiFixture : Closeable {
                             )
                             .jsonObject
             }
+            beforeListReturn()
             json("""{"events":${JsonArray(rows)},"hasMore":false}""")
         }
         chats.historyRows = ::rows
@@ -225,6 +237,7 @@ class ComposerApiFixture : Closeable {
         val url = checkNotNull(request.requestUrl)
         val since = checkNotNull(url.queryParameter("sinceSeqId")).toLong()
         val rows = history(url.pathSegments[2], since)
+        beforeHistoryReturn(url.pathSegments[2])
         val cursor =
             rows.lastOrNull()?.let {
                 "{\"lastEventId\":${it.getValue("id")},\"lastSeqId\":${it.getValue("seqId")}}"

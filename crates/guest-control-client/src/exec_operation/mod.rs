@@ -53,8 +53,9 @@ fn exec_operation_guest_error(message: String) -> io::Error {
     io::Error::other(message)
 }
 
-fn exec_operation_protocol_error(error: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
+fn exec_operation_protocol_error(message: impl Into<String>) -> io::Error {
+    let message: String = message.into();
+    io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
 #[cfg(test)]

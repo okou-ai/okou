@@ -15,9 +15,7 @@ use crate::helper_output::{CapturedHelperOutput, captured_or_empty};
 use crate::helper_program::TestHelperProgram;
 use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
-use crate::wait::{
-    WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
-};
+use crate::wait::{WaitOutcome, collect_bounded_output, wait_for_helper_with_group_cleanup};
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as HomeDriveMountSubmitError;
 use crate::worker_ownership::{LazyConnectionWorker, SingleActivePermit};
 use crate::writer::GuestWriter;
@@ -199,8 +197,7 @@ fn handle_request(
 
     writer
         .write_frame_after_lock_unless_cancelled(&frame, connection_cancel, || {
-            operation_guard.release();
-            drop(admission);
+            admission.finish_operation(&operation_guard);
         })
         .map(|_| ())
 }
@@ -290,12 +287,8 @@ fn run_mount(input: RunMountInput<'_>) -> CapturedHelperOutput {
     drop(drain_done_tx);
 
     program.await_test_timeout_gate(child.id());
-    let outcome = wait_with_kill_timeout_or_connection_cancelled(
-        child,
-        program.timeout_ms(),
-        connection_cancel,
-        || true,
-    );
+    let outcome =
+        wait_for_helper_with_group_cleanup(child, program.timeout_ms(), connection_cancel);
     let cancellation_observed = connection_cancel.load(Ordering::Acquire);
     if !matches!(outcome, WaitOutcome::Exited(_)) || cancellation_observed {
         drain_cancel.cancel();

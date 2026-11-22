@@ -5,7 +5,8 @@ import type {
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
 import { connectors } from "@okouai/db/schema/connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -30,6 +31,7 @@ import {
   customConnectorPermissionBundleDependencySlug,
   loadCustomConnectorPermissionBundle,
 } from "./custom-connector-permission-bundle.service";
+import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 import {
   connectorPermissionGrantOwner,
   connectorPermissionMutationSql,
@@ -105,9 +107,27 @@ export const applyConnectorPermissions$ = command(
       owner.target.kind === "custom"
         ? await db
             .select({
+              slug: orgCustomConnectors.slug,
+              authMode: orgCustomConnectors.authMode,
+              prefixTemplates: orgCustomConnectors.prefixTemplates,
               permissionBundleRef: orgCustomConnectors.permissionBundleRef,
+              oauthProviderAdapter:
+                orgCustomConnectorOauthConfigs.providerAdapter,
             })
             .from(orgCustomConnectors)
+            .leftJoin(
+              orgCustomConnectorOauthConfigs,
+              and(
+                eq(
+                  orgCustomConnectorOauthConfigs.connectorId,
+                  orgCustomConnectors.id,
+                ),
+                eq(
+                  orgCustomConnectorOauthConfigs.orgId,
+                  orgCustomConnectors.orgId,
+                ),
+              ),
+            )
             .where(
               and(
                 eq(orgCustomConnectors.orgId, owner.orgId),
@@ -117,13 +137,14 @@ export const applyConnectorPermissions$ = command(
             .limit(1)
         : [];
     signal.throwIfAborted();
+    const permissionBundleRef = definition
+      ? effectiveCustomConnectorPermissionBundleRef(definition)
+      : null;
     const slug =
       owner.target.kind === "builtin"
         ? owner.target.connectorSlug
-        : definition?.permissionBundleRef
-          ? customConnectorPermissionBundleDependencySlug(
-              definition.permissionBundleRef,
-            )
+        : permissionBundleRef
+          ? customConnectorPermissionBundleDependencySlug(permissionBundleRef)
           : null;
     const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: slug === null ? [] : [slug],
@@ -144,11 +165,11 @@ export const applyConnectorPermissions$ = command(
               owner.target.connectorSlug,
             )
           )?.permissionNames
-        : definition?.permissionBundleRef
+        : permissionBundleRef
           ? (
               await loadCustomConnectorPermissionBundle({
                 catalog: snapshot.serverFirewalls,
-                ref: definition.permissionBundleRef,
+                ref: permissionBundleRef,
               })
             )?.permissionNames
           : undefined;

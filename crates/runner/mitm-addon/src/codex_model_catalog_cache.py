@@ -88,7 +88,7 @@ import secrets
 import time
 import urllib.parse
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import NamedTuple
@@ -150,8 +150,6 @@ _RAW_REQUEST_CONDITIONAL_HEADERS = frozenset(
     )
 )
 
-_ResponseStream = Callable[[bytes], bytes | Iterable[bytes]]
-
 
 @dataclass(frozen=True)
 class _CacheKey:
@@ -195,10 +193,9 @@ class _FlowState:
     in_flight: _InFlight = field(repr=False)
     upstream_encoding: str | None = None
     compressed_content_length: int | None = None
-    capture: bytearray | None = field(default=None, repr=False)
-    capture_overflow: bool = False
-    downstream_stream: _ResponseStream | None = field(default=None, repr=False)
-    wrapper_stream: _ResponseStream | None = field(default=None, repr=False)
+    capture: stream_capture.StreamCapture | None = field(default=None, repr=False)
+    downstream_stream: stream_capture.StreamCallback | None = field(default=None, repr=False)
+    wrapper_stream: stream_capture.StreamCallback | None = field(default=None, repr=False)
     finalized: bool = False
     capacity_reserved: bool = True
     result_published: bool = False
@@ -781,18 +778,13 @@ def wrap_response_stream(flow: http.HTTPFlow) -> None:
         _set_not_stored(flow, state, "response_stream")
         return
 
-    state.capture = bytearray()
+    state.capture = stream_capture.StreamCapture()
     state.downstream_stream = downstream
 
     def capture_and_stream(chunk: bytes) -> bytes | Iterable[bytes]:
-        if (
-            state.capture is not None
-            and not state.capture_overflow
-            and stream_capture.append_captured_chunk(
-                state.capture, chunk, limit=catalog_validation.MAX_ENTRY_BYTES
-            )
+        if state.capture is not None and state.capture.append(
+            chunk, limit=catalog_validation.MAX_ENTRY_BYTES
         ):
-            state.capture_overflow = True
             _bypass_response(flow, state, "response_size")
         return downstream(chunk)
 
@@ -801,13 +793,9 @@ def wrap_response_stream(flow: http.HTTPFlow) -> None:
 
 
 def _unwrap_response_stream(flow: http.HTTPFlow, state: _FlowState) -> None:
-    response = flow.response
-    if (
-        response is not None
-        and state.wrapper_stream is not None
-        and response.stream is state.wrapper_stream
-    ):
-        response.stream = state.downstream_stream or False
+    stream_capture.replace_owned_stream(
+        flow.response, state.wrapper_stream, replacement=state.downstream_stream
+    )
     state.wrapper_stream = None
     state.downstream_stream = None
 
@@ -911,11 +899,11 @@ def finalize_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
             _set_not_stored(flow, state, "response_missing")
             _release_flow_capacity(state)
             return None
-        if state.capture is None or state.capture_overflow:
+        if state.capture is None or state.capture.truncated:
             _set_not_stored(flow, state, "response_size")
             _release_flow_capacity(state)
             return None
-        body = bytes(state.capture)
+        body = bytes(state.capture.buffer)
         state.capture = None
         snapshot = catalog_validation.ResponseValidationSnapshot(
             status_code=response.status_code,

@@ -12,34 +12,11 @@ describe("Discord Gateway connection health", () => {
     async ({ endpoint, stage }) => {
       const relay = await createRelay();
       relay[endpoint] = () => {
+        // Let the retry proceed independently of when the test reads health.
+        relay[endpoint] = null;
         return new Response("private provider error", { status: 503 });
       };
-      expect((await relay.request("/start")).status).toBe(200);
-      await expect
-        .poll(() => {
-          return relay.health();
-        })
-        .toMatchObject({
-          running: true,
-          connected: false,
-          deliveryFailures: 0,
-          connection: {
-            stage: "backoff",
-            failures: 1,
-            reconnectAt: expect.any(Number),
-            lastFailure: {
-              stage,
-              reason: "connection-error",
-              httpStatus: 503,
-              exceptionType: "Error",
-              retryCount: 1,
-              retryDelayMs: expect.any(Number),
-            },
-          },
-        });
-
-      relay[endpoint] = null;
-      const gateway = await relay.connections.next();
+      const gateway = await relay.start();
       gateway.hello();
       await gateway.next(2);
       gateway.ready();
@@ -48,14 +25,23 @@ describe("Discord Gateway connection health", () => {
           return relay.health();
         })
         .toMatchObject({
+          running: true,
           connected: true,
           resumable: true,
+          deliveryFailures: 0,
           connection: {
             stage: "ready",
             httpStatus: null,
             failures: 0,
             reconnectAt: null,
-            lastFailure: { stage, httpStatus: 503 },
+            lastFailure: {
+              stage,
+              reason: "connection-error",
+              httpStatus: 503,
+              exceptionType: "Error",
+              retryCount: 1,
+              retryDelayMs: expect.any(Number),
+            },
           },
         });
     },
@@ -74,25 +60,26 @@ describe("Discord Gateway connection health", () => {
         return new Response(null, { status, headers: { "Retry-After": "30" } });
       };
       expect((await relay.request("/start")).status).toBe(200);
-      await expect
-        .poll(() => {
-          return relay.health();
-        })
-        .toMatchObject({
-          running,
-          fatal: running ? null : "gateway-authentication",
-          connection: {
-            stage: running ? "backoff" : "stopped",
-            failures: running ? 1 : 0,
-            lastFailure: {
-              stage: "gateway-discovery",
-              reason,
-              httpStatus: status,
-              exceptionType: null,
-              retryDelayMs: running ? 30_000 : null,
-            },
+      // Health is ordered after the alarm that made this discovery request.
+      await relay.discoveries.next();
+      expect(await relay.health()).toMatchObject({
+        running,
+        connected: false,
+        deliveryFailures: 0,
+        fatal: running ? null : "gateway-authentication",
+        connection: {
+          stage: running ? "backoff" : "stopped",
+          failures: running ? 1 : 0,
+          reconnectAt: running ? expect.any(Number) : null,
+          lastFailure: {
+            stage: "gateway-discovery",
+            reason,
+            httpStatus: status,
+            exceptionType: null,
+            retryDelayMs: running ? 30_000 : null,
           },
-        });
+        },
+      });
     },
   );
 

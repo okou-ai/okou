@@ -1,18 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { secrets } from "@okouai/db/schema/secret";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { variables } from "@okouai/db/schema/variable";
 import {
   and,
@@ -46,7 +44,6 @@ interface FeishuOAuthPublicationInput {
     readonly accountMutation: ConnectorAccountMutationIntent;
   };
   readonly installation: {
-    readonly defaultAgentId: string;
     readonly tenantKey: string | null;
   };
   readonly connector: { readonly id: string; readonly storageVersion: number };
@@ -63,13 +60,11 @@ const members = feishuOrgConnections;
 const accounts = connectors;
 const definitions = orgCustomConnectors;
 const configs = orgCustomConnectorOauthConfigs;
-const grants = userCustomConnectors;
 type TimedFeishuOAuthPublicationInput = FeishuOAuthPublicationInput & {
   readonly at: Date;
 };
 
 export const feishuOAuthPublicationRow = object({
-  agent: boolean(),
   credentialContract: boolean(),
   definitionEnabled: boolean(),
   foreignOwner: boolean(),
@@ -102,23 +97,6 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
       )
       .limit(1),
   );
-  const agent = query.$with("oauth_agent").as(
-    query
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, args.installation.defaultAgentId),
-          eq(agents.orgId, args.state.orgId),
-          or(
-            eq(agents.visibility, "public"),
-            eq(agents.owner, args.state.userId),
-          ),
-        ),
-      )
-      .for("update")
-      .limit(1),
-  );
   const definition = query.$with("oauth_definition").as(
     query
       .select({
@@ -126,9 +104,6 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
         authMode: definitions.authMode,
         storageVersion: definitions.storageVersion,
         enabled: definitions.enabled,
-        slug: definitions.slug,
-        prefixTemplates: definitions.prefixTemplates,
-        permissionBundleRef: definitions.permissionBundleRef,
         providerAdapter: configs.providerAdapter,
       })
       .from(definitions)
@@ -143,7 +118,6 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
         and(
           eq(definitions.id, args.connector.id),
           eq(definitions.orgId, args.state.orgId),
-          exists(query.select().from(agent)),
         ),
       )
       .for("update", { of: definitions })
@@ -182,7 +156,7 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
         not(foreign),
       ),
     );
-  return { installation, agent, definition, contract, foreign, eligible };
+  return { installation, definition, contract, foreign, eligible };
 }
 
 function feishuOAuthMember(
@@ -403,52 +377,6 @@ function feishuOAuthCredentials(
   };
 }
 
-function feishuGrantBundleSql(
-  definition: ReturnType<typeof feishuOAuthAdmission>["definition"],
-): SQL {
-  const prefix = sql`CASE WHEN ${definition.slug} LIKE '_lark-%' THEN 'https://open.larksuite.com/open-apis/' ELSE 'https://open.feishu.cn/open-apis/' END`;
-  return sql`CASE WHEN ${definition.slug} ~ ${"^_(feishu|lark)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}
-    AND ${definition.authMode} = 'oauth' AND ${definition.providerAdapter} = 'feishu'
-    AND jsonb_array_length(${definition.prefixTemplates}) = 1
-    AND ${definition.prefixTemplates}->>0 = ${prefix}
-    THEN 'builtin:feishu@1' ELSE ${definition.permissionBundleRef} END`;
-}
-
-function feishuOAuthGrant(
-  args: TimedFeishuOAuthPublicationInput,
-  admission: ReturnType<typeof feishuOAuthAdmission>,
-  account: ReturnType<typeof feishuOAuthAccount>,
-  after: SQL,
-) {
-  const query = new QueryBuilder();
-  const bundle = feishuGrantBundleSql(admission.definition);
-  const ordinary = sql`(${bundle}) IS NULL OR (${bundle}) = 'builtin:feishu@1'`;
-  const scope = and(
-    eq(grants.orgId, args.state.orgId),
-    eq(grants.userId, args.state.userId),
-    eq(grants.agentId, args.installation.defaultAgentId),
-    eq(grants.customConnectorId, args.connector.id),
-  );
-  // Preserve the current permission array at the unique-key arbiter, including
-  // an array committed while this statement waited. Never reinsert old grants.
-  const inserted = query.$with("oauth_standard_grant", { id: grants.id })
-    .as(sql`
-    INSERT INTO ${grants} (org_id, user_id, agent_id, custom_connector_id, permission_names)
-    SELECT ${args.state.orgId}, ${args.state.userId}, ${args.installation.defaultAgentId}::uuid,
-      ${args.connector.id}::uuid, '{}'::text[] FROM ${admission.definition}
-    WHERE (${ordinary}) AND EXISTS (SELECT 1 FROM ${account.accepted}) AND (SELECT count(*) FROM ${after}) >= 0
-    ON CONFLICT (org_id, user_id, agent_id, custom_connector_id)
-    DO UPDATE SET permission_names = ${grants.permissionNames} RETURNING id
-  `);
-  const retained = query.$with("oauth_selected_grant", { id: grants.id })
-    .as(sql`
-    UPDATE ${grants} SET permission_names = ${grants.permissionNames} FROM ${admission.definition}
-    WHERE ${scope} AND NOT (${ordinary}) AND EXISTS (SELECT 1 FROM ${account.accepted})
-      AND (SELECT count(*) FROM ${after}) >= 0 RETURNING ${grants.id}
-  `);
-  return { inserted, retained };
-}
-
 export function feishuOAuthPublicationSql(
   input: FeishuOAuthPublicationInput,
   encrypted: EncryptedFeishuTokens | null,
@@ -467,7 +395,6 @@ export function feishuOAuthPublicationSql(
     WHERE id = ${args.state.installationId}::uuid AND ${!args.installation.tenantKey && Boolean(args.userInfo.tenantKey)}
       AND EXISTS (SELECT 1 FROM ${account.accepted}) AND (SELECT count(*) FROM ${credentials.custom}) >= 0 RETURNING id
   `);
-  const grant = feishuOAuthGrant(args, admission, account, sql`${tenant}`);
   const sourceEvent = query.$with("reward_source_event", {}).as(
     marketingRewardOAuthEventInsert(
       {
@@ -484,7 +411,6 @@ export function feishuOAuthPublicationSql(
   return query
     .with(
       admission.installation,
-      admission.agent,
       admission.definition,
       member.removed,
       member.claimed,
@@ -499,14 +425,9 @@ export function feishuOAuthPublicationSql(
       credentials.inserted,
       credentials.custom,
       tenant,
-      grant.inserted,
-      grant.retained,
       sourceEvent,
     )
     .select({
-      agent: sql`${exists(query.select().from(admission.agent))}`
-        .mapWith(zodDriverValueDecoder(boolean()))
-        .as("agent"),
       credentialContract: sql`${exists(admission.contract)}`
         .mapWith(zodDriverValueDecoder(boolean()))
         .as("credentialContract"),
@@ -527,7 +448,6 @@ export function feishuOAuthPublicationSql(
       ((SELECT count(*) FROM ${member.removed}) = 0 OR EXISTS (SELECT 1 FROM ${member.claimed}))
       AND ((SELECT count(*) FROM ${member.claimed}) = (SELECT count(*) FROM ${account.accepted}))
       AND ((SELECT count(*) FROM ${credentials.inserted}) = ${credentials.expected} * (SELECT count(*) FROM ${account.accepted}))
-      AND ((SELECT count(*) FROM ${grant.inserted}) + (SELECT count(*) FROM ${grant.retained}) = (SELECT count(*) FROM ${account.accepted}))
       THEN 1 ELSE 0 END`
         .mapWith(zodDriverValueDecoder(literal(1)))
         .as("complete"),

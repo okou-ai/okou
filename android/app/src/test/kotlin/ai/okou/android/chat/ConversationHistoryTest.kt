@@ -18,6 +18,7 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
@@ -54,6 +55,32 @@ class ConversationHistoryTest {
 
     @After fun close() = runBlocking { stores.forEach { it.close() } }
 
+    @Test
+    fun readingAnchorSurvivesReopenAndStaysScopedToAccountWorkspaceAndThread() = runTest {
+        val directory = temporary.newFolder()
+        val anchor = ConversationAnchor(HISTORY_LAST_EVENT, -27f)
+        val original = cache(directory)
+        original.open(identity) { true }.saveReadingAnchor(CHAT_PERSONAL, anchor)
+        original.close()
+
+        val reopened = cache(directory)
+        assertNull(
+            reopened
+                .open(identity.copy(userId = "other-user")) { true }
+                .loadReadingAnchor(CHAT_PERSONAL)
+        )
+        assertNull(
+            reopened
+                .open(identity.copy(workspaceId = "other-workspace")) { true }
+                .loadReadingAnchor(CHAT_PERSONAL)
+        )
+        val lease = reopened.open(identity.copy(sessionId = "renewed")) { true }
+        assertNull(lease.loadReadingAnchor(CHAT_IN_PROJECT))
+        assertEquals(anchor, lease.loadReadingAnchor(CHAT_PERSONAL))
+        lease.saveReadingAnchor(CHAT_PERSONAL, null)
+        assertNull(lease.loadReadingAnchor(CHAT_PERSONAL))
+    }
+
     private fun row(
         id: String = HISTORY_LAST_EVENT,
         seq: Long = 37,
@@ -72,7 +99,7 @@ class ConversationHistoryTest {
 
     private fun thread(id: String = CHAT_PERSONAL): ConfirmedChat =
         Json.decodeFromString<ChatArchive>(
-                """{"chatThreads":[{"id":"$id","agentId":"agent-original","projectId":"project-original","title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                """{"chatThreads":[{"id":"$id","projectId":"project-original","title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
             )
             .chatThreads
             .single()
@@ -276,6 +303,181 @@ class ConversationHistoryTest {
     }
 
     @Test
+    fun historyReadbackReusesCommittedRowsAndLoadsARebuiltPrefix() = runTest {
+        val lease = cache().open(identity) { true }
+        val incoming = checkpoint().copy(replaced = true)
+        val initialWrite = checkNotNull(lease.saveHistory(incoming, 100))
+        val matching = checkNotNull(lease.loadHistory(CHAT_PERSONAL, initialWrite))
+        assertSame(incoming.rows, matching.checkpoint.rows)
+        assertFalse(matching.checkpoint.replaced)
+        assertEquals(100L, matching.confirmedAt)
+
+        val addition = row(id = "another-event", seq = 38)
+        val newer =
+            matching.checkpoint.copy(
+                rows = incoming.rows + addition,
+                cursor = HistoryCursor(addition.id, addition.seqId),
+            )
+        val append = checkNotNull(lease.saveHistory(newer, 200, matching))
+        assertSame(newer.rows, lease.loadHistory(CHAT_PERSONAL, append)?.checkpoint?.rows)
+
+        val archived = row(id = "archived-event", seq = 36)
+        val rebuilt = newer.copy(rows = listOf(archived) + newer.rows, replaced = true)
+        lease.saveWarmedHistory(rebuilt, 200, newer.cursor) { null }
+        val adopted = checkNotNull(lease.loadHistory(CHAT_PERSONAL, append))
+        assertEquals(rebuilt.copy(replaced = false), adopted.checkpoint)
+        assertEquals(200L, adopted.confirmedAt)
+
+        val tail = row(id = "tail-event", seq = 39)
+        val staleAppend =
+            newer.copy(rows = newer.rows + tail, cursor = HistoryCursor(tail.id, tail.seqId))
+        val staleWrite = lease.saveHistory(staleAppend, 300, append)
+        assertNull(staleWrite)
+        val persisted = checkNotNull(lease.loadHistory(CHAT_PERSONAL))
+        assertEquals(rebuilt.rows + tail, persisted.checkpoint.rows)
+    }
+
+    @Test
+    fun unchangedCatchUpReusesTheCachedTranscriptAndProjectsNewEvents() = runTest {
+        val baseline = checkpoint()
+        val started = CompletableDeferred<HistoryCursor>()
+        val response = CompletableDeferred<HistoryPage>()
+        val service =
+            Service().apply {
+                rowsRead = { _, cursor ->
+                    started.complete(cursor)
+                    response.await()
+                }
+            }
+        val lease = cache().open(identity) { true }
+        lease.saveHistory(baseline, 100)
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            assertEquals(baseline.cursor, started.await())
+            val cached = model.uiState.value
+            val transcript = checkNotNull(cached.transcript)
+            assertEquals(ChatListSource.Cache, cached.source)
+            assertNull(cached.confirmation)
+
+            response.complete(HistoryPage(emptyList(), baseline.cursor, false))
+            val unchanged = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertSame(transcript, unchanged.transcript)
+            assertEquals(ChatListSource.Network, unchanged.source)
+            assertEquals(baseline.cursor, unchanged.confirmation?.cursor)
+
+            val added = row(id = "tail-event", seq = 38)
+            val cursor = HistoryCursor(added.id, added.seqId)
+            service.rowsRead = { _, _ -> HistoryPage(listOf(added), cursor, false) }
+            model.refresh()
+            val changed = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertNotSame(transcript, changed.transcript)
+            assertEquals(
+                listOf(HISTORY_LAST_EVENT, added.id),
+                changed.transcript?.messages?.map { it.id },
+            )
+            assertEquals(cursor, changed.confirmation?.cursor)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
+    fun reopeningAdoptsThePrefixRebuiltByWarmingAtTheSameCursor() = runTest {
+        val baseline = checkpoint()
+        val archived = row(id = "archived-event", seq = 36)
+        val warmed = baseline.copy(rows = listOf(archived) + baseline.rows, replaced = true)
+        val service = Service()
+        val lease = cache().open(identity) { true }
+        lease.saveHistory(baseline, 100)
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            val initial = model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.open(thread(CHAT_IN_PROJECT))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            lease.saveWarmedHistory(warmed, 200, baseline.cursor) { model.uiState.value.thread?.id }
+
+            model.open(thread())
+            assertSame(initial.transcript, model.uiState.value.transcript)
+            val published = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(baseline.cursor, service.requested.last())
+            assertNotSame(initial.transcript, published.transcript)
+            assertEquals(warmed.rows.map { it.id }, published.transcript?.messages?.map { it.id })
+            assertEquals(baseline.cursor, published.confirmation?.cursor)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
+    fun anInFlightCatchUpPublishesTheNewerStoredCursor() = runTest {
+        val received = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val baseline = checkpoint()
+        val older = row(id = "older-event", seq = 38)
+        val newer = row(id = "newer-event", seq = 39)
+        val service =
+            Service().apply {
+                rowsRead = { _, _ ->
+                    received.complete(Unit)
+                    release.await()
+                    HistoryPage(listOf(older), HistoryCursor(older.id, older.seqId), false)
+                }
+            }
+        val lease = cache().open(identity) { true }
+        lease.saveHistory(baseline, 100)
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            received.await()
+            val stored =
+                baseline.copy(
+                    rows = baseline.rows + listOf(older, newer),
+                    cursor = HistoryCursor(newer.id, newer.seqId),
+                )
+            lease.saveHistory(stored, 200)
+            release.complete(Unit)
+            val published = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(stored.cursor, published.confirmation?.cursor)
+            assertEquals(stored, model.checkpoint(CHAT_PERSONAL))
+            assertEquals(stored, lease.loadHistory(CHAT_PERSONAL)?.checkpoint)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
     fun visibleReadEffectsAreSeparateFromLoadingAndThreadFailuresStayLocal() = runTest {
         val service = Service()
         val lease = cache().open(identity) { true }
@@ -294,7 +496,7 @@ class ConversationHistoryTest {
         model.open(thread())
         model.uiState.first { it.phase == HistoryPhase.Ready }
         assertEquals(0, service.markCount)
-        assertEquals("agent-original", model.uiState.value.thread!!.agentId)
+        assertEquals(CHAT_PERSONAL, model.uiState.value.thread!!.id)
         val visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
         model.uiState.first { it.phase == HistoryPhase.Ready }
         runCurrent()
@@ -410,16 +612,20 @@ class ConversationHistoryTest {
             service.marked.await()
             runCurrent()
             assertEquals(CHAT_DATE, serverReadAt)
-            val previousTranscript = model.uiState.value.transcript
+            val previous = model.uiState.value
 
             visit.close()
             // The canonical mark-unread endpoint clears this without changing history rows.
             serverReadAt = null
             visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
-            model.uiState.first { it.phase == HistoryPhase.Ready }
-            assertEquals(previousTranscript, model.uiState.value.transcript)
+            val refreshed = model.uiState.first { it.phase == HistoryPhase.Ready }
+            val previousConfirmation = checkNotNull(previous.confirmation)
+            val newConfirmation = checkNotNull(refreshed.confirmation)
+            assertSame(previous.transcript, refreshed.transcript)
+            assertEquals(previousConfirmation.cursor, newConfirmation.cursor)
+            assertTrue(newConfirmation.revision > previousConfirmation.revision)
             assertNull(serverReadAt)
-            visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
+            visit.confirmDisplayed(newConfirmation)
             runCurrent()
             assertEquals(CHAT_DATE, serverReadAt)
             assertEquals(2, service.markCount)
@@ -525,7 +731,8 @@ class ConversationHistoryTest {
             model.uiState.first { it.phase == HistoryPhase.Ready }
             visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             started.await()
-            val stopped = checkNotNull(model.stopAutomaticRead(CHAT_PERSONAL))
+            val stopped = checkNotNull(visit.pendingAutomaticRead)
+            visit.stopAutomaticRead()
             assertFalse(stopped.isCompleted)
 
             val nextId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -623,6 +830,103 @@ class ConversationHistoryTest {
             model.close()
             lease.close()
         }
+    }
+
+    @Test
+    fun revisitingImmediatelyShowsTheConfirmedTimelineWhileCatchUpIsHeld() = runTest {
+        val lease = cache().open(identity) { true }
+        val service = Service()
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        val started = CompletableDeferred<HistoryCursor>()
+        val response = CompletableDeferred<HistoryPage>()
+        try {
+            model.open(thread())
+            val original = model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.open(thread(CHAT_IN_PROJECT))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            val read = service.rowsRead
+            service.rowsRead = { id, cursor ->
+                if (id == CHAT_PERSONAL) {
+                    started.complete(cursor)
+                    response.await()
+                } else read(id, cursor)
+            }
+
+            model.open(thread())
+            val revisited = model.uiState.value
+            assertSame(original.transcript, revisited.transcript)
+            assertEquals(ChatListSource.Cache, revisited.source)
+            assertNull(revisited.confirmation)
+            val visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, revisited.generation))
+            visit.confirmDisplayed(checkNotNull(original.confirmation))
+            assertEquals(original.confirmation.cursor, started.await())
+            assertEquals(0, service.markCount)
+
+            response.completeExceptionally(IOException("history unavailable"))
+            val failed = model.uiState.first { it.phase == HistoryPhase.Failed }
+            assertSame(original.transcript, failed.transcript)
+            assertNull(failed.confirmation)
+            service.rowsRead = read
+            model.refresh()
+            val refreshed = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(revisited.generation, checkNotNull(refreshed.confirmation).generation)
+            assertEquals(0, service.markCount)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
+    fun onlyRecentAccessibleTimelinesAreRestoredImmediately() = runTest {
+        val lease = cache().open(identity) { true }
+        val service = Service()
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            for (id in listOf(CHAT_PERSONAL, CHAT_IN_PROJECT, "third", "fourth", "fifth")) {
+                model.open(thread(id))
+                model.uiState.first { it.phase == HistoryPhase.Ready }
+            }
+            model.open(thread())
+            assertNull(model.uiState.value.transcript)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.open(thread("fifth"))
+            assertNotNull(model.uiState.value.transcript)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            model.forgetWarmedHistory(CHAT_PERSONAL)
+            model.open(thread())
+            assertNull(model.uiState.value.transcript)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+
+            service.threadStatus = 403
+            model.refresh()
+            assertNull(model.uiState.first { it.phase == HistoryPhase.Missing }.transcript)
+            model.open(thread("fifth"))
+            model.open(thread())
+            assertNull(model.uiState.value.transcript)
+        } finally {
+            model.close()
+            lease.close()
+        }
+        assertNull(model.uiState.value.transcript)
     }
 
     @Test
@@ -738,18 +1042,23 @@ class ConversationHistoryTest {
                 StandardTestDispatcher(testScheduler),
             )
         model.open(thread())
-        model.uiState.first { it.phase == HistoryPhase.Ready }
-        assertTrue(model.uiState.value.cacheUnavailable)
+        val unsaved = model.uiState.first { it.phase == HistoryPhase.Ready }
+        assertTrue(unsaved.cacheUnavailable)
         assertEquals(
             "**Native history** reply",
-            model.uiState.value.transcript!!.messages.single().blocks.single().text,
+            unsaved.transcript!!.messages.single().blocks.single().text,
         )
         assertTrue(root.delete())
         assertTrue(root.mkdir())
         model.refresh()
-        model.uiState.first { it.phase == HistoryPhase.Ready }
-        assertFalse(model.uiState.value.cacheUnavailable)
-        assertEquals(37L, lease.loadHistory(CHAT_PERSONAL)!!.checkpoint.cursor.seqId)
+        val repaired = model.uiState.first { it.phase == HistoryPhase.Ready }
+        assertFalse(repaired.cacheUnavailable)
+        assertEquals(unsaved.transcript, repaired.transcript)
+        assertEquals(checkpoint().cursor, repaired.confirmation?.cursor)
+        assertEquals(
+            repaired.confirmation?.cursor,
+            lease.loadHistory(CHAT_PERSONAL)?.checkpoint?.cursor,
+        )
         model.close()
         lease.close()
     }
@@ -878,5 +1187,21 @@ class ConversationHistoryTest {
         assertTrue(numbered.text.contains("3. first"))
         assertTrue(numbered.text.contains("7. nested"))
         assertTrue(numbered.text.contains("4. second"))
+        val table =
+            conversationMarkdownForCopy("| Check | Status |\n| --- | --- |\n| Links | Done |")
+        assertEquals("Check\tStatus\nLinks\tDone", table)
+    }
+
+    @Test
+    fun artifactMarkdownKeepsTightListsAndParagraphBreaks() {
+        val source = "1. First\n2. Second\n\nA paragraph.\n\nAnother paragraph."
+        assertEquals(
+            "1. First\n2. Second\n\nA paragraph.\n\nAnother paragraph.",
+            renderHistoryMarkdown(source, compactLists = true).text,
+        )
+        assertTrue(renderHistoryMarkdown(source).text.contains("First\n\n2. Second"))
+        assertTrue(
+            renderHistoryMarkdown("# Checklist", compactLists = true).spanStyles.isNotEmpty()
+        )
     }
 }

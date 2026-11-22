@@ -16,7 +16,6 @@ import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-a
 export function googleFormsAccountProjectionStatement(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly chatAccountAccess?: boolean;
 }) {
   return sql`
     WITH changed AS (${googleFormsAccountProjectionUpdate(args)})
@@ -29,7 +28,6 @@ export function googleFormsAccountProjectionStatement(args: {
 export function googleFormsAccountProjectionUpdate(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly chatAccountAccess?: boolean;
   readonly defaultConnectorId?: SQL;
   readonly excludedChatThreadId?: string;
   readonly selectedThread?: {
@@ -46,7 +44,12 @@ export function googleFormsAccountProjectionUpdate(args: {
   const snapshotConnectorId = sql`CASE WHEN ${chatThreadConnectorSelections.connectorSlug} IS NOT NULL
     THEN ${chatThreadConnectorSelections.connectorId}
     ELSE ${defaultConnectorId} END`;
-  const selectedConnectorId = args.chatAccountAccess
+  const reconcile =
+    args.defaultConnectorId === undefined &&
+    args.excludedChatThreadId === undefined &&
+    args.selectedThread === undefined &&
+    args.publicationCondition === undefined;
+  const selectedConnectorId = reconcile
     ? sql`(${workflowAutomationConnectorSelectionSql({ ...args, workflowId: sql`${workflowAutomations.workflowId}`, connectorSlug: "google-forms" })})`
     : args.selectedThread === undefined
       ? snapshotConnectorId

@@ -1,3 +1,4 @@
+import * as voiceTranscriptionSchema from "./schema/voice-transcription";
 import * as larkOfficialAppTicketSchema from "./schema/lark-official-app-ticket";
 import * as phoneUseSchema from "./schema/phone-use";
 import * as marketingContentGrantSchema from "./schema/marketing-content-grant";
@@ -23,10 +24,9 @@ import * as featureGuideSchema from "./schema/feature-guide";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as instructionsSchema from "./schema/instructions";
-import * as agentSchema from "./schema/agent";
+import * as legacyAgentApiProfileSchema from "./schema/legacy-agent-api-profile";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
-import * as storageSchema from "./schema/storage";
 import * as memberMemorySchema from "./schema/member-memory";
 import * as registryResourceArchiveSchema from "./schema/registry-resource-archive";
 import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-presigned-url-cache";
@@ -51,7 +51,6 @@ import * as modelProviderAccountSchema from "./schema/model-provider-account";
 import * as runModelCatalogSchema from "./schema/run-model-catalog";
 import * as modelRouteSchema from "./schema/model-route";
 import * as variableSchema from "./schema/variable";
-import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
 import * as chatThreadConnectorSelectionSchema from "./schema/chat-thread-connector-selection";
 import * as chatThreadConnectorAccessSchema from "./schema/chat-thread-connector-access";
@@ -113,13 +112,10 @@ import * as exportJobSchema from "./schema/export-job";
 import * as backgroundJobSchema from "./schema/background-job";
 import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
-import * as skillSchema from "./schema/skill";
 import * as builtInSkillSchema from "./schema/built-in-skill";
 import * as usagePricingSchema from "./runtime/usage-pricing";
 import * as agentDraftSchema from "./schema/agent-draft";
 import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
-import * as userPermissionGrantSchema from "./schema/user-permission-grant";
-import * as storageVersionLineageSchema from "./schema/storage-version-lineage";
 import * as runUploadedFileSchema from "./schema/run-uploaded-file";
 import * as builtInModelKeySchema from "./schema/built-in-model-key";
 import * as workflowSchema from "./schema/workflow";
@@ -144,7 +140,7 @@ import * as chatThreadEventSchema from "./schema/chat-thread-event";
 import * as chatThreadSnapshotSchema from "./schema/chat-thread-snapshot";
 import * as runOutputMaterializationSchema from "./schema/run-output-materialization";
 import * as runOutputLegacyPiEventSchema from "./schema/run-output-legacy-pi-event";
-import * as orgCustomConnectorSchema from "./schema/org-custom-connector";
+import * as orgCustomConnectorRuntime from "./runtime/org-custom-connector";
 import * as orgCustomConnectorCloudflareBindingSchema from "./schema/org-custom-connector-cloudflare-binding";
 import * as orgCustomConnectorOauthConfigSchema from "./schema/org-custom-connector-oauth-config";
 import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-connector-dcr-registration";
@@ -175,7 +171,6 @@ import * as browserOwnerSchema from "./schema/browser-owner";
 import * as browserChatSessionSchema from "./schema/browser-chat-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
-import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as sshConnectionSchema from "./runtime/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
@@ -206,11 +201,10 @@ export const schema = {
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,
-  ...agentSchema,
+  ...legacyAgentApiProfileSchema,
   ...instructionsSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
-  ...storageSchema,
   ...memberMemorySchema,
   ...registryResourceArchiveSchema,
   ...systemStoragePresignedUrlCacheSchema,
@@ -254,7 +248,6 @@ export const schema = {
   ...feishuChatThreadRouteSchema,
   ...feishuChatIngressSchema,
   ...variableSchema,
-  ...composeJobSchema,
   ...connectorSchema,
   ...chatThreadConnectorSelectionSchema,
   ...chatThreadConnectorAccessSchema,
@@ -275,6 +268,7 @@ export const schema = {
   ...usagePackCreditRefundSchema,
   ...usagePackSubscriptionSchema,
   ...runBuiltInAdmissionSchema,
+  ...voiceTranscriptionSchema,
   ...githubInstallationSchema,
   ...githubUserLinkSchema,
   ...telegramOfficialUserLinkSchema,
@@ -299,13 +293,10 @@ export const schema = {
   ...backgroundJobSchema,
   ...userExportEntrySchema,
   ...emailSuppressionSchema,
-  ...skillSchema,
   ...builtInSkillSchema,
   ...usagePricingSchema,
   ...agentDraftSchema,
   ...chatThreadDraftSchema,
-  ...userPermissionGrantSchema,
-  ...storageVersionLineageSchema,
   ...runUploadedFileSchema,
   ...builtInModelKeySchema,
   ...workflowSchema,
@@ -330,7 +321,7 @@ export const schema = {
   ...chatThreadSnapshotSchema,
   ...runOutputMaterializationSchema,
   ...runOutputLegacyPiEventSchema,
-  ...orgCustomConnectorSchema,
+  ...orgCustomConnectorRuntime,
   ...orgCustomConnectorOauthConfigSchema,
   ...orgCustomConnectorDcrRegistrationSchema,
   ...customConnectorAccountOauthBindingSchema,
@@ -360,7 +351,6 @@ export const schema = {
   ...browserChatSessionSchema,
   ...presentationTemplateSchema,
   ...userTemplateSchema,
-  ...piResourceVersionIndexSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...vncCredentialSchema,

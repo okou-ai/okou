@@ -152,6 +152,12 @@ fn persisted_entries_keep_their_identity_and_external_writer_lock() {
                 .unwrap(),
             )
             .unwrap();
+            File::open(&entry)
+                .unwrap()
+                .set_modified(std::time::UNIX_EPOCH)
+                .unwrap();
+            let modified = || fs::metadata(&entry).unwrap().modified().unwrap();
+            let stale_mtime = modified();
             let writer = lock::try_acquire_or_busy_blocking(&lock_path).unwrap();
             assert!(matches!(writer, TryLock::Acquired(_)));
             let cancel = CancellationToken::new();
@@ -160,6 +166,7 @@ fn persisted_entries_keep_their_identity_and_external_writer_lock() {
             } else {
                 assert!(read(&home, &name, &version, &cancel).unwrap().is_none());
             }
+            assert_eq!(modified(), stale_mtime);
             drop(writer);
             if rejected {
                 assert!(is_rejected(&home, &name, &version, &cancel).unwrap());
@@ -170,6 +177,7 @@ fn persisted_entries_keep_their_identity_and_external_writer_lock() {
                     files()
                 );
             }
+            assert!(modified() > stale_mtime);
         }
     }
 }
@@ -434,7 +442,8 @@ fn entry_kind_cannot_be_swapped_between_positive_and_rejected_keys() {
     );
     // Invalid kind metadata remains an error even when no bodies could fit.
     assert_eq!(
-        read_with_budget(&home, "other", "v1", 0, 0, &cancel)
+        BatchReader::new(&home, &cancel)
+            .read("other", "v1", 0, 0)
             .unwrap_err()
             .kind(),
         io::ErrorKind::InvalidData
@@ -444,9 +453,29 @@ fn entry_kind_cannot_be_swapped_between_positive_and_rejected_keys() {
 #[test]
 fn orphaned_lock_collection_does_not_make_persistent_files_unreachable() {
     let (_root, home, _, lock_path) = setup();
+    let cancel = CancellationToken::new();
+    let mut reader = BatchReader::new(&home, &cancel);
+    assert!(
+        reader
+            .read(
+                "name",
+                "v1",
+                storage_files::MAX_STORAGE_BYTES,
+                storage_files::MAX_FILES
+            )
+            .unwrap()
+            .is_some()
+    );
+
     fs::remove_file(&lock_path).unwrap();
     assert_eq!(
-        read(&home, "name", "v1", &CancellationToken::new())
+        reader
+            .read(
+                "name",
+                "v1",
+                storage_files::MAX_STORAGE_BYTES,
+                storage_files::MAX_FILES
+            )
             .unwrap()
             .unwrap(),
         files()
@@ -466,6 +495,7 @@ fn orphaned_lock_collection_does_not_make_persistent_files_unreachable() {
 fn rejects_corrupt_content_and_index_without_returning_partial_files() {
     for target in [
         "content",
+        "uppercase-digest",
         "size",
         "identity",
         "truncated-index",
@@ -485,6 +515,10 @@ fn rejects_corrupt_content_and_index_without_returning_partial_files() {
             mutation => {
                 match mutation {
                     "size" => index["files"][0]["size"] = 4.into(),
+                    "uppercase-digest" => {
+                        let digest = &mut index["files"][0]["sha256"];
+                        *digest = digest.as_str().unwrap().to_ascii_uppercase().into();
+                    }
                     "identity" => index["version"] = "v2".into(),
                     "path" => index["files"][0]["path"] = "../outside".into(),
                     "mode" => index["files"][0]["mode"] = 0o4755.into(),

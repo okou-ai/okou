@@ -1,11 +1,8 @@
-import {
-  agentInstructionsContract,
-  agentsByIdContract,
-} from "@okouai/api-contracts/contracts/agents";
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -17,7 +14,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
 const RUN_ID = "a0000000-0000-4000-a000-000000000071";
 
 function getLink(name: string): HTMLElement {
@@ -42,33 +38,24 @@ function markdownFrameFor(element: Element): HTMLElement {
 }
 
 async function openInstructionsThenChat(): Promise<void> {
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      isDefaultAgent: false,
-      agentId: AGENT_ID,
-      avatarUrl: null,
-      description: null,
-      displayName: "Markdown Agent",
-      ownerId: "test-user-123",
-      sound: null,
-      visibility: "private",
-    });
-  });
-  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
     return respond(200, {
       content: "<u>Editor underline</u>",
-      filename: "AGENTS.md",
+      orgId: "org_current",
+      userId: "test-user-123",
+      updatedAt: "2026-08-01T10:00:00.000Z",
+      version: "first",
     });
   });
-
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}?tab=instructions`,
+    path: "/?settings=my-okou&focus=instructions",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
-
-  const editor = await screen.findByLabelText("Instructions editor");
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  const editor = await within(settings).findByLabelText("Instructions");
   expect(editor.querySelector("u")).toHaveTextContent("Editor underline");
+  click(within(settings).getByLabelText("Close", { selector: "button" }));
   const chatLink = await waitFor(() => {
     return getLink("Rich content");
   });
@@ -98,9 +85,14 @@ async function prepareLiteralPlusMarkdownChat(initialReply?: string) {
 
 test("Opening Instructions preserves literal plus signs in a new streamed reply", async () => {
   const { chat, rows } = await prepareLiteralPlusMarkdownChat();
-  await expect(
-    screen.findByText("++Plain message++"),
-  ).resolves.toBeInTheDocument();
+  const threadSelector = `[data-chat-thread-container-id="${chat.threadId}"]`;
+  const queryMessage = (text: string) => {
+    const thread = document.querySelector<HTMLElement>(threadSelector);
+    return thread && within(thread).queryByText(text);
+  };
+  await waitFor(() => {
+    expect(queryMessage("++Plain message++")).toBeInTheDocument();
+  });
   rows.push(
     chat.outputMessage("**Streaming:** ++Reply", {
       id: "streamed-markdown",
@@ -109,7 +101,13 @@ test("Opening Instructions preserves literal plus signs in a new streamed reply"
     }),
   );
   context.mocks.ably.trigger(chat.realtimeTopic);
-  const streaming = await screen.findByText("Streaming:");
+  const streaming = await waitFor(() => {
+    const content = queryMessage("Streaming:");
+    if (!content) {
+      throw new Error("Expected the streamed reply");
+    }
+    return content;
+  });
   expect(streaming.tagName).toBe("STRONG");
   expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply");
   expect(markdownFrameFor(streaming).querySelector("u")).toBeNull();
@@ -214,8 +212,6 @@ test("Opening Instructions keeps rich Activity logs readable", async () => {
     return respond(200, {
       id: RUN_ID,
       sessionId: "markdown-isolation-session",
-      agentId: AGENT_ID,
-      displayName: "Markdown activity",
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,

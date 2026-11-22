@@ -6,7 +6,6 @@ import { useEditorState } from "@tiptap/react";
 import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
-import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { recentWorkflowIds } from "../../signals/okou-page/recent-workflows.ts";
@@ -371,11 +370,9 @@ interface ComposerSuggestionMenuState {
   /** The chat actions a typed slash query names. */
   readonly searchActions: readonly SlashAction[];
   readonly showWorkflows: boolean;
-  readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
   readonly showMentions: boolean;
   readonly selectWorkflow: (workflow: ComposerSlashWorkflow) => void;
-  readonly selectAgent: (agent: ComposerAgentSuggestion) => void;
   readonly selectChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
   readonly handleKeyDown: (event: KeyboardEvent) => boolean;
 }
@@ -463,10 +460,7 @@ function useComposerWorkflowSuggestions(
     (modeLoadable.data || localRecentLoadable.state === "hasData")
       ? workflowsLoadable.data
       : undefined;
-  const workflows = buildComposerSlashWorkflows({
-    agentId: composer.agentId,
-    workflows: requested ?? [],
-  });
+  const workflows = buildComposerSlashWorkflows(requested ?? []);
   return {
     workflows:
       query === undefined
@@ -491,8 +485,7 @@ function useComposerWorkflowSuggestions(
 }
 
 /**
- * The @-mention half of the suggestion menu. Only the result for the current
- * agent and the current query counts; a stale resolution shows nothing.
+ * The @-mention menu shows results for the current query.
  */
 function useComposerMentionSuggestions(
   composer: ComposerSignals,
@@ -507,19 +500,14 @@ function useComposerMentionSuggestions(
   const result =
     chatThreadRange &&
     chatThreadResult &&
-    chatThreadResult.agentId === composer.agentId &&
     chatThreadResult.query === chatThreadRange.query
       ? chatThreadResult
       : null;
-  const agents = result?.agents ?? [];
   const chatThreads = result?.chatThreads ?? [];
   return {
-    agents,
     chatThreads,
     showMentions:
-      slashRange === null &&
-      chatThreadRange !== null &&
-      agents.length + chatThreads.length > 0,
+      slashRange === null && chatThreadRange !== null && chatThreads.length > 0,
   };
 }
 
@@ -533,7 +521,6 @@ interface SuggestionRows {
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   /** New workflow and Manage workflows follow the revealed workflows. */
   readonly workflowActions: boolean;
-  readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
 }
 
@@ -542,7 +529,6 @@ interface SuggestionRowActions {
   readonly newWorkflow: () => void;
   readonly manageWorkflows: () => void;
   readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
-  readonly insertAgent: (agent: ComposerAgentSuggestion) => void;
   readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
 }
 
@@ -563,7 +549,7 @@ function buildSuggestionRows({
 
 function suggestionRowCount(rows: SuggestionRows): number {
   if (!rows.showWorkflows) {
-    return rows.agents.length + rows.chatThreads.length;
+    return rows.chatThreads.length;
   }
   return rows.expandIndex === null
     ? rows.headCount + rows.workflows.length + (rows.workflowActions ? 2 : 0)
@@ -626,12 +612,7 @@ function selectSuggestionRow(
     selectSlashSuggestionRow(index, rows, actions);
     return;
   }
-  const agent = rows.agents[index];
-  if (agent) {
-    actions.insertAgent(agent);
-    return;
-  }
-  const chatThread = rows.chatThreads[index - rows.agents.length];
+  const chatThread = rows.chatThreads[index];
   if (chatThread) {
     actions.insertChatThread(chatThread);
   }
@@ -724,7 +705,6 @@ function useComposerSuggestionMenu({
   const collapseWorkflows = workflowOverview && !workflowsExpanded;
   const templatePanel = useSlashTemplatePanelActions(composer, close);
   const insertWorkflow = useSet(composer.workflow.insertWorkflow$);
-  const insertAgent = useSet(composer.suggestion.insertAgent$);
   const insertChatThread = useSet(composer.suggestion.insertChatThread$);
   const workflowResult = useComposerWorkflowSuggestions(
     composer,
@@ -736,7 +716,7 @@ function useComposerSuggestionMenu({
   // Only the desktop slash overview keeps its anchored action order.
   const reversedSuggestions = isDesktop && workflowOverview;
   const mentions = useComposerMentionSuggestions(composer, slashRange);
-  const { agents, chatThreads, showMentions } = mentions;
+  const { chatThreads, showMentions } = mentions;
   const open = showWorkflows || showMentions;
   const slashActions = useSlashActionsMenu({
     composer,
@@ -751,7 +731,6 @@ function useComposerSuggestionMenu({
     collapseWorkflows,
     workflows: workflowSuggestions,
     workflowActions: workflowOverview && workflowsExpanded,
-    agents,
     chatThreads,
   });
   const suggestionOrder =
@@ -771,7 +750,6 @@ function useComposerSuggestionMenu({
       ...templatePanel,
       expandWorkflows,
       insertWorkflow,
-      insertAgent,
       insertChatThread,
     });
   }
@@ -812,11 +790,9 @@ function useComposerSuggestionMenu({
     cascade: actionsOverview !== null && isDesktop,
     searchActions: slashActions.searchActions,
     showWorkflows,
-    agents,
     chatThreads,
     showMentions,
     selectWorkflow: insertWorkflow,
-    selectAgent: insertAgent,
     selectChatThread: insertChatThread,
     handleKeyDown,
   };
@@ -962,10 +938,8 @@ function ComposerSuggestionSession({
           <ComposerMentionSuggestionMenu
             menuRef={setMentionHintMenuRef}
             anchor={suggestionAnchor}
-            agents={suggestionMenu.agents}
             chatThreads={suggestionMenu.chatThreads}
             selectedIndex={suggestionMenu.selectedIndex}
-            onSelectAgent={suggestionMenu.selectAgent}
             onSelectChatThread={suggestionMenu.selectChatThread}
           />
         )}

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { useLastResolved, useGet, useSet } from "ccstate-react";
+import { useGet, useSet, useLoadable } from "ccstate-react";
 import { Button, Input, Popover, PopoverContent } from "@okouai/ui";
 import {
   Drawer,
@@ -20,11 +20,10 @@ import {
 import { Check, Folder, Plus } from "lucide-react";
 import {
   projects$,
-  projectsEnabled$,
   createProject$,
   renameProject$,
   deleteProject$,
-  moveProjectThread$,
+  moveProjectThreadFromDialog$,
 } from "../../signals/projects/projects.ts";
 import {
   setProjectEditorName$,
@@ -35,42 +34,23 @@ import {
   completeProjectDialogClose$,
   projectSearch$,
   setProjectSearch$,
-  projectDialogHasSuccessor$,
   type ProjectDialog,
 } from "../../signals/projects/project-ui.ts";
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
+import {
+  projectDeletionThreads$,
+  initializeProjectDeletion$,
+  projectDeletionConfirmation$,
+  projectDeletionChanged$,
+  refreshProjectDeletion$,
+  confirmProjectThreadDeletion$,
+  backFromProjectThreadDeletion$,
+  deleteProjectAndThreads$,
+} from "../../signals/projects/project-deletion.ts";
 import { mobileChatViewport$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-// A rename keeps its Project menu; deleting a Project returns to the list's
-// create control. Creating from a chat returns to that chat's surviving row,
-// and creating from a new chat's composer returns to the message.
-function projectDialogFocusTarget(dialog: ProjectDialog) {
-  if (dialog.kind === "editor" && dialog.fromComposer) {
-    return document.querySelector<HTMLElement>(
-      '[data-slot="chat-composer-card"] [contenteditable="true"]',
-    );
-  }
-  const threadId =
-    dialog.kind === "membership"
-      ? dialog.threadId
-      : dialog.kind === "editor"
-        ? dialog.fromThreadId
-        : undefined;
-  const projectId = "projectId" in dialog ? dialog.projectId : undefined;
-  const target = threadId
-    ? document.querySelector<HTMLElement>(
-        `[data-sidebar-chat-thread-id="${threadId}"]`,
-      )
-    : projectId
-      ? document.querySelector<HTMLElement>(
-          `[data-project-menu-id="${projectId}"]`,
-        )
-      : null;
-  return target ?? document.querySelector<HTMLElement>("[data-project-create]");
-}
-
 function ProjectNameField() {
   const { t } = useTranslation();
   const name = useGet(projectEditorName$);
@@ -102,7 +82,6 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const name = useGet(projectEditorName$);
   const close = useSet(closeProjectDialog$);
   const completeClose = useSet(completeProjectDialogClose$);
-  const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [creation, create] = useLoadableSet(createProject$);
   const [renaming, rename] = useLoadableSet(renameProject$);
   const signal = useGet(pageSignal$);
@@ -111,20 +90,13 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
   const error = creation.state === "hasError" || renaming.state === "hasError";
   async function submit() {
     // A newly visible Project can be used while its creation is still in flight.
-    const completion = dialog.projectId
-      ? rename(dialog.projectId, name, signal)
-      : create(
-          {
-            name,
-            ...(dialog.fromThreadId
-              ? { fromThreadId: dialog.fromThreadId }
-              : {}),
-            open: dialog.fromComposer === true,
-          },
-          creationSignal,
-        );
-    close(dialog);
-    await completion;
+    if (dialog.projectId) {
+      const completion = rename(dialog.projectId, name, signal);
+      close(dialog);
+      await completion;
+      return;
+    }
+    await create(dialog, name, creationSignal);
   }
   return (
     <Dialog
@@ -140,13 +112,7 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
         }
       }}
     >
-      <DialogContent
-        finalFocus={() => {
-          return hasSuccessor(dialog)
-            ? false
-            : projectDialogFocusTarget(dialog);
-        }}
-      >
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {dialog.projectId
@@ -206,14 +172,12 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
 function MembershipSurface({
   dialog,
   mobile,
-  finalFocus,
   onOpenChange,
   onOpenChangeComplete,
   children,
 }: {
   dialog: Extract<ProjectDialog, { kind: "membership" }>;
   mobile: boolean;
-  finalFocus: () => HTMLElement | false;
   onOpenChange: (open: boolean) => void;
   onOpenChangeComplete: (open: boolean) => void;
   children: ReactNode;
@@ -230,7 +194,6 @@ function MembershipSurface({
           closeLabel={t(($) => {
             return $.projects.close;
           })}
-          finalFocus={finalFocus}
         >
           <DrawerHeader>
             <DrawerTitle>
@@ -257,7 +220,6 @@ function MembershipSurface({
         aria-label={t(($) => {
           return $.projects.moveTitle;
         })}
-        finalFocus={finalFocus}
       >
         {children}
       </PopoverContent>
@@ -319,7 +281,7 @@ function ProjectMembershipPicker({
   dialog: Extract<ProjectDialog, { kind: "membership" }>;
 }) {
   const { t } = useTranslation();
-  const projects = useLastResolved(projects$) ?? [];
+  const projects = useGet(projects$);
   const search = useGet(projectSearch$);
   const setSearch = useSet(setProjectSearch$);
   const current = useGet(eventDrivenChatThreads$).find((thread) => {
@@ -328,36 +290,21 @@ function ProjectMembershipPicker({
   const mobile = useGet(mobileChatViewport$);
   const close = useSet(closeProjectDialog$);
   const completeClose = useSet(completeProjectDialogClose$);
-  const [moving, move] = useLoadableSet(moveProjectThread$);
+  const [moving, move] = useLoadableSet(moveProjectThreadFromDialog$);
   const signal = useGet(pageSignal$);
-  const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const pending = moving.state === "loading";
   const matches = projects.filter((project) => {
     return project.name
       .toLocaleLowerCase()
       .includes(search.trim().toLocaleLowerCase());
   });
-  async function select(id: string | null) {
-    const completion = move(dialog.threadId, id, signal);
-    close(dialog);
-    await completion;
+  function select(id: string | null) {
+    return move(dialog, id, signal);
   }
   function onOpenChange(open: boolean) {
     if (!open) {
       close(dialog);
     }
-  }
-  // Moving can replace the original row. Focus its surviving navigation link,
-  // or return to the menu trigger when the row has stayed in place.
-  function finalFocus() {
-    if (hasSuccessor(dialog)) {
-      return false;
-    }
-    return (
-      document.querySelector<HTMLElement>(
-        `[data-sidebar-chat-thread-id="${dialog.threadId}"]`,
-      ) ?? dialog.anchor
-    );
   }
   const content = (
     <div className="flex min-h-0 flex-col gap-2">
@@ -426,7 +373,6 @@ function ProjectMembershipPicker({
     <MembershipSurface
       dialog={dialog}
       mobile={mobile}
-      finalFocus={finalFocus}
       onOpenChange={onOpenChange}
       onOpenChangeComplete={(open) => {
         if (!open) {
@@ -438,6 +384,163 @@ function ProjectMembershipPicker({
     </MembershipSurface>
   );
 }
+function ProjectDeleteChoices({
+  pending,
+  onDeleteProject,
+}: {
+  readonly pending: boolean;
+  readonly onDeleteProject: () => void;
+}) {
+  const { t } = useTranslation();
+  const threads = useLoadable(projectDeletionThreads$);
+  const confirmThreads = useSet(confirmProjectThreadDeletion$);
+  const refresh = useSet(refreshProjectDeletion$);
+  const signal = useGet(pageSignal$);
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <Button disabled={pending} onClick={onDeleteProject}>
+          {t(($) => {
+            return $.projects.deleteProjectOnly;
+          })}
+        </Button>
+        {(threads.state !== "hasData" || threads.data.length > 0) && (
+          <Button
+            variant="outline"
+            disabled={pending || threads.state !== "hasData"}
+            onClick={() => {
+              detach(confirmThreads(signal), Reason.DomCallback);
+            }}
+          >
+            {threads.state === "hasData"
+              ? t(
+                  ($) => {
+                    return $.projects.deleteProjectAndThreads;
+                  },
+                  { count: threads.data.length },
+                )
+              : t(($) => {
+                  return $.projects.loadingThreads;
+                })}
+          </Button>
+        )}
+      </div>
+      {threads.state === "hasError" && (
+        <div
+          role="alert"
+          className="flex flex-col gap-2 text-sm text-destructive"
+        >
+          {t(($) => {
+            return $.projects.loadThreadsError;
+          })}
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              detach(refresh(signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.projects.retryThreads;
+            })}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ProjectDeleteConfirmation({
+  pending,
+  hasError,
+  onDelete,
+}: {
+  readonly pending: boolean;
+  readonly hasError: boolean;
+  readonly onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const confirmation = useGet(projectDeletionConfirmation$);
+  const changed = useGet(projectDeletionChanged$);
+  const back = useSet(backFromProjectThreadDeletion$);
+  return (
+    <DialogContent
+      initialFocus={() => {
+        return document.querySelector<HTMLButtonElement>(
+          "[data-project-delete-back]",
+        );
+      }}
+      showCloseButton={!pending}
+      closeLabel={t(($) => {
+        return $.projects.close;
+      })}
+    >
+      <DialogHeader>
+        <DialogTitle>
+          {t(($) => {
+            return $.projects.deleteThreadsTitle;
+          })}
+        </DialogTitle>
+        <DialogDescription>
+          {t(
+            ($) => {
+              return $.projects.deleteThreadsDescription;
+            },
+            { count: confirmation?.length ?? 0 },
+          )}
+        </DialogDescription>
+      </DialogHeader>
+      <ul className="max-h-48 overflow-y-auto text-sm">
+        {confirmation?.map((thread) => {
+          return (
+            <li key={thread.id} className="truncate py-1">
+              {thread.title ??
+                t(($) => {
+                  return $.projects.untitledThread;
+                })}
+            </li>
+          );
+        })}
+      </ul>
+      {changed && (
+        <p role="alert" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.projects.threadsChanged;
+          })}
+        </p>
+      )}
+      {hasError && (
+        <p role="alert" className="text-sm text-destructive">
+          {t(($) => {
+            return $.projects.deleteThreadsError;
+          })}
+        </p>
+      )}
+      <DialogFooter>
+        <Button
+          data-project-delete-back
+          variant="outline"
+          disabled={pending}
+          onClick={back}
+        >
+          {t(($) => {
+            return $.projects.back;
+          })}
+        </Button>
+        <Button variant="destructive" disabled={pending} onClick={onDelete}>
+          {pending
+            ? t(($) => {
+                return $.projects.deletingThreads;
+              })
+            : t(($) => {
+                return $.projects.confirmDeleteThreads;
+              })}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
 function DeleteProjectDialog({
   dialog,
 }: {
@@ -445,33 +548,32 @@ function DeleteProjectDialog({
 }) {
   const { t } = useTranslation();
   const close = useSet(closeProjectDialog$);
-  const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const [deletion, remove] = useLoadableSet(deleteProject$);
+  const [threadDeletion, removeThreads] = useLoadableSet(
+    deleteProjectAndThreads$,
+  );
+  const confirmation = useGet(projectDeletionConfirmation$);
+  const initialize = useSet(initializeProjectDeletion$);
+  const back = useSet(backFromProjectThreadDeletion$);
   const signal = useGet(pageSignal$);
-  async function submit() {
-    await remove(
-      dialog.projectId,
-      () => {
-        close(dialog);
-      },
-      signal,
-    );
-  }
+  const pending =
+    deletion.state === "loading" || threadDeletion.state === "loading";
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) {
+        if (!open && !pending) {
           close(dialog);
         }
       }}
     >
       <DialogContent
-        finalFocus={() => {
-          return hasSuccessor(dialog)
-            ? false
-            : projectDialogFocusTarget(dialog);
-        }}
+        ref={initialize}
+        hideWhenNestedOpen
+        showCloseButton={!pending}
+        closeLabel={t(($) => {
+          return $.projects.close;
+        })}
       >
         <DialogHeader>
           <DialogTitle>
@@ -481,35 +583,46 @@ function DeleteProjectDialog({
           </DialogTitle>
           <DialogDescription>
             {t(($) => {
-              return $.projects.deleteDescription;
+              return $.projects.deleteChoiceDescription;
             })}
           </DialogDescription>
         </DialogHeader>
-        <Button
-          disabled={deletion.state === "loading"}
-          onClick={() => {
-            detach(submit(), Reason.DomCallback);
+        <ProjectDeleteChoices
+          pending={pending}
+          onDeleteProject={() => {
+            detach(remove(dialog, signal), Reason.DomCallback);
           }}
-        >
-          {t(($) => {
-            return $.projects.deleteProject;
-          })}
-        </Button>
+        />
         {deletion.state === "hasError" && (
-          <p role="alert">
+          <p role="alert" className="text-sm text-destructive">
             {t(($) => {
               return $.projects.deleteError;
             })}
           </p>
         )}
+        <Dialog
+          open={confirmation !== null}
+          onOpenChange={(open) => {
+            if (!open && !pending) {
+              back();
+            }
+          }}
+        >
+          <ProjectDeleteConfirmation
+            pending={pending}
+            hasError={threadDeletion.state === "hasError"}
+            onDelete={() => {
+              detach(removeThreads(dialog, signal), Reason.DomCallback);
+            }}
+          />
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
 }
 export function ProjectDialogs() {
-  const enabled = useLastResolved(projectsEnabled$) ?? false;
   const dialog = useGet(projectDialogSession$);
-  if (!enabled || !dialog) {
+  if (!dialog) {
     return null;
   }
   if (dialog.kind === "editor") {

@@ -7,9 +7,8 @@ const context = testContext();
 test("claims exact-attempt SSH and VNC guidance", async () => {
   const owned = await publicChatActor(context);
   await owned.run(async () => {
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     const run = await owned.sendChatRun(actor, {
-      agentId,
       prompt: "Explain the retained failure from my remote operation",
     });
     const { execution } = await owned.runExecution(run.runId);

@@ -3,8 +3,6 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agents } from "@okouai/db/schema/agent";
 import { eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
@@ -97,7 +95,6 @@ interface SlackOrgStatusResult {
   readonly workspaceName: string | null;
   readonly installUrl: string | null;
   readonly connectUrl: string | null;
-  readonly defaultAgentName: string | null;
   readonly scopeMismatch: boolean | null;
   readonly reinstallUrl: string | null;
 }
@@ -129,33 +126,6 @@ function slackScopeStatus(
   return { scopeMismatch, reinstallUrl };
 }
 
-function slackDefaultAgentName(args$: Computed<SlackStatusArgs>) {
-  return computed(async (get) => {
-    const args = get(args$);
-    const db = get(db$);
-    let defaultAgentName: string | null = null;
-
-    const [orgMeta] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
-
-    if (orgMeta?.defaultAgentId) {
-      const [agent] = await db
-        .select({
-          displayName: agents.displayName,
-          name: agents.name,
-        })
-        .from(agents)
-        .where(eq(agents.id, orgMeta.defaultAgentId))
-        .limit(1);
-      defaultAgentName = agent?.displayName ?? agent?.name ?? null;
-    }
-    return defaultAgentName;
-  });
-}
-
 function slackAccountStatus(
   args: SlackStatusArgs,
   account:
@@ -165,7 +135,6 @@ function slackAccountStatus(
       }
     | undefined,
   installation: typeof slackOrgInstallations.$inferSelect | undefined,
-  defaultAgentName: string | null,
 ): SlackOrgStatusResult {
   const ownInstallation = installation;
   const isAdmin = args.orgRole === "admin";
@@ -177,7 +146,6 @@ function slackAccountStatus(
       account?.connection.slackWorkspaceName ??
       ownInstallation?.slackWorkspaceName ??
       null,
-    defaultAgentName,
     installUrl:
       isAdmin && !ownInstallation
         ? buildSlackInstallUrl({
@@ -214,7 +182,6 @@ export function slackOrgStatus(
     return { orgId: args.orgId, userId: args.userId };
   });
   const account$ = slackAccountConnection(identity$);
-  const defaultAgentName$ = slackDefaultAgentName(args$);
   return computed(async (get) => {
     const args = get(args$);
     const db = get(db$);
@@ -225,12 +192,7 @@ export function slackOrgStatus(
       .where(eq(slackOrgInstallations.orgId, args.orgId))
       .limit(1);
 
-    return slackAccountStatus(
-      args,
-      await get(account$),
-      installation,
-      await get(defaultAgentName$),
-    );
+    return slackAccountStatus(args, await get(account$), installation);
   });
 }
 

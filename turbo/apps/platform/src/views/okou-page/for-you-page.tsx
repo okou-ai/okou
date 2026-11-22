@@ -7,18 +7,24 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ArrowLeft, ArrowRight, Layers } from "lucide-react";
-import { Button, Card, buttonVariants, cn } from "@okouai/ui";
+import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
+import {
+  Button,
+  Card,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Radio,
+  RadioGroup,
+  buttonVariants,
+  cn,
+} from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useTranslation } from "react-i18next";
-import type { Suggestion } from "@okouai/api-contracts/contracts/feed";
-import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
-import { assistantName$ } from "../../signals/branding.ts";
 import {
   type AgentSuggestionEntry,
   reloadSuggestionSession$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
-import { openAgentSuggestionComposer$ } from "../../signals/okou-page/agent-suggestions.ts";
 import {
   browseForYou$,
   finishForYouPaginationOnRef$,
@@ -26,6 +32,7 @@ import {
   forYouDeck$,
   forYouPagination$,
   measureForYouCardOnRef$,
+  swipeForYouOnRef$,
 } from "../../signals/okou-page/for-you.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -34,51 +41,67 @@ import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
   AgentSuggestionCard,
-  AgentSuggestionComposerDialog,
   SuggestionSaveErrors,
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
-import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
+import { proactiveSettingsInMyOkou$ } from "../../signals/proactive-settings.ts";
 import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
+import {
+  forYouCover$,
+  forYouPaintedCover$,
+  markForYouCoverPainted$,
+  selectForYouCover$,
+} from "../../signals/okou-page/for-you-artwork.ts";
+import {
+  DEFAULT_FOR_YOU_COVER_ID,
+  forYouCovers,
+} from "../../lib/for-you-artwork.ts";
+
+// The header sits on the cover. Its scrim washes the cover's own colors behind
+// the title, subtitle and progress, then eases out past the header's bottom
+// edge so no band edge shows.
+const HEADER_SCRIM_MASK = `linear-gradient(${[
+  [0.85, 0],
+  [0.85, 45],
+  [0.7, 55],
+  [0.52, 63],
+  [0.35, 71],
+  [0.2, 79],
+  [0.08, 87],
+  [0.02, 94],
+  [0, 100],
+]
+  .map(([alpha, stop]) => {
+    return `rgb(0 0 0 / ${String(alpha)}) ${String(stop)}%`;
+  })
+  .join(", ")})`;
+
+interface ForYouHeaderColors {
+  readonly tone: "light" | "dark";
+  readonly tint: readonly [string, string, string];
+  readonly bar: readonly [string, string];
+}
+
+function headerScrim({ tint: [left, middle, right] }: ForYouHeaderColors) {
+  return {
+    backgroundImage: `linear-gradient(to right, rgb(${left}) 15%, rgb(${middle}) 50%, rgb(${right}) 85%)`,
+    maskImage: HEADER_SCRIM_MASK,
+  } satisfies CSSProperties;
+}
+
+function headerInk({ tone }: ForYouHeaderColors) {
+  return tone === "dark" ? "255 255 255" : "36 36 36";
+}
 
 const STACK_LAYERS = [
-  "z-3 translate-y-2 -rotate-1",
-  "z-2 translate-y-4 rotate-1",
-  "z-1 translate-y-6 -rotate-2",
+  "z-3 translate-y-2 scale-x-[0.98] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
+  "z-2 translate-y-4 scale-x-[0.96] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
 ] as const;
 
 const STACK_CARD =
-  "@container/suggestion col-start-1 row-start-1 flex min-h-125 origin-[50%_85%] flex-col rounded-3xl p-5 shadow-none sm:p-7";
-
-function SuggestionSource({ animated }: { readonly animated: boolean }) {
-  const { t } = useTranslation();
-  const agentId = useLastResolved(defaultAgentId$);
-  const assistantName = useGet(assistantName$);
-  const name = useLastResolved(defaultAgentName$) ?? assistantName;
-  return (
-    <div className="mb-6 flex items-center gap-2 text-xs text-muted-foreground">
-      {agentId ? (
-        <AgentAvatarImg
-          name={agentId}
-          alt=""
-          className="size-6 rounded-lg object-cover object-top"
-          motion={animated ? "animated" : "static"}
-        />
-      ) : (
-        <Layers aria-hidden className="size-4" />
-      )}
-      <span className="truncate">{name}</span>
-      <span aria-hidden>·</span>
-      <span>
-        {t(($) => {
-          return $.chat.agentSuggestions.label;
-        })}
-      </span>
-    </div>
-  );
-}
+  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)] sm:p-10";
 
 function SuggestionSendStatus({
   entry,
@@ -93,11 +116,7 @@ function SuggestionSendStatus({
   ) : null;
 }
 
-function ForYouStack({
-  onCustomDirection,
-}: {
-  readonly onCustomDirection: (item: Suggestion) => void;
-}) {
+function ForYouStack() {
   const deck = useLastResolved(forYouDeck$);
   const pagination = useGet(forYouPagination$);
   const minHeight = useGet(forYouCardMinHeight$);
@@ -117,7 +136,7 @@ function ForYouStack({
     ...settled,
   ];
   return (
-    <div className="mx-auto my-auto w-full max-w-160 py-6">
+    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-29">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -181,14 +200,7 @@ function ForYouStack({
                 {card.kind === "event" ? (
                   <PlatformFeedEvent entry={card.entry} active={active} />
                 ) : (
-                  <>
-                    <SuggestionSource animated={active || outgoing} />
-                    <AgentSuggestionCard
-                      active={active}
-                      item={card.entry.item}
-                      onCustomDirection={onCustomDirection}
-                    />
-                  </>
+                  <AgentSuggestionCard active={active} entry={card.entry} />
                 )}
               </ForYouCardContents>
             </Card>
@@ -210,9 +222,12 @@ function ForYouCardContents({
   readonly children: ReactNode;
 }) {
   const read = useSet(entry.readOnRef$);
+  const swipe = useSet(swipeForYouOnRef$);
   return (
     <div ref={active ? read : undefined} className="flex flex-1 flex-col">
-      {children}
+      <div ref={active ? swipe : undefined} className="flex flex-1 flex-col">
+        {children}
+      </div>
     </div>
   );
 }
@@ -229,7 +244,13 @@ function ForYouNavigation() {
           aria-label={t(($) => {
             return $.chat.agentSuggestions.homeCard.navigation;
           })}
-          className="mt-5 flex items-center justify-center gap-3"
+          className={cn(
+            // Paging moves through the whole stack, so the controls sit
+            // outside the card: on its flanks when the page has room, below
+            // it otherwise.
+            "-mt-3 flex items-center justify-end gap-2",
+            "@min-[56rem]/for-you:pointer-events-none @min-[56rem]/for-you:absolute @min-[56rem]/for-you:inset-0 @min-[56rem]/for-you:m-0",
+          )}
         >
           {[
             {
@@ -237,7 +258,7 @@ function ForYouNavigation() {
               label: t(($) => {
                 return $.chat.agentSuggestions.forYou.previous;
               }),
-              Icon: ArrowLeft,
+              Icon: ChevronLeft,
               direction: "previous" as const,
             },
             {
@@ -245,7 +266,7 @@ function ForYouNavigation() {
               label: t(($) => {
                 return $.chat.agentSuggestions.forYou.next;
               }),
-              Icon: ArrowRight,
+              Icon: ChevronRight,
               direction: "next" as const,
             },
           ].map(({ card, label, Icon, direction }) => {
@@ -270,10 +291,14 @@ function ForYouNavigation() {
                     );
                   }
                 }}
-                className={buttonVariants({
-                  variant: "quiet",
-                  size: "icon",
-                })}
+                className={cn(
+                  buttonVariants({ variant: "neutral", size: "icon-lg" }),
+                  "rounded-full bg-card shadow-surface",
+                  "@min-[56rem]/for-you:pointer-events-auto @min-[56rem]/for-you:absolute @min-[56rem]/for-you:top-[calc(50%-0.75rem)] @min-[56rem]/for-you:-translate-y-1/2",
+                  direction === "previous"
+                    ? "@min-[56rem]/for-you:-left-17"
+                    : "@min-[56rem]/for-you:-right-17",
+                )}
               >
                 <Icon aria-hidden className="size-4" />
               </Link>
@@ -285,38 +310,261 @@ function ForYouNavigation() {
   );
 }
 
-function ForYouHeader({ count }: { readonly count: number | undefined }) {
+function ForYouCover() {
   const { t } = useTranslation();
+  const cover = useGet(forYouCover$);
+  const select = useSet(selectForYouCover$);
+  const markPainted = useSet(markForYouCoverPainted$);
   return (
-    <header className="flex min-h-20 shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-8">
-      <div>
-        <h1 className="text-lg font-medium">
+    <div className="group/cover relative -mx-4 h-58 shrink-0 sm:-mx-8 sm:h-56">
+      <img
+        data-slot="for-you-cover"
+        src={cover.src}
+        alt=""
+        draggable={false}
+        onLoad={() => {
+          markPainted(cover.id);
+        }}
+        className="pointer-events-none size-full select-none object-cover object-[50%_65%]"
+      />
+      <Popover>
+        {/* The control sits in the banner's lower corner only when the page is
+            wide enough for it to clear the card; otherwise it moves to the top. */}
+        <PopoverTrigger
+          render={
+            <Button
+              variant="neutral"
+              size="sm"
+              className="absolute top-24 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:top-17 sm:right-6 @min-[64rem]/for-you:top-auto @min-[64rem]/for-you:bottom-14"
+            />
+          }
+        >
+          <ImageIcon aria-hidden />
+          {t(($) => {
+            return $.chat.agentSuggestions.forYou.cover.change;
+          })}
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.forYou.cover.change;
+          })}
+          className="w-[28rem] max-w-[calc(100vw-32px)] p-3"
+        >
+          <p className="px-1.5 pb-2 text-sm font-medium text-foreground">
+            {t(($) => {
+              return $.chat.agentSuggestions.forYou.cover.gallery;
+            })}
+          </p>
+          <RadioGroup
+            value={cover.id}
+            onValueChange={(value) => {
+              select(String(value));
+            }}
+            aria-label={t(($) => {
+              return $.chat.agentSuggestions.forYou.cover.gallery;
+            })}
+            className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto p-1.5"
+          >
+            {forYouCovers.map((option, index) => {
+              return (
+                <label
+                  key={option.id}
+                  className={cn(
+                    "relative aspect-[5/2] cursor-default overflow-hidden rounded-lg outline-2 outline-offset-2 outline-transparent transition-[outline-color] has-focus-visible:outline-ring",
+                    option.id === cover.id && "outline-primary",
+                  )}
+                >
+                  <img
+                    src={option.thumbnail}
+                    alt=""
+                    draggable={false}
+                    loading="lazy"
+                    className="size-full object-cover"
+                  />
+                  {option.id === DEFAULT_FOR_YOU_COVER_ID && (
+                    <span className="absolute top-1.5 left-1.5 rounded-md bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                      {t(($) => {
+                        return $.chat.agentSuggestions.forYou.cover.default;
+                      })}
+                    </span>
+                  )}
+                  <Radio
+                    value={option.id}
+                    aria-label={t(
+                      ($) => {
+                        return $.chat.agentSuggestions.forYou.cover.option;
+                      },
+                      { index: index + 1 },
+                    )}
+                    className="absolute top-1.5 right-1.5 focus-visible:ring-0"
+                  />
+                </label>
+              );
+            })}
+          </RadioGroup>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+// Compact and wide layouts show different parts of the artwork behind the
+// header, so each gets its own scrim colors.
+function ForYouHeaderScrim({
+  cover,
+}: {
+  readonly cover: (typeof forYouCovers)[number];
+}) {
+  return (
+    <>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-27 @min-[56rem]/for-you:hidden"
+        style={headerScrim(cover.header.compact)}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-27 @min-[56rem]/for-you:block"
+        style={headerScrim(cover.header.wide)}
+      />
+    </>
+  );
+}
+
+// The header follows the cover, not the color scheme: its ink is fixed rather
+// than a theme token, which would flip in dark mode.
+function headerInkVars(cover: (typeof forYouCovers)[number]): CSSProperties {
+  return {
+    "--for-you-ink-wide": headerInk(cover.header.wide),
+    "--for-you-ink-compact": headerInk(cover.header.compact),
+    "--for-you-bar-wide": cover.header.wide.bar[0],
+    "--for-you-bar-compact": cover.header.compact.bar[0],
+    "--for-you-track-wide": cover.header.wide.bar[1],
+    "--for-you-track-compact": cover.header.compact.bar[1],
+  } as CSSProperties;
+}
+
+function ForYouHeader() {
+  const proactiveInMyOkou = useLastResolved(proactiveSettingsInMyOkou$);
+  const { t } = useTranslation();
+  const deck = useLastResolved(forYouDeck$);
+  const cards = deck?.progressCards ?? [];
+  const currentId = deck?.cards[0]?.entry.item.id;
+  const position = Math.max(
+    0,
+    cards.findIndex((card) => {
+      return card.entry.item.id === currentId;
+    }),
+  );
+  // Keep a navigable window around the current card, even for a large feed.
+  const firstStep = Math.max(0, Math.min(position - 3, cards.length - 7));
+  const steps = cards.slice(firstStep, firstStep + 7);
+  const browse = useSet(browseForYou$);
+  const signal = useGet(pageSignal$);
+  const cover = useGet(forYouPaintedCover$);
+  return (
+    <header
+      style={headerInkVars(cover)}
+      className="absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8 [--for-you-bar:var(--for-you-bar-compact)] [--for-you-ink:var(--for-you-ink-compact)] [--for-you-track:var(--for-you-track-compact)] @min-[56rem]/for-you:[--for-you-bar:var(--for-you-bar-wide)] @min-[56rem]/for-you:[--for-you-ink:var(--for-you-ink-wide)] @min-[56rem]/for-you:[--for-you-track:var(--for-you-track-wide)]"
+    >
+      <ForYouHeaderScrim cover={cover} />
+      <div className="min-w-0">
+        <h1 className="text-base font-semibold text-[rgb(var(--for-you-ink)/0.9)] sm:text-lg">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.title;
           })}
         </h1>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-0.5 truncate text-xs text-[rgb(var(--for-you-ink)/0.85)]">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.subtitle;
           })}
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-3">
-        <span
-          role="status"
-          className="min-w-12 text-right text-xs tabular-nums text-muted-foreground"
+      <div className="flex min-w-0 items-center gap-2 sm:gap-5">
+        <nav
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.homeCard.navigation;
+          })}
+          className="flex min-w-0 flex-1 items-center"
         >
-          {count !== undefined
+          {steps.map((card, offset) => {
+            const index = firstStep + offset;
+            return (
+              <Link
+                key={card.entry.item.id}
+                pathname={ROUTES.forYou}
+                options={{
+                  searchParams: new URLSearchParams({
+                    suggestion: card.entry.item.id,
+                  }),
+                }}
+                aria-current={index === position ? "step" : undefined}
+                aria-label={t(
+                  ($) => {
+                    return $.chat.agentSuggestions.homeCard.show;
+                  },
+                  {
+                    index: index + 1,
+                    total: cards.length,
+                  },
+                )}
+                onClick={(event) => {
+                  if (shouldHandleLinkClick(event)) {
+                    event.preventDefault();
+                    detach(
+                      browse(
+                        card.entry.item.id,
+                        index < position ? "previous" : "next",
+                        signal,
+                      ),
+                      Reason.DomCallback,
+                    );
+                  }
+                }}
+                className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-1 w-full rounded-full transition-colors",
+                    index === position
+                      ? "bg-[rgb(var(--for-you-bar))]"
+                      : "bg-[rgb(var(--for-you-track))]",
+                  )}
+                />
+              </Link>
+            );
+          })}
+        </nav>
+        {cards.length > 0 && (
+          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.85)]">
+            <span className="text-[rgb(var(--for-you-ink)/0.9)]">
+              {position + 1}
+            </span>
+            <span
+              aria-hidden
+              className="mx-1 text-[rgb(var(--for-you-ink)/0.35)]"
+            >
+              /
+            </span>
+            {cards.length}
+          </span>
+        )}
+        <span role="status" className="sr-only">
+          {deck
             ? t(
                 ($) => {
                   return $.chat.agentSuggestions.forYou.remaining;
                 },
-                { total: count },
+                {
+                  total: cards.length,
+                },
               )
             : null}
         </span>
-        <ForYouSources />
       </div>
+      {proactiveInMyOkou === false && <ForYouSources />}
     </header>
   );
 }
@@ -324,22 +572,21 @@ function ForYouHeader({ count }: { readonly count: number | undefined }) {
 export function ForYouPage() {
   const { t } = useTranslation();
   const deck = useLastLoadable(forYouDeck$);
-  const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
   const [reloading, reload] = useLoadableSet(reloadSuggestionSession$);
   const signal = useGet(pageSignal$);
   const cards = deck.state === "hasData" ? deck.data.cards : [];
   const settled = deck.state === "hasData" ? deck.data.settled : [];
   const complete = deck.state === "hasData" && cards.length === 0;
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <ForYouHeader
-        count={deck.state === "hasData" ? cards.length : undefined}
-      />
-      <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-5 pb-safe-offset-8 pt-4 sm:px-12">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-brand-off-white dark:bg-background">
+      <main className="@container/for-you relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 sm:px-8">
+        {/* The header sits on the banner and scrolls away with it. */}
+        <ForYouHeader />
+        <ForYouCover />
         {deck.state === "hasError" ? (
           <div
             role="alert"
-            className="m-auto flex flex-col items-center gap-4 p-6"
+            className="m-auto flex flex-col items-center gap-4 rounded-3xl bg-card p-6"
           >
             <p className="text-sm text-muted-foreground">
               {t(($) => {
@@ -373,14 +620,10 @@ export function ForYouPage() {
             {complete && (
               <SuggestionsComplete
                 celebrate={settled.length > 0}
-                className="absolute inset-0 min-h-full"
+                className="absolute inset-x-4 top-58 mx-auto max-w-160 pt-8 sm:top-56 sm:pt-12"
               />
             )}
-            <ForYouStack
-              onCustomDirection={(suggestion) => {
-                detach(openComposer(suggestion.id, signal), Reason.DomCallback);
-              }}
-            />
+            <ForYouStack />
           </>
         )}
         <div className="relative mx-auto w-full max-w-160 shrink-0 space-y-3">
@@ -397,7 +640,6 @@ export function ForYouPage() {
           })}
         </div>
       </main>
-      <AgentSuggestionComposerDialog composer={composer} />
     </div>
   );
 }

@@ -10,7 +10,6 @@ import {
 export interface RenameChatThreadDialogRequest {
   readonly threadId: string;
   readonly title?: string | null;
-  readonly agentId?: string | null;
 }
 
 /**
@@ -21,11 +20,7 @@ export interface RenameChatThreadDialogRequest {
 export const renameChatThreadFromInput$ = command(
   async (
     { get, set },
-    {
-      threadId,
-      input,
-      agentId,
-    }: { threadId: string; input: string; agentId?: string | null },
+    { threadId, input }: { threadId: string; input: string },
     signal: AbortSignal,
   ) => {
     const title = input.trim();
@@ -33,7 +28,7 @@ export const renameChatThreadFromInput$ = command(
     if (!title || title === currentTitle) {
       return;
     }
-    await set(renameChatThread$, { threadId, title, agentId }, signal);
+    await set(renameChatThread$, { threadId, title }, signal);
   },
 );
 
@@ -42,7 +37,6 @@ export const openRenameChatThreadDialogFromThreadMeta$ = command(
     set(openRenameChatThreadDialog$, {
       threadId: request.threadId,
       title: request.title,
-      agentId: request.agentId,
     });
   },
 );
@@ -55,7 +49,6 @@ export const openRenameChatThreadDialogForThreadId$ = command(
       {
         threadId,
         title: meta?.title,
-        agentId: meta?.agentId,
       },
       signal,
     );
@@ -79,7 +72,6 @@ export const setChatThreadEmojiFromThreadMeta$ = command(
       {
         threadId,
         title: applyChatThreadEmoji(currentTitle, emoji),
-        agentId: meta?.agentId,
       },
       signal,
     );
@@ -98,10 +90,6 @@ export const clearChatThreadEmojiFromThreadMeta$ = command(
     if (!nextTitle) {
       return;
     }
-    await set(
-      renameChatThread$,
-      { threadId, title: nextTitle, agentId: meta?.agentId },
-      signal,
-    );
+    await set(renameChatThread$, { threadId, title: nextTitle }, signal);
   },
 );

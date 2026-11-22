@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Validate original accepted-pause/public-repark-wait custody and required saving."""
 
-import argparse
 import hashlib
-import json
 import pathlib
 
 import batch_aba_report as batch
 import later_parking_report as later
 import report
 import speculative_fault_report as saving
-import status_failure_report as failure
+import status_evidence
 from native_transition_report import wait_progress, wire
 from cleanup_report import supplied_policy
 from report import exact
@@ -38,10 +36,11 @@ def validate(directory):
     paths, runners = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(event["phase"] for event in events) != PHASES:
-            raise ValueError("missing duplicate or reordered native physical pause phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((event["sandbox_id"], event["backing_generation"]) != identity for event in events):
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or reordered native physical pause phases",
+        )
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("native physical pause changed original physical owner")
         ordered = [terminal[1], *events[:7], terminal[2], terminal[3], *events[7:10],
                    terminal[4], *events[10:], terminal[5]]
@@ -50,11 +49,11 @@ def validate(directory):
         initial, captured, accepted, lost, progress, joined, ready = [event["evidence"] for event in events[:7]]
         mode = case.rsplit("-", 1)[0]
         path = initial.get("status_path")
-        if not failure.valid_status_path(path) or path in paths:
+        if not status_evidence.valid_status_path(path) or path in paths:
             raise ValueError("invalid or replayed native physical pause status path")
         paths.add(path)
         baseline = initial.get("published_status")
-        failure.status(baseline, sandbox=identity[0])
+        status_evidence.original_status(baseline, sandbox=identity[0])
         exact(initial, {"policy":policy,"status_path":path,"published_status":baseline,"regular_file":True},
               "native physical pause changed original inputs")
         history, operation = later.history_operation(
@@ -113,6 +112,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory",type=pathlib.Path)
-    print(json.dumps(validate(parser.parse_args().directory),indent=2,sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)

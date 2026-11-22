@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
@@ -21,7 +21,6 @@ import {
   httpConnector,
   ACME_CONNECTOR_ID,
   SCOUT_THREAD_ID,
-  SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
   findComposer,
@@ -72,12 +71,10 @@ async function setup(
 ) {
   await setupPage({
     context,
-    path: draft
-      ? `/agents/${SCOUT_AGENT_ID}/chat`
-      : `/chats/${SCOUT_THREAD_ID}`,
+    path: draft ? `/` : `/chats/${SCOUT_THREAD_ID}`,
     locale: "en-US",
     sharedWorkerTestTransport,
-    featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+    featureSwitches: {},
   });
   await findComposer();
 }
@@ -521,9 +518,15 @@ test("Release the cached subscription on navigation and reload the returning Cha
   await openAfterSetup();
   await findFastControl("button", "Probe 1");
   click(await findFastControl("button", "Connectors"));
-  click(await findFastControl("button", "New chat"));
+  const newChat = screen
+    .getByTestId("chat-list-column")
+    .querySelector<HTMLAnchorElement>('a[href="/"]');
+  if (!newChat) {
+    throw new Error("Expected the new chat link in the chat list");
+  }
+  click(newChat);
   await waitFor(() => {
-    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
+    expect(window.location.pathname).toBe("/");
   });
   await findComposer();
   await waitFor(() => {

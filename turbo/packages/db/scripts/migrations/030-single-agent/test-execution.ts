@@ -42,6 +42,7 @@ import {
   chatThreadSnapshotProjectionSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
+import { migrationTimestamp } from "../../migration-timestamp";
 import { applyPendingMigrations } from "../../migration-runner";
 import { checkPrivileges } from "./production-database";
 import { BRANCH, PROJECT, STAFF_ORG } from "./production-model";
@@ -268,7 +269,12 @@ async function eventsState() {
 
 try {
   await admin.unsafe(`CREATE DATABASE "${database}"`);
-  await applyPendingMigrations(sql);
+  // This operator migrates historical Agent associations before their columns are retired.
+  await applyPendingMigrations(sql, {
+    beforeMillis: await migrationTimestamp(
+      "1610_contract_chat_run_agent_storage",
+    ),
+  });
   const login = object({ value: string() }).parse(
     (await sql`SELECT session_user AS value`)[0],
   ).value;
@@ -426,11 +432,11 @@ try {
       (${retainedWorkflow},${org},${privateAgent},'second','private',${owner},${workflowInstruction},NULL,${sql.json(secondBundle.descriptor)},${owner},${owner},'{"kind":"empty"}'::jsonb),
       (${publicWorkflow},${org},${publicAgent},'second','public',${other},${workflowInstruction},NULL,${sql.json(secondBundle.descriptor)},${other},${other},'{"kind":"empty"}'::jsonb)`;
   await sql`INSERT INTO projects(id,org_id,user_id,name) VALUES(${originalProject},${org},${owner},'Existing Project')`;
-  await sql`INSERT INTO chat_threads(id,user_id,agent_id,project_id,title,framework,framework_session_id,framework_session_run_id)
-    VALUES(${chat},${owner},${privateAgent},${originalProject},${canary},'codex','native-session',${nativeRun}),
-      (${otherChat},${other},${privateAgent},NULL,'other retained chat',NULL,NULL,NULL),
-      (${randomUUID()},${owner},${publicAgent},NULL,'separate same-name Agent',NULL,NULL,NULL),
-      (${randomUUID()},'foreign',${foreignAgent},NULL,'foreign untouched',NULL,NULL,NULL)`;
+  await sql`INSERT INTO chat_threads(id,user_id,org_id,agent_id,project_id,title,framework,framework_session_id,framework_session_run_id)
+    VALUES(${chat},${owner},${org}, ${privateAgent},${originalProject},${canary},'codex','native-session',${nativeRun}),
+      (${otherChat},${other},${org}, ${privateAgent},NULL,'other retained chat',NULL,NULL,NULL),
+      (${randomUUID()},${owner},${org}, ${publicAgent},NULL,'separate same-name Agent',NULL,NULL,NULL),
+      (${randomUUID()},'foreign',${foreignOrg}, ${foreignAgent},NULL,'foreign untouched',NULL,NULL,NULL)`;
   await sql`INSERT INTO workflow_automations(id,org_id,workflow_id,owner_user_id,kind,schedule_type,interval_seconds,enabled)
     VALUES(${badAutomation},${org},${workflow},${other},'schedule','loop',900,false),
       (${keptAutomation},${org},${retainedWorkflow},${owner},'schedule','loop',900,true),
@@ -444,8 +450,8 @@ try {
     VALUES(${historicalRun},${other},${org},${privateAgent},${otherChat},'completed','retained historical prompt','automation',0,${badAutomation},'{"wide":9007199254740993}'::jsonb)`;
   await sql`INSERT INTO agent_runs(id,user_id,org_id,agent_id,chat_thread_id,status,prompt,trigger_source,autonomy_budget)
     VALUES(${nativeRun},${owner},${org},${privateAgent},${chat},'completed','native history','web',0)`;
-  await sql`INSERT INTO chat_threads(id,user_id,agent_id,title)
-    SELECT gen_random_uuid(),${owner},${privateAgent},'retained scale fixture' FROM generate_series(1,11065)`;
+  await sql`INSERT INTO chat_threads(id,user_id,org_id,agent_id,title)
+    SELECT gen_random_uuid(),${owner},${org}, ${privateAgent},'retained scale fixture' FROM generate_series(1,11065)`;
   const snapshotProjection = object({
     value: chatThreadSnapshotProjectionSchema,
   }).parse(
@@ -463,10 +469,10 @@ try {
   async function replayPublishedMetadata() {
     const events = array(object({ value: chatThreadEventSchema })).parse(
       await sql`SELECT jsonb_build_object(
-      'id',id,'seqId',seq_id,'kind',kind,'chatThreadId',chat_thread_id,'agentId',agent_id,
+      'id',id,'seqId',seq_id,'kind',CASE WHEN kind='agent_reassigned' THEN 'sort_touched' ELSE kind::text END,'chatThreadId',chat_thread_id,'agentId',event_executor_id,
       'projectId',project_id,'title',title,'pinOrder',pin_order,
       'createdAt',to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
-    ) || CASE WHEN reassigned_agent_id IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('reassignedAgentId',reassigned_agent_id) END AS value
+    ) || CASE WHEN kind<>'agent_reassigned' THEN '{}'::jsonb ELSE jsonb_build_object('reassignedAgentId',event_executor_id) END AS value
     FROM chat_thread_events WHERE chat_thread_id=${chat} ORDER BY seq_id`,
     );
     return replayChatThreadEvents(
@@ -677,7 +683,6 @@ try {
     published = puts;
   const replayed = await replayPublishedMetadata();
   assert.ok(replayed);
-  assert.equal(replayed.agentId, target);
   assert.notEqual(replayed.projectId, originalProject);
   assert.equal(
     replayed.sortAt,
@@ -819,7 +824,6 @@ try {
   );
   const restoredProjection = await replayPublishedMetadata();
   assert.ok(restoredProjection);
-  assert.equal(restoredProjection.agentId, privateAgent);
   assert.equal(restoredProjection.projectId, originalProject);
   assert.equal(restoredProjection.sortAt, snapshotProjection.sortAt);
   const recoveredEvents = await eventsState();

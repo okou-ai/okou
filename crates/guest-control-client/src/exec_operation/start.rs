@@ -11,6 +11,7 @@ use tokio::sync::oneshot;
 use tokio::time::{self, Instant};
 
 use crate::connection::FrameWriteDecision;
+use crate::protocol_error;
 use crate::request_progress::RequestWriteProgress;
 use crate::{
     CompositeNormalOperation, FrameWriteObserver, RequestTimeoutError, RequestTimeoutStage, Shared,
@@ -26,8 +27,8 @@ use super::handle::{
 };
 use super::state::{
     ExecOperationLifecycle, ExecOperationRegistration, ExecOperationRegistrationInput,
-    ExecOperationTracking, ExecStreamQueueKind, output_policy_streams,
-    register_exec_operation_start, stream_queue_capacity_for,
+    ExecOperationTracking, ExecStreamQueueKind, register_exec_operation_start,
+    stream_queue_capacity_for,
 };
 use super::types::{
     ExecCaptureRequest, ExecOperationRequest, ExecOperationResult, ExecStreamRequest,
@@ -137,7 +138,7 @@ async fn start_exec_operation_on_shared_with_tracking_and_admission(
             stdin_bytes: request.stdin_bytes,
         },
     )
-    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    .map_err(protocol_error::invalid_input)?;
     let deadline = exec_start_deadline(request.start_write_timeout)?;
 
     let ExecOperationRegistration {
@@ -204,7 +205,7 @@ pub(crate) async fn start_supervised_process_on_shared(
     shared: &Arc<Shared>,
     request: SupervisedExecRequest<'_>,
 ) -> io::Result<SupervisedExecHandle> {
-    if output_policy_streams(request.stderr) {
+    if request.stderr.stream_limits().is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "supervised process output requires non-streaming stderr",
@@ -307,7 +308,7 @@ where
             stdin_bytes: request.stdin_bytes,
         },
     )
-    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    .map_err(protocol_error::invalid_input)?;
     if request.start_timeout.is_zero() {
         return Err(supervised_start_timeout_error(
             RequestTimeoutStage::BeforeFrameWrite,
@@ -610,7 +611,7 @@ async fn exec_operation_stream_on_shared_with_tracking(
     tracking: ExecOperationTracking<'_>,
     write_observer: FrameWriteObserver,
 ) -> io::Result<ExecOperationHandle> {
-    if !output_policy_streams(request.stdout) && !output_policy_streams(request.stderr) {
+    if request.stdout.stream_limits().is_none() && request.stderr.stream_limits().is_none() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "exec_operation_stream requires a streaming output policy",

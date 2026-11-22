@@ -84,7 +84,6 @@ interface WorkflowsFixture {
 async function setupFixture(): Promise<{
   readonly fixture: WorkflowsFixture;
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly workflowId: string;
 }> {
   await runsApi.configureRunnerGroup();
@@ -92,20 +91,17 @@ async function setupFixture(): Promise<{
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  await runsApi.ensurePersonalSubscriptionModel(actor);
-  await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
-  const agent = await wf.createAgent(actor, {
-    displayName: "GitHub Webhook Agent",
+  await runsApi.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
   });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId: agent.agentId,
     name: WORKFLOW_NAME,
   });
   const fixture = { orgId: actor.orgId, userId: actor.userId };
   mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
   context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
   runsApi.acceptStorageDownloads();
-  return { fixture, actor, agentId: agent.agentId, workflowId };
+  return { fixture, actor, workflowId };
 }
 
 function githubPullRequestPayload(args: {
@@ -545,8 +541,8 @@ describe("POST /api/webhooks/github for workflow automations", () => {
   it.each(githubActorAllowlistCases)(
     "ignores $name events from outside the trusted-author allowlist",
     async (testCase) => {
-      const { fixture, actor, agentId, workflowId } = await setupFixture();
-      const installed = await gh.installGithubApp(actor, agentId);
+      const { fixture, actor, workflowId } = await setupFixture();
+      const installed = await gh.installGithubApp(actor);
       mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
       await accept(
@@ -577,8 +573,8 @@ describe("POST /api/webhooks/github for workflow automations", () => {
   it.each(githubWebhookAutomationCases)(
     "dispatches $name automations without an API feature gate",
     async (testCase) => {
-      const { fixture, actor, agentId, workflowId } = await setupFixture();
-      const installed = await gh.installGithubApp(actor, agentId);
+      const { fixture, actor, workflowId } = await setupFixture();
+      const installed = await gh.installGithubApp(actor);
       mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
       const created = await accept(
@@ -616,7 +612,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
         testCase.expectedDisplayMessage,
       );
 
-      await runsApi.heartbeatRunner();
       const listedRuns = await listActiveRuns(actor, 20);
       const runId = listedRuns.runs[0]?.id;
       if (!runId || listedRuns.runs.length !== 1) {
@@ -636,13 +631,13 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       for (const excluded of testCase.excludedPrompt ?? []) {
         expect(execution.prompt).not.toContain(excluded);
       }
-      expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+      expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
     },
   );
 
   it("validates workflow job actions before dispatching", async () => {
-    const { actor, agentId, workflowId } = await setupFixture();
-    const installed = await gh.installGithubApp(actor, agentId);
+    const { actor, workflowId } = await setupFixture();
+    const installed = await gh.installGithubApp(actor);
     mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
     const testCase = githubWebhookAutomationCases.find((testCase) => {
       return testCase.event === "workflow_job";
@@ -706,8 +701,8 @@ describe("POST /api/webhooks/github for workflow automations", () => {
   });
 
   it("de-duplicates completed workflow job deliveries", async () => {
-    const { actor, agentId, workflowId } = await setupFixture();
-    const installed = await gh.installGithubApp(actor, agentId);
+    const { actor, workflowId } = await setupFixture();
+    const installed = await gh.installGithubApp(actor);
     mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
     const testCase = githubWebhookAutomationCases.find((testCase) => {
       return testCase.event === "workflow_job";
@@ -745,14 +740,13 @@ describe("POST /api/webhooks/github for workflow automations", () => {
         return event.eventType === "input.automation";
       }),
     ).toHaveLength(1);
-    await runsApi.heartbeatRunner();
     const listedRuns = await listActiveRuns(actor, 20);
     expect(listedRuns.runs).toHaveLength(1);
   });
 
   it("validates pull request review actions before dispatching", async () => {
-    const { actor, agentId, workflowId } = await setupFixture();
-    const installed = await gh.installGithubApp(actor, agentId);
+    const { actor, workflowId } = await setupFixture();
+    const installed = await gh.installGithubApp(actor);
     mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
     const created = await accept(
       automationsClient().create({
@@ -797,8 +791,8 @@ describe("POST /api/webhooks/github for workflow automations", () => {
   });
 
   it("dispatches matching pull request events and de-duplicates deliveries", async () => {
-    const { fixture, actor, agentId, workflowId } = await setupFixture();
-    const installed = await gh.installGithubApp(actor, agentId);
+    const { fixture, actor, workflowId } = await setupFixture();
+    const installed = await gh.installGithubApp(actor);
     mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
 
@@ -914,7 +908,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     // closed-without-merge delivery never matched. Under the per-thread
     // workflow queue, the first matched event creates the only admitted run
     // and the remaining five wait as pending workflow queue events.
-    await runsApi.heartbeatRunner();
     const listedRuns = await listActiveRuns(actor, 20);
     const admittedRunId = listedRuns.runs[0]?.id;
     if (!admittedRunId || listedRuns.runs.length !== 1) {
@@ -931,8 +924,8 @@ describe("POST /api/webhooks/github for workflow automations", () => {
   });
 
   it("dispatches completed workflow runs matching all GitHub filters", async () => {
-    const { fixture, actor, agentId, workflowId } = await setupFixture();
-    const installed = await gh.installGithubApp(actor, agentId);
+    const { fixture, actor, workflowId } = await setupFixture();
+    const installed = await gh.installGithubApp(actor);
     mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
     const created = await accept(
@@ -1003,7 +996,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     expect(sequentialDuplicate).toStrictEqual({ status: 200, text: "OK" });
     await flushWaitUntilForTest();
 
-    await runsApi.heartbeatRunner();
     const listedRuns = await listActiveRuns(actor, 20);
     const runId = listedRuns.runs[0]?.id;
     if (!runId || listedRuns.runs.length !== 1) {
@@ -1050,12 +1042,12 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     );
     expect(execution.prompt).toContain('"attempt": 2');
     expect(execution.prompt).toContain('"triggeringEvent": "push"');
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
   });
 
   it("accepts startup failures with GitHub's documented nullable run fields", async () => {
-    const { fixture, actor, agentId, workflowId } = await setupFixture();
-    const installed = await gh.installGithubApp(actor, agentId);
+    const { fixture, actor, workflowId } = await setupFixture();
+    const installed = await gh.installGithubApp(actor);
     mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", GITHUB_WEBHOOK_SECRET);
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
 
@@ -1111,7 +1103,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       'GitHub Actions workflow ".github/workflows/turbo.yml" completed with conclusion "startup_failure".',
     );
 
-    await runsApi.heartbeatRunner();
     const listedRuns = await listActiveRuns(actor, 20);
     const runId = listedRuns.runs[0]?.id;
     if (!runId || listedRuns.runs.length !== 1) {
@@ -1124,6 +1115,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     expect(execution.prompt).toContain('"name": null');
     expect(execution.prompt).toContain('"actor": null');
     expect(execution.prompt).toContain('"triggeringActor": null');
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("Your name is Okou.");
   });
 });

@@ -7,14 +7,14 @@ import {
 } from "../chat-user-message.service";
 import type { createDiscordThreadContext } from "../discord-thread-prompt-context.service";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
 export function createDiscordThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: ReturnType<typeof createDiscordThreadContext>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (pickedEvent?.contextType !== "discord") {
@@ -66,7 +66,6 @@ export function createDiscordThreadPrompt(
           })
           .join("\n\n"),
       },
-      skillVolumes: [],
     };
   });
 }

@@ -1,31 +1,22 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
 
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   ACME_CONNECTOR_ID,
   builtinConnector,
   connectorAccount,
-  DEEPWIKI_CONNECTOR_ID,
   FEISHU_CONNECTOR_ID,
   httpConnector,
   manualAuthMethod,
-  mcpConnector,
   noAuthMethod,
   oauthAuthMethod,
   ORDINARY_CONNECTOR_ID,
   permissionDetail,
-  SCOUT_AGENT_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
@@ -83,30 +74,6 @@ async function openCustomConnectors(
   return dialog;
 }
 
-function accessRow(control: HTMLElement): HTMLElement {
-  const row = control.closest(".flex.h-10");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Connector access row not found");
-  }
-  return row;
-}
-
-function normalizedText(element: Element): string {
-  return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";
-}
-
-function buttonIndex(
-  name: string,
-  container: ParentNode = document.body,
-): number {
-  return queryAllByRoleFast("button", container).findIndex((button) => {
-    return (
-      button.getAttribute("aria-label") === name ||
-      normalizedText(button) === name
-    );
-  });
-}
-
 function createAuthWindow(): Window {
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
@@ -124,7 +91,6 @@ test("Configure connector permissions from the composer", async () => {
   });
   installComposerConnectorFixture({
     catalog: [axiom],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [AXIOM_SLUG] },
     permissionDetails: new Map([
       [
         AXIOM_SLUG,
@@ -133,13 +99,13 @@ test("Configure connector permissions from the composer", async () => {
     ]),
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   click(await findFastControl("button", "Connectors"));
-  await findFastControl("button", "Add connectors");
-  click(await findFastControl("button", "Configure Axiom permissions"));
+  click(await findFastControl("button", /^Axiom/u));
+  click(await findFastControl("button", "Permissions"));
   const dialog = await screen.findByRole("dialog", {
-    name: /Axiom permissions.*Scout/u,
+    name: "Axiom permissions",
   });
   expect(queryFastControl("button", "Add connectors")).toBeNull();
   const permission = within(dialog).getByText("annotations|create");
@@ -154,66 +120,13 @@ test("Configure connector permissions from the composer", async () => {
   click(await findFastControl("button", "Cancel", dialog));
   await waitFor(() => {
     expect(
-      screen.queryByRole("dialog", { name: /Axiom permissions.*Scout/u }),
+      screen.queryByRole("dialog", { name: "Axiom permissions" }),
     ).toBeNull();
     expect(queryFastControl("button", "Add connectors")).toBeNull();
   });
 });
 
-test("Apply composer connector permissions as the agent's grants", async () => {
-  const axiom = builtinConnector({
-    slug: AXIOM_SLUG,
-    label: "Axiom",
-    hasPermissions: true,
-  });
-  installComposerConnectorFixture({
-    catalog: [axiom],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [AXIOM_SLUG] },
-    permissionDetails: new Map([
-      [
-        AXIOM_SLUG,
-        permissionDetail(AXIOM_SLUG, "Axiom", ["annotations|create"]),
-      ],
-    ]),
-  });
-  const applied: unknown[] = [];
-  context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {
-    applied.push(body);
-    return respond(200, []);
-  });
-
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-
-  click(await findFastControl("button", "Connectors"));
-  click(await findFastControl("button", "Configure Axiom permissions"));
-  const dialog = await screen.findByRole("dialog", {
-    name: /Axiom permissions.*Scout/u,
-  });
-  const permission = within(dialog).getByText("annotations|create");
-  const row = permission.closest(".flex.items-center");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Permission row not found");
-  }
-  click(await findFastControl("button", "Deny", row));
-  click(await findFastControl("button", "Apply", dialog));
-
-  await screen.findByText("Permissions updated");
-  expect(applied).toStrictEqual([
-    {
-      agentId: SCOUT_AGENT_ID,
-      connectorSlug: AXIOM_SLUG,
-      mode: "patch",
-      grants: [{ permission: "annotations|create", action: "deny" }],
-    },
-  ]);
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: /Axiom permissions.*Scout/u }),
-    ).toBeNull();
-  });
-});
-
-describe("connecting a custom connector for the active agent", () => {
+describe("connecting a custom connector from Chat", () => {
   let user: ReturnType<typeof userEvent.setup>;
   let fixture: ReturnType<typeof installComposerConnectorFixture>;
   beforeEach(async () => {
@@ -229,7 +142,7 @@ describe("connecting a custom connector for the active agent", () => {
       ],
     });
 
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    await setupPage({ context, path: `/` });
 
     await loadComposer();
     await openConnectors(user);
@@ -246,7 +159,7 @@ describe("connecting a custom connector for the active agent", () => {
     return { catalog, secret };
   }
 
-  it("cancel a custom connector for only the active agent", async () => {
+  it("cancel a custom connector from Chat", async () => {
     const { secret } = await prepareCustomConnection();
     await fill(secret, "discarded-secret");
     click(await findFastControl("button", "Cancel"));
@@ -256,10 +169,9 @@ describe("connecting a custom connector for the active agent", () => {
     const reopenedSecret = await screen.findByLabelText("Secret");
     expect(reopenedSecret).toHaveValue("");
     expect(fixture.customValueRequests).toStrictEqual([]);
-    expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
   });
 
-  it("connect a custom connector for only the active agent", async () => {
+  it("connect a custom connector from Chat", async () => {
     const { secret } = await prepareCustomConnection();
     await fill(secret, "scout-secret");
     click(await findFastControl("button", "Save"));
@@ -271,26 +183,12 @@ describe("connecting a custom connector for the active agent", () => {
           values: [{ key: "secret", kind: "secret", value: "scout-secret" }],
         },
       ]);
-      expect(fixture.customAuthorizationUpdates).toStrictEqual([
-        {
-          agentId: SCOUT_AGENT_ID,
-          grants: [
-            {
-              customConnectorId: ACME_CONNECTOR_ID,
-              permissionNames: [],
-            },
-          ],
-          operation: "add",
-        },
-      ]);
     });
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
     await ensureConnectorsOpen(user);
-    await expect(
-      screen.findByLabelText("Remove Acme Search"),
-    ).resolves.toBeVisible();
+    await expect(screen.findByText("Acme Search")).resolves.toBeVisible();
   });
 });
 
@@ -327,7 +225,7 @@ test("Reconnect the expired custom default from the composer with healthy siblin
     ],
     accounts: [expired, sibling],
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   await loadComposer();
   await openConnectors(user);
   const catalog = await openCustomConnectors(user);
@@ -345,13 +243,6 @@ test("Reconnect the expired custom default from the composer with healthy siblin
       connectorId: ACME_CONNECTOR_ID,
       account: { intent: "reconnect", connectionId: expired.id },
       values: [{ key: "secret", kind: "secret", value: "replacement-secret" }],
-    },
-  ]);
-  expect(fixture.customAuthorizationUpdates).toStrictEqual([
-    {
-      agentId: SCOUT_AGENT_ID,
-      grants: [{ customConnectorId: ACME_CONNECTOR_ID, permissionNames: [] }],
-      operation: "add",
     },
   ]);
 });
@@ -391,109 +282,90 @@ test("Show only the connector actions that are useful in chat", async () => {
   });
   installComposerConnectorFixture({
     catalog: [axiom, github],
-    builtinAuthorizations: {
-      [SCOUT_AGENT_ID]: [AXIOM_SLUG, GITHUB_SLUG],
-    },
     accounts: [...axiomAccounts, githubAccount],
   });
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   await loadComposer();
   await openConnectors(user);
-  const accountAction = await findFastControl(
-    "button",
-    "Axiom · Account for this chat",
-  );
-  const permissionAction = await findFastControl(
-    "button",
-    "Configure Axiom permissions",
-  );
-  const axiomRow = accessRow(await screen.findByLabelText("Remove Axiom"));
-  expect(axiomRow).toContainElement(accountAction);
-  expect(axiomRow).toContainElement(permissionAction);
+  await user.click(await findFastControl("button", /^Axiom/u));
+  const axiomMenu = await screen.findByRole("dialog", { name: "Axiom" });
+  expect(queryFastControl("button", "Permissions", axiomMenu)).toBeVisible();
   expect(
-    buttonIndex(accountAction.getAttribute("aria-label")!, axiomRow),
-  ).toBeLessThan(buttonIndex("Configure Axiom permissions", axiomRow));
-  const githubRow = accessRow(await screen.findByLabelText("Remove GitHub"));
-  await expect(
-    findFastControl("button", "GitHub · Account for this chat", githubRow),
-  ).resolves.toBeVisible();
-
-  await user.click(screen.getByLabelText("Remove Axiom"));
-  await expect(screen.findByLabelText("Add Axiom")).resolves.toBeVisible();
+    within(axiomMenu).getByRole("switch", { name: "Work access" }),
+  ).toBeChecked();
   expect(
-    screen.queryByRole("dialog", { name: /Axiom permissions/u }),
-  ).toBeNull();
-  expect(accessRow(screen.getByLabelText("Add Axiom"))).toBe(axiomRow);
+    within(axiomMenu).getByRole("switch", { name: "Personal access" }),
+  ).toBeChecked();
+  await user.keyboard("{Escape}");
+  await user.click(await findFastControl("button", /^GitHub/u));
+  const githubMenu = await screen.findByRole("dialog", { name: "GitHub" });
+  expect(queryFastControl("button", "Permissions", githubMenu)).toBeNull();
+  expect(
+    within(githubMenu).getByRole("switch", { name: "Work access" }),
+  ).toBeVisible();
 });
 
-test.each([false, true])(
-  "Start connector setup from chat, chat accounts=%s",
-  async (chatAccounts) => {
-    const user = userEvent.setup({ delay: null });
-    const fixture = installComposerConnectorFixture({
-      catalog: [
-        builtinConnector({
-          slug: GOOGLE_ANALYTICS_SLUG,
-          label: "Google Analytics",
-          hasAccount: false,
-          authMethods: [oauthAuthMethod()],
-        }),
-      ],
-    });
-    const authWindow = createAuthWindow();
-    const browserOpen = context.mocks.browser.open(authWindow);
+test("Start connector setup from chat", async () => {
+  const user = userEvent.setup({ delay: null });
+  const fixture = installComposerConnectorFixture({
+    catalog: [
+      builtinConnector({
+        slug: GOOGLE_ANALYTICS_SLUG,
+        label: "Google Analytics",
+        hasAccount: false,
+        authMethods: [oauthAuthMethod()],
+      }),
+    ],
+  });
+  const authWindow = createAuthWindow();
+  const browserOpen = context.mocks.browser.open(authWindow);
 
-    await setupPage({
-      context,
-      path: `/agents/${SCOUT_AGENT_ID}/chat`,
-      featureSwitches: {
-        [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
-      },
-    });
+  await setupPage({
+    context,
+    path: `/`,
+    featureSwitches: {},
+  });
 
-    await loadComposer();
-    await openConnectors(user);
-    const catalog = await openAddConnectors(user);
-    await user.type(
-      within(catalog).getByPlaceholderText("Find connectors..."),
-      "Google Analytics",
-    );
-    const connect = await findFastControl(
-      "button",
-      "Connect Google Analytics",
-      catalog,
-    );
-    expect(authWindow.location.href).toBe("about:blank");
-    await user.click(connect);
-    await waitFor(() => {
-      expect(fixture.oauthConnectionRequests).toHaveLength(1);
-      expect(fixture.oauthConnectionRequests[0]).toMatchObject({
-        connectorSlug: GOOGLE_ANALYTICS_SLUG,
-        authMethod: "oauth",
-        agentId: chatAccounts ? undefined : SCOUT_AGENT_ID,
-        authorizeAgent: chatAccounts ? undefined : true,
-      });
-      expect(authWindow.location.href).toBe(
-        "https://accounts.example.test/google-analytics",
-      );
+  await loadComposer();
+  await openConnectors(user);
+  const catalog = await openAddConnectors(user);
+  await user.type(
+    within(catalog).getByPlaceholderText("Find connectors..."),
+    "Google Analytics",
+  );
+  const connect = await findFastControl(
+    "button",
+    "Connect Google Analytics",
+    catalog,
+  );
+  expect(authWindow.location.href).toBe("about:blank");
+  await user.click(connect);
+  await waitFor(() => {
+    expect(fixture.oauthConnectionRequests).toHaveLength(1);
+    expect(fixture.oauthConnectionRequests[0]).toMatchObject({
+      connectorSlug: GOOGLE_ANALYTICS_SLUG,
+      authMethod: "oauth",
     });
-    expect(browserOpen.calls).toHaveLength(1);
-    authWindow.close();
-    await waitFor(() => {
-      expect(
-        queryFastControl("button", "Connect Google Analytics", catalog),
-      ).toBeEnabled();
-    });
+    expect(authWindow.location.href).toBe(
+      "https://accounts.example.test/google-analytics",
+    );
+  });
+  expect(browserOpen.calls).toHaveLength(1);
+  authWindow.close();
+  await waitFor(() => {
     expect(
-      within(catalog).getByPlaceholderText("Find connectors..."),
-    ).toHaveValue("Google Analytics");
-  },
-);
+      queryFastControl("button", "Connect Google Analytics", catalog),
+    ).toBeEnabled();
+  });
+  expect(
+    within(catalog).getByPlaceholderText("Find connectors..."),
+  ).toHaveValue("Google Analytics");
+});
 
 test.each([null, "Close"] as const)(
   "Complete or cancel connector authorization from chat (%s)",
@@ -511,7 +383,7 @@ test.each([null, "Close"] as const)(
     });
     const authWindow = createAuthWindow();
     const browserOpen = context.mocks.browser.open(authWindow);
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    await setupPage({ context, path: `/` });
 
     await loadComposer();
     await openConnectors(user);
@@ -544,16 +416,10 @@ test.each([null, "Close"] as const)(
       { ...account, slug: GOOGLE_ANALYTICS_SLUG },
     ]);
     fixture.completeOAuth(account.id);
-    expect(
-      screen.queryByText("Google Analytics connected and authorized for Scout"),
-    ).toBeNull();
     if (cancelled) {
       return;
     }
     authWindow.close();
-    await expect(
-      screen.findByText("Google Analytics connected and authorized for Scout"),
-    ).resolves.toBeInTheDocument();
     await waitFor(() => {
       expect(catalog).not.toBeInTheDocument();
     });
@@ -591,50 +457,24 @@ test("Respect integration-managed connector availability in chat", async () => {
   ];
   installComposerConnectorFixture({
     customConnectors: [feishu],
-    customAuthorizations: {
-      [SCOUT_AGENT_ID]: [
-        { customConnectorId: FEISHU_CONNECTOR_ID, permissionNames: [] },
-      ],
-    },
     accounts,
   });
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   await loadComposer();
   await openConnectors(user);
-  await expect(screen.findByLabelText("Remove Feishu")).resolves.toBeVisible();
-  expect(
-    queryFastControl("button", "Feishu · Account for this chat"),
-  ).toBeNull();
-});
-
-test("Require a permission choice before adding a permissioned custom connector", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    customConnectors: [
-      httpConnector({
-        id: ACME_CONNECTOR_ID,
-        slug: "acme-search",
-        displayName: "Acme Search",
-        hasAccount: true,
-        permissionBundleRef: "builtin:acme-search@1",
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-
-  await loadComposer();
-  await openConnectors(user);
-  await user.click(screen.getByLabelText("Add Acme Search"));
-  await waitFor(() => {
-    expect(fixture.customAuthorizationUpdates).toHaveLength(0);
-    expect(screen.getByLabelText("Add Acme Search")).toBeVisible();
-  });
+  click(await screen.findByText("Feishu"));
+  const menu = await screen.findByRole("dialog", { name: "Feishu" });
+  await expect(
+    within(menu).findByRole("switch", { name: "Primary access" }),
+  ).resolves.toBeChecked();
+  await expect(
+    within(menu).findByRole("switch", { name: "Secondary access" }),
+  ).resolves.toBeChecked();
 });
 
 test("Search beyond featured connectors from chat", async () => {
@@ -656,7 +496,7 @@ test("Search beyond featured connectors from chat", async () => {
     featuredConnectorSlugs: [GITHUB_SLUG],
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   await loadComposer();
   await openConnectors(user);
@@ -672,54 +512,6 @@ test("Search beyond featured connectors from chat", async () => {
   expect(
     within(dialog).getByText("API Token", { selector: "label" }),
   ).toBeVisible();
-});
-
-test("Add or remove a connected connector for the active agent", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    customConnectors: [
-      mcpConnector({
-        id: DEEPWIKI_CONNECTOR_ID,
-        slug: "deepwiki",
-        displayName: "DeepWiki",
-        hasAccount: true,
-      }),
-    ],
-    customAuthorizations: {
-      [SCOUT_AGENT_ID]: [
-        { customConnectorId: DEEPWIKI_CONNECTOR_ID, permissionNames: [] },
-      ],
-    },
-  });
-
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-  });
-
-  await loadComposer();
-  await openConnectors(user);
-  await user.click(screen.getByLabelText("Add GitHub"));
-  await expect(screen.findByLabelText("Remove GitHub")).resolves.toBeVisible();
-  await user.click(screen.getByLabelText("Remove DeepWiki"));
-  await expect(screen.findByLabelText("Add DeepWiki")).resolves.toBeVisible();
-  expect(fixture.builtinAuthorizationUpdates).toStrictEqual([
-    {
-      agentId: SCOUT_AGENT_ID,
-      connectorSlugs: [GITHUB_SLUG],
-      operation: "add",
-    },
-  ]);
-  expect(fixture.customAuthorizationUpdates).toStrictEqual([
-    {
-      agentId: SCOUT_AGENT_ID,
-      grants: [
-        { customConnectorId: DEEPWIKI_CONNECTOR_ID, permissionNames: [] },
-      ],
-      operation: "remove",
-    },
-  ]);
 });
 
 test("Exclude unconnected integration-managed connectors from chat setup", async () => {
@@ -743,7 +535,7 @@ test("Exclude unconnected integration-managed connectors from chat setup", async
     ],
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   await loadComposer();
   await openConnectors(user);
@@ -769,7 +561,7 @@ test("Enable a credential-free connector directly from chat", async () => {
   });
   const browserOpen = context.mocks.browser.open(null);
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   await loadComposer();
   await openConnectors(user);
@@ -782,15 +574,13 @@ test("Enable a credential-free connector directly from chat", async () => {
       {
         connectorSlug: PUBLIC_STRIPE_SLUG,
         authMethod: "public",
-        agentId: SCOUT_AGENT_ID,
-        authorizeAgent: true,
       },
     ]);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
   await ensureConnectorsOpen(user);
   await expect(
-    screen.findByLabelText("Remove Public Stripe"),
+    findFastControl("button", /^Public Stripe/u),
   ).resolves.toBeVisible();
   expect(browserOpen.calls).toHaveLength(0);
 });

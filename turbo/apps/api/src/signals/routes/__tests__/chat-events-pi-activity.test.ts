@@ -100,7 +100,6 @@ describe("CHAT-02: model-first routing", () => {
     const okouCliCommand = "okou --help";
     const prompt = "use the Okou CLI in the Sandbox";
     const run = await sendChatRunAfterPick(actor, {
-      agentId,
       prompt,
       model,
     });
@@ -308,7 +307,6 @@ describe("CHAT-02: model-first routing", () => {
 
     // Native Runs retain their captured Framework.
     const failedRun = await sendChatRunAfterPick(actor, {
-      agentId,
       threadId: run.threadId,
       prompt: "reject a changed native Framework",
     });
@@ -334,7 +332,6 @@ describe("CHAT-02: model-first routing", () => {
     );
     await flushWaitUntilForTest();
     const cancelledRun = await sendChatRunAfterPick(actor, {
-      agentId,
       threadId: run.threadId,
       model,
       prompt: "cancel before native initialization",
@@ -346,7 +343,6 @@ describe("CHAT-02: model-first routing", () => {
       cancelledExecution.sandboxHeaders,
     );
     const retry = await sendChatRunAfterPick(actor, {
-      agentId,
       threadId: run.threadId,
       prompt: "recover Chat history after uninitialized turns",
     });
@@ -379,7 +375,6 @@ describe("CHAT-02: model-first routing", () => {
     await flushWaitUntilForTest();
 
     const reportedFailureRun = await sendChatRunAfterPick(actor, {
-      agentId,
       threadId: run.threadId,
       prompt: "retry one atomically reported Pi failure",
     });
@@ -431,7 +426,6 @@ describe("CHAT-02: model-first routing", () => {
       combinedCompletion.body,
     );
     const probe = await sendChatRunAfterPick(actor, {
-      agentId,
       threadId: run.threadId,
       prompt: "verify the current native generation after rejected writes",
     });

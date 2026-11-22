@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">Su cosa vuoi lavorare?</string>
+    <string name="conversation_welcome_detail">Di’ a Okou cosa vuoi fare.</string>
+    <string name="conversation_jump_latest">Vai all’ultimo messaggio</string>
+    <string name="conversation_new_reply">Nuova risposta</string>
+    <string name="conversation_view_progress">Mostra avanzamento</string>
+    <string name="conversation_processing">Elaborazione…</string>
+    <string name="conversation_history_offline">La cronologia verrà caricata quando tornerai online.</string>
+    <string name="conversation_offline_send">Connettiti per inviare. La tua bozza rimane qui.</string>
+    <string name="conversation_work">Fasi del lavoro</string>
+    <string name="conversation_reply_actions">Azioni della risposta</string>
+    <string name="conversation_copy_reply">Copia risposta</string>
+    <string name="conversation_reply_copied">Risposta copiata</string>
+    <string name="conversation_revoke">Ritira</string>
+    <string name="conversation_stop">Interrompi</string>
+</resources>

@@ -187,11 +187,9 @@ fn format_guest_result(result: ExecOperationResult) -> String {
 }
 
 fn captured_output(output: ExecOwnedCapturedOutput) -> (String, bool) {
-    match output {
-        ExecOwnedCapturedOutput::Discarded => ("[discarded]".to_string(), false),
-        ExecOwnedCapturedOutput::Captured { bytes, truncated } => {
-            (String::from_utf8_lossy(&bytes).into_owned(), truncated)
-        }
+    match output.into_captured() {
+        None => ("[discarded]".to_string(), false),
+        Some((bytes, truncated)) => (String::from_utf8_lossy(&bytes).into_owned(), truncated),
     }
 }
 

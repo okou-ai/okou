@@ -9,7 +9,6 @@ import {
   connectorPermissionsContract,
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -18,7 +17,6 @@ import { mockNow } from "../../../lib/time";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorPermissionsRoutes } from "../connector-permissions";
-import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -54,20 +52,10 @@ function accounts() {
     connectorAccountsContract,
   );
 }
-function legacy() {
-  return setupApp({ context, routes: userPermissionGrantsRoutes })(
-    userPermissionGrantsContract,
-  );
-}
 function session(actor: ReturnType<typeof bdd.user>) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 }
-async function member(actor = bdd.user(), enabled = true) {
-  if (enabled) {
-    await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
-  }
+function member(actor = bdd.user()) {
   session(actor);
   return actor;
 }
@@ -85,24 +73,57 @@ async function addOpenAi(actor: ReturnType<typeof bdd.user>) {
 }
 
 describe("Member connector permissions", () => {
-  it("starts from connector defaults, shares rules across Chats/Agents and preserves deny, expiry and reset", async () => {
-    const actor = await member();
-    bdd.acceptAgentStorageWrites();
-    const first = await bdd.createAgent(actor);
-    const second = await bdd.createAgent(actor);
-    const firstChat = await chat.createThread(actor, {
-      agentId: first.agentId,
-    });
-    const secondChat = await chat.createThread(actor, {
-      agentId: second.agentId,
-    });
+  it("applies the same one-hour deadline to both permissions in a member patch", async () => {
+    const actor = member();
     mockSlackConnectorOAuth();
-    const start = await connectors.startOauth(
-      actor,
-      "slack",
-      "oauth",
-      first.agentId,
+    const start = await connectors.startOauth(actor, "slack", "oauth");
+    const state = new URL(start.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected OAuth state");
+    }
+    await connectors.completeOauthCallback("slack", {
+      state,
+      code: randomUUID(),
+    });
+    session(actor);
+
+    const startedAt = Date.parse("2026-11-05T12:00:00Z");
+    const deadline = startedAt + 60 * 60 * 1000;
+    const permissions = ["chat:write", "conversations:read"];
+    mockNow(startedAt);
+    const result = await save({
+      target: slack,
+      mode: "patch",
+      grants: permissions.map((permission) => {
+        return { permission, action: "allow", expiresIn: "1h" };
+      }),
+    });
+    const expected = permissions.map((permission) => {
+      return {
+        permission,
+        action: "allow",
+        expiresAt: new Date(deadline).toISOString(),
+      };
+    });
+    expect(result.grants).toHaveLength(2);
+    expect(result.grants).toStrictEqual(expect.arrayContaining(expected));
+    mockNow(deadline - 1);
+    expect((await read(slack)).grants).toStrictEqual(
+      expect.arrayContaining(expected),
     );
+    mockNow(deadline);
+    expect((await read(slack)).grants).toStrictEqual([]);
+  });
+
+  it("starts from connector defaults, shares rules across Chats/Agents and preserves deny, expiry and reset", async () => {
+    const actor = member();
+    bdd.acceptAgentStorageWrites();
+    await bdd.createAgent(actor);
+    await bdd.createAgent(actor);
+    const firstChat = await chat.createThread(actor, {});
+    const secondChat = await chat.createThread(actor, {});
+    mockSlackConnectorOAuth();
+    const start = await connectors.startOauth(actor, "slack", "oauth");
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected OAuth state");
@@ -117,23 +138,6 @@ describe("Member connector permissions", () => {
     }
     session(actor);
     mockNow(new Date("2026-11-02T12:00:00Z"));
-    for (const [agentId, action] of [
-      [first.agentId, "allow"],
-      [second.agentId, "deny"],
-    ] as const) {
-      await accept(
-        legacy().apply({
-          headers,
-          body: {
-            agentId,
-            connectorSlug: "slack",
-            mode: "replace",
-            grants: [{ permission: "conversations:read", action }],
-          },
-        }),
-        [200],
-      );
-    }
     await expect(read(slack)).resolves.toStrictEqual({
       target: slack,
       grants: [],
@@ -196,20 +200,6 @@ describe("Member connector permissions", () => {
       ).body.available,
     ).toBeTruthy();
     await expect(read(slack)).resolves.toStrictEqual(initial);
-    await accept(
-      legacy().apply({
-        headers,
-        body: {
-          agentId: first.agentId,
-          connectorSlug: "slack",
-          mode: "replace",
-          grants: [
-            { permission: "chat:write", action: "allow", expiresIn: "24h" },
-          ],
-        },
-      }),
-      [200],
-    );
     await expect(read(slack)).resolves.toStrictEqual(initial);
     mockNow(new Date("2026-11-02T12:15:00Z"));
     const edited = await save({
@@ -249,10 +239,10 @@ describe("Member connector permissions", () => {
   });
 
   it("shares custom rules across accounts and permits editing with all accounts disabled", async () => {
-    const actor = await member();
+    const actor = member();
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor);
-    const thread = await chat.createThread(actor, { agentId: agent.agentId });
+    await bdd.createAgent(actor);
+    const thread = await chat.createThread(actor, {});
     const definition = await connectors.createCustomConnector(
       actor,
       manualHttpCustomConnectorCreateBody({
@@ -277,12 +267,6 @@ describe("Member connector permissions", () => {
       definition.id,
       [{ key: "secret", kind: "secret", value: "custom-B" }],
       { intent: "add" },
-    );
-    await connectors.requestUpdateAgentCustomConnectorGrants(
-      actor,
-      agent.agentId,
-      [{ customConnectorId: definition.id, permissionNames: ["chat:write"] }],
-      [200],
     );
     session(actor);
     await expect(read(target)).resolves.toStrictEqual({ target, grants: [] });
@@ -380,14 +364,14 @@ describe("Member connector permissions", () => {
   });
 
   it("isolates member and organization grants for the same connector without requiring a Chat", async () => {
-    const actor = await member();
+    const actor = member();
     await addOpenAi(actor);
     const own = await save({
       target: openai,
       mode: "replace",
       grants: [{ permission: UNKNOWN_PERMISSION_GRANT, action: "deny" }],
     });
-    const otherMember = await member(bdd.user({ orgId: actor.orgId }));
+    const otherMember = member(bdd.user({ orgId: actor.orgId }));
     await addOpenAi(otherMember);
     const otherRules = await save({
       target: openai,
@@ -400,7 +384,7 @@ describe("Member connector permissions", () => {
         },
       ],
     });
-    const otherOrg = await member(bdd.user({ userId: actor.userId }));
+    const otherOrg = member(bdd.user({ userId: actor.userId }));
     await addOpenAi(otherOrg);
     const orgRules = await save({
       target: openai,
@@ -419,7 +403,7 @@ describe("Member connector permissions", () => {
     await expect(read(openai)).resolves.toStrictEqual(otherRules);
     session(otherOrg);
     await expect(read(openai)).resolves.toStrictEqual(orgRules);
-    await member();
+    member();
     await accept(client().get({ headers, query: openai }), [404]);
     await accept(
       client().apply({
@@ -430,13 +414,10 @@ describe("Member connector permissions", () => {
     );
   });
 
-  it("gates configuration and rejects a real Run credential before it can change shared rules", async () => {
-    const actor = await member(bdd.user(), false);
+  it("rejects a real Run credential before it can change shared rules", async () => {
+    const actor = member();
     await addOpenAi(actor);
-    await accept(client().get({ headers, query: openai }), [404]);
-    await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     bdd.acceptAgentStorageWrites();
     const token = await tokenFor(actor);
     await accept(

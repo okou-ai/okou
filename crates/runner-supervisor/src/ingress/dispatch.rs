@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::decode_execution_publication;
@@ -13,21 +13,65 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 
+mod preferred_home;
+pub(crate) use preferred_home::PreferredHomeProbe;
+
 pub(super) const MAX_BODY: usize =
     api_contracts::generated::constants::runners::DISPATCH_MAX_BODY_BYTES as usize;
 const MAX_VALIDITY_MS: u64 =
     api_contracts::generated::constants::runners::DISPATCH_MAX_VALIDITY_MS as u64;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Disposition {
     /// This HTTP attempt acquired no custody. Says nothing about an earlier attempt.
     Busy,
     Pending,
-    Accepted,
+    Accepted(Instant),
     Rejected,
     Unknown,
     Conflict,
+}
+
+impl Disposition {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Busy => "busy",
+            Self::Pending => "pending",
+            Self::Accepted(_) => "accepted",
+            Self::Rejected => "rejected",
+            Self::Unknown => "unknown",
+            Self::Conflict => "conflict",
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct DispatchTiming {
+    #[serde(skip)]
+    started_at: Instant,
+    runner_version: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) body_read_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    envelope_parse_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_decode_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acceptance_ms: Option<f64>,
+}
+
+impl DispatchTiming {
+    pub(super) fn start(runner_version: &'static str) -> Self {
+        Self {
+            started_at: Instant::now(),
+            runner_version,
+            body_read_ms: None,
+            envelope_parse_ms: None,
+            context_decode_ms: None,
+            acceptance_ms: None,
+        }
+    }
 }
 
 // Dispatch senders and receivers roll independently.
@@ -39,6 +83,15 @@ struct Envelope {
     profile: String,
     not_after: u64,
     execution_context: Box<serde_json::value::RawValue>,
+    preferred_home_checkout: Option<PreferredHomeCheckout>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreferredHomeCheckout {
+    predecessor_run_id: RunId,
+    // Bounds deferral before custody. A late retry still selects this source.
+    wait_until: u64,
 }
 
 struct Record {
@@ -52,11 +105,15 @@ pub(crate) struct DispatchIntake {
     sender: mpsc::Sender<DispatchWork>,
     slots: Arc<Semaphore>,
     latest_time_ms: AtomicU64,
+    preferred_home_probe: Option<PreferredHomeProbe>,
+    #[cfg(test)]
+    pub(crate) work_queued: Option<Arc<tokio::sync::Notify>>,
 }
 
 pub(crate) struct DispatchWork {
     pub context: Option<ExecutionContext>,
     pub profile: String,
+    pub preferred_home_source: Option<RunId>,
     pub deadline: tokio::time::Instant,
     pub permit: Option<OwnedSemaphorePermit>,
     verdict: watch::Sender<Disposition>,
@@ -81,6 +138,13 @@ impl Drop for DispatchWork {
     }
 }
 
+pub(crate) async fn reject_queued(mut receiver: mpsc::Receiver<DispatchWork>) {
+    receiver.close();
+    while let Some(work) = receiver.recv().await {
+        work.settle(Disposition::Rejected);
+    }
+}
+
 pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -90,7 +154,10 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 impl DispatchIntake {
-    pub fn new(slots: Arc<Semaphore>) -> (Self, mpsc::Receiver<DispatchWork>) {
+    pub fn new(
+        slots: Arc<Semaphore>,
+        preferred_home_probe: Option<PreferredHomeProbe>,
+    ) -> (Self, mpsc::Receiver<DispatchWork>) {
         // Constructed before intake is enabled, with the fresh shared transaction slots.
         let (sender, receiver) = mpsc::channel(slots.available_permits());
         (
@@ -99,6 +166,9 @@ impl DispatchIntake {
                 sender,
                 slots,
                 latest_time_ms: AtomicU64::new(0),
+                preferred_home_probe,
+                #[cfg(test)]
+                work_queued: None,
             },
             receiver,
         )
@@ -133,6 +203,7 @@ impl DispatchIntake {
         bytes: &[u8],
         permit: OwnedSemaphorePermit,
         received_at_ms: u64,
+        timing: &mut DispatchTiming,
     ) -> Disposition {
         if received_at_ms == u64::MAX {
             return Disposition::Unknown;
@@ -159,7 +230,10 @@ impl DispatchIntake {
                 Err(verdict) => verdict,
             };
         }
-        let envelope: Envelope = match serde_json::from_slice(bytes) {
+        let parse_started = Instant::now();
+        let envelope = serde_json::from_slice::<Envelope>(bytes);
+        timing.envelope_parse_ms = Some(parse_started.elapsed().as_secs_f64() * 1000.0);
+        let envelope = match envelope {
             Ok(envelope) => envelope,
             Err(_) => return Disposition::Unknown,
         };
@@ -173,16 +247,43 @@ impl DispatchIntake {
         }
         // Freeze the remaining validity on a monotonic clock before decoding or
         // waiting for local resources. Wall-clock adjustment must not extend it.
-        let deadline = received_at + std::time::Duration::from_millis(envelope.not_after - now);
-        let context =
-            match decode_execution_publication(envelope.execution_context.get().as_bytes()) {
-                Ok(context) if context.run_id == run_id && !context.sandbox_token.is_empty() => {
-                    context
-                }
-                _ => return Disposition::Unknown,
-            };
-        let mut context = Some(context);
+        let deadline = received_at + Duration::from_millis(envelope.not_after - now);
+        let decode_started = Instant::now();
+        let context = decode_execution_publication(envelope.execution_context.get().as_bytes());
+        timing.context_decode_ms = Some(decode_started.elapsed().as_secs_f64() * 1000.0);
+        let context = match context {
+            Ok(context) if context.run_id == run_id && !context.sandbox_token.is_empty() => context,
+            _ => return Disposition::Unknown,
+        };
         let mut permit = Some(permit);
+        let preferred_home = envelope.preferred_home_checkout.filter(|hint| {
+            hint.predecessor_run_id != run_id
+                && hint.wait_until <= envelope.not_after
+                && context.reuse_key().is_some_and(|key| !key.is_empty())
+        });
+        let probe = self.preferred_home_probe.as_ref().and_then(|probe| {
+            let hint = preferred_home.as_ref()?;
+            let remaining = hint.wait_until.checked_sub(now)?;
+            if remaining > preferred_home::MAX_WAIT_MS {
+                return None;
+            }
+            probe.start(
+                &context,
+                &envelope.profile,
+                hint.predecessor_run_id,
+                received_at + Duration::from_millis(remaining),
+            )
+        });
+        let mut contended = false;
+        if let Some(probe) = probe {
+            // The dedicated hint probe cannot reserve ordinary admission capacity.
+            drop(permit.take());
+            contended = probe.await;
+            if !contended {
+                permit = self.try_reserve();
+            }
+        }
+        let mut context = Some(context);
         let mut to_submit = None;
         let receiver = {
             let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
@@ -200,12 +301,21 @@ impl DispatchIntake {
                 }
                 record.verdict.subscribe()
             } else {
+                let Some(admission_permit) = permit.take() else {
+                    // No custody was published. The caller can retry these bytes.
+                    drop(records);
+                    if contended {
+                        tracing::info!(%run_id, "preferred dispatch deferred on Home checkout contention");
+                    }
+                    return Disposition::Busy;
+                };
                 let (verdict, receiver) = watch::channel(Disposition::Pending);
                 to_submit = Some(DispatchWork {
                     context: context.take(),
                     profile: envelope.profile,
+                    preferred_home_source: preferred_home.map(|hint| hint.predecessor_run_id),
                     deadline,
-                    permit: permit.take(),
+                    permit: Some(admission_permit),
                     verdict: verdict.clone(),
                 });
                 records.insert(
@@ -223,12 +333,26 @@ impl DispatchIntake {
         // its unused context/slot before observing the original admission.
         drop((context, permit));
         // Queueing and failed-send payload destruction do not hold the custody lock.
-        if let Some(work) = to_submit
-            && let Err(error) = self.sender.try_send(work)
-        {
-            error.into_inner().settle(Disposition::Rejected);
+        let Some(work) = to_submit else {
+            return observe(receiver).await;
+        };
+        match self.sender.try_send(work) {
+            Ok(()) =>
+            {
+                #[cfg(test)]
+                if let Some(queued) = &self.work_queued {
+                    queued.notify_one();
+                }
+            }
+            Err(error) => error.into_inner().settle(Disposition::Rejected),
         }
-        observe(receiver).await
+        let verdict = observe(receiver).await;
+        // Only the attempt that enqueued work can report its custody boundary.
+        if let Disposition::Accepted(accepted_at) = verdict {
+            timing.acceptance_ms =
+                Some(accepted_at.duration_since(timing.started_at).as_secs_f64() * 1000.0);
+        }
+        verdict
     }
 }
 

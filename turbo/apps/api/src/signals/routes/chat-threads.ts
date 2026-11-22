@@ -19,10 +19,15 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { uuid } from "zod";
 
-import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
+import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { request$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
@@ -56,7 +61,7 @@ import { chatThreadCreateRoutes } from "./chat-threads-create";
 import { chatThreadDeleteRoutes } from "./chat-threads-delete";
 import { chatThreadDraftGetRoutes } from "./chat-threads-draft-get";
 import { chatThreadGetRoutes } from "./chat-threads-get";
-import { chatThreadMarkAgentReadRoutes } from "./chat-threads-mark-agent-read";
+import { chatThreadMarkAllReadRoutes } from "./chat-threads-mark-all-read";
 import { chatThreadMarkReadRoutes } from "./chat-threads-mark-read";
 import { chatThreadMarkUnreadRoutes } from "./chat-threads-mark-unread";
 import { chatThreadModelSelectionRoutes } from "./chat-threads-model-selection";
@@ -80,7 +85,7 @@ function isValidChatThreadId(id: string): boolean {
 }
 
 const getChatThreadInner$ = computed(async (get) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadByIdContract.get));
 
   if (!isValidChatThreadId(params.id)) {
@@ -88,7 +93,11 @@ const getChatThreadInner$ = computed(async (get) => {
   }
 
   const thread = await get(
-    chatThreadDetail({ threadId: params.id, userId: auth.userId }),
+    chatThreadDetail({
+      threadId: params.id,
+      userId: auth.userId,
+      orgId: auth.orgId,
+    }),
   );
   if (!thread) {
     return chatThreadNotFound();
@@ -176,10 +185,12 @@ const listChatThreadLifecycleEventsInner$ = computed(async (get) => {
 
 const listChatIndicatorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
+  const query = get(queryOf(chatThreadsContract.indicators));
   const indicators = await get(
     chatIndicators({
       userId: auth.userId,
       orgId: auth.orgId,
+      includeActiveUnread: query.includeActiveUnread === "true",
     }),
   );
 
@@ -218,13 +229,13 @@ const catchUpChatEventsInner$ = command(
 
 const getChatEventSnapshotInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(authContext$);
+    const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(chatThreadEventsContract.snapshot));
     const snapshot = await set(
       chatThreadEventSnapshot({
         threadId: params.threadId,
         userId: auth.userId,
-        ...(auth.tokenType === "oauth" ? { orgId: auth.orgId } : {}),
+        orgId: auth.orgId,
       }),
       signal,
     );
@@ -257,14 +268,14 @@ const getChatEventSnapshotInner$ = command(
 
 const listChatEventRowsInner$ = command(
   async ({ get }, signal: AbortSignal) => {
-    const auth = get(authContext$);
+    const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(chatThreadEventsContract.rows));
     const query = get(queryOf(chatThreadEventsContract.rows));
     const page = await get(
       chatThreadEventRows({
         threadId: params.threadId,
         userId: auth.userId,
-        ...(auth.tokenType === "oauth" ? { orgId: auth.orgId } : {}),
+        orgId: auth.orgId,
         limit: query.limit,
         ...(query.sinceEventId === undefined
           ? { sinceSeqId: 0 as const }
@@ -302,10 +313,11 @@ const listChatEventRowsInner$ = command(
 );
 
 const listChatThreadDraftsInner$ = computed(async (get) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
 
   const draftThreadIds = await get(
     chatThreadDraftIds({
+      orgId: auth.orgId,
       userId: auth.userId,
     }),
   );
@@ -318,24 +330,30 @@ const listChatThreadDraftsInner$ = computed(async (get) => {
 
 const listChatThreadArtifactsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(authContext$);
+    const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(chatThreadArtifactsContract.list));
+    // Native iOS previews use the file inventory independently of Drive.
+    const includeDriveStatus =
+      get(request$).header(CLIENT_TYPE_HEADER) !== CLIENT_TYPE_IOS;
     const [runs, lookup] = await Promise.all([
       get(
         chatThreadArtifacts({
+          orgId: auth.orgId,
           threadId: params.threadId,
           userId: auth.userId,
         }),
       ),
-      set(
-        googleDriveArtifactStatusLookup$,
-        {
-          threadId: params.threadId,
-          orgId: auth.orgId,
-          userId: auth.userId,
-        },
-        signal,
-      ),
+      includeDriveStatus
+        ? set(
+            googleDriveArtifactStatusLookup$,
+            {
+              threadId: params.threadId,
+              orgId: auth.orgId,
+              userId: auth.userId,
+            },
+            signal,
+          )
+        : undefined,
     ]);
     signal.throwIfAborted();
     if (!runs) {
@@ -344,7 +362,11 @@ const listChatThreadArtifactsInner$ = command(
 
     return {
       status: 200 as const,
-      body: { runs: applyGoogleDriveArtifactSyncStatuses(runs, lookup) },
+      body: {
+        runs: lookup
+          ? applyGoogleDriveArtifactSyncStatuses(runs, lookup)
+          : runs,
+      },
     };
   },
 );
@@ -357,13 +379,18 @@ const searchChatInner$ = computed(async (get) => {
       userId: auth.userId,
       orgId: auth.orgId,
       keyword: query.keyword,
-      agentId: query.agentId,
     }),
   );
 
   return {
     status: 200 as const,
-    body: { results: [...result.results] },
+    body: {
+      results: result.results.map(
+        ({ chatThreadId, matchedMessage, matchedRanges }) => {
+          return { chatThreadId, matchedMessage, matchedRanges };
+        },
+      ),
+    },
   };
 });
 
@@ -411,15 +438,21 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadsContract.drafts,
-    handler: authRoute({}, listChatThreadDraftsInner$),
+    handler: authRoute(
+      { requireOrganization: true },
+      listChatThreadDraftsInner$,
+    ),
   },
   {
     route: chatThreadByIdContract.get,
-    handler: authRoute({}, getChatThreadInner$),
+    handler: authRoute({ requireOrganization: true }, getChatThreadInner$),
   },
   {
     route: chatThreadArtifactsContract.list,
-    handler: authRoute({}, listChatThreadArtifactsInner$),
+    handler: authRoute(
+      { requireOrganization: true },
+      listChatThreadArtifactsInner$,
+    ),
   },
   {
     route: chatThreadEventsContract.catchUp,
@@ -436,7 +469,11 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadEventsContract.snapshot,
     handler: authRoute(
-      { requiredCapability: "chat-event:read", oauthScope: "okou:chat:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-event:read",
+        oauthScope: "okou:chat:read",
+      },
       getChatEventSnapshotInner$,
     ),
   },
@@ -444,7 +481,11 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
     route: chatThreadEventsContract.rows,
     responseTransforms: [iosEmailChatRowsTransform],
     handler: authRoute(
-      { requiredCapability: "chat-event:read", oauthScope: "okou:chat:read" },
+      {
+        requireOrganization: true,
+        requiredCapability: "chat-event:read",
+        oauthScope: "okou:chat:read",
+      },
       listChatEventRowsInner$,
     ),
   },
@@ -472,7 +513,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatThreadDeleteRoutes,
   ...chatThreadDraftGetRoutes,
   ...chatThreadGetRoutes,
-  ...chatThreadMarkAgentReadRoutes,
+  ...chatThreadMarkAllReadRoutes,
   ...chatThreadMarkReadRoutes,
   ...chatThreadMarkUnreadRoutes,
   ...chatThreadModelSelectionRoutes,

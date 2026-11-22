@@ -1,3 +1,4 @@
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
@@ -359,11 +360,8 @@ async function setupGoogleFormsAutomation() {
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  const agent = await workflows.createAgent(actor, {
-    displayName: "Google Forms automation agent",
-  });
+
   const workflowId = await workflows.createWorkflow(actor, {
-    agentId: agent.agentId,
     name: "google-forms-response-workflow",
   });
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
@@ -986,7 +984,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       respondentEmail: "respondent@example.test",
       previouslyDelivered: false,
     });
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("# Identity");
     const retry = await postWebhook(push);
     expect(retry).toStrictEqual({
       status: 200,
@@ -1205,11 +1203,8 @@ describe("Google Forms Pub/Sub webhook", () => {
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped workflow actor");
       }
-      const agent = await workflows.createAgent(actor, {
-        displayName: `Google Forms ${suffix} agent`,
-      });
+
       const workflowId = await workflows.createWorkflow(actor, {
-        agentId: agent.agentId,
         name: `google-forms-${suffix}-workflow`,
       });
       mocks.clerk.session(actor.userId, actor.orgId, "org:member");
@@ -1297,9 +1292,7 @@ describe("Google Forms Pub/Sub webhook", () => {
     ).toBeFalsy();
   });
 
-  async function setupGoogleFormsMultiAccountAutomations(
-    chatAccountAccess = false,
-  ) {
+  async function setupGoogleFormsMultiAccountAutomations() {
     await configureEnvironment();
     const formsApi = configureFormsApi([
       "google-forms-access-token",
@@ -1309,22 +1302,16 @@ describe("Google Forms Pub/Sub webhook", () => {
       "google-forms-readded-access-token",
     ]);
     const { actor } = await workflows.setupWorkflowOrg();
-    await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: chatAccountAccess,
-    });
+
     await useNativeHarnessForFormsFixture(actor);
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
-    const agent = await workflows.createAgent(actor, {
-      displayName: "Google Forms multi-account agent",
-    });
+
     const firstWorkflowId = await workflows.createWorkflow(actor, {
-      agentId: agent.agentId,
       name: "google-forms-first-account-workflow",
     });
     const secondWorkflowId = await workflows.createWorkflow(actor, {
-      agentId: agent.agentId,
       name: "google-forms-second-account-workflow",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:member");
@@ -1341,13 +1328,10 @@ describe("Google Forms Pub/Sub webhook", () => {
       subject: "bdd-google-forms-second-user-id",
       email: "bdd-google-forms-second@example.test",
     });
-    const oauth = await connectors.startOauth(
-      actor,
-      "google-forms",
-      "oauth",
-      agent.agentId,
-      { intent: "add", displayName: "Second Google Forms" },
-    );
+    const oauth = await connectors.startOauth(actor, "google-forms", "oauth", {
+      intent: "add",
+      displayName: "Second Google Forms",
+    });
     const state = new URL(oauth.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected Google Forms OAuth state");
@@ -1439,7 +1423,7 @@ describe("Google Forms Pub/Sub webhook", () => {
     }
     return {
       actor,
-      agentId: agent.agentId,
+
       first: { automationId: first.body.id, chatThreadId: firstChatThreadId },
       second: {
         automationId: second.body.id,
@@ -1453,45 +1437,34 @@ describe("Google Forms Pub/Sub webhook", () => {
     };
   }
 
-  it.each([false, true])(
-    "rejects the previous account watch after a switch (Chat access: %s)",
-    async (chatAccountAccess) => {
-      const { first, second, firstWatchId } =
-        await setupGoogleFormsMultiAccountAutomations(chatAccountAccess);
-      const firstPush = await postWebhook(
-        formsPushBody("pubsub-first-account", firstWatchId),
-      );
-      expect(firstPush).toMatchObject({
-        status: 200,
-        body: { watchStates: 1, dispatched: 1 },
-      });
-      await flushWaitUntilForTest();
-      const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
-      const secondEvents = await workflows.readThreadEvents(
-        second.chatThreadId,
-      );
-      expect(
-        firstEvents.filter((event) => {
-          return event.eventType === "input.prompt";
-        }),
-      ).toHaveLength(1);
-      expect(
-        secondEvents.filter((event) => {
-          return event.eventType === "input.prompt";
-        }),
-      ).toHaveLength(0);
-    },
-  );
+  it("rejects the previous account watch after a switch", async () => {
+    const { first, second, firstWatchId } =
+      await setupGoogleFormsMultiAccountAutomations();
+    const firstPush = await postWebhook(
+      formsPushBody("pubsub-first-account", firstWatchId),
+    );
+    expect(firstPush).toMatchObject({
+      status: 200,
+      body: { watchStates: 1, dispatched: 1 },
+    });
+    await flushWaitUntilForTest();
+    const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
+    const secondEvents = await workflows.readThreadEvents(second.chatThreadId);
+    expect(
+      firstEvents.filter((event) => {
+        return event.eventType === "input.prompt";
+      }),
+    ).toHaveLength(1);
+    expect(
+      secondEvents.filter((event) => {
+        return event.eventType === "input.prompt";
+      }),
+    ).toHaveLength(0);
+  });
 
   it("rebinds Forms to an allowed surviving account after deleting the selected account", async () => {
-    const {
-      actor,
-      agentId,
-      firstConnector,
-      secondConnector,
-      second,
-      formsApi,
-    } = await setupGoogleFormsMultiAccountAutomations(true);
+    const { actor, firstConnector, secondConnector, second, formsApi } =
+      await setupGoogleFormsMultiAccountAutomations();
     const target = { kind: "builtin", connectorSlug: "google-forms" } as const;
     const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
       chatConnectorAccessContract,
@@ -1514,13 +1487,10 @@ describe("Google Forms Pub/Sub webhook", () => {
       subject: randomUUID(),
       email,
     });
-    const oauth = await connectors.startOauth(
-      actor,
-      "google-forms",
-      "oauth",
-      agentId,
-      { intent: "add", displayName: "Third Google Forms" },
-    );
+    const oauth = await connectors.startOauth(actor, "google-forms", "oauth", {
+      intent: "add",
+      displayName: "Third Google Forms",
+    });
     const state = new URL(oauth.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected third Google Forms OAuth state");
@@ -1597,7 +1567,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       firstConnector,
       secondConnector,
       firstWatchId,
-    } = await setupGoogleFormsMultiAccountAutomations(true);
+    } = await setupGoogleFormsMultiAccountAutomations();
     const target = { kind: "builtin", connectorSlug: "google-forms" } as const;
     const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
       chatConnectorAccessContract,
@@ -1817,24 +1787,27 @@ describe("Google Forms Pub/Sub webhook", () => {
     await flushWaitUntilForTest();
   });
 
-  it("rebinds watches after clearing a selection and changing the default account", async () => {
+  it("rebinds watches after switching the Chat account and changing the default account", async () => {
     const {
+      actor,
       first,
       second,
       firstConnector,
-      firstWatchId,
       secondConnector,
       secondWatchId,
       formsApi,
     } = await setupGoogleFormsMultiAccountAutomations();
 
-    await accept(
-      chatThreadConnectorSelectionsClient().clear({
-        headers: authHeaders(),
-        params: { id: second.chatThreadId },
-        body: { kind: "builtin", connectorSlug: "google-forms" },
-      }),
-      [204],
+    const accountAccess = createChatConnectorAccessApi(context);
+    const selection = {
+      target: { kind: "builtin", connectorSlug: "google-forms" },
+      connectionId: secondConnector.id,
+    } as const;
+    await accountAccess.setThreadOverride(
+      actor,
+      second.chatThreadId,
+      selection,
+      false,
     );
     const cleared = await accept(
       automationsClient().get({
@@ -1862,7 +1835,10 @@ describe("Google Forms Pub/Sub webhook", () => {
       }),
       [200],
     );
-    for (const automation of [first, second]) {
+    for (const [automation, account] of [
+      [first, secondConnector],
+      [second, firstConnector],
+    ] as const) {
       const defaulted = await accept(
         automationsClient().get({
           headers: authHeaders(),
@@ -1876,17 +1852,14 @@ describe("Google Forms Pub/Sub webhook", () => {
       ) {
         throw new Error("Expected a defaulted Google Forms automation");
       }
-      expect(defaulted.body.eventConfig.connectorId).toBe(secondConnector.id);
+      expect(defaulted.body.eventConfig.connectorId).toBe(account.id);
     }
     expect(formsApi.watchIds).toHaveLength(3);
-    expect(formsApi.stoppedWatchIds).toStrictEqual([
-      secondWatchId,
-      firstWatchId,
-    ]);
+    expect(formsApi.stoppedWatchIds).toStrictEqual([secondWatchId]);
   });
 
   it("preserves watches when reconnecting the same Google Forms account", async () => {
-    const { actor, agentId, secondConnector, formsApi } =
+    const { actor, secondConnector, formsApi } =
       await setupGoogleFormsMultiAccountAutomations();
 
     mockGoogleFormsConnectorOAuth({
@@ -1899,7 +1872,6 @@ describe("Google Forms Pub/Sub webhook", () => {
       actor,
       "google-forms",
       "oauth",
-      agentId,
       { intent: "reconnect", connectionId: secondConnector.id },
     );
     const reconnectState = new URL(
@@ -1936,7 +1908,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     it("repairs watches after Google Forms account deletion, replacement, and re-add", async () => {
       const {
         actor,
-        agentId,
         first,
         second,
         firstConnector,
@@ -1990,7 +1961,6 @@ describe("Google Forms Pub/Sub webhook", () => {
         actor,
         "google-forms",
         "oauth",
-        agentId,
         { intent: "add" },
       );
       const replaceState = new URL(
@@ -2030,7 +2000,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       );
       expect(deletedFirst.body).toStrictEqual({
         deletedConnectionId: firstConnector.id,
-        resolvedSelectionCount: 0,
+        resolvedSelectionCount: 1,
         promotedDefaultConnectionId: replacementAccount.id,
       });
       expect(formsApi.watchIds).toHaveLength(3);
@@ -2062,7 +2032,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       );
       expect(deletedLast.body).toStrictEqual({
         deletedConnectionId: replacementAccount.id,
-        resolvedSelectionCount: 0,
+        resolvedSelectionCount: 1,
         promotedDefaultConnectionId: null,
       });
       expect(formsApi.stoppedWatchIds).toStrictEqual([
@@ -2088,7 +2058,6 @@ describe("Google Forms Pub/Sub webhook", () => {
         actor,
         "google-forms",
         "oauth",
-        agentId,
         { intent: "add", displayName: "Re-added Google Forms" },
       );
       const addState = new URL(addOauth.authorizationUrl).searchParams.get(

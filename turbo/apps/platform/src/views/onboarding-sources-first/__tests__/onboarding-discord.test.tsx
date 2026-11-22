@@ -29,8 +29,7 @@ function mockDiscord(overrides: Partial<DiscordOrgStatus> = {}) {
     guildId: null,
     guildName: null,
     discordUserId: null,
-    defaultAgentId: null,
-    defaultAgentName: null,
+
     contextMode: "mentions_only",
     onboarding: "oauth",
     dmSelectionConnectionId: null,

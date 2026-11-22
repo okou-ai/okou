@@ -6,11 +6,6 @@ import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
-export const MESSAGE_EXPERIENCE_AGENT_ID =
-  "c0000000-0000-4000-a000-000000000051";
-export const ADA_AGENT_ID = "c0000000-0000-4000-a000-000000000052";
-export const SOURCE_AGENT_ID = "c0000000-0000-4000-a000-000000000053";
-
 type MockChatLifecycleOptions = NonNullable<
   Parameters<typeof mockChatLifecycle>[1]
 >;
@@ -21,18 +16,13 @@ function normalizedText(element: Element): string {
 
 export function findFastControl(
   role: "button" | "link" | "radio" | "tab",
-  name: string,
+  name: string | RegExp,
   container: ParentNode = document.body,
 ): Promise<HTMLElement> {
   return waitFor(() => {
-    const control = queryAllByRoleFast(role, container).find((candidate) => {
-      return (
-        candidate.getAttribute("aria-label") === name ||
-        normalizedText(candidate) === name
-      );
-    });
+    const control = queryFastControl(role, name, container);
     if (!control) {
-      throw new Error(`${role} ${name} not found`);
+      throw new Error(`${role} ${String(name)} not found`);
     }
     return control;
   });
@@ -40,15 +30,16 @@ export function findFastControl(
 
 export function queryFastControl(
   role: "button" | "link" | "radio" | "tab",
-  name: string,
+  name: string | RegExp,
   container: ParentNode = document.body,
 ): HTMLElement | null {
   return (
     queryAllByRoleFast(role, container).find((candidate) => {
-      return (
-        candidate.getAttribute("aria-label") === name ||
-        normalizedText(candidate) === name
-      );
+      const label = candidate.getAttribute("aria-label");
+      const text = normalizedText(candidate);
+      return typeof name === "string"
+        ? label === name || text === name
+        : name.test(label ?? text);
     }) ?? null
   );
 }
@@ -69,22 +60,6 @@ export function createMessageExperienceHelpers(context: TestContext) {
   function installMessageExperienceChat(
     options: MockChatLifecycleOptions = {},
   ): ReturnType<typeof mockChatLifecycle> {
-    context.mocks.data.agents([
-      {
-        agentId: MESSAGE_EXPERIENCE_AGENT_ID,
-        displayName: "Message Agent",
-      },
-      {
-        agentId: ADA_AGENT_ID,
-        displayName: "Ada",
-        avatarUrl: "https://cdn.vm7.io/avatars/ada.png",
-      },
-      {
-        agentId: SOURCE_AGENT_ID,
-        displayName: "Source Agent",
-        avatarUrl: "https://cdn.vm7.io/avatars/source-agent.png",
-      },
-    ]);
     context.mocks.api(browserContract.get, ({ respond }) => {
       return respond(404, {
         error: {

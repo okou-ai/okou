@@ -100,9 +100,8 @@ test("fails a Run with no serving process and releases its concurrency slot", as
 test("persists preparation failure and releases admission before another Run", async () => {
   const f = await launchFixture();
   await f.api.registerDirectRunner(f.group);
-  await createBddApi(context).updateAgentInstructions(
+  await createBddApi(context).updatePersonalInstructions(
     f.actor,
-    f.agentId,
     `# Direct preparation ${randomUUID()}`,
   );
   context.mocks.s3.getSignedUrl.mockRejectedValue(
@@ -113,7 +112,6 @@ test("persists preparation failure and releases admission before another Run", a
   const sent = await chat.requestSendEvent(
     f.actor,
     {
-      agentId: f.agentId,
       prompt: "Fail execution preparation",
       clientEventId,
     },
@@ -221,7 +219,6 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
   const sent = await chat.requestSendEvent(
     f.actor,
     {
-      agentId: f.agentId,
       clientEventId,
       prompt: "Interrupt this invocation after publication",
     },
@@ -596,7 +593,6 @@ test("launches the following queued input after a definite refusal releases its 
         await chat.requestSendEvent(
           f.actor,
           {
-            agentId: f.agentId,
             threadId: reuseKey.slice("thread:".length),
             clientEventId,
             prompt: "Continue after refused delivery",

@@ -45,7 +45,10 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/we
 import { createDeferredPromise } from "../../signals/utils";
 import { flushWaitUntilForTest } from "../../signals/context/wait-until";
 import { healthRoutes } from "../../signals/routes/health";
-import { createBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-fixture";
+import {
+  createBrowserFixtures,
+  PROVIDER_URL,
+} from "../../signals/routes/__tests__/helpers/browser-fixture";
 import { createChatFilesBddApi } from "../../signals/routes/__tests__/helpers/api-bdd-chat-files";
 import { controlBrowserDeadline } from "../../signals/routes/__tests__/helpers/browser-deadline";
 import { mockOptionalEnv } from "../env";
@@ -162,7 +165,6 @@ test.each([
       }
       const threads = createChatFilesBddApi(context);
       const sibling = await threads.createThread(f.owned.actor, {
-        agentId: f.owned.agentId,
         model: f.owned.model,
       });
       const privateDetail = "private-provider-window-detail";
@@ -227,7 +229,7 @@ test.each([
               }
             : {
                 errorKind: "provider",
-                providerStatus: 503,
+                mappedHttpStatus: 503,
                 errorCode: "BROWSER_USE_TIMEOUT",
                 nativePhase: failure,
               }),
@@ -245,6 +247,102 @@ test.each([
       f.provider.native.windowReply = "reply";
       f.provider.native.onWithheldReply = undefined;
       f.provider.native.beforeNativeWindowReply = undefined;
+      expect((await view(chat)).window).toStrictEqual(first.window);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  },
+);
+
+// Logger-owned status and redaction contract at the provider HTTP boundary.
+test.each([
+  {
+    upstreamHttpStatus: 401,
+    mappedHttpStatus: 503,
+    errorCode: "BROWSER_USE_AUTH_ERROR",
+  },
+  {
+    upstreamHttpStatus: 403,
+    mappedHttpStatus: 503,
+    errorCode: "BROWSER_USE_AUTH_ERROR",
+  },
+  {
+    upstreamHttpStatus: 403,
+    mappedHttpStatus: 502,
+    errorCode: "BROWSER_USE_OUTPUT_TOO_LARGE",
+    bodyFailure: "oversized",
+  },
+  {
+    upstreamHttpStatus: 403,
+    mappedHttpStatus: 502,
+    errorCode: "BROWSER_USE_ERROR",
+    bodyFailure: "interrupted",
+  },
+])(
+  "records upstream HTTP $upstreamHttpStatus for $errorCode alongside the mapped status",
+  async ({ upstreamHttpStatus, mappedHttpStatus, errorCode, bodyFailure }) => {
+    const { fixture, open, view } = createBrowserFixtures(context);
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const first = await open(chat);
+      const [providerSessionId] = f.provider.sessionIds;
+      if (!providerSessionId) {
+        throw new Error("Expected the external Browser provider session");
+      }
+      const threads = createChatFilesBddApi(context);
+      const sibling = await threads.createThread(f.owned.actor, {
+        model: f.owned.model,
+      });
+      const privateDetail = "private-provider-auth-detail";
+      const detail =
+        bodyFailure === "oversized"
+          ? privateDetail.padEnd(513 * 1024, "x")
+          : privateDetail;
+      server.use(
+        http.get(
+          `${PROVIDER_URL}/browsers/${providerSessionId}`,
+          () => {
+            if (bodyFailure === "interrupted") {
+              return new HttpResponse(
+                new ReadableStream({
+                  pull(controller) {
+                    controller.error(new TypeError(privateDetail));
+                  },
+                }),
+                { status: upstreamHttpStatus },
+              );
+            }
+            return HttpResponse.json(
+              { detail },
+              { status: upstreamHttpStatus },
+            );
+          },
+          { once: true },
+        ),
+      );
+
+      await threads.deleteThread(f.owned.actor, sibling.id);
+      const warning = context.mocks.axiomLogging.warn.mock.calls
+        .filter(([message]) => {
+          return message === "Browser window reconciliation failed";
+        })
+        .at(-1);
+      const record = object({})
+        .catchall(string().or(number()).or(boolean()))
+        .parse(warning?.[1]);
+      expect(record).toStrictEqual({
+        instanceId: first.window?.instanceId,
+        primaryWindowId: first.window?.primaryWindowId,
+        phase: "find-provider",
+        errorKind: "provider",
+        errorCode,
+        mappedHttpStatus,
+        upstreamHttpStatus,
+        context: "BrowserReconcile",
+      });
+      const serialized = JSON.stringify(warning);
+      expect(serialized).not.toContain(privateDetail);
+      expect(serialized).not.toContain(providerSessionId);
       expect((await view(chat)).window).toStrictEqual(first.window);
       expect(f.provider.sessionRequests).toHaveLength(1);
     });
@@ -656,7 +754,6 @@ describe("template usage Axiom transport", () => {
         },
       ];
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         clientEventId: sourceEventId,
         prompt: "Use each selected template around its marker",
         userMessage: {
@@ -793,7 +890,6 @@ describe("template usage Axiom transport", () => {
           selection: { userTemplateId: published.body.id },
         };
         const run = await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           clientEventId: sourceEventId,
           prompt: "Use both imported template markers",
           userMessage: {
@@ -846,7 +942,6 @@ describe("template usage Axiom transport", () => {
           authorization: `Bearer ${input.sandboxToken}`,
         });
         await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           threadId: run.threadId,
           prompt: "Continue without selecting a template",
         });
@@ -908,7 +1003,6 @@ describe("template usage Axiom transport", () => {
       const privatePreviewUrl =
         "https://private.example.test/confidential-deck";
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Use the imported presentation",
         template: {
           type: "presentation",
@@ -955,7 +1049,6 @@ describe("template usage Axiom transport", () => {
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       const anchor = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Keep the thread busy",
       });
       const execution = await owned.runExecution(anchor.runId);
@@ -963,7 +1056,6 @@ describe("template usage Axiom transport", () => {
       await owned.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: anchor.threadId,
           clientEventId: sourceEventId,
           prompt: "Prepare an invoice",
@@ -1012,7 +1104,6 @@ describe("template usage Axiom transport", () => {
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Start without a template",
       });
       const { execution } = await owned.runExecution(run.runId);
@@ -1020,7 +1111,6 @@ describe("template usage Axiom transport", () => {
       await owned.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: run.threadId,
           clientEventId: sourceEventId,
           prompt: "Prepare an invoice",
@@ -1081,7 +1171,6 @@ describe("template usage Axiom transport", () => {
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Start without template volumes",
       });
       const { execution } = await owned.runExecution(run.runId);
@@ -1089,7 +1178,6 @@ describe("template usage Axiom transport", () => {
       await owned.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: run.threadId,
           clientEventId: sourceEventId,
           prompt: "Apply both templates",
@@ -1221,7 +1309,6 @@ describe("template usage Axiom transport", () => {
     await owned.run(async () => {
       const sourceEventId = randomUUID();
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         clientEventId: sourceEventId,
         prompt: "Prepare an invoice despite refused delivery",
         template: {
@@ -1254,7 +1341,6 @@ describe("template usage Axiom transport", () => {
         eventTypes: ["template_used"],
       });
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Prepare an invoice",
         template: {
           type: "document",
@@ -1275,7 +1361,6 @@ describe("template usage Axiom transport", () => {
 async function ownedTelemetryUpload() {
   const owned = await publicChatActor(context);
   const { runId } = await owned.sendChatRun(owned.actor, {
-    agentId: owned.agentId,
     prompt: "Exercise Axiom error diagnostics",
   });
   const { execution } = await owned.runExecution(runId);
@@ -1335,7 +1420,6 @@ describe("completed chat callback failure diagnostics", () => {
           return "Safe generated summary";
         });
         const run = await fixture.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt: "Keep the completed answer",
         });
         await fixture.chatCallbacks.registerPushSubscription(owned.actor);

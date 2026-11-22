@@ -2,10 +2,6 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
-  agentsByIdContract,
-  agentsMainContract,
-} from "@okouai/api-contracts/contracts/agents";
-import {
   workflowsCollectionContract,
   workflowsDetailContract,
   type WorkflowSummary,
@@ -25,7 +21,6 @@ import {
   fileArtifactDetail,
 } from "./chat-navigation-artifact-test-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   chatListThread,
   fastButton,
   sidebarThreadTitles,
@@ -68,35 +63,8 @@ function searchResultTitles(dialog: HTMLElement): string[] {
 }
 
 function installSearchResources() {
-  const agent = {
-    isDefaultAgent: false,
-    agentId: "c7000000-0000-4000-a000-000000000002",
-    displayName: "Budget agent",
-    ownerId: "test-user",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    visibility: "private" as const,
-  };
-  context.mocks.api(agentsMainContract.list, ({ respond }) => {
-    return respond(200, [
-      { ...agent, agentId: CHAT_LIST_AGENT_ID, displayName: "List agent" },
-      agent,
-    ]);
-  });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return respond(200, {
-      ...agent,
-      agentId: params.id,
-      displayName:
-        params.id === agent.agentId ? agent.displayName : "List agent",
-    });
-  });
   const workflow: WorkflowSummary = {
     id: "f7000000-0000-4000-a000-000000000001",
-    agentId: CHAT_LIST_AGENT_ID,
-    agentName: "Support Agent",
-    agentDisplayName: "Support Agent",
     name: "budget-review",
     displayName: "Budget review",
     description: null,
@@ -150,7 +118,7 @@ function installSearchResources() {
       }),
     );
   });
-  return { agent, workflow, artifact };
+  return { workflow, artifact };
 }
 
 test("Limit empty search to 25 cached chats in sidebar order", async () => {
@@ -172,7 +140,7 @@ test("Limit empty search to 25 cached chats in sidebar order", async () => {
   });
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     ...workspace.pageOptions,
   });
   const expectedTitles = [
@@ -231,7 +199,7 @@ test.each([
     });
     await startPage({
       context,
-      path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+      path: `/`,
       ...workspace.pageOptions,
     });
     const expectedTitles = [
@@ -290,14 +258,9 @@ test.each([
 test.each([
   {
     filter: "All",
-    titles: [
-      "Budget planning",
-      "Budget agent",
-      "Budget review",
-      "Budget report",
-    ],
-    hints: ["1", "2", "3", "4"],
-    digit: "4",
+    titles: ["Budget planning", "Budget review", "Budget report"],
+    hints: ["1", "2", "3"],
+    digit: "3",
   },
 ])(
   "Open a resource from numbered search results in $filter",
@@ -312,10 +275,10 @@ test.each([
       caseId: 29,
       threads: [titleMatch],
     });
-    const { agent, workflow, artifact } = installSearchResources();
+    const { workflow, artifact } = installSearchResources();
     await setupPage({
       context,
-      path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+      path: `/`,
       ...workspace.pageOptions,
     });
     const { dialog, search } = await openSearch();
@@ -324,11 +287,10 @@ test.each([
     await waitFor(() => {
       expect(searchResultTitles(dialog)).toStrictEqual([
         "Budget planning",
-        "Budget agent",
         "Budget review",
         "Budget report",
       ]);
-      expect(numberedHints(dialog)).toStrictEqual(["1", "2", "3", "4"]);
+      expect(numberedHints(dialog)).toStrictEqual(["1", "2", "3"]);
     });
     const filterButton = queryAllByRoleFast("button", dialog).find((item) => {
       return item.textContent === filter;
@@ -348,11 +310,7 @@ test.each([
       shiftKey: false,
     });
     const expectedPath =
-      filter === "Agents"
-        ? `/agents/${agent.agentId}/chat`
-        : filter === "Workflows"
-          ? `/workflows/${workflow.id}`
-          : "/artifacts";
+      filter === "Workflows" ? `/workflows/${workflow.id}` : "/artifacts";
     const expectedArtifact = filter === "All" ? artifact.id : null;
     const expectedTab = filter === "All" ? "file" : null;
     await waitFor(() => {

@@ -1,17 +1,78 @@
-import { CircleCheck } from "lucide-react";
 import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@okouai/ui";
+import { forYouCompleteIllustration } from "../../lib/for-you-artwork.ts";
 import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 
-const COMPLETION_DOTS = [
-  "size-0.75 [--completion-dot-x:-48px] [--completion-dot-y:-19px] [--completion-dot-stagger:0ms]",
-  "size-1 [--completion-dot-x:-29px] [--completion-dot-y:-38px] [--completion-dot-stagger:12ms]",
-  "size-0.75 [--completion-dot-x:-6px] [--completion-dot-y:-48px] [--completion-dot-stagger:24ms]",
-  "size-1 [--completion-dot-x:24px] [--completion-dot-y:-39px] [--completion-dot-stagger:36ms]",
-  "size-0.75 [--completion-dot-x:45px] [--completion-dot-y:-21px] [--completion-dot-stagger:48ms]",
-  "size-1 [--completion-dot-x:49px] [--completion-dot-y:8px] [--completion-dot-stagger:60ms]",
+// Three bursts around the illustration, positioned relative to it and
+// staggered so they pop one after another rather than all at once. Each burst
+// rises, then opens into twelve sparks in two alternating colours.
+const FIREWORKS = [
+  {
+    position:
+      "top-[22%] left-[-14%] [--firework-delay:0ms] [--firework-reach:44px]",
+    colors: ["bg-amber-400", "bg-rose-400"],
+  },
+  {
+    position:
+      "top-[8%] left-[112%] [--firework-delay:240ms] [--firework-reach:40px]",
+    colors: ["bg-sky-400", "bg-emerald-400"],
+  },
+  {
+    position:
+      "top-[-30%] left-[54%] [--firework-delay:480ms] [--firework-reach:52px]",
+    colors: ["bg-rose-400", "bg-amber-300"],
+  },
 ] as const;
+
+const FIREWORK_SPARKS = [
+  "[--firework-spark-angle:0deg] [--firework-spark-scale:1]",
+  "[--firework-spark-angle:30deg] [--firework-spark-scale:0.72]",
+  "[--firework-spark-angle:60deg] [--firework-spark-scale:1]",
+  "[--firework-spark-angle:90deg] [--firework-spark-scale:0.72]",
+  "[--firework-spark-angle:120deg] [--firework-spark-scale:1]",
+  "[--firework-spark-angle:150deg] [--firework-spark-scale:0.72]",
+  "[--firework-spark-angle:180deg] [--firework-spark-scale:1]",
+  "[--firework-spark-angle:210deg] [--firework-spark-scale:0.72]",
+  "[--firework-spark-angle:240deg] [--firework-spark-scale:1]",
+  "[--firework-spark-angle:270deg] [--firework-spark-scale:0.72]",
+  "[--firework-spark-angle:300deg] [--firework-spark-scale:1]",
+  "[--firework-spark-angle:330deg] [--firework-spark-scale:0.72]",
+] as const;
+
+function Firework({
+  firework,
+}: {
+  readonly firework: (typeof FIREWORKS)[number];
+}) {
+  return (
+    <span
+      className={cn(
+        "absolute size-0 motion-safe:animate-firework-fall",
+        firework.position,
+      )}
+    >
+      <span
+        className={cn(
+          "absolute top-0 -left-px h-3 w-0.5 rounded-full opacity-0 motion-safe:animate-firework-rise",
+          firework.colors[0],
+        )}
+      />
+      {FIREWORK_SPARKS.map((spark, index) => {
+        return (
+          <span
+            key={spark}
+            className={cn(
+              "absolute -top-1.25 -left-px h-2.5 w-0.5 rounded-full opacity-0 motion-safe:animate-firework-spark",
+              firework.colors[index % 2],
+              spark,
+            )}
+          />
+        );
+      })}
+    </span>
+  );
+}
 
 export function SuggestionsComplete({
   className,
@@ -23,48 +84,41 @@ export function SuggestionsComplete({
   const { t } = useTranslation();
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   return (
-    <div
-      className={cn(
-        "relative flex min-h-72 flex-col items-center justify-center overflow-hidden py-10 text-center sm:min-h-80",
-        className,
-      )}
-    >
+    <div className={cn("flex flex-col items-center text-center", className)}>
       <div
         className={cn(
-          "flex flex-col items-center gap-5",
+          "flex flex-col items-center",
           celebrate && "motion-safe:animate-completion-in",
         )}
       >
-        <span aria-hidden className="pointer-events-none relative size-14">
-          <CircleCheck
-            strokeWidth={1.5}
-            className={cn(
-              "size-full text-muted-foreground",
-              celebrate && "motion-safe:animate-completion-check-in",
-            )}
+        <span aria-hidden className="pointer-events-none relative">
+          <img
+            src={forYouCompleteIllustration}
+            alt=""
+            width={480}
+            height={293}
+            draggable={false}
+            className="h-auto w-40 select-none sm:w-48"
           />
           {celebrate &&
-            COMPLETION_DOTS.map((dot) => {
-              return (
-                <span
-                  key={dot}
-                  className={cn(
-                    "absolute top-1/2 left-1/2 -translate-1/2 rounded-full bg-green-700/70 opacity-0 motion-safe:animate-completion-dot dark:bg-green-300/70",
-                    dot,
-                  )}
-                />
-              );
+            FIREWORKS.map((firework) => {
+              return <Firework key={firework.position} firework={firework} />;
             })}
         </span>
         <h3
           ref={focusTitle}
           tabIndex={-1}
-          className="text-xl font-medium focus:outline-none"
+          className="mt-5 text-xl font-semibold focus:outline-none"
         >
           {t(($) => {
             return $.chat.agentSuggestions.homeCard.completeTitle;
           })}
         </h3>
+        <p className="mt-2 max-w-90 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.chat.agentSuggestions.homeCard.completeDescription;
+          })}
+        </p>
       </div>
     </div>
   );

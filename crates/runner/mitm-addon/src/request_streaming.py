@@ -38,7 +38,7 @@ def configure_request_stream(
     if callable(flow.request.stream):
         return
 
-    state = {"total_bytes": 0}
+    state = stream_capture.empty_stream_byte_count()
     buf_limit = STREAM_BUFFER_LIMIT
     retain_body = capture_body or inspect_body
     capture = stream_capture.StreamCapture() if retain_body else None
@@ -58,10 +58,7 @@ def configure_request_stream(
 
 def streamed_request_size(flow: http.HTTPFlow) -> int | None:
     """Return total request bytes observed by the request stream callback."""
-    state = flow.metadata.get(metadata_keys.REQUEST_STREAM_STATE)
-    if state is None:
-        return None
-    return int(state["total_bytes"])
+    return stream_capture.streamed_byte_count(flow.metadata.get(metadata_keys.REQUEST_STREAM_STATE))
 
 
 def captured_request_stream_body(flow: http.HTTPFlow) -> stream_capture.CapturedStreamBody | None:
@@ -84,5 +81,4 @@ def release_request_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(metadata_keys.REQUEST_STREAM_CAPTURE, None)
     flow.metadata.pop(metadata_keys.REQUEST_STREAM_STATE, None)
     flow.metadata.pop(metadata_keys.REQUEST_STREAM_COMPLETE, None)
-    if stream_callback is not None and flow.request.stream is stream_callback:
-        flow.request.stream = False
+    stream_capture.replace_owned_stream(flow.request, stream_callback)

@@ -70,18 +70,18 @@ async function setupFixture(): Promise<{
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
   // Webhook runs are executed by the native Runner, so the owner selects
   // Fable, whose personal subscription route never uses Pi.
-  const { actor, subscriptionId } = await wf.setupWorkflowOrg({
+  const {
+    defaultAgentId: agentId,
+    actor,
+    subscriptionId,
+  } = await wf.setupWorkflowOrg({
     tier: "team",
     model: "claude-fable-5-1",
   });
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  const agent = await wf.createAgent(actor, {
-    displayName: "Webhook Automation Agent",
-  });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId: agent.agentId,
     name: WORKFLOW_NAME,
   });
   const fixture = { orgId: actor.orgId, userId: actor.userId };
@@ -90,7 +90,7 @@ async function setupFixture(): Promise<{
   return {
     fixture,
     actor,
-    agentId: agent.agentId,
+    agentId,
     workflowId,
     subscriptionId,
   };

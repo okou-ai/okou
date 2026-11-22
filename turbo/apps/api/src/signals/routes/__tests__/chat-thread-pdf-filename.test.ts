@@ -56,9 +56,8 @@ async function fixture() {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, { displayName: "PDF filename" });
+  await bdd.createAgent(actor, { displayName: "PDF filename" });
   const run = await chat.sendAndLaunch(actor, {
-    agentId: agent.agentId,
     prompt: "Analyze residential solar economics",
   });
   const execution = await runs.executionInput(run.runId);
@@ -80,7 +79,6 @@ async function fixture() {
   await chat.requestSendEvent(
     actor,
     {
-      agentId: agent.agentId,
       threadId: run.threadId,
       prompt: privateText,
     },

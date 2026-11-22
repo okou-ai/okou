@@ -1,6 +1,0 @@
-# R8 synthesizes this coroutine probe in the test APK after applying the app's
-# mapping. Its generated call retains the intrinsic method name; keep that name
-# and holder stable so it links to the app's copy rather than a renamed method.
--keep class kotlin.coroutines.jvm.internal.DebugProbesKt {
-    public static void probeCoroutineSuspended(kotlin.coroutines.Continuation);
-}

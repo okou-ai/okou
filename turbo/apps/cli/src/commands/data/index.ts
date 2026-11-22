@@ -35,7 +35,7 @@ function callSummary(
     ? `No request was sent: this identical call was saved at ${saved.savedAt}. Read it with okou data show ${saved.seq} <path>, or add --refresh to request new data.`
     : saved.status >= 400
       ? `The call failed with status ${saved.status}; the error body is saved in file.`
-      : `Read fields with okou data show ${saved.seq} <path> or parse file locally. If parsing fails or finds nothing, fix the parsing on this file instead of calling again; okou data history lists saved responses.`;
+      : `The file holds the complete response body. Read fields with okou data show ${saved.seq} <path>; okou data history lists saved responses.`;
   return {
     status: saved.status,
     ...(saved.requestId ? { requestId: saved.requestId } : {}),
@@ -293,7 +293,7 @@ export function createDataCommand(): Command {
     );
   command.addHelpText(
     "after",
-    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Every response is saved unchanged to a numbered private file; the call prints its path and a field outline. Read fields with okou data show <number> <path> and list saved responses with okou data history.\nAn identical call reuses its saved successful response without sending a request; add --refresh when new data is needed, such as when polling a job.\nCalls can consume credits, which are totaled when the Run ends. Do not automatically repeat a paid request whose outcome is uncertain.',
+    '\nDiscover tools with okou data tools, then inspect parameters with okou data describe <tool>.\nCall tools with okou data call <tool> --input \'{"parameter":"value"}\'. Every response is saved unchanged to a numbered private file; the call prints its path and a field outline. Read fields with okou data show <number> <path> and list saved responses with okou data history.\nAn identical call reuses its saved successful response without sending a request; add --refresh when new data is needed, such as when polling a job.\nCalls can consume credits, which are totaled when the Run ends. A paid request whose outcome is uncertain may already have executed, so repeating it can charge twice.',
   );
   return command;
 }

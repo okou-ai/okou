@@ -27,16 +27,6 @@ function createEditorSchema(): Schema {
       paragraph: { content: "inline*", group: "block" },
       text: { group: "inline" },
       hardBreak: { group: "inline", inline: true },
-      agentMention: {
-        atom: true,
-        attrs: {
-          agentId: { default: null },
-          avatarUrl: { default: null },
-          name: { default: null },
-        },
-        group: "inline",
-        inline: true,
-      },
       projectMention: {
         atom: true,
         attrs: { projectId: { default: null }, name: { default: null } },
@@ -95,7 +85,6 @@ function createEditorSchema(): Schema {
 }
 
 const CHAT_THREAD_ID = "b0000000-0000-4000-a000-000000000931";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000931";
 
 function restoredEditorDocument(value: unknown): ProseMirrorNode {
   const restored = draftToEditorDoc(value);
@@ -220,13 +209,7 @@ test("Complex composer content survives saving and restoring", () => {
         threadId: CHAT_THREAD_ID,
         titleSnapshot: "Launch decisions",
       },
-      { type: "text", text: " with " },
-      {
-        type: "agent",
-        agentId: AGENT_ID,
-        nameSnapshot: "Release Scout",
-      },
-      { type: "text", text: " closing notes." },
+      { type: "text", text: " with Release Scout closing notes." },
     ],
   };
 
@@ -281,13 +264,11 @@ test("Forwarded feedback uses the document-level source title", () => {
         note: [],
       },
       {
-        type: "source",
-        kind: "agent",
+        type: "chat_thread",
         runId: "d0000000-0000-4000-a000-000000000931",
         threadId: CHAT_THREAD_ID,
-        agentId: AGENT_ID,
+
         titleSnapshot: "Source launch plan",
-        href: `/chats/${CHAT_THREAD_ID}#run-d0000000-0000-4000-a000-000000000931`,
       },
     ],
   };
@@ -301,13 +282,11 @@ test("Forwarded feedback uses the document-level source title", () => {
 
 test("Forwarded mail feedback keeps common source identifiers", () => {
   const sourcePart = {
-    type: "source",
-    kind: "agent",
+    type: "chat_thread",
     runId: "d0000000-0000-4000-a000-000000000932",
     threadId: CHAT_THREAD_ID,
-    agentId: AGENT_ID,
+
     titleSnapshot: "Source launch plan",
-    href: `/chats/${CHAT_THREAD_ID}#run-d0000000-0000-4000-a000-000000000932`,
   } as const satisfies UserMessagePart;
   const cases: readonly {
     readonly document: UserMessageDocument;

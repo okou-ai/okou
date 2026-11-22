@@ -13,7 +13,6 @@ export ANSIBLE_NOCOLOR=1
 export XDG_DATA_HOME="$tmp/caddy-data"
 export XDG_CONFIG_HOME="$tmp/caddy-config"
 
-ansible-playbook -i 'localhost,' -c local --syntax-check "$playbook" >/dev/null
 # Ordinary provisioning must reach ingress validation without an enable flag.
 if ansible-playbook -i 'localhost,' -c local --tags runner_caddy \
   "$playbook" >"$tmp/invalid" 2>&1; then
@@ -69,11 +68,9 @@ python3 -B "$native_tests/runner-caddy-install-test.py" \
   "$repo_root" "$caddy_archive" "$tmp/install"
 
 printf 'runner-wss.example.org ansible_connection=local\n' >"$tmp/inventory"
-for template in runner-caddy.Caddyfile okou-runner-caddy.service; do
-  ansible -i "$tmp/inventory" all -m ansible.builtin.template \
-    -a "src=$repo_root/ansible/templates/$template.j2 dest=$tmp/$template" \
-    -e "runner_caddy_version=$version" >/dev/null
-done
+ansible -i "$tmp/inventory" all -m ansible.builtin.template \
+  -a "src=$repo_root/ansible/templates/runner-caddy.Caddyfile.j2 dest=$tmp/runner-caddy.Caddyfile" \
+  -e "runner_caddy_version=$version" >/dev/null
 "$caddy_bin" validate --config "$tmp/runner-caddy.Caddyfile" --adapter caddyfile
 
 # Run only owned loopback/Unix fixtures under an unprivileged synthetic consumer.

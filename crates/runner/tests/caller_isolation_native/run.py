@@ -195,6 +195,19 @@ def parse_receipt(log, architecture):
     return {"kernel": kernels[0], "checks": checks, "summary": summary}
 
 
+def reap_owned_vmm(process):
+    """Stop and reap a VMM started in its own session.
+
+    The caller blocks cancellation signals during cleanup.
+    """
+    if process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # The child can exit between poll and kill.
+    process.wait(timeout=5)
+
+
 def run_vm(command, log_path, receipt, timeout=35):
     def interrupted(number, _frame):
         raise InterruptedError(f"native owner received signal {number}")
@@ -241,12 +254,7 @@ def run_vm(command, log_path, receipt, timeout=35):
         signal.pthread_sigmask(signal.SIG_BLOCK, interrupts)
         try:
             if process is not None:
-                if process.poll() is None:
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass  # Owned VMM exited between poll and signal.
-                process.wait(timeout=5)
+                reap_owned_vmm(process)
                 receipt["cleanup"] = "vmm_joined"
         finally:
             for number, handler in previous.items():

@@ -12,7 +12,12 @@ import uuid
 
 import pressure_report
 import report
-from report_test import prepare_snapshot_record, write_report_fixture
+from report_test import (
+    prepare_snapshot_record,
+    pressure_policy_fixture,
+    witness_receipt,
+    write_report_fixture,
+)
 
 
 class PressureReportTests(unittest.TestCase):
@@ -24,16 +29,7 @@ class PressureReportTests(unittest.TestCase):
 
     def prepare(self, kind):
         gib = 1024**3
-        self.policy = {
-            "host_total_bytes": 64*gib, "operating_floor_bytes": gib,
-            "cleanup_reserve_bytes": 256*1024**2, "critical_available_bytes": 12*gib,
-            "recovery_available_bytes": 20*gib, "live_growth_bytes": 4*1024**2,
-            "tail_growth_bytes": 65*1024**2, "replacement_preparation_bytes": 32*1024**2,
-            "max_sample_age_millis": 1000, "max_operations": 8, "max_cleanup_inflight": 2,
-            "pressure_sample_period_millis": 50, "pressure_recovery_sustain_millis": 100,
-            "pressure_wave_cooldown_millis": 100, "pressure_optional_start_interval_millis": 100,
-            "pressure_max_wave_entries": 1,
-        }
+        self.policy = pressure_policy_fixture()
         raw_policy = json.dumps(self.policy)
         self.artifacts = {
             "source_sha": "a"*40, "test_binary_sha256": "b"*64,
@@ -74,10 +70,14 @@ class PressureReportTests(unittest.TestCase):
             phases = ("case_started", "scenario_observed", "terminal_started", "backing_exit_confirmed",
                       "required_tail_started", "required_tail_completed", "case_completed")
             for phase, evidence in zip(phases, proofs):
-                self.events.append({"version": 1, "case": case, "phase": phase,
-                                    "monotonic_ns": clock, "unix_ns": clock+1000,
-                                    "sandbox_id": sandbox, "backing_generation": backing,
-                                    "evidence": evidence})
+                self.events.append(witness_receipt(
+                    case, phase,
+                    monotonic_ns=clock,
+                    unix_ns=clock+1000,
+                    sandbox_id=sandbox,
+                    backing_generation=backing,
+                    evidence=evidence,
+                ))
                 self.samples.append({"monotonic_ns": clock+1, "mem_available_bytes": 10*gib,
                                      "sample_age_ns": 2, "read_duration_ns": 1,
                                      "processes": [{"pid": 123, "start_ticks": 456,
@@ -95,10 +95,14 @@ class PressureReportTests(unittest.TestCase):
                 values = [("different_guest_prepared", {"incoming_sandbox_id": str(uuid.uuid4()), "admitted": True}),
                           ("original_join_requested", {"retirements": 1})]
             for offset, (phase, evidence) in enumerate(values):
-                self.witnesses.append({"version": 1, "case": case, "phase": phase,
-                                       "monotonic_ns": clock-15+offset, "unix_ns": clock+1000,
-                                       "sandbox_id": sandbox, "backing_generation": backing,
-                                       "evidence": evidence})
+                self.witnesses.append(witness_receipt(
+                    case, phase,
+                    monotonic_ns=clock-15+offset,
+                    unix_ns=clock+1000,
+                    sandbox_id=sandbox,
+                    backing_generation=backing,
+                    evidence=evidence,
+                ))
             clock += 20
 
     def write(self):

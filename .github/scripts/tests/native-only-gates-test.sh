@@ -37,6 +37,8 @@ def context(ios=True, ts=False, event='pull_request', release=False):
         'github.event.pull_request.head.repo.full_name': 'test/repo',
         'needs.detect-release.outputs.skip': str(release).lower(),
         'needs.detect-release.outputs.lookup-failed': '',
+        'needs.validate-release-presence.outputs.release-entry': 'true' if event == 'merge_group' and release else '',
+        'vars.PRODUCTION_RELEASE_FREEZE': '',
         'needs.detect-turbo-ts-checks.outputs.ios-only': str(ios).lower(),
         'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': str(ts).lower(),
         'needs.detect-native-only.outputs.ios-only': str(ios).lower(),
@@ -84,6 +86,11 @@ fallback = context(ios=False, ts=True, event='merge_group') | {
 assert condition(turbo['validate-release-presence'], fallback)
 assert condition(turbo['test-api'], fallback)
 gate(turbo, 'ci-gate-turbo', fallback, True)
+frozen = {'vars.PRODUCTION_RELEASE_FREEZE': 'true'}
+gate(turbo, 'ci-gate-turbo', fallback | frozen, True)
+gate(turbo, 'ci-gate-turbo', fallback | frozen | {
+    'needs.validate-release-presence.outputs.release-entry': 'true',
+}, False)
 for result in ['failure', 'cancelled', 'skipped']:
     gate(turbo, 'ci-gate-turbo', fallback | {'needs.validate-release-presence.result': result}, False)
 
@@ -164,7 +171,13 @@ for ios in ['false', '']:
 for needed in ['true', '']:
     gate(turbo, 'ci-gate-turbo', native | {'needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed': needed}, False)
 released = context(ios=False, ts=True, event='merge_group', release=True)
-gate(turbo, 'ci-gate-turbo', released, True)
+for value in ['', 'false', '1']:
+    gate(turbo, 'ci-gate-turbo', released | {'vars.PRODUCTION_RELEASE_FREEZE': value}, True)
+for value in ['true', 'TRUE', 'True']:
+    gate(turbo, 'ci-gate-turbo', released | {'vars.PRODUCTION_RELEASE_FREEZE': value}, False)
+gate(turbo, 'ci-gate-turbo', context(ios=False, ts=True, event='merge_group') | frozen, True)
+for event in ['pull_request', 'push']:
+    gate(turbo, 'ci-gate-turbo', context(ios=False, ts=True, event=event, release=True) | frozen, True)
 for job in artifacts:
     for failure in ['failure', 'cancelled', 'skipped']:
         gate(turbo, 'ci-gate-turbo', released | {f'needs.{job}.result': failure}, False)
@@ -211,21 +224,29 @@ released = context(ios=False, ts=True, event='merge_group', release=True)
 for job in ['detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit', 'actionlint',
             'workflow-script-tests', 'gitleaks']:
     released[f'needs.{job}.result'] = 'skipped'
+for job in ['action-pins', 'release-workspace-coverage']:
+    assert not condition(security[job], released)
+    released[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', released, True)
-assert condition(security['action-pins'], released)
+gate(security, 'ci-gate-security', released | {'needs.detect-release.result': 'failure'}, False)
 assert 'action-pins' in security['ci-gate-security']['needs']
 for event in ['pull_request', 'merge_group', 'push']:
     for result in ['failure', 'cancelled', 'skipped']:
         for release in [False, True]:
             values = context(event=event, release=release)
             values['needs.action-pins.result'] = result
+            if event == 'merge_group' and release:
+                values['needs.release-workspace-coverage.result'] = 'skipped'
+                assert not condition(security['action-pins'], values)
+                gate(security, 'ci-gate-security', values, result == 'skipped')
+                continue
             assert condition(security['action-pins'], values)
             gate(security, 'ci-gate-security', values, False)
 
 # Android must publish a result even when detection fails or native work is skipped.
 android = workflow('android')
 android_gate = android['ci-gate-android']
-assert {'detect-release', 'detect', 'build-test', 'instrumentation'} <= set(android_gate['needs'])
+assert {'detect-release', 'detect', 'build-test', 'instrumentation', 'release-smoke'} <= set(android_gate['needs'])
 for needed in ['true', 'false']:
     values = {
         'needs.detect-release.result': 'success',
@@ -234,16 +255,19 @@ for needed in ['true', 'false']:
         'needs.detect.outputs.needed': needed,
         'needs.build-test.result': 'success' if needed == 'true' else 'skipped',
         'needs.instrumentation.result': 'success' if needed == 'true' else 'skipped',
+        'needs.release-smoke.result': 'success' if needed == 'true' else 'skipped',
     }
-    assert condition(android['instrumentation'], values) == (needed == 'true')
+    for job in ['instrumentation', 'release-smoke']:
+        assert condition(android[job], values) == (needed == 'true')
     assert condition(android_gate, values, cancelled=True)
     gate(android, 'ci-gate-android', values, True)
     for failure in ['failure', 'cancelled', 'skipped']:
         blocked = values | {'needs.detect.result': failure}
-        assert not condition(android['instrumentation'], blocked)
+        for job in ['instrumentation', 'release-smoke']:
+            assert not condition(android[job], blocked)
         assert condition(android_gate, blocked)
         gate(android, 'ci-gate-android', blocked, False)
-    for job in ['build-test', 'instrumentation']:
+    for job in ['build-test', 'instrumentation', 'release-smoke']:
         for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
             blocked = values | {f'needs.{job}.result': result}
             assert condition(android_gate, blocked)

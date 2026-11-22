@@ -74,6 +74,43 @@ Apply [first-display verification](android-testing.md#first-display-with-pending
 when introducing the corresponding API consumers. A standalone benchmark target
 or numerical startup budget is not a prerequisite for applying this contract.
 
+## Cache-First Presentation and Optimistic Actions
+
+Restore usable, last-confirmed data after checking the current authorization.
+Enable each action when its own prerequisites are satisfied. Give each cached
+resource a freshness policy and a canonical refresh path. Keep usable content
+visible during refresh and preserve the distinction between unknown and
+confirmed empty. A display snapshot cannot supply freshness or authorization
+evidence for an action that needs a current server observation.
+
+Derive presentation from a confirmed baseline and local intents in the owning
+state. Show a predictable local change immediately. When the result depends on
+the server, show progress until the owner can confirm the outcome. Keep
+optimistic display out of the [confirmed cache](#local-storage). User-authored
+drafts and commands that must survive process recreation use their own
+durable storage contract.
+
+Choose the confirmation evidence for each operation before sending it. Match
+[event-backed changes](../chat.md#event-sourcing-and-optimistic-events) by
+their original IDs. A complete authoritative response can confirm its own
+resource. A readback must have started late enough to observe the write and
+must preserve newer local intents. Independently committed steps each require
+their own evidence. Derive bulk success from the confirmed subset.
+
+Recover from a definitive rejection according to the affected operation's
+contract. After an uncertain transport outcome, reconcile through the
+authoritative resource and retain recoverable input. Where the API supports
+idempotent retries, reuse the original request and identity. When an owner
+retires, end its presentation and reject publications from its old work.
+
+Coalesce invalidations within a resource so requests for unrelated resources
+can progress independently. Preserve demand received during an in-flight
+read and catch up on reconnect. Verify the visible result while the transport
+is held, then verify convergence under the applicable failure and ownership
+scenarios. Measure time to usable content, time to visible action feedback,
+and time to canonical confirmation separately when quantifying a latency
+change. See [Android testing](android-testing.md#first-display-with-pending-api-requests).
+
 ## Native Presentation
 
 Use Kotlin and Compose for application UI and native APIs for OS interactions.
@@ -115,6 +152,25 @@ The current server response owns the workspace values. Apply the matching
 generated day or night resources and use the resolved appearance for system
 bars. Keep the Activity context and its owners intact during resource lookup.
 
+### Interface Icons
+
+Use [Material Symbols Outlined](https://fonts.google.com/icons) for app actions.
+Choose the symbol named in the Android design, such as `filter_list` for Filter
+and `more_horiz` for More. Use the 24dp Android XML with the default weight 400,
+grade 0 and fill 0. The bundled vectors come from
+[Google's Material Symbols sources](https://github.com/google/material-design-icons/tree/10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7/symbols/android).
+Keep one `res/drawable/ic_<symbol>.xml` per symbol and preserve its path and
+viewport. Remove the exported vector's `android:tint` so the Compose control
+supplies the tint. Set `android:autoMirrored` for directional navigation such
+as Back and end chevrons.
+
+Render vectors with `Icon(painterResource(...))`. Use a 24dp icon in the top app
+bar and a native `IconButton` with at least a 48 × 48dp touch target for a
+standalone action. Give that icon a localized action label. Use
+`contentDescription = null` when visible text or the parent control already
+describes it. Workspace logos, brand marks and system controls keep their own
+assets. Ship the Apache-2.0 license with the local vectors in `assets/licenses`.
+
 ### Saved Instance State
 
 `rememberSaveable`, `rememberSerializable`, `SavedStateHandle` and registered
@@ -154,33 +210,8 @@ and verify the actual save boundary through the
 
 ### Local Storage
 
-Use Android's storage owners and choose the location by data lifetime. Structured
-server-confirmed chat data uses Room/SQLite, with Web's snapshot, event replay,
-cursor and consistency rules as its semantic reference. Keep one lazy database
-owner per application process; run IO off Main and commit related records in a
-transaction. Store snapshots as per-entity rows so tail appends do not rewrite an
-entire archive. Use the AndroidX bundled SQLite driver to avoid CursorWindow's
-per-row limit. Native response decoding must not add data-size/count limits that
-reject legitimate canonical data Web can read; use streaming and cursor progress
-checks. Export Room schemas through its Gradle plugin. A disposable-cache rebuild
-policy must never cover user-authored drafts
-or other data that cannot be recovered from the server.
-
-Resolve paths through Context, never hard-code device paths. Keep offline cache
-databases in app-private `noBackupFilesDir` and disposable download/upload staging
-in `cacheDir`; neither requires storage permissions. Durable unsent input needs
-its own private persistent owner and explicit migration/recovery rules. Credentials
-belong to the authentication SDK/Keystore, and device preferences to DataStore.
-Canonical member preferences remain server-owned. User-selected imports/exports
-use the Storage Access Framework or MediaStore as appropriate, and sharing uses
-content URIs with scoped grants rather than exposing private file paths.
-
-Scope protected content by API origin, account and workspace; revalidate current
-authorization before restoring it. Keep optimistic mutations and transient stream
-deltas outside confirmed tables. Storage failures must remain observable without
-discarding already confirmed live content. Closing a workspace cancels its work
-and retires its storage lease; physical database/file cleanup must not block Main.
-Tests must close/checkpoint SQLite before copying or restoring its files.
+Choose storage by authority and lifetime. Follow the storage, identity, and
+recovery rules in [Android local storage](android-local-storage.md).
 
 ### Public Android Entry Points
 

@@ -41,12 +41,9 @@ const movePinnedThread$ = command(
     if (!thread) {
       return;
     }
-    // A pin ranks against the pins listed with it: the chats of its Project,
-    // which can belong to several Agents, or else the chats of its Agent.
+    // Each Project and the top-level member list have independent pin ranks.
     const ranked = threads.filter((item) => {
-      return move.projectId === null
-        ? item.agentId === thread.agentId
-        : item.projectId === move.projectId;
+      return item.projectId === move.projectId;
     });
     const pinOrders = new Map(
       moveChatThreadPinOrder(
@@ -58,8 +55,7 @@ const movePinnedThread$ = command(
         return [update.threadId, update.pinOrder] as const;
       }),
     );
-    // A move between equal ranks also re-ranks the chats tied with it, and
-    // each of them keeps its own Agent.
+    // A move between equal ranks also re-ranks the chats tied with it.
     const reranked = ranked.flatMap((item) => {
       const pinOrder = pinOrders.get(item.id);
       return pinOrder === undefined
@@ -71,7 +67,6 @@ const movePinnedThread$ = command(
         id: update.eventId,
         kind: "sort_touched",
         chatThreadId: update.thread.id,
-        agentId: update.thread.agentId,
         pinOrder: update.pinOrder,
       });
     }
@@ -103,17 +98,19 @@ export const stepPinnedThread$ = command(
     signal.throwIfAborted();
     // A pin steps over the pins listed with it: the other chats of its
     // Project, or else the chats outside Projects.
-    const projectThreads = get(list.projectThreads$);
+    const projectThreads = await get(list.projectThreads$);
+    signal.throwIfAborted();
     const projectId =
       projectThreads.find((item) => {
         return item.id === threadId;
       })?.projectId ?? null;
     const listed =
       projectId === null
-        ? get(list.threads$)
+        ? await get(list.threads$)
         : projectThreads.filter((item) => {
             return item.projectId === projectId;
           });
+    signal.throwIfAborted();
     const pins = listed.filter((item) => {
       return item.pinnedAt !== null;
     });

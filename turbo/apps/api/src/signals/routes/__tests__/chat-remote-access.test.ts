@@ -44,7 +44,7 @@ async function ownerWithThread(actor = bdd.user()) {
     displayName: "Remote access test agent",
     visibility: "private",
   });
-  const thread = await chat.createThread(actor, { agentId: agent.agentId });
+  const thread = await chat.createThread(actor, {});
   if (!actor.orgId) {
     throw new Error("Expected an organization");
   }
@@ -78,9 +78,7 @@ describe("chat remote access owner API", () => {
       owner.actor.orgId,
       owner.actor.orgRole,
     );
-    const secondThread = await chat.createThread(owner.actor, {
-      agentId: owner.agentId,
-    });
+    const secondThread = await chat.createThread(owner.actor, {});
     const first = await createSshHost("First host");
     const second = await createSshHost("Second host");
 

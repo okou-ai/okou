@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Require six actual returned-Guest stages, late custody and joined cleanup."""
 
-import argparse
 import hashlib
-import json
 import pathlib
-import re
 
 import create_cancellation_report as create
+import ext4_superblock
 import progress_report as foreground
 import pressure_report as pressure
 import observation_report as reads
@@ -27,16 +25,16 @@ def home(value, sandbox_id, filesystem_uuid=None):
     path = pathlib.PurePosixPath(value.get("path", ""))
     block_hex = value.get("superblock_hex")
     if (not path.is_absolute() or ".." in path.parts or path.name != "home.ext4"
-            or path.parent.name != sandbox_id or not isinstance(block_hex, str)
-            or not re.fullmatch(r"[0-9a-f]{2048}", block_hex)):
+            or path.parent.name != sandbox_id):
         raise ValueError("actual returned home path/bytes changed")
-    block = bytes.fromhex(block_hex)
-    if block[56:58] != b"\x53\xef":
+    block = ext4_superblock.decode_hex(block_hex, "actual returned home path/bytes changed")
+    if not ext4_superblock.has_magic(block):
         raise ValueError("actual returned home is not ext4")
-    actual_uuid = block[104:120].hex()
+    actual_uuid = ext4_superblock.filesystem_uuid(block)
     if filesystem_uuid is not None and actual_uuid != filesystem_uuid:
         raise ValueError("actual returned home generation changed")
-    report.exact(value, {"path": str(path), "bytes": report.NATIVE_HOME_BYTES, "ext4_magic": "53ef",
+    report.exact(value, {"path": str(path), "bytes": report.NATIVE_HOME_BYTES,
+        "ext4_magic": ext4_superblock.MAGIC_HEX,
         "filesystem_uuid": actual_uuid, "superblock_hex": block_hex,
         "superblock_sha256": hashlib.sha256(block).hexdigest()}, "actual returned home bytes/hash changed")
     return path, actual_uuid
@@ -56,10 +54,11 @@ def validate(directory):
     for case, events in witnesses.items():
         terminal = terminals[case]
         stage = case.split("-")[1]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered returned Guest phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered returned Guest phases",
+        )
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("returned Guest lost original identity")
         create.ordered([terminal[1]["monotonic_ns"], *(e["monotonic_ns"] for e in events[:-1]), terminal[2]["monotonic_ns"]])
         create.ordered([terminal[4]["monotonic_ns"], events[-1]["monotonic_ns"], terminal[-1]["monotonic_ns"]])
@@ -158,6 +157,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    print(json.dumps(validate(parser.parse_args().directory), indent=2))
+    report.run_cli(validate, __doc__)

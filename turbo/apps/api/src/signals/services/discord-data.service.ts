@@ -1,10 +1,8 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, count, eq, gte, isNotNull, or, sql, type SQL } from "drizzle-orm";
+import { and, count, eq, gte, isNotNull, sql, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
-import { agents } from "@okouai/db/schema/agent";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { discordSnowflakeSchema } from "../external/discord-client";
 import type { ApiOrgRole } from "../../types/auth";
@@ -492,95 +490,6 @@ export const disconnectDiscordBinding$ = command(
   },
 );
 
-function discordDefaultAgentReadPlan(orgId: string) {
-  return {
-    columns: { defaultAgentId: orgMetadata.defaultAgentId },
-    from: orgMetadata,
-    where: eq(orgMetadata.orgId, orgId),
-  };
-}
-
-function discordAccessibleAgentReadPlan(
-  identity: { readonly orgId: string; readonly userId: string },
-  agentId: string,
-) {
-  return {
-    columns: {
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    },
-    from: agents,
-    where: and(
-      eq(agents.id, agentId),
-      eq(agents.orgId, identity.orgId),
-      or(eq(agents.visibility, "public"), eq(agents.owner, identity.userId)),
-    ),
-  };
-}
-
-function discordEffectiveAgent(
-  input: Computed<{ readonly orgId: string; readonly userId: string }>,
-) {
-  return computed(async (get) => {
-    const args = get(input);
-    const db = get(db$);
-    const metadataPlan = discordDefaultAgentReadPlan(args.orgId);
-    const [metadata] = await db
-      .select(metadataPlan.columns)
-      .from(metadataPlan.from)
-      .where(metadataPlan.where);
-    const agentId = metadata?.defaultAgentId;
-    if (!agentId) {
-      return null;
-    }
-    const agentPlan = discordAccessibleAgentReadPlan(args, agentId);
-    const [agent] = await db
-      .select(agentPlan.columns)
-      .from(agentPlan.from)
-      .where(agentPlan.where);
-    return agent ?? null;
-  });
-}
-
-/** Fresh read; each semantic caller retains its complete-read abort boundary. */
-export const readDiscordEffectiveAgent$ = command(
-  async (
-    { get },
-    args: { readonly orgId: string; readonly userId: string },
-  ) => {
-    const db = get(db$);
-    const metadataPlan = discordDefaultAgentReadPlan(args.orgId);
-    const [metadata] = await db
-      .select(metadataPlan.columns)
-      .from(metadataPlan.from)
-      .where(metadataPlan.where);
-    const agentId = metadata?.defaultAgentId;
-    if (!agentId) {
-      return null;
-    }
-    const agentPlan = discordAccessibleAgentReadPlan(args, agentId);
-    const [agent] = await db
-      .select(agentPlan.columns)
-      .from(agentPlan.from)
-      .where(agentPlan.where);
-    return agent ?? null;
-  },
-);
-
-function discordStatusAgentFields(
-  agent: {
-    readonly id: string;
-    readonly name: string;
-    readonly displayName: string | null;
-  } | null,
-): Pick<DiscordOrgStatus, "defaultAgentId" | "defaultAgentName"> {
-  return {
-    defaultAgentId: agent?.id ?? null,
-    defaultAgentName: agent?.displayName ?? agent?.name ?? null,
-  };
-}
-
 function discordStatusConnection(
   identity$: Computed<{ readonly orgId: string; readonly userId: string }>,
 ) {
@@ -612,7 +521,6 @@ export function discordOrgStatus(
 ): Computed<Promise<DiscordOrgStatus>> {
   const capability$ = discordMessageContentCapability();
   const role$ = discordMemberRole(identity$);
-  const agent$ = discordEffectiveAgent(identity$);
   const connection$ = discordStatusConnection(identity$);
   const discordUserId$ = computed(async (get) => {
     const connection = await get(connection$);
@@ -630,8 +538,7 @@ export function discordOrgStatus(
       guildId: null,
       guildName: null,
       discordUserId: null,
-      defaultAgentId: null,
-      defaultAgentName: null,
+
       contextMode: "unavailable",
       onboarding: "oauth",
       dmSelectionConnectionId: null,
@@ -657,12 +564,10 @@ export function discordOrgStatus(
           : "unavailable",
     };
     const connection = await get(connection$);
-    const agent = await get(agent$);
     if (!connection) {
       return {
         ...currentStatus,
         isAdmin: role === "admin",
-        ...discordStatusAgentFields(agent),
       };
     }
     const bindings = (await get(statusBindings$)).filter((binding) => {
@@ -693,7 +598,6 @@ export function discordOrgStatus(
       guildId: connection.guildId,
       guildName: connection.guildName,
       discordUserId: connection.discordUserId,
-      ...discordStatusAgentFields(agent),
       dmSelectionConnectionId:
         choice?.userId === args.userId ? choice.connectionId : null,
       dmBindings: bindings.map(

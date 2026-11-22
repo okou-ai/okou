@@ -2,9 +2,7 @@ import { useGet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, MessageCircle, Package, Plug, User } from "lucide-react";
 import { cn } from "@okouai/ui";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
-import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { isChatRoute } from "../../signals/okou-page/nav.ts";
 import { pwaHasUnreadChats$ } from "../../signals/okou-page/pwa-chat-list.ts";
 import {
@@ -13,10 +11,9 @@ import {
   type RouteKey,
 } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
-import { AgentUnreadIndicator } from "./sidebar-agent-row-actions.tsx";
+import { UnreadIndicator } from "./unread-indicator.tsx";
 
-type PwaParentPathname =
-  typeof ROUTES.me | typeof ROUTES.agents | typeof ROUTES.workflows;
+type PwaParentPathname = typeof ROUTES.me | typeof ROUTES.workflows;
 
 function PwaBackLink({
   pathname,
@@ -39,20 +36,12 @@ function PwaBackLink({
   );
 }
 
-// My Okou's chats tab is `/`; otherwise it opens the current agent's chat.
-function useChatsTabAgentId(): string | null {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  const agentId = useLastResolved(currentChatAgentId$) ?? null;
-  return singleAgent ? null : agentId;
-}
-
 export function PwaBackToChats() {
   const { t } = useTranslation();
-  const agentId = useChatsTabAgentId();
+
   return (
     <PwaBackLink
-      pathname={agentId ? ROUTES.agentChat : ROUTES.home}
-      options={agentId ? { pathParams: { agentId } } : undefined}
+      pathname={ROUTES.home}
       label={t(($) => {
         return $.appShell.pwaNavigation.backToChats;
       })}
@@ -60,14 +49,11 @@ export function PwaBackToChats() {
   );
 }
 
-// Agents, Workflows and Works are opened from Me, so each page steps back one
+// Workflows and Works are opened from Me, so each page steps back one
 // level toward it. Tab roots have no parent.
 function pwaParentPathname(route: RouteKey | null): PwaParentPathname | null {
-  if (route === "agents" || route === "workflows" || route === "works") {
+  if (route === "workflows" || route === "works") {
     return ROUTES.me;
-  }
-  if (route === "agentDetail" || route === "agentPermissions") {
-    return ROUTES.agents;
   }
   if (isWorkflowDetailRouteKey(route)) {
     return ROUTES.workflows;
@@ -99,7 +85,7 @@ function PwaTabUnreadIndicator() {
   // The background ring cuts the dot out of the icon stroke it overlaps.
   return (
     <span className="absolute -right-1 -top-1 flex rounded-full bg-background p-0.5">
-      <AgentUnreadIndicator />
+      <UnreadIndicator />
     </span>
   );
 }
@@ -107,11 +93,10 @@ function PwaTabUnreadIndicator() {
 export function PwaBottomNavigation() {
   const { t } = useTranslation();
   const route = useGet(activeRoute$);
-  const agentId = useChatsTabAgentId();
+
   const tabs = [
     {
-      pathname: agentId ? ROUTES.agentChat : ROUTES.home,
-      options: agentId ? { pathParams: { agentId } } : undefined,
+      pathname: ROUTES.home,
       label: t(($) => {
         return $.appShell.pwaNavigation.chats;
       }),
@@ -162,40 +147,37 @@ export function PwaBottomNavigation() {
       })}
       className="grid shrink-0 grid-cols-4 gap-1 border-t border-border/50 bg-background px-2 pt-1 pb-safe [view-transition-name:pwa-tab-bar] [[data-keyboard-open=true]_&]:hidden"
     >
-      {tabs.map(
-        ({ pathname, options, label, Icon, filledPath, active, unread }) => {
-          return (
-            <Link
-              key={pathname}
-              pathname={pathname}
-              options={options}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium transition-colors",
-                active
-                  ? "text-brand-text hover:text-brand-text-hover"
-                  : "text-muted-foreground hover:text-foreground",
+      {tabs.map(({ pathname, label, Icon, filledPath, active, unread }) => {
+        return (
+          <Link
+            key={pathname}
+            pathname={pathname}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-xs font-medium transition-colors",
+              active
+                ? "text-brand-text hover:text-brand-text-hover"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <span className="relative flex">
+              {active ? (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="size-5 fill-current"
+                  aria-hidden="true"
+                >
+                  <path d={filledPath} fillRule="evenodd" />
+                </svg>
+              ) : (
+                <Icon className="size-5" aria-hidden="true" />
               )}
-            >
-              <span className="relative flex">
-                {active ? (
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="size-5 fill-current"
-                    aria-hidden="true"
-                  >
-                    <path d={filledPath} fillRule="evenodd" />
-                  </svg>
-                ) : (
-                  <Icon className="size-5" aria-hidden="true" />
-                )}
-                {unread && <PwaTabUnreadIndicator />}
-              </span>
-              <span className="max-w-full truncate">{label}</span>
-            </Link>
-          );
-        },
-      )}
+              {unread && <PwaTabUnreadIndicator />}
+            </span>
+            <span className="max-w-full truncate">{label}</span>
+          </Link>
+        );
+      })}
     </nav>
   );
 }

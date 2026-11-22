@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { workflowsCollectionContract } from "@okouai/api-contracts/client/workflows";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -141,14 +141,14 @@ function createWorkflowRecencyOwner(owner: string | null) {
   const migrationRevision$ = state(0);
   const migration$ = state<Promise<void> | null>(null);
   const readComposer$ = command(
-    async ({ get, set }, agentId: string, consumerSignal: AbortSignal) => {
+    async ({ get, set }, consumerSignal: AbortSignal) => {
       const resource = await set(open$, get(rootSignal$));
       const signal = AbortSignal.any([resource.signal, consumerSignal]);
       signal.throwIfAborted();
       resource.assertCurrent();
       const result = await accept(
         resource.client.composer({
-          query: { agentId },
+          query: {},
           fetchOptions: { signal },
         }),
         [200],
@@ -191,12 +191,11 @@ function createWorkflowRecencyOwner(owner: string | null) {
     load$: command(
       async (
         { get, set },
-        agentId: string,
         enabled: boolean,
         signal: AbortSignal,
       ): Promise<readonly ComposerWorkflow[]> => {
         const revision = get(migrationRevision$);
-        const workflows = await set(readComposer$, agentId, signal);
+        const workflows = await set(readComposer$, signal);
         if (!enabled) {
           return workflows;
         }
@@ -204,12 +203,12 @@ function createWorkflowRecencyOwner(owner: string | null) {
         if (pending) {
           await pending;
           signal.throwIfAborted();
-          return await set(readComposer$, agentId, signal);
+          return await set(readComposer$, signal);
         }
         // A GET started before another composer imported history must not
         // publish pre-import data after that import finishes.
         if (revision !== get(migrationRevision$)) {
-          return await set(readComposer$, agentId, signal);
+          return await set(readComposer$, signal);
         }
         if (get(checked$)) {
           return workflows;
@@ -230,7 +229,7 @@ function createWorkflowRecencyOwner(owner: string | null) {
         set(migration$, migration);
         await migration;
         signal.throwIfAborted();
-        return await set(readComposer$, agentId, signal);
+        return await set(readComposer$, signal);
       },
     ),
   };
@@ -241,24 +240,18 @@ const recencyOwner$ = computed((get) => {
   return createWorkflowRecencyOwner(get(authenticatedSessionKey$));
 });
 
-type AgentIdValue = string | null | Promise<string | null>;
-
 interface ComposerWorkflowRequestKey {
   readonly owner: ReturnType<typeof createWorkflowRecencyOwner>;
-  readonly agentId: AgentIdValue;
   readonly enabled: Promise<boolean>;
 }
 
-export function createComposerWorkflows<T extends AgentIdValue>(
-  agentIdSource$: Computed<T>,
-) {
+export function createComposerWorkflows() {
   const requestKey$ = computed((get): ComposerWorkflowRequestKey => {
     get(recencyVersion$);
     get(queryVersion$);
     get(workflowReloadVersion$);
     return {
       owner: get(recencyOwner$),
-      agentId: get(agentIdSource$),
       enabled: get(workflowRecencyEnabled$),
     };
   });
@@ -270,11 +263,9 @@ export function createComposerWorkflows<T extends AgentIdValue>(
   const loadRequest$ = command(
     async ({ set }, key: ComposerWorkflowRequestKey, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const [agentId, enabled] = await Promise.all([key.agentId, key.enabled]);
+      const enabled = await key.enabled;
       signal.throwIfAborted();
-      return agentId
-        ? await set(key.owner.load$, agentId, enabled, signal)
-        : [];
+      return await set(key.owner.load$, enabled, signal);
     },
   );
   return {

@@ -87,14 +87,14 @@ ios_path = sys.argv[1].replace('release-please.yml', 'ios.yml')
 ios = json.loads(subprocess.check_output(['yq', '-o=json', '.', ios_path], text=True))
 assert 'publish-archive' in ios['jobs']['ci-gate-ios']['needs']
 assert ios['jobs']['ci-gate-ios']['if'] == 'always()'
-native_jobs = ['swiftlint-build', 'swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-preview', 'build-archive', 'publish-archive']
+native_jobs = ['swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-preview', 'build-archive', 'publish-archive']
 
 def ancestors(name):
     needs = ios['jobs'][name].get('needs', [])
     needs = [needs] if isinstance(needs, str) else needs
     return set(needs).union(*(ancestors(job) for job in needs))
 
-def started(event, needed='true', release=False, reuse='', cancelled=False, **forced):
+def started(event, needed='true', release=False, reuse='', cancelled=False, scripts='true', **forced):
     """Evaluate the actual job conditions in dependency order, as Actions does."""
     results = {}
     for name in ['detect', 'script-checks', 'resolve-release', *native_jobs]:
@@ -105,6 +105,7 @@ def started(event, needed='true', release=False, reuse='', cancelled=False, **fo
         if selected:
             detected = results.get('detect') == 'success'
             context = {'github.event_name': event, '!cancelled()': True,
+                       'needs.detect.outputs.scripts-needed': scripts if detected else '',
                        'needs.detect.outputs.needed': needed if detected else '',
                        'needs.detect.outputs.release': str(release).lower() if detected else '',
                        'needs.resolve-release.outputs.reuse': reuse if results.get('resolve-release') == 'success' else ''}
@@ -122,7 +123,7 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
         for release in [False, True]:
             expected = set()
             if needed == 'true':
-                expected |= {'swiftlint-build', 'swiftlint'}
+                expected.add('swiftlint')
                 if event != 'push':
                     expected |= {'prepare-package-sources', 'test-packages', 'build-test'}
                 if event in ['pull_request', 'workflow_dispatch']:
@@ -133,6 +134,8 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
                         expected.add('resolve-release')
             assert started(event, needed, release, reuse='false') == expected, (event, needed, release)
 ordinary = started('merge_group')
+assert started('merge_group', scripts='false') == ordinary
+assert 'publish-archive' not in started('merge_group', scripts='true', **{'script-checks': 'skipped'})
 # Verified reuse omits every native job; a miss runs all of them after the resolver.
 assert started('merge_group', release=True, reuse='true') == {'resolve-release'}
 assert started('merge_group', release=True, reuse='false') == ordinary | {'resolve-release'}
@@ -140,7 +143,7 @@ assert started('merge_group', release=True, reuse='false') == ordinary | {'resol
 assert started('merge_group', release=True, reuse='') == {'resolve-release'}
 for result in ['failure', 'cancelled']:
     assert started('merge_group', release=True, reuse='false', **{'resolve-release': result}) == {'resolve-release'}
-for producer in ['script-checks', 'swiftlint-build', 'swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-archive']:
+for producer in ['script-checks', 'swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-archive']:
     for result in ['failure', 'cancelled']:
         assert 'publish-archive' not in started('merge_group', **{producer: result}), (producer, result)
 assert not started('merge_group', cancelled=True)

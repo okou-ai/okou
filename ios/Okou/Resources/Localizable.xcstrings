@@ -2407,43 +2407,6 @@
         }
       }
     },
-    "Allow %@ for this Agent": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "%@ für diesen Agenten zulassen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Permitir %@ para este agente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Autoriser %@ pour cet agent" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस एजेंट के लिए %@ की अनुमति दें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Izinkan %@ untuk agen ini" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Consenti %@ per questo agente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "このエージェントに %@ を許可" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 에이전트에 %@ 허용" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Permitir %@ para este agente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "允许此智能体使用 %@" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "允許此智能體使用 %@" }
-        }
-      }
-    },
     "Allow all": {
       "localizations": {
         "de": {
@@ -2597,47 +2560,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "授予權限" }
-        }
-      }
-    },
-    "Allow this Agent to use the connected account.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Erlauben Sie diesem Agenten, das verbundene Konto zu verwenden." }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Allow this Agent to use the connected account." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Permite que este agente use la cuenta conectada." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Autorisez cet agent à utiliser le compte connecté." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस एजेंट को कनेक्ट किए गए खाते का उपयोग करने की अनुमति दें।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Izinkan agen ini menggunakan akun yang terhubung." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Consenti a questo agente di usare l'account collegato." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "このエージェントに、接続済みのアカウントの使用を許可します。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 에이전트가 연결된 계정을 사용하도록 허용합니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Permita que este agente use a conta conectada." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "允许此智能体使用已连接的账号。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "允許此智能體使用已連線的帳號。" }
         }
       }
     },
@@ -3555,47 +3477,6 @@
         }
       }
     },
-    "Authorization applies to the Agent in this chat.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Die Autorisierung gilt für den Agenten in diesem Chat." }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Authorization applies to the Agent in this chat." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "La autorización se aplica al agente de este chat." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "L’autorisation s’applique à l’agent de cette discussion." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "प्राधिकरण इस चैट के एजेंट पर लागू होता है।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Otorisasi berlaku untuk agen di chat ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "L'autorizzazione vale per l'agente in questa chat." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "承認はこのチャットのエージェントに適用されます。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "승인은 이 채팅의 에이전트에 적용됩니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "A autorização vale para o agente desta conversa." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "授权适用于此聊天中的智能体。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "授權適用於此聊天中的智能體。" }
-        }
-      }
-    },
     "Authorization canceled.": {
       "extractionState": "manual",
       "localizations": {
@@ -3798,47 +3679,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "授權於 %@ 到期" }
-        }
-      }
-    },
-    "Authorize Agent": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Agenten autorisieren" }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Authorize Agent" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Autorizar agente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Autoriser l’agent" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "एजेंट को अधिकृत करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Otorisasi agen" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Autorizza agente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "エージェントを承認" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "에이전트 승인" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Autorizar agente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "授权智能体" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "授權智能體" }
         }
       }
     },
@@ -5786,43 +5626,6 @@
         }
       }
     },
-    "Connect a service to make it available to this Agent.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Verbinden Sie einen Dienst, um ihn diesem Agenten zur Verfügung zu stellen." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Conecta un servicio para que esté disponible para este agente." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Connectez un service pour le rendre disponible pour cet agent." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "किसी सेवा को इस एजेंट के लिए उपलब्ध कराने के लिए उसे कनेक्ट करें।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Hubungkan layanan agar tersedia untuk agen ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Collega un servizio per renderlo disponibile a questo agente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "サービスを接続すると、このエージェントで利用できるようになります。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "서비스를 연결하면 이 에이전트에서 사용할 수 있습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Conecte um serviço para disponibilizá-lo a este agente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "连接服务，让此智能体可以使用。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "連線服務，讓此智能體可以使用。" }
-        }
-      }
-    },
     "Connect account": {
       "extractionState": "manual",
       "localizations": {
@@ -5861,47 +5664,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "連接帳號" }
-        }
-      }
-    },
-    "Connect an account for this Agent": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Konto für diesen Agenten verbinden" }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Connect an account for this Agent" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Conecta una cuenta para este agente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Connecter un compte pour cet agent" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस एजेंट के लिए खाता कनेक्ट करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Hubungkan akun untuk agen ini" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Collega un account per questo agente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "このエージェント用のアカウントを接続" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 에이전트에 계정 연결" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Conectar uma conta para este agente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "为此智能体连接账号" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "為此智能體連線帳號" }
         }
       }
     },
@@ -6103,47 +5865,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "已連線" }
-        }
-      }
-    },
-    "Connected and authorized for this Agent.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Verbunden und für diesen Agenten autorisiert." }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Connected and authorized for this Agent." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Conectado y autorizado para este agente." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Connecté et autorisé pour cet agent." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस एजेंट के लिए कनेक्ट और अधिकृत है।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Terhubung dan diotorisasi untuk agen ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Collegato e autorizzato per questo agente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "接続済みで、このエージェントに承認されています。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "연결되었으며 이 에이전트에 대해 승인되었습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Conectado e autorizado para este agente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已连接并授权给此智能体。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "已連線並授權給此智能體。" }
         }
       }
     },
@@ -14225,40 +13946,40 @@
         }
       }
     },
-    "Notifications tell you when a chat finishes. Pick a chat's model at the top of the chat, and its connectors under + in the message composer.": {
+    "Notifications tell you when a chat finishes. Choose connectors under + in the message composer.": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Benachrichtigungen melden, wenn ein Chat fertig ist. Das Modell eines Chats wählen Sie oben im Chat, seine Konnektoren unter + im Nachrichtenfeld." }
+          "stringUnit": { "state": "translated", "value": "Benachrichtigungen melden, wenn ein Chat fertig ist. Konnektoren wählen Sie unter + im Nachrichtenfeld." }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Las notificaciones te avisan cuando termina un chat. Elige el modelo de un chat en la parte superior del chat y sus conectores en + del cuadro de mensaje." }
+          "stringUnit": { "state": "translated", "value": "Las notificaciones te avisan cuando termina un chat. Elige los conectores en + del cuadro de mensaje." }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Les notifications vous préviennent quand un chat se termine. Choisissez le modèle d’un chat en haut du chat, et ses connecteurs sous + dans le champ de message." }
+          "stringUnit": { "state": "translated", "value": "Les notifications vous préviennent quand un chat se termine. Choisissez les connecteurs sous + dans le champ de message." }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "चैट पूरी होने पर सूचनाएँ आपको बताती हैं। चैट का मॉडल चैट के ऊपर चुनें, और उसके कनेक्टर संदेश बॉक्स में + के अंदर।" }
+          "stringUnit": { "state": "translated", "value": "चैट पूरी होने पर सूचनाएँ आपको बताती हैं। संदेश बॉक्स में + के अंदर कनेक्टर चुनें।" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Notifikasi memberi tahu Anda saat chat selesai. Pilih model chat di bagian atas chat, dan konektornya di + pada kotak pesan." }
+          "stringUnit": { "state": "translated", "value": "Notifikasi memberi tahu Anda saat chat selesai. Pilih konektor di + pada kotak pesan." }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Le notifiche ti avvisano quando una chat termina. Scegli il modello di una chat in alto nella chat e i suoi connettori sotto + nel campo del messaggio." }
+          "stringUnit": { "state": "translated", "value": "Le notifiche ti avvisano quando una chat termina. Scegli i connettori sotto + nel campo del messaggio." }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "チャットが終わると通知でお知らせします。チャットのモデルはチャット上部で、コネクタはメッセージ欄の + から選べます。" }
+          "stringUnit": { "state": "translated", "value": "チャットが終わると通知でお知らせします。コネクタはメッセージ欄の + から選べます。" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "채팅이 끝나면 알림으로 알려 드립니다. 채팅의 모델은 채팅 상단에서, 커넥터는 메시지 입력창의 + 에서 고르세요." }
+          "stringUnit": { "state": "translated", "value": "채팅이 끝나면 알림으로 알려 드립니다. 커넥터는 메시지 입력창의 + 에서 고르세요." }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "As notificações avisam quando um chat termina. Escolha o modelo de um chat no topo do chat e os conectores em + na caixa de mensagem." }
+          "stringUnit": { "state": "translated", "value": "As notificações avisam quando um chat termina. Escolha os conectores em + na caixa de mensagem." }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "聊天完成时会通知你。对话的模型在对话顶部选择，连接器在消息输入框的 + 里选择。" }
+          "stringUnit": { "state": "translated", "value": "聊天完成时会通知你。连接器在消息输入框的 + 里选择。" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "聊天完成時會通知你。對話的模型在對話頂部選擇，連接器在訊息輸入框的 + 裡選擇。" }
+          "stringUnit": { "state": "translated", "value": "聊天完成時會通知你。連接器在訊息輸入框的 + 裡選擇。" }
         }
       }
     },
@@ -17732,43 +17453,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "要重設訂閱用量嗎？" }
-        }
-      }
-    },
-    "Reset this connector's permissions for this Agent?": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Berechtigungen dieser Integration für diesen Agenten zurücksetzen?" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "¿Restablecer los permisos de este conector para este agente?" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Réinitialiser les autorisations de ce connecteur pour cet agent ?" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस एजेंट के लिए इस कनेक्टर की अनुमतियाँ रीसेट करें?" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Reset izin konektor ini untuk agen ini?" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Ripristinare le autorizzazioni di questo connettore per questo agente?" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "このエージェントに対するこのコネクターの権限をリセットしますか？" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 에이전트에 대한 이 커넥터의 권한을 초기화하시겠습니까?" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Redefinir as permissões deste conector para este agente?" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "要重置此连接器对此智能体的权限吗？" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "要重設此連接器對此智能體的權限嗎？" }
         }
       }
     },
@@ -21503,43 +21187,6 @@
         }
       }
     },
-    "Switches apply to this Agent. Account choices apply to this chat.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Schalter gelten für diesen Agenten. Die Kontoauswahl gilt für diesen Chat." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Los interruptores se aplican a este agente. La elección de cuenta se aplica a este chat." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Les interrupteurs s’appliquent à cet agent. Le choix du compte s’applique à cette discussion." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "स्विच इस एजेंट पर लागू होते हैं। खाते के विकल्प इस चैट पर लागू होते हैं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Sakelar berlaku untuk agen ini. Pilihan akun berlaku untuk chat ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Gli interruttori valgono per questo agente. La scelta dell'account vale per questa chat." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "スイッチの設定はこのエージェントに、アカウントの選択はこのチャットに適用されます。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "스위치 설정은 이 에이전트에 적용되고, 계정 선택은 이 채팅에 적용됩니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "As opções liga/desliga valem para este agente. As escolhas de conta valem para esta conversa." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "开关设置适用于此智能体，账号选择仅适用于此聊天。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "開關設定適用於此智能體，帳號選擇僅適用於此聊天。" }
-        }
-      }
-    },
     "Sync draft": {
       "localizations": {
         "de": {
@@ -21948,84 +21595,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "還是老樣子，%@？" }
-        }
-      }
-    },
-    "These permissions apply to this Agent across its chats.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Diese Berechtigungen gelten für diesen Agenten in all seinen Chats." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Estos permisos se aplican a este agente en todos sus chats." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Ces autorisations s’appliquent à cet agent dans toutes ses discussions." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "ये अनुमतियाँ इस एजेंट की सभी चैट पर लागू होती हैं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Izin ini berlaku untuk agen ini di semua chat-nya." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Queste autorizzazioni valgono per questo agente in tutte le sue chat." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "これらの権限は、このエージェントのすべてのチャットに適用されます。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 권한은 이 에이전트의 모든 채팅에 적용됩니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Estas permissões valem para este agente em todas as conversas dele." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "这些权限适用于此智能体的所有聊天。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "這些權限適用於此智能體的所有聊天。" }
-        }
-      }
-    },
-    "These permissions apply to your account for this Agent.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Diese Berechtigungen gelten für Ihr Konto bei diesem Agenten." }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "These permissions apply to your account for this Agent." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Estos permisos se aplican a tu cuenta para este agente." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Ces autorisations s’appliquent à votre compte pour cet agent." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "ये अनुमतियाँ इस एजेंट के लिए आपके खाते पर लागू होती हैं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Izin ini berlaku untuk akun Anda di agen ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Queste autorizzazioni valgono per il tuo account con questo agente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "これらの権限は、このエージェントでのあなたのアカウントに適用されます。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 권한은 이 에이전트에서 내 계정에 적용됩니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Estas permissões valem para sua conta neste agente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "这些权限适用于你在此智能体中的账号。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "這些權限適用於你在此智能體中的帳號。" }
         }
       }
     },
@@ -26821,6 +26390,191 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "顯示已歸檔的聊天" }
+        }
+      }
+    },
+    "Delete chat": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Chat löschen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Eliminar chat" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Supprimer la discussion" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "चैट हटाएं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Hapus chat" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Elimina la chat" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "チャットを削除" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "채팅 삭제" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Excluir conversa" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除聊天" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除聊天" }
+        }
+      }
+    },
+    "Delete chat?": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Chat löschen?" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "¿Eliminar el chat?" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Supprimer la discussion ?" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "चैट हटाएं?" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Hapus chat?" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Eliminare la chat?" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "チャットを削除しますか?" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "채팅을 삭제하시겠습니까?" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Excluir conversa?" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除聊天？" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除聊天？" }
+        }
+      }
+    },
+    "This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Dadurch wird dieser Chat dauerhaft gelöscht. Jede derzeit in diesem Chat ausgeführte Aufgabe wird sofort gestoppt. Alle verknüpften Automatisierungen werden pausiert. Diese Aktion kann nicht rückgängig gemacht werden." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Esto eliminará permanentemente este chat. Cualquier tarea que se esté ejecutando en este chat se detendrá inmediatamente. Todas las automatizaciones vinculadas se pausarán. Esta acción no puede deshacerse." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "इससे यह चैट स्थायी रूप से हट जाएगी। इस चैट में वर्तमान में चल रहा कोई भी कार्य तुरंत बंद कर दिया जाएगा। इससे जुड़ी सभी ऑटोमेशन रोक दी जाएंगी। इस एक्शन को वापस नहीं किया जा सकता।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Ini akan menghapus chat ini secara permanen. Setiap tugas yang sedang berjalan di chat ini akan dihentikan segera. Semua automasi yang ditautkan akan dijeda. Tindakan ini tidak dapat dibatalkan." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Ciò eliminerà definitivamente questa chat. Qualsiasi attività attualmente in esecuzione in questa chat verrà interrotta immediatamente. Tutte le automazioni collegate verranno messe in pausa. Questa azione non può essere annullata." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "これにより、このチャットは完全に削除されます。このチャットで現在実行中のタスクはすぐに停止されます。リンクされている自動化は一時停止されます。この操作は元に戻すことができません。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "이 채팅을 영구 삭제합니다. 현재 실행 중인 작업은 즉시 중단됩니다. 연결된 자동화는 일시 중지됩니다. 이 작업은 되돌릴 수 없습니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Esta conversa será excluída permanentemente. Qualquer tarefa em execução nesta conversa será interrompida imediatamente. Todas as automações vinculadas serão pausadas. Esta ação não pode ser desfeita." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这将永久删除该聊天。聊天中正在运行的任务会立即停止，关联的自动化会被暂停。此操作无法撤销。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "這將永久刪除該聊天。聊天中正在執行的任務會立即停止，關聯的自動化會被暫停。此操作無法撤銷。" }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Löschen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Eliminar" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Supprimer" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "हटाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Hapus" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Elimina" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "削除" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "삭제" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Excluir" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除" }
+        }
+      }
+    },
+    "The chat deletion was not confirmed.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Das Löschen des Chats wurde nicht bestätigt." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "No se confirmó la eliminación del chat." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "La suppression de la discussion n’a pas été confirmée." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "चैट हटाने की पुष्टि नहीं हुई।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Penghapusan chat tidak dikonfirmasi." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "L’eliminazione della chat non è stata confermata." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "チャットの削除は確認されませんでした。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "채팅 삭제가 확인되지 않았습니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "A exclusão da conversa não foi confirmada." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除聊天未确认。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除聊天未確認。" }
         }
       }
     }

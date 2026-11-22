@@ -6,7 +6,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 
@@ -22,7 +22,6 @@ import {
   connectorAccount,
   chatConnectorOverviewFixture,
   createComposerConnectorHelpers,
-  SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 
@@ -51,9 +50,9 @@ async function setup(count: number) {
   installComposerConnectorFixture({ catalog, accounts });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
     locale: "en-US",
-    featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+    featureSwitches: {},
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);

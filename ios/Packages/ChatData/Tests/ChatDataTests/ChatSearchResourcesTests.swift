@@ -5,14 +5,14 @@ import XCTest
 final class ChatSearchResourcesTests: XCTestCase {
   func testWorkflowMatchesItsTitleNameOrDescription() {
     let workflow = ChatSearchWorkflow(
-      id: "workflow", agentId: "agent", name: "brand-design", displayName: "Brand Design",
+      id: "workflow", name: "brand-design", displayName: "Brand Design",
       description: "Make Okou posters")
     XCTAssertTrue(workflow.matches(""))
     XCTAssertTrue(workflow.matches("brand"))
     XCTAssertTrue(workflow.matches("poster"))
     XCTAssertFalse(workflow.matches("calendar"))
     XCTAssertEqual(workflow.title, "Brand Design")
-    let workflowWithoutDisplayName = ChatSearchWorkflow(id: "mine", agentId: "agent", name: "mine")
+    let workflowWithoutDisplayName = ChatSearchWorkflow(id: "mine", name: "mine")
     XCTAssertEqual(workflowWithoutDisplayName.title, "mine")
   }
 }

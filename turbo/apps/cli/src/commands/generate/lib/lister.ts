@@ -1,13 +1,11 @@
 import chalk from "chalk";
 import type { ConnectorCatalogItem } from "../../../lib/api/domains/connectors";
-import { getAgentUserBuiltinConnectors } from "../../../lib/api/domains/agents";
 import {
   listConnectorCatalog,
   listConnectedConnectors,
 } from "../../../lib/api/domains/connectors";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import { isPaidToolEnabled } from "../../../lib/command/paid-tools";
-import { getOkouAgentId } from "../../../lib/okou-env";
 import { connectorActionUrl } from "../../connector/action-url";
 import {
   isRunBoundConnectorContext,
@@ -47,37 +45,37 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   presentation: {
     label: "Built-in presentation generation",
     command: "okou generate presentation -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   report: {
     label: "Built-in report generation",
     command: "okou generate report -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   "docs-design": {
     label: "Built-in docs design generation",
     command: "okou generate docs-design -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   poster: {
     label: "Built-in poster generation",
     command: "okou generate poster -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   "dashboard-design": {
     label: "Built-in dashboard design generation",
     command: "okou generate dashboard-design -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   "mobile-app-design": {
     label: "Built-in mobile app design generation",
     command: "okou generate mobile-app-design -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   website: {
     label: "Built-in website generation",
     command: "okou generate website -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   sprite: {
     label: "Built-in sprite asset generation",
@@ -116,7 +114,6 @@ type CandidateStatus =
   | "ready"
   | "needs-reconnect"
   | "saved-accounts"
-  | "not-authorized"
   | "not-connected"
   | "unavailable-for-run";
 
@@ -203,17 +200,9 @@ function runUnavailableReason(lookup: RunUnavailableAccountLookup): string {
 function toRunCandidate(params: {
   connector: ConnectorCatalogItem;
   lookup: RunConnectorAccountLookup;
-  authorizedConnectorSlugs: Set<string> | null;
-  agentId: string | undefined;
   platformOrigin: string;
 }): GenerationCandidate {
-  const {
-    connector,
-    lookup,
-    authorizedConnectorSlugs,
-    agentId,
-    platformOrigin,
-  } = params;
+  const { connector, lookup, platformOrigin } = params;
   if (lookup.state !== "available") {
     return {
       connectorSlug: connector.slug,
@@ -225,38 +214,19 @@ function toRunCandidate(params: {
 
   const needsReconnect =
     lookup.metadata.connectionStatus === "reconnect-required";
-  const authorized =
-    authorizedConnectorSlugs === null ||
-    authorizedConnectorSlugs.has(connector.slug);
-  const status: CandidateStatus = needsReconnect
-    ? "needs-reconnect"
-    : authorized
-      ? "ready"
-      : "not-authorized";
+  const status: CandidateStatus = needsReconnect ? "needs-reconnect" : "ready";
   const reason = needsReconnect
     ? "connected, reconnect required"
-    : authorized
-      ? "connected and authorized for current agent"
-      : "connected, not authorized for current agent";
+    : "connected and selected for this Run";
   const action = needsReconnect
     ? {
         actionLabel: `Reconnect ${connector.label}`,
         actionUrl: connectorActionUrl({
           origin: platformOrigin,
           path: `/connectors/${connector.slug}/reconnect/${lookup.connectionId}`,
-          agentId,
         }),
       }
-    : status === "not-authorized" && agentId
-      ? {
-          actionLabel: `Authorize ${connector.label}`,
-          actionUrl: connectorActionUrl({
-            origin: platformOrigin,
-            path: `/connectors/${connector.slug}/authorize`,
-            agentId,
-          }),
-        }
-      : {};
+    : {};
 
   return {
     connectorSlug: connector.slug,
@@ -346,32 +316,21 @@ function renderGenerationContext(generationType: GenerationType): void {
 
 function renderText(params: {
   generationType: GenerationType;
-  agentId: string | undefined;
   ready: GenerationCandidate[];
   other: GenerationCandidate[];
   showAll: boolean;
   runBound: boolean;
 }): void {
-  const { generationType, agentId, ready, other, showAll, runBound } = params;
+  const { generationType, ready, other, showAll, runBound } = params;
   const label = GENERATION_TYPE_LABELS[generationType];
   const scope = runBound ? "for current run" : "(saved-account directory)";
 
   console.log(`${label} generation choices ${scope}`);
   console.log("");
 
-  if (agentId) {
-    console.log(`${"Agent:".padEnd(10)}${agentId}`);
-    console.log("");
-  } else {
-    console.log(
-      "OKOU_AGENT_ID is not set, so agent authorization could not be checked.",
-    );
-    console.log("");
-  }
-
   if (!runBound) {
     console.log(
-      "Saved accounts may need setup, reconnect, or permission updates. Inspect connector status before use; directory membership does not establish runtime availability or agent authorization.",
+      "Saved accounts may need setup, reconnect, or permission updates. Inspect connector status before use; directory membership does not establish availability in a Run.",
     );
     console.log("");
   }
@@ -434,16 +393,11 @@ export async function runLister(
   options: ListerOptions = {},
 ): Promise<void> {
   const connectorGenerationType = getConnectorGenerationType(generationType);
-  const agentId = getOkouAgentId();
   const runBound = isRunBoundConnectorContext();
-  const [catalog, enabledConnectorSlugs, platformOrigin] = await Promise.all([
+  const [catalog, platformOrigin] = await Promise.all([
     loadGenerationCatalog(connectorGenerationType, runBound),
-    agentId ? getAgentUserBuiltinConnectors(agentId) : Promise.resolve(null),
     getPlatformOrigin(),
   ]);
-  const authorizedConnectorSlugs = enabledConnectorSlugs
-    ? new Set(enabledConnectorSlugs)
-    : null;
   let candidates: GenerationCandidate[] = [];
   if (connectorGenerationType && catalog.kind === "run") {
     const connectors = getGenerationConnectors(
@@ -463,8 +417,6 @@ export async function runLister(
       return toRunCandidate({
         connector,
         lookup,
-        authorizedConnectorSlugs,
-        agentId,
         platformOrigin,
       });
     });
@@ -500,7 +452,6 @@ export async function runLister(
   });
   renderText({
     generationType,
-    agentId,
     ready,
     other,
     showAll: options.all === true,

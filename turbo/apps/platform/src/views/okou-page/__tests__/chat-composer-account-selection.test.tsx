@@ -1,4 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
@@ -12,8 +13,8 @@ import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
+  chatConnectorOverviewFixture,
   connectorAccount,
-  SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
@@ -27,7 +28,6 @@ const { installComposerConnectorFixture } =
   createComposerConnectorHelpers(context);
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
-const DEFAULT_ACCOUNT_LABEL = "GitHub · Account for this chat";
 
 function target(): ConnectorAccountTarget {
   return { kind: "builtin", connectorSlug: GITHUB_SLUG };
@@ -49,20 +49,26 @@ function accounts(names: readonly string[] = ["Work", "Personal"]) {
 function installAccounts(
   connections: readonly ConnectorAccountConnection[],
   selectedConnection?: ConnectorAccountConnection,
-) {
-  return installComposerConnectorFixture({
+): void {
+  installComposerConnectorFixture({
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
-    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
     accounts: connections,
-    threadSelections: selectedConnection
-      ? {
-          [SCOUT_THREAD_ID]: [
-            { target: target(), connectionId: selectedConnection.id },
-          ],
-        }
-      : {},
     threadId: SCOUT_THREAD_ID,
   });
+  if (selectedConnection) {
+    context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+      return respond(200, [
+        {
+          ...chatConnectorOverviewFixture({
+            target: target(),
+            label: "GitHub",
+            accounts: connections,
+          }),
+          currentConnectionId: selectedConnection.id,
+        },
+      ]);
+    });
+  }
 }
 
 async function openConnectors(): Promise<void> {
@@ -72,15 +78,13 @@ async function openConnectors(): Promise<void> {
 
 async function openChooser(
   user: ReturnType<typeof userEvent.setup>,
-  accessibleName = DEFAULT_ACCOUNT_LABEL,
 ): Promise<HTMLElement> {
-  await user.click(await findFastControl("button", accessibleName));
-  return await screen.findByLabelText("Account for this chat");
+  await user.click(await findFastControl("button", /^GitHub/u));
+  return await screen.findByRole("group", { name: "GitHub" });
 }
 
 async function setupChooser(
   user: ReturnType<typeof userEvent.setup>,
-  accessibleName = DEFAULT_ACCOUNT_LABEL,
 ): Promise<HTMLElement> {
   await setupPage({
     locale: "en-US",
@@ -89,13 +93,13 @@ async function setupChooser(
   });
   await findComposer();
   await openConnectors();
-  return await openChooser(user, accessibleName);
+  return await openChooser(user);
 }
 
-async function expectClosedWithFocus(accessibleName: string): Promise<void> {
-  const trigger = await findFastControl("button", accessibleName);
+async function expectClosedWithFocus(): Promise<void> {
+  const trigger = await findFastControl("button", /^GitHub/u);
   await waitFor(() => {
-    expect(screen.queryByLabelText("Account for this chat")).toBeNull();
+    expect(screen.queryByRole("group", { name: "GitHub" })).toBeNull();
     expect(trigger).toHaveFocus();
   });
 }
@@ -113,7 +117,7 @@ test.each(["pagination", "remote search"] as const)(
       "Team A",
       "Team B",
     ]);
-    const fixture = installAccounts(connections, connections[1]);
+    installAccounts(connections, connections[1]);
     context.mocks.api(
       connectorAccountsContract.connections,
       ({ query, respond }) => {
@@ -131,58 +135,33 @@ test.each(["pagination", "remote search"] as const)(
               defaultConnection: connections[0]!,
             })
           : respond(200, {
-              connections: [connections[0]!, connections[1]!],
+              connections: [connections[0]!],
               nextCursor: "next-accounts",
               defaultConnection: connections[0]!,
             });
       },
     );
-    const chooser = await setupChooser(
-      user,
-      "GitHub · Selected account: Personal",
-    );
-    await within(chooser).findByRole("option", { name: /^Personal/u });
+    const chooser = await setupChooser(user);
+    await within(chooser).findByRole("switch", { name: "Personal access" });
     click(await findFastControl("button", "Load more", chooser));
-    await within(chooser).findByRole("option", { name: /^Client/u });
+    await within(chooser).findByRole("switch", { name: "Client access" });
+    expect(
+      within(chooser).getAllByRole("switch", { name: "Personal access" }),
+    ).toHaveLength(1);
     if (kind === "remote search") {
       const input = within(chooser).getByRole("textbox", {
         name: "Find accounts",
       });
       await fill(input, "remote");
-      await within(chooser).findByRole("option", { name: /^Research/u });
+      await within(chooser).findByRole("switch", { name: "Research access" });
     }
     expect(
-      within(chooser).queryAllByRole("option", { name: /^Client/u }),
-    ).toHaveLength(kind === "pagination" ? 1 : 0);
-    expect(
-      within(chooser).getAllByRole("option", { name: /^Personal/u }),
-    ).toHaveLength(1);
-    expect(
-      within(chooser).getByRole("option", { name: /^Personal/u }),
-    ).toHaveAttribute("aria-selected", "true");
-    expect(fixture.threadSelectionUpdates).toStrictEqual([]);
-    if (kind === "pagination") {
-      return;
-    }
-    const selected = connections[3]!;
-    await user.click(
-      within(chooser).getByRole("option", {
-        name: new RegExp(`^${selected.displayName}`, "u"),
-      }),
-    );
-    await expectClosedWithFocus(
-      `GitHub · Selected account: ${selected.displayName}`,
-    );
-    expect(fixture.threadSelectionUpdates).toStrictEqual([
-      {
-        threadId: SCOUT_THREAD_ID,
-        selection: { target: target(), connectionId: selected.id },
-      },
-    ]);
+      within(chooser).queryAllByRole("switch", { name: "Client access" }),
+    ).toHaveLength(kind === "remote search" ? 0 : 1);
   },
 );
 
-test("Unavailable selected accounts retain their identity and fallback", async () => {
+test("Accounts retain their identity when reconnection is required", async () => {
   const user = userEvent.setup({ delay: null });
   const connections = accounts(["Work", "Personal", "Client"]).map(
     (connection) => {
@@ -191,23 +170,14 @@ test("Unavailable selected accounts retain their identity and fallback", async (
         : { ...connection, connectionStatus: "reconnect-required" as const };
     },
   );
-  const fixture = installAccounts(connections, connections[1]);
-  const chooser = await setupChooser(
-    user,
-    "GitHub · Selected account: Personal",
-  );
-  const personal = await within(chooser).findByRole("option", {
-    name: /^Personal.*Falls back to Work/u,
-  });
-  expect(personal).toHaveAttribute("aria-selected", "true");
-  expect(
-    within(chooser).getByRole("option", { name: /^Use default.*Work/u }),
-  ).toHaveAttribute("aria-selected", "false");
-  await within(chooser).findByRole("option", {
-    name: /^Client.*Reconnect required/u,
-  });
-  expect(fixture.threadSelectionUpdates).toStrictEqual([]);
-  expect(fixture.clearedThreadSelections).toStrictEqual([]);
+  installAccounts(connections, connections[1]);
+  const chooser = await setupChooser(user);
+  for (const name of ["Work", "Personal", "Client"]) {
+    await expect(
+      within(chooser).findByRole("switch", { name: `${name} access` }),
+    ).resolves.toBeChecked();
+  }
+  expect(within(chooser).getAllByText("Reconnect required")).toHaveLength(2);
 });
 
 test("Open a single-account chooser and read fresh target accounts on reopen", async () => {
@@ -224,15 +194,15 @@ test("Open a single-account chooser and read fresh target accounts on reopen", a
     });
   });
   const chooser = await setupChooser(user);
-  await within(chooser).findByRole("option", { name: /^Work/u });
-  click(await findFastControl("button", "Back", chooser));
-  await expectClosedWithFocus(DEFAULT_ACCOUNT_LABEL);
+  await within(chooser).findByRole("switch", { name: "Work access" });
+  await user.keyboard("{Escape}");
+  await expectClosedWithFocus();
   displayName = "Renamed account";
   const reopened = await openChooser(user);
   await expect(
-    within(reopened).findByRole("option", { name: /^Renamed account/u }),
+    within(reopened).findByRole("switch", { name: "Renamed account access" }),
   ).resolves.toBeVisible();
   expect(
-    within(reopened).queryByRole("option", { name: /^Work/u }),
+    within(reopened).queryByRole("switch", { name: "Work access" }),
   ).not.toBeInTheDocument();
 });

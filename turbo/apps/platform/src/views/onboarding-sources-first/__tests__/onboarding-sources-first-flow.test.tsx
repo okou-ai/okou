@@ -2,7 +2,6 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import {
   onboardingCompleteContract,
   onboardingRecommendationContract,
-  onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
@@ -10,7 +9,7 @@ import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/c
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -96,39 +95,40 @@ function mockMemberOnboardingNeeded(): void {
 }
 
 /**
- * Completion answers at once, while the onboarding status read the handoff to
- * the first chat waits on is held until the test releases it.
+ * Hold the refreshed model preference request used to start the first chat.
  */
 function holdChatHandoffAfterCompletion(): {
   readonly handoffPending: Promise<void>;
   readonly release: () => void;
 } {
+  mockOnboardingNeeded();
   let completed = false;
   const handoffPending = context.mocks.deferred<void>();
   const releaseHandoff = context.mocks.deferred<void>();
   context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
     completed = true;
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: false,
+      onboardingComplete: true,
+    });
     return respond(200, {
       onboardingComplete: true,
       needsOnboarding: false,
     });
   });
   context.mocks.api(
-    onboardingStatusContract.getStatus,
+    userModelPreferenceContract.get,
     async ({ respond, withSignal }) => {
-      const finished = completed;
-      if (finished) {
+      if (completed) {
         handoffPending.resolve(undefined);
         await withSignal(releaseHandoff.promise);
       }
       return respond(200, {
-        needsOnboarding: !finished,
-        onboardingComplete: finished,
-        isAdmin: true,
-        hasOrg: true,
-        hasDefaultAgent: true,
-        defaultAgentId: "c0000000-0000-4000-a000-000000000001",
-        defaultAgentMetadata: { displayName: DEFAULT_AGENT_DISPLAY_NAME },
+        selectedModel: null,
+        serviceTier: null,
+        modelSettings: {},
+        selectedImageModel: null,
+        updatedAt: null,
       });
     },
   );
@@ -1301,7 +1301,7 @@ test("An onboarded visitor can redeem without bringing a prompt", async () => {
   });
 
   await waitFor(() => {
-    expect(pathname()).toMatch(/^\/agents\/[^/]+\/chat$/u);
+    expect(pathname()).toBe("/");
   });
   expect(redeemedCode).toBe("PRO-CAMPAIGN");
   expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();

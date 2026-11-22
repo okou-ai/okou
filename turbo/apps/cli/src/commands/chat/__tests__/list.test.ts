@@ -9,8 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
 import { chatCommand } from "../index";
 
-const AGENT_ID = "00000000-0000-4000-8000-000000000101";
-const OTHER_AGENT_ID = "00000000-0000-4000-8000-000000000102";
 const THREAD_ID = "00000000-0000-4000-8000-000000000201";
 const SECOND_THREAD_ID = "00000000-0000-4000-8000-000000000202";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000203";
@@ -44,7 +42,6 @@ function okouToken(): string {
 
 function snapshotThread(options: {
   readonly id: string;
-  readonly agentId: string;
   readonly title: string;
   readonly sortAt: string;
   readonly archived?: boolean;
@@ -66,7 +63,6 @@ function event(options: {
   readonly seqId: number;
   readonly kind: "renamed" | "sort_touched";
   readonly chatThreadId: string;
-  readonly agentId: string;
   readonly title: string | null;
   readonly createdAt: string;
 }) {
@@ -129,7 +125,6 @@ describe("okou chat list command", () => {
     cacheDirectory = await mkdtemp(join(tmpdir(), "chat-list-"));
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", okouToken());
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("XDG_CACHE_HOME", cacheDirectory);
   });
 
@@ -138,7 +133,6 @@ describe("okou chat list command", () => {
     const threads = [
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Project planning",
         sortAt: "2026-11-02T00:00:00.000Z",
       }),
@@ -164,7 +158,6 @@ describe("okou chat list command", () => {
                     kind: "project_updated",
                     projectId,
                     chatThreadId: THREAD_ID,
-                    agentId: AGENT_ID,
                     title: null,
                     createdAt: "2026-11-02T01:00:00.000Z",
                   },
@@ -182,7 +175,6 @@ describe("okou chat list command", () => {
         expect.objectContaining({
           id: THREAD_ID,
           projectId,
-          agentId: AGENT_ID,
           sortAt: "2026-11-02T00:00:00.000Z",
         }),
       ]);
@@ -201,13 +193,11 @@ describe("okou chat list command", () => {
     mockStableThreadSnapshot([
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Visible chat",
         sortAt: "2026-11-02T00:00:00.000Z",
       }),
       snapshotThread({
         id: SECOND_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Hidden Learning chat",
         sortAt: "2026-11-02T01:00:00.000Z",
         hidden: true,
@@ -224,7 +214,6 @@ describe("okou chat list command", () => {
     ]);
 
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual({
-      agentId: AGENT_ID,
       total: 1,
       threads: [expect.objectContaining({ id: THREAD_ID })],
     });
@@ -247,14 +236,13 @@ describe("okou chat list command", () => {
     await chatCommand.parseAsync(["node", "cli", "list", "--json"]);
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
       {
-        agentId: AGENT_ID,
         total: 0,
         threads: [],
       },
     );
   });
 
-  it("replays incremental events from the cache and defaults to OKOU_AGENT_ID", async () => {
+  it("replays incremental events from the cache for the workspace", async () => {
     let snapshotRequests = 0;
     let eventRequests = 0;
     server.use(
@@ -265,20 +253,17 @@ describe("okou chat list command", () => {
             chatThreads: [
               snapshotThread({
                 id: THREAD_ID,
-                agentId: AGENT_ID,
                 title: "Initial title",
                 sortAt: "2026-07-24T03:00:00.000Z",
               }),
               snapshotThread({
                 id: SECOND_THREAD_ID,
-                agentId: AGENT_ID,
                 title: "Second title",
                 sortAt: "2026-07-24T02:00:00.000Z",
               }),
               snapshotThread({
                 id: OTHER_THREAD_ID,
-                agentId: OTHER_AGENT_ID,
-                title: "Other agent",
+                title: "Another thread",
                 sortAt: "2026-07-24T04:00:00.000Z",
               }),
             ],
@@ -299,7 +284,6 @@ describe("okou chat list command", () => {
                 seqId: RENAME_SEQ_ID,
                 kind: "renamed",
                 chatThreadId: THREAD_ID,
-                agentId: AGENT_ID,
                 title: "Renamed title",
                 createdAt: "2026-07-24T03:30:00.000Z",
               }),
@@ -316,7 +300,6 @@ describe("okou chat list command", () => {
               seqId: SORT_SEQ_ID,
               kind: "sort_touched",
               chatThreadId: SECOND_THREAD_ID,
-              agentId: AGENT_ID,
               title: null,
               createdAt: "2026-07-24T05:00:00.000Z",
             }),
@@ -337,13 +320,11 @@ describe("okou chat list command", () => {
 
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
       {
-        agentId: AGENT_ID,
-        total: 2,
+        total: 3,
         threads: [
           expect.objectContaining({
-            id: THREAD_ID,
-            agentId: AGENT_ID,
-            title: "Renamed title",
+            id: OTHER_THREAD_ID,
+            title: "Another thread",
           }),
         ],
       },
@@ -361,7 +342,7 @@ describe("okou chat list command", () => {
       secondOutput.threads.map((thread) => {
         return thread.id;
       }),
-    ).toStrictEqual([SECOND_THREAD_ID, THREAD_ID]);
+    ).toStrictEqual([SECOND_THREAD_ID, OTHER_THREAD_ID, THREAD_ID]);
     expect(snapshotRequests).toBe(1);
     expect(eventRequests).toBe(2);
   });
@@ -377,7 +358,6 @@ describe("okou chat list command", () => {
             chatThreads: [
               snapshotThread({
                 id: THREAD_ID,
-                agentId: AGENT_ID,
                 title:
                   snapshotRequests === 1 ? "Cached title" : "Refreshed title",
                 sortAt: "2026-07-24T03:00:00.000Z",
@@ -424,85 +404,27 @@ describe("okou chat list command", () => {
     expect(eventRequests).toBe(3);
   });
 
-  it("lets --agent override OKOU_AGENT_ID", async () => {
-    server.use(
-      http.get(SNAPSHOT_URL, () => {
-        return HttpResponse.json(
-          mockR2Snapshot({
-            chatThreads: [
-              snapshotThread({
-                id: THREAD_ID,
-                agentId: AGENT_ID,
-                title: "Current agent",
-                sortAt: "2026-07-24T03:00:00.000Z",
-              }),
-              snapshotThread({
-                id: OTHER_THREAD_ID,
-                agentId: OTHER_AGENT_ID,
-                title: "Selected agent",
-                sortAt: "2026-07-24T04:00:00.000Z",
-              }),
-            ],
-            latestEventId: INITIAL_EVENT_ID,
-            latestSeqId: INITIAL_SEQ_ID,
-          }),
-        );
-      }),
-      http.get(EVENTS_URL, () => {
-        return HttpResponse.json({ events: [], hasMore: false });
-      }),
-    );
-
-    await chatCommand.parseAsync([
-      "node",
-      "cli",
-      "list",
-      "--agent",
-      OTHER_AGENT_ID,
-      "--limit",
-      "1",
-      "--json",
-    ]);
-
-    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
-      {
-        agentId: OTHER_AGENT_ID,
-        total: 1,
-        threads: [
-          expect.objectContaining({
-            id: OTHER_THREAD_ID,
-            title: "Selected agent",
-          }),
-        ],
-      },
-    );
-  });
-
   it("filters unread threads before the limit and orders equal timestamps deterministically", async () => {
     const unreadAt = "2026-07-24T06:00:00.000Z";
     mockStableThreadSnapshot([
       snapshotThread({
         id: THIRD_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Newest but read",
         sortAt: "2026-07-24T07:00:00.000Z",
       }),
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Unread one",
         sortAt: "2026-07-24T03:00:00.000Z",
       }),
       snapshotThread({
         id: SECOND_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Unread two",
         sortAt: "2026-07-24T02:00:00.000Z",
       }),
       snapshotThread({
         id: OTHER_THREAD_ID,
-        agentId: OTHER_AGENT_ID,
-        title: "Other agent unread",
+        title: "Another thread unread",
         sortAt: "2026-07-24T08:00:00.000Z",
       }),
     ]);
@@ -512,7 +434,7 @@ describe("okou chat list command", () => {
         indicatorRequests++;
         expect(new URL(request.url).searchParams.size).toBe(0);
         return HttpResponse.json({
-          agents: { [AGENT_ID]: "unread", [OTHER_AGENT_ID]: "unread" },
+          agents: {},
           threads: {
             [THREAD_ID]: "unread",
             [SECOND_THREAD_ID]: "unread",
@@ -539,13 +461,11 @@ describe("okou chat list command", () => {
 
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
       {
-        agentId: AGENT_ID,
-        total: 2,
+        total: 3,
         threads: [
           expect.objectContaining({
-            id: SECOND_THREAD_ID,
-            agentId: AGENT_ID,
-            unreadAt,
+            id: OTHER_THREAD_ID,
+            unreadAt: "2026-07-24T09:00:00.000Z",
           }),
         ],
       },
@@ -556,11 +476,9 @@ describe("okou chat list command", () => {
       "node",
       "cli",
       "list",
-      "--agent",
-      AGENT_ID,
       "--unread",
       "--limit",
-      "2",
+      "3",
     ]);
     const humanOutput = mockConsoleLog.mock.calls.flat().join("\n");
     expect(humanOutput).toContain("UNREAD AT");
@@ -571,15 +489,11 @@ describe("okou chat list command", () => {
     expect(indicatorRequests).toBe(2);
   });
 
-  it("lists unread threads across agents with one indicators request", async () => {
-    const agentIds = Array.from({ length: 6 }, (_, index) => {
-      return `00000000-0000-4000-8000-${String(110 + index).padStart(12, "0")}`;
-    });
-    const threads = agentIds.map((agentId, index) => {
+  it("lists unread threads in the workspace with one indicators request", async () => {
+    const threads = Array.from({ length: 6 }, (_, index) => {
       return snapshotThread({
         id: `00000000-0000-4000-8000-${String(210 + index).padStart(12, "0")}`,
-        agentId,
-        title: `Agent ${index}`,
+        title: `Thread ${index}`,
         sortAt: new Date(
           Date.parse("2026-07-24T01:00:00.000Z") + index * 1000,
         ).toISOString(),
@@ -591,11 +505,7 @@ describe("okou chat list command", () => {
       http.get(INDICATORS_URL, () => {
         requestCount += 1;
         return HttpResponse.json({
-          agents: Object.fromEntries(
-            agentIds.map((id) => {
-              return [id, "unread"];
-            }),
-          ),
+          agents: {},
           threads: Object.fromEntries(
             threads.map((thread) => {
               return [thread.id, "unread"];
@@ -610,56 +520,27 @@ describe("okou chat list command", () => {
       }),
     );
 
-    await chatCommand.parseAsync([
-      "node",
-      "cli",
-      "list",
-      "--unread",
-      "--all-agents",
-      "--json",
-    ]);
+    await chatCommand.parseAsync(["node", "cli", "list", "--unread", "--json"]);
     expect(requestCount).toBe(1);
     const output = JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0])) as {
-      readonly allAgents: boolean;
       readonly total: number;
       readonly threads: readonly {
         readonly id: string;
-        readonly agentId: string;
         readonly unreadAt: string;
       }[];
     };
-    expect(output.allAgents).toBe(true);
     expect(output.total).toBe(6);
     expect(output.threads).toHaveLength(6);
     expect(output.threads[0]).toMatchObject({
       id: threads.at(-1)?.id,
-      agentId: threads.at(-1)?.agentId,
       unreadAt: threads.at(-1)?.sortAt,
     });
-  });
-
-  it("rejects --all-agents with --agent", async () => {
-    await expect(async () => {
-      await chatCommand.parseAsync([
-        "node",
-        "cli",
-        "list",
-        "--all-agents",
-        "--agent",
-        AGENT_ID,
-      ]);
-    }).rejects.toThrow("process.exit called");
-
-    const stderr = mockConsoleError.mock.calls.flat().join("\n");
-    expect(stderr).toContain("--all-agents and --agent are mutually exclusive");
-    expect(mockExit).toHaveBeenCalledWith(1);
   });
 
   it("keeps human output unchanged without new flags and reports empty unread results", async () => {
     mockStableThreadSnapshot([
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Existing human row",
         sortAt: "2026-07-24T03:00:00.000Z",
       }),
@@ -676,7 +557,6 @@ describe("okou chat list command", () => {
     expect(existingOutput).toContain("SORTED");
     expect(existingOutput).toContain("PINNED");
     expect(existingOutput).not.toContain("UNREAD AT");
-    expect(existingOutput).not.toContain("AGENT ID");
 
     mockConsoleLog.mockClear();
     await chatCommand.parseAsync(["node", "cli", "list", "--unread"]);
@@ -687,13 +567,11 @@ describe("okou chat list command", () => {
     mockStableThreadSnapshot([
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "✅ Active row",
         sortAt: "2026-07-24T03:00:00.000Z",
       }),
       snapshotThread({
         id: OTHER_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Archived row",
         sortAt: "2026-07-24T04:00:00.000Z",
         archived: true,
@@ -709,7 +587,6 @@ describe("okou chat list command", () => {
     ]);
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
       {
-        agentId: AGENT_ID,
         total: 1,
         threads: [
           expect.objectContaining({
@@ -729,21 +606,8 @@ describe("okou chat list command", () => {
     expect(output).toContain("Archived row");
   });
 
-  it("requires an agent id from --agent or OKOU_AGENT_ID", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "");
-
-    await expect(async () => {
-      await chatCommand.parseAsync(["node", "cli", "list"]);
-    }).rejects.toThrow("process.exit called");
-
-    const stderr = mockConsoleError.mock.calls.flat().join("\n");
-    expect(stderr).toContain("OKOU_AGENT_ID is not set");
-    expect(stderr).toContain("Pass --agent <agent-id>");
-    expect(mockExit).toHaveBeenCalledWith(1);
-  });
-
   it("reports invalid chat cache scope errors", async () => {
-    vi.stubEnv("OKOU_TOKEN", "invalid-token");
+    vi.stubEnv("OKOU_TOKEN", "vm0_sandbox_malformed");
 
     await expect(async () => {
       await chatCommand.parseAsync(["node", "cli", "list"]);
@@ -761,7 +625,6 @@ describe("okou chat list command", () => {
       return {
         ...snapshotThread({
           id: `00000000-0000-4000-8000-${String(1000 + index).padStart(12, "0")}`,
-          agentId: index % 2 ? OTHER_AGENT_ID : AGENT_ID,
           title: `Related ${index}`,
           sortAt: "2026-11-02T00:00:00.000Z",
           archived: index === 100,
@@ -772,7 +635,6 @@ describe("okou chat list command", () => {
     all.unshift({
       ...snapshotThread({
         id: OTHER_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Hidden Project chat",
         sortAt: "2026-11-02T01:00:00.000Z",
         hidden: true,
@@ -811,66 +673,10 @@ describe("okou chat list command", () => {
       "--json",
     ]);
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
-      { allAgents: true, total: 101, complete: true },
+      { total: 101, complete: true },
     );
     expect(
       JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0])).threads,
     ).toHaveLength(101);
-  });
-  it("intersects an explicit Agent with Project discovery", async () => {
-    const projectId = "00000000-0000-4000-8000-000000000071";
-    server.use(
-      http.get(`http://localhost:3000/api/projects/${projectId}`, () => {
-        return HttpResponse.json({
-          id: projectId,
-          name: "Launch",
-          createdAt: "2026-11-02T00:00:00.000Z",
-          updatedAt: "2026-11-02T00:00:00.000Z",
-        });
-      }),
-      http.get(
-        `http://localhost:3000/api/projects/${projectId}/threads`,
-        () => {
-          return HttpResponse.json({
-            threads: [
-              {
-                ...snapshotThread({
-                  id: THREAD_ID,
-                  agentId: AGENT_ID,
-                  title: "Planning",
-                  sortAt: "2026-11-02T00:00:00.000Z",
-                }),
-                projectId,
-              },
-              {
-                ...snapshotThread({
-                  id: OTHER_THREAD_ID,
-                  agentId: OTHER_AGENT_ID,
-                  title: "Research",
-                  sortAt: "2026-11-02T00:00:00.000Z",
-                }),
-                projectId,
-              },
-            ],
-            nextAfter: null,
-          });
-        },
-      ),
-    );
-    await chatCommand.parseAsync([
-      "node",
-      "cli",
-      "list",
-      "--project-id",
-      projectId,
-      "--agent",
-      AGENT_ID,
-      "--limit",
-      "all",
-      "--json",
-    ]);
-    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
-      { agentId: AGENT_ID, total: 1, threads: [{ id: THREAD_ID }] },
-    );
   });
 });

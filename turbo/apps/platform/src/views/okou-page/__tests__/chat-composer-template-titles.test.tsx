@@ -1,16 +1,13 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { composerInlineTemplates } from "./chat-composer-test-helpers.ts";
-import {
-  AGENT_ID,
-  createTemplateGalleryHelpers,
-} from "./chat-composer-template-gallery-test-helpers.ts";
+import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   openSavedPresentationPicker,
   savedPresentationDraft,
@@ -36,14 +33,14 @@ async function openBuiltInTitleHint() {
   if (!template || !selected) {
     throw new Error("Expected presentation templates to preview and retain");
   }
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, savedPresentationDraft(selected));
   });
   mockPresentationHtml(template.embedUrl, ["Opening"]);
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
   const picker = await openSavedPresentationPicker(selected.title);

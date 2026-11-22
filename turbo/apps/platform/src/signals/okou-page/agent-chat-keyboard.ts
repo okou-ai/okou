@@ -8,7 +8,6 @@ import {
   navigateChatList$,
 } from "../chat-page/chat-list-navigation.ts";
 import { projectRowKey } from "../chat-page/chat-thread-list-rows.ts";
-import { singleAgentEnabled$ } from "../single-agent.ts";
 
 /**
  * Moves a main-pane page to its neighbours in the chat list. `currentKey` is
@@ -50,8 +49,7 @@ const setupChatListNavigationShortcuts$ = command(
 );
 
 export const setupAgentChatKeyboardShortcuts$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const singleAgent = await get(singleAgentEnabled$);
+  ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     setupGlobalShortcut(
       {
@@ -64,13 +62,7 @@ export const setupAgentChatKeyboardShortcuts$ = command(
       },
       signal,
     );
-    // My Okou's only chat page is the New chat entry. An agent's chat page
-    // without My Okou stands outside the list.
-    set(
-      setupChatListNavigationShortcuts$,
-      singleAgent ? NEW_CHAT_ENTRY_KEY : null,
-      signal,
-    );
+    set(setupChatListNavigationShortcuts$, NEW_CHAT_ENTRY_KEY, signal);
   },
 );
 

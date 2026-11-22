@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Validate complete native session/home continuation and original saving."""
 
-import argparse
 import hashlib
 import json
 import pathlib
@@ -62,11 +61,12 @@ def validate(directory):
     original_ids = {v["sandbox_id"] for v in result["cases"].values()}
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing, duplicate or unordered continuation witnesses")
-        identity = (terminal[1]["sandbox_id"], terminal[1]["backing_generation"])
+        report.validate_witness_phases(
+            events, PHASES, "missing, duplicate or unordered continuation witnesses",
+        )
+        identity = report.witness_identity(terminal[1])
         times = [e["monotonic_ns"] for e in events]
-        if (any((e["sandbox_id"], e["backing_generation"]) != identity for e in events)
+        if (report.witness_identity_changed(events, identity)
                 or not terminal[0]["monotonic_ns"] < times[0] < times[1] < terminal[1]["monotonic_ns"]
                 or not terminal[-2]["monotonic_ns"] < times[2] < times[3] < terminal[-1]["monotonic_ns"]):
             raise ValueError("continuation crossed original generation or work boundaries")
@@ -137,7 +137,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    args = parser.parse_args()
-    print(json.dumps(validate(args.directory), indent=2))
+    report.run_cli(validate, __doc__)

@@ -28,7 +28,6 @@ const CRON_SECRET = "test-run-time-budget-steer-secret";
 async function startBudgetRun() {
   const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
   const active = await sendChatRun(actor, {
-    agentId,
     prompt: "work until the runner's time-budget warning",
   });
   const execution = await runExecution(active.runId);
@@ -189,7 +188,7 @@ describe("run-targeted time budget steering through HTTP", () => {
   }, 90_000);
 
   it("revokes an unsteered warning at completion and never gives it to the next run", async () => {
-    const { actor, agentId, runnerGroup, active, receivedExecution, budget } =
+    const { actor, runnerGroup, active, receivedExecution, budget } =
       await startRunAtBudgetBoundary();
     await completeChatRunOk(active.runId, receivedExecution.sandboxHeaders);
     await flushWaitUntilForTest();
@@ -208,7 +207,6 @@ describe("run-targeted time budget steering through HTTP", () => {
 
     await createRunsApi(context).registerDirectRunner(runnerGroup);
     const successor = await sendChatRun(actor, {
-      agentId,
       threadId: active.threadId,
       prompt: "continue after the prior run finished",
     });

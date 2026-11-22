@@ -361,7 +361,7 @@ final class ConversationStore {
       do {
         let workflowIDs =
           try await workflowSource?.prepareUse(
-            in: message.text, document: message.document, agentID: thread.agentID) ?? []
+            in: message.text, document: message.document) ?? []
         submitted = true
         _ = try await commands.send(
           thread: thread, text: message.text, attachments: message.attachments,

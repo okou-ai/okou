@@ -12,6 +12,7 @@ from .json_selective import (
     ScalarField,
     json_nesting_within_limit,
 )
+from .json_syntax import contains_surrogate
 from .model_tokens import (
     MODEL_USAGE_CATEGORIES,
     MODEL_USAGE_CATEGORY_CACHE_CREATION,
@@ -19,8 +20,8 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
 )
-from .openai_tokens import input_partition_overlaps, is_usage_quantity, partition_input_tokens
-from .quantities import MAX_USAGE_QUANTITY
+from .openai_tokens import partition_input_tokens
+from .quantities import MAX_USAGE_QUANTITY, is_usage_quantity
 from .sse import SseUsageScanner
 
 _CHAT_COMPLETIONS_MAX_WORK_UNITS = 65_536
@@ -49,9 +50,6 @@ _CHAT_COMPLETIONS_CHOICE_KEYS = frozenset(
         "finish_reason",
     )
 )
-_UTF8_SURROGATE_MIN = 0xD800
-_UTF8_SURROGATE_MAX = 0xDFFF
-
 _TOP_LEVEL_USAGE_PATH = ("usage",)
 _FIRST_CHOICE_USAGE_PATH = ("choices", FIRST_ARRAY_ELEMENT, "usage")
 _USAGE_PATHS = (_TOP_LEVEL_USAGE_PATH, _FIRST_CHOICE_USAGE_PATH)
@@ -117,17 +115,13 @@ def _reject_json_constant(value: str) -> object:
     raise _FastPathRejectedError(value)
 
 
-def _contains_surrogate(value: str) -> bool:
-    return any(_UTF8_SURROGATE_MIN <= ord(char) <= _UTF8_SURROGATE_MAX for char in value)
-
-
 def _json_value_is_unambiguous(value: object) -> bool:
     if isinstance(value, str):
-        return not _contains_surrogate(value)
+        return not contains_surrogate(value)
     if isinstance(value, _JsonObjectPairs):
         keys: set[str] = set()
         for key, child in value:
-            if key in keys or _contains_surrogate(key) or not _json_value_is_unambiguous(child):
+            if key in keys or contains_surrogate(key) or not _json_value_is_unambiguous(child):
                 return False
             keys.add(key)
         return True
@@ -242,30 +236,26 @@ def _usage_snapshot(result: JsonExtractionResult) -> dict | None:
         if cached_tokens_path in result.value_present
         else result.values.get((*usage_path, "prompt_cache_hit_tokens"))
     )
-    input_tokens, cache_read_tokens, cache_creation_tokens = partition_input_tokens(
+    partition = partition_input_tokens(
         result.values.get((*usage_path, "prompt_tokens")),
         cached_tokens,
         result.values.get((*usage_path, "prompt_tokens_details", "cache_write_tokens")),
     )
 
     usage: dict = {}
-    if input_partition_overlaps(
-        result.values.get((*usage_path, "prompt_tokens")),
-        cached_tokens,
-        result.values.get((*usage_path, "prompt_tokens_details", "cache_write_tokens")),
-    ):
+    if partition.overlaps:
         usage["input_partition_incomplete"] = True
-    _store_quantity(usage, MODEL_USAGE_CATEGORY_INPUT, input_tokens)
+    _store_quantity(usage, MODEL_USAGE_CATEGORY_INPUT, partition.uncached_tokens)
     _store_quantity(
         usage,
         MODEL_USAGE_CATEGORY_OUTPUT,
         result.values.get((*usage_path, "completion_tokens")),
     )
-    _store_quantity(usage, MODEL_USAGE_CATEGORY_CACHE_READ, cache_read_tokens)
+    _store_quantity(usage, MODEL_USAGE_CATEGORY_CACHE_READ, partition.cache_read_tokens)
     _store_quantity(
         usage,
         MODEL_USAGE_CATEGORY_CACHE_CREATION,
-        cache_creation_tokens,
+        partition.cache_creation_tokens,
     )
 
     if not any(category in usage for category in MODEL_USAGE_CATEGORIES):

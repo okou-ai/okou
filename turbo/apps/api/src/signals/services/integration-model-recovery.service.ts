@@ -15,7 +15,6 @@ import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { db$ } from "../external/db";
@@ -84,12 +83,11 @@ export function latestThreadModelRecovery(args: {
       .select({ eventId: chatEvents.id })
       .from(chatEvents)
       .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.id, args.threadId),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
           inArray(chatEvents.eventType, ["run.failed", "output.error"]),
         ),
       )
@@ -117,13 +115,12 @@ const loadIntegrationModelRecovery$ = command(
       })
       .from(chatEvents)
       .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .leftJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
       .where(
         and(
           eq(chatEvents.id, args.eventId),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
           inArray(chatEvents.eventType, ["run.failed", "output.error"]),
           // Title/archive changes must not hide recovery; model changes do.
           or(

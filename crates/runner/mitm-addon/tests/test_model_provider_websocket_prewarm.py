@@ -4,18 +4,19 @@ import json
 from pathlib import Path
 
 import pytest
-from mitmproxy import http
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import model_websocket_usage
 import openai_responses_events
 import usage
-from tests.jsonl_log_helpers import jsonl_exists_after_flush, read_jsonl_entries_after_flush
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import (
+    ModelUsageLog,
     make_openai_responses_websocket_flow,
     model_provider_usage_sources,
     model_usage_source_entries,
+    read_model_usage_log,
 )
 from tests.model_provider_websocket_helpers import (
     ScheduledWebSocketTrim,
@@ -43,17 +44,6 @@ def _openai_websocket_created_frame(response_id: str) -> bytes:
             "response": {"id": response_id},
         }
     ).encode()
-
-
-def _correlation_entries(flow: http.HTTPFlow) -> list[dict[str, object]]:
-    proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
-    if not jsonl_exists_after_flush(proxy_log):
-        return []
-    return [
-        entry
-        for entry in read_jsonl_entries_after_flush(proxy_log)
-        if entry.get("type") == "model_usage_correlation"
-    ]
 
 
 class TestModelProviderWebSocketPrewarmUsage:
@@ -101,14 +91,13 @@ class TestModelProviderWebSocketPrewarmUsage:
         assert b"".join(full_body_feeds) == dense_terminal
         assert max(map(len, full_body_feeds)) <= 4096
         assert webhook.usage_events() == []
+        usage_log = read_model_usage_log(flow)
         [ignored_entry] = [
-            entry
-            for entry in model_usage_source_entries(flow)
-            if entry.get("disposition") == "ignored"
+            entry for entry in usage_log.source_entries() if entry.get("disposition") == "ignored"
         ]
         assert ignored_entry["provider_response_id"] == "dense-prewarm"
         assert ignored_entry["reason"] == "responses_generate_false"
-        assert not _correlation_entries(flow)
+        assert not usage_log.correlation_entries()
 
     def test_model_websocket_ignores_late_usage_after_usage_free_terminal(
         self,
@@ -137,15 +126,14 @@ class TestModelProviderWebSocketPrewarmUsage:
             usage.flush_usage_events(trigger="test")
 
         assert webhook.usage_events() == []
+        usage_log = read_model_usage_log(flow)
         [ignored_entry] = [
-            entry
-            for entry in model_usage_source_entries(flow)
-            if entry.get("disposition") == "ignored"
+            entry for entry in usage_log.source_entries() if entry.get("disposition") == "ignored"
         ]
         assert ignored_entry["provider_response_id"] == "warm-late"
         assert ignored_entry["reason"] == "responses_generate_false"
         assert ignored_entry["usage"] == {"tokens.input": 17}
-        assert not _correlation_entries(flow)
+        assert not usage_log.correlation_entries()
 
     def test_model_websocket_terminal_usage_error_settles_prewarm_correlation(
         self,
@@ -188,20 +176,19 @@ class TestModelProviderWebSocketPrewarmUsage:
             usage.flush_usage_events(trigger="test")
 
         assert webhook.usage_events() == []
+        usage_log = ModelUsageLog(read_jsonl_entries_after_flush(proxy_log))
         [warning] = [
             entry
-            for entry in read_jsonl_entries_after_flush(proxy_log)
+            for entry in usage_log.entries
             if entry.get("message") == "Model provider WebSocket usage extraction failed"
         ]
         assert warning["error"] == "integer value limit exceeded"
         [ignored_entry] = [
-            entry
-            for entry in model_usage_source_entries(flow)
-            if entry.get("disposition") == "ignored"
+            entry for entry in usage_log.source_entries() if entry.get("disposition") == "ignored"
         ]
         assert ignored_entry["provider_response_id"] == "next-prewarm"
         assert ignored_entry["reason"] == "responses_generate_false"
-        assert not _correlation_entries(flow)
+        assert not usage_log.correlation_entries()
 
     def test_model_websocket_logs_each_prewarm_source_once_across_late_duplicate(
         self,
@@ -242,16 +229,15 @@ class TestModelProviderWebSocketPrewarmUsage:
             usage.flush_usage_events(trigger="test")
 
         assert webhook.usage_events() == []
+        usage_log = read_model_usage_log(flow)
         ignored_entries = [
-            entry
-            for entry in model_usage_source_entries(flow)
-            if entry.get("disposition") == "ignored"
+            entry for entry in usage_log.source_entries() if entry.get("disposition") == "ignored"
         ]
         assert [entry["provider_response_id"] for entry in ignored_entries] == [
             "warm-first",
             "warm-second",
         ]
-        assert not _correlation_entries(flow)
+        assert not usage_log.correlation_entries()
 
     def test_model_websocket_ignored_response_cap_fails_open(
         self,
@@ -300,10 +286,11 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 9)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
+        usage_log = read_model_usage_log(flow)
         assert not any(
-            entry.get("disposition") == "ignored" for entry in model_usage_source_entries(flow)
+            entry.get("disposition") == "ignored" for entry in usage_log.source_entries()
         )
-        [correlation_entry] = _correlation_entries(flow)
+        [correlation_entry] = usage_log.correlation_entries()
         assert correlation_entry["reason"] == "correlation_cap"
 
     def test_model_websocket_ignores_bound_prewarm_and_reports_normal_input_only_turn(
@@ -394,7 +381,8 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 5)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
-        source_entries = model_usage_source_entries(flow)
+        usage_log = read_model_usage_log(flow)
+        source_entries = usage_log.source_entries()
         ignored_entries = [
             entry for entry in source_entries if entry.get("disposition") == "ignored"
         ]
@@ -406,7 +394,7 @@ class TestModelProviderWebSocketPrewarmUsage:
             and entry.get("provider_response_id") == "warm-ambiguous"
         ]
         assert len(reported_entries) == 1
-        [correlation_entry] = _correlation_entries(flow)
+        [correlation_entry] = usage_log.correlation_entries()
         assert correlation_entry["reason"] == "unknown_client_event"
 
     def test_model_websocket_duplicate_terminal_stays_idempotent_with_active_request(
@@ -446,7 +434,7 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 4)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
-        assert not _correlation_entries(flow)
+        assert not read_model_usage_log(flow).correlation_entries()
 
     def test_model_websocket_reused_older_ignored_id_fails_open(self, tmp_path, real_flow):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
@@ -487,7 +475,8 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 7)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
-        source_entries = model_usage_source_entries(flow)
+        usage_log = read_model_usage_log(flow)
+        source_entries = usage_log.source_entries()
         ignored_entries = [
             entry for entry in source_entries if entry.get("disposition") == "ignored"
         ]
@@ -502,7 +491,7 @@ class TestModelProviderWebSocketPrewarmUsage:
             and entry.get("provider_response_id") == "reused-id"
         ]
         assert len(reported_entries) == 1
-        [correlation_entry] = _correlation_entries(flow)
+        [correlation_entry] = usage_log.correlation_entries()
         assert correlation_entry["reason"] == "invalid_lifecycle"
 
     def test_model_websocket_reused_ignored_id_without_created_fails_open(
@@ -537,7 +526,8 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 7)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
-        source_entries = model_usage_source_entries(flow)
+        usage_log = read_model_usage_log(flow)
+        source_entries = usage_log.source_entries()
         ignored_entries = [
             entry for entry in source_entries if entry.get("disposition") == "ignored"
         ]
@@ -549,7 +539,7 @@ class TestModelProviderWebSocketPrewarmUsage:
             and entry.get("provider_response_id") == "reused-id"
         ]
         assert len(reported_entries) == 1
-        [correlation_entry] = _correlation_entries(flow)
+        [correlation_entry] = usage_log.correlation_entries()
         assert correlation_entry["reason"] == "invalid_lifecycle"
 
     @pytest.mark.parametrize(
@@ -601,10 +591,11 @@ class TestModelProviderWebSocketPrewarmUsage:
             ("gpt-5.5", "tokens.input", 6),
         ]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
+        usage_log = read_model_usage_log(flow)
         assert not any(
-            entry.get("disposition") == "ignored" for entry in model_usage_source_entries(flow)
+            entry.get("disposition") == "ignored" for entry in usage_log.source_entries()
         )
-        [correlation_entry] = _correlation_entries(flow)
+        [correlation_entry] = usage_log.correlation_entries()
         assert correlation_entry["reason"] == "overlapping_request"
         assert correlation_entry["transport"] == "websocket"
 
@@ -639,10 +630,11 @@ class TestModelProviderWebSocketPrewarmUsage:
             ("gpt-5.5", "tokens.input", 5),
         ]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
+        usage_log = read_model_usage_log(flow)
         assert not any(
-            entry.get("disposition") == "ignored" for entry in model_usage_source_entries(flow)
+            entry.get("disposition") == "ignored" for entry in usage_log.source_entries()
         )
-        [correlation_entry] = _correlation_entries(flow)
+        [correlation_entry] = usage_log.correlation_entries()
         assert correlation_entry["reason"] == "overlapping_request"
 
     def test_model_websocket_unknown_client_event_emits_one_content_free_diagnostic(
@@ -682,10 +674,11 @@ class TestModelProviderWebSocketPrewarmUsage:
             ("gpt-5.5", "tokens.input", 7),
         ]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
+        usage_log = read_model_usage_log(flow)
         assert not any(
-            entry.get("disposition") == "ignored" for entry in model_usage_source_entries(flow)
+            entry.get("disposition") == "ignored" for entry in usage_log.source_entries()
         )
-        correlation_entries = _correlation_entries(flow)
+        correlation_entries = usage_log.correlation_entries()
         assert len(correlation_entries) == 1
         assert correlation_entries[0]["reason"] == "unknown_client_event"
         assert marker not in json.dumps(correlation_entries)
@@ -710,10 +703,11 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 9)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
+        usage_log = read_model_usage_log(flow)
         assert not any(
-            entry.get("disposition") == "ignored" for entry in model_usage_source_entries(flow)
+            entry.get("disposition") == "ignored" for entry in usage_log.source_entries()
         )
-        [correlation_entry] = _correlation_entries(flow)
+        [correlation_entry] = usage_log.correlation_entries()
         assert correlation_entry["reason"] == "server_error"
 
     async def test_model_websocket_correlation_cap_stays_bounded_and_fails_open(
@@ -743,10 +737,11 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 11)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
+        usage_log = read_model_usage_log(flow)
         assert not any(
-            entry.get("disposition") == "ignored" for entry in model_usage_source_entries(flow)
+            entry.get("disposition") == "ignored" for entry in usage_log.source_entries()
         )
-        correlation_entries = _correlation_entries(flow)
+        correlation_entries = usage_log.correlation_entries()
         assert len(correlation_entries) == 1
         assert correlation_entries[0]["reason"] == "correlation_cap"
 
@@ -773,10 +768,11 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 12)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
+        usage_log = read_model_usage_log(flow)
         assert not any(
-            entry.get("disposition") == "ignored" for entry in model_usage_source_entries(flow)
+            entry.get("disposition") == "ignored" for entry in usage_log.source_entries()
         )
-        [correlation_entry] = _correlation_entries(flow)
+        [correlation_entry] = usage_log.correlation_entries()
         assert correlation_entry["reason"] == "correlation_cap"
 
     def test_model_websocket_unbound_prewarm_usage_fails_open(self, tmp_path, real_flow):
@@ -984,10 +980,11 @@ class TestModelProviderWebSocketPrewarmUsage:
 
         expected_rows = [("gpt-5.5", "tokens.input", 17)]
         assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
+        usage_log = read_model_usage_log(flow)
         assert not any(
-            entry.get("disposition") == "ignored" for entry in model_usage_source_entries(flow)
+            entry.get("disposition") == "ignored" for entry in usage_log.source_entries()
         )
-        correlation_entries = _correlation_entries(flow)
+        correlation_entries = usage_log.correlation_entries()
         assert len(correlation_entries) == 1
         assert correlation_entries[0]["reason"] == "invalid_lifecycle"
         assert sensitive_marker not in json.dumps(correlation_entries)

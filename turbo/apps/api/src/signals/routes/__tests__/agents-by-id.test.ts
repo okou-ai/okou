@@ -1,10 +1,5 @@
-import {
-  agentInstructionsContract,
-  agentsByIdContract,
-} from "@okouai/api-contracts/contracts/agents";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { randomUUID } from "node:crypto";
-import { agentInstructionsRoutes } from "../agent-instructions";
-import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -229,210 +224,17 @@ describe("GET /api/agents/:id", () => {
 });
 
 describe("DELETE /api/agents/:id", () => {
-  it("returns 401 when the request is unauthenticated", async () => {
-    const response = await bdd.requestDeleteAgent(null, randomUUID(), [401]);
-    expect(response.body).toStrictEqual({
-      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 403 for an agent token without agent:delete capability", async () => {
-    const actor = bdd.user();
-    const token = await executionToken(actor);
-
-    const response = await accept(
-      agentsClient().delete({
-        params: { id: randomUUID() },
-        headers: bearerHeaders(token),
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: agent:delete",
-        code: "FORBIDDEN",
-      },
-    });
-  });
-
-  it("returns 404 for an unknown agent id", async () => {
-    const actor = bdd.user();
-    const unknownId = randomUUID();
-
-    const response = await bdd.requestDeleteAgent(actor, unknownId, [404]);
-
-    expect(response.body).toStrictEqual({
-      error: { message: `Agent not found: ${unknownId}`, code: "NOT_FOUND" },
-    });
-  });
-
-  it("returns 404 when the agent belongs to a different org and leaves it readable to its owner", async () => {
-    const owner = bdd.user();
-    const requester = bdd.user();
-    const agent = await createAgent(owner, {
-      displayName: "Other Org Agent",
-    });
-
-    const response = await bdd.requestDeleteAgent(
-      requester,
-      agent.agentId,
-      [404],
-    );
-    expect(response.body).toStrictEqual({
-      error: {
-        message: `Agent not found: ${agent.agentId}`,
-        code: "NOT_FOUND",
-      },
-    });
-
-    await expect(bdd.readAgent(owner, agent.agentId)).resolves.toMatchObject({
-      agentId: agent.agentId,
-      displayName: "Other Org Agent",
-    });
-  });
-
-  it("rejects same-org members who are not the agent owner", async () => {
-    const owner = bdd.user();
-    const member = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
-    const agent = await createAgent(owner);
-
-    const response = await bdd.requestDeleteAgent(member, agent.agentId, [403]);
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Only the agent owner or org admin can delete agent",
-        code: "FORBIDDEN",
-      },
-    });
-  });
-
-  it("deletes the caller's own agent", async () => {
+  it("has no route and leaves the agent readable to its owner", async () => {
     const actor = bdd.user();
     const agent = await createAgent(actor);
-
-    await bdd.deleteAgent(actor, agent.agentId);
-
-    const response = await bdd.requestReadAgent(actor, agent.agentId, [404]);
-    expect(response.body).toStrictEqual({
-      error: {
-        message: `Agent not found: ${agent.agentId}`,
-        code: "NOT_FOUND",
-      },
+    const app = createApp({ signal: context.signal, routes: agentsRoutes });
+    const response = await app.request(`/api/agents/${agent.agentId}`, {
+      method: "DELETE",
+      headers: { authorization: "Bearer clerk-session" },
     });
-  });
-
-  it("removes Agent and instruction access after deleting an edited Agent", async () => {
-    const owner = createPublicConnectorActor(context);
-    const actor = owner.actor;
-    await owner.run(async () => {
-      bdd.acceptAgentStorageWrites();
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Sweep Agent",
-      });
-      await bdd.updateAgentInstructions(
-        actor,
-        agent.agentId,
-        "Owned instructions to delete",
-      );
-      const instructions = setupApp({
-        context,
-        routes: agentInstructionsRoutes,
-      })(agentInstructionsContract);
-      const current = await accept(
-        instructions.get({
-          params: { id: agent.agentId },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(current.body.content).toBe("Owned instructions to delete");
-      await bdd.deleteAgent(actor, agent.agentId);
-      await bdd.requestReadAgent(actor, agent.agentId, [404]);
-      await accept(
-        instructions.get({
-          params: { id: agent.agentId },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [404],
-      );
-    });
-  });
-
-  it("allows an owner API key to delete a private agent", async () => {
-    const actor = bdd.user({ orgRole: "org:member" });
-    const agent = await createAgent(actor, {
-      displayName: "API Key Deletable Agent",
-      visibility: "private",
-    });
-    const response = await accept(
-      agentsClient().delete({
-        params: { id: agent.agentId },
-        headers: await apiKeyHeaders(actor, "org:member"),
-      }),
-      [204],
+    expect(response.status).toBe(404);
+    await expect(bdd.readAgent(actor, agent.agentId)).resolves.toStrictEqual(
+      agent,
     );
-    expect(response.body).toBeUndefined();
-
-    const readAfterDelete = await bdd.requestReadAgent(
-      actor,
-      agent.agentId,
-      [404],
-    );
-    expect(readAfterDelete.body).toStrictEqual({
-      error: {
-        message: `Agent not found: ${agent.agentId}`,
-        code: "NOT_FOUND",
-      },
-    });
-  });
-
-  it("allows an org admin to delete another user's public agent", async () => {
-    const owner = bdd.user();
-    const admin = bdd.user({ orgId: owner.orgId, orgRole: "org:admin" });
-    const agent = await createAgent(owner);
-
-    await bdd.deleteAgent(admin, agent.agentId);
-
-    const readAfterDelete = await bdd.requestReadAgent(
-      owner,
-      agent.agentId,
-      [404],
-    );
-    expect(readAfterDelete.body).toStrictEqual({
-      error: {
-        message: `Agent not found: ${agent.agentId}`,
-        code: "NOT_FOUND",
-      },
-    });
-  });
-
-  it("returns 409 and preserves the agent when a pending run references it", async () => {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    await api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
-    await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor);
-    const run = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "keep this run pending",
-    });
-    const response = await bdd.requestDeleteAgent(actor, agent.agentId, [409]);
-
-    // Lifecycle ownership can already be busy after creating the run. Both
-    // that retryable conflict and the active-run guard must preserve the Agent.
-    expect(response.body).toMatchObject({
-      error: {
-        code: "CONFLICT",
-      },
-    });
-    await expect(bdd.readAgent(actor, agent.agentId)).resolves.toMatchObject({
-      agentId: agent.agentId,
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
   });
 });

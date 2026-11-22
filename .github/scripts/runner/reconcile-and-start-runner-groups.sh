@@ -30,6 +30,7 @@ required_env=(
   RUNNER_GROUP
   RUNNER_SERVICE_REF
   RUNNER_SHA_MAP
+  SELECTED_HOST
   SNAPSHOT_HASH_MAP
   VERCEL_BYPASS
 )
@@ -37,11 +38,13 @@ for name in "${required_env[@]}"; do
   require_env "$name"
 done
 
-# Match the Crates Runner behavior lane's selection without replicating each
-# CI namespace's idle and prewarmed pools across every metal host.
-SELECTED_CONTEXT=$(AWS_METAL_RUNNER_HOSTS="$METAL_HOSTS" \
-  "${SCRIPT_DIR}/runner-host-architecture-groups.sh" select-context "$JOB_REF")
-SELECTED_HOST=$(jq -r '.host' <<<"$SELECTED_CONTEXT")
+if [[ ! "$SELECTED_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]] ||
+  ! printf '%s\n' "$METAL_HOSTS" | tr ',' '\n' |
+  sed 's/^[[:space:]]*//; s/[[:space:]]*$//' |
+  grep -Fx -- "$SELECTED_HOST" >/dev/null; then
+  echo "::error::Selected Runner host is outside the configured metal inventory" >&2
+  exit 2
+fi
 export SELECTED_HOST
 echo "Selected runner service host: ${SELECTED_HOST}"
 
@@ -93,7 +96,7 @@ read_host_capacity() {
   local RUNNER_SERVICE_SUFFIX=$2
   local REMOTE="${METAL_USER}@${HOST}"
   # shellcheck disable=SC2029
-  ssh "$REMOTE" "sudo ${BIN_DIR}/runner service wait-running --name ${RUNNER_SERVICE_SUFFIX} --timeout-secs 120"
+  ssh "$REMOTE" "sudo ${BIN_DIR}/runner service wait-running --name ${RUNNER_SERVICE_SUFFIX} --timeout-secs 120 --check-health"
 }
 
 reconcile_service_on_host() {
@@ -161,8 +164,6 @@ reconcile_service_on_host() {
     return 1
   fi
   echo "Runner ready on ${HOST}: max_concurrent=${MC}"
-  # shellcheck disable=SC2029
-  ssh "$REMOTE" "sudo ${BIN_DIR}/runner doctor --name ${RUNNER_SERVICE_SUFFIX}"
 
   # Capture the deployed generation while the caller still owns its lifecycle
   # lock. Cleanup must not discover a replacement generation later.

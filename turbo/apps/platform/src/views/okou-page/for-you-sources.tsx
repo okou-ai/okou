@@ -1,7 +1,7 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { SlidersHorizontal } from "lucide-react";
+import { Bell, Newspaper, SlidersHorizontal, Tag } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -13,6 +13,7 @@ import {
   IconButton,
   Switch,
 } from "@okouai/ui";
+import { PreferenceCardRow } from "./components/settings/preference-card-row.tsx";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -22,7 +23,18 @@ import {
   updateForYouSource$,
 } from "../../signals/okou-page/for-you-sources.ts";
 
-function SourceChoices() {
+const SOURCE_ICONS = {
+  whatsNew: Newspaper,
+  offers: Tag,
+  systemUpdates: Bell,
+} as const;
+const CARD_SOURCES = ["whatsNew", "offers", "systemUpdates"] as const;
+
+export function SourceChoices({
+  inMyOkou = false,
+}: {
+  readonly inMyOkou?: boolean;
+}) {
   const { t } = useTranslation();
   const sources = useLastLoadable(forYouSources$);
   const [saving, update] = useLoadableSet(updateForYouSource$);
@@ -60,33 +72,60 @@ function SourceChoices() {
       </div>
     );
   }
-  return (
-    <div className="divide-y divide-gray-400">
-      {(["suggestions", "whatsNew", "offers", "systemUpdates"] as const).map(
-        (source) => {
-          return (
-            <label
-              key={source}
-              className="flex cursor-default items-center justify-between gap-6 py-4 text-sm"
-            >
-              <span>{labels[source]}</span>
-              {sources.state === "hasData" ? (
-                <Switch
-                  size="compact"
-                  checked={sources.data[source]}
-                  disabled={saving.state === "loading"}
-                  onCheckedChange={(enabled) => {
-                    detach(update(source, enabled, signal), Reason.DomCallback);
-                  }}
-                />
-              ) : (
-                <Skeleton className="h-5 w-9 rounded-full" />
-              )}
-            </label>
-          );
-        },
-      )}
-    </div>
+  const visibleSources = inMyOkou
+    ? CARD_SOURCES
+    : (["suggestions", ...CARD_SOURCES] as const);
+  const rows = visibleSources.map((source) => {
+    const control =
+      sources.state === "hasData" ? (
+        <Switch
+          size={inMyOkou ? "default" : "compact"}
+          aria-label={inMyOkou ? labels[source] : undefined}
+          checked={sources.data[source]}
+          disabled={saving.state === "loading"}
+          onCheckedChange={(enabled) => {
+            detach(update(source, enabled, signal), Reason.DomCallback);
+          }}
+        />
+      ) : (
+        <Skeleton
+          className={
+            inMyOkou ? "h-6 w-11 rounded-full" : "h-5 w-9 rounded-full"
+          }
+        />
+      );
+    if (inMyOkou && source !== "suggestions") {
+      return (
+        <div key={source} className="border-t border-t-gray-400">
+          <PreferenceCardRow
+            inline
+            grouped
+            icon={SOURCE_ICONS[source]}
+            iconContainerClassName="h-10 w-10 rounded-xl bg-primary/10 text-brand-text"
+            title={labels[source]}
+            description={t(($) => {
+              return $.myOkou.proactiveSettings[source];
+            })}
+          >
+            {control}
+          </PreferenceCardRow>
+        </div>
+      );
+    }
+    return (
+      <label
+        key={source}
+        className="flex cursor-default items-center justify-between gap-6 py-4 text-sm"
+      >
+        <span>{labels[source]}</span>
+        {control}
+      </label>
+    );
+  });
+  return inMyOkou ? (
+    <>{rows}</>
+  ) : (
+    <div className="divide-y divide-gray-400">{rows}</div>
   );
 }
 

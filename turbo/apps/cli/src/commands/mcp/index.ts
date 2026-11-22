@@ -1,4 +1,3 @@
-import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import chalk from "chalk";
 import type { CallToolResult } from "@modelcontextprotocol/client";
 import {
@@ -16,7 +15,6 @@ import {
   resolveMcpToolInput,
 } from "./input";
 import { listRunMcpConnectors, resolveRunMcpConnector } from "./run-connectors";
-import { chatConnectorAccountsEnabled } from "../../lib/api/domains/run-connector-accounts";
 
 interface JsonOptions {
   readonly json?: boolean;
@@ -87,13 +85,7 @@ function printCleanupWarning(cleanupWarning: boolean): void {
 
 const listCommand = new Command()
   .name("list")
-  .description(
-    chatConnectorAccountsEnabled()
-      ? "List MCP connectors available in this Chat"
-      : decodeSandboxTokenPayload()?.singleAgent
-        ? "List MCP connectors authorized for this Run"
-        : "List MCP connectors authorized for this Agent",
-  )
+  .description("List MCP connectors available in this Run")
   .option("--json", "Print compact JSON")
   .action(
     withErrorHandler(async (options: JsonOptions) => {
@@ -119,13 +111,7 @@ const listCommand = new Command()
       }
       if (connectors.length === 0) {
         console.log(
-          chalk.dim(
-            chatConnectorAccountsEnabled()
-              ? "No MCP connectors have an allowed account in this Chat"
-              : decodeSandboxTokenPayload()?.singleAgent
-                ? "No MCP connectors are authorized for this Run"
-                : "No MCP connectors are authorized for this Agent",
-          ),
+          chalk.dim("No MCP connectors have an available account in this Run"),
         );
         return;
       }
@@ -288,11 +274,7 @@ const callCommand = new Command()
 
 export const mcpCommand = new Command()
   .name("mcp")
-  .description(
-    chatConnectorAccountsEnabled()
-      ? "Use this Chat's current MCP connector accounts"
-      : "Use MCP connectors authorized for this Agent",
-  )
+  .description("Use this Chat's current MCP connector accounts")
   .addCommand(listCommand)
   .addCommand(listToolsCommand)
   .addCommand(callCommand)
@@ -308,7 +290,7 @@ Examples:
 
 Notes:
   - Select by full slug, custom UUID, builtin:<selector>, custom:<selector>, or an exact unique display name
-  - ${chatConnectorAccountsEnabled() ? "Available only inside a Run, using this Chat's allowed current account" : decodeSandboxTokenPayload()?.singleAgent ? "Available only inside a Run and scoped to its current authorization" : "Available only inside an Agent Run and scoped to its Agent's current authorization"}
+  - Run MCP commands inside a Run with an allowed account in this Chat
   - Runner remains execution authority; authorization changes may require a new Run
   - Runner applies endpoint policy and injects connector credentials
   - Successful call JSON is the raw MCP result; failed --json calls use a stable error envelope

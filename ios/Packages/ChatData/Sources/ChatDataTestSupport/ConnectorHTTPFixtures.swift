@@ -12,7 +12,8 @@ public enum ConnectorHTTPFixtures {
     """
   public static func account(
     id: String = accountID, custom: Bool = false, connected: Bool = true,
-    reconnectReason: String? = nil, isDefault: Bool = true, label: String = "Work account"
+    reconnectReason: String? = nil, isDefault: Bool = true, label: String = "Work account",
+    missingRequiredFieldsJSON: String = "[]"
   ) -> String {
     let target =
       custom
@@ -20,28 +21,27 @@ public enum ConnectorHTTPFixtures {
       : "{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}"
     let reason = reconnectReason.map { "\"\($0)\"" } ?? "null"
     return """
-      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"\(label)","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":\(reason),"tokenExpiresAt":null,"missingRequiredFields":[],"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"}
+      {"id":"\(id)","target":\(target),"authMethod":"oauth","displayName":"\(label)","isDefault":\(isDefault),"externalEmail":"work@example.invalid","externalUsername":null,"externalId":null,"oauthScopes":null,"connectionStatus":"\(connected ? "connected" : "reconnect-required")","reconnectReason":\(reason),"tokenExpiresAt":null,"missingRequiredFields":\(missingRequiredFieldsJSON),"configuredFieldKeys":[],"createdAt":"2026-10-21T00:00:00Z","updatedAt":"2026-10-21T00:00:00Z"}
       """
   }
-  public static func catalog(grantKind: String = "none") -> String {
+  public static func catalog(
+    grantKind: String = "none", slug: String = "slack", manualFieldsJSON: String = "[]",
+    startOptionsJSON: String = "[]"
+  ) -> String {
     """
-    {"connector":{"slug":"slack","label":"Slack","description":"Read messages","connectNotice":null,"authMethods":[{"id":"oauth","label":"Sign in","description":null,"grantKind":"\(grantKind)","manualFields":[],"startOptions":[]}]}}
+    {"connector":{"slug":"\(slug)","label":"Slack","description":"Read messages","connectNotice":null,"authMethods":[{"id":"oauth","label":"Sign in","description":null,"grantKind":"\(grantKind)","manualFields":\(manualFieldsJSON),"startOptions":\(startOptionsJSON)}]}}
     """
   }
-  public static func custom(mode: String = "none") -> String {
+  public static func custom(mode: String = "none", fieldsJSON: String = "[]") -> String {
     """
-    {"id":"\(customID)","slug":"_internal","displayName":"Internal service","authMode":"\(mode)","permissionBundleRef":null,"fields":[]}
+    {"id":"\(customID)","slug":"_internal","displayName":"Internal service","authMode":"\(mode)","permissionBundleRef":null,"fields":\(fieldsJSON)}
     """
   }
   public static func response(
-    _ request: URLRequest, connected: Bool = true, authorized: Bool = true,
+    _ request: URLRequest, connected: Bool = true,
     grantKind: String = "none", customMode: String = "none"
   ) -> ChatHTTPResponse? {
     let path = request.url?.path ?? ""
-    if path == "/api/feature-switches" {
-      return ChatHTTPResponse(
-        body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":false}}")
-    }
     if path.hasSuffix("/metadata") { return ChatHTTPResponse(body: metadata) }
     if path == "/api/connector-catalog/slack" {
       return ChatHTTPResponse(body: catalog(grantKind: grantKind))
@@ -75,22 +75,16 @@ public enum ConnectorHTTPFixtures {
         .contains { $0.name == "kind" && $0.value == "custom" } == true
       return ChatHTTPResponse(body: account(custom: custom, connected: connected))
     }
-    if path.hasSuffix("/user-connectors") {
-      return ChatHTTPResponse(
-        body: "{\"enabledConnectorSlugs\":\(authorized ? "[\"slack\"]" : "[]")}")
-    }
-    if path.hasSuffix("/custom-connectors") {
-      return ChatHTTPResponse(
-        body:
-          "{\"grants\":\(authorized ? "[{\"customConnectorId\":\"\(customID)\",\"permissionNames\":[]}]" : "[]")}"
-      )
-    }
-    if path.hasSuffix("/connector-selections") {
-      return ChatHTTPResponse(body: "{\"selections\":[]}")
-    }
     if path == "/api/chat/events" {
       return ChatHTTPResponse(status: 201, body: "{\"threadId\":\"\(threadID)\"}")
     }
     return nil
+  }
+
+  public static func access(slug: String = "slack", currentID: String? = accountID) -> String {
+    let current = currentID.map { "\"\($0)\"" } ?? "null"
+    return """
+      {"target":{"kind":"builtin","connectorSlug":"\(slug)"},"accounts":[{"connectionId":"\(accountID)","displayName":"Work account","defaultEnabled":true,"isDefault":true,"overrideEnabled":null,"enabled":true}],"currentConnectionId":\(current),"available":\(currentID != nil)}
+      """
   }
 }

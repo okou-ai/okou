@@ -33,7 +33,7 @@ final class ComposerConnectorPermissionResources {
     let duration: String?
   }
 
-  let agentID: String
+  let agentID: String?
   let slug: String
   let label: String
   let store = CCState.Store()
@@ -52,7 +52,7 @@ final class ComposerConnectorPermissionResources {
   private var closed = false
 
   init(
-    composer: ComposerConnectorStore, agentID: String, slug: String, label: String,
+    composer: ComposerConnectorStore, agentID: String?, slug: String, label: String,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.composer = composer
@@ -87,10 +87,10 @@ final class ComposerConnectorPermissionResources {
       _ = try get(revision)
       let signal = options.signal
       let task: Task<ChatConnectorPermissionState, Error> =
-        Task { @MainActor [weak self, service, agentID, slug] in
+        Task { @MainActor [weak self, service, slug] in
           do {
             try Task.checkCancellation()
-            let result = try await service.permissions(slug: slug, agentID: agentID)
+            let result = try await service.permissions(slug: slug)
             try Task.checkCancellation()
             try signal.checkCancellation()
             return result

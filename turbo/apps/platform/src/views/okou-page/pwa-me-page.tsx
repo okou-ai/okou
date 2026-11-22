@@ -1,4 +1,3 @@
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import type { ReactNode } from "react";
 import {
   useGet,
@@ -29,10 +28,8 @@ import {
   Plus,
   Route,
   Settings,
-  Users,
   type LucideIcon,
 } from "lucide-react";
-import { defaultAgentName$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { handleAccountAction$ } from "../../signals/okou-page/nav.ts";
@@ -95,7 +92,7 @@ function MeLink({
 }: {
   readonly icon: LucideIcon;
   readonly children: ReactNode;
-  readonly pathname: "/agents" | "/workflows" | "/works" | "/export";
+  readonly pathname: "/workflows" | "/works" | "/export";
   readonly target?: "_blank";
   readonly trailing?: ReactNode;
 }) {
@@ -216,11 +213,9 @@ function MeNavigation({
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
+
   const subscriptionEntry = useSubscriptionLinkingEntry();
   const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
-  const defaultDisplayName =
-    useLastResolved(defaultAgentName$) ?? assistantName;
 
   return (
     <div className={surfaceVariants({ className: "flex flex-col gap-1 p-1" })}>
@@ -238,13 +233,7 @@ function MeNavigation({
           return $.settings.accountMenu.settings;
         })}
       </MeAction>
-      {!singleAgent && (
-        <MeLink icon={Users} pathname={ROUTES.agents}>
-          {t(($) => {
-            return $.appShell.sidebar.navigation.agents;
-          })}
-        </MeLink>
-      )}
+
       <MeLink icon={Route} pathname={ROUTES.workflows}>
         {t(($) => {
           return $.appShell.sidebar.navigation.workflows;
@@ -266,7 +255,7 @@ function MeNavigation({
           ($) => {
             return $.appShell.sidebar.navigation.works;
           },
-          { agentName: defaultDisplayName },
+          { agentName: assistantName },
         )}
       </MeLink>
       {profile.labEnabled && (

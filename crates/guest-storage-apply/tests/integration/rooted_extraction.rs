@@ -56,6 +56,15 @@ fn ordinary_files_preserve_metadata_and_extended_names() {
         .map(|index| (index % 251) as u8)
         .collect::<Vec<_>>();
     append_file(&mut builder, "nested/large", &large, 0o4750, 1234567893).unwrap();
+    let second_large = vec![0xff; 8193];
+    append_file(
+        &mut builder,
+        "nested/second-large",
+        &second_large,
+        0o644,
+        1234567894,
+    )
+    .unwrap();
     let archive = builder.into_inner().unwrap().finish().unwrap();
 
     assert!(apply(dir.path(), &mount, &archive).unwrap());
@@ -74,6 +83,12 @@ fn ordinary_files_preserve_metadata_and_extended_names() {
             large.as_slice(),
             0o750,
             1234567893,
+        ),
+        (
+            Path::new("nested/second-large"),
+            second_large.as_slice(),
+            0o644,
+            1234567894,
         ),
     ] {
         let path = mount.join(path);

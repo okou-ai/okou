@@ -120,9 +120,8 @@ final class MentionNavigationFixture: Sendable {
 
   @MainActor func workspace() async throws -> WorkspaceStore {
     let store = WorkspaceStore(client: http.client, webURL: http.baseURL)
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.list.refresh()
-    _ = try await store.list.stateStore.get(store.list.navigationValue).value
     XCTAssertNil(store.list.error)
     return store
   }
@@ -133,7 +132,7 @@ final class MentionRequestLog: Sendable { let value = Mutex<[String]>([]) }
 @MainActor
 extension WorkspaceStore {
   var mentionTestSource: ComposerMentionSource {
-    ComposerMentionSource(agentID: selectedAgentID, threads: list.threads)
+    ComposerMentionSource(threads: list.threads)
   }
 }
 
@@ -226,7 +225,6 @@ func mentionState(_ input: ComposerTextView, in host: UIView) -> String {
     + "caret=\(input.selectedRange); "
     + "query=\(String(reflecting: editor?.mentionQuery)); "
     + "source=\(editor?.mentionSource != nil); "
-    + "sourceAgent=\(String(describing: editor?.mentionSource?.agentID)); "
     + "sourceThreads=\(String(describing: editor?.mentionSource?.threads.count)); "
     + "candidates=\(String(describing: editor?.mentionSuggestions.map(\.referenceID))); "
     + "selected=\(String(describing: editor?.selectedMentionIndex)); "

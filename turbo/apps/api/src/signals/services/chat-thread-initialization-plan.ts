@@ -1,16 +1,12 @@
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
-import { count, exists, gte, sql } from "drizzle-orm";
+import { count, exists, gte, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { prepareChatEvent } from "./chat-event.service";
 import { initialRemoteAccessValues } from "./chat-remote-access.service";
-import {
-  initialChatThreadConnectorSelectionStatements,
-  type PreparedChatThreadConnectorSelection,
-} from "./chat-thread-connector-selection.service";
 import {
   chatThreadCreatedEventPlan,
   type createdChatThreadFromRow,
@@ -45,7 +41,6 @@ export function chatThreadInitializationCtes(args: {
   readonly orgId: string;
   readonly eventId: string | undefined;
   readonly thread: ReturnType<typeof createdChatThreadFromRow>;
-  readonly selections: readonly PreparedChatThreadConnectorSelection[];
   readonly remoteOverrides: readonly InitialRemoteAccessOverride[];
   readonly assistantMessage: string | undefined;
 }) {
@@ -54,25 +49,8 @@ export function chatThreadInitializationCtes(args: {
       .select({})
       .from(sql`${sql.identifier("created_chat_thread")}`),
   );
-  const selectionGates = args.selections.map((_, index) => {
-    return index === 0
-      ? created
-      : sql`${created} AND ${completedWrite(`initial_connector_selection_${String(index - 1)}`)}`;
-  });
-  const statements = initialChatThreadConnectorSelectionStatements(
-    {
-      chatThreadId: args.thread.id,
-      selections: args.selections,
-    },
-    selectionGates,
-  );
-  const ctes = statements.map((statement, index) => {
-    return sql`${sql.identifier(`initial_connector_selection_${String(index)}`)} AS (${statement})`;
-  });
-  let ready =
-    statements.length === 0
-      ? created
-      : sql`${created} AND ${completedWrite(`initial_connector_selection_${String(statements.length - 1)}`)}`;
+  const ctes: SQL[] = [];
+  let ready = created;
   const remote = initialRemoteAccessValues(
     args.thread.id,
     args.remoteOverrides,
@@ -101,7 +79,6 @@ export function chatThreadInitializationCtes(args: {
     { orgId: args.orgId, eventId: args.eventId, thread: args.thread },
     {
       gate: ready,
-      agentId: sql`${args.thread.agentId}`,
       reservationSource: sql`${sql.identifier("created_thread_events_reserved")}`,
     },
   );

@@ -1,14 +1,11 @@
 import { LoadingSkeleton } from "../../../components/loading-skeleton.tsx";
-import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
-  Sheet,
-  SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
@@ -36,7 +33,7 @@ import {
   type FirewallPolicies,
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-contracts";
-import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
 import type {
   PlatformConnectorPermissionMetadata,
   PlatformUserPermissionGrant,
@@ -100,12 +97,9 @@ interface PermissionsDrawerProps {
   finalFocus?: React.ComponentProps<typeof DialogContent>["finalFocus"];
   initialFocus?: React.ComponentProps<typeof DialogContent>["initialFocus"];
   dialogRef?: React.Ref<HTMLDivElement>;
-  agentId?: string;
-  scopeKey?: string;
-  connectorScope?: boolean;
+  scopeKey: string;
   connectorSlug: ConnectorSlug;
   connectorLabel: string;
-  displayName: string;
   /** Owns the grants the drawer edits, their save, and the drawer's close. */
   session: PermissionDrawerSession;
 }
@@ -138,13 +132,12 @@ interface LoadedPermissionsDrawerContentProps {
 }
 
 function buildInitialPermissionDrawerState({
-  agentId,
   scopeKey,
   connectorSlug,
   metadata,
   initialPolicies,
   initialGrants,
-}: Pick<PermissionsDrawerProps, "agentId" | "scopeKey" | "connectorSlug"> & {
+}: Pick<PermissionsDrawerProps, "scopeKey" | "connectorSlug"> & {
   readonly metadata: PlatformConnectorPermissionMetadata;
   readonly initialPolicies: FirewallPolicies;
   readonly initialGrants: readonly PlatformUserPermissionGrant[];
@@ -155,56 +148,28 @@ function buildInitialPermissionDrawerState({
   const initialPolicyStateKey = permissionDraftInitialPolicyKey(context);
   return {
     explicitGrants,
-    initialPolicyKey: `${scopeKey ?? agentId}\u0000${connectorSlug}\u0000${permissionDraftMetadataKey(metadata)}\u0000${initialPolicyStateKey}\u0000${grantStateKey}`,
+    initialPolicyKey: `${scopeKey}\u0000${connectorSlug}\u0000${permissionDraftMetadataKey(metadata)}\u0000${initialPolicyStateKey}\u0000${grantStateKey}`,
   };
 }
 
 function PermissionsDrawerHeader({
   icon,
   connectorLabel,
-  displayName,
   surface,
-  connectorScope,
-}: Pick<
-  PermissionsDrawerProps,
-  "connectorLabel" | "displayName" | "connectorScope"
-> & {
+}: Pick<PermissionsDrawerProps, "connectorLabel"> & {
   readonly icon: PublicConnectorCatalogIcon | undefined;
   readonly surface: PermissionsSurface;
 }) {
   const { t } = useTranslation();
-  const title = (
-    <>
-      {t(
-        ($) => {
-          return $.connectors.permissions.title;
-        },
-        { connector: connectorLabel },
-      )}
-      {!connectorScope && (
-        <span className="text-sm font-normal text-muted-foreground ml-1">
-          {t(
-            ($) => {
-              return $.connectors.permissions.forTarget;
-            },
-            { target: displayName },
-          )}
-        </span>
-      )}
-    </>
+  const title = t(
+    ($) => {
+      return $.connectors.permissions.title;
+    },
+    { connector: connectorLabel },
   );
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  const description = connectorScope
-    ? t(($) => {
-        return $.connectorChatAccess.permissionsDescription;
-      })
-    : singleAgent
-      ? t(($) => {
-          return $.myOkou.access;
-        })
-      : t(($) => {
-          return $.connectors.permissions.descriptionAgent;
-        });
+  const description = t(($) => {
+    return $.connectorChatAccess.permissionsDescription;
+  });
 
   if (surface === "dialog") {
     return (
@@ -1477,7 +1442,6 @@ function PermissionsContent({
   const loadedInitialState =
     loadedMetadata && snapshot
       ? buildInitialPermissionDrawerState({
-          agentId: props.agentId,
           scopeKey: props.scopeKey,
           connectorSlug: props.connectorSlug,
           metadata: loadedMetadata,
@@ -1504,8 +1468,6 @@ function PermissionsContent({
       <PermissionsDrawerHeader
         icon={loadedMetadata?.icon}
         connectorLabel={props.connectorLabel}
-        displayName={props.displayName}
-        connectorScope={props.connectorScope}
         surface={surface}
       />
 
@@ -1548,30 +1510,6 @@ function PermissionsContent({
         </>
       )}
     </>
-  );
-}
-
-export function PermissionsDrawer(props: PermissionsDrawerProps) {
-  const dismissDrawer = useSet(dismissPermissionDrawer$);
-  const handleClose = () => {
-    dismissDrawer(props.session);
-  };
-
-  return (
-    <Sheet
-      open
-      onOpenChange={(open) => {
-        return !open && handleClose();
-      }}
-    >
-      <SheetContent side="right">
-        <PermissionsContent
-          props={props}
-          surface="sheet"
-          onClose={handleClose}
-        />
-      </SheetContent>
-    </Sheet>
   );
 }
 

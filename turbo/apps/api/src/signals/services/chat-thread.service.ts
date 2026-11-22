@@ -1,3 +1,12 @@
+import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
+import { normalChatInputInsertSql } from "./normal-chat-input-publication-sql";
+import { db$, writeDb$ } from "../external/db";
+import {
+  deleteChatThreadDraft$,
+  persistChatThreadDraft$,
+} from "./chat-thread-draft-write.service";
+import { cancelRun$ } from "./agent-run-cancellation.service";
+import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { array, boolean, object, string, uuid, unknown as zUnknown } from "zod";
 import { hostedSites } from "@okouai/db/runtime/hosted-site";
 import { linkLayoutFromSegment } from "@okouai/api-contracts/contracts/link-layout";
@@ -33,7 +42,6 @@ import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,
 } from "@okouai/db/schema/run-uploaded-file";
-import { agents } from "@okouai/db/schema/agent";
 import {
   and,
   asc,
@@ -63,22 +71,10 @@ import {
 import { chatThreadInitializationCtes } from "./chat-thread-initialization-plan";
 import { now, nowDate, nowDateSql } from "../../lib/time";
 import { safeSqlStateCode } from "../../lib/pg-errors";
-import { db$, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
-import {
-  deleteChatThreadDraft$,
-  persistChatThreadDraft$,
-} from "./chat-thread-draft-write.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
-import { cancelRun$ } from "./agent-run-cancellation.service";
 import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
-import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
-import {
-  selectionParentMissing,
-  prepareChatThreadConnectorSelections$,
-  type PreparedChatThreadConnectorSelection,
-} from "./chat-thread-connector-selection.service";
 import {
   prepareChatThreadInsert,
   createdChatThreadFromRow,
@@ -88,7 +84,7 @@ import { initialRemoteAccessOwnershipPredicate } from "./chat-remote-access.serv
 type ChatThreadRow = {
   readonly id: string;
   readonly title: string | null;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
@@ -183,6 +179,7 @@ function canonicalAssetMaterialization(
 }
 
 function ownedChatThread(
+  orgId: string,
   threadId: string,
   userId: string,
 ): Computed<Promise<ChatThreadRow | null>> {
@@ -192,11 +189,10 @@ function ownedChatThread(
       .select({
         id: chatThreads.id,
         title: chatThreads.title,
-        agentId: agents.id,
         computerUseHostId: chatThreads.computerUseHostId,
         cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
         codexServiceTier: chatThreads.codexServiceTier,
-        orgId: agents.orgId,
+        orgId: chatThreads.orgId,
         lastReadAt: chatThreads.lastReadAt,
         lastMessageAt: chatThreads.lastMessageAt,
         pinnedAt: chatThreads.pinnedAt,
@@ -205,18 +201,22 @@ function ownedChatThread(
         updatedAt: chatThreads.updatedAt,
       })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)))
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, userId),
+          chatThreadOrganizationPredicate(orgId),
+        ),
+      )
       .limit(1);
 
-    if (!thread?.agentId) {
+    if (!thread) {
       return null;
     }
 
     return {
       id: thread.id,
       title: thread.title,
-      agentId: thread.agentId,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
       codexServiceTier: thread.codexServiceTier ?? null,
@@ -231,13 +231,8 @@ function ownedChatThread(
   });
 }
 
-/**
- * The caller's saved draft for one thread, read from `chat_thread_drafts` alone
- * by thread id and owner. A thread the caller does not own, a missing thread
- * and a thread without a draft all read as the empty draft; clients already
- * treat that the same as the former 404.
- */
 export function chatThreadDraft(args: {
+  readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
 }): Computed<Promise<ChatThreadDraft>> {
@@ -249,15 +244,17 @@ export function chatThreadDraft(args: {
         draftAttachments: chatThreadDrafts.draftAttachments,
       })
       .from(chatThreadDrafts)
+      .innerJoin(chatThreads, eq(chatThreads.id, chatThreadDrafts.chatThreadId))
       .where(
         and(
           eq(chatThreadDrafts.chatThreadId, args.threadId),
+          chatThreadOrganizationPredicate(args.orgId),
           eq(chatThreadDrafts.userId, args.userId),
         ),
       )
       .limit(1);
     return {
-      draftUserMessage: draft?.draftUserMessage ?? null,
+      draftUserMessage: readStoredDraftMessage(draft?.draftUserMessage),
       draftAttachments: persistedAttachmentSchema
         .array()
         .nullable()
@@ -271,7 +268,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
-const INDICATOR_AGENT_LIMIT = 128;
 const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
 /** Unread candidates read per request: the newest threads within the lookback. */
@@ -279,6 +275,7 @@ export const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
 export const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function ownedChatThreadDetail(
+  orgId: string,
   threadId: string,
   userId: string,
 ): Computed<Promise<ChatThreadDetailRow | null>> {
@@ -288,7 +285,13 @@ function ownedChatThreadDetail(
         lastReadAt: chatThreads.lastReadAt,
       })
       .from(chatThreads)
-      .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)))
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, userId),
+          chatThreadOrganizationPredicate(orgId),
+        ),
+      )
       .limit(1);
 
     if (!thread) {
@@ -302,10 +305,11 @@ function ownedChatThreadDetail(
 }
 
 export function chatThreadDetail(args: {
+  readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
 }): Computed<Promise<ChatThreadDetail | null>> {
-  const thread$ = ownedChatThreadDetail(args.threadId, args.userId);
+  const thread$ = ownedChatThreadDetail(args.orgId, args.threadId, args.userId);
   const recoveryPending$ = cancellationRecoveryPendingForThread(args);
   return computed(async (get): Promise<ChatThreadDetail | null> => {
     const thread = await get(thread$);
@@ -320,37 +324,17 @@ export function chatThreadDetail(args: {
     };
   });
 }
-type IndicatorOwner = {
+type IndicatorScope = {
   readonly userId: string;
   readonly orgId: string;
+  readonly includeActiveUnread: boolean;
 };
 type IndicatorThreadRow = {
   readonly threadId: string;
-  readonly agentId: string | null;
 };
 type UnreadIndicatorRow = IndicatorThreadRow & {
   readonly unreadAt: Date;
-  readonly archived: boolean;
 };
-
-function indicatorAgentIds(args: IndicatorOwner) {
-  return computed(async (get): Promise<readonly string[]> => {
-    const rows = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.orgId, args.orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-        ),
-      )
-      .orderBy(desc(agents.updatedAt), desc(agents.id))
-      .limit(INDICATOR_AGENT_LIMIT);
-    return rows.map((row) => {
-      return row.id;
-    });
-  });
-}
 
 function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
   rows.sort((left, right) => {
@@ -363,16 +347,11 @@ function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
   return rows.slice(0, INDICATOR_UNREAD_LIMIT);
 }
 
-function createIndicatorRows(args: IndicatorOwner) {
-  const agentIds$ = indicatorAgentIds(args);
+function createIndicatorRows(args: IndicatorScope) {
   const activeRows$ = computed(
     async (get): Promise<readonly IndicatorThreadRow[]> => {
-      const agentIds = await get(agentIds$);
-      if (agentIds.length === 0) {
-        return [];
-      }
       return await get(db$)
-        .select({ threadId: chatThreads.id, agentId: chatThreads.agentId })
+        .select({ threadId: chatThreads.id })
         .from(agentRuns)
         .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
         .where(
@@ -383,20 +362,16 @@ function createIndicatorRows(args: IndicatorOwner) {
             isNotNull(agentRuns.triggerSource),
             eq(chatThreads.userId, args.userId),
             eq(chatThreads.hidden, false),
-            inArray(chatThreads.agentId, agentIds),
+            eq(chatThreads.orgId, args.orgId),
           ),
         )
-        .groupBy(chatThreads.id, chatThreads.agentId)
+        .groupBy(chatThreads.id)
         .orderBy(desc(max(agentRuns.createdAt)))
         .limit(INDICATOR_ACTIVE_LIMIT);
     },
   );
   const unreadRows$ = computed(
     async (get): Promise<readonly UnreadIndicatorRow[]> => {
-      const agentIds = await get(agentIds$);
-      if (agentIds.length === 0) {
-        return [];
-      }
       const db = get(db$);
       const unreadCutoff = new Date(now() - INDICATOR_UNREAD_LOOKBACK_MS);
       // The newest threads with messages after their read watermark are the only
@@ -404,15 +379,13 @@ function createIndicatorRows(args: IndicatorOwner) {
       const candidates = await db
         .select({
           threadId: chatThreads.id,
-          agentId: chatThreads.agentId,
           lastReadAt: chatThreads.lastReadAt,
-          archived: chatThreads.archived,
         })
         .from(chatThreads)
         .where(
           and(
             eq(chatThreads.userId, args.userId),
-            inArray(chatThreads.agentId, agentIds),
+            eq(chatThreads.orgId, args.orgId),
             eq(chatThreads.muted, false),
             eq(chatThreads.hidden, false),
             gte(chatThreads.lastMessageAt, unreadCutoff),
@@ -431,7 +404,7 @@ function createIndicatorRows(args: IndicatorOwner) {
         return row.threadId;
       });
 
-      const [terminalRows, activeRows] = await Promise.all([
+      const [terminalRows, activeCandidates] = await Promise.all([
         db
           .selectDistinctOn([chatEvents.chatThreadId], {
             threadId: chatEvents.chatThreadId,
@@ -450,16 +423,19 @@ function createIndicatorRows(args: IndicatorOwner) {
             desc(chatEvents.createdAt),
             desc(chatEvents.id),
           ),
-        db
-          .selectDistinct({ threadId: agentRuns.chatThreadId })
-          .from(agentRuns)
-          .where(
-            and(
-              inArray(agentRuns.chatThreadId, candidateIds),
-              inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
-              isNotNull(agentRuns.triggerSource),
-            ),
-          ),
+        // The default projection excludes active candidates before the unread limit.
+        args.includeActiveUnread
+          ? []
+          : db
+              .selectDistinct({ threadId: agentRuns.chatThreadId })
+              .from(agentRuns)
+              .where(
+                and(
+                  inArray(agentRuns.chatThreadId, candidateIds),
+                  inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+                  isNotNull(agentRuns.triggerSource),
+                ),
+              ),
       ]);
 
       const latestTerminalAt = new Map<string, Date>();
@@ -467,7 +443,7 @@ function createIndicatorRows(args: IndicatorOwner) {
         latestTerminalAt.set(row.threadId, row.createdAt);
       }
       const activeIds = new Set(
-        activeRows.map((row) => {
+        activeCandidates.map((row) => {
           return row.threadId;
         }),
       );
@@ -485,9 +461,7 @@ function createIndicatorRows(args: IndicatorOwner) {
         }
         unreadRows.push({
           threadId: candidate.threadId,
-          agentId: candidate.agentId,
           unreadAt,
-          archived: candidate.archived,
         });
       }
       return newestUnreadIndicators(unreadRows);
@@ -503,19 +477,14 @@ function createIndicatorRows(args: IndicatorOwner) {
  * different states during transitions. Missing entries do not prove inactivity
  * or completion, and exclusions do not promise eventual appearance.
  *
- * Covers up to 128 visible agents in the current organization. Agent IDs are
- * loaded first and passed to the bounded thread reads, so those reads do not
- * join against or correlate to the agents table.
  * Each indicator source returns at most 50 rows. Only Run terminal markers
  * contribute unread indicators; they are resolved for at most 128 candidate
- * threads with uncorrelated reads. Active wins for a thread; unarchived unread
- * wins for an agent, which can still have other active threads. See
- * indicatorsSchema for the public bounds and outcome-observation contract.
+ * threads with uncorrelated reads. Active wins for a thread in the active
+ * window. Clients can request unread watermarks independently from that window.
  */
-export function chatIndicators(args: {
-  readonly userId: string;
-  readonly orgId: string;
-}): Computed<Promise<Indicators>> {
+export function chatIndicators(
+  args: IndicatorScope,
+): Computed<Promise<Indicators>> {
   const { activeRows$, unreadRows$ } = createIndicatorRows(args);
   return computed(async (get): Promise<Indicators> => {
     const [activeRows, unreadRows] = await Promise.all([
@@ -523,30 +492,23 @@ export function chatIndicators(args: {
       get(unreadRows$),
     ]);
 
-    const agentIndicators: Record<string, Indicator> = {};
     const threads: Record<string, Indicator> = {};
     const unreadAt: Record<string, string> = {};
     for (const row of activeRows) {
       threads[row.threadId] = "active";
-      if (row.agentId !== null) {
-        agentIndicators[row.agentId] = "active";
-      }
     }
     for (const row of unreadRows) {
-      // The unread reads already exclude threads with active Runs, but they
-      // run concurrently with the active read and can observe a newer Run
-      // state; the active indicator wins either way.
-      if (threads[row.threadId] === "active") {
+      const active = threads[row.threadId] === "active";
+      if (active && !args.includeActiveUnread) {
+        continue;
+      }
+      unreadAt[row.threadId] = row.unreadAt.toISOString();
+      if (active) {
         continue;
       }
       threads[row.threadId] = "unread";
-      unreadAt[row.threadId] = row.unreadAt.toISOString();
-      // Archived chats retain their reading state without requesting attention.
-      if (row.agentId !== null && !row.archived) {
-        agentIndicators[row.agentId] = "unread";
-      }
     }
-    return { agents: agentIndicators, threads, unreadAt };
+    return { threads, unreadAt };
   });
 }
 
@@ -555,6 +517,7 @@ export function chatIndicators(args: {
  * (a canonical user message with optional `draftAttachments`).
  */
 export function chatThreadDraftIds(args: {
+  readonly orgId: string;
   readonly userId: string;
 }): Computed<Promise<readonly string[]>> {
   return computed(async (get): Promise<readonly string[]> => {
@@ -562,7 +525,13 @@ export function chatThreadDraftIds(args: {
     const rows = await db
       .select({ id: chatThreadDrafts.chatThreadId })
       .from(chatThreadDrafts)
-      .where(eq(chatThreadDrafts.userId, args.userId));
+      .innerJoin(chatThreads, eq(chatThreads.id, chatThreadDrafts.chatThreadId))
+      .where(
+        and(
+          eq(chatThreadDrafts.userId, args.userId),
+          chatThreadOrganizationPredicate(args.orgId),
+        ),
+      );
     return rows.map((row) => {
       return row.id;
     });
@@ -694,10 +663,11 @@ function publicHostedArtifactSites(
 }
 
 export function chatThreadArtifacts(args: {
+  readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
 }): Computed<Promise<readonly ChatThreadArtifactRun[] | null>> {
-  const thread$ = ownedChatThread(args.threadId, args.userId);
+  const thread$ = ownedChatThread(args.orgId, args.threadId, args.userId);
   const rows$ = chatThreadArtifactRows(args);
   const publicSites$ = publicHostedArtifactSites(args.userId, thread$, rows$);
   return computed(
@@ -814,7 +784,7 @@ const existingClientThreadSelection = Object.freeze({
 function existingClientThreadCondition(args: {
   readonly clientThreadId: string | undefined;
   readonly userId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly orgId: string;
 }) {
   if (args.clientThreadId === undefined) {
@@ -823,7 +793,6 @@ function existingClientThreadCondition(args: {
   return and(
     eq(chatThreads.id, args.clientThreadId),
     eq(chatThreads.userId, args.userId),
-    eq(chatThreads.agentId, args.agentId),
     chatThreadOrganizationPredicate(args.orgId),
   );
 }
@@ -834,7 +803,7 @@ interface CreateChatThreadArgs {
   readonly sourceRunId?: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly title: string | undefined;
   readonly clientThreadId: string | undefined;
   readonly eventId: string | undefined;
@@ -842,7 +811,6 @@ interface CreateChatThreadArgs {
   readonly modelSettings?: ModelSettings;
   readonly cloudBrowserEnabled?: boolean;
   readonly codexServiceTier: CodexServiceTier | null;
-  readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
   readonly committedThread?: ExistingChatThread;
   readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   /** Welcome delivery seeds one immutable message only for the winning INSERT. */
@@ -859,7 +827,6 @@ function ordinaryChatThreadInsertPlan(args: CreateChatThreadArgs) {
     orgId: args.orgId,
     ...(args.clientThreadId !== undefined ? { id: args.clientThreadId } : {}),
     userId: args.userId,
-    agentId: args.agentId,
     title: args.title ?? null,
     projectId: args.projectId,
     // Positive classification belongs to the INSERT itself. A conflicting
@@ -904,21 +871,18 @@ function preparedOrdinaryThread(
     readonly cloudBrowserEnabled: boolean;
   },
 ) {
-  const thread = createdChatThreadFromRow(
-    {
-      id: args.clientThreadId ?? read.id,
-      projectId: args.projectId,
-      userId: args.userId,
-      title: args.title ?? null,
-      selectedModel: plan.values.selectedModel,
-      modelSettings: read.modelSettings,
-      codexServiceTier: args.codexServiceTier,
-      computerUseHostId: null,
-      cloudBrowserEnabled: read.cloudBrowserEnabled,
-      createdAt: read.at,
-    },
-    args.agentId,
-  );
+  const thread = createdChatThreadFromRow({
+    id: args.clientThreadId ?? read.id,
+    projectId: args.projectId,
+    userId: args.userId,
+    title: args.title ?? null,
+    selectedModel: plan.values.selectedModel,
+    modelSettings: read.modelSettings,
+    codexServiceTier: args.codexServiceTier,
+    computerUseHostId: null,
+    cloudBrowserEnabled: read.cloudBrowserEnabled,
+    createdAt: read.at,
+  });
   return {
     thread,
     values: {
@@ -944,15 +908,6 @@ function createdThreadResult(thread: {
   readonly createdAt: Date;
 }): CreatedChatThread {
   return { kind: "created", id: thread.id, createdAt: thread.createdAt };
-}
-
-function initialConnectorSelectionInput(args: CreateChatThreadArgs) {
-  return {
-    orgId: args.orgId,
-    userId: args.userId,
-    agentId: args.agentId,
-    selections: args.connectorSelections ?? [],
-  };
 }
 
 function initialRemoteOwnershipSelection(args: CreateChatThreadArgs) {
@@ -986,28 +941,6 @@ function createdChatRelationCtes(args: CreateChatThreadArgs) {
   ];
 }
 
-function failedChatThreadInitialization(error: unknown) {
-  // Classify only after the complete initialization has rolled back. Other
-  // constraints and database failures remain errors.
-  if (selectionParentMissing(error) === "account") {
-    return { kind: "connector_account_unavailable" as const };
-  }
-  throw error;
-}
-
-function invalidInitialConnectorSelection(prepared: {
-  readonly message: string;
-  readonly accountUnavailable?: true;
-}) {
-  if (prepared.accountUnavailable) {
-    return { kind: "connector_account_unavailable" as const };
-  }
-  return {
-    kind: "invalid_connector_selection" as const,
-    message: prepared.message,
-  };
-}
-
 /** Initialization and the ordered created event commit together. */
 export const createChatThread$ = command(
   async ({ get, set }, args: CreateChatThreadArgs, signal: AbortSignal) => {
@@ -1015,98 +948,79 @@ export const createChatThread$ = command(
     if (args.committedThread) {
       return args.committedThread;
     }
-    const preparedConnectorSelections = await set(
-      prepareChatThreadConnectorSelections$,
-      initialConnectorSelectionInput(args),
-      signal,
-    );
-    if (preparedConnectorSelections.kind === "invalid") {
-      return invalidInitialConnectorSelection(preparedConnectorSelections);
-    }
-    const thread = await settle(
-      (async () => {
-        const readDb = get(db$);
-        const [remoteOwnership] =
-          (args.initialRemoteAccessOverrides?.length ?? 0) > 0
-            ? await readDb
-                .select(initialRemoteOwnershipSelection(args))
-                .from(sql`(SELECT 1) AS initial_remote_ownership`)
-            : [{ owned: true }];
-        signal.throwIfAborted();
-        if (!remoteOwnership) {
-          throw new Error("Initial remote access ownership result is missing");
-        }
-        if (remoteOwnership.owned) {
-          const plan = ordinaryChatThreadInsertPlan(args);
-          const [read] = await readDb
-            .with(...plan.defaults)
-            .select(ordinaryInitializationRead(plan))
-            .from(sql`(SELECT 1) AS initial_thread_values`);
-          signal.throwIfAborted();
-          if (!read) {
-            throw new Error("Initial chat thread values are missing");
-          }
-          const prepared = preparedOrdinaryThread(args, plan, read);
-          const db = set(writeDb$);
-          const insertion = db
-            .insert(chatThreads)
-            .values(prepared.values)
-            .onConflictDoNothing()
-            .returning({
-              id: chatThreads.id,
-              createdAt: chatThreads.createdAt,
-            });
-          const ctes = [
-            sql`created_chat_thread AS (${insertion.getSQL()})`,
-            ...createdChatRelationCtes(args),
-            ...chatThreadInitializationCtes({
-              orgId: args.orgId,
-              eventId: args.eventId,
-              thread: prepared.thread,
-              selections: preparedConnectorSelections.selections,
-              remoteOverrides: args.initialRemoteAccessOverrides ?? [],
-              assistantMessage: args.initialAssistantMessage,
-            }),
-          ];
-          const [created] = parseRawRows(
-            initializedThreadRowSchema,
-            await db.execute(sql`WITH ${sql.join(ctes, sql`, `)}
-              SELECT id, created_at::text AS "createdAt" FROM created_chat_thread`),
-          );
-          signal.throwIfAborted();
-          if (created) {
-            return {
-              ...createdThreadResult(created),
-              projectId: args.projectId ?? null,
-            };
-          }
-        }
-        if (canReplayClientThread(args)) {
-          // A conflicting INSERT may have waited for an uncommitted winner.
-          // Read again after that statement; its initial snapshot cannot replay it.
-          const [existing] = await readDb
-            .select(existingClientThreadSelection)
-            .from(chatThreads)
-            .where(existingClientThreadCondition(args))
-            .limit(1);
-          signal.throwIfAborted();
-          if (existing) {
-            return { kind: "existing" as const, ...existing };
-          }
-        }
-        return remoteOwnership.owned
-          ? { kind: "client_thread_conflict" as const }
-          : {
-              kind: "invalid_remote_access_selection" as const,
-              message: "Remote access host not found",
-            };
-      })(),
-      signal,
-    );
+    const readDb = get(db$);
+    const [remoteOwnership] =
+      (args.initialRemoteAccessOverrides?.length ?? 0) > 0
+        ? await readDb
+            .select(initialRemoteOwnershipSelection(args))
+            .from(sql`(SELECT 1) AS initial_remote_ownership`)
+        : [{ owned: true }];
     signal.throwIfAborted();
-    return thread.ok
-      ? thread.value
-      : failedChatThreadInitialization(thread.error);
+    if (!remoteOwnership) {
+      throw new Error("Initial remote access ownership result is missing");
+    }
+    if (remoteOwnership.owned) {
+      const plan = ordinaryChatThreadInsertPlan(args);
+      const [read] = await readDb
+        .with(...plan.defaults)
+        .select(ordinaryInitializationRead(plan))
+        .from(sql`(SELECT 1) AS initial_thread_values`);
+      signal.throwIfAborted();
+      if (!read) {
+        throw new Error("Initial chat thread values are missing");
+      }
+      const prepared = preparedOrdinaryThread(args, plan, read);
+      const db = set(writeDb$);
+      const insertion = normalChatInputInsertSql(
+        chatThreads,
+        prepared.values,
+        sql`true`,
+        sql`DO NOTHING`,
+        sql`${chatThreads.id}, ${chatThreads.createdAt}`,
+      );
+      const ctes = [
+        sql`created_chat_thread AS (${insertion})`,
+        ...createdChatRelationCtes(args),
+        ...chatThreadInitializationCtes({
+          orgId: args.orgId,
+          eventId: args.eventId,
+          thread: prepared.thread,
+          remoteOverrides: args.initialRemoteAccessOverrides ?? [],
+          assistantMessage: args.initialAssistantMessage,
+        }),
+      ];
+      const [created] = parseRawRows(
+        initializedThreadRowSchema,
+        await db.execute(sql`WITH ${sql.join(ctes, sql`, `)}
+          SELECT id, created_at::text AS "createdAt" FROM created_chat_thread`),
+      );
+      signal.throwIfAborted();
+      if (created) {
+        return {
+          ...createdThreadResult(created),
+          projectId: args.projectId ?? null,
+        };
+      }
+    }
+    if (canReplayClientThread(args)) {
+      // A conflicting INSERT may have waited for an uncommitted winner.
+      // Read again after that statement; its initial snapshot cannot replay it.
+      const [existing] = await readDb
+        .select(existingClientThreadSelection)
+        .from(chatThreads)
+        .where(existingClientThreadCondition(args))
+        .limit(1);
+      signal.throwIfAborted();
+      if (existing) {
+        return { kind: "existing" as const, ...existing };
+      }
+    }
+    return remoteOwnership.owned
+      ? { kind: "client_thread_conflict" as const }
+      : {
+          kind: "invalid_remote_access_selection" as const,
+          message: "Remote access host not found",
+        };
   },
 );
 
@@ -1230,21 +1144,13 @@ export const deleteChatThread$ = command(
   },
 );
 
-/**
- * Save or clear the caller's composer draft for one thread.
- *
- * One statement on `chat_thread_drafts`, keyed by the thread and the caller.
- * Nothing reads or locks `chat_threads`: a write for a thread the caller does
- * not own, or for a missing thread, lands in a row keyed to the caller that no
- * reader ever serves for anyone else. Draft changes do not publish
- * `threadListChanged`; other clients pick the dot up from the drafts endpoint.
- */
 export const updateChatThreadDraft$ = command(
   async (
     { set },
     args: {
       readonly threadId: string;
       readonly userId: string;
+      readonly orgId: string;
       readonly draftUserMessage: UserMessageInputDocument | null;
       readonly draftAttachments: readonly PersistedAttachment[] | null;
     },
@@ -1254,6 +1160,7 @@ export const updateChatThreadDraft$ = command(
       persistChatThreadDraft$,
       {
         chatThreadId: args.threadId,
+        orgId: args.orgId,
         userId: args.userId,
         draftUserMessage: args.draftUserMessage,
         draftAttachments: args.draftAttachments

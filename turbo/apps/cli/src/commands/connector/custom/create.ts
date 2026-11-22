@@ -1,4 +1,3 @@
-import { personalCommandMode } from "../../../lib/command/single-agent";
 import { readManagementInput } from "../../../lib/management-input";
 import { customConnectorMetadata } from "../management";
 
@@ -9,7 +8,6 @@ import { Command } from "commander";
 import { createCustomConnector } from "../../../lib/api/domains/connectors";
 import { decodeSandboxTokenPayload } from "../../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
-import { getOkouAgentId } from "../../../lib/okou-env";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   CALLBACK_PROMPT_MAX_LENGTH,
@@ -30,9 +28,7 @@ interface CreateOptions {
 function requireCustomConnectorWriteCapability(): void {
   const payload = decodeSandboxTokenPayload();
   if (payload && !payload.capabilities.includes("connector:write")) {
-    throw new Error(
-      `Custom connector creation is not enabled for this ${payload.singleAgent ? "Run" : "agent run"}`,
-    );
+    throw new Error("Custom connector creation is not enabled for this Run");
   }
 }
 
@@ -40,7 +36,6 @@ function printCreateResult(
   connector: CustomConnectorResponse,
   options: CreateOptions,
   connectUrl: string,
-  agentId: string | undefined,
 ): void {
   if (options.json) {
     console.log(
@@ -67,7 +62,7 @@ function printCreateResult(
   if (options.callbackPrompt !== undefined) {
     printCallbackTurnInstruction();
   } else {
-    printCallbackActionUrlExample(connectUrl, agentId);
+    printCallbackActionUrlExample(connectUrl);
   }
 }
 
@@ -83,9 +78,9 @@ export const createCustomConnectorCommand = new Command()
     "--callback-prompt <prompt>",
     `Start the next web chat round with this prompt after connection (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
   )
-  .addHelpText("after", ({ command }) => {
-    const personal = personalCommandMode(command);
-    return `
+  .addHelpText(
+    "after",
+    `
 Types and authentication:
   HTTP uses prefixTemplates and supports authMode: none, manual, oauth.
   HTTP API prefixes accept http:// or https://.
@@ -117,7 +112,7 @@ Definition file:
   end-user OAuth token, or values array. Creating the definition is separate
   from connecting a member account, including for none and automatic modes.
 
-${personal ? "Okou setup sequence" : "Agent workflow"}:
+Connector setup
   1. For manual connectors, ask only for missing metadata: name, HTTP or HTTPS
      API prefix for HTTP or HTTPS endpoint for MCP, and the Header or Query
      injection template. Do not ask the user for the actual API token.
@@ -134,8 +129,8 @@ ${personal ? "Okou setup sequence" : "Agent workflow"}:
      The user finishes the separate account connection flow, including for
      none and automatic modes.
   6. When this connection is the only access action needed, add --callback-prompt
-     with a brief task and next step. Share connectUrl and end the turn; Okou
-     continues after the user completes the connection and ${personal ? "Okou access" : "Agent"} authorization.
+     with a brief task and next step. Share connectUrl and end the turn. Okou
+     starts the next round after the user completes the connection.
 
 No-auth HTTP connector example:
   {
@@ -242,21 +237,17 @@ Examples:
   okou connector custom create --file ./connector.json --json
   okou connector custom create --file ./connector.json --json --callback-prompt "Verify the newly connected MCP tools"
 
-Notes:
-  - This command only creates the connector definition; it does not store a
-    manual API token, start OAuth authorization, or authorize ${personal ? "your Okou" : "an agent"}.
-  - Manual credentials and end-user OAuth grants are supplied later through
-    the Connect dialog.
-  - Connected accounts still need ${personal ? "Okou" : "Agent"} access and any fine-grained permissions.
-  - In the current web chat, a callback link example is printed when the action
-    targets the ${personal ? "current execution context" : "current Agent"}. Use it only for a single connector/permission
-    action, keeping the callback prompt free of secrets.
-  - --callback-prompt requires the current web chat and ${personal ? "execution" : "Agent"} context.
+Notes
+  - Members supply manual credentials or authorize OAuth in the Connect dialog.
+  - Inside a Run, use okou connector account list <selector> --json to inspect
+    Chat allowance. Firewall permissions are shared across your Chats and accounts.
+  - --callback-prompt requires the current Web Chat and its execution context.
     ${CALLBACK_PROMPT_GUIDANCE}
   - OAuth app client secrets are definition-time configuration, matching UI
     creation, and should be kept in a temporary file that is never committed.
-  - Requires an organization admin.`;
-  })
+  - Requires an organization admin.
+`,
+  )
   .action(
     withErrorHandler(async (options: CreateOptions) => {
       requireCustomConnectorWriteCapability();
@@ -264,20 +255,18 @@ Notes:
         options.file,
         createCustomConnectorDefinitionFileSchema,
       );
-      const agentId = getOkouAgentId()?.trim() || undefined;
       const actionUrl = new URL(
         connectorActionUrl({
           origin: await getPlatformOrigin(),
           path: "/connectors",
-          agentId,
         }),
       );
       // Validate the callback before creating a definition that needs connection.
       const connectUrl = new URL(
-        finalizeActionUrl(actionUrl, options.callbackPrompt, agentId),
+        finalizeActionUrl(actionUrl, options.callbackPrompt),
       );
       const connector = await createCustomConnector(definition);
       connectUrl.pathname = `/connectors/${connector.slug}/connect`;
-      printCreateResult(connector, options, connectUrl.toString(), agentId);
+      printCreateResult(connector, options, connectUrl.toString());
     }),
   );

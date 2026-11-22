@@ -18,7 +18,8 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
+import { feedRoutes } from "../feed";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -27,10 +28,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
-import {
-  proactiveLearningRoutes,
-  proactiveSuggestionsRoutes,
-} from "../proactive-preferences";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -174,11 +172,10 @@ async function listMorningBriefInstallations(actor: ApiTestUser) {
 }
 
 async function ordinaryDelegationScenario() {
-  const owned = await publicChatActor(context);
+  const owned = await publicChatActor(context, { useDefaultAgent: true });
   return await owned.run(async () => {
     await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     const workflowId = await workflowBdd.createWorkflow(owned.actor, {
-      agentId: owned.agentId,
       name: `ordinary-delegation-${randomUUID().slice(0, 8)}`,
     });
     const detail = await accept(
@@ -189,7 +186,6 @@ async function ordinaryDelegationScenario() {
       [200],
     );
     const sent = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Delegate a workflow",
     });
     const source = await launchBudgetRun(context, owned, sent);
@@ -197,63 +193,69 @@ async function ordinaryDelegationScenario() {
   });
 }
 
-describe("Proactive Learning preference", () => {
-  it("preserves the Learning choice independently of Suggestions", async () => {
+describe("My Okou proactive settings", () => {
+  it("sets hourly checks and new suggestion delivery together without changing other sources or legacy clients", async () => {
     const app = setupApp({
       context,
-      routes: [...proactiveLearningRoutes, ...proactiveSuggestionsRoutes],
+      routes: [...proactiveSuggestionsRoutes, ...feedRoutes],
     });
     const { actor } = await prepareBriefMember();
-    await bdd.completeOnboarding(actor, { timezone: "UTC" });
     if (!actor.orgId) {
-      throw new Error("Expected organization");
+      throw new Error("Expected an organization");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.ProactiveLearning]: true,
-        [FeatureSwitchKey.AgentSuggestion]: true,
-      },
-    );
-    const client = app(proactiveLearningContract);
+    const owner = { ...actor, orgId: actor.orgId };
+    const headers = authHeaders(actor);
+    const hourly = app(proactiveSuggestionsContract);
+    const feed = app(feedContract);
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    });
     await accept(
-      app(proactiveSuggestionsContract).update({
-        headers: authHeaders(actor),
-        body: { enabled: true },
-      }),
-      [200],
+      hourly.updateWithFeed({ headers, body: { enabled: false } }),
+      [403],
     );
-    const initial = await accept(
-      client.get({ headers: authHeaders(actor) }),
-      [200],
-    );
-    expect(initial.body).toMatchObject({ enabled: false, status: "paused" });
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    });
+    expect(
+      (await accept(hourly.get({ headers }), [200])).body.enabled,
+    ).toBeFalsy();
+    expect(
+      (await accept(feed.sources({ headers }), [200])).body.suggestions,
+    ).toBeTruthy();
     await accept(
-      client.update({ headers: authHeaders(actor), body: { enabled: true } }),
+      feed.updateSources({ headers, body: { offers: false } }),
       [200],
     );
-    const saved = await accept(
-      client.get({ headers: authHeaders(actor) }),
-      [200],
-    );
-    expect(saved.body.enabled).toBeTruthy();
-    const paused = await accept(
-      client.update({ headers: authHeaders(actor), body: { enabled: false } }),
-      [200],
-    );
-    expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
-    const suggestions = await accept(
-      app(proactiveSuggestionsContract).get({ headers: authHeaders(actor) }),
-      [200],
-    );
-    expect(suggestions.body.enabled).toBeTruthy();
+    for (const enabled of [false, true]) {
+      await accept(
+        hourly.updateWithFeed({ headers, body: { enabled } }),
+        [200],
+      );
+      expect((await accept(hourly.get({ headers }), [200])).body.enabled).toBe(
+        enabled,
+      );
+      expect(
+        (await accept(feed.sources({ headers }), [200])).body,
+      ).toStrictEqual({
+        suggestions: enabled,
+        offers: false,
+        whatsNew: true,
+        systemUpdates: true,
+      });
+    }
+    await accept(hourly.update({ headers, body: { enabled: false } }), [200]);
+    expect(
+      (await accept(feed.sources({ headers }), [200])).body.suggestions,
+    ).toBeTruthy();
   });
+});
 
+describe("Daily profile learning through Suggestions", () => {
   it("keeps an opt-in cancellable while the Learning time zone is unavailable", async () => {
     const app = setupApp({
       context,
-      routes: proactiveLearningRoutes,
+      routes: proactiveSuggestionsRoutes,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
@@ -263,16 +265,16 @@ describe("Proactive Learning preference", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ProactiveLearning]: true },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
     );
-    const client = app(proactiveLearningContract);
+    const client = app(proactiveSuggestionsContract);
     const pending = await accept(
       client.update({ headers: authHeaders(actor), body: { enabled: true } }),
       [200],
     );
     expect(pending.body).toMatchObject({
       enabled: true,
-      status: "paused",
+      status: "preparing",
       unavailableReason: "missing-timezone",
     });
     const cancelled = await accept(
@@ -294,10 +296,10 @@ describe("Proactive Learning preference", () => {
 });
 
 describe("Proactive Suggestions preference", () => {
-  it("keeps the independent Suggestions choice while the catalog is unavailable", async () => {
+  it("keeps the shared Suggestions choice while the catalog is unavailable", async () => {
     const app = setupApp({
       context,
-      routes: [...proactiveSuggestionsRoutes, ...proactiveLearningRoutes],
+      routes: proactiveSuggestionsRoutes,
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
@@ -309,7 +311,6 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: true,
         [FeatureSwitchKey.AgentSuggestion]: false,
       },
     );
@@ -318,13 +319,8 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: false,
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
-    );
-    await accept(
-      app(proactiveLearningContract).get({ headers: authHeaders(actor) }),
-      [403],
     );
     const initial = await accept(
       client.get({ headers: authHeaders(actor) }),
@@ -355,7 +351,6 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: true,
         [FeatureSwitchKey.AgentSuggestion]: false,
       },
     );
@@ -364,7 +359,6 @@ describe("Proactive Suggestions preference", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.ProactiveLearning]: false,
         [FeatureSwitchKey.AgentSuggestion]: true,
       },
     );
@@ -490,11 +484,10 @@ describe("Workflow schedule recovery", () => {
   it("completes an in-flight user schedule using its edited recurrence", async () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const client = automationClient();
-    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+    const { actor } = await workflowBdd.setupWorkflowOrg({
       timezone: "UTC",
     });
     const workflowId = await workflowBdd.createWorkflow(actor, {
-      agentId: defaultAgentId,
       name: "edited-in-flight-schedule",
     });
     const automation = (
@@ -556,11 +549,10 @@ describe("Workflow schedule recovery", () => {
     const startedAt = Date.parse("2030-01-01T00:00:00.000Z");
     mockNow(startedAt);
     const client = automationClient();
-    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+    const { actor } = await workflowBdd.setupWorkflowOrg({
       timezone: "UTC",
     });
     const workflowId = await workflowBdd.createWorkflow(actor, {
-      agentId: defaultAgentId,
       name: "user-managed-schedule",
     });
     let automation = (
@@ -667,7 +659,7 @@ describe("Debug Morning Brief", () => {
 
 describe("Workflow Run admission", () => {
   it("captures ordinary Workflows at dispatch and applies edits to later Runs", async () => {
-    const owned = await publicChatActor(context);
+    const owned = await publicChatActor(context, { useDefaultAgent: true });
     const fixture = createChatEventsFixture(context);
     const s3 = installWorkflowVolumeS3Fixture(context);
     await owned.run(() => {
@@ -682,7 +674,6 @@ describe("Workflow Run admission", () => {
       const workflowName = `published-${name}-${randomUUID().slice(0, 8)}`;
       const workflowId = await owned.run(() => {
         return workflowBdd.createWorkflow(owned.actor, {
-          agentId: owned.agentId,
           name: workflowName,
           instruction,
         });
@@ -694,7 +685,6 @@ describe("Workflow Run admission", () => {
       throw new Error("Expected the first Workflow");
     }
     const first = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Use available Workflows",
     });
     const revised = "Read the revised first publication.";
@@ -712,7 +702,6 @@ describe("Workflow Run admission", () => {
       const current =
         run ??
         (await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt: "Use current Workflows again",
         }));
       const { execution, sandboxHeaders } = await owned.runExecution(

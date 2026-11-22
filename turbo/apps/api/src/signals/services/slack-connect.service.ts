@@ -2,9 +2,7 @@ import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command, computed, type Computed } from "ccstate";
 import type { SlackConnectLinkStatus } from "@okouai/api-contracts/contracts/slack-connect";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq, isNull, ne, or } from "drizzle-orm";
@@ -96,24 +94,6 @@ const refreshSlackAppHome$ = command(
       return;
     }
 
-    let agentName: string | undefined;
-    if (args.installation.orgId) {
-      const [metadata] = await db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.installation.orgId))
-        .limit(1);
-      const defaultAgentId = metadata?.defaultAgentId ?? null;
-      if (defaultAgentId) {
-        const [agent] = await db
-          .select({ name: agents.name, displayName: agents.displayName })
-          .from(agents)
-          .where(eq(agents.id, defaultAgentId))
-          .limit(1);
-        agentName = agent?.displayName ?? agent?.name;
-      }
-    }
-
     await args.client.publishAppHome(
       args.slackUserId,
       buildAppHomeView({
@@ -125,7 +105,6 @@ const refreshSlackAppHome$ = command(
           args.clerkClient,
           connection.userId,
         ),
-        agentName,
       }),
     );
   },
@@ -188,7 +167,6 @@ interface SlackConnectStatusResponse {
   readonly isConnected: boolean;
   readonly isAdmin: boolean;
   readonly workspaceName?: string | null;
-  readonly defaultAgentName?: string | null;
 }
 
 export function slackConnectStatus(
@@ -231,7 +209,6 @@ export function slackConnectStatus(
   const linkStatus$ = slackConnectLinkStatus(args);
 
   return computed(async (get) => {
-    const db = get(db$);
     const orgInstallation = await get(orgInstallation$);
     const linkStatus = await get(linkStatus$);
 
@@ -246,20 +223,6 @@ export function slackConnectStatus(
       };
     }
 
-    const [metadata] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
-
-    const [agent] = metadata?.defaultAgentId
-      ? await db
-          .select({ name: agents.name })
-          .from(agents)
-          .where(eq(agents.id, metadata.defaultAgentId))
-          .limit(1)
-      : [];
-
     return {
       isConnected: true,
       workspaceName:
@@ -267,7 +230,6 @@ export function slackConnectStatus(
         orgInstallation?.slackWorkspaceName ??
         null,
       isAdmin: args.isAdmin,
-      defaultAgentName: agent?.name ?? null,
       ...(linkStatus ? { linkStatus } : {}),
     };
   });
@@ -334,18 +296,8 @@ export const notifySlackConnect$ = command(
       .select({
         id: slackOrgConnections.id,
         dmWelcomeSent: slackOrgConnections.dmWelcomeSent,
-        agentName: agents.name,
-        agentDisplayName: agents.displayName,
       })
       .from(slackOrgConnections)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId))
-      .leftJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, args.orgId),
-        ),
-      )
       .where(
         and(
           eq(slackOrgConnections.userId, args.userId),
@@ -358,8 +310,6 @@ export const notifySlackConnect$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    const agentName =
-      connection?.agentDisplayName ?? connection?.agentName ?? undefined;
     const { assistantName } = BRAND_PRESENTATION;
 
     const blocks = buildSuccessMessage(
@@ -397,7 +347,10 @@ export const notifySlackConnect$ = command(
         `Hi! I'm ${officialSlackBotMention(args.installation.botUserId)}.`,
         {
           threadTs,
-          blocks: buildWelcomeMessage(args.installation.botUserId, agentName),
+          blocks: buildWelcomeMessage(
+            args.installation.botUserId,
+            assistantName,
+          ),
         },
       );
       signal.throwIfAborted();

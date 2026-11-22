@@ -27,7 +27,7 @@ final class ConnectorActionTests: XCTestCase {
       XCTAssertNotEqual(request.httpMethod, "DELETE")
       return try XCTUnwrap(
         FixtureData.response(
-          request, connected: linked.withLock { $0 }, authorized: linked.withLock { $0 }))
+          request, connected: linked.withLock { $0 }))
     }
     let store = store(fixture)
     defer { store.close() }
@@ -39,25 +39,7 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertEqual(prompts.withLock { $0 }, ["I connected Slack+Chat"])
     let loaded = try await store.resources.read(action).load()
     let status = try XCTUnwrap(loaded)
-    XCTAssertTrue(status.complete)
-  }
-  func testSavedAccountsWithoutDefaultDoNotOpenAnAddFlow() async throws {
-    let fixture = ChatHTTPFixture { request in
-      XCTAssertEqual(request.httpMethod, "GET")
-      if request.url?.path == "/api/connector-accounts/connections" {
-        return ChatHTTPResponse(
-          body: """
-            {"connections":[\(FixtureData.account(isDefault: false))],"nextCursor":null,"defaultConnection":null}
-            """)
-      }
-      return try XCTUnwrap(FixtureData.response(request))
-    }
-    let store = store(fixture)
-    defer { store.close() }
-    let action = try descriptor(fixture)
-    store.activate(action)
-    try await waitForBusinessResult { store.activationError != nil }
-    XCTAssertNil(store.active)
+    XCTAssertTrue(status.connected)
   }
   func testExactReconnectRejectsASiblingReceiptAndAllowsRetry() async throws {
     let starts = Mutex(0)
@@ -118,23 +100,24 @@ final class ConnectorActionTests: XCTestCase {
     XCTAssertEqual(eventIDs.withLock { Set($0).count }, 1)
     XCTAssertEqual(eventIDs.withLock { $0.count }, 2)
   }
-  func testAccountConfirmationUsesPUTAndPreservesTheSelectionWhileContinuing() async throws {
+  func testAccountConfirmationSavesTheChatsCurrentAccountBeforeContinuing() async throws {
     let selected = Mutex(false)
     let callbacks = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/connector-selections") {
-        if request.httpMethod == "PUT" {
-          XCTAssertTrue(
-            try XCTUnwrap(String(data: chatRequestBody(request), encoding: .utf8)).contains(
-              FixtureData.accountID))
-          selected.withLock { $0 = true }
-          return ChatHTTPResponse(body: "{}")
-        }
-        XCTAssertEqual(request.httpMethod, "GET")
-        let selection =
-          "{\"connectionId\":\"\(FixtureData.accountID)\",\"target\":{\"kind\":\"builtin\",\"connectorSlug\":\"slack\"}}"
+      if request.url!.path.hasSuffix("/connector-account-approval") {
+        XCTAssertEqual(request.httpMethod, "POST")
+        let body = try JSONDecoder().decode(
+          ChatConnectorSelection.self, from: chatRequestBody(request))
+        XCTAssertEqual(body.target, .builtin("slack"))
+        XCTAssertEqual(body.connectionId, FixtureData.accountID)
+        selected.withLock { $0 = true }
         return ChatHTTPResponse(
-          body: "{\"selections\":\(selected.withLock { $0 } ? "[\(selection)]" : "[]")}")
+          body: try XCTUnwrap(String(data: JSONEncoder().encode(body), encoding: .utf8)))
+      }
+      if request.url!.path.hasSuffix("/connector-access") {
+        return ChatHTTPResponse(
+          body: FixtureData.access(
+            currentID: selected.withLock { $0 } ? FixtureData.accountID : nil))
       }
       if request.url!.path == "/api/chat/events" {
         XCTAssertTrue(selected.withLock { $0 })
@@ -179,7 +162,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
       }
       XCTAssertNotEqual(request.url!.path, "/api/chat/events")
       return try XCTUnwrap(
-        FixtureData.response(request, connected: false, authorized: false, grantKind: "auth-code"))
+        FixtureData.response(request, connected: false, grantKind: "auth-code"))
     }
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
@@ -219,7 +202,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
         }
         return try XCTUnwrap(
           FixtureData.response(
-            request, connected: linked.withLock { $0 }, authorized: linked.withLock { $0 })
+            request, connected: linked.withLock { $0 })
         )
       }
       let store = store(fixture)
@@ -246,7 +229,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
         XCTAssertEqual(prompts.withLock { $0 }, ["Continue"])
         let loaded = try await store.resources.read(action).load()
         let status = try XCTUnwrap(loaded)
-        XCTAssertTrue(status.complete)
+        XCTAssertTrue(status.connected)
       }
     }
   }
@@ -473,7 +456,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
       }
       XCTAssertNotEqual(request.url!.path, "/api/chat/events")
       return try XCTUnwrap(
-        FixtureData.response(request, connected: false, authorized: false, grantKind: "device-auth")
+        FixtureData.response(request, connected: false, grantKind: "device-auth")
       )
     }
     let store = store(fixture, pollSleep: clock.sleep)
@@ -543,7 +526,7 @@ final class ConnectorStatusReadTests: XCTestCase {
     one.cancel()
     gate.open()
     let status = try await two.value
-    XCTAssertTrue(try XCTUnwrap(status).complete)
+    XCTAssertTrue(try XCTUnwrap(status).connected)
     guard case .failure(let error) = await one.result else {
       return XCTFail("The cancelled waiter must not publish status")
     }
@@ -603,7 +586,7 @@ final class ConnectorStatusReadTests: XCTestCase {
     let fresh = self.store(fixture)
     defer { fresh.close() }
     let value = try await fresh.resources.read(action).load()
-    XCTAssertTrue(try XCTUnwrap(value).complete)
+    XCTAssertTrue(try XCTUnwrap(value).connected)
     XCTAssertEqual(metadataReads.withLock { $0 }, 2)
   }
 
@@ -642,7 +625,7 @@ final class ConnectorStatusReadTests: XCTestCase {
       XCTAssertNil(store.active)
       await store.refresh(action)
       let value = try await read.load()
-      XCTAssertTrue(try XCTUnwrap(value).complete)
+      XCTAssertTrue(try XCTUnwrap(value).connected)
       XCTAssertNil(store.active)
     }
   }
@@ -670,7 +653,7 @@ final class ConnectorStatusReadTests: XCTestCase {
     await store.refreshKnown()
     XCTAssertEqual(metadataReads.withLock { $0 }, 0)
     let loaded = try await read.load()
-    XCTAssertTrue(try XCTUnwrap(loaded).complete)
+    XCTAssertTrue(try XCTUnwrap(loaded).connected)
     response.withLock { $0 = 403 }
     await store.refreshKnown()
     do {

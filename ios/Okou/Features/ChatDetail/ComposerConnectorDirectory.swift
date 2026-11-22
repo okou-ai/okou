@@ -263,9 +263,8 @@ private struct ComposerConnectorDirectoryContent: View {
   }
 
   private func openConnector(_ slug: String) {
-    guard let agentID = store.agentID else { return }
     store.openWeb(
-      path: "connectors/\(slug)/connect", query: [URLQueryItem(name: "agentId", value: agentID)])
+      path: "connectors/\(slug)/connect")
   }
 
   /// Sign-in in the app when the connector has an account method; a connector that Okou
@@ -275,10 +274,9 @@ private struct ComposerConnectorDirectoryContent: View {
   ) {
     if connector.authMethods.contains(where: { $0.grantKind != "managed" }) {
       store.connect(target: .builtin(connector.slug))
-    } else if let agentID = store.agentID {
+    } else {
       store.openWeb(
-        path: "connectors/\(connector.slug)/connect",
-        query: [URLQueryItem(name: "agentId", value: agentID)])
+        path: "connectors/\(connector.slug)/connect")
     }
   }
 
@@ -360,7 +358,7 @@ private struct ComposerConnectorDetail: View {
         .buttonStyle(OkouButtonStyle(isPrimary: !added, isCompact: true))
         .accessibilityIdentifier("connector-connect")
         if connector.permissionSummary.hasPermissions
-          && (!store.chatAccountAccess || store.canConfigurePermissions(slug: connector.slug))
+          && store.canConfigurePermissions(slug: connector.slug)
         {
           Button {
             permissionDestination = store.openPermissions(

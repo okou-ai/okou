@@ -11,7 +11,6 @@ import {
 import {
   findComposer,
   findFastControl,
-  MESSAGE_EXPERIENCE_AGENT_ID,
   queryFastControl,
   createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
@@ -146,7 +145,7 @@ test("Send with the Enter key preference", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const editor = await loadNewChatComposer();
@@ -200,7 +199,7 @@ test("Send with the command-key preference", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const editor = await loadNewChatComposer();
@@ -230,7 +229,7 @@ test("Avoid sending while text composition is in progress", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const editor = await loadNewChatComposer();
@@ -327,16 +326,10 @@ test("Use the appropriate Enter behavior on touch devices", async () => {
 test("Treat whitespace as an empty message", async () => {
   const sentPrompts: string[] = [];
   installComposerChat(sentPrompts, "enter");
-  context.mocks.data.agents([
-    {
-      agentId: MESSAGE_EXPERIENCE_AGENT_ID,
-      displayName: "Scout",
-    },
-  ]);
 
   await setupPage({
     context,
-    path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const editor = await loadNewChatComposer();

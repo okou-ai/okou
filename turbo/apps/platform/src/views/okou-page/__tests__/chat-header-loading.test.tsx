@@ -150,7 +150,6 @@ async function setupHeaders({
                 scheduleSummary: "Every two hours",
                 workflow: {
                   id: "a0000000-0000-4000-a000-000000000977",
-                  agentId: previous.agentId,
                   name: "header-schedule",
                   displayName: "Header schedule",
                   description: null,

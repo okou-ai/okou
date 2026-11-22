@@ -8,13 +8,19 @@ import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  persistedAttachment,
+} from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
+
+const malformedText = 'Keep "quotes", \\ and 👒; replace \udc52 and \ud83d.';
+const repairedText = String.raw`Keep "quotes", \ and 👒; replace � and �.`;
 
 interface DraftFixture {
   readonly actor: ReturnType<typeof bdd.user>;
@@ -26,7 +32,6 @@ async function createDraftFixture(): Promise<DraftFixture> {
   const actor = bdd.user();
   const agent = await chat.createAgentForChatThread(actor);
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: `Draft ${randomUUID()}`,
   });
   return { actor, agentId: agent.agentId, threadId: thread.id };
@@ -36,7 +41,6 @@ async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {
   const sent = await chat.requestSendEvent(
     fixture.actor,
     {
-      agentId: fixture.agentId,
       threadId: fixture.threadId,
       prompt: "Send the saved draft",
       clientEventId: randomUUID(),
@@ -50,6 +54,24 @@ async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {
 
 function draftDocument(text: string): UserMessageInputDocument {
   return { version: 1, parts: [{ type: "text", text }] };
+}
+
+function imageMessage(
+  image: PersistedAttachment,
+  text: string,
+): UserMessageInputDocument {
+  return {
+    version: 1,
+    parts: [
+      {
+        type: "file",
+        fileId: image.id,
+        filenameSnapshot: image.filename,
+        contentType: image.contentType,
+      },
+      { type: "text", text },
+    ],
+  };
 }
 
 function draftBody(text: string) {
@@ -123,10 +145,30 @@ describe("thread drafts", () => {
     );
   });
 
+  it("saves rich draft edits containing unpaired surrogates", async () => {
+    const { actor, threadId } = await createDraftFixture();
+    const image = persistedAttachment(
+      randomUUID(),
+      "image.png",
+      "image/png",
+      23,
+    );
+
+    await chat.patchThread(actor, threadId, draftBody("earlier draft"));
+    await chat.patchThread(actor, threadId, {
+      draftUserMessage: imageMessage(image, malformedText),
+      draftAttachments: [image],
+    });
+
+    await expect(chat.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
+      draftUserMessage: imageMessage(image, repairedText),
+      draftAttachments: [image],
+    });
+  });
+
   it("keeps drafts separate per thread and per user", async () => {
     const fixture = await createDraftFixture();
     const sibling = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
       title: `Sibling ${randomUUID()}`,
     });
     await chat.patchThread(fixture.actor, fixture.threadId, draftBody("mine"));
@@ -154,6 +196,31 @@ describe("thread drafts", () => {
       draftUserMessage: null,
       draftAttachments: null,
     });
+  });
+
+  it("isolates drafts between the same user's workspaces", async () => {
+    const fixture = await createDraftFixture();
+    const other = bdd.user({ userId: fixture.actor.userId });
+    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
+    await chat.patchThread(
+      other,
+      fixture.threadId,
+      draftBody("wrong workspace"),
+    );
+    await chat.patchThread(other, fixture.threadId, {
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(chat.listThreadDrafts(other)).resolves.not.toContain(
+      fixture.threadId,
+    );
+    await expect(
+      chat.readThreadDraft(other, fixture.threadId),
+    ).resolves.toStrictEqual({
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(servedDraftText(fixture)).resolves.toBe("owned");
   });
 
   it("keeps a write to another user's thread out of the owner's draft", async () => {
@@ -199,6 +266,39 @@ describe("thread drafts", () => {
 });
 
 describe("sends and drafts", () => {
+  it("publishes a rich send containing unpaired surrogates", async () => {
+    const { actor, threadId } = await createDraftFixture();
+    await runs.ensurePersonalSubscriptionModel(actor);
+    const image = persistedAttachment(
+      randomUUID(),
+      "image.png",
+      "image/png",
+      23,
+    );
+    chat.mockCompletedUploadObject(actor, image.id, image.filename, image.size);
+    const clientEventId = randomUUID();
+
+    await chat.requestSendEvent(
+      actor,
+      {
+        threadId,
+        clientEventId,
+        prompt: malformedText,
+        userMessage: imageMessage(image, malformedText),
+      },
+      [201],
+    );
+
+    const { events } = await chat.listThreadEvents(actor, threadId);
+    const stored = events.find((event) => {
+      return event.id === clientEventId;
+    });
+    expect(stored).toMatchObject({
+      eventType: "input.prompt",
+      userMessage: imageMessage(image, repairedText),
+    });
+  });
+
   it("leaves the saved draft for the client to clear when a message is sent", async () => {
     const fixture = await createDraftFixture();
     await runs.ensurePersonalSubscriptionModel(fixture.actor);

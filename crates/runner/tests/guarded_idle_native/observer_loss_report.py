@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Validate native observer loss without losing accepted saving or progress."""
 
-import argparse
-import json
 import pathlib
 
 import progress_report as foreground
 from cleanup_report import COUNTS, accounting, coverage, supplied_policy
-import status_failure_report as failure
 import report
+import status_evidence
 from report import exact
 
 PREFIX = "NATIVE_OBSERVER_LOSS_WITNESS "
@@ -30,12 +28,13 @@ def validate(directory):
     runners = set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered observer-loss phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered observer-loss phases",
+        )
+        identity = report.witness_identity(terminal[1])
         clocks = [terminal[3]["monotonic_ns"], *(e["monotonic_ns"] for e in events), terminal[-1]["monotonic_ns"]]
         if (any(a >= b for a, b in zip(clocks, clocks[1:]))
-                or any((e["sandbox_id"], e["backing_generation"]) != identity for e in events)):
+                or report.witness_identity_changed(events, identity)):
             raise ValueError("observer loss changed original identity or physical-tail ordering")
         blocked, lost, pool, tail, status, joined = [e["evidence"] for e in events]
         mode = "panic" if case.startswith("ObserverPanic-") else "drop"
@@ -78,7 +77,7 @@ def validate(directory):
         if (not all(report.positive_integer(t) for t in (io_released, status_polled))
                 or not events[3]["monotonic_ns"] < io_released < terminal[4]["monotonic_ns"]
                 < status_polled < events[4]["monotonic_ns"]
-                or not failure.status_wait_advanced(before, after)):
+                or not status_evidence.status_wait_advanced(before, after)):
             raise ValueError("final status was not Pending after complete required IO")
         second = foreground.heartbeat(status.get("heartbeat"), 2, status_polled, events[4]["monotonic_ns"], (0, 0))
         if first != second or first in runners:
@@ -103,7 +102,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    args = parser.parse_args()
-    print(json.dumps(validate(args.directory), indent=2, sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)

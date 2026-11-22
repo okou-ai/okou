@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     CompositeNormalOperation, ConnectionState, RouteId, Shared, normal_operation_transition_error,
-    operation_tracker::{NormalOperationToken, NormalOperationTransitionHandle},
+    operation_tracker::{NormalOperationToken, PendingNormalOperation},
 };
 
 use super::diagnostics::{
@@ -179,10 +179,7 @@ impl Operations {
             .and_then(|operation| operation.pending_controls.get(&request_seq))
             .is_some_and(|pending| pending.route_id == request_route_id);
         if request_matches {
-            self.control_targets.remove(&request_seq);
-            if let Some(operation) = self.get_mut(target_route_id) {
-                operation.pending_controls.remove(&request_seq);
-            }
+            self.take_pending_control(request_seq);
         }
     }
 
@@ -219,7 +216,7 @@ impl Default for Operations {
 
 pub(in crate::exec_operation) struct ExecOperation {
     pub(in crate::exec_operation) route_id: RouteId,
-    pub(in crate::exec_operation) normal_operation: Option<ExecOperationNormalTracking>,
+    pub(in crate::exec_operation) normal_operation: Option<PendingNormalOperation>,
     pub(in crate::exec_operation) lifecycle: ExecOperationLifecycle,
     pub(in crate::exec_operation) diagnostic: ExecOperationDiagnostic,
     pub(in crate::exec_operation) result_tx: oneshot::Sender<io::Result<ExecOperationResult>>,
@@ -260,11 +257,6 @@ pub(in crate::exec_operation) struct PendingExecControl {
     pub(in crate::exec_operation) control_nonce: ExecControlNonce,
     pub(in crate::exec_operation) response_tx: oneshot::Sender<io::Result<ExecControlOutcome>>,
     pub(in crate::exec_operation) normal_operation: NormalOperationToken,
-}
-
-pub(in crate::exec_operation) enum ExecOperationNormalTracking {
-    Owned(NormalOperationToken),
-    Composite(NormalOperationTransitionHandle),
 }
 
 pub(in crate::exec_operation) struct TerminalExecOperation {
@@ -356,7 +348,9 @@ impl ExecOperation {
             }
         };
         if let Some(normal_operation) = normal_operation {
-            normal_operation.complete()?;
+            normal_operation
+                .complete()
+                .map_err(normal_operation_transition_error)?;
         }
         Ok(TerminalExecOperation {
             diagnostic,
@@ -366,32 +360,6 @@ impl ExecOperation {
             stream_overflowed,
             host_cancel_requested,
         })
-    }
-}
-
-impl ExecOperationNormalTracking {
-    pub(in crate::exec_operation) fn mark_possible_guest_write_started(
-        &mut self,
-    ) -> io::Result<()> {
-        match self {
-            ExecOperationNormalTracking::Owned(normal_operation) => normal_operation
-                .mark_possible_guest_write_started()
-                .map_err(normal_operation_transition_error),
-            ExecOperationNormalTracking::Composite(normal_operation) => normal_operation
-                .mark_possible_guest_write_started()
-                .map_err(normal_operation_transition_error),
-        }
-    }
-
-    pub(in crate::exec_operation) fn complete(self) -> io::Result<()> {
-        match self {
-            ExecOperationNormalTracking::Owned(normal_operation) => normal_operation
-                .complete()
-                .map_err(normal_operation_transition_error),
-            ExecOperationNormalTracking::Composite(normal_operation) => normal_operation
-                .mark_possible_guest_write_completed()
-                .map_err(normal_operation_transition_error),
-        }
     }
 }
 
@@ -566,13 +534,6 @@ impl Drop for PendingExecControlGuard {
     }
 }
 
-pub(in crate::exec_operation) fn output_policy_streams(policy: ExecOutputPolicy) -> bool {
-    matches!(
-        policy,
-        ExecOutputPolicy::Stream { .. } | ExecOutputPolicy::CaptureAndStream { .. }
-    )
-}
-
 pub(in crate::exec_operation) fn stream_queue_capacity_for(
     stdout: ExecOutputPolicy,
     stderr: ExecOutputPolicy,
@@ -592,7 +553,7 @@ pub(in crate::exec_operation) fn stream_queue_capacity_for(
             format!("exec stream queue capacity must be at most {MAX_EXEC_STREAM_CAPACITY}"),
         ));
     }
-    let streams_output = output_policy_streams(stdout) || output_policy_streams(stderr);
+    let streams_output = stdout.stream_limits().is_some() || stderr.stream_limits().is_some();
     if !streams_output && requested.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -607,36 +568,21 @@ pub(in crate::exec_operation) fn stream_queue_capacity_for(
 }
 
 pub(in crate::exec_operation) fn capture_state(policy: ExecOutputPolicy) -> ExecCaptureState {
-    match policy {
-        ExecOutputPolicy::Discard | ExecOutputPolicy::Stream { .. } => ExecCaptureState::Discard,
-        ExecOutputPolicy::Capture { limit_bytes }
-        | ExecOutputPolicy::CaptureAndStream {
-            capture_limit_bytes: limit_bytes,
-            ..
-        } => ExecCaptureState::Capture {
+    match policy.capture_limit_bytes() {
+        None => ExecCaptureState::Discard,
+        Some(limit_bytes) => ExecCaptureState::Capture {
             limit_bytes: limit_bytes as usize,
         },
     }
 }
 
 pub(in crate::exec_operation) fn stream_state(policy: ExecOutputPolicy) -> Option<ExecStreamState> {
-    match policy {
-        ExecOutputPolicy::Stream {
-            limit_bytes,
-            chunk_limit_bytes,
-        }
-        | ExecOutputPolicy::CaptureAndStream {
-            stream_limit_bytes: limit_bytes,
-            chunk_limit_bytes,
-            ..
-        } => Some(ExecStreamState {
-            limit_bytes: limit_bytes as usize,
-            chunk_limit_bytes: chunk_limit_bytes as usize,
-            emitted_bytes: 0,
-            truncated: false,
-        }),
-        ExecOutputPolicy::Discard | ExecOutputPolicy::Capture { .. } => None,
-    }
+    policy.stream_limits().map(|limits| ExecStreamState {
+        limit_bytes: limits.total_limit_bytes as usize,
+        chunk_limit_bytes: limits.chunk_limit_bytes as usize,
+        emitted_bytes: 0,
+        truncated: false,
+    })
 }
 
 pub(in crate::exec_operation) fn register_exec_operation_start(
@@ -668,11 +614,11 @@ pub(in crate::exec_operation) fn register_exec_operation_start(
     };
     let (result_tx, result_rx) = oneshot::channel();
     let normal_operation = match tracking {
-        ExecOperationTracking::Tracked => Some(ExecOperationNormalTracking::Owned(
+        ExecOperationTracking::Tracked => Some(PendingNormalOperation::Owned(
             shared.reserve_normal_operation()?,
         )),
         ExecOperationTracking::Composite(normal_operation) => Some(
-            ExecOperationNormalTracking::Composite(normal_operation.transition_handle()),
+            PendingNormalOperation::Composite(normal_operation.transition_handle()),
         ),
         ExecOperationTracking::Untracked => None,
     };

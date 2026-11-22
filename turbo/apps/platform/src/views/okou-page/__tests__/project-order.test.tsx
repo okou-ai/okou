@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
 import {
@@ -10,7 +9,7 @@ import {
   chatThreadDraftContract,
   chatThreadPinOrderContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   fill,
@@ -121,7 +120,6 @@ async function prepare(projectPage = false, configure?: () => void) {
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: { [child.id]: "unread" },
       unreadAt: { [child.id]: at },
     });
@@ -156,25 +154,23 @@ async function prepare(projectPage = false, configure?: () => void) {
   context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
     return respond(204);
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
   context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {
     return respond(204);
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: first.agentId });
   configure?.();
   await setupPage({
     context,
     path: projectPage ? `/projects/${ids[1]}` : `/chats/${second.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await expectProjects(initialNames);
   return {

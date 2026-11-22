@@ -52,11 +52,6 @@ const RUN_CONTROL_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 const CONDITIONAL_CAPABILITIES = [
   ["phone-use:read", FeatureSwitchKey.PhoneUse],
   ["phone-use:write", FeatureSwitchKey.PhoneUse],
-  ["instructions:read", FeatureSwitchKey.SingleAgent],
-  ["instructions:write", FeatureSwitchKey.SingleAgent],
-  ["connector-account:switch", FeatureSwitchKey.ConnectorChatAccountAccess],
-  ["project:read", FeatureSwitchKey.SingleAgent],
-  ["project:write", FeatureSwitchKey.SingleAgent],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
   ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
   ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
@@ -151,7 +146,6 @@ const composeJobTokenPayloadSchema = jwtBaseSchema.extend({
 const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
   scope: literal("skill-import"),
   orgId: string().min(1),
-  agentId: string().min(1),
   provider: workflowImportSourceSchema,
   sessionId: uuid(),
 });
@@ -226,11 +220,12 @@ function isCapabilityAvailableToAgent(
 ): boolean {
   if (
     capability === "instructions:read" ||
-    capability === "instructions:write"
+    capability === "instructions:write" ||
+    capability === "project:read" ||
+    capability === "project:write" ||
+    capability === "suggestion:read" ||
+    capability === "suggestion:write"
   ) {
-    return options?.isDefaultAgent === true;
-  }
-  if (capability === "suggestion:read" || capability === "suggestion:write") {
     return options?.isDefaultAgent === true;
   }
   if (
@@ -490,10 +485,7 @@ function buildOkouTokenClaims(
     runId,
     orgId,
     capabilities,
-    ...(options?.isDefaultAgent === true &&
-    featureEnabled(FeatureSwitchKey.SingleAgent)
-      ? { singleAgent: true as const }
-      : {}),
+    ...(options?.isDefaultAgent === true ? { singleAgent: true as const } : {}),
     ...phoneUseTokenClaims(capabilities, options),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId
@@ -534,7 +526,6 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
   return {
     userId: parsed.data.userId,
     orgId: parsed.data.orgId,
-    agentId: parsed.data.agentId,
     provider: parsed.data.provider,
     sessionId: parsed.data.sessionId,
   };
@@ -543,7 +534,6 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
 export function generateSkillImportToken(
   userId: string,
   orgId: string,
-  agentId: string,
   provider: WorkflowImportSource,
   sessionId: string,
 ): { readonly token: string; readonly expiresAt: Date } {
@@ -553,7 +543,6 @@ export function generateSkillImportToken(
     scope: "skill-import",
     userId,
     orgId,
-    agentId,
     provider,
     sessionId,
     iat: nowSeconds,

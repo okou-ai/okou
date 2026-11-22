@@ -40,7 +40,6 @@ async function sourceFixture() {
     });
   });
   const source = await fixture.sendChatRun(fixture.actor, {
-    agentId: fixture.agentId,
     model: "claude-fable-5-1",
     prompt: "Coordinate related chats",
   });
@@ -55,27 +54,32 @@ async function sourceFixture() {
 
 describe("chat relationships", () => {
   it("returns all created chats once without inferring human-created children", async () => {
-    const { actor, agentId, source, receivedExecution, token } =
-      await sourceFixture();
-    const createdIds: string[] = [];
-    for (let index = 0; index < 51; index++) {
-      const clientThreadId = randomUUID();
-      const request = {
+    const { actor, source, receivedExecution, token } = await sourceFixture();
+    const childRequest = (index: number) => {
+      return {
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId, clientThreadId, title: `Child ${index}` },
+        body: { clientThreadId: randomUUID(), title: `Child ${index}` },
       };
-      const [created, replayed] = await Promise.all([
-        accept(threads.create(request), [201]),
-        accept(threads.create(request), [201]),
-      ]);
-      expect(replayed.body.id).toBe(created.body.id);
+    };
+    const createdIds: string[] = [];
+    const formerPageSize = 50;
+    for (let index = 0; index < formerPageSize; index++) {
+      const created = await accept(threads.create(childRequest(index)), [201]);
       createdIds.push(created.body.id);
     }
-    const humanThread = await chat.createThread(actor, { agentId });
+    const request = childRequest(formerPageSize);
+    const [created, replayed] = await Promise.all([
+      accept(threads.create(request), [201]),
+      accept(threads.create(request), [201]),
+    ]);
+    expect(replayed.body.id).toBe(created.body.id);
+    createdIds.push(created.body.id);
+
+    const humanThread = await chat.createThread(actor, {});
     await accept(
       threads.create({
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId, clientThreadId: humanThread.id },
+        body: { clientThreadId: humanThread.id },
       }),
       [201],
     );
@@ -112,17 +116,15 @@ describe("chat relationships", () => {
   it("records both directions between existing chats and attributes only consumed messages", async () => {
     const {
       actor,
-      agentId,
       source,
       receivedExecution,
       token,
       runExecution,
       requestSendEventWithBearer,
     } = await sourceFixture();
-    const peer = await chat.createThread(actor, { agentId });
+    const peer = await chat.createThread(actor, {});
     const eventId = randomUUID();
     const send = {
-      agentId,
       threadId: peer.id,
       clientEventId: eventId,
       model: "claude-fable-5-1",
@@ -145,7 +147,6 @@ describe("chat relationships", () => {
     await requestSendEventWithBearer(
       okouTokenFromExecution(peerExecution.execution),
       {
-        agentId,
         threadId: source.threadId,
         clientEventId: replyId,
         prompt: "Here is the investigation",
@@ -207,7 +208,6 @@ describe("chat relationships", () => {
     await requestSendEventWithBearer(
       token,
       {
-        agentId,
         threadId: peer.id,
         clientEventId: recalledId,
         prompt: "Withdraw this request",
@@ -217,7 +217,6 @@ describe("chat relationships", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: peer.id,
         revokesEventId: recalledId,
         clientEventId: randomUUID(),
@@ -238,13 +237,12 @@ describe("chat relationships", () => {
     ).toMatchObject({ targetRunId: null });
     await requestSendEventWithBearer(
       token,
-      { agentId, threadId: source.threadId, prompt: "Self follow-up" },
+      { threadId: source.threadId, prompt: "Self follow-up" },
       [201],
     );
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: peer.id,
         sourceRunId: source.runId,
         prompt: "Human forwarding",
@@ -297,7 +295,6 @@ describe("chat relationships", () => {
   ])("$name", async ({ peerCount, firstPeerMessageCount }) => {
     const {
       actor,
-      agentId,
       source,
       receivedExecution,
       token,
@@ -306,7 +303,7 @@ describe("chat relationships", () => {
     const peerIds: string[] = [];
     const messageIds: string[] = [];
     for (let index = 0; index < peerCount; index++) {
-      const peer = await chat.createThread(actor, { agentId });
+      const peer = await chat.createThread(actor, {});
       peerIds.push(peer.id);
       const messageCount = index === 0 ? firstPeerMessageCount : 1;
       const sendMessage = async (messageIndex: number) => {
@@ -314,7 +311,6 @@ describe("chat relationships", () => {
         await requestSendEventWithBearer(
           token,
           {
-            agentId,
             threadId: peer.id,
             clientEventId,
             model: "claude-fable-5-1",
@@ -402,14 +398,12 @@ describe("chat relationships", () => {
   it("records implicit creation and enforces user and organization boundaries", async () => {
     const {
       actor,
-      agentId,
       source,
       receivedExecution,
       token,
       requestSendEventWithBearer,
     } = await sourceFixture();
     const send = {
-      agentId,
       clientThreadId: randomUUID(),
       clientEventId: randomUUID(),
       prompt: "Start a delegated chat",

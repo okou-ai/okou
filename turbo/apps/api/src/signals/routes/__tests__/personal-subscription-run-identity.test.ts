@@ -177,7 +177,6 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
   });
   const start = async () => {
     const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "use my selected subscription",
       model,
     });
@@ -394,12 +393,11 @@ describe("personal subscription run identity", () => {
         runs.acceptTelemetryIngest();
         const runnerGroup = await runs.configureRunnerGroup();
         const connected = await connect(actor, type, "identity-auto");
-        const agent = await bdd.createAgent(actor, {
+        await bdd.createAgent(actor, {
           displayName: "Auto subscription",
           visibility: "private",
         });
         const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
-          agentId: agent.agentId,
           prompt: "use my subscription model",
           model,
         });
@@ -714,13 +712,12 @@ describe("personal subscription run identity", () => {
   it("admits one canonical run for concurrent idempotent chat sends", async () => {
     const f = await fixture("codex-oauth-token");
     const chat = createChatFilesBddApi(context);
-    const thread = await chat.createThread(f.actor, { agentId: f.agentId });
+    const thread = await chat.createThread(f.actor, {});
     const headId = randomUUID();
     const send = () => {
       return chat.requestSendEvent(
         f.actor,
         {
-          agentId: f.agentId,
           threadId: thread.id,
           clientEventId: headId,
           prompt: "one canonical subscription input",
@@ -1088,7 +1085,7 @@ describe("exact subscription selection", () => {
       await runs.updateUserModelPreference(f.actor, model);
       const { runId } = await createChatFilesBddApi(context).sendAndLaunch(
         f.actor,
-        { agentId: f.agentId, model, prompt: "use the requested model" },
+        { model, prompt: "use the requested model" },
       );
       onTestFinished(async () => {
         await runs.requestCancelRun(f.actor, runId, [200]);
@@ -1162,7 +1159,7 @@ describe("personal priority connection boundaries", () => {
       expect(availableModel(models, f.model)).toBeUndefined();
       const rejected = await createChatFilesBddApi(context).requestCreateThread(
         f.actor,
-        { agentId: f.agentId, model: f.model },
+        { model: f.model },
         [400],
       );
       expect(rejected.status).toBe(400);
@@ -1455,7 +1452,6 @@ describe("personal priority credential and session boundaries", () => {
 
     const chat = createChatFilesBddApi(context);
     const sent = await chat.sendAndLaunch(f.actor, {
-      agentId: f.agentId,
       model: f.model,
       prompt: "first account",
     });
@@ -1463,7 +1459,6 @@ describe("personal priority credential and session boundaries", () => {
     await chat.requestSendEvent(
       f.actor,
       {
-        agentId: f.agentId,
         threadId: sent.threadId,
         clientEventId: randomUUID(),
         prompt: "resolve my next account when the queued message becomes a run",

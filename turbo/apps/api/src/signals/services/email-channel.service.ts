@@ -1,3 +1,5 @@
+import type { ApiOrgRole } from "../../types/auth";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import {
   materializeIntegrationInputAssets$,
   integrationInputMessageFiles,
@@ -30,10 +32,7 @@ import { clerk$, type ClerkUser } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { waitUntil } from "../context/wait-until";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { resolveOrgDefaultComposeId$ } from "./agentphone-shared.service";
-import { ensureOrgLimitedFreeBootstrap$ } from "./org-limited-free-bootstrap.service";
 import { completeOnboarding$ } from "./onboarding.service";
-import type { ApiOrgRole } from "../../types/auth";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
@@ -221,15 +220,9 @@ const ensureEmailThread$ = command(
     if (existing) {
       return existing;
     }
-    const agentId = await set(resolveOrgDefaultComposeId$, args.link.orgId);
-    signal.throwIfAborted();
-    if (!agentId) {
-      throw new Error("Workspace default agent is unavailable");
-    }
     const creation = {
       orgId: args.link.orgId,
       userId: args.link.userId,
-      agentId,
       currentTime: nowDate(),
       initialModel: await set(
         resolveDefaultModelFirstPin$,
@@ -266,9 +259,9 @@ const ensureEmailThread$ = command(
     // The route, canonical thread, and created event publish in one statement.
     await db.execute(
       integrationThreadCreatedEventSql(args.link.orgId, thread, {
-        cte: sql`email_route AS (${insertRoute.getSQL()}), email_thread AS (${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)} RETURNING ${chatThreads.agentId})`,
+        cte: sql`email_route AS (${insertRoute.getSQL()}), email_thread AS (${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)} RETURNING ${chatThreads.id})`,
         gate: sql`EXISTS (SELECT 1 FROM email_thread)`,
-        agentId: sql`(SELECT agent_id FROM email_thread)`,
+
         result: sql`SELECT id FROM email_route WHERE EXISTS (SELECT 1 FROM inserted)`,
       }),
     );
@@ -376,34 +369,33 @@ function emailInputFiles(
   return files;
 }
 
-const initializeEmailWorkspace$ = command(
+const completeEmailOnboarding$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly role: ApiOrgRole;
-    },
+    {
+      orgId,
+      userId,
+      role,
+    }: { orgId: string; userId: string; role: ApiOrgRole },
     signal: AbortSignal,
   ) => {
-    const defaultAgentId = await set(resolveOrgDefaultComposeId$, args.orgId);
+    // Keep the durable email intact for redelivery when signup precedes Clerk's creation event.
+    const db = set(writeDb$);
+    const [workspace] = await db
+      .select({ orgId: orgPlanEntitlements.orgId })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
     signal.throwIfAborted();
-    if (args.role === "admin" && !defaultAgentId) {
-      // Signup can reach this continuation before Clerk's organization webhook.
-      // Reuse the same workspace bootstrap as the normal signup workflow.
-      await set(
-        ensureOrgLimitedFreeBootstrap$,
-        { orgId: args.orgId, ownerUserId: args.userId },
-        signal,
-      );
-      signal.throwIfAborted();
+    if (!workspace) {
+      throw new Error("Email workspace initialization is pending");
     }
     await set(
       completeOnboarding$,
       {
-        orgId: args.orgId,
-        member: { userId: args.userId, role: args.role },
-        isAdmin: args.role === "admin",
+        orgId,
+        member: { userId, role },
+        isAdmin: role === "admin",
       },
       signal,
     );
@@ -457,12 +449,8 @@ export const processEmailChannelMessage$ = command(
       return;
     }
     await set(
-      initializeEmailWorkspace$,
-      {
-        orgId: link.orgId,
-        userId: link.userId,
-        role: role.role,
-      },
+      completeEmailOnboarding$,
+      { orgId: link.orgId, userId: link.userId, role: role.role },
       signal,
     );
     signal.throwIfAborted();

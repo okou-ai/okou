@@ -236,7 +236,7 @@ async function configureFastCodexPreference(
     [200, 201],
   );
   await runs.updateUserModelPreference(actor, "gpt-6-astra");
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   await integrations.updateUserModelPreference(
     actor,
     "gpt-6-astra",
@@ -306,22 +306,22 @@ function hasSlackSource(event: ChatEvent): boolean {
 async function ownedThreadWhere(
   actor: ApiTestUser,
   matches: (event: ChatEvent) => boolean,
-): Promise<{ readonly chatThreadId: string; readonly agentId: string }> {
+): Promise<{ readonly chatThreadId: string }> {
   const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
   if (lifecycle.status !== 200) {
     throw new Error("Expected the caller's chat thread lifecycle events");
   }
-  const created = new Map<string, string>();
+  const created = new Set<string>();
   for (const event of lifecycle.body.events) {
     if (event.kind === "created") {
-      created.set(event.chatThreadId, event.agentId);
+      created.add(event.chatThreadId);
     }
   }
-  const matched: { chatThreadId: string; agentId: string }[] = [];
-  for (const [chatThreadId, agentId] of created) {
+  const matched: { chatThreadId: string }[] = [];
+  for (const chatThreadId of created) {
     const { events } = await chat.listThreadEvents(actor, chatThreadId);
     if (events.some(matches)) {
-      matched.push({ chatThreadId, agentId });
+      matched.push({ chatThreadId });
     }
   }
   expect(matched).toHaveLength(1);
@@ -1570,7 +1570,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const home = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -1809,7 +1809,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       assistantText: "finished initial mention",
     });
     const web = await chat.sendAndLaunch(scenario.actor, {
-      agentId: thread.agentId,
       threadId: thread.chatThreadId,
       prompt: "continue from Web",
     });
@@ -2856,17 +2855,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilForTest();
 
     const run1Id = await observeSlackRun(runnerGroup);
-    // The Slack route's thread and the agent it launched with are public
-    // through the caller's thread lifecycle.
-    const { chatThreadId: canonicalChatThreadId, agentId: defaultAgentId } =
-      await ownedThreadWhere(actor, launchedBy(run1Id));
+    const { chatThreadId: canonicalChatThreadId } = await ownedThreadWhere(
+      actor,
+      launchedBy(run1Id),
+    );
     const execution1 = await runs.executionInput(run1Id);
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     const queuedWebMessage = await chat.requestSendEvent(
       actor,
       {
-        agentId: defaultAgentId,
         prompt: "keep the web session separate",
         threadId: canonicalChatThreadId,
         clientEventId: randomUUID(),
@@ -3082,7 +3080,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const runnerGroup = await runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
       await integrations.configureNativeSubscriptionModels(actor);
-      await bdd.readOnboardingStatus(actor);
+      await bdd.provisionWorkspace(actor);
       const slackUserId = uniqueSlackUserId();
       const { teamId } = await integrations.installSlackWorkspace(actor, {
         installerSlackUserId: slackUserId,
@@ -3230,7 +3228,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -4179,8 +4177,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    const onboarding = await bdd.readOnboardingStatus(actor);
-    if (!onboarding.defaultAgentId) {
+    const onboardingAgentId = await bdd.readDefaultAgentId(actor);
+    if (!onboardingAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
     }
     const slackUserId = uniqueSlackUserId();
@@ -4517,51 +4515,52 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.apiCall).not.toHaveBeenCalled();
   });
 
-  it("notifies connected Slack users when no usable org agent is configured", async () => {
-    bdd.acceptAgentStorageWrites();
+  it("opens the connected member's chat for Slack mentions and DMs without a profile", async () => {
     integrations.configureSlackAppMocks();
-
-    const bare = bdd.user();
-    const bareSlackUserId = uniqueSlackUserId();
-    const bareInstall = await integrations.installSlackWorkspace(bare, {
-      installerSlackUserId: bareSlackUserId,
+    const actor = bdd.user();
+    const sender = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: sender,
     });
-    integrations.clearSlackCallHistory();
-    await integrations.postSlackEvent(bareInstall.teamId, {
-      type: "app_mention",
-      user: bareSlackUserId,
-      text: "hello agent",
-      ts: "2100.000100",
-      channel: "C_BDD_NOAGENT",
-    });
-    await flushWaitUntilAndAssert(() => {
-      expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "C_BDD_NOAGENT",
-          user: bareSlackUserId,
-          text: expect.stringContaining("No agent is configured"),
-        }),
-      );
-    });
-
-    // The same unonboarded member can also receive guidance in a DM.
-    integrations.clearSlackCallHistory();
-    await integrations.postSlackEvent(bareInstall.teamId, {
-      type: "message",
-      channel_type: "im",
-      user: bareSlackUserId,
-      text: "hello in dm",
-      ts: "2100.000200",
-      channel: "D_BDD_MISSING_AGENT",
-    });
-    await flushWaitUntilAndAssert(() => {
-      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "D_BDD_MISSING_AGENT",
-          text: expect.stringContaining("No agent is configured"),
-        }),
-      );
-    });
+    const activity = async (
+      type: "app_mention" | "message",
+      channel: string,
+      ts: string,
+    ) => {
+      await integrations.postSlackEvent(teamId, {
+        type,
+        channel_type: type === "message" ? "im" : "channel",
+        user: sender,
+        text: "Hello from Slack",
+        ts,
+        channel,
+      });
+      await flushWaitUntilForTest();
+      const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+      if (lifecycle.status !== 200) {
+        throw new Error("Expected the member's chat threads");
+      }
+      return lifecycle.body.events
+        .filter((event) => {
+          return event.kind === "created";
+        })
+        .map((event) => {
+          return event.chatThreadId;
+        });
+    };
+    const mentionThreads = await activity(
+      "app_mention",
+      "C_BDD_NOAGENT",
+      "2100.000100",
+    );
+    expect(mentionThreads).toHaveLength(1);
+    const bothThreads = await activity(
+      "message",
+      "D_BDD_MISSING_AGENT",
+      "2100.000200",
+    );
+    expect(new Set(bothThreads).size).toBe(2);
+    expect(bothThreads).toContain(mentionThreads[0]);
   });
 
   it("serves Slack help, connect, and disconnect commands", async () => {
@@ -4571,8 +4570,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "BDD Slack Default Agent",
     });
-    const status = await bdd.readOnboardingStatus(actor);
-    const defaultAgentId = status.defaultAgentId;
+    const defaultAgentId = await bdd.readDefaultAgentId(actor);
     if (!defaultAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
     }
@@ -4705,7 +4703,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
     await bdd.readMe(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await bdd.completeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();
     const install = await integrations.installSlackWorkspace(actor, {
@@ -4988,11 +4986,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         throw new Error("Expected Slack failing default actor to have an org");
       }
       await integrations.configureNativeSubscriptionModels(actor);
-      const onboarding = await bdd.readOnboardingStatus(actor);
-      expect(onboarding).toMatchObject({
-        hasDefaultAgent: true,
-        defaultAgentId: expect.any(String),
-      });
+      await bdd.provisionWorkspace(actor);
       await plan.update("canceled");
       const slackUserId = uniqueSlackUserId();
       const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -5055,7 +5049,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       [200, 201],
     );
     await runs.updateUserModelPreference(actor, "gpt-6-astra");
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -5186,7 +5180,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await integrations.enableOkouDebug(actor);
     const slackUser1 = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -5437,7 +5431,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -5765,7 +5759,7 @@ describe("INT-02: Telegram integration", () => {
     );
     expect(agentSend.body).toMatchObject({ ok: true });
     expect(sentMessages.at(-1)?.text).toBe(
-      `agent-initiated fast message\n\n<i>Sent via Okou · Triggered by <a href="tg://user?id=${telegramUserId}">BDD</a></i>`,
+      `agent-initiated fast message\n\n<i>Triggered by <a href="tg://user?id=${telegramUserId}">BDD</a></i>`,
     );
 
     sentMessages.length = 0;
@@ -5808,7 +5802,7 @@ describe("INT-02: Telegram integration", () => {
         TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
       );
       const webhookSecret = TELEGRAM_OFFICIAL_WEBHOOK_SECRET;
-      await bdd.readOnboardingStatus(actor);
+      await bdd.provisionWorkspace(actor);
       const chatActions: {
         readonly chat_id: string;
         readonly action: string;
@@ -6152,13 +6146,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     integrations.configureGithubAppInstallProvider();
 
     const actor = integrations.user();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Signed GitHub callback",
-    });
     const installQuery = {
       userId: actor.userId,
       orgId: actor.orgId ?? undefined,
-      composeId: agent.agentId,
     };
     const okouInstall = await integrations.requestGithubOauthInstall(
       installQuery,
@@ -6260,15 +6250,11 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     if (!orgId) {
       throw new Error("Expected GitHub admin test user to have an org");
     }
-    const agent = await bdd.createAgent(admin, {
-      displayName: "BDD GitHub setup agent",
-    });
     await integrations.readGithubInstallation(admin);
     const installWithState = await integrations.requestGithubOauthInstall(
       {
         orgId,
         userId: admin.userId,
-        composeId: agent.agentId,
       },
       [307],
       admin,
@@ -6299,19 +6285,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       "Invalid%20state%20signature",
     );
 
-    const noDefaultAgent = integrations.user();
-    const installWithoutAgent = await integrations.requestGithubOauthInstall(
-      {
-        orgId: noDefaultAgent.orgId ?? undefined,
-        userId: noDefaultAgent.userId,
-      },
-      [307],
-      noDefaultAgent,
-    );
-    expect(
-      decodeURIComponent(installWithoutAgent.headers.get("location") ?? ""),
-    ).toContain("Finish workspace setup");
-
     await integrations.readGithubInstallation(admin);
     const requestSetup = await integrations.requestGithubAppSetupCallback(
       {
@@ -6327,7 +6300,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
 
     const missingIdStart = await integrations.requestGithubOauthInstall(
-      { orgId, userId: admin.userId, composeId: agent.agentId },
+      { orgId, userId: admin.userId },
       [307],
       admin,
     );

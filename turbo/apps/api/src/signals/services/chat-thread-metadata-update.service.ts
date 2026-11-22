@@ -1,3 +1,4 @@
+import { db$, writeDb$ } from "../external/db";
 import {
   workflows,
   workflowUserAutomationThreads,
@@ -38,20 +39,19 @@ import {
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
 import {
   chatThreadServiceTierFromCodex,
   chatThreadEventInsertSql,
 } from "./chat-thread-event.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
+import { type ModelCatalog, loadModelCatalog$ } from "./model-catalog.service";
 import {
   autoSelectionPin,
-  resolveModelSelectionPin$,
   validateCodexServiceTier,
   type ModelFirstPin,
+  resolveModelSelectionPin$,
 } from "./model-selection.service";
-import { agents } from "@okouai/db/schema/agent";
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { command } from "ccstate";
 import { settle } from "../utils";
 
@@ -143,7 +143,6 @@ function hasModel(
 }
 
 const currentSelection = Object.freeze({
-  agentId: chatThreads.agentId,
   modelSettings: chatThreads.modelSettings,
   codexServiceTier: chatThreads.codexServiceTier,
   threadId: chatThreads.id,
@@ -162,8 +161,7 @@ function threadCondition(args: ChatThreadMetadataUpdateArgs) {
   return and(
     eq(chatThreads.id, args.threadId),
     eq(chatThreads.userId, args.principal.userId),
-    isNotNull(chatThreads.agentId),
-    sql`EXISTS (SELECT 1 FROM ${agents} WHERE ${agents.id} = ${chatThreads.agentId} AND ${agents.orgId} = ${args.principal.orgId})`,
+    chatThreadOrganizationPredicate(args.principal.orgId),
     args.expectedModelState
       ? and(
           eq(chatThreads.selectedModel, args.expectedModelState.selectedModel),
@@ -244,7 +242,6 @@ function resolveModelColumns(
 
 function metadataEvents(
   args: ChatThreadMetadataUpdateArgs,
-  agentId: string,
   columns: ModelColumns | undefined,
   createdAt: Date,
 ) {
@@ -252,7 +249,6 @@ function metadataEvents(
     userId: args.principal.userId,
     orgId: args.principal.orgId,
     chatThreadId: args.threadId,
-    agentId,
     createdAt,
   };
   return [
@@ -377,7 +373,7 @@ const commitMetadata$ = command(
       .where(threadCondition(args))
       .limit(1);
     signal.throwIfAborted();
-    if (!current?.agentId) {
+    if (!current) {
       return { kind: "not_found" };
     }
     if (
@@ -455,7 +451,6 @@ const commitMetadata$ = command(
       )
       .returning({
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
         title: chatThreads.title,
         selectedModel: chatThreads.selectedModel,
         modelSettings: chatThreads.modelSettings,
@@ -465,7 +460,7 @@ const commitMetadata$ = command(
     const commitQuery = metadataCommitWithEventsSql({
       updated: updated.getSQL(),
       ...args.principal,
-      events: metadataEvents(args, current.agentId, columns, updatedAt),
+      events: metadataEvents(args, columns, updatedAt),
     });
     const rowSchema = metadataCommitRowSchema;
     const [row] = await (async () => {
@@ -479,7 +474,6 @@ const commitMetadata$ = command(
 // Preserve real column decoding; annotations do not decode driver values.
 const metadataCommitRowSchema = object({
   threadId: uuid(),
-  agentId: uuid().nullable(),
   title: string().nullable(),
   titleTruncated: boolean(),
   selectedModel: string().nullable(),
@@ -541,7 +535,6 @@ const commitTitleMetadata$ = command(
       selectedModel: chatThreads.selectedModel,
       codexServiceTier: chatThreads.codexServiceTier,
       updatedAt: chatThreads.updatedAt,
-      agentId: chatThreads.agentId,
     });
     const [state] = parseRawRows(
       titleMetadataStateSchema,
@@ -559,7 +552,6 @@ const commitTitleMetadata$ = command(
           {
             cte: sql`updated AS (${updated.getSQL()})`,
             gate: sql`EXISTS (SELECT 1 FROM updated)`,
-            agentId: sql`(SELECT agent_id FROM updated)`,
             result: sql`SELECT id AS "threadId", left(title, 500) AS title,
         COALESCE(length(title) > 500, false) AS "titleTruncated",
         selected_model AS "selectedModel", codex_service_tier AS "codexServiceTier",

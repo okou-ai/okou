@@ -69,12 +69,12 @@ test("Authentication is ready before Platform content becomes interactive", asyn
   const pageReady = setupPage({
     context,
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/workflows",
   });
 
   const skeleton = bootstrapSkeleton();
   expect(skeleton).toBeVisible();
-  expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Workflows" })).toBeNull();
   expect(queryAllByRoleFast("link")).toHaveLength(0);
 
   clerkLoad.resolve();
@@ -82,7 +82,7 @@ test("Authentication is ready before Platform content becomes interactive", asyn
 
   expect(skeleton).toHaveAttribute("aria-hidden", "true");
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   expect(queryAllByRoleFast("link").length).toBeGreaterThan(0);
@@ -92,11 +92,11 @@ test("The SharedWorker owns realtime", async () => {
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/workflows",
     sharedWorkerTestTransport: "message-port",
   });
 
-  await screen.findByRole("heading", { name: "Agents" });
+  await screen.findByRole("heading", { name: "Workflows" });
   await vi.waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
@@ -113,7 +113,7 @@ test("Foreground presence follows tab visibility without stopping realtime", asy
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/workflows",
     sharedWorkerTestTransport: "message-port",
     auth: {
       user: { id: "foreground-user", fullName: "Foreground User" },
@@ -123,7 +123,7 @@ test("Foreground presence follows tab visibility without stopping realtime", asy
       },
     },
   });
-  await screen.findByRole("heading", { name: "Agents" });
+  await screen.findByRole("heading", { name: "Workflows" });
   const channel = "user-org-foreground:foreground-user:foreground-org";
   await vi.waitFor(() => {
     expect(context.mocks.ably.getPresenceCount(channel)).toBe(1);
@@ -158,7 +158,7 @@ test.each(["setupPage", "startPage"])(
         signal: pageSignal,
       },
       host: "app.okou.ai",
-      path: "/agents",
+      path: "/workflows",
     };
     const pageReady =
       entryPoint === "setupPage"
@@ -171,7 +171,7 @@ test.each(["setupPage", "startPage"])(
     clerkLoad.resolve();
     await expect(pageReady).rejects.toBe(pageSignal.reason);
 
-    expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Workflows" })).toBeNull();
     expect(skeleton).not.toBeInTheDocument();
   },
 );
@@ -189,7 +189,7 @@ test.each(["setupPage", "startPage"])(
     const options = {
       context: { ...context, signal: pageSignal },
       host: "app.okou.ai",
-      path: "/agents",
+      path: "/workflows",
     };
 
     await expect(
@@ -197,7 +197,7 @@ test.each(["setupPage", "startPage"])(
     ).rejects.toBe(reason);
     expect(queryBootstrapSkeleton()).toBeNull();
     expect(
-      screen.queryByRole("heading", { name: "Agents" }),
+      screen.queryByRole("heading", { name: "Workflows" }),
     ).not.toBeInTheDocument();
   },
 );
@@ -221,7 +221,7 @@ test("Cancelled locale startup does not adopt a replacement lifetime", async () 
       },
     },
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/workflows",
     locale: "fr-FR",
   });
   const request = await localeRequested.promise;
@@ -234,7 +234,7 @@ test("Cancelled locale startup does not adopt a replacement lifetime", async () 
   expect(request.signal.aborted).toBeTruthy();
   expect(queryBootstrapSkeleton()).toBeNull();
   expect(
-    screen.queryByRole("heading", { name: "Agents" }),
+    screen.queryByRole("heading", { name: "Workflows" }),
   ).not.toBeInTheDocument();
 });
 
@@ -252,7 +252,7 @@ test.each(["setupPage", "startPage"])(
     const options = {
       context: cancelledApp,
       host: "app.okou.ai",
-      path: "/agents",
+      path: "/workflows",
       locale: "fr-FR" as const,
     };
     const startup =
@@ -273,10 +273,10 @@ test.each(["setupPage", "startPage"])(
     await setupPage({
       context: replacementApp,
       host: "app.okou.ai",
-      path: "/agents",
+      path: "/workflows",
     });
     await expect(
-      screen.findByRole("heading", { name: "Agents" }),
+      screen.findByRole("heading", { name: "Workflows" }),
     ).resolves.toBeInTheDocument();
   },
 );
@@ -290,7 +290,7 @@ test("Authentication startup is reused without a duplicate load", async () => {
   const pageReady = setupPage({
     context,
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/workflows",
   });
 
   expect(bootstrapSkeleton()).toBeVisible();
@@ -301,7 +301,7 @@ test("Authentication startup is reused without a duplicate load", async () => {
   await pageReady;
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
   expect(clerk.loads).toHaveLength(1);
   expect(clerk.uiRequests).toStrictEqual([]);
@@ -347,9 +347,6 @@ test("Startup onboarding follows the current account and workspace", async () =>
     statusRequested.resolve();
     await statusReady.promise;
     return HttpResponse.json({
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
-      hasDefaultAgent: true,
       hasOrg: true,
       isAdmin: true,
       needsOnboarding: true,
@@ -360,7 +357,7 @@ test("Startup onboarding follows the current account and workspace", async () =>
   const pageReady = setupPage({
     context,
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/workflows",
   });
   await statusRequested.promise;
 
@@ -372,7 +369,7 @@ test("Startup onboarding follows the current account and workspace", async () =>
   await pageReady;
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
   expect(currentIdentityRequests).toBe(1);
   expect(
@@ -436,9 +433,9 @@ test("Workspace switching navigates home when the active organization changes", 
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/workflows",
   });
-  await screen.findByRole("heading", { name: "Agents" });
+  await screen.findByRole("heading", { name: "Workflows" });
   clerk.organization({ activeOrg: { id: "org_beta", name: "Beta" } });
   clerk.stateChanged();
   await vi.waitFor(() => {

@@ -7,10 +7,10 @@ import {
 } from "./helpers/api-bdd-runs";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
+import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { agentInstructionsRoutes } from "../agent-instructions";
+import { instructionsRoutes } from "../instructions";
 
 import { clearMockNow, mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -121,18 +121,16 @@ describe("OPS-01: user data export", () => {
     const misc = createMiscRoutesApi(context);
     const events = createChatEventsFixture(context);
     await fixture.run(async () => {
-      const agent = await bdd.createAgent(actor, {
-        displayName: "BDD Export Agent",
-        visibility: "private",
-      });
-      await bdd.updateAgentInstructions(
+      const defaultAgentId = await bdd.readDefaultAgentId(actor);
+      if (!defaultAgentId) {
+        throw new Error("Expected a workspace workflow namespace");
+      }
+      await bdd.updatePersonalInstructions(
         actor,
-        agent.agentId,
-        "Use the exported agent instructions.",
+        "Use the exported personal instructions.",
       );
       const workflow = await misc.createWorkflow(
         actor,
-        agent.agentId,
         "bdd-export-workflow",
         { content: "Use the exported workflow instructions." },
         [201],
@@ -141,23 +139,21 @@ describe("OPS-01: user data export", () => {
         throw new Error("Expected workflow creation to return an id");
       }
       const thread = await chat.createThread(actor, {
-        agentId: agent.agentId,
         title: "An empty thread worth keeping",
       });
       await chat.pinThread(actor, thread.id, { pinOrder: "a0" });
 
       const peer = bdd.user({ orgId: actor.orgId });
-      const peerOnboarding = await bdd.readOnboardingStatus(peer);
-      if (!peerOnboarding.defaultAgentId) {
+      const peerOnboardingAgentId = await bdd.readDefaultAgentId(peer);
+      if (!peerOnboardingAgentId) {
         throw new Error("Expected the paid organization to onboard the peer");
       }
       const peerOnboarded = await bdd.completeOnboarding(peer);
       if (peerOnboarded.status !== 200) {
         throw new Error("Expected peer onboarding to complete");
       }
-      const peerAgent = await bdd.createAgent(peer, { visibility: "private" });
+      await bdd.createAgent(peer, { visibility: "private" });
       const peerThread = await chat.createThread(peer, {
-        agentId: peerAgent.agentId,
         title: "Another user's private thread",
       });
 
@@ -165,7 +161,6 @@ describe("OPS-01: user data export", () => {
       expect(ownThread).toMatchObject({
         id: thread.id,
         title: thread.title,
-        agentId: agent.agentId,
         pinOrder: "a0",
       });
       await chat.requestReadThread(actor, peerThread.id, [404]);
@@ -175,16 +170,15 @@ describe("OPS-01: user data export", () => {
         actor.orgRole,
       );
       const instructions = await accept(
-        setupApp({ context, routes: agentInstructionsRoutes })(
-          agentInstructionsContract,
+        setupApp({ context, routes: instructionsRoutes })(
+          instructionsContract,
         ).get({
-          params: { id: agent.agentId },
           headers: { authorization: "Bearer clerk-session" },
         }),
         [200],
       );
       expect(instructions.body).toMatchObject({
-        content: "Use the exported agent instructions.",
+        content: "Use the exported personal instructions.",
       });
       const currentWorkflow = await misc.readWorkflow(
         actor,
@@ -195,8 +189,6 @@ describe("OPS-01: user data export", () => {
         id: workflow.body.id,
         instruction: "Use the exported workflow instructions.",
       });
-      await bdd.deleteAgent(peer, peerAgent.agentId);
-      await bdd.deleteAgent(actor, agent.agentId);
       await flushWaitUntilForTest();
     });
   });

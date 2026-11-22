@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "닫기"
+  },
   "activity": {
     "codex": {
       "codexError": "Codex 오류",
@@ -86,7 +89,6 @@
           "title": "제공자 일시적 사용 불가"
         }
       },
-      "fallbackAgent": "에이전트",
       "fields": {
         "duration": "소요 시간",
         "model": "모델",
@@ -333,15 +335,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "에이전트를 불러올 수 없습니다",
       "back": "뒤로",
       "backToChats": "채팅 목록으로 돌아가기",
       "chatListUnavailable": "채팅을 불러올 수 없습니다",
       "chats": "채팅",
       "me": "나",
-      "navigation": "기본 탐색",
-      "searchAgents": "에이전트 검색",
-      "switchAgent": "에이전트 전환"
+      "navigation": "기본 탐색"
     },
     "shortcutHelp": {
       "close": "단축키 닫기",
@@ -358,10 +357,8 @@
         "collapseProject": "Project 접기",
         "expandProject": "Project 펼치기",
         "newChat": "새 채팅",
-        "nextAgent": "다음 에이전트",
         "nextThread": "다음 스레드",
         "openFirstThread": "첫 번째 스레드 열기",
-        "previousAgent": "이전 에이전트",
         "previousThread": "이전 스레드",
         "renameChat": "채팅 이름 변경",
         "scrollBottom": "맨 아래로 스크롤",
@@ -383,7 +380,6 @@
         "openAutomations": "모바일 자동화 열기"
       },
       "navigation": {
-        "agents": "에이전트",
         "artifacts": "아티팩트",
         "connectors": "커넥터",
         "settings": "설정",
@@ -524,10 +520,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "에이전트가 아직 로딩 중입니다",
       "connect": "Google Drive 연결",
-      "connectTooltip": "아티팩트 업로드를 위해 Google Drive를 연결하세요",
-      "conversionNotice": "편집 가능한 사본을 만듭니다. 서식이 달라질 수 있습니다.",
       "conversionUnconfirmed": "Google 변환 결과를 확인할 수 없습니다. 다시 시도하기 전에 Drive를 확인하세요.",
       "openDocs": "Google Docs에서 열기",
       "openSheets": "Google Sheets에서 열기",
@@ -997,11 +990,9 @@
         "twentyFourHours": "24시간"
       },
       "errors": {
-        "agentNotFound": "에이전트를 찾을 수 없음",
-        "loadAgent": "에이전트 로드 실패",
         "loadGrants": "권한 부여 로드 실패",
+        "loadMember": "워크스페이스 멤버를 불러올 수 없습니다.",
         "loadMetadata": "권한 메타데이터 로드 실패",
-        "missingAgentId": "URL 매개변수에 에이전트 ID 누락",
         "missingPermission": "URL 매개변수에 권한 누락",
         "unknownAction": "알 수 없는 권한 작업: {{action}}",
         "unknownConnector": "알 수 없는 커넥터: {{connector}}",
@@ -1047,13 +1038,10 @@
       "invalid": "이 권한 링크는 유효하지 않거나 사용할 수 없습니다.",
       "loadFailed": "요청된 모든 권한을 확인하지 못했습니다. 권한을 변경할 수 없습니다.",
       "loading": "권한을 불러오는 중",
-      "myOkouScopeNote": "현재 작업뿐 아니라 이 워크스페이스에서 내 Okou 사용에 적용됩니다.",
       "myOkouSharedScopeNote": "이 워크스페이스의 내 모든 채팅에서 이 커넥터에 적용됩니다. 팀원의 권한은 각자 독립적입니다.",
       "notNow": "나중에",
       "pending_other": "허용할 권한 {{count}}개",
       "review": "권한 검토",
-      "scopeNote": "현재 작업뿐 아니라 이 에이전트에 적용됩니다.",
-      "sharedScopeNote": "이 커넥터의 권한은 모든 채팅과 에이전트에 적용됩니다.",
       "title": "다음 권한 허용"
     }
   },
@@ -1526,7 +1514,6 @@
           "action": "출석하기",
           "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
           "name": "매일 출석하기",
-          "pendingDescription": "체크인이 저장되었습니다. 확인 후 크레딧이 반영됩니다.",
           "unit": "하루당"
         },
         "connector": {
@@ -1543,12 +1530,6 @@
         },
         "inReview": "검토 중",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} 크레딧",
-            "confirm": "일하러 가기",
-            "description": "크레딧은 일 자체에 쓰입니다. 실행 한 번, 결과물 하나, 일정에 따라 도는 워크플로 모두에요.",
-            "title": "오늘 몫은 끝났습니다"
-          },
           "connector": {
             "confirm": "모든 커넥터 보기",
             "connected": "연결됨",
@@ -1633,8 +1614,7 @@
         "whatsCooking": "무슨 일이 있나요, {{userName}}?",
         "whatsOnYourMind": "무슨 생각 중이신가요, {{userName}}?",
         "whatsTheMove": "어떤 계획이 있나요, {{userName}}?"
-      },
-      "viewAgentProfile": "에이전트 프로필 보기"
+      }
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
@@ -1646,9 +1626,19 @@
       "dismiss": "무시",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "재촉하지 마세요",
+      "dontNudgeRecorded": "이 일은 더 이상 재촉하지 않도록 기록했어요",
+      "editDraft": "기존 채팅에 초안 준비",
       "editReason": "Edit reason",
+      "feedbackPrompt": "이 제안은 어떤가요?",
       "feedLabel": "피드",
       "forYou": {
+        "cover": {
+          "change": "커버 변경",
+          "default": "기본",
+          "gallery": "커버",
+          "option": "커버 {{index}}"
+        },
         "loading": "제안 불러오는 중",
         "next": "다음 제안",
         "previous": "이전 제안",
@@ -1661,10 +1651,11 @@
           "title": "추천 소식의 출처",
           "whatsNew": "새 소식"
         },
-        "subtitle": "한 번에 하나씩",
+        "subtitle": "Okou가 고른 처리할 일",
         "title": "추천"
       },
       "homeCard": {
+        "completeDescription": "시간을 들일 만한 일이 생기면 Okou가 다음 일을 여기로 가져올게요.",
         "completeTitle": "모두 확인했어요",
         "feedback": "제안 작업",
         "navigation": "제안 둘러보기",
@@ -1680,9 +1671,12 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "보내는 중…",
+      "sendNew": "새 채팅으로 보내기",
       "sent": "새 채팅으로 보냈습니다",
+      "sentToChat": "채팅에 보냈습니다",
       "unavailable": "이 제안은 더 이상 사용할 수 없습니다. 제안을 새로고침했습니다.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "출처 보기"
     },
     "attachments": {
       "attach": "첨부",
@@ -1818,7 +1812,7 @@
       "repair": "복구",
       "repairRequired": "{{institution}}에 복구가 필요합니다",
       "revoke": "철회",
-      "revokeConfirm": "이 에이전트의 뱅킹 접근을 철회하시겠습니까?",
+      "revokeConfirm": "이 워크스페이스의 뱅킹 접근 권한을 철회하시겠습니까?",
       "selectAccounts": "계좌 선택",
       "sevenDays": "7일",
       "thirtyDays": "30일",
@@ -1999,7 +1993,6 @@
     },
     "composer": {
       "add": "추가",
-      "agentSuggestions": "에이전트",
       "configureModel": "모델 구성",
       "create": {
         "addStyle": "스타일 추가",
@@ -2011,7 +2004,7 @@
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
       },
-      "mentionHint": "에이전트 또는 채팅 검색…",
+      "mentionHint": "채팅 또는 프로젝트 검색…",
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
@@ -2098,13 +2091,8 @@
       "unavailableTitle": "계정을 사용할 수 없음"
     },
     "connectors": {
-      "accountForThread": "이 스레드의 계정",
-      "add": "{{connectorName}} 추가",
       "addConnectors": "커넥터 추가",
-      "authorized": "{{connectorName}}가 연결되고 {{agentName}}에 권한이 부여되었습니다",
       "back": "뒤로",
-      "configurePermissions": "{{connectorName}} 권한 구성",
-      "customAuthorizeDescription": "이 맞춤 커넥터를 검토하고 연결한 후 에이전트에 권한을 부여하세요.",
       "directory": {
         "allCategories": "전체",
         "askAdmin": "관리자에게 활성화를 요청하세요",
@@ -2131,14 +2119,8 @@
         "tabCustom": "커스텀",
         "tabDiscover": "탐색"
       },
-      "fallsBackTo": "{{account}} 계정으로 대체",
       "find": "커넥터 찾기...",
-      "loadFailed": "커넥터를 불러올 수 없습니다.",
-      "noUsableAccount": "사용 가능한 계정 없음",
-      "remove": "{{connectorName}} 제거",
-      "selectedAccountFor": "{{connector}} · 선택한 계정: {{account}}",
-      "title": "커넥터",
-      "useDefault": "기본값 사용"
+      "title": "커넥터"
     },
     "documentTitle": "채팅",
     "errors": {
@@ -2227,16 +2209,7 @@
       "sent": "새 채팅이 생성되었습니다"
     },
     "forward": {
-      "action": "전달",
-      "agents": "에이전트",
-      "back": "뒤로",
       "composerPlaceholder": "메시지 추가",
-      "content": "내용",
-      "description": "선택한 내용을 에이전트 또는 채팅으로 보내 계속 작업하세요.",
-      "noResults": "에이전트 또는 채팅을 찾을 수 없습니다",
-      "search": "에이전트 및 채팅 검색...",
-      "sent": "전달했습니다",
-      "threads": "채팅",
       "title": "전달 대상"
     },
     "mail": {
@@ -2302,10 +2275,11 @@
       "unavailable": "이 이메일은 더 이상 사용할 수 없습니다."
     },
     "messageDocument": {
-      "agent": "[에이전트: {{name}}]",
       "chatThread": "[채팅 스레드: {{title}}]",
       "file": "[파일: {{filename}}]",
-      "template": "[템플릿: {{title}}]"
+      "template": "[템플릿: {{title}}]",
+      "voice": "음성 메시지",
+      "voiceClip": "음성 클립 {{index}}"
     },
     "newChat": "새 채팅",
     "origins": {
@@ -2333,7 +2307,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "에이전트를 찾을 수 없습니다",
       "allow": "허용",
       "alreadyAllowed": "이미 허용됨",
       "alreadyDenied": "이미 거부됨",
@@ -2348,6 +2321,7 @@
       "expiresInHours_one": "{{count}}시간 후 만료",
       "expiresInHours_other": "{{count}}시간 후 만료",
       "loadFailed": "권한 상태를 불러올 수 없습니다",
+      "memberNotFound": "워크스페이스 멤버를 찾을 수 없습니다.",
       "otherEndpoints": "기타 엔드포인트",
       "unknown": "알 수 없는 권한",
       "updated": "권한이 업데이트되었습니다",
@@ -2495,18 +2469,26 @@
       "workingFor": "{{duration}} 동안 작업 중"
     },
     "sharing": {
+      "accessNote": "액세스 권한은 본인만 변경할 수 있습니다.",
       "cancel": "취소",
       "close": "닫기",
       "copyFailed": "링크를 복사하지 못했습니다",
       "create": "공유",
       "createFailed": "공유된 대화를 만들지 못했습니다.",
+      "createLink": "링크 만들기",
+      "deselectAll": "모두 선택 해제",
       "deselectGroup": "메시지 그룹 선택 해제",
+      "done": "완료",
       "everyone": "모든 사용자",
       "linkCopied": "링크가 복사되었습니다",
+      "linkCreated_other": "메시지 {{count}}개의 링크를 만들었습니다",
       "messageShareFailed": "공유 링크를 만들지 못했습니다.",
       "organizationDescription": "조직 내 구성원만",
+      "selectAll": "모두 선택",
       "selectedCount_other": "{{count}}개 선택됨",
+      "selectedOfTotal_other": "{{total}}개 중 {{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
+      "selectPrompt": "공유할 메시지를 선택하세요",
       "shareLink": "공유된 대화 링크",
       "start": "메시지 공유",
       "tooLarge": "공유할 메시지를 더 적게 선택하세요",
@@ -2806,7 +2788,6 @@
       "noEmojiFound": "이모지가 없습니다",
       "notFound": "채팅 스레드를 찾을 수 없습니다",
       "openBrowser": "브라우저 열기",
-      "openNamedAgent": "에이전트 {{name}} 열기",
       "openNamedChat": "채팅 {{title}} 열기",
       "pickEmoji": "이모지 선택",
       "scrollToBottom": "맨 아래로 스크롤",
@@ -2937,28 +2918,12 @@
     "totalAccounts": "계정 {{value}}개"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{agent}}에 대해 {{connector}} {{action}} 권한",
-      "accessUpdated": "{{connector}} 권한이 업데이트되었습니다",
-      "clearSearch": "에이전트 검색 초기화",
-      "description": "이 커넥터를 사용할 수 있는 에이전트를 선택하세요.",
-      "loading": "에이전트 불러오는 중...",
-      "managePermissions": "권한 관리",
-      "managePermissionsFor": "{{agent}}에 대한 {{connector}} 권한 관리",
-      "noAgents": "에이전트를 찾을 수 없습니다",
-      "noMatchingAgents": "\"{{search}}\"와 일치하는 에이전트가 없습니다",
-      "permissionsUpdated": "권한이 업데이트되었습니다",
-      "search": "에이전트 찾기",
-      "title": "{{connector}} 접근 권한 관리",
-      "unnamedAgent": "이름 없음"
-    },
     "accounts": {
       "accountName": "계정 이름",
       "accountsUnavailable": "이 커넥터의 계정을 사용할 수 없습니다.",
       "actions": "계정 작업",
       "addAccount": "계정 추가",
       "connected": "연결됨",
-      "default": "기본값",
       "disconnectAccount": "계정 연결 해제",
       "disconnectDescription": "이 계정과 Okou의 연결을 해제합니다. 이 계정을 사용하는 스레드는 기본 상속으로 돌아갑니다. 제공업체의 계정은 삭제되지 않습니다.",
       "disconnectDescriptionWithCount": "이 계정과 Okou의 연결을 해제합니다. {{value}}개 스레드가 기본 상속으로 돌아갑니다. 제공업체의 계정은 삭제되지 않습니다.",
@@ -2973,8 +2938,6 @@
       "find": "계정 찾기",
       "loading": "계정 불러오는 중…",
       "loadMore": "더 불러오기",
-      "makeDefault": "기본값으로 설정",
-      "managerDescription": "새 실행은 기본 계정을 사용합니다.",
       "managerTitle": "{{connector}} 계정 관리",
       "namePromptDescription": "이 단계를 건너뛰고 나중에 계정 이름을 지정할 수 있습니다.",
       "namePromptTitle": "{{connector}} 계정 이름 지정",
@@ -2988,7 +2951,6 @@
     },
     "actions": {
       "apply": "적용",
-      "authorize": "승인",
       "cancel": "취소",
       "close": "닫기",
       "closeWindow": "창 닫기",
@@ -3035,7 +2997,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} 접근 권한",
-      "authorized": "승인됨",
       "connectAria": "{{connector}} 연결",
       "connected": "연결됨",
       "connectionExpired": "연결이 만료되었습니다",
@@ -3048,11 +3009,7 @@
     },
     "catalog": {
       "access": {
-        "add": "접근 권한 추가",
-        "manage": "{{connector}} 접근 권한 관리",
-        "summaryMany": "에이전트 {{value}}개",
-        "unavailable": "접근 권한을 사용할 수 없음",
-        "usedBy": "사용 중 "
+        "manage": "{{connector}} 접근 권한 관리"
       },
       "categories": {
         "ai": {
@@ -3108,8 +3065,6 @@
           "menu": "영업 및 비즈니스"
         }
       },
-      "description": "에이전트가 사용할 수 있도록 타사 서비스를 연결하세요.",
-      "descriptionWithCount": "에이전트가 사용할 수 있도록 {{value}}개의 서비스를 연결하세요.",
       "directory": {
         "browse": "둘러보기",
         "builtin": "기본 제공 커넥터",
@@ -3123,18 +3078,13 @@
         "searchAll": "모든 커넥터 검색"
       },
       "empty": {
-        "agent": "이 에이전트에 연결된 커넥터가 없습니다",
         "connected": "연결된 커넥터가 없습니다",
-        "search": "\"{{search}}\"와(과) 일치하는 커넥터가 없습니다",
-        "unshared": "모든 커넥터가 에이전트와 공유되어 있습니다"
+        "search": "\"{{search}}\"와(과) 일치하는 커넥터가 없습니다"
       },
       "filterCategory": "카테고리",
       "filters": {
-        "agents": "에이전트",
         "all": "전체",
-        "allAgents": "모든 에이전트",
-        "aria": "커넥터 필터",
-        "unshared": "어떤 에이전트와도 공유되지 않음"
+        "aria": "커넥터 필터"
       },
       "filterWith": "필터: {{category}}",
       "myOkouDescription": "내 Okou가 사용할 외부 서비스를 연결하세요.",
@@ -3164,8 +3114,7 @@
         "seeMore_other": "{{names}} 외 {{count}}개 보기",
         "top": "인기 커넥터"
       },
-      "title": "커넥터",
-      "unnamedAgent": "이름 없음"
+      "title": "커넥터"
     },
     "connectDialog": {
       "connectedAs": "{{username}}로 연결됨",
@@ -3286,7 +3235,7 @@
         "tokenUrl": "토큰 URL"
       },
       "delete": {
-        "description": "이 작업은 커넥터와 모든 멤버의 저장된 시크릿을 제거합니다. 이 커넥터에 권한이 부여된 에이전트는 즉시 접근 권한을 잃게 됩니다. 되돌릴 수 없습니다.",
+        "description": "이 커넥터를 삭제하면 워크스페이스 멤버가 즉시 액세스할 수 없게 되며 모든 멤버가 저장한 비밀 값도 삭제됩니다. 이 작업은 취소할 수 없습니다.",
         "title": "{{connector}} 삭제하시겠습니까?"
       },
       "edit": {
@@ -3309,9 +3258,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "{{agent}} 권한 부여",
-      "authorized": "{{connector}} 권한 부여됨",
-      "authorizeDocumentTitle": "{{connector}} 권한 부여",
       "connectDocumentTitle": "{{connector}} 연결",
       "connected": "{{connector}} 연결됨",
       "needsConnector": "{{agent}}가 진행하려면 {{connector}}가 필요합니다",
@@ -3339,10 +3285,8 @@
       "allowOptions": "{{permission}} 허용 옵션",
       "always": "항상",
       "clearSearch": "권한 검색 지우기",
-      "descriptionAgent": "이 에이전트가 이 커넥터를 통해 수행할 수 있는 작업을 구성하세요.",
       "find": "권한 찾기",
       "findPlaceholder": "권한 찾기...",
-      "forTarget": "{{target}} 대상",
       "loadError": "권한 메타데이터 로드 실패",
       "loading": "권한 로드 중...",
       "metadataMissing": "{{connector}}에 대한 권한 메타데이터가 없습니다",
@@ -3399,13 +3343,13 @@
       },
       "github": {
         "accountFallback": "이 GitHub 계정",
-        "alreadyDescription": "{{account}}로 이미 연결되어 있습니다. GitHub 이슈나 풀 리퀘스트에서 에이전트를 언급하여 대화를 시작하세요.",
+        "alreadyDescription": "{{account}} 계정으로 연결했습니다. GitHub 이슈나 풀 리퀘스트에서 Okou를 멘션해 채팅을 시작하세요.",
         "alreadyTitle": "GitHub에 이미 연결됨",
         "back": "워크플로로 돌아가기",
         "checkingConnectionDescription": "GitHub 연결을 확인하는 중입니다. 잠시만 기다려 주세요.",
         "checkingConnectionTitle": "연결 확인 중...",
         "checkingSession": "{{brandName}} 세션을 확인하는 중입니다. 잠시만 기다려 주세요.",
-        "connectDescription": "{{brandName}} 계정을 {{account}}에 연결하면 GitHub 이슈 및 풀 리퀘스트에서 에이전트를 실행할 수 있습니다.",
+        "connectDescription": "{{brandName}} 계정을 {{account}}에 연결해 GitHub 이슈와 풀 리퀘스트에서 채팅을 시작하세요.",
         "connectTitle": "GitHub에 연결하기",
         "errorFallback": "GitHub에 연결할 수 없습니다. GitHub에서 다시 시도하세요.",
         "invalidInstallation": "이 링크의 GitHub 설치가 유효하지 않습니다.",
@@ -3423,7 +3367,7 @@
         "signInCheckFailed": "로그인 확인 실패",
         "signInDescription": "이 GitHub 사용자를 연결하기 전에 {{brandName}} 계정을 사용하세요.",
         "signInTitle": "계속하려면 로그인하세요",
-        "successDescription": "{{account}}로 연결되었습니다. GitHub 이슈나 풀 리퀘스트에서 에이전트를 언급하여 대화를 시작하세요.",
+        "successDescription": "{{account}} 계정으로 연결했습니다. GitHub 이슈나 풀 리퀘스트에서 Okou를 멘션해 채팅을 시작하세요.",
         "successTitle": "GitHub에 연결되었습니다!",
         "wrongOrganizationDescription": "활성 조직이 이 GitHub 설치와 일치하지 않습니다. 올바른 조직으로 전환한 후 링크를 다시 여세요.",
         "wrongOrganizationTitle": "조직 전환"
@@ -3438,7 +3382,7 @@
         "accountMismatchDescriptionWorkspace": "현재 Okou 계정은 {{workspace}}에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
         "accountMismatchTitle": "Slack 계정을 전환할까요?",
         "authorizationFailed": "Slack 인증이 완료되지 않았습니다. 현재 연결 상태가 아래에 표시됩니다. 다시 시도할 수 있습니다.",
-        "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "계정을 연결해 Slack에서 Okou와 채팅하세요.",
         "connectTitle": "Slack에 연결하기",
         "currentConnection": "Slack에 연결됨",
         "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다.",
@@ -3456,7 +3400,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams 승인",
-        "connectDescription": "Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "계정을 연결해 Microsoft Teams에서 Okou와 채팅하세요.",
         "connectedDescription": "Teams 계정이 연결되었습니다.",
         "connectTitle": "Microsoft Teams 연결하기",
         "identityMismatch": "요청한 Teams 계정 또는 작업 공간이 현재 연결과 일치하지 않습니다.",
@@ -3477,7 +3421,7 @@
         "checkingConnectionTitle": "연결 확인 중...",
         "conflictDescription": "현재 {{current}} 계정으로 연결되어 있지만 이 링크는 {{requested}} 계정을 요청합니다. 현재 연결을 유지하거나 연결을 직접 관리한 후 다시 시도하세요.",
         "conflictTitle": "다른 Telegram 계정이 연결되어 있습니다",
-        "connectDescription": "이 Telegram 봇에 계정을 연결하여 Telegram에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "계정을 연결해 Telegram에서 Okou와 채팅하세요.",
         "connectionCheckFailed": "연결을 확인하기 위해 Telegram에 접속할 수 없습니다.",
         "connectTitle": "Telegram에 연결하기",
         "continue": "Telegram으로 계속하기",
@@ -3532,7 +3476,6 @@
         "addBot": "봇 추가",
         "addDialogDescription": "Agent 유형의 기업 앱을 만든 다음 Feishu 개발자 콘솔에서 다음 단계를 완료하세요.",
         "addDialogTitle": "Feishu 봇 추가",
-        "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
         "backToIntegrations": "통합으로 돌아가기",
         "botFallback": "Feishu 봇",
         "botIconAlt": "{{bot}} 봇 아이콘",
@@ -3559,12 +3502,9 @@
           "imageAlt": "앱 ID와 앱 비밀키 위치를 보여주는 Feishu 앱 생성 결과",
           "title": "앱 자격 증명 추가"
         },
-        "defaultAgent": "기본 에이전트",
-        "defaultAgentAria": "{{appId}}의 기본 에이전트",
         "developerConsole": "Feishu 개발자 콘솔",
         "dialogAdminRequired": "조직 관리자가 앱을 구성해야 합니다. 설정 완료 후 Feishu 봇 목록에서 자신의 계정을 연결할 수 있습니다.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Feishu 메시지를 에이전트로 라우팅하려면 맞춤 앱을 추가하세요.",
         "emptyMember": "조직 관리자에게 Feishu 봇 추가를 요청하세요.",
         "emptyTitle": "아직 Feishu 봇이 없습니다",
         "events": {
@@ -3622,8 +3562,6 @@
         "reviewGuide": "검토 가이드",
         "reviewGuideDescription": "이 Feishu 봇의 완료된 설정 단계를 검토하세요.",
         "reviewGuideTitle": "Feishu 검토 가이드",
-        "routeDescription": "Feishu 메시지를 에이전트로 라우팅",
-        "selectAgent": "에이전트 선택",
         "setupIncomplete": "설정 완료되지 않음",
         "steps": {
           "back": "뒤로",
@@ -3664,7 +3602,6 @@
         "addBot": "봇 추가",
         "addDialogDescription": "Agent 유형의 기업 앱을 만든 다음 Lark 개발자 콘솔에서 다음 단계를 완료하세요.",
         "addDialogTitle": "Lark 봇 추가",
-        "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
         "backToIntegrations": "통합으로 돌아가기",
         "botFallback": "Lark 봇",
         "botIconAlt": "{{bot}} 봇 아이콘",
@@ -3691,12 +3628,9 @@
           "imageAlt": "앱 ID와 앱 비밀키 위치를 보여주는 Feishu 앱 생성 결과",
           "title": "앱 자격 증명 추가"
         },
-        "defaultAgent": "기본 에이전트",
-        "defaultAgentAria": "{{appId}}의 기본 에이전트",
         "developerConsole": "Lark 개발자 콘솔",
         "dialogAdminRequired": "조직 관리자가 앱을 구성해야 합니다. 설정 완료 후 Lark 봇 목록에서 자신의 계정을 연결할 수 있습니다.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Lark 메시지를 에이전트로 라우팅하려면 맞춤 앱을 추가하세요.",
         "emptyMember": "조직 관리자에게 Lark 봇 추가를 요청하세요.",
         "emptyTitle": "아직 Lark 봇이 없습니다",
         "events": {
@@ -3759,8 +3693,6 @@
         "reviewGuide": "검토 가이드",
         "reviewGuideDescription": "이 Lark 봇의 완료된 설정 단계를 검토하세요.",
         "reviewGuideTitle": "Lark 검토 가이드",
-        "routeDescription": "Lark 메시지를 에이전트로 라우팅",
-        "selectAgent": "에이전트 선택",
         "setupIncomplete": "설정 완료되지 않음",
         "steps": {
           "back": "뒤로",
@@ -3990,6 +3922,364 @@
       "requestFailed": "요청 실패"
     }
   },
+  "ideation": {
+    "all": "전체",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "대량으로 이미지 최적화 및 변환",
+            "title": "Cloudinary 미디어 최적화기"
+          },
+          "fal-ai-image-generation": {
+            "description": "Notion 설명에서 제품 이미지 생성",
+            "title": "Fal AI 이미지 생성"
+          }
+        },
+        "title": "크리에이티브"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "목록을 붙여넣으면 {{assistantName}}가 이슈를 생성합니다",
+            "title": "이슈 일괄 생성"
+          },
+          "browserbase-web-testing": {
+            "description": "웹 앱을 위한 자동화된 브라우저 테스트",
+            "title": "Browserbase 웹 테스트"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "주간 Slack 트래픽 및 보안 이벤트 요약",
+            "title": "Cloudflare 트래픽 및 보안 보고서"
+          },
+          "codebase-investigation": {
+            "description": "URL을 제공하면 {{assistantName}}가 저장소 내 버그를 추적",
+            "title": "코드베이스 조사"
+          },
+          "daily-standup-report": {
+            "description": "아침 지표를 슬라이드 데크로 만들어 Slack에 게시",
+            "title": "일일 스탠드업 보고서"
+          },
+          "deep-research-code-analysis": {
+            "description": "코드베이스 내 하위 시스템 작동 방식 설명",
+            "title": "심층 연구 코드 분석"
+          },
+          "github-pr-summarizer": {
+            "description": "병합된 풀 리퀘스트 요약을 Notion에, 선택적으로 Slack에 게시",
+            "title": "GitHub PR 요약기"
+          },
+          "github-progress-weekly": {
+            "description": "기능별 주간 저장소 활동 요약",
+            "title": "GitHub 주간 진행 상황"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "GitLab 이슈 및 머지 리퀘스트를 GitHub에 미러링",
+            "title": "GitLab → GitHub 마이그레이션 도우미"
+          },
+          "jira-github-issue-sync": {
+            "description": "Jira 티켓과 GitHub 이슈 동기화 유지",
+            "title": "Jira ↔ GitHub 이슈 동기화"
+          },
+          "make-scenario-builder": {
+            "description": "설명으로 다단계 Make 시나리오 설계",
+            "title": "Make 시나리오 빌더"
+          },
+          "security-dependency-alert-digest": {
+            "description": "GitHub의 주간 보안 및 의존성 알림",
+            "title": "보안 및 의존성 알림 요약"
+          },
+          "sentry-issue-digest": {
+            "description": "심각도별 이슈 아침 요약",
+            "title": "Sentry 이슈 요약"
+          },
+          "vercel-deploy-digest": {
+            "description": "각 배포를 커밋과 연결하고 배포 실패 시 Slack 알림",
+            "title": "Vercel 배포 요약"
+          },
+          "zapier-okou-migration": {
+            "description": "Zapier 워크플로를 {{brandName}}에서 다시 만들기",
+            "title": "Zapier → {{brandName}} 마이그레이션"
+          }
+        },
+        "title": "엔지니어링"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "브라우저에서 페이지를 열고 스크린샷 반환",
+            "title": "브라우저 스크린샷"
+          },
+          "calendar-optimizer": {
+            "description": "일정 충돌, 과부하, 집중 시간 관리 지원",
+            "title": "캘린더 최적화기"
+          },
+          "calendly-booking-sync": {
+            "description": "새 예약을 캘린더에 추가하고 Slack 알림 전송",
+            "title": "Calendly 예약 동기화"
+          },
+          "email-assistant": {
+            "description": "아침 받은편지함 요약과 다음 단계 제안",
+            "title": "이메일 어시스턴트"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola 회의 노트를 Notion 데이터베이스와 동기화",
+            "title": "Granola 노트 → Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Lark와 Slack 간 메시지 양방향 전달",
+            "title": "Lark ↔ Slack 메시지 중계"
+          },
+          "line-message-relay": {
+            "description": "LINE 메시지를 Slack으로, Slack 메시지를 LINE으로 전달",
+            "title": "LINE 메시지 중계"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies 노트를 Notion에 저장하고 Slack에서 후속 조치 알림",
+            "title": "회의 노트 파이프라인"
+          },
+          "morning-brief": {
+            "description": "이메일, 캘린더, 노트를 짧은 일일 계획으로 변환",
+            "title": "모닝 브리핑"
+          },
+          "perplexity-deep-research": {
+            "description": "AI 기반 연구 요약을 Notion에 저장",
+            "title": "Perplexity 심층 연구"
+          },
+          "personal-weekly-digest": {
+            "description": "풀 리퀘스트, 이메일, 캘린더를 하나의 Slack 업데이트로",
+            "title": "개인 주간 요약"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "팀 공지를 Slack에 대신 게시",
+            "title": "대신 메시지 보내기"
+          },
+          "strava-team-fitness-digest": {
+            "description": "주간 팀 활동 요약을 Slack에 게시",
+            "title": "Strava 팀 피트니스 요약"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "웹 검색 후 결과를 Notion에 정리",
+            "title": "Tavily 웹 리서치 파이프라인"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "회의 녹음을 Notion에 요약하고 실행 항목 포함",
+            "title": "tl;dv 회의 요약"
+          }
+        },
+        "title": "전체"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify가 사이트를 스크랩하여 구조화된 Google Sheets 행으로 변환",
+            "title": "Apify 웹 스크래퍼 → Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "CRM 이벤트 기반 자동 이메일 시퀀스",
+            "title": "Brevo 이메일 육성 시퀀스"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl이 경쟁사 사이트를 감시하고 변경 사항을 Notion에 기록",
+            "title": "경쟁사 정보 스크래퍼"
+          },
+          "competitor-research-to-notion": {
+            "description": "X에서 조사한 경쟁사 정보를 구조화된 노트로 Notion에 저장",
+            "title": "경쟁사 조사 → Notion"
+          },
+          "content-planner": {
+            "description": "주제 브레인스토밍 및 편집 캘린더 개요 작성",
+            "title": "콘텐츠 플래너"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Notion 게시물을 Dev.to에 게시하고 X에 링크 연결",
+            "title": "Dev.to 자동 게시기"
+          },
+          "discord-community-insights": {
+            "description": "Discord 피드백을 Notion에 기록하고 주간 Slack 요약 제공",
+            "title": "Discord 커뮤니티 인사이트"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Sheets에서 참여도 추적 및 주간 Slack 요약 제공",
+            "title": "Instagram 참여도 추적기"
+          },
+          "loops-email-campaign": {
+            "description": "Loops를 통해 거래 이메일 작성 및 발송",
+            "title": "Loops 이메일 캠페인"
+          },
+          "marketing-content-planning": {
+            "description": "Slack, 인터뷰, 경쟁사에서 출시 스토리 기획",
+            "title": "마케팅 콘텐츠 기획"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Slack과 인터뷰에서 온보딩 각도 찾기",
+            "title": "온보딩 이메일 활용 사례"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "주간 키워드 순위 추적 및 Sheets에 기록",
+            "title": "SerpAPI 키워드 추적기"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "경쟁사 대비 트래픽 벤치마크를 Notion에 저장",
+            "title": "SimilarWeb 트래픽 비교"
+          },
+          "social-media-content-calendar": {
+            "description": "Sheets 달력을 각 네트워크용 게시물로 변환",
+            "title": "소셜 미디어 콘텐츠 캘린더"
+          },
+          "x-brand-monitor": {
+            "description": "X 브랜드 언급을 Notion에 저장하고 팀 알림 제공",
+            "title": "X 브랜드 모니터"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "새 YouTube 영상 게시 시 Notion 요약과 X 스레드 생성",
+            "title": "YouTube → X 스레드 재활용기"
+          }
+        },
+        "title": "마케팅"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "AgentMail API로 인박스 생성 및 관리",
+            "title": "AgentMail 인박스"
+          },
+          "clickup-slack-standups": {
+            "description": "일일 ClickUp 작업을 Slack 스탠드업으로 게시",
+            "title": "ClickUp → Slack 스탠드업"
+          },
+          "google-docs-notion-migrator": {
+            "description": "레이아웃 유지하며 Google Docs를 Notion으로 일괄 이전",
+            "title": "Google Docs → Notion 이전기"
+          },
+          "google-drive-file-organizer": {
+            "description": "새 파일을 자동으로 폴더에 분류",
+            "title": "Google Drive 파일 정리기"
+          },
+          "jotform-intake-to-notion": {
+            "description": "폼 응답을 Notion에 기록하고 Slack 알림 제공",
+            "title": "Jotform 입력 → Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Monday.com 주간 보드 진행 상황을 Slack에 게시",
+            "title": "Monday.com 주간 요약"
+          },
+          "pdf-contract-processor": {
+            "description": "계약서 필드를 Notion에 기록하고 만료 전 알림 제공",
+            "title": "PDF 계약서 처리기"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Sheets에 구독 지표 기록 및 Slack에서 이탈 알림",
+            "title": "RevenueCat 구독 요약"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Todoist 작업을 팀용으로 Notion에 동기화",
+            "title": "Todoist → Notion 작업 동기화"
+          },
+          "wrike-project-reporter": {
+            "description": "주간 Wrike 진행 상황 요약을 Slack에 게시",
+            "title": "Wrike 프로젝트 리포터"
+          },
+          "xero-financial-summary": {
+            "description": "Xero의 주간 이익 및 현금 흐름을 Slack에 게시",
+            "title": "Xero 재무 요약"
+          }
+        },
+        "title": "운영"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana 마일스톤과 작업을 Notion에 동기화",
+            "title": "Asana → Notion 프로젝트 동기화"
+          },
+          "feedback-router": {
+            "description": "Slack 피드백을 규칙에 따라 적절한 곳으로 라우팅",
+            "title": "피드백 라우터"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion 사양을 Linear 프로젝트와 이슈로 변환",
+            "title": "Linear PRD 구현기"
+          },
+          "metabase-dashboard-digest": {
+            "description": "대시보드 스냅샷을 자동으로 Slack에 게시",
+            "title": "Metabase 대시보드 요약"
+          },
+          "pricing-analysis": {
+            "description": "경쟁사 가격 전략 분석 및 유사 제품과 비교",
+            "title": "가격 분석"
+          },
+          "product-copy-naming": {
+            "description": "제품 내 기술 용어를 친근한 이름으로 변경",
+            "title": "제품 카피 및 명명"
+          }
+        },
+        "title": "제품"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "거래 종료 시 Sheets와 Slack에 동기화",
+            "title": "Airtable 거래 추적기"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "새 Bitrix 리드에 후속 작업과 Slack 알림 생성",
+            "title": "Bitrix24 리드 육성"
+          },
+          "hubspot-sales-reporter": {
+            "description": "주간 HubSpot 요약을 구조화된 보고서로 저장",
+            "title": "HubSpot 영업 리포터"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "새 리드를 HubSpot 작업으로 만들고 Slack 알림 제공",
+            "title": "리드 후속 파이프라인"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "주간 Salesforce 기회 업데이트를 Slack에 게시",
+            "title": "Salesforce 파이프라인 요약"
+          },
+          "streak-pipeline-report": {
+            "description": "주간 Gmail CRM 파이프라인 통계를 Slack에 게시",
+            "title": "Streak 파이프라인 리포트"
+          },
+          "win-loss-reporter": {
+            "description": "파이프라인의 승패 추세를 Slack에 게시",
+            "title": "승패 리포터"
+          }
+        },
+        "title": "영업"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "고객 대화를 Notion에 기록 및 분류",
+            "title": "Chatwoot → Notion 지원 로그"
+          },
+          "customer-support-bot": {
+            "description": "지식 기반 답변 및 부족한 부분 작업 생성",
+            "title": "고객 지원 봇"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom 채팅을 우선순위 Notion 작업으로 변환",
+            "title": "Intercom 대화 분류기"
+          },
+          "support-ticket-router": {
+            "description": "티켓을 Notion으로 보내고 긴급한 것은 Slack 알림",
+            "title": "지원 티켓 라우터"
+          }
+        },
+        "title": "지원"
+      }
+    },
+    "categoryFilter": "카테고리별 필터",
+    "chat": "채팅",
+    "description": "카드를 클릭해 대화를 시작하세요. 주문형 작업, 반복 워크플로, 하위 에이전트가 될 수 있습니다.",
+    "search": {
+      "accessibilityLabel": "활용 사례 검색",
+      "empty": "검색과 일치하는 활용 사례가 없습니다.",
+      "placeholder": "검색"
+    },
+    "title": "아이디어 및 활용 사례"
+  },
   "invitationRedirect": {
     "accountMismatch": {
       "title": "다른 계정으로 초대를 수락했습니다"
@@ -4084,7 +4374,6 @@
     }
   },
   "myOkou": {
-    "access": "이 워크스페이스에서의 내 접근 권한",
     "conflict": "저장된 지침이 다른 곳에서 변경되었습니다. 초안은 유지됩니다. 저장된 지침을 다시 불러오기 전에 초안을 검토하거나 복사하세요.",
     "description": "이 워크스페이스에서 Okou에게 전달할 나만의 지침",
     "discard": "취소",
@@ -4093,6 +4382,19 @@
     "loadError": "지침을 불러오지 못했습니다. 다시 시도하세요.",
     "markdown": "일반 텍스트 또는 Markdown으로 작성",
     "placeholder": "선호하는 업무 방식을 Okou에게 알려주세요…",
+    "proactiveSettings": {
+      "cardsOnly": "새 카드는 켜져 있습니다. 매시간 확인과 매일 프로필 업데이트는 꺼져 있습니다. 모두에 적용할 설정을 선택하세요.",
+      "choose": "선택…",
+      "description": "이 워크스페이스에서 Okou가 일하는 방식을 설정하세요.",
+      "hourlyOnly": "매시간 확인과 매일 프로필 업데이트는 켜져 있습니다. 새 카드는 꺼져 있습니다. 모두에 적용할 설정을 선택하세요.",
+      "offers": "추천에서 혜택 카드를 받습니다.",
+      "sourcesHint": "카드 출처를 끄면 해당 출처의 새 카드와 읽지 않은 카드 알림을 받지 않습니다. 기존 카드는 추천에 남습니다.",
+      "suggestions": "연결된 소스를 매시간 확인하고, 사용자 프로필을 매일 업데이트하며, 유용한 다음 단계를 제안합니다.",
+      "systemUpdates": "추천에서 시스템 공지를 받습니다.",
+      "turnOff": "모두 끄기",
+      "turnOn": "모두 켜기",
+      "whatsNew": "추천에서 Okou의 새 기능 소식을 받습니다."
+    },
     "reload": "저장된 지침 다시 불러오기",
     "retry": "다시 시도",
     "save": "저장",
@@ -4837,18 +5139,27 @@
     }
   },
   "projects": {
+    "back": "Back",
     "close": "Close",
     "collapse": "접기",
+    "confirmDeleteThreads": "Permanently delete",
     "create": "Create Project",
     "delete": "Delete",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
+    "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectOnly": "Delete project only",
+    "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
+    "deleteThreadsError": "Deletion stopped. Some threads may already be permanently deleted. Check the Project and remaining threads before continuing.",
+    "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deletingThreads": "Deleting…",
+    "description": "관련 채팅을 한곳에 모으세요.",
     "empty": "No chats here yet",
     "expand": "펼치기",
     "fromChat": "Create a Project from this chat",
+    "loadingThreads": "Loading threads…",
+    "loadThreadsError": "Could not load all threads. Try again before deleting them.",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
@@ -4864,12 +5175,15 @@
     "removeFromNewChat": "{{name}} 제거",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
+    "threadsChanged": "The threads in this Project have changed. Review the updated list and confirm again.",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project unavailable"
+    "unavailable": "Project unavailable",
+    "untitledThread": "Untitled thread"
   },
   "queue": {
     "concurrentRuns_one": "{{count}}개의 동시 실행",
@@ -4901,15 +5215,14 @@
       "pro": "프로",
       "team": "팀"
     },
-    "title": "에이전트가 대기 중입니다",
+    "title": "요청이 대기 중입니다",
     "upgrade": {
       "action": "{{plan}}으로 업그레이드",
       "features": {
         "creditsPerMonth": "월 {{credits}} 크레딧",
         "emailSupport": "이메일 지원",
         "payAsYouGo": "이후 사용량 기반 결제",
-        "prioritySupport": "우선 지원",
-        "unlimitedAgents": "무제한 에이전트"
+        "prioritySupport": "우선 지원"
       },
       "proDescription": "여러 작업을 병렬로 실행하고 대기열을 건너뜁니다.",
       "recommended": "추천",
@@ -5364,7 +5677,6 @@
         "startFailed": "내보내기 시작 실패"
       },
       "scope": {
-        "agentInstructions": "접근할 수 있는 에이전트의 지침",
         "chatMessages": "내 채팅 메시지",
         "chatThreads": "내 채팅 스레드",
         "filesExcluded": "아티팩트, 첨부 파일 및 워크플로 보조 파일은 포함되지 않습니다.",
@@ -5713,25 +6025,14 @@
         "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다.",
         "description": "내 시간대 기준 오전 7:00 전에 일일 우선순위를 받습니다.",
         "errorMessage": "Morning Brief 설정을 불러오거나 업데이트할 수 없습니다.",
-        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
         "preparationFailed": "일시적으로 사용할 수 없습니다.",
         "preparing": "첫 모닝 브리프를 준비하고 있습니다. 언제든지 끌 수 있습니다.",
         "title": "모닝 브리프"
       },
-      "proactiveLearning": {
-        "description": "밤에 활동을 검토하고 개인 기억과 이해를 갱신합니다.",
-        "errorMessage": "이 설정을 불러오거나 업데이트하지 못했습니다.",
-        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
-        "missingTimezone": "환경설정에서 시간대를 설정하세요.",
-        "preparationFailed": "이 워크플로는 일시적으로 사용할 수 없습니다.",
-        "preparing": "워크플로를 준비하고 있습니다.",
-        "title": "학습"
-      },
       "proactiveSuggestions": {
-        "description": "Okou가 매시간 연결된 소스를 확인하고 홈에서 유용한 다음 행동을 제안합니다.",
+        "description": "연결된 소스를 매시간 확인하고, 사용자 프로필을 매일 업데이트하며, 유용한 다음 단계를 제안합니다.",
         "errorMessage": "제안 설정을 불러오거나 업데이트하지 못했습니다.",
-        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "일시적으로 사용할 수 없습니다.",
         "preparing": "시간별 제안을 준비하고 있습니다. 언제든지 끌 수 있습니다.",
@@ -5746,7 +6047,7 @@
       },
       "timezone": {
         "description": "표시되는 시간과 자동화 실행에 사용되는 시간입니다.",
-        "rowDescription": "에이전트가 실행 시 이 시간대를 사용합니다",
+        "rowDescription": "Okou는 작업을 실행할 때 이 시간대를 사용합니다.",
         "rowTitle": "시간대",
         "sectionTitle": "시간대",
         "zones": {
@@ -5800,7 +6101,7 @@
         "title": "Link의 내 카드"
       },
       "connect": "연결",
-      "description": "에이전트가 구매를 요청하고 Link 거래를 확인할 수 있습니다. 모든 구매는 직접 승인합니다.",
+      "description": "Okou가 구매를 요청하고 Link 거래 내역을 조회하도록 허용하세요. 모든 구매는 직접 승인합니다.",
       "disconnect": "연결 해제",
       "loadError": "지갑을 불러오지 못했습니다.",
       "scope": "Okou가 대신 구매하고 Link 거래를 확인하도록 허용하세요.",
@@ -6019,6 +6320,21 @@
     "signUp": "회원가입",
     "tryItYourself": "직접 사용해 보기"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "전체",
+    "markAllRead": "모두 읽음으로 표시",
+    "noResults": "결과가 없습니다",
+    "resultCount_other": "결과 {{count}}개",
+    "searching": "검색 중...",
+    "searchWorkspace": "워크스페이스 검색...",
+    "sections": {
+      "artifacts": "아티팩트",
+      "chats": "채팅",
+      "messages": "메시지",
+      "workflows": "워크플로"
+    }
+  },
   "ssh": {
     "add": "호스트 추가",
     "cancel": "취소",
@@ -6062,8 +6378,8 @@
       "summary_other": "자격 증명 {{count}}개 구성됨",
       "unused": "사용 중인 호스트 없음"
     },
-    "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지됩니다. Agent의 호스트 목록에서 사라집니다.",
-    "description": "에이전트가 원격 명령을 실행할 SSH 호스트를 구성하세요.",
+    "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지되며 Okou는 이 호스트에 액세스할 수 없게 됩니다.",
+    "description": "Okou가 원격 컴퓨터에서 명령을 실행하도록 허용하세요.",
     "edit": "호스트 편집",
     "editHelp": "다른 자격 증명을 선택하면 이 호스트만 변경됩니다. 직접 연결 대상 변경 시 저장된 호스트 키가 지워지며, Cloudflare Access 관련 변경 시에는 유지됩니다.",
     "errors": {
@@ -6109,7 +6425,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH 인증에 실패했습니다. 시스템 사용자 이름을 확인하고, 태그가 지정된 대상에서 Tailscale SSH를 활성화한 뒤 tailnet의 SSH accept 정책에서 이 로그인을 허용하세요.",
-      "deleteHelp": "이 호스트를 삭제할까요? 에이전트의 실시간 인벤토리에 이 호스트가 더 이상 표시되지 않습니다.",
+      "deleteHelp": "이 호스트를 삭제할까요? Okou는 이 호스트에 액세스할 수 없게 됩니다.",
       "sshDocs": "Tailscale SSH 공식 문서",
       "sshHelp": "선택한 Tailscale 네트워크 ID로 인증하므로 SSH 비밀번호나 개인 키가 필요하지 않습니다. 태그가 지정된 대상에서 Tailscale SSH를 활성화하고 SSH accept 정책에서 이 시스템 사용자 이름을 허용하세요.",
       "sshTitle": "Tailscale SSH",
@@ -6144,6 +6460,9 @@
     },
     "title": "SSH 액세스",
     "unavailable": "이 요청을 사용할 수 없습니다. 새로 요청하세요."
+  },
+  "status": {
+    "unread": "읽지 않음"
   },
   "tailscale": {
     "changed": "이 Tailscale 네트워크가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",
@@ -6307,7 +6626,7 @@
       "usernamePasswordMethod": "사용자 이름 및 비밀번호"
     },
     "deleteHelp": "이 호스트를 삭제할까요? 재사용 가능한 자격 증명은 유지됩니다.",
-    "description": "Agent가 원격 데스크톱을 보고 제어하도록 허용하세요.",
+    "description": "Okou가 원격 데스크톱을 보고 제어하도록 허용하세요.",
     "edit": "호스트 편집",
     "editHelp": "변경 사항은 이 호스트에 적용되며 현재 연결 설정을 무효화합니다.",
     "errors": {
@@ -6905,20 +7224,15 @@
       }
     },
     "common": {
-      "agents": "에이전트",
       "cancel": "취소",
       "close": "닫기",
-      "copyWorkflow": "워크플로 복사",
       "delete": "삭제",
       "deleteWorkflow": "워크플로 삭제",
       "instructions": "지침",
       "manual": "수동",
-      "others": "기타",
-      "pinned": "고정됨",
       "private": "비공개",
       "public": "공개",
       "settings": "설정",
-      "view": "보기",
       "workflow": "워크플로",
       "workflows": "워크플로"
     },
@@ -6928,36 +7242,14 @@
     },
     "createDialog": {
       "addAutomation": "자동화 추가",
-      "chooseAgentAutomation": "이 자동화에 사용할 에이전트를 선택하세요",
-      "chooseAgentWorkflow": "이 워크플로에 사용할 에이전트를 선택하세요.",
       "chooseWorkflow": "자동화할 워크플로를 선택하거나 채팅에서 새로 만드세요.",
       "createAutomation": "자동화 생성",
       "createInChat": "채팅에서 생성",
       "createInChatDescription": "아직 적합한 워크플로가 없을 때 대화에서 시작하세요.",
       "createWorkflow": "워크플로 생성",
-      "noAgents": "에이전트가 없습니다",
-      "noAgentsFound": "에이전트를 찾을 수 없습니다",
       "noWorkflows": "아직 워크플로가 없습니다. 계속하려면 채팅에서 만드세요."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "에이전트",
-        "copied": "{{agent}}에 복사됨",
-        "copyAndRemove": "복사 후 제거",
-        "description": "이 워크플로를 다른 에이전트에 새 비공개 워크플로로 복사하세요.",
-        "moved": "{{agent}}로 이동됨",
-        "moveDescription": "원본이 {{agent}}에서 제거되었습니다.",
-        "noAgents": "다른 에이전트가 없습니다",
-        "privateReady": "비공개 복사본이 준비되었습니다.",
-        "removalAlert": "이 작업은 원본을 삭제합니다",
-        "removalNoAutomations": "이 워크플로가 {{agent}}에서 삭제되었습니다.",
-        "removalWithAutomations_one": "{{count}}개의 자동화가 {{agent}}에서 일시 중지되고 이 워크플로가 삭제됩니다.",
-        "removalWithAutomations_other": "{{count}}개의 자동화가 {{agent}}에서 일시 중지되고 이 워크플로가 삭제됩니다.",
-        "removeOriginal": "복사 후 {{agent}}에서 원본 제거",
-        "selectAgent": "에이전트 선택",
-        "title": "워크플로 복사",
-        "to": "복사 대상"
-      },
       "delete": {
         "confirm": "{{title}} 및 모든 연결된 자동화가 삭제됩니다.",
         "dangerDescription": "이 워크플로와 자동화를 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
@@ -6979,16 +7271,10 @@
         "upload": "텍스트 파일 업로드",
         "uploadAria": "워크플로 파일 업로드"
       },
-      "info": {
-        "copyDescription": "이 워크플로를 다른 에이전트에 복사하세요.",
-        "copyTitle": "워크플로 복사"
-      },
       "metadata": {
-        "agent": "에이전트",
-        "agentDescription": "이 워크플로는 이 에이전트에 속합니다.",
         "aria": "워크플로 메타데이터",
         "description": "설명",
-        "descriptionHelp": "에이전트가 이 워크플로를 언제 사용할지 알려주세요.",
+        "descriptionHelp": "Okou가 이 워크플로를 언제 사용해야 하는지 설명하세요.",
         "name": "이름",
         "nameHelp": "워크플로 목록과 선택 시 표시됩니다.",
         "namePlaceholder": "워크플로 이름",
@@ -7003,12 +7289,7 @@
       "notFound": "워크플로를 찾을 수 없습니다.",
       "refineWith": "{{agent}}와 함께 다듬기",
       "sectionNavigation": "워크플로 상세 섹션",
-      "shadow": {
-        "end": "사용자용입니다. 이 워크플로는 동일 슬러그 우선순위 규칙에 의해 그림자 처리됩니다.",
-        "resolvesTo": "현재 다음으로 해결됩니다"
-      },
       "visibility": {
-        "adminRequired": "소유하지 않은 에이전트 아래에 워크플로를 게시하려면 조직 관리자 권한이 필요합니다.",
         "automationWarning": "자동화가 중지됩니다",
         "confirmDescription": "이 작업은 위험합니다. 이 워크플로가 비공개인 동안 다른 멤버가 만든 자동화가 중지됩니다.",
         "confirmTitle": "이 워크플로를 비공개로 전환하시겠습니까?",
@@ -7019,8 +7300,8 @@
     },
     "editor": {
       "aria": "지침 편집기",
-      "footer": "에이전트 동작을 맞춤 설정하려면 지침을 직접 편집하세요.",
-      "placeholder": "에이전트를 위한 지침을 작성하세요...",
+      "footer": "이 워크플로의 지침을 편집하세요.",
+      "placeholder": "이 워크플로의 지침을 입력하세요…",
       "toolbar": {
         "blockquote": "인용문 블록",
         "bold": "굵게",
@@ -7036,9 +7317,7 @@
     },
     "list": {
       "actionRequired": "조치 필요",
-      "agentEmpty": "이 에이전트로 실행된 워크플로가 없습니다.",
       "all": "전체",
-      "allAgents": "모든 에이전트",
       "automated": "자동화됨",
       "automations": "자동화",
       "createdBy": "작성자",
@@ -7056,8 +7335,6 @@
       "openRecovery": "{{title}} 복구 열기",
       "ownerLoading": "작성자 불러오는 중…",
       "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
-      "runsAs": "다음 에이전트로 실행됨",
-      "runsAsAria": "{{agent}}로 실행됨",
       "section": {
         "event": "자동화 시",
         "later": "나중에",
@@ -7111,6 +7388,18 @@
       "uninstalling": "제거 중…",
       "updatePermissions": "권한 업데이트"
     },
+    "channelExamples": {
+      "email": "이메일을 Okou에게 전달하고 요약이나 답장 초안을 부탁하세요.",
+      "feishu": "Feishu에서 Okou에게 초안을 보내고 팀에 공유할 짧은 글로 다듬어 달라고 하세요.",
+      "github": "풀 리퀘스트가 열리면 검토할 항목을 정리하는 워크플로를 실행하세요.",
+      "lark": "Lark에서 Okou에게 초안을 보내고 팀에 공유할 짧은 글로 다듬어 달라고 하세요.",
+      "phone": "iPhone에서 {{assistantName}}에게 아이디어를 문자로 보내고 초안을 부탁하세요.",
+      "slack": "Slack 채널에서 Okou를 멘션하고 작성 중인 초안에 대한 의견을 받아 보세요.",
+      "teams": "Teams 채팅에 회의 메모를 붙여 넣고 Okou에게 할 일을 정리해 달라고 하세요.",
+      "telegram": "Telegram에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요.",
+      "wechat": "WeChat에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요.",
+      "whatsapp": "WhatsApp에서 Okou에게 두 가지 방안을 보내고 각각의 장단점을 비교해 달라고 하세요."
+    },
     "connected": "연결됨",
     "connectedWithDetail": "연결됨 ({{detail}})",
     "discord": {
@@ -7119,7 +7408,7 @@
       "authorizationError": "Discord 인증을 완료할 수 없습니다.",
       "cancelled": "Discord 인증이 취소되었습니다.",
       "chooseWorkspace": "워크스페이스 선택",
-      "connectDescription": "Discord 계정을 연결하여 에이전트와 대화하세요.",
+      "connectDescription": "계정을 연결해 Discord에서 Okou와 채팅하세요.",
       "connectedTitle": "Discord에 연결됨",
       "connectTitle": "Discord 연결",
       "defaultWorkspace": "Discord 기본 워크스페이스",
@@ -7197,17 +7486,16 @@
       "uninstallTitle": "Microsoft Teams 통합을 제거하시겠습니까?"
     },
     "telegram": {
-      "description": "Telegram 메시지를 에이전트로 라우팅",
+      "description": "Telegram을 Okou에 연결하세요.",
       "title": "Telegram"
     },
     "wechat": {
       "accountLabel": "계정",
-      "agentLabel": "에이전트",
       "code": "인증 코드",
       "connect": "연결",
       "connected": "연결됨",
       "creating": "QR 코드 생성 중…",
-      "description": "WeChat에서 에이전트와 대화하세요.",
+      "description": "WeChat에서 Okou와 채팅하세요.",
       "disconnect": "연결 해제",
       "expired": "이 QR 코드는 만료되었습니다. 새로 만드세요.",
       "failed": "WeChat에 연결하지 못했습니다.",
@@ -7221,7 +7509,7 @@
       "restoreDescription": "아래 계정과 워크스페이스에 WeChat을 다시 연결합니다.",
       "returnToWechat": "WeChat으로 돌아가 메시지를 보내 대화를 시작하세요.",
       "scanned": "스캔되었습니다. 휴대전화에서 확인하세요.",
-      "scope": "이 에이전트에게 보내는 다이렉트 메시지만 연결됩니다. 텍스트 메시지를 지원합니다.",
+      "scope": "Okou와 주고받는 다이렉트 메시지만 연결됩니다. 텍스트 메시지를 지원합니다.",
       "title": "WeChat 연결",
       "unavailable": "아직 연결이 설정되지 않았습니다.",
       "verification_blocked": "시도 횟수가 너무 많습니다. 새 QR 코드를 만드세요.",
@@ -7233,7 +7521,7 @@
     "whatsapp": {
       "codeError": "연결 코드를 생성하지 못했습니다. 다시 시도하세요.",
       "connect": "WhatsApp 연결",
-      "connectDescription": "WhatsApp 계정을 {{brandName}}에 연결하여 에이전트와 채팅하세요.",
+      "connectDescription": "WhatsApp 계정을 {{brandName}}에 연결해 Okou와 채팅하세요.",
       "connected": "WhatsApp 연결됨",
       "description": "WhatsApp에서 Okou와 바로 대화하세요",
       "disconnected": "WhatsApp 연결 해제됨",

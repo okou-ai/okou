@@ -7,6 +7,7 @@ usage output. Keep the phases separate from [release promotion](../release/).
 | Phase  | Commands                                                                                               |
 | ------ | ------------------------------------------------------------------------------------------------------ |
 | Build  | `build-okou-cli-artifact.sh`, `build-okou-desktop-artifact.sh`                                         |
+| Upload | `upload-okou-app-artifact.sh`                                                                          |
 | Fetch  | `fetch-okou-app-artifact.sh`, `fetch-okou-desktop-artifact.sh`                                         |
 | Verify | `verify-okou-app-artifact.sh`, `verify-okou-cli-artifact.sh`, `verify-okou-desktop-artifact.sh`        |
 | Smoke  | `smoke-okou-cli-artifact.sh`, with `smoke-installed-okou-cli.sh` and `smoke-okou-cli-image-resize.mjs` |

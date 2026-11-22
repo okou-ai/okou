@@ -1,5 +1,126 @@
 # Changelog
 
+## [0.52.0](https://github.com/okou-ai/okou/compare/ios-v0.51.12...ios-v0.52.0) (2026-11-22)
+
+
+### Features
+
+* **ios:** show working and muted chats in the sidebar's trailing slot ([#49929](https://github.com/okou-ai/okou/issues/49929)) ([221b5e7](https://github.com/okou-ai/okou/commit/221b5e78a062f443a9eefd034d834b47ea92f5d8))
+
+## [0.51.12](https://github.com/okou-ai/okou/compare/ios-v0.51.11...ios-v0.51.12) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
+## [0.51.11](https://github.com/okou-ai/okou/compare/ios-v0.51.10...ios-v0.51.11) (2026-11-22)
+
+
+### Bug Fixes
+
+* **ios:** render member-scoped connector permission cards ([#49914](https://github.com/okou-ai/okou/issues/49914)) ([8bc9d40](https://github.com/okou-ai/okou/commit/8bc9d4097ec91dac14bc33e3d5fe752b3a5c645b))
+
+## [0.51.10](https://github.com/okou-ai/okou/compare/ios-v0.51.9...ios-v0.51.10) (2026-11-22)
+
+
+### Bug Fixes
+
+* **mobile:** prepare native clients for workspace apis without agent ids ([#49889](https://github.com/okou-ai/okou/issues/49889)) ([acc1180](https://github.com/okou-ai/okou/commit/acc1180b74cc5401511eb40984f43c64db058604))
+
+## [0.51.9](https://github.com/okou-ai/okou/compare/ios-v0.51.8...ios-v0.51.9) (2026-11-21)
+
+
+### CI
+
+* shorten app publication and scope ios script checks ([#49872](https://github.com/okou-ai/okou/issues/49872)) ([5181cd2](https://github.com/okou-ai/okou/commit/5181cd28d322da866f40aa508234af7a6417f370))
+
+
+### Refactoring
+
+* contract legacy chat and run agent storage ([#49868](https://github.com/okou-ai/okou/issues/49868)) ([abbf9f8](https://github.com/okou-ai/okou/commit/abbf9f8e672ac56f0f98583cfb0b536e9225e905))
+
+## [0.51.8](https://github.com/okou-ai/okou/compare/ios-v0.51.7...ios-v0.51.8) (2026-11-21)
+
+
+### Refactoring
+
+* stage retirement of chat and run agent identity ([#49839](https://github.com/okou-ai/okou/issues/49839)) ([01b34f9](https://github.com/okou-ai/okou/commit/01b34f9b9f1a7f7b117739ad834931fa646a1b8b))
+
+## [0.51.7](https://github.com/okou-ai/okou/compare/ios-v0.51.6...ios-v0.51.7) (2026-11-21)
+
+
+### Bug Fixes
+
+* **ios:** keep the keyboard session when emptying a quoted draft ([#49668](https://github.com/okou-ai/okou/issues/49668)) ([6459c98](https://github.com/okou-ai/okou/commit/6459c98c7bceb217c8338c5d4e8b82918488efdb))
+* **ios:** present the fork sheet at its fitted height ([#49671](https://github.com/okou-ai/okou/issues/49671)) ([27f2ec7](https://github.com/okou-ai/okou/commit/27f2ec79a4f78b25f4953780a0f18fd2208309a6))
+
+## [0.51.6](https://github.com/okou-ai/okou/compare/ios-v0.51.5...ios-v0.51.6) (2026-11-21)
+
+
+### Refactoring
+
+* scope chat run admission to workspace members ([#49637](https://github.com/okou-ai/okou/issues/49637)) ([30c1941](https://github.com/okou-ai/okou/commit/30c1941239202722c767b1190718538a5c0b00d3))
+
+## [0.51.5](https://github.com/okou-ai/okou/compare/ios-v0.51.4...ios-v0.51.5) (2026-11-20)
+
+
+### Bug Fixes
+
+* **connectors:** align web and ios connection requests ([#49530](https://github.com/okou-ai/okou/issues/49530)) ([8343cc9](https://github.com/okou-ai/okou/commit/8343cc9e65b2da35c1a45fdf189d8cc91508461d))
+
+## [0.51.4](https://github.com/okou-ai/okou/compare/ios-v0.51.3...ios-v0.51.4) (2026-11-20)
+
+
+### CI
+
+* **ios:** save swiftlint tool caches on pull request refs ([#49485](https://github.com/okou-ai/okou/issues/49485)) ([56341ff](https://github.com/okou-ai/okou/commit/56341ff42e39f6b2317b92b5f2670fbd22b68a4f))
+
+## [0.51.3](https://github.com/okou-ai/okou/compare/ios-v0.51.2...ios-v0.51.3) (2026-11-20)
+
+
+### CI
+
+* **ios:** run swiftlint checks in one job ([#48682](https://github.com/okou-ai/okou/issues/48682)) ([8666b98](https://github.com/okou-ai/okou/commit/8666b9829b54fd86e91dc84d18e97961a4721570))
+
+## [0.51.2](https://github.com/okou-ai/okou/compare/ios-v0.51.1...ios-v0.51.2) (2026-11-20)
+
+
+### Refactoring
+
+* **api:** retire agent connector execution grants ([#49268](https://github.com/okou-ai/okou/issues/49268)) ([596e8ca](https://github.com/okou-ai/okou/commit/596e8ca5d65c2ba7d7b447816042a9bc48fa8b44))
+
+## [0.51.1](https://github.com/okou-ai/okou/compare/ios-v0.51.0...ios-v0.51.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **mobile:** use chat bubble icons for mark read and unread ([#49277](https://github.com/okou-ai/okou/issues/49277)) ([745cfcf](https://github.com/okou-ai/okou/commit/745cfcfc47b9c05ba40031ab4af73765385a3c5d))
+
+## [0.51.0](https://github.com/okou-ai/okou/compare/ios-v0.50.0...ios-v0.51.0) (2026-11-19)
+
+
+### Features
+
+* **ios:** use native icon-only chat swipe actions with confirmed delete ([#49057](https://github.com/okou-ai/okou/issues/49057)) ([4cd8d4a](https://github.com/okou-ai/okou/commit/4cd8d4a79fad1014a190aa880e3bf0f459dd1568))
+
+## [0.50.0](https://github.com/okou-ai/okou/compare/ios-v0.49.1...ios-v0.50.0) (2026-11-19)
+
+
+### Features
+
+* **api:** roll out chat connector accounts and retire the switch ([#48841](https://github.com/okou-ai/okou/issues/48841)) ([a5a153e](https://github.com/okou-ai/okou/commit/a5a153e20f5e7e9e3d3d7761772bd80720b3f684))
+
+
+### Bug Fixes
+
+* **ios:** play chat media through the playback audio session ([#48962](https://github.com/okou-ai/okou/issues/48962)) ([b475198](https://github.com/okou-ai/okou/commit/b4751988cb0fe6df4a694528b08fde1b1ba44687)) [#48955](https://github.com/okou-ai/okou/issues/48955)
+
+
+### CI
+
+* **ios:** reuse published archives and tests for release metadata ([#48938](https://github.com/okou-ai/okou/issues/48938)) ([f545101](https://github.com/okou-ai/okou/commit/f545101921e62153a1b699a7e6a567e491b76d3a))
+
 ## [0.49.1](https://github.com/okou-ai/okou/compare/ios-v0.49.0...ios-v0.49.1) (2026-11-19)
 
 

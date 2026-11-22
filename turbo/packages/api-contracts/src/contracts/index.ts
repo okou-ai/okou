@@ -384,7 +384,7 @@ export {
   chatThreadDraftContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
   chatThreadConnectorSelectionContract,
@@ -420,7 +420,7 @@ export {
   type ChatThreadDraftContract,
   type ChatThreadMarkReadContract,
   type ChatThreadMarkUnreadContract,
-  type ChatThreadMarkAgentReadContract,
+  type ChatThreadMarkAllReadContract,
   type ChatThreadMetadataContract,
   type ChatThreadModelSelectionContract,
   type ChatThreadComputerUseHostContract,
@@ -824,12 +824,6 @@ export {
   type WorkflowAutomationsContract,
 } from "./workflows";
 export {
-  userBuiltinConnectorsContract,
-  userBuiltinConnectorEnabledSlugsSchema,
-  type UserBuiltinConnectorEnabledSlugs,
-  type UserBuiltinConnectorsContract,
-} from "./user-connectors";
-export {
   remotesContract,
   remotesOverviewSchema,
   computerUseHostBriefSchema,
@@ -844,39 +838,6 @@ export {
   type BuiltinConnectorBrief,
   type CustomConnectorBrief,
 } from "./connected-connectors";
-export {
-  agentConnectorAccessContract,
-  agentConnectorAccessSchema,
-  type AgentConnectorAccess,
-} from "./agent-connector-access";
-export {
-  connectorAgentAccessContract,
-  connectorAgentAccessSchema,
-  type ConnectorAgentAccess,
-} from "./connector-agent-access";
-export {
-  userPermissionGrantsContract,
-  userPermissionGrantScopeSchema,
-  userPermissionGrantActionSchema,
-  userPermissionGrantApplyModeSchema,
-  userPermissionGrantExpiresInSchema,
-  userPermissionGrantResponseSchema,
-  applyUserPermissionGrantSchema,
-  applyUserPermissionGrantsRequestSchema,
-  userPermissionGrantBatchItemSchema,
-  userPermissionGrantBatchItemsSchema,
-  applyUserPermissionGrantsBatchRequestSchema,
-  type UserPermissionGrantBatchItem,
-  type ApplyUserPermissionGrantsBatchRequest,
-  type UserPermissionGrantAction,
-  type UserPermissionGrantApplyMode,
-  type UserPermissionGrantExpiresIn,
-  type UserPermissionGrantResponse,
-  type ListUserPermissionGrantsQuery,
-  type ApplyUserPermissionGrant,
-  type ApplyUserPermissionGrantsRequest,
-  type UserPermissionGrantsContract,
-} from "./user-permission-grants";
 export {
   builtinConnectorsMainContract,
   builtinConnectorManualGrantContract,
@@ -1028,16 +989,6 @@ export {
   type SetCustomConnectorValuesBody,
   type UpdateCustomConnectorBody,
 } from "./custom-connectors";
-export {
-  agentCustomConnectorsContract,
-  agentCustomConnectorGrantSchema,
-  agentCustomConnectorGrantsSchema,
-  agentCustomConnectorUpdateSchema,
-  type AgentCustomConnectorGrant,
-  type AgentCustomConnectorGrants,
-  type AgentCustomConnectorUpdate,
-  type AgentCustomConnectorsContract,
-} from "./agent-custom-connectors";
 export {
   integrationsSlackMessageContract,
   type IntegrationsSlackMessageContract,

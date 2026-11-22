@@ -452,7 +452,7 @@ describe("POST /api/webhooks/notion", () => {
     readonly workflowId: string;
     readonly entities: NotionEntities;
   }> {
-    const { actor } = await wf.setupWorkflowOrg();
+    const { defaultAgentId: agentId, actor } = await wf.setupWorkflowOrg();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
@@ -460,11 +460,7 @@ describe("POST /api/webhooks/notion", () => {
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await wf.createAgent(actor, {
-      displayName: "Notion Webhook Agent",
-    });
     const workflowId = await wf.createWorkflow(actor, {
-      agentId: agent.agentId,
       name: WORKFLOW_NAME,
     });
     const fixture = { orgId: actor.orgId, userId: actor.userId };
@@ -473,7 +469,7 @@ describe("POST /api/webhooks/notion", () => {
     return {
       fixture,
       actor,
-      agentId: agent.agentId,
+      agentId,
       workflowId,
       entities: newNotionEntities(),
     };
@@ -930,7 +926,7 @@ describe("POST /api/webhooks/notion", () => {
   async function setupNotionAccountLifecycle() {
     const runnerGroup = await runsApi.configureRunnerGroup();
     const scenario = await setupFixture();
-    const { actor, agentId, fixture, workflowId, entities } = scenario;
+    const { actor, fixture, workflowId, entities } = scenario;
     await connectNotion(scenario);
     const [firstAccount] = await connectorsApi.listBuiltinConnectorAccounts(
       actor,
@@ -945,13 +941,10 @@ describe("POST /api/webhooks/notion", () => {
       ownerId: "notion-user-2",
       ownerName: "Second Notion User",
     });
-    const oauth = await connectorsApi.startOauth(
-      actor,
-      "notion",
-      "oauth",
-      agentId,
-      { intent: "add", displayName: "Second Notion" },
-    );
+    const oauth = await connectorsApi.startOauth(actor, "notion", "oauth", {
+      intent: "add",
+      displayName: "Second Notion",
+    });
     const state = new URL(oauth.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected the Notion OAuth start URL to include state");
@@ -1064,7 +1057,6 @@ describe("POST /api/webhooks/notion", () => {
   it("repairs Notion selection after account deletion and re-add", async () => {
     const {
       actor,
-      agentId,
       threadId,
       firstAccount,
       secondAccount,
@@ -1088,7 +1080,6 @@ describe("POST /api/webhooks/notion", () => {
       actor,
       "notion",
       "oauth",
-      agentId,
       { intent: "add", displayName: "Second Notion Re-added" },
     );
     const readdState = new URL(readdOauth.authorizationUrl).searchParams.get(
@@ -1176,16 +1167,9 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("follows an allowance replacement before the Chat's first explicit account selection", async () => {
-    const {
-      actor,
-      threadId,
-      firstAccount,
-      secondAccount,
-      expectAutomationConnector,
-    } = await setupNotionAccountLifecycle();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+    const { threadId, firstAccount, secondAccount, expectAutomationConnector } =
+      await setupNotionAccountLifecycle();
+
     const changed = await accept(
       setupApp({ context, routes: chatConnectorAccessRoutes })(
         chatConnectorAccessContract,
@@ -1208,28 +1192,22 @@ describe("POST /api/webhooks/notion", () => {
     async (deletedAccount) => {
       const {
         actor,
-        agentId,
         threadId,
         firstAccount,
         secondAccount,
         expectAutomationConnector,
       } = await setupNotionAccountLifecycle();
-      await connectorsApi.updateFeatureSwitches(actor, {
-        connectorChatAccountAccess: true,
-      });
+
       const thirdOwner = randomUUID();
       mockNotionConnectorOAuth({
         accessToken: "notion-third-access-token",
         ownerId: thirdOwner,
         ownerName: "Third Notion User",
       });
-      const oauth = await connectorsApi.startOauth(
-        actor,
-        "notion",
-        "oauth",
-        agentId,
-        { intent: "add", displayName: "Third Notion" },
-      );
+      const oauth = await connectorsApi.startOauth(actor, "notion", "oauth", {
+        intent: "add",
+        displayName: "Third Notion",
+      });
       const state = new URL(oauth.authorizationUrl).searchParams.get("state");
       if (!state) {
         throw new Error("Expected third Notion account OAuth state");
@@ -1294,9 +1272,7 @@ describe("POST /api/webhooks/notion", () => {
   it("does not reactivate a denied Notion default when deletion leaves no allowed account", async () => {
     const { actor, threadId, automationId, firstAccount, secondAccount } =
       await setupNotionAccountLifecycle();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     const target = { kind: "builtin", connectorSlug: "notion" } as const;
     const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
       chatConnectorAccessContract,
@@ -1346,9 +1322,7 @@ describe("POST /api/webhooks/notion", () => {
       secondAccount,
       expectAutomationConnector,
     } = await setupNotionAccountLifecycle();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
+
     const target = { kind: "builtin", connectorSlug: "notion" } as const;
     const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
       chatConnectorAccessContract,

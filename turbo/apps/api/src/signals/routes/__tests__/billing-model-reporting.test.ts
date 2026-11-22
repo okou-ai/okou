@@ -12,7 +12,6 @@ import { usageMembersRoutes } from "../usage-members";
 import { chatThreadRoutes } from "../chat-threads";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
@@ -26,14 +25,12 @@ describe("Billing model reporting", () => {
     mockNow(at);
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
     } = await publicChatActor(context, { clockTime: at });
     await own(async () => {
       const run = await sendChatRun(actor, {
-        agentId,
         prompt: "Publish first usage while completing",
         model: "auto",
       });
@@ -152,14 +149,12 @@ describe("Billing model reporting", () => {
       mockNow(at);
       const {
         actor,
-        agentId,
         run: own,
         sendChatRun,
         runExecution,
       } = await publicChatActor(context, { clockTime: at });
       await own(async () => {
         const run = await sendChatRun(actor, {
-          agentId,
           prompt: "Report usage before unsuccessful completion",
           model: "auto",
         });
@@ -237,12 +232,11 @@ describe("Billing model reporting", () => {
     },
   );
 
-  it("retains captured providers and settled totals after Thread deletion and Run deletion", async () => {
+  it("retains captured providers and settled totals after Thread deletion", async () => {
     const at = Date.UTC(2026, 2, 1, 12, 15);
     mockNow(at);
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
@@ -251,7 +245,6 @@ describe("Billing model reporting", () => {
     const historyObjects = fixture.mockPiObjectStore();
     await own(async () => {
       const run = await sendChatRun(actor, {
-        agentId,
         prompt: "Report captured usage",
         model: "auto",
       });
@@ -416,10 +409,7 @@ describe("Billing model reporting", () => {
       });
       expect(withoutThread.members).toStrictEqual(raw.members);
 
-      await createBddApi(context).deleteAgent(actor, agentId);
-      await createRunsApi(context).requestReadRun(actor, run.runId, [404]);
-      const deleted = await report();
-      expect(deleted).toStrictEqual(withoutThread);
+      await createRunsApi(context).requestReadRun(actor, run.runId, [200]);
     });
   });
 });

@@ -79,7 +79,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const agent = created.body;
   await api.ensurePersonalSubscriptionModel(actor);
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title,
     model: "claude-sonnet-5-5",
   });
@@ -202,7 +201,6 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
         expect.objectContaining({
           id: save.eventId,
           kind: "model_selection_updated",
-          agentId: fixture.agentId,
           selectedModel: save.model,
           modelSettingsPatch: { model: save.model, effort: save.effort },
           createdAt: operationTime.toISOString(),
@@ -210,7 +208,6 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
         expect.objectContaining({
           id: save.serviceTierEventId,
           kind: "service_tier_updated",
-          agentId: fixture.agentId,
           serviceTier: save.serviceTier,
           createdAt: operationTime.toISOString(),
         }),
@@ -375,13 +372,11 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
         expect.objectContaining({
           id: eventId,
           kind: "model_selection_updated",
-          agentId: fixture.agentId,
           selectedModel: "gpt-6-luna",
         }),
         expect.objectContaining({
           id: serviceTierEventId,
           kind: "service_tier_updated",
-          agentId: fixture.agentId,
           serviceTier: stage.serviceTier,
         }),
       );
@@ -642,7 +637,6 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
 
     expect(response.body).toStrictEqual({
       id: fixture.threadId,
-      agentId: fixture.agentId,
       title: "Launch plan",
       pinnedAt: null,
       archived: false,

@@ -1,5 +1,79 @@
 # Changelog
 
+## [0.12.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.9...runner-storage-v0.12.10) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** combine archive presence and shared lock probes ([#49723](https://github.com/okou-ai/okou/issues/49723)) ([669e883](https://github.com/okou-ai/okou/commit/669e883a2b415ba5bb3b5f545015575edd1e2fb5))
+
+## [0.12.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.8...runner-storage-v0.12.9) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** read cache metadata and archive in one task ([#49717](https://github.com/okou-ai/okou/issues/49717)) ([1e32cda](https://github.com/okou-ai/okou/commit/1e32cdabce639aa768735c1fc05fdaa4f8f519d1))
+* **runner-storage:** read cached archives in one blocking task ([#49695](https://github.com/okou-ai/okou/issues/49695)) ([2770366](https://github.com/okou-ai/okou/commit/2770366377cd2c78d7deeb47d66dcbc3a678e2ad))
+
+## [0.12.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.7...runner-storage-v0.12.8) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** avoid allocating decoded cache digest strings ([#49673](https://github.com/okou-ai/okou/issues/49673)) ([1491c15](https://github.com/okou-ai/okou/commit/1491c158ccdb9bf61999b78899dc81b267f9fdfa))
+
+## [0.12.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.6...runner-storage-v0.12.7) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** reuse the open decoded cache entry for age refresh ([#49623](https://github.com/okou-ai/okou/issues/49623)) ([444c73e](https://github.com/okou-ai/okou/commit/444c73ebc56a2ba87ef6782251958c5c1b769696))
+
+## [0.12.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.5...runner-storage-v0.12.6) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+## [0.12.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.4...runner-storage-v0.12.5) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+## [0.12.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.3...runner-storage-v0.12.4) (2026-11-20)
+
+
+### Performance Improvements
+
+* **runner-storage:** reuse lock directory validation during decoded lookup ([#49507](https://github.com/okou-ai/okou/issues/49507)) ([7bce2d6](https://github.com/okou-ai/okou/commit/7bce2d6ad365e3f9f37954859e09edbd0ef9c122))
+
+## [0.12.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.2...runner-storage-v0.12.3) (2026-11-20)
+
+## [0.12.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.1...runner-storage-v0.12.2) (2026-11-20)
+
+
+### Performance Improvements
+
+* **runner-storage:** overlap saturated archive delivery ([#49427](https://github.com/okou-ai/okou/issues/49427)) ([a8b60c6](https://github.com/okou-ai/okou/commit/a8b60c6771f9704c207d51aa56dd27a43a727705))
+
+## [0.12.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.0...runner-storage-v0.12.1) (2026-11-20)
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.11...runner-storage-v0.12.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
+## [0.11.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.10...runner-storage-v0.11.11) (2026-11-19)
+
+## [0.11.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.9...runner-storage-v0.11.10) (2026-11-19)
+
+## [0.11.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.8...runner-storage-v0.11.9) (2026-11-19)
+
 ## [0.11.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.11.7...runner-storage-v0.11.8) (2026-11-19)
 
 

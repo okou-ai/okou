@@ -1,15 +1,14 @@
-import { command, computed, state } from "ccstate";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
-import type {
-  ApplyUserPermissionGrantsBatchRequest,
-  UserPermissionGrantExpiresIn,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
-import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { accept } from "../../lib/accept.ts";
-import { agentById } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
+import {
+  permissionActionTarget,
+  verifyPermissionCallbackThread,
+} from "../permission-allow/permission-action-target.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
+import { runChatActionCallback$ } from "./action-callback.ts";
+import { command, computed, state } from "ccstate";
+
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import {
   findPermissionInMetadata,
@@ -22,22 +21,19 @@ import type {
   PlatformUserPermissionGrant,
 } from "../connector-domain.ts";
 import { DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN } from "../permission-allow/permission-grant-expiration.ts";
-import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
-import { chatActionIdMatches } from "./chat-action-context.ts";
 import {
   permissionBatchActionResourceKey,
   type PermissionBatchActionDescriptor,
 } from "./permission-batch-action-block.ts";
 
 function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
-  const agent$ = agentById(descriptor.agentId);
-  const grants$ = permissionGrantsForConnectors({
-    agentId: descriptor.agentId,
-    connectorSlugs: descriptor.items.map((item) => {
+  const target$ = permissionActionTarget(descriptor.owner, descriptor.threadId);
+  const grants$ = permissionGrantsForConnectors(
+    descriptor.items.map((item) => {
       return item.connectorSlug;
     }),
-  });
+  );
   const metadataResources = [
     ...new Set(
       descriptor.items.map((item) => {
@@ -47,24 +43,8 @@ function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
   ].map((connectorSlug) => {
     return firewallPermissionMetadataByConnector({ connectorSlug });
   });
-  const callbackTarget$ = computed(async (get) => {
-    if (!descriptor.threadId) {
-      return;
-    }
-    const client = get(apiClient$)(chatThreadMetadataContract);
-    const result = await accept(
-      client.get({ params: { id: descriptor.threadId } }),
-      [200],
-    );
-    if (!chatActionIdMatches(result.body.agentId, descriptor.agentId)) {
-      throw new Error(
-        "Permission callback thread does not belong to this agent",
-      );
-    }
-  });
   const metadata$ = computed(
     async (get): Promise<readonly PlatformConnectorPermissionMetadata[]> => {
-      await get(callbackTarget$);
       const metadata = await Promise.all(
         metadataResources.map((resource$) => {
           return get(resource$);
@@ -88,7 +68,7 @@ function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
       return present;
     },
   );
-  return { agent$, grants$, metadata$ };
+  return { target$, grants$, metadata$ };
 }
 type BatchResources = ReturnType<typeof createBatchResources>;
 
@@ -127,7 +107,7 @@ function missingPermissionGroups(
   grants: readonly PlatformUserPermissionGrant[],
   metadata: readonly PlatformConnectorPermissionMetadata[],
   expiresIn: UserPermissionGrantExpiresIn,
-): ApplyUserPermissionGrantsBatchRequest["groups"] {
+) {
   return metadata.flatMap((entry) => {
     const missing = descriptor.items.filter((item) => {
       return (
@@ -171,8 +151,7 @@ function allBatchPermissionsAllowed(
 }
 
 function mergeBatchAcknowledgements(
-  agentId: string | undefined,
-  groups: ApplyUserPermissionGrantsBatchRequest["groups"],
+  groups: ReturnType<typeof missingPermissionGroups>,
   previous: readonly PlatformUserPermissionGrant[],
   returned: readonly PlatformUserPermissionGrant[],
 ): readonly PlatformUserPermissionGrant[] {
@@ -182,10 +161,6 @@ function mergeBatchAcknowledgements(
     for (const requested of group.grants) {
       const grant = returned.find((candidate) => {
         return (
-          (agentId === undefined
-            ? candidate.agentId === undefined
-            : candidate.agentId !== undefined &&
-              chatActionIdMatches(candidate.agentId, agentId)) &&
           candidate.connectorSlug === group.connectorSlug &&
           candidate.permission === requested.permission
         );
@@ -226,14 +201,18 @@ function createBatchSaveCommand(
       if (get(local.dismissed$)) {
         return false;
       }
-      const [agent, grants, metadata] = await Promise.all([
-        get(resources.agent$),
+      const [, grants, metadata] = await Promise.all([
+        get(resources.target$),
         get(resources.grants$),
         get(resources.metadata$),
       ]);
       signal.throwIfAborted();
-      if (!chatActionIdMatches(agent.agentId, descriptor.agentId)) {
-        throw new Error("Permission agent does not match");
+      if (descriptor.threadId) {
+        await verifyPermissionCallbackThread(
+          get(apiClient$),
+          descriptor.threadId,
+          signal,
+        );
       }
       const groups = missingPermissionGroups(
         descriptor,
@@ -242,19 +221,16 @@ function createBatchSaveCommand(
         expiresIn,
       );
       let acknowledged = grants;
-      const features = await get(featureSwitches$);
+
       signal.throwIfAborted();
-      if (
-        groups.length &&
-        features[FeatureSwitchKey.ConnectorChatAccountAccess]
-      ) {
+      if (groups.length) {
         const saved: PlatformUserPermissionGrant[] = [];
         for (const group of groups) {
           saved.push(
             ...(await set(
               applyUserPermissionGrants$,
               {
-                agentId: descriptor.agentId,
+                owner: descriptor.owner,
                 connectorSlug: group.connectorSlug,
                 mode: "patch",
                 grants: group.grants,
@@ -263,28 +239,7 @@ function createBatchSaveCommand(
             )),
           );
         }
-        acknowledged = mergeBatchAcknowledgements(
-          undefined,
-          groups,
-          grants,
-          saved,
-        );
-      } else if (groups.length) {
-        const client = get(apiClient$)(userPermissionGrantsContract);
-        const result = await accept(
-          client.applyBatch({
-            body: { agentId: descriptor.agentId, groups },
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-        signal.throwIfAborted();
-        acknowledged = mergeBatchAcknowledgements(
-          descriptor.agentId,
-          groups,
-          grants,
-          result.body,
-        );
+        acknowledged = mergeBatchAcknowledgements(groups, grants, saved);
       }
       if (!allBatchPermissionsAllowed(descriptor, acknowledged, metadata)) {
         throw new Error(
@@ -295,7 +250,6 @@ function createBatchSaveCommand(
         await set(
           runChatActionCallback$,
           {
-            agentId: descriptor.agentId,
             threadId: descriptor.threadId,
             callbackPrompt: descriptor.callbackPrompt,
             callbackIds,
@@ -319,7 +273,6 @@ export function createPermissionBatchSignals(
   return {
     ...descriptor,
     descriptor,
-    href: permissionBatchActionResourceKey(descriptor),
     ...resources,
     expiresIn$: local.expiresIn$,
     dismissed$: local.dismissed$,

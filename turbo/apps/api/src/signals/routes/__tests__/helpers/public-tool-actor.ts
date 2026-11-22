@@ -169,7 +169,6 @@ export async function launchPublicToolRun(
       }
       await flushWaitUntilForTest();
     }
-    await bdd.deleteAgent(actor, agent.agentId);
     await flushWaitUntilForTest();
   };
   registerCleanup(cleanup);

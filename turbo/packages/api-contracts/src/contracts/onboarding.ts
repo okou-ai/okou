@@ -5,7 +5,6 @@ import {
   literal,
   object,
   string,
-  union,
   uuid,
   enum as zEnum,
   type infer as zInfer,
@@ -38,16 +37,7 @@ export const onboardingStatusResponseSchema = object({
   onboardingComplete: boolean(),
   isAdmin: boolean(),
   hasOrg: boolean(),
-  hasDefaultAgent: boolean(),
-  defaultAgentId: string().nullable(),
-  defaultAgentMetadata: object({
-    displayName: string().optional(),
-    description: string().optional(),
-    sound: string().optional(),
-    avatarUrl: string().optional(),
-  }).nullable(),
 });
-
 export type OnboardingStatusResponse = zInfer<
   typeof onboardingStatusResponseSchema
 >;
@@ -113,18 +103,15 @@ export type OnboardingRecommendationStatus = zInfer<
 >;
 
 /**
- * Onboarding status contract for GET /api/onboarding/status
+ * Onboarding status contract for workspace members
  */
 export const onboardingStatusContract = c.router({
   getStatus: {
     method: "GET",
     path: "/api/onboarding/status",
     headers: authHeadersSchema,
-    responses: {
-      200: onboardingStatusResponseSchema,
-      401: apiErrorSchema,
-    },
-    summary: "Get onboarding status for current user",
+    responses: { 200: onboardingStatusResponseSchema, 401: apiErrorSchema },
+    summary: "Read workspace membership onboarding status",
   },
 });
 
@@ -159,7 +146,7 @@ export const onboardingDraftContract = c.router({
     responses: {
       200: object({ draft: onboardingDraftSnapshotSchema.nullable() }),
       401: apiErrorSchema,
-      404: union([apiErrorSchema, object({ error: literal("Not found") })]),
+      404: apiErrorSchema,
     },
     summary: "Get the signed-in member's in-progress onboarding draft",
   },

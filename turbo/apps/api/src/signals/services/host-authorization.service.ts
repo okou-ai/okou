@@ -1,21 +1,10 @@
 import { hostAuthorizationPermissionsSchema } from "@okouai/api-contracts/contracts/host-authorization";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import {
-  and,
-  eq,
-  exists,
-  gt,
-  inArray,
-  isNull,
-  not,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, exists, gt, inArray, not, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { object, uuid } from "zod";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import {
   sshAuthorizationSchema,
   type SshAuthorization,
@@ -37,17 +26,16 @@ import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
-import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
+
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { db$, writeDb$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+
 import {
   memberConnectorPermissionColumns,
   activeMemberConnectorPermissionCondition,
@@ -95,51 +83,29 @@ function ownedHost(owner: Owner, protocol: Protocol) {
 /** Dependencies are the explicit approvals accompanying this request. */
 function permissionsCondition(
   owner: Owner,
-  agentId: string,
   required: Request["requiredPermissions"],
-  memberMode: boolean,
   at: Date,
 ) {
   const q = new QueryBuilder();
   return (
     and(
       ...required.map((item) => {
-        return memberMode
-          ? exists(
-              q
-                .select({ id: connectorPermissionGrants.id })
-                .from(connectorPermissionGrants)
-                .where(
-                  and(
-                    activeMemberConnectorPermissionCondition(owner, at),
-                    eq(
-                      memberConnectorPermissionColumns().connectorSlug,
-                      item.connectorSlug,
-                    ),
-                    eq(connectorPermissionGrants.permission, item.permission),
-                    eq(connectorPermissionGrants.action, "allow"),
-                  ),
+        return exists(
+          q
+            .select({ id: connectorPermissionGrants.id })
+            .from(connectorPermissionGrants)
+            .where(
+              and(
+                activeMemberConnectorPermissionCondition(owner, at),
+                eq(
+                  memberConnectorPermissionColumns().connectorSlug,
+                  item.connectorSlug,
                 ),
-            )
-          : exists(
-              q
-                .select({ id: userPermissionGrants.id })
-                .from(userPermissionGrants)
-                .where(
-                  and(
-                    eq(userPermissionGrants.orgId, owner.orgId),
-                    eq(userPermissionGrants.userId, owner.userId),
-                    eq(userPermissionGrants.agentId, agentId),
-                    eq(userPermissionGrants.connectorSlug, item.connectorSlug),
-                    eq(userPermissionGrants.permission, item.permission),
-                    eq(userPermissionGrants.action, "allow"),
-                    or(
-                      isNull(userPermissionGrants.expiresAt),
-                      gt(userPermissionGrants.expiresAt, at),
-                    ),
-                  ),
-                ),
-            );
+                eq(connectorPermissionGrants.permission, item.permission),
+                eq(connectorPermissionGrants.action, "allow"),
+              ),
+            ),
+        );
       }),
     ) ?? sql`true`
   );
@@ -159,7 +125,6 @@ const readHostAuthorizationContext$ = command(
     const [context] = await get(db$)
       .select({
         row: requests,
-        agentId: chatThreads.agentId,
         displayName: hosts.displayName,
         host: hosts.host,
         port: hosts.port,
@@ -205,11 +170,8 @@ const readHostAuthorizationContext$ = command(
         and(
           eq(chatThreads.id, requests.chatThreadId),
           eq(chatThreads.userId, owner.userId),
+          eq(chatThreads.orgId, owner.orgId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
       )
       .innerJoin(hosts, ownedHost(owner, protocol))
       .leftJoin(
@@ -303,16 +265,7 @@ export const readHostAuthorization$ = command(
     const { requests } = configuration(protocol);
     const schema =
       protocol === "ssh" ? sshAuthorizationSchema : vncAuthorizationSchema;
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      owner.orgId,
-      owner.userId,
-      signal,
-    );
-    const memberMode = isFeatureEnabled(
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-      features,
-    );
+
     const context = await set(
       readHostAuthorizationContext$,
       protocol,
@@ -320,7 +273,7 @@ export const readHostAuthorization$ = command(
       id,
       signal,
     );
-    if (!context?.agentId) {
+    if (!context) {
       return null;
     }
     const { row } = context;
@@ -329,9 +282,7 @@ export const readHostAuthorization$ = command(
     );
     const permissionPredicate = permissionsCondition(
       owner,
-      context.agentId,
       required,
-      memberMode,
       nowDate(),
     );
     const [permissions] =
@@ -387,8 +338,6 @@ export const readHostAuthorization$ = command(
       protocol,
       authorization,
       row,
-      agentId: context.agentId,
-      memberMode,
       permissionsAllowed: permissions?.allowed === true,
       dependenciesAllowed: context.dependenciesAllowed,
     };
@@ -448,11 +397,8 @@ export const createHostAuthorization$ = command(
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
       )
       .innerJoin(
         hosts,
@@ -515,20 +461,19 @@ export const decideHostAuthorization$ = command(
   ) => {
     const { requests, hosts, overrides, available, dependenciesAllowed } =
       configuration(context.protocol);
-    const { row, agentId, memberMode, protocol } = context;
+    const { row, protocol } = context;
     const db = set(writeDb$);
     const q = new QueryBuilder();
     const validScope = exists(
       q
         .select({ id: chatThreads.id })
         .from(chatThreads)
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .innerJoin(hosts, ownedHost(owner, protocol))
         .where(
           and(
             eq(chatThreads.id, row.chatThreadId),
             eq(chatThreads.userId, owner.userId),
-            eq(agents.orgId, owner.orgId),
+            eq(chatThreads.orgId, owner.orgId),
             eq(hosts.generation, row.generation),
             available,
             action === "approve" ? dependenciesAllowed : undefined,
@@ -601,13 +546,7 @@ export const decideHostAuthorization$ = command(
                 sql`EXISTS (SELECT 1 FROM reviewed_remote_authorization_host)`,
                 runEnded,
                 idle,
-                permissionsCondition(
-                  owner,
-                  agentId,
-                  row.requiredPermissions,
-                  memberMode,
-                  nowDate(),
-                ),
+                permissionsCondition(owner, row.requiredPermissions, nowDate()),
               )
             : undefined,
         ),

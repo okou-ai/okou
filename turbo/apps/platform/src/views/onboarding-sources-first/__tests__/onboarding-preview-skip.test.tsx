@@ -60,7 +60,7 @@ test.each([
     await expect(
       screen.findByRole("textbox", { name: "Message" }),
     ).resolves.toBeInTheDocument();
-    expect(pathname()).toMatch(/^\/agents\/[^/]+\/chat$/u);
+    expect(pathname()).toBe("/");
     expect(
       screen.queryByRole("heading", { name: INDUSTRY_QUESTION }),
     ).not.toBeInTheDocument();
@@ -160,7 +160,7 @@ test("Skip waits for completion and remains retryable after a failure", async ()
   await expect(
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toMatch(/^\/agents\/[^/]+\/chat$/u);
+  expect(pathname()).toBe("/");
 });
 
 test("Skipping a preview prompt handoff opens the app without running the prompt", async () => {
@@ -178,6 +178,6 @@ test("Skipping a preview prompt handoff opens the app without running the prompt
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
   expect(composer).toHaveTextContent(/^$/u);
-  expect(pathname()).toMatch(/^\/agents\/[^/]+\/chat$/u);
+  expect(pathname()).toBe("/");
   expect(new URLSearchParams(search()).has("prompt")).toBeFalsy();
 });

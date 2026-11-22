@@ -12,17 +12,16 @@ from typing import Literal
 import pytest
 from mitmproxy import http
 
-import flow_metadata_keys as metadata_keys
 import mitm_addon
 import model_websocket_usage
 import openai_responses_events
 import usage
-from tests.jsonl_log_helpers import jsonl_exists_after_flush, read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import (
+    ModelUsageLog,
     RealFlowFactory,
     make_openai_responses_websocket_flow,
     model_provider_usage_sources,
-    model_usage_source_entries,
+    read_model_usage_log,
 )
 from tests.model_provider_websocket_helpers import (
     ScheduledWebSocketTrim,
@@ -601,21 +600,6 @@ def _reference_for_case(case: _TraceCase) -> _ReferenceLedger:
     return ledger
 
 
-def _correlation_entries(flow: http.HTTPFlow) -> list[dict[str, object]]:
-    proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
-    if not jsonl_exists_after_flush(proxy_log):
-        return []
-    return [
-        entry
-        for entry in read_jsonl_entries_after_flush(proxy_log)
-        if entry.get("type") == "model_usage_correlation" and entry.get("flow_id") == flow.id
-    ]
-
-
-def _flow_source_entries(flow: http.HTTPFlow) -> list[dict[str, object]]:
-    return [entry for entry in model_usage_source_entries(flow) if entry.get("flow_id") == flow.id]
-
-
 def _entry_input_quantity(entry: dict[str, object]) -> int:
     source_usage = entry.get("usage")
     assert isinstance(source_usage, dict)
@@ -637,12 +621,11 @@ def _accepted_flags(entry: dict[str, object], field_name: str) -> list[bool]:
 
 
 def _assert_source_entries(
-    flow: http.HTTPFlow,
+    entries: list[dict[str, object]],
     expected: _ReferenceLedger,
     *,
     context: str,
 ) -> None:
-    entries = _flow_source_entries(flow)
     ignored_entries = [entry for entry in entries if entry.get("disposition") == "ignored"]
     actual_ignored = {
         entry.get("provider_response_id"): _entry_input_quantity(entry) for entry in ignored_entries
@@ -668,14 +651,17 @@ def _assert_source_entries(
         ], context
 
 
-def _assert_diagnostics(
+def _assert_usage_log(
+    log: ModelUsageLog,
     flow: http.HTTPFlow,
     expected: _ReferenceLedger,
     *,
     marker: str,
     context: str,
 ) -> None:
-    entries = _correlation_entries(flow)
+    source_entries = [entry for entry in log.source_entries() if entry.get("flow_id") == flow.id]
+    _assert_source_entries(source_entries, expected, context=context)
+    entries = [entry for entry in log.correlation_entries() if entry.get("flow_id") == flow.id]
     if expected.ambiguity_reason is None:
         assert entries == [], context
         return
@@ -795,8 +781,8 @@ async def test_generated_websocket_prewarm_trace_matches_reference_model(
         ("gpt-5.5", "tokens.input", quantity) for quantity in expected.accepted_input.values()
     ]
     assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
-    _assert_source_entries(flow, expected, context=context)
-    _assert_diagnostics(
+    _assert_usage_log(
+        read_model_usage_log(flow),
         flow,
         expected,
         marker=case.sensitive_marker,
@@ -854,19 +840,17 @@ async def test_generated_websocket_prewarm_state_isolated_across_terminated_flow
 
     expected_rows = [("gpt-5.5", "tokens.input", 7)]
     assert_usage_event_rows(webhook.usage_events(), "provider", expected_rows)
-    _assert_source_entries(exact_flow, exact_expected, context=exact_case.describe())
-    _assert_source_entries(
-        ambiguous_flow,
-        ambiguous_expected,
-        context=ambiguous_case.describe(),
-    )
-    _assert_diagnostics(
+    # Both flows write to this case's proxy log.
+    usage_log = read_model_usage_log(exact_flow)
+    _assert_usage_log(
+        usage_log,
         exact_flow,
         exact_expected,
         marker=exact_case.sensitive_marker,
         context=exact_case.describe(),
     )
-    _assert_diagnostics(
+    _assert_usage_log(
+        usage_log,
         ambiguous_flow,
         ambiguous_expected,
         marker=ambiguous_case.sensitive_marker,

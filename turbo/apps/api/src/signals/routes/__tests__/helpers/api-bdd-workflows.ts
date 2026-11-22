@@ -30,7 +30,6 @@ import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { now } from "../../../../lib/time";
 import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-automations";
 import { workflowsRoutes } from "../../workflows";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -153,7 +152,6 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly tier?: "pro" | "team";
         readonly model?: RunModel;
         readonly maxAutonomyBudget?: number;
-        readonly singleAgent?: boolean;
       } = {},
     ): Promise<{
       readonly actor: ApiTestUser;
@@ -172,15 +170,6 @@ export function createWorkflowsBddApi(context: TestContext) {
       const entitlement = await runs.grantProEntitlement(actor, {
         tier: options.tier,
       });
-      if (!actor.orgId) {
-        throw new Error("Expected a workflow workspace");
-      }
-      // Existing workflow fixtures model the retained multi-Agent cohort.
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: options.singleAgent ?? false },
-      );
       if (options.timezone) {
         await bdd.updateUserTimezone(actor, options.timezone);
       }
@@ -198,14 +187,6 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly visibility?: "public" | "private";
       } = {},
     ): Promise<{ readonly agentId: string }> {
-      if (!actor.orgId) {
-        throw new Error("Expected a legacy Agent workspace");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: false },
-      );
       bdd.acceptAgentStorageWrites();
       const agent = await bdd.createAgent(actor, {
         displayName: options.displayName ?? "Workflow Automation Agent",
@@ -217,7 +198,6 @@ export function createWorkflowsBddApi(context: TestContext) {
     async createWorkflow(
       actor: ApiTestUser,
       options: {
-        readonly agentId: string;
         readonly name: string;
         readonly displayName?: string;
         readonly chatThreadId?: string;
@@ -226,16 +206,6 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly instruction?: string;
       },
     ): Promise<string> {
-      if (!actor.orgId) {
-        throw new Error("Expected a retained Agent workspace");
-      }
-      // This helper creates named-Agent Workflows, including callers that
-      // prepare their Agent without setupWorkflowOrg or createAgent above.
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { singleAgent: false },
-      );
       const client = setupApp({ context, routes: workflowsRoutes })(
         workflowsCollectionContract,
       );
@@ -243,7 +213,6 @@ export function createWorkflowsBddApi(context: TestContext) {
         client.create({
           headers: authenticate(actor),
           body: {
-            agentId: options.agentId,
             name: options.name,
             ...(options.displayName === undefined
               ? {}
@@ -268,7 +237,6 @@ export function createWorkflowsBddApi(context: TestContext) {
     async copyWorkflow(
       actor: ApiTestUser,
       workflowId: string,
-      toAgentId: string,
     ): Promise<string> {
       const client = setupApp({ context, routes: workflowsRoutes })(
         workflowsDetailContract,
@@ -277,7 +245,7 @@ export function createWorkflowsBddApi(context: TestContext) {
         client.copy({
           headers: authenticate(actor),
           params: { workflowId },
-          body: { toAgentId },
+          body: {},
         }),
         [201],
       );
@@ -336,11 +304,10 @@ export function createWorkflowsBddApi(context: TestContext) {
      */
     async startEventAutomationRun(
       actor: ApiTestUser,
-      agentId: string,
+      _legacyAgentId: string,
       chatThreadId?: string,
     ): Promise<{ readonly runId: string; readonly threadId: string }> {
       const workflowId = await api.createWorkflow(actor, {
-        agentId,
         name: `event-${randomUUID().slice(0, 8)}`,
         chatThreadId,
       });

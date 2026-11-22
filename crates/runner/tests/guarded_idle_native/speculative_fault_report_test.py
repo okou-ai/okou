@@ -15,6 +15,7 @@ import report
 import report_test
 import speculative_fault_report as fault
 import status_failure_report_test as failure_test
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class SpeculativeFaultReportTests(unittest.TestCase):
@@ -43,11 +44,6 @@ class SpeculativeFaultReportTests(unittest.TestCase):
                 "idle_sandboxes":[{"reuse_key":reuse, "sandbox_id":old}]}
             empty = {k:v for k,v in initial.items() if k != "idle_sandboxes"}
             empty["updated_at"] = "2026-10-19T01:00:02Z"
-            def heartbeat(sequence, begin, end, allocated):
-                return {"receipt":{"received_ns":at(begin), "acknowledgement_status":204,
-                    "state":{"runnerId":runner, "snapshotGeneration":1, "snapshotSequence":sequence,
-                        "group":"native-foreground", "mode":"running", "allocatedVcpu":allocated[0],
-                        "allocatedMemoryMb":allocated[1]}}, "send_joined":True, "completed_ns":at(end)}
             zero = dict.fromkeys(cleanup.COUNTS,0) | {"closed":True}
             active = zero | {"registered_operations":1, "started":1, "tracked_tasks":1,
                 "cleanup_growth_bytes":self.policy["tail_growth_bytes"], "closed":False}
@@ -71,15 +67,16 @@ class SpeculativeFaultReportTests(unittest.TestCase):
                  "pool_empty":True, "allocated":[2,4096,1]},
                 {"original_exit_confirmed":True, "receiver_polled_pending":True, "coverage":coverage},
                 {"pool_held_ns":at(46), "status_held_ns":at(47), "heartbeat_pending_ns":at(48),
-                 "heartbeat_polled_pending":True, "observer":{"started_ns":at(49), "completed_ns":at(50),
-                    "available_bytes":32*1024**3, "age_ns":2, "read_duration_ns":1, "joined":True},
+                 "heartbeat_polled_pending":True, "observer":joined_observer(at(49), at(50)),
                  "coverage":coverage},
-                {"pool_released_ns":at(56), "status_held_ns":at(47), "heartbeat":heartbeat(1,57,58,(2,4096)),
+                {"pool_released_ns":at(56), "status_held_ns":at(47),
+                 "heartbeat":foreground_heartbeat(runner, 1, at(57), at(58), (2, 4096)),
                  "receiver_polled_pending":True, "coverage":coverage},
                 {"io_released_ns":at(66), "saving_joined_ns":at(72), "home_cache_promoted":True,
                  "original_lease_released":True, "allocated":[0,0,0], "accounting":zero},
                 {"status_wait_polled_ns":at(76), "status_waits_before":0, "status_waits_after":1,
-                 "heartbeat":heartbeat(2,78,79,(0,0)), "publication_polled_pending":True, "allocated":[0,0,0]},
+                 "heartbeat":foreground_heartbeat(runner, 2, at(78), at(79), (0, 0)),
+                 "publication_polled_pending":True, "allocated":[0,0,0]},
                 {"status_released_ns":at(86), "publication_joined_ns":at(87), "published_status":empty,
                  "regular_file":True, "allocated":[0,0,0]},
                 {"tracker_joined":True, "accounting_joined":True, "heartbeat_joined":True,
@@ -87,9 +84,14 @@ class SpeculativeFaultReportTests(unittest.TestCase):
                  "remaining_finalizing_owners":0, "allocated":[0,0,0], "accounting":zero},
             )
             for phase, value, offset in zip(fault.PHASES, values, (3,12,20,45,55,65,75,85,90,95)):
-                self.witnesses.append({"version":1, "case":case, "phase":phase,
-                    "monotonic_ns":at(offset), "unix_ns":at(offset)+1000, "sandbox_id":old,
-                    "backing_generation":backing, "evidence":copy.deepcopy(value)})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(offset),
+                    unix_ns=at(offset)+1000,
+                    sandbox_id=old,
+                    backing_generation=backing,
+                    evidence=copy.deepcopy(value),
+                ))
 
     def event(self, phase):
         return next(e for e in self.witnesses if e["phase"] == phase)

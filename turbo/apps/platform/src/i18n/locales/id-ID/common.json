@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "Tutup"
+  },
   "activity": {
     "codex": {
       "codexError": "Galat Codex",
@@ -86,7 +89,6 @@
           "title": "Provider sementara tidak tersedia"
         }
       },
-      "fallbackAgent": "Agen",
       "fields": {
         "duration": "Durasi",
         "model": "Model",
@@ -333,15 +335,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "Tidak dapat memuat agen",
       "back": "Kembali",
       "backToChats": "Kembali ke obrolan",
       "chatListUnavailable": "Tidak dapat memuat obrolan",
       "chats": "Obrolan",
       "me": "Saya",
-      "navigation": "Navigasi utama",
-      "searchAgents": "Cari agen",
-      "switchAgent": "Ganti agen"
+      "navigation": "Navigasi utama"
     },
     "shortcutHelp": {
       "close": "Tutup pintasan keyboard",
@@ -358,10 +357,8 @@
         "collapseProject": "Ciutkan Project",
         "expandProject": "Luaskan Project",
         "newChat": "Chat baru",
-        "nextAgent": "Agen berikutnya",
         "nextThread": "Thread berikutnya",
         "openFirstThread": "Buka thread pertama",
-        "previousAgent": "Agen sebelumnya",
         "previousThread": "Thread sebelumnya",
         "renameChat": "Ganti nama chat",
         "scrollBottom": "Gulir ke bawah",
@@ -383,7 +380,6 @@
         "openAutomations": "Buka otomatisasi mobile"
       },
       "navigation": {
-        "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
         "settings": "Pengaturan",
@@ -524,10 +520,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
-      "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
-      "conversionNotice": "Membuat salinan yang dapat diedit; format dapat berubah.",
       "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "openDocs": "Buka di Google Docs",
       "openSheets": "Buka di Google Sheets",
@@ -997,11 +990,9 @@
         "twentyFourHours": "24 jam"
       },
       "errors": {
-        "agentNotFound": "Agen tidak ditemukan",
-        "loadAgent": "Gagal memuat agen",
         "loadGrants": "Gagal memuat pemberian izin",
+        "loadMember": "Gagal memuat anggota ruang kerja.",
         "loadMetadata": "Gagal memuat metadata izin",
-        "missingAgentId": "ID agen tidak ada di parameter URL",
         "missingPermission": "Izin tidak ada di parameter URL",
         "unknownAction": "Tindakan izin tidak dikenal: {{action}}",
         "unknownConnector": "Konektor tidak dikenal: {{connector}}",
@@ -1047,13 +1038,10 @@
       "invalid": "Tautan izin ini tidak valid atau tidak tersedia.",
       "loadFailed": "Tidak dapat memverifikasi semua izin yang diminta. Tidak ada izin yang dapat diubah.",
       "loading": "Memuat izin",
-      "myOkouScopeNote": "Berlaku untuk penggunaan Okou Anda di ruang kerja ini, bukan hanya tugas saat ini.",
       "myOkouSharedScopeNote": "Berlaku untuk konektor ini di seluruh chat Anda dalam ruang kerja ini. Rekan tim memiliki izin sendiri.",
       "notNow": "Tidak sekarang",
       "pending_other": "{{count}} izin untuk disetujui",
       "review": "Tinjau izin",
-      "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
-      "sharedScopeNote": "Berlaku untuk konektor ini di semua chat dan agen Anda.",
       "title": "Berikan izin berikut"
     }
   },
@@ -1526,7 +1514,6 @@
           "action": "Check in",
           "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
           "name": "Check in setiap hari",
-          "pendingDescription": "Check-in Anda telah disimpan. Kredit akan diperbarui setelah dikonfirmasi.",
           "unit": "per hari"
         },
         "connector": {
@@ -1543,12 +1530,6 @@
         },
         "inReview": "Sedang ditinjau",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} kredit",
-            "confirm": "Kembali bekerja",
-            "description": "Kredit membayar pekerjaannya sendiri: setiap jalannya, setiap hasil, setiap alur kerja yang berjalan sesuai jadwal.",
-            "title": "Bagian hari ini selesai"
-          },
           "connector": {
             "confirm": "Lihat semua konektor",
             "connected": "Terhubung",
@@ -1633,8 +1614,7 @@
         "whatsCooking": "Ada apa, {{userName}}?",
         "whatsOnYourMind": "Apa yang ada di pikiranmu, {{userName}}?",
         "whatsTheMove": "Mau ngapain, {{userName}}?"
-      },
-      "viewAgentProfile": "Lihat profil agen"
+      }
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
@@ -1646,9 +1626,19 @@
       "dismiss": "Abaikan",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "Jangan desak saya",
+      "dontNudgeRecorded": "Dicatat: jangan desak saya lagi soal ini",
+      "editDraft": "Siapkan draf di chat yang ada",
       "editReason": "Edit reason",
+      "feedbackPrompt": "Bagaimana saran ini?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Ganti sampul",
+          "default": "Default",
+          "gallery": "Sampul",
+          "option": "Sampul {{index}}"
+        },
         "loading": "Memuat saran",
         "next": "Saran berikutnya",
         "previous": "Saran sebelumnya",
@@ -1661,10 +1651,11 @@
           "title": "Sumber Untuk Anda",
           "whatsNew": "Yang baru"
         },
-        "subtitle": "Satu per satu",
+        "subtitle": "Pilihan Okou untuk ditangani",
         "title": "Untuk Anda"
       },
       "homeCard": {
+        "completeDescription": "Okou akan membawa hal berikutnya ke sini saat ada sesuatu yang layak untuk waktumu.",
         "completeTitle": "Semua beres",
         "feedback": "Tindakan saran",
         "navigation": "Jelajahi saran",
@@ -1680,9 +1671,12 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "Mengirim…",
+      "sendNew": "Kirim ke chat baru",
       "sent": "Dikirim ke chat baru",
+      "sentToChat": "Terkirim ke chat",
       "unavailable": "Saran itu sudah tidak tersedia. Daftar saran telah diperbarui.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "Lihat sumber"
     },
     "attachments": {
       "attach": "Lampirkan",
@@ -1818,7 +1812,7 @@
       "repair": "Perbaiki",
       "repairRequired": "{{institution}} perlu diperbaiki",
       "revoke": "Cabut",
-      "revokeConfirm": "Cabut akses perbankan Agen ini?",
+      "revokeConfirm": "Cabut akses perbankan untuk ruang kerja ini?",
       "selectAccounts": "Pilih rekening",
       "sevenDays": "7 hari",
       "thirtyDays": "30 hari",
@@ -1999,7 +1993,6 @@
     },
     "composer": {
       "add": "Tambah",
-      "agentSuggestions": "Agen",
       "configureModel": "Konfigurasikan model",
       "create": {
         "addStyle": "Tambahkan gaya",
@@ -2011,7 +2004,7 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
-      "mentionHint": "Cari agen atau obrolan…",
+      "mentionHint": "Cari obrolan atau proyek…",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
@@ -2098,13 +2091,8 @@
       "unavailableTitle": "Akun tidak tersedia"
     },
     "connectors": {
-      "accountForThread": "Akun untuk utas ini",
-      "add": "Tambahkan {{connectorName}}",
       "addConnectors": "Tambahkan konektor",
-      "authorized": "{{connectorName}} terhubung dan diotorisasi untuk {{agentName}}",
       "back": "Kembali",
-      "configurePermissions": "Konfigurasikan izin {{connectorName}}",
-      "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
       "directory": {
         "allCategories": "Semua",
         "askAdmin": "Minta admin untuk mengaktifkan",
@@ -2131,14 +2119,8 @@
         "tabCustom": "Kustom",
         "tabDiscover": "Temukan"
       },
-      "fallsBackTo": "Beralih kembali ke {{account}}",
       "find": "Cari konektor...",
-      "loadFailed": "Gagal memuat konektor.",
-      "noUsableAccount": "Tidak ada akun yang dapat digunakan",
-      "remove": "Hapus {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Akun terpilih: {{account}}",
-      "title": "Konektor",
-      "useDefault": "Gunakan default"
+      "title": "Konektor"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -2227,16 +2209,7 @@
       "sent": "Obrolan baru dibuat"
     },
     "forward": {
-      "action": "Teruskan",
-      "agents": "Agen",
-      "back": "Kembali",
       "composerPlaceholder": "Tambahkan pesan",
-      "content": "Konten",
-      "description": "Kirim konten yang dipilih ke agen atau chat untuk melanjutkan pengerjaannya.",
-      "noResults": "Agen atau chat tidak ditemukan",
-      "search": "Cari agen dan chat...",
-      "sent": "Berhasil diteruskan",
-      "threads": "Chat",
       "title": "Teruskan ke"
     },
     "mail": {
@@ -2302,10 +2275,11 @@
       "unavailable": "Email ini tidak lagi tersedia."
     },
     "messageDocument": {
-      "agent": "[Agen: {{name}}]",
       "chatThread": "[Thread chat: {{title}}]",
       "file": "[File: {{filename}}]",
-      "template": "[Template: {{title}}]"
+      "template": "[Template: {{title}}]",
+      "voice": "Pesan suara",
+      "voiceClip": "Klip suara {{index}}"
     },
     "newChat": "Chat baru",
     "origins": {
@@ -2333,7 +2307,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "Agen tidak ditemukan",
       "allow": "Izinkan",
       "alreadyAllowed": "Sudah diizinkan",
       "alreadyDenied": "Sudah ditolak",
@@ -2348,6 +2321,7 @@
       "expiresInHours_one": "Kedaluwarsa dalam {{count}} jam",
       "expiresInHours_other": "Kedaluwarsa dalam {{count}} jam",
       "loadFailed": "Tidak dapat memuat status izin",
+      "memberNotFound": "Anggota ruang kerja tidak tersedia.",
       "otherEndpoints": "endpoint lainnya",
       "unknown": "Izin tidak dikenal",
       "updated": "Izin diperbarui",
@@ -2495,18 +2469,26 @@
       "workingFor": "Bekerja selama {{duration}}"
     },
     "sharing": {
+      "accessNote": "Hanya Anda yang dapat mengubah akses.",
       "cancel": "Batal",
       "close": "Tutup",
       "copyFailed": "Tautan tidak dapat disalin",
       "create": "Bagikan",
       "createFailed": "Percakapan yang dibagikan tidak dapat dibuat.",
+      "createLink": "Buat tautan",
+      "deselectAll": "Batalkan semua pilihan",
       "deselectGroup": "Batalkan pilihan grup pesan",
+      "done": "Selesai",
       "everyone": "Semua orang",
       "linkCopied": "Tautan disalin",
+      "linkCreated_other": "Tautan dibuat untuk {{count}} pesan",
       "messageShareFailed": "Tautan berbagi tidak dapat dibuat.",
       "organizationDescription": "Hanya orang di organisasi Anda",
+      "selectAll": "Pilih semua",
       "selectedCount_other": "{{count}} dipilih",
+      "selectedOfTotal_other": "{{count}} dari {{total}} dipilih",
       "selectGroup": "Pilih grup pesan",
+      "selectPrompt": "Pilih pesan yang ingin dibagikan",
       "shareLink": "Tautan percakapan yang dibagikan",
       "start": "Bagikan pesan",
       "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan",
@@ -2806,7 +2788,6 @@
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
       "openBrowser": "Buka browser",
-      "openNamedAgent": "Buka agen {{name}}",
       "openNamedChat": "Buka chat {{title}}",
       "pickEmoji": "Pilih emoji",
       "scrollToBottom": "Gulir ke bawah",
@@ -2937,28 +2918,12 @@
     "totalAccounts": "{{value}} akun"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} akses {{connector}} untuk {{agent}}",
-      "accessUpdated": "Akses {{connector}} diperbarui",
-      "clearSearch": "Hapus pencarian agen",
-      "description": "Pilih agen yang dapat menggunakan konektor ini.",
-      "loading": "Memuat agen...",
-      "managePermissions": "Kelola izin",
-      "managePermissionsFor": "Kelola izin {{connector}} untuk {{agent}}",
-      "noAgents": "Tidak ada agen ditemukan",
-      "noMatchingAgents": "Tidak ada agen yang cocok dengan \"{{search}}\"",
-      "permissionsUpdated": "Izin diperbarui",
-      "search": "Cari agen",
-      "title": "Kelola akses {{connector}}",
-      "unnamedAgent": "Tanpa nama"
-    },
     "accounts": {
       "accountName": "Nama akun",
       "accountsUnavailable": "Akun tidak tersedia untuk konektor ini.",
       "actions": "Tindakan akun",
       "addAccount": "Tambah akun",
       "connected": "Terhubung",
-      "default": "Default",
       "disconnectAccount": "Putuskan akun",
       "disconnectDescription": "Ini memutuskan akun dari Okou. Thread yang menggunakannya akan kembali ke pewarisan default. Akun di penyedia tidak akan dihapus.",
       "disconnectDescriptionWithCount": "Ini memutuskan akun dari Okou. {{value}} thread akan kembali ke pewarisan default. Akun di penyedia tidak akan dihapus.",
@@ -2973,8 +2938,6 @@
       "find": "Cari akun",
       "loading": "Memuat akun…",
       "loadMore": "Muat lebih banyak",
-      "makeDefault": "Jadikan default",
-      "managerDescription": "Run baru menggunakan akun default Anda.",
       "managerTitle": "Kelola akun {{connector}}",
       "namePromptDescription": "Anda dapat melewati langkah ini dan memberi nama akun nanti.",
       "namePromptTitle": "Beri nama akun {{connector}} Anda",
@@ -2988,7 +2951,6 @@
     },
     "actions": {
       "apply": "Terapkan",
-      "authorize": "Otorisasi",
       "cancel": "Batal",
       "close": "Tutup",
       "closeWindow": "Tutup jendela",
@@ -3035,7 +2997,6 @@
     },
     "card": {
       "accessFor": "{{action}} akses {{connector}}",
-      "authorized": "Diotorisasi",
       "connectAria": "Hubungkan {{connector}}",
       "connected": "Terhubung",
       "connectionExpired": "Koneksi kedaluwarsa",
@@ -3048,11 +3009,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Tambah akses",
-        "manage": "Kelola akses {{connector}}",
-        "summaryMany": "{{value}} agen",
-        "unavailable": "Akses tidak tersedia",
-        "usedBy": "Digunakan oleh "
+        "manage": "Kelola akses {{connector}}"
       },
       "categories": {
         "ai": {
@@ -3108,8 +3065,6 @@
           "menu": "Penjualan dan Bisnis"
         }
       },
-      "description": "Hubungkan layanan pihak ketiga agar agen Anda dapat menggunakannya.",
-      "descriptionWithCount": "Hubungkan {{value}} layanan agar agen Anda dapat menggunakannya.",
       "directory": {
         "browse": "Jelajahi",
         "builtin": "Konektor bawaan",
@@ -3123,18 +3078,13 @@
         "searchAll": "Cari semua konektor"
       },
       "empty": {
-        "agent": "Tidak ada konektor untuk agen ini",
         "connected": "Tidak ada konektor yang terhubung",
-        "search": "Tidak ada konektor yang cocok dengan \"{{search}}\"",
-        "unshared": "Setiap konektor sudah dibagikan ke sebuah agen"
+        "search": "Tidak ada konektor yang cocok dengan \"{{search}}\""
       },
       "filterCategory": "Kategori",
       "filters": {
-        "agents": "Agen",
         "all": "Semua",
-        "allAgents": "Semua agen",
-        "aria": "Filter konektor",
-        "unshared": "Tidak dibagikan ke agen mana pun"
+        "aria": "Filter konektor"
       },
       "filterWith": "Filter: {{category}}",
       "myOkouDescription": "Hubungkan layanan pihak ketiga untuk digunakan Okou Anda.",
@@ -3164,8 +3114,7 @@
         "seeMore_other": "Lihat {{names}} dan {{count}} lainnya",
         "top": "Konektor teratas"
       },
-      "title": "Konektor",
-      "unnamedAgent": "Tanpa nama"
+      "title": "Konektor"
     },
     "connectDialog": {
       "connectedAs": "Terhubung sebagai {{username}}",
@@ -3286,7 +3235,7 @@
         "tokenUrl": "URL token"
       },
       "delete": {
-        "description": "Ini akan menghapus konektor dan secret tersimpan milik setiap anggota untuk konektor ini. Agen yang berwenang untuk konektor ini akan langsung kehilangan akses. Tindakan ini tidak dapat dibatalkan.",
+        "description": "Menghapus konektor ini langsung mencabut akses dan menghapus rahasia yang disimpan oleh semua anggota ruang kerja. Tindakan ini tidak dapat dibatalkan.",
         "title": "Hapus {{connector}}?"
       },
       "edit": {
@@ -3309,9 +3258,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Otorisasi {{agent}}",
-      "authorized": "{{connector}} diotorisasi",
-      "authorizeDocumentTitle": "Otorisasi {{connector}}",
       "connectDocumentTitle": "Hubungkan {{connector}}",
       "connected": "{{connector}} terhubung",
       "needsConnector": "{{agent}} membutuhkan {{connector}} untuk melanjutkan",
@@ -3339,10 +3285,8 @@
       "allowOptions": "Opsi izinkan {{permission}}",
       "always": "Selalu",
       "clearSearch": "Hapus pencarian izin",
-      "descriptionAgent": "Konfigurasikan tindakan yang diizinkan dilakukan agen ini melalui konektor ini.",
       "find": "Cari izin",
       "findPlaceholder": "Cari izin...",
-      "forTarget": "untuk {{target}}",
       "loadError": "Gagal memuat metadata izin",
       "loading": "Memuat izin...",
       "metadataMissing": "Tidak ada metadata izin untuk {{connector}}",
@@ -3399,13 +3343,13 @@
       },
       "github": {
         "accountFallback": "akun GitHub ini",
-        "alreadyDescription": "Anda sudah tersambung sebagai {{account}}. Sebut agen Anda di issue atau pull request GitHub untuk mulai mengobrol.",
+        "alreadyDescription": "Anda terhubung sebagai {{account}}. Sebut Okou dalam issue atau pull request GitHub untuk memulai percakapan.",
         "alreadyTitle": "Sudah tersambung ke GitHub",
         "back": "Kembali ke alur kerja",
         "checkingConnectionDescription": "Harap tunggu saat kami memeriksa koneksi GitHub Anda.",
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "checkingSession": "Harap tunggu saat kami memverifikasi sesi {{brandName}} Anda.",
-        "connectDescription": "Tautkan akun {{brandName}} Anda ke {{account}} agar mention GitHub dapat menjalankan agen Anda dari issue dan pull request.",
+        "connectDescription": "Tautkan akun {{brandName}} Anda ke {{account}} untuk memulai percakapan dari GitHub.",
         "connectTitle": "Hubungkan ke GitHub",
         "errorFallback": "Kami tidak dapat menghubungkan GitHub. Coba lagi dari GitHub.",
         "invalidInstallation": "Instalasi GitHub pada tautan ini tidak valid.",
@@ -3423,7 +3367,7 @@
         "signInCheckFailed": "Tidak dapat memeriksa status masuk",
         "signInDescription": "Gunakan akun {{brandName}} Anda sebelum menghubungkan pengguna GitHub ini.",
         "signInTitle": "Masuk untuk melanjutkan",
-        "successDescription": "Anda tersambung sebagai {{account}}. Sebut agen Anda di issue atau pull request GitHub untuk mulai mengobrol.",
+        "successDescription": "Anda terhubung sebagai {{account}}. Sebut Okou dalam issue atau pull request GitHub untuk memulai percakapan.",
         "successTitle": "Berhasil tersambung ke GitHub!",
         "wrongOrganizationDescription": "Organisasi aktif Anda tidak cocok dengan instalasi GitHub ini. Pindah ke organisasi yang benar dan buka tautannya lagi.",
         "wrongOrganizationTitle": "Pindah organisasi"
@@ -3438,7 +3382,7 @@
         "accountMismatchDescriptionWorkspace": "Akun Okou Anda saat ini menggunakan akun Slack {{currentAccount}} di {{workspace}}. Beralih ke {{requestedAccount}}, akun yang membuka tautan ini?",
         "accountMismatchTitle": "Beralih akun Slack?",
         "authorizationFailed": "Otorisasi Slack belum selesai. Koneksi Anda saat ini ditampilkan di bawah. Anda dapat mencoba lagi.",
-        "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Slack.",
         "connectTitle": "Hubungkan ke Slack",
         "currentConnection": "Slack terhubung",
         "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack.",
@@ -3456,7 +3400,7 @@
       },
       "teams": {
         "authorize": "Otorisasi Microsoft Teams",
-        "connectDescription": "Tautkan akun Teams Anda agar Anda dapat berinteraksi dengan agen Anda langsung dari Microsoft Teams.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Microsoft Teams.",
         "connectedDescription": "Akun Teams Anda terhubung.",
         "connectTitle": "Hubungkan Microsoft Teams",
         "identityMismatch": "Akun atau ruang kerja Teams yang diminta tidak cocok dengan koneksi saat ini.",
@@ -3477,7 +3421,7 @@
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "conflictDescription": "Anda terhubung sebagai {{current}}, tetapi tautan ini meminta {{requested}}. Pertahankan koneksi Anda atau kelola koneksi secara manual sebelum mencoba lagi.",
         "conflictTitle": "Akun Telegram lain sedang terhubung",
-        "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Telegram.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Telegram.",
         "connectionCheckFailed": "Telegram tidak dapat dijangkau untuk memeriksa koneksi.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
@@ -3532,7 +3476,6 @@
         "addBot": "Tambahkan bot",
         "addDialogDescription": "Buat aplikasi enterprise dengan tipe Agent, lalu selesaikan langkah-langkah ini di konsol pengembang Feishu.",
         "addDialogTitle": "Tambahkan bot Feishu",
-        "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Feishu",
         "botIconAlt": "Ikon bot {{bot}}",
@@ -3559,12 +3502,9 @@
           "imageAlt": "Hasil pembuatan aplikasi Feishu yang menunjukkan tempat menemukan App ID dan App Secret",
           "title": "Tambahkan kredensial aplikasi"
         },
-        "defaultAgent": "Agen default",
-        "defaultAgentAria": "Agen default untuk {{appId}}",
         "developerConsole": "Konsol developer Feishu",
         "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Feishu setelah penyiapan selesai.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Feishu ke agen.",
         "emptyMember": "Minta admin organisasi menambahkan bot Feishu.",
         "emptyTitle": "Belum ada bot Feishu",
         "events": {
@@ -3622,8 +3562,6 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Feishu ini.",
         "reviewGuideTitle": "Panduan tinjau Feishu",
-        "routeDescription": "Arahkan pesan Feishu ke agen",
-        "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
           "back": "Kembali",
@@ -3664,7 +3602,6 @@
         "addBot": "Tambahkan bot",
         "addDialogDescription": "Buat aplikasi enterprise dengan tipe Agent, lalu selesaikan langkah-langkah ini di konsol pengembang Lark.",
         "addDialogTitle": "Tambahkan bot Lark",
-        "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Lark",
         "botIconAlt": "Ikon bot {{bot}}",
@@ -3691,12 +3628,9 @@
           "imageAlt": "Hasil pembuatan aplikasi Feishu yang menunjukkan tempat menemukan App ID dan App Secret",
           "title": "Tambahkan kredensial aplikasi"
         },
-        "defaultAgent": "Agen default",
-        "defaultAgentAria": "Agen default untuk {{appId}}",
         "developerConsole": "Konsol developer Lark",
         "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Lark setelah penyiapan selesai.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Lark ke agen.",
         "emptyMember": "Minta admin organisasi menambahkan bot Lark.",
         "emptyTitle": "Belum ada bot Lark",
         "events": {
@@ -3759,8 +3693,6 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Lark ini.",
         "reviewGuideTitle": "Panduan tinjau Lark",
-        "routeDescription": "Arahkan pesan Lark ke agen",
-        "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
           "back": "Kembali",
@@ -3990,6 +3922,364 @@
       "requestFailed": "Permintaan gagal"
     }
   },
+  "ideation": {
+    "all": "Semua",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimalkan dan ubah gambar secara massal",
+            "title": "Optimasi media Cloudinary"
+          },
+          "fal-ai-image-generation": {
+            "description": "Hasilkan gambar produk dari deskripsi di Notion",
+            "title": "Pembuatan gambar Fal AI"
+          }
+        },
+        "title": "Kreatif"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Tempel daftar dan {{assistantName}} akan membuka issue untuk Anda",
+            "title": "Buat issue secara massal"
+          },
+          "browserbase-web-testing": {
+            "description": "Pengujian browser otomatis untuk aplikasi web Anda",
+            "title": "Pengujian web Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Ringkasan mingguan Slack tentang lalu lintas dan peristiwa keamanan",
+            "title": "Laporan lalu lintas & keamanan Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "Berikan URL dan {{assistantName}} menelusuri bug melalui repo",
+            "title": "Investigasi basis kode"
+          },
+          "daily-standup-report": {
+            "description": "Metrik pagi menjadi slide deck yang diposting ke Slack",
+            "title": "Laporan standup harian"
+          },
+          "deep-research-code-analysis": {
+            "description": "Menjelaskan cara kerja sebuah subsistem di basis kode Anda",
+            "title": "Analisis kode riset mendalam"
+          },
+          "github-pr-summarizer": {
+            "description": "Ringkasan pull request yang digabung di Notion dengan posting Slack opsional",
+            "title": "Perangkum PR GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "Aktivitas repo mingguan diringkas berdasarkan fitur",
+            "title": "Progres mingguan GitHub"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Mencerminkan issue GitLab dan merge request ke GitHub",
+            "title": "Asisten migrasi GitLab ke GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "Menyinkronkan tiket Jira dan issue GitHub",
+            "title": "Sinkronisasi issue Jira ↔ GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "Rancang skenario Make multi-langkah dari sebuah deskripsi",
+            "title": "Penyusun skenario Make"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Peringatan keamanan dan dependensi mingguan dari GitHub",
+            "title": "Ringkasan peringatan keamanan & dependensi"
+          },
+          "sentry-issue-digest": {
+            "description": "Ringkasan pagi issue yang dikelompokkan berdasarkan tingkat keparahan",
+            "title": "Ringkasan issue Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "Menghubungkan setiap deployment ke commit-nya dan memberi peringatan ke Slack saat deployment gagal",
+            "title": "Ringkasan deployment Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Buat ulang alur kerja Zapier Anda di {{brandName}}",
+            "title": "Migrasi Zapier → {{brandName}}"
+          }
+        },
+        "title": "Teknik"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Membuka halaman di browser dan mengembalikan tangkapan layar",
+            "title": "Tangkapan layar browser"
+          },
+          "calendar-optimizer": {
+            "description": "Membantu dengan konflik, beban berlebih, dan waktu fokus",
+            "title": "Pengoptimal kalender"
+          },
+          "calendly-booking-sync": {
+            "description": "Pemesanan baru di kalender Anda dengan ping ke Slack",
+            "title": "Sinkronisasi pemesanan Calendly"
+          },
+          "email-assistant": {
+            "description": "Ringkasan inbox pagi dengan langkah selanjutnya yang disarankan",
+            "title": "Asisten email"
+          },
+          "granola-notes-to-notion": {
+            "description": "Catatan meeting Granola disinkronkan ke database Notion",
+            "title": "Catatan Granola ke Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Meneruskan pesan dua arah antara Lark dan Slack",
+            "title": "Relay pesan Lark ↔ Slack"
+          },
+          "line-message-relay": {
+            "description": "Teruskan pesan LINE ke Slack dan sebaliknya",
+            "title": "Relay pesan LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Catatan Fireflies ke Notion dengan tindak lanjut di Slack",
+            "title": "Alur catatan meeting"
+          },
+          "morning-brief": {
+            "description": "Email, kalender, dan catatan diubah menjadi rencana harian singkat",
+            "title": "Ringkasan pagi"
+          },
+          "perplexity-deep-research": {
+            "description": "Ringkasan riset bertenaga AI disimpan ke Notion",
+            "title": "Riset mendalam Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull request, email, dan kalender dalam satu pembaruan Slack",
+            "title": "Ringkasan mingguan pribadi"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Mengeposkan pengumuman tim ke Slack untuk Anda",
+            "title": "Kirim pesan atas nama Anda"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Ringkasan aktivitas tim mingguan diposting ke Slack",
+            "title": "Digest kebugaran tim Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Cari web dan susun temuan di Notion",
+            "title": "Alur riset web Tavily"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Rekaman meeting diringkas di Notion dengan item tindakan",
+            "title": "Rekap meeting tl;dv"
+          }
+        },
+        "title": "Semua orang"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify men-scrape situs ke baris Google Sheets terstruktur",
+            "title": "Web scraper Apify ke Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Rangkaian email otomatis dari event CRM",
+            "title": "Rangkaian nurture email Brevo"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl memantau situs pesaing dan mencatat perubahan di Notion",
+            "title": "Scraper intel kompetitif"
+          },
+          "competitor-research-to-notion": {
+            "description": "Riset di X disimpan sebagai catatan terstruktur di Notion",
+            "title": "Riset pesaing ke Notion"
+          },
+          "content-planner": {
+            "description": "Brainstorm topik dan susun kerangka kalender editorial",
+            "title": "Perencana konten"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Menerbitkan posting Notion ke Dev.to dan menautkannya di X",
+            "title": "Auto-publisher Dev.to"
+          },
+          "discord-community-insights": {
+            "description": "Umpan balik Discord di Notion dengan digest mingguan Slack",
+            "title": "Wawasan komunitas Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Engagement di Sheets dengan ringkasan mingguan Slack",
+            "title": "Pelacak engagement Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "Rancang dan kirim email transaksional via Loops",
+            "title": "Kampanye email Loops"
+          },
+          "marketing-content-planning": {
+            "description": "Merencanakan cerita peluncuran dari Slack, wawancara, dan pesaing",
+            "title": "Perencanaan konten pemasaran"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Menemukan sudut pandang onboarding dari Slack dan wawancara",
+            "title": "Use case email onboarding"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Lacak peringkat kata kunci setiap minggu dan catat ke Sheets",
+            "title": "Pelacak kata kunci SerpAPI"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Benchmark traffic versus pesaing disimpan di Notion",
+            "title": "Perbandingan traffic SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "Mengubah kalender Sheets menjadi posting untuk tiap jaringan",
+            "title": "Kalender konten media sosial"
+          },
+          "x-brand-monitor": {
+            "description": "Penyebutan merek di X disimpan di Notion dengan peringatan tim",
+            "title": "Pemantau merek X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Saat video YouTube baru dipublikasikan, buat ringkasan Notion dan thread X untuk mempromosikannya",
+            "title": "Pengubah fungsi video YouTube ke thread X"
+          }
+        },
+        "title": "Pemasaran"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Buat dan kelola inbox dengan API AgentMail",
+            "title": "Inbox AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "Tugas ClickUp harian diposting sebagai standup di Slack",
+            "title": "Standup ClickUp → Slack"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Batch Google Docs ke Notion dengan tata letak tetap terjaga",
+            "title": "Migrator Google Docs → Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "File baru diurutkan ke folder secara otomatis",
+            "title": "Pengatur file Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Jawaban formulir masuk ke Notion dengan notifikasi Slack",
+            "title": "Intake Jotform ke Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Kemajuan board mingguan dari Monday.com di Slack",
+            "title": "Digest mingguan Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "Field kontrak di Notion dengan pengingat sebelum kedaluwarsa",
+            "title": "Pemroses kontrak PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Metrik langganan di Sheets dengan peringatan churn di Slack",
+            "title": "Digest langganan RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Tugas Todoist dicerminkan ke Notion untuk tim",
+            "title": "Sinkronisasi tugas Todoist → Notion"
+          },
+          "wrike-project-reporter": {
+            "description": "Ringkasan progres Wrike mingguan di Slack",
+            "title": "Pelapor proyek Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "Laba dan arus kas mingguan dari Xero di Slack",
+            "title": "Ringkasan keuangan Xero"
+          }
+        },
+        "title": "Operasional"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Milestone dan tugas Asana dicerminkan ke Notion",
+            "title": "Sinkronisasi proyek Asana → Notion"
+          },
+          "feedback-router": {
+            "description": "Umpan balik Slack diarahkan sesuai aturan Anda ke tempat yang tepat",
+            "title": "Pengarah umpan balik"
+          },
+          "linear-prd-implementer": {
+            "description": "Spesifikasi Notion menjadi proyek dan issue Linear",
+            "title": "Implementer PRD Linear"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Cuplikan dashboard otomatis diposting ke Slack",
+            "title": "Digest dashboard Metabase"
+          },
+          "pricing-analysis": {
+            "description": "Menganalisis strategi harga pesaing dan membandingkannya dengan produk serupa",
+            "title": "Analisis harga"
+          },
+          "product-copy-naming": {
+            "description": "Nama yang lebih ramah untuk istilah teknis di produk",
+            "title": "Copy produk & penamaan"
+          }
+        },
+        "title": "Produk"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Deal disinkronkan ke Sheets dan Slack saat ditutup",
+            "title": "Pelacak deal Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Lead baru Bitrix mendapat tugas tindak lanjut dan ping Slack",
+            "title": "Nurture lead Bitrix24"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Ringkasan mingguan HubSpot disimpan sebagai laporan terstruktur",
+            "title": "Pelapor penjualan HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Lead baru menjadi tugas HubSpot dengan peringatan Slack",
+            "title": "Pipeline tindak lanjut lead"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Pembaruan peluang Salesforce mingguan di Slack",
+            "title": "Digest pipeline Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "Statistik pipeline CRM mingguan dari Gmail di Slack",
+            "title": "Laporan pipeline Streak"
+          },
+          "win-loss-reporter": {
+            "description": "Tren menang dan kalah dari pipeline di Slack",
+            "title": "Pelapor menang/kalah"
+          }
+        },
+        "title": "Penjualan"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Percakapan pelanggan dicatat dan dikategorikan di Notion",
+            "title": "Log dukungan Chatwoot → Notion"
+          },
+          "customer-support-bot": {
+            "description": "Jawaban dari basis pengetahuan dan tugas untuk celah yang ada",
+            "title": "Bot dukungan pelanggan"
+          },
+          "intercom-conversation-triager": {
+            "description": "Chat Intercom menjadi tugas Notion yang diprioritaskan",
+            "title": "Penyaring percakapan Intercom"
+          },
+          "support-ticket-router": {
+            "description": "Tiket masuk ke Notion dan yang mendesak memberi ping ke Slack",
+            "title": "Pengarah tiket dukungan"
+          }
+        },
+        "title": "Dukungan"
+      }
+    },
+    "categoryFilter": "Filter menurut kategori",
+    "chat": "Chat",
+    "description": "Klik kartu apa pun untuk memulai percakapan. Ini bisa menjadi tugas sesuai permintaan, alur kerja berulang, atau subagen.",
+    "search": {
+      "accessibilityLabel": "Cari use case",
+      "empty": "Tidak ada use case yang cocok dengan pencarian Anda.",
+      "placeholder": "Cari"
+    },
+    "title": "Ide & Use Case"
+  },
   "invitationRedirect": {
     "accountMismatch": {
       "title": "Undangan diterima untuk akun lain"
@@ -4084,7 +4374,6 @@
     }
   },
   "myOkou": {
-    "access": "Akses Anda di ruang kerja ini",
     "conflict": "Instruksi tersimpan berubah di tempat lain. Draf Anda tetap disimpan. Tinjau atau salin sebelum memuat ulang instruksi tersimpan.",
     "description": "Instruksi Anda untuk Okou di ruang kerja ini",
     "discard": "Buang",
@@ -4093,6 +4382,19 @@
     "loadError": "Instruksi tidak dapat dimuat. Coba lagi.",
     "markdown": "Tulis dengan teks biasa atau Markdown",
     "placeholder": "Beri tahu Okou cara kerja yang Anda sukai…",
+    "proactiveSettings": {
+      "cardsOnly": "Kartu baru aktif. Pemeriksaan setiap jam dan pembaruan profil harian nonaktif. Pilih satu pengaturan untuk semuanya.",
+      "choose": "Pilih…",
+      "description": "Sesuaikan cara Okou bekerja di ruang kerja ini.",
+      "hourlyOnly": "Pemeriksaan setiap jam dan pembaruan profil harian aktif. Kartu baru nonaktif. Pilih satu pengaturan untuk semuanya.",
+      "offers": "Terima kartu penawaran di Untuk Anda.",
+      "sourcesHint": "Menonaktifkan sumber kartu menghentikan kartu baru dan notifikasi kartu yang belum dibaca dari sumber tersebut. Kartu yang sudah ada tetap tersedia di Untuk Anda.",
+      "suggestions": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
+      "systemUpdates": "Terima pengumuman sistem di Untuk Anda.",
+      "turnOff": "Nonaktifkan keduanya",
+      "turnOn": "Aktifkan keduanya",
+      "whatsNew": "Lihat info fitur baru Okou di Untuk Anda."
+    },
     "reload": "Muat ulang instruksi tersimpan",
     "retry": "Coba lagi",
     "save": "Simpan",
@@ -4837,18 +5139,27 @@
     }
   },
   "projects": {
+    "back": "Back",
     "close": "Close",
     "collapse": "Ciutkan",
+    "confirmDeleteThreads": "Permanently delete",
     "create": "Create Project",
     "delete": "Delete",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
+    "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectOnly": "Delete project only",
+    "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
+    "deleteThreadsError": "Deletion stopped. Some threads may already be permanently deleted. Check the Project and remaining threads before continuing.",
+    "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deletingThreads": "Deleting…",
+    "description": "Kelompokkan percakapan yang berkaitan.",
     "empty": "No chats here yet",
     "expand": "Luaskan",
     "fromChat": "Create a Project from this chat",
+    "loadingThreads": "Loading threads…",
+    "loadThreadsError": "Could not load all threads. Try again before deleting them.",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
@@ -4864,12 +5175,15 @@
     "removeFromNewChat": "Hapus {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
+    "threadsChanged": "The threads in this Project have changed. Review the updated list and confirm again.",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project unavailable"
+    "unavailable": "Project unavailable",
+    "untitledThread": "Untitled thread"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} eksekusi bersamaan",
@@ -4901,15 +5215,14 @@
       "pro": "Pro",
       "team": "Tim"
     },
-    "title": "Agen Anda sedang menunggu giliran",
+    "title": "Permintaan Anda sedang mengantre",
     "upgrade": {
       "action": "Upgrade ke {{plan}}",
       "features": {
         "creditsPerMonth": "{{credits}} kredit / bulan",
         "emailSupport": "Dukungan email",
         "payAsYouGo": "Bayar sesuai pemakaian setelah itu",
-        "prioritySupport": "Dukungan prioritas",
-        "unlimitedAgents": "Total agen tak terbatas"
+        "prioritySupport": "Dukungan prioritas"
       },
       "proDescription": "Jalankan beberapa tugas secara paralel dan lewati antrean.",
       "recommended": "Direkomendasikan",
@@ -5364,7 +5677,6 @@
         "startFailed": "Gagal memulai ekspor"
       },
       "scope": {
-        "agentInstructions": "Instruksi agen yang dapat Anda akses",
         "chatMessages": "Pesan chat Anda",
         "chatThreads": "Percakapan chat Anda",
         "filesExcluded": "Artefak, lampiran, dan file pendukung alur kerja tidak disertakan.",
@@ -5713,25 +6025,14 @@
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten.",
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
         "errorMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
         "title": "Brief Pagi"
       },
-      "proactiveLearning": {
-        "description": "Tinjau aktivitas pada malam hari dan perbarui memori pribadi.",
-        "errorMessage": "Pengaturan ini tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
-        "missingTimezone": "Atur zona waktu Anda di Preferensi.",
-        "preparationFailed": "Alur kerja ini sementara tidak tersedia.",
-        "preparing": "Menyiapkan alur kerja ini.",
-        "title": "Pembelajaran"
-      },
       "proactiveSuggestions": {
-        "description": "Okou memeriksa sumber terhubung setiap jam dan menyarankan langkah berikutnya yang berguna di beranda.",
+        "description": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
@@ -5746,7 +6047,7 @@
       },
       "timezone": {
         "description": "Waktu ditampilkan kepada Anda dan digunakan untuk eksekusi otomatis.",
-        "rowDescription": "Agen Anda akan menggunakan zona waktu ini saat eksekusi",
+        "rowDescription": "Okou menggunakan zona waktu ini saat menjalankan tugas.",
         "rowTitle": "Zona waktu",
         "sectionTitle": "Zona Waktu",
         "zones": {
@@ -5800,7 +6101,7 @@
         "title": "Kartu Anda di Link"
       },
       "connect": "Hubungkan",
-      "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
+      "description": "Izinkan Okou mengajukan pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
       "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
@@ -6019,6 +6320,21 @@
     "signUp": "Daftar",
     "tryItYourself": "Coba sendiri"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "Semua",
+    "markAllRead": "Tandai semua sudah dibaca",
+    "noResults": "Tidak ada hasil ditemukan",
+    "resultCount_other": "{{count}} hasil",
+    "searching": "Mencari...",
+    "searchWorkspace": "Cari di ruang kerja...",
+    "sections": {
+      "artifacts": "Artefak",
+      "chats": "Chat",
+      "messages": "Pesan",
+      "workflows": "Alur kerja"
+    }
+  },
   "ssh": {
     "add": "Tambahkan host",
     "cancel": "Batal",
@@ -6062,8 +6378,8 @@
       "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host mana pun"
     },
-    "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
-    "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
+    "deleteHelp": "Hapus host ini? Kredensialnya akan disimpan. Okou akan kehilangan akses ke host ini.",
+    "description": "Izinkan Okou menjalankan perintah di komputer jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
     "errors": {
@@ -6109,7 +6425,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Autentikasi Tailscale SSH gagal. Periksa nama pengguna sistem, aktifkan Tailscale SSH pada tujuan yang memiliki tag, dan izinkan login ini dalam kebijakan SSH accept tailnet.",
-      "deleteHelp": "Hapus host ini? Agen tidak akan lagi melihat host ini di inventaris langsung.",
+      "deleteHelp": "Hapus host ini? Okou akan kehilangan akses.",
       "sshDocs": "Dokumentasi Tailscale SSH",
       "sshHelp": "Menggunakan identitas jaringan Tailscale yang dipilih, tanpa kata sandi SSH atau kunci privat. Aktifkan Tailscale SSH pada perangkat tujuan yang memiliki tag dan izinkan nama pengguna sistem ini dalam kebijakan SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -6144,6 +6460,9 @@
     },
     "title": "Akses SSH",
     "unavailable": "Permintaan ini tidak tersedia. Minta permintaan baru."
+  },
+  "status": {
+    "unread": "Belum dibaca"
   },
   "tailscale": {
     "changed": "Jaringan Tailscale ini berubah. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
@@ -6307,7 +6626,7 @@
       "usernamePasswordMethod": "Nama pengguna dan kata sandi"
     },
     "deleteHelp": "Hapus host tersimpan ini? Kredensialnya yang dapat digunakan kembali akan tetap disimpan.",
-    "description": "Izinkan agen Anda melihat dan mengendalikan desktop jarak jauh Anda.",
+    "description": "Izinkan Okou melihat dan mengontrol desktop jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Perubahan berlaku pada host tersimpan ini dan membatalkan konfigurasi koneksinya saat ini.",
     "errors": {
@@ -6905,20 +7224,15 @@
       }
     },
     "common": {
-      "agents": "Agen",
       "cancel": "Batal",
       "close": "Tutup",
-      "copyWorkflow": "Salin alur kerja",
       "delete": "Hapus",
       "deleteWorkflow": "Hapus alur kerja",
       "instructions": "Instruksi",
       "manual": "Manual",
-      "others": "Lainnya",
-      "pinned": "Disematkan",
       "private": "Pribadi",
       "public": "Publik",
       "settings": "Pengaturan",
-      "view": "Lihat",
       "workflow": "Alur kerja",
       "workflows": "Alur kerja"
     },
@@ -6928,36 +7242,14 @@
     },
     "createDialog": {
       "addAutomation": "Tambahkan otomatisasi",
-      "chooseAgentAutomation": "Pilih agen untuk otomatisasi ini",
-      "chooseAgentWorkflow": "Pilih agen untuk alur kerja ini.",
       "chooseWorkflow": "Pilih alur kerja untuk diotomatisasi, atau buat satu di chat.",
       "createAutomation": "Buat Otomatisasi",
       "createInChat": "Buat di chat",
       "createInChatDescription": "Mulai dari percakapan saat belum ada alur kerja yang cocok.",
       "createWorkflow": "Buat alur kerja",
-      "noAgents": "Belum ada agen",
-      "noAgentsFound": "Agen tidak ditemukan",
       "noWorkflows": "Belum ada alur kerja. Buat satu di chat untuk melanjutkan."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "agen tersebut",
-        "copied": "Disalin ke {{agent}}",
-        "copyAndRemove": "Salin dan hapus",
-        "description": "Salin alur kerja ini ke agen lain sebagai alur kerja pribadi baru.",
-        "moved": "Dipindahkan ke {{agent}}",
-        "moveDescription": "Asli dihapus dari {{agent}}.",
-        "noAgents": "Belum ada agen lain",
-        "privateReady": "Salinan pribadi sudah siap.",
-        "removalAlert": "Ini menghapus yang asli",
-        "removalNoAutomations": "Alur kerja ini dihapus dari {{agent}}.",
-        "removalWithAutomations_one": "{{count}} otomatisasi dijeda di {{agent}} dan alur kerja ini dihapus.",
-        "removalWithAutomations_other": "{{count}} otomatisasi dijeda di {{agent}} dan alur kerja ini dihapus.",
-        "removeOriginal": "Hapus yang asli dari {{agent}} setelah menyalin",
-        "selectAgent": "Pilih agen",
-        "title": "Salin alur kerja",
-        "to": "Salin ke"
-      },
       "delete": {
         "confirm": "{{title}} dan semua otomatisasi yang terikat akan dihapus.",
         "dangerDescription": "Hapus alur kerja ini dan otomatisasinya. Tindakan ini tidak dapat dibatalkan.",
@@ -6979,16 +7271,10 @@
         "upload": "Unggah berkas teks",
         "uploadAria": "Unggah berkas alur kerja"
       },
-      "info": {
-        "copyDescription": "Salin alur kerja ini ke agen lain.",
-        "copyTitle": "Salin alur kerja"
-      },
       "metadata": {
-        "agent": "Agen",
-        "agentDescription": "Alur kerja ini milik agen ini.",
         "aria": "Metadata alur kerja",
         "description": "Deskripsi",
-        "descriptionHelp": "Beri tahu agen kapan harus menggunakan alur kerja ini.",
+        "descriptionHelp": "Jelaskan kapan Okou perlu menggunakan alur kerja ini.",
         "name": "Nama",
         "nameHelp": "Ditampilkan di daftar alur kerja dan saat memilih alur kerja.",
         "namePlaceholder": "Nama alur kerja",
@@ -7003,12 +7289,7 @@
       "notFound": "Alur kerja tidak ditemukan.",
       "refineWith": "Perhalus dengan {{agent}}",
       "sectionNavigation": "Bagian detail alur kerja",
-      "shadow": {
-        "end": "untuk Anda. Alur kerja ini dibayangi oleh aturan prioritas slug yang sama.",
-        "resolvesTo": "saat ini mengarah ke"
-      },
       "visibility": {
-        "adminRequired": "Menerbitkan alur kerja di bawah agen yang tidak Anda miliki memerlukan izin admin org.",
         "automationWarning": "Otomatisasi akan berhenti",
         "confirmDescription": "Ini adalah operasi berbahaya. Saat alur kerja ini bersifat pribadi, otomatisasi yang dibuat anggota lain di atasnya berhenti berjalan.",
         "confirmTitle": "Jadikan alur kerja ini privat?",
@@ -7019,8 +7300,8 @@
     },
     "editor": {
       "aria": "Editor instruksi",
-      "footer": "Edit instruksi secara langsung untuk menyesuaikan perilaku agen Anda.",
-      "placeholder": "Tulis instruksi untuk agen Anda...",
+      "footer": "Edit instruksi untuk alur kerja ini.",
+      "placeholder": "Tulis instruksi untuk alur kerja ini…",
       "toolbar": {
         "blockquote": "Blok kutip",
         "bold": "Tebal",
@@ -7036,9 +7317,7 @@
     },
     "list": {
       "actionRequired": "Tindakan diperlukan",
-      "agentEmpty": "Belum ada alur kerja yang dijalankan sebagai agen ini.",
       "all": "Semua",
-      "allAgents": "Semua agen",
       "automated": "Otomatis",
       "automations": "Otomatisasi",
       "createdBy": "Dibuat oleh",
@@ -7056,8 +7335,6 @@
       "openRecovery": "Buka pemulihan {{title}}",
       "ownerLoading": "Memuat penulis…",
       "ownerUnavailable": "Penulis tidak tersedia",
-      "runsAs": "Dijalankan sebagai",
-      "runsAsAria": "Dijalankan sebagai {{agent}}",
       "section": {
         "event": "Saat otomatisasi",
         "later": "Nanti",
@@ -7111,6 +7388,18 @@
       "uninstalling": "Mencopot pemasangan…",
       "updatePermissions": "Perbarui izin"
     },
+    "channelExamples": {
+      "email": "Teruskan email ke Okou dan minta ringkasan atau draf balasan.",
+      "feishu": "Kirim draf ke Okou di Feishu dan minta versi singkat untuk dibagikan kepada tim.",
+      "github": "Saat pull request dibuka, jalankan alur kerja untuk menyiapkan daftar periksa peninjauan.",
+      "lark": "Kirim draf ke Okou di Lark dan minta versi singkat untuk dibagikan kepada tim.",
+      "phone": "Kirim ide ke {{assistantName}} dari iPhone dan minta bantuan membuat draf awal.",
+      "slack": "Sebut Okou di kanal Slack dan minta masukan tentang draf yang sedang Anda tulis.",
+      "teams": "Tempel catatan rapat di Teams dan minta Okou merangkum tugas yang perlu ditindaklanjuti.",
+      "telegram": "Kirim dua pilihan ke Okou di Telegram dan minta perbandingan kelebihan serta kekurangannya.",
+      "wechat": "Kirim dua pilihan ke Okou di WeChat dan minta perbandingan kelebihan serta kekurangannya.",
+      "whatsapp": "Kirim dua pilihan ke Okou di WhatsApp dan minta perbandingan kelebihan serta kekurangannya."
+    },
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
@@ -7119,7 +7408,7 @@
       "authorizationError": "Otorisasi Discord tidak dapat diselesaikan.",
       "cancelled": "Otorisasi Discord dibatalkan.",
       "chooseWorkspace": "Pilih ruang kerja",
-      "connectDescription": "Hubungkan akun Discord untuk mengobrol dengan agen Anda.",
+      "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Discord.",
       "connectedTitle": "Terhubung ke Discord",
       "connectTitle": "Hubungkan ke Discord",
       "defaultWorkspace": "Ruang kerja default untuk Discord",
@@ -7197,17 +7486,16 @@
       "uninstallTitle": "Copot pemasangan integrasi Microsoft Teams?"
     },
     "telegram": {
-      "description": "Rutekan pesan Telegram ke agen",
+      "description": "Hubungkan Telegram ke Okou.",
       "title": "Telegram"
     },
     "wechat": {
       "accountLabel": "Akun",
-      "agentLabel": "Agen",
       "code": "Kode verifikasi",
       "connect": "Hubungkan",
       "connected": "Terhubung",
       "creating": "Membuat kode QR…",
-      "description": "Mengobrol dengan agen Anda di WeChat.",
+      "description": "Mengobrol dengan Okou di WeChat.",
       "disconnect": "Putuskan koneksi",
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat.",
@@ -7221,7 +7509,7 @@
       "restoreDescription": "Hubungkan kembali WeChat ke akun dan ruang kerja di bawah ini.",
       "returnToWechat": "Kembali ke WeChat dan kirim pesan untuk mulai mengobrol.",
       "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
-      "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",
+      "scope": "Hanya pesan langsung Anda ke Okou yang terhubung. Pesan teks didukung.",
       "title": "Hubungkan WeChat",
       "unavailable": "Koneksi belum dikonfigurasi.",
       "verification_blocked": "Terlalu banyak percobaan. Buat kode QR baru.",
@@ -7233,7 +7521,7 @@
     "whatsapp": {
       "codeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
       "connect": "Hubungkan WhatsApp",
-      "connectDescription": "Hubungkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan agen Anda.",
+      "connectDescription": "Tautkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan Okou.",
       "connected": "WhatsApp terhubung",
       "description": "Mengobrol dengan Okou langsung dari WhatsApp",
       "disconnected": "WhatsApp terputus",

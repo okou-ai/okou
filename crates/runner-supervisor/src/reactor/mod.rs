@@ -49,6 +49,7 @@ use crate::home_image_cache::HomeImageCache;
 use crate::idle_pool::ParkingGate;
 #[cfg(test)]
 use crate::idle_pool::{IdlePool, IdlePoolConfig};
+use crate::ingress::dispatch;
 use crate::kmsg_log;
 use crate::lifecycle::{LifecycleController, RunnerMode};
 use crate::network_log_drain::DrainableLineReaderExit;
@@ -330,6 +331,24 @@ pub struct OrphanReapState {
 }
 
 impl OrphanReapState {
+    async fn finish_joined_job(
+        &self,
+        result: Option<Result<JobResult, tokio::task::JoinError>>,
+        orphans: &OrphanedActiveRuns,
+        shared: &RunnerSharedState,
+    ) {
+        handle_job_result(result).await;
+        if !orphans.is_empty() {
+            self.reap(
+                orphans,
+                &shared.idle_pool,
+                &shared.status,
+                OrphanReapMode::Immediate,
+            )
+            .await;
+        }
+    }
+
     async fn reap(
         &self,
         orphans: &OrphanedActiveRuns,
@@ -354,6 +373,7 @@ impl OrphanReapState {
 #[cfg(test)]
 struct RunTestHooks {
     ingress_client: Option<reqwest::Client>,
+    dispatch_work_queued: Option<Arc<tokio::sync::Notify>>,
     outer_job_panic: Option<OuterJobPanicPoint>,
     test_observer: StartLoopTestObserver,
     before_initial_home_cache_scan: Option<StartLoopTestGate>,
@@ -928,6 +948,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             shared: &shared,
             provider: &provider_state,
             exec_config: &exec_config,
+            device_rate_limits: &capacity.device_rate_limits,
         },
         signals,
         startup::StartupInventory {
@@ -971,6 +992,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         startup_mode,
         mut home_cache_observation,
         mut heartbeat,
+        acceptance_slots,
+        mut dispatch_rx,
     } = started;
 
     let mut jobs: JoinSet<JobResult> = JoinSet::new();
@@ -1084,16 +1107,14 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         #[cfg(test)]
         test_observer: test_hooks.test_observer.clone(),
     };
-    let mut acceptance_tasks = AcceptanceTasks::new(AcceptanceContext {
-        mode_rx: mode_rx.clone(),
-        cancel_tokens: provider_state.cancel_tokens.clone(),
-        spawn_ctx: spawn_ctx.clone(),
-    });
-    let (dispatch_intake, mut dispatch_rx) =
-        crate::ingress::dispatch::DispatchIntake::new(acceptance_tasks.slots());
-    if let Some(ingress) = &ingress {
-        ingress.enable_dispatch(dispatch_intake);
-    }
+    let mut acceptance_tasks = AcceptanceTasks::new(
+        AcceptanceContext {
+            mode_rx: mode_rx.clone(),
+            cancel_tokens: provider_state.cancel_tokens.clone(),
+            spawn_ctx: spawn_ctx.clone(),
+        },
+        acceptance_slots,
+    );
     let mut blank_pool_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(1),
         Duration::from_secs(1),
@@ -1498,15 +1519,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // stale cancellation registrations until drain, budget exhaustion,
             // or shutdown.
             result = jobs.join_next(), if !jobs.is_empty() => {
-                handle_job_result(result).await;
-                if !orphaned_active_runs.is_empty() {
-                    orphan_reap.reap(
-                        &orphaned_active_runs,
-                        &shared.idle_pool,
-                        &shared.status,
-                        OrphanReapMode::Immediate,
-                    ).await;
-                }
+                orphan_reap.finish_joined_job(result, &orphaned_active_runs, &shared).await;
             }
             Some(()) = usage_flush_rx.recv() => {
                 #[cfg(test)]
@@ -1610,10 +1623,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // independently and must finish before idle or provider teardown; successful
     // outcomes still enter the existing activation/executor ownership path.
     drop(discover_fut);
-    dispatch_rx.close();
-    while let Some(work) = dispatch_rx.recv().await {
-        work.settle(crate::ingress::dispatch::Disposition::Rejected);
-    }
+    dispatch::reject_queued(dispatch_rx).await;
     teardown.event("drop_discover_fut");
     home_cache_observation.stop_watching();
     let phase = teardown.phase_start("acceptance_drain");
@@ -1710,15 +1720,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
 
             tokio::select! {
                 result = jobs.join_next() => {
-                    handle_job_result(result).await;
-                    if !orphaned_active_runs.is_empty() {
-                        orphan_reap.reap(
-                            &orphaned_active_runs,
-                            &shared.idle_pool,
-                            &shared.status,
-                            OrphanReapMode::Immediate,
-                        ).await;
-                    }
+                    orphan_reap.finish_joined_job(result, &orphaned_active_runs, &shared).await;
                 }
                 Some(()) = usage_flush_rx.recv() => {
                     #[cfg(test)]

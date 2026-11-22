@@ -1,6 +1,7 @@
 package ai.okou.android.auth
 
 import ai.okou.android.TEST_PREFERENCES
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.UpdatePreferencesRequest
@@ -47,20 +48,16 @@ class CanonicalWorkspaceSessionTest {
 
     @Test
     fun initializedCanonicalPreferencesNeedNoWrite() = runTest {
-        server.enqueue(MockResponse().setBody("""{"id":"org-a","name":"A"}"""))
         server.enqueue(MockResponse().setBody(TEST_PREFERENCES))
-        owner().use { assertTrue(it.bootstrap().preferences.memoryInitialized) }
-        assertEquals(2, server.requestCount)
-        assertEquals("/api/org", server.takeRequest().path)
+        owner().use { assertTrue(it.preferences().memoryInitialized) }
+        assertEquals(1, server.requestCount)
         assertEquals("/api/user-preferences", server.takeRequest().path)
     }
 
     @Test
     fun canonicalTimezoneIsNotRewrittenUsingTheDevicesTimezoneCatalog() = runTest {
-        server.enqueue(MockResponse().setBody("""{"id":"org-a","name":"A"}"""))
         server.enqueue(MockResponse().setBody(TEST_PREFERENCES.replace("UTC", "America/Coyhaique")))
-        owner().use { assertEquals("America/Coyhaique", it.bootstrap().preferences.timezone) }
-        assertEquals(2, server.requestCount)
+        owner().use { assertEquals("America/Coyhaique", it.preferences().timezone) }
     }
 
     @Test
@@ -78,11 +75,9 @@ class CanonicalWorkspaceSessionTest {
                         )
                     ),
             )) {
-            server.enqueue(MockResponse().setBody("""{"id":"org-a","name":"A"}"""))
             server.enqueue(response)
             server.enqueue(MockResponse().setBody(TEST_PREFERENCES))
-            owner().use { assertTrue(it.bootstrap().preferences.memoryInitialized) }
-            server.takeRequest()
+            owner().use { assertTrue(it.preferences().memoryInitialized) }
             server.takeRequest()
             val initialize = server.takeRequest()
             assertEquals("POST", initialize.method)
@@ -95,19 +90,26 @@ class CanonicalWorkspaceSessionTest {
     }
 
     @Test
-    fun wrongWorkspaceOrIncompleteInitializationNeverGrantsReadyData() = runTest {
+    fun organizationMustMatchTheActiveWorkspace() = runTest {
         server.enqueue(MockResponse().setBody("""{"id":"org-b","name":"Other"}"""))
         owner().use {
-            assertTrue(runCatching { it.bootstrap() }.exceptionOrNull() is IllegalStateException)
+            assertTrue(
+                runCatching { it.organization() }.exceptionOrNull() is ApiFailure.Unauthenticated
+            )
         }
-        assertEquals(1, server.requestCount)
+        assertEquals("/api/org", server.takeRequest().path)
         server.enqueue(MockResponse().setBody("""{"id":"org-a","name":"A"}"""))
+        owner().use { assertEquals("org-a", it.organization().id) }
+    }
+
+    @Test
+    fun incompleteInitializationNeverGrantsReadyPreferences() = runTest {
         val uninitialized =
             TEST_PREFERENCES.replace("\"memoryInitialized\":true", "\"memoryInitialized\":false")
         server.enqueue(MockResponse().setBody(uninitialized))
         server.enqueue(MockResponse().setBody(uninitialized))
         owner().use {
-            assertTrue(runCatching { it.bootstrap() }.exceptionOrNull() is IllegalStateException)
+            assertTrue(runCatching { it.preferences() }.exceptionOrNull() is IllegalStateException)
         }
     }
 

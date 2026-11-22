@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { HttpResponse } from "msw";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -193,6 +194,50 @@ describe("Independent finalizing resource dispatch", () => {
     });
   });
 
+  it("prefers a dispatchable Home holder when the exact sandbox holder cannot accept", async () => {
+    const f = await terminalPredecessor(context, "completed");
+    mockNow(f.clock + 2500);
+    const reuseKey = `thread:${f.run.threadId}`;
+    await heartbeat(f, {
+      snapshotSequence: 2,
+      ingressServiceActive: false,
+      heldSandboxStates: [
+        {
+          reuseKey,
+          lastCompletedAt: nowDate().toISOString(),
+          reusableSandbox: { profile: "vm0/default", sourceRunId: f.run.runId },
+        },
+      ],
+    });
+    const home = await f.owned.run(async () => {
+      await f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 8,
+        heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
+      });
+      return await f.api.registerDirectRunner(f.group, {
+        maxConcurrent: 1,
+        heartbeat: {
+          heldHomeStates: [
+            {
+              reuseKey,
+              lastCompletedAt: nowDate().toISOString(),
+              homeCaches: [
+                {
+                  profile: "vm0/default",
+                  homeAffinityVersion: 1,
+                  sourceRunId: f.run.runId,
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+    const next = await continuation(f);
+    expect(next.status).toBe("running");
+    await expectOwner(f, next.runId, home.runnerId, home.heartbeatGeneration);
+  });
+
   it("routes to a same-host replacement while its predecessor drains", async () => {
     const f = await terminalPredecessor(context, "completed");
     await heartbeat(f, {
@@ -224,13 +269,135 @@ describe("Independent finalizing resource dispatch", () => {
     );
   });
 
+  it.each([
+    "active-producer",
+    "drain-release",
+    "drain-expiry",
+    "stopping",
+    "stale-drain",
+    "different-generation",
+  ] as const)(
+    "bounds Home dispatch and same-byte retry with %s",
+    async (scenario) => {
+      const f = await terminalPredecessor(context, "completed");
+      const expectsRetry =
+        scenario === "active-producer" ||
+        scenario === "drain-release" ||
+        scenario === "drain-expiry";
+      mockNow(f.clock + 26 * 60_000);
+      await heartbeat(f, {
+        snapshotGeneration: scenario === "different-generation" ? 8 : 7,
+        snapshotSequence: 2,
+        mode: scenario === "stopping" ? "stopping" : "draining",
+        activeReuseProducers:
+          scenario === "active-producer" ? [producer(f)] : [],
+      });
+      if (scenario === "stale-drain") {
+        mockNow(now() + 180_001);
+      }
+      const sentAt = now();
+      const preferredBytes: string[] = [];
+      const preferredDeadlines: number[] = [];
+      const alternativeDeadlines: number[] = [];
+      const replacement = await f.owned.run(async () => {
+        const identity = await f.api.registerDirectRunner(f.group, {
+          hostname: `runner-${f.runnerId}.okou.app`,
+          maxConcurrent: 1,
+          reply: (envelope, bytes) => {
+            preferredBytes.push(bytes);
+            preferredDeadlines.push(envelope.notAfter);
+            const hint = envelope.preferredHomeCheckout;
+            if (expectsRetry) {
+              expect(hint).toBeDefined();
+              expect(hint?.predecessorRunId).toBe(f.run.runId);
+              expect(hint?.waitUntil).toBeGreaterThan(sentAt);
+              expect(hint?.waitUntil).toBeLessThanOrEqual(sentAt + 1000);
+              expect(hint?.waitUntil).toBeLessThan(envelope.notAfter);
+            } else {
+              expect(hint).toBeUndefined();
+            }
+            const busy =
+              expectsRetry &&
+              (scenario === "drain-expiry" || preferredBytes.length === 1);
+            if (busy && hint) {
+              mockNow(
+                scenario === "drain-release"
+                  ? sentAt + 492
+                  : hint.waitUntil + 1,
+              );
+            }
+            return HttpResponse.json(
+              {
+                runnerId: envelope.runnerId,
+                heartbeatGeneration: envelope.heartbeatGeneration,
+                runId: envelope.executionContext.runId,
+                disposition: busy ? "busy" : "accepted",
+              },
+              {
+                status: busy ? 429 : 200,
+                ...(scenario === "active-producer"
+                  ? {
+                      headers: {
+                        "x-okou-runner-dispatch-timing": busy
+                          ? "invalid"
+                          : JSON.stringify({
+                              runnerVersion: "1.2.3",
+                              bodyReadMs: 2,
+                              envelopeParseMs: 0.4,
+                              contextDecodeMs: 1,
+                              acceptanceMs: 5,
+                            }),
+                      },
+                    }
+                  : {}),
+              },
+            );
+          },
+        });
+        const alternative = await f.api.registerDirectRunner(f.group, {
+          maxConcurrent: 8,
+          heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
+          reply: (envelope) => {
+            expect(envelope.preferredHomeCheckout).toBeUndefined();
+            alternativeDeadlines.push(envelope.notAfter);
+            return HttpResponse.json({
+              runnerId: envelope.runnerId,
+              heartbeatGeneration: envelope.heartbeatGeneration,
+              runId: envelope.executionContext.runId,
+              disposition: "accepted",
+            });
+          },
+        });
+        return { identity, alternative };
+      });
+      const next = await continuation(f);
+      expect(next.status).toBe("running");
+      const useAlternative = scenario === "drain-expiry";
+      const owner = useAlternative
+        ? replacement.alternative
+        : replacement.identity;
+      await expectOwner(
+        f,
+        next.runId,
+        owner.runnerId,
+        owner.heartbeatGeneration,
+      );
+      expect(preferredBytes).toHaveLength(expectsRetry ? 2 : 1);
+      if (preferredBytes.length === 2) {
+        expect(preferredBytes[1]).toBe(preferredBytes[0]);
+      }
+      expect(alternativeDeadlines).toStrictEqual(
+        useAlternative ? [preferredDeadlines[0]] : [],
+      );
+    },
+  );
+
   it("keeps another Chat's producer out of a new Thread's placement", async () => {
     const f = await terminalPredecessor(context, "failed", false);
     mockNow(f.clock + 2500);
     await f.owned.run(async () => {
       const chat = createChatFilesBddApi(context);
       const thread = await chat.createThread(f.actor, {
-        agentId: f.agentId,
         title: "Independent Chat",
       });
       await heartbeat(f, {
@@ -270,11 +437,9 @@ describe("Independent finalizing resource dispatch", () => {
     const [firstThread, secondThread] = await f.owned.run(async () => {
       const chat = createChatFilesBddApi(context);
       const first = await chat.createThread(f.actor, {
-        agentId: f.agentId,
         title: "Home snapshot bound",
       });
       const second = await chat.createThread(f.actor, {
-        agentId: f.agentId,
         title: "Empty Home snapshot",
       });
       return [first, second] as const;

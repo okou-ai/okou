@@ -18,6 +18,45 @@ report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
 
 
+def pressure_policy_fixture():
+    """Build a fresh ordered baseline for synthetic pressure reports."""
+    gib = 1024**3
+    return {
+        "host_total_bytes": 64 * gib,
+        "operating_floor_bytes": gib,
+        "cleanup_reserve_bytes": 256 * 1024**2,
+        "critical_available_bytes": 12 * gib,
+        "recovery_available_bytes": 20 * gib,
+        "live_growth_bytes": 4 * 1024**2,
+        "tail_growth_bytes": 65 * 1024**2,
+        "replacement_preparation_bytes": 32 * 1024**2,
+        "max_sample_age_millis": 1000,
+        "max_operations": 8,
+        "max_cleanup_inflight": 2,
+        "pressure_sample_period_millis": 50,
+        "pressure_recovery_sustain_millis": 100,
+        "pressure_wave_cooldown_millis": 100,
+        "pressure_optional_start_interval_millis": 100,
+        "pressure_max_wave_entries": 1,
+    }
+
+
+def witness_receipt(
+    case, phase, *, monotonic_ns, unix_ns, sandbox_id, backing_generation, evidence
+):
+    """Build one synthetic v1 envelope around scenario-owned evidence."""
+    return {
+        "version": 1,
+        "case": case,
+        "phase": phase,
+        "monotonic_ns": monotonic_ns,
+        "unix_ns": unix_ns,
+        "sandbox_id": sandbox_id,
+        "backing_generation": backing_generation,
+        "evidence": evidence,
+    }
+
+
 def write_report_fixture(root, collector, samples, log_groups, *, stdout_suffix=""):
     """Serialize synthetic consumer inputs; callers own evidence and log order."""
     (root / "report.json").write_text(json.dumps(collector))
@@ -80,11 +119,14 @@ class NativeReportTests(unittest.TestCase):
                  "home_payload_bytes": 65536},
             ]
             for phase, proof in zip(report.PHASES, evidence):
-                self.events.append({
-                    "version": 1, "case": case, "phase": phase, "monotonic_ns": clock,
-                    "unix_ns": clock + 1000, "sandbox_id": sandbox,
-                    "backing_generation": backing, "evidence": proof,
-                })
+                self.events.append(witness_receipt(
+                    case, phase,
+                    monotonic_ns=clock,
+                    unix_ns=clock + 1000,
+                    sandbox_id=sandbox,
+                    backing_generation=backing,
+                    evidence=proof,
+                ))
                 self.samples.append({
                     "monotonic_ns": clock + 1, "mem_available_bytes": 100000,
                     "sample_age_ns": 2, "read_duration_ns": 1,

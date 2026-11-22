@@ -84,14 +84,7 @@ private struct PermissionActionCardContent: View {
         } else {
           Text("Deny \(permission)")
         }
-        Text(
-          snapshot?.connectorScoped == true
-            ? status
-            : String(
-              localized:
-                "For \(snapshot?.agentName ?? String(localized: "this Agent")) · \(status)")
-        )
-        .lineLimit(1, reservesSpace: true)
+        Text(status).lineLimit(1, reservesSpace: true)
       }
     } actions: {
       if review.applied && !needsContinuation && error == nil && !isLoading
@@ -155,6 +148,7 @@ private struct PermissionActionDetailsContent: View {
   @Bindable var store: PermissionActionStore
   let phase: Loadable<ChatPermissionSnapshot>
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.permissionWorkspaceName) private var workspaceName
 
   private var isLoading: Bool { phase.state == .loading }
   private var snapshot: ChatPermissionSnapshot? {
@@ -203,7 +197,7 @@ private struct PermissionActionDetailsContent: View {
         VStack(alignment: .leading, spacing: OkouSpace.xs) {
           Text(review.metadata?.label ?? store.action.connectorSlug)
             .font(.okou(.headline)).foregroundStyle(OkouColor.foreground)
-          Text("Requested by \(snapshot?.agentName ?? String(localized: "this Agent"))")
+          Text("Workspace: \(workspaceName ?? store.action.member.workspaceID)")
             .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
         }
       }
@@ -220,12 +214,8 @@ private struct PermissionActionDetailsContent: View {
         })?.description {
           Text(description).textSelection(.enabled)
         }
-        Text(
-          snapshot?.connectorScoped == true
-            ? "These permissions apply to this connector across your chats and accounts."
-            : "These permissions apply to your account for this Agent."
-        )
-        .okouSectionNote()
+        Text("These permissions apply to this connector across your chats and accounts.")
+          .okouSectionNote()
       }
       if let method = store.action.method, let path = store.action.path {
         Text("\(method) \(path)").font(.okou(.caption, design: .monospaced)).textSelection(.enabled)

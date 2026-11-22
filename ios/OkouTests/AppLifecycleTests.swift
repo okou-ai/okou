@@ -81,9 +81,9 @@ final class AppLifecycleTests: XCTestCase {
     addTeardownBlock { await identity.close() }
     let authentication = try await identity.authentication()
     await authentication.refresh()
-    let held = expectation(description: "Navigation HTTP is held")
+    let held = expectation(description: "Indicators HTTP is held")
     let gate = ModelResponseGate()
-    let fixture = LifecycleHTTPFixture(beforeNavigation: {
+    let fixture = LifecycleHTTPFixture(beforeIndicators: {
       held.fulfill()
       await gate.wait()
     })
@@ -105,7 +105,7 @@ final class AppLifecycleTests: XCTestCase {
     await workspace.start()
     await waiter.value
 
-    XCTAssertEqual(workspace.store.list.agents.map(\.agentId), [ConversationHistoryFixture.agentID])
+    XCTAssertEqual(workspace.store.currentAgentName, "Okou")
     XCTAssertEqual(workspace.store.newChatDraft, "Input entered before navigation completes")
   }
 
@@ -158,7 +158,7 @@ final class AppLifecycleTests: XCTestCase {
     let held = expectation(description: "First workspace navigation is held")
     let gate = ModelResponseGate()
     let first = Mutex(true)
-    let fixture = LifecycleHTTPFixture(beforeNavigation: {
+    let fixture = LifecycleHTTPFixture(beforeIndicators: {
       if first.withLock({ value in
         let wasFirst = value
         value = false
@@ -191,10 +191,10 @@ final class AppLifecycleTests: XCTestCase {
     gate.open()
     await startup.value
 
-    XCTAssertEqual(current.store.list.agents.map(\.agentId), [ConversationHistoryFixture.agentID])
+    XCTAssertEqual(current.store.currentAgentName, "Okou")
     XCTAssertEqual(current.store.newChatDraft, "Current workspace input")
-    XCTAssertEqual(fixture.navigationWorkspaces.first, "org_one")
-    XCTAssertEqual(fixture.navigationWorkspaces.last, "org_two")
+    XCTAssertEqual(fixture.indicatorWorkspaces.first, "org_one")
+    XCTAssertEqual(fixture.indicatorWorkspaces.last, "org_two")
   }
 
   func testRootCancellationCancelsOriginalWorkspaceHttpBeforeItsReplyIsReleased() async throws {
@@ -205,7 +205,7 @@ final class AppLifecycleTests: XCTestCase {
     let held = expectation(description: "Workspace HTTP is held")
     let cancelled = expectation(description: "Original HTTP is cancelled before its reply")
     let gate = ModelResponseGate()
-    let fixture = LifecycleHTTPFixture(beforeNavigation: {
+    let fixture = LifecycleHTTPFixture(beforeIndicators: {
       held.fulfill()
       await withTaskCancellationHandler {
         await gate.wait()
@@ -368,10 +368,10 @@ private final class LifecycleFixtureCaches {
 private final class LifecycleHTTPFixture: Sendable {
   let history: ConversationHistoryFixture
   private let state = LifecycleHTTPState()
-  var navigationWorkspaces: [String] { state.navigationWorkspaces.withLock { $0 } }
+  var indicatorWorkspaces: [String] { state.indicatorWorkspaces.withLock { $0 } }
 
   init(
-    beforeNavigation: (@Sendable () async -> Void)? = nil,
+    beforeIndicators: (@Sendable () async -> Void)? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil
   ) {
     let state = state
@@ -388,15 +388,10 @@ private final class LifecycleHTTPFixture: Sendable {
       additional: { request in
         if let response = ModelHTTPFixtures.response(request.url!.path) { return response }
         switch request.url!.path {
-        case "/api/agents":
-          let workspace = try Self.workspace(request)
-          state.navigationWorkspaces.withLock { $0.append(workspace) }
-          await beforeNavigation?()
-          return ChatHTTPResponse(
-            body:
-              "[{\"agentId\":\"\(ConversationHistoryFixture.agentID)\",\"displayName\":\"Lifecycle fixture\",\"isDefaultAgent\":true}]"
-          )
         case "/api/indicators":
+          let workspace = try Self.workspace(request)
+          state.indicatorWorkspaces.withLock { $0.append(workspace) }
+          await beforeIndicators?()
           return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
         case "/api/chat-thread-drafts":
           return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
@@ -404,7 +399,7 @@ private final class LifecycleHTTPFixture: Sendable {
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case "/api/projects/snapshot":
           return ChatHTTPResponse(body: #"{"latestEventId":null,"latestSeqId":0,"projects":[]}"#)
-        case "/api/agents/\(ConversationHistoryFixture.agentID)/draft",
+        case "/api/chat-drafts/composer",
           "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
           let key = try Self.workspace(request) + request.url!.path
           if request.httpMethod == "PATCH" {
@@ -444,6 +439,6 @@ private final class LifecycleHTTPFixture: Sendable {
 }
 
 private final class LifecycleHTTPState: Sendable {
-  let navigationWorkspaces = Mutex<[String]>([])
+  let indicatorWorkspaces = Mutex<[String]>([])
   let drafts = Mutex<[String: String]>([:])
 }

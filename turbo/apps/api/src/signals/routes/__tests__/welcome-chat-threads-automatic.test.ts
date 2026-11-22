@@ -1,38 +1,19 @@
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { featureSwitchesRoutes } from "../feature-switches";
-import { createRouteMocks } from "./helpers/route-test";
+import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
-
-async function setMyOkou(actor: ApiTestUser, enabled: boolean) {
-  createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
-  );
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { switches: { [FeatureSwitchKey.SingleAgent]: enabled } },
-    }),
-    [200],
-  );
-}
 
 async function createdThreadIds(
   actor: ApiTestUser,
@@ -79,40 +60,13 @@ async function deliverMembershipCreated(actor: ApiTestUser): Promise<void> {
   await flushWaitUntilForTest();
 }
 
-async function deliverOrganizationCreated(actor: ApiTestUser): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected a workspace");
-  }
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organization.created",
-    data: {
-      id: actor.orgId,
-      created_by: actor.userId,
-      created_at: now(),
-    },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-}
-
-/** An established workspace whose default agent an invited member can use. */
-async function establishedWorkspace(): Promise<ApiTestUser> {
-  const admin = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  await bdd.bootstrapLimitedFreeOnboarding(admin, {
-    displayName: "Established workspace agent",
-  });
-  return admin;
-}
-
 async function welcomeEvents(actor: ApiTestUser, threadId: string) {
   return await chat.listThreadEventRows(actor, threadId);
 }
 
 describe("automatic welcome thread delivery", () => {
   it("delivers one welcome thread to an invited member", async () => {
-    const admin = await establishedWorkspace();
+    const admin = bdd.user();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     await deliverMembershipCreated(member);
 
@@ -125,16 +79,14 @@ describe("automatic welcome thread delivery", () => {
     ]);
   });
 
-  it("selects each recipient's mode independently of their workspace admin", async () => {
-    const admin = await establishedWorkspace();
+  it("delivers personal Instructions guidance to each invited member", async () => {
+    const admin = bdd.user();
     const firstMember = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     const secondMember = bdd.user({
       orgId: admin.orgId,
       orgRole: "org:member",
     });
-    await setMyOkou(admin, true);
-    await setMyOkou(firstMember, false);
-    await setMyOkou(secondMember, true);
+
     await deliverMembershipCreated(firstMember);
     await deliverMembershipCreated(secondMember);
 
@@ -149,15 +101,15 @@ describe("automatic welcome thread delivery", () => {
     ).resolves.toHaveLength(1);
     expect(
       (await welcomeEvents(firstMember, firstThreadId))[0]?.payload?.content,
-    ).toContain("**Give a job its own agent.**");
+    ).toContain("**Your preferences belong in personal Instructions.**");
     expect(
       (await welcomeEvents(secondMember, secondThreadId))[0]?.payload?.content,
     ).toContain("**Your preferences belong in personal Instructions.**");
   });
 
   it("delivers a separate welcome to the same member in each workspace", async () => {
-    const firstAdmin = await establishedWorkspace();
-    const secondAdmin = await establishedWorkspace();
+    const firstAdmin = bdd.user();
+    const secondAdmin = bdd.user();
     const firstMembership = bdd.user({
       orgId: firstAdmin.orgId,
       orgRole: "org:member",
@@ -167,8 +119,7 @@ describe("automatic welcome thread delivery", () => {
       orgId: secondAdmin.orgId,
       orgRole: "org:member",
     });
-    await setMyOkou(firstMembership, true);
-    await setMyOkou(secondMembership, false);
+
     await deliverMembershipCreated(firstMembership);
     await deliverMembershipCreated(secondMembership);
 
@@ -182,7 +133,7 @@ describe("automatic welcome thread delivery", () => {
     expect(
       (await welcomeEvents(secondMembership, secondThreadId))[0]?.payload
         ?.content,
-    ).toContain("**Give a job its own agent.**");
+    ).toContain("**Your preferences belong in personal Instructions.**");
     await expect(
       welcomeEvents(firstMembership, firstThreadId),
     ).resolves.toHaveLength(1);
@@ -194,26 +145,21 @@ describe("automatic welcome thread delivery", () => {
   it.each([
     {
       registration: "organization.created",
-      deliver: deliverOrganizationCreated,
+      deliver: (actor: ApiTestUser) => {
+        return deliverOrganizationCreated(context, actor);
+      },
     },
     {
       registration: "organizationMembership.created",
       deliver: deliverMembershipCreated,
     },
   ])(
-    "delivers a workspace creator's welcome from $registration, once bootstrap publishes the default agent",
+    "delivers a workspace creator's welcome from $registration",
     async ({ deliver }) => {
       const creator = bdd.user();
       bdd.acceptAgentStorageWrites();
-      // `organization.created` carries no membership side effects at all, so
-      // the only trigger that can reach this creator is the moment bootstrap
-      // publishes the workspace default agent.
       await deliver(creator);
 
-      // Bootstrap is unaffected by the welcome work chained behind it.
-      await expect(bdd.readOnboardingStatus(creator)).resolves.toMatchObject({
-        hasDefaultAgent: true,
-      });
       const threadId = await onlyCreatedThreadId(creator);
       await expect(
         chat.readThreadMetadata(creator, threadId),
@@ -223,7 +169,7 @@ describe("automatic welcome thread delivery", () => {
   );
 
   it("keeps one thread across a redelivered event and two concurrent deliveries", async () => {
-    const admin = await establishedWorkspace();
+    const admin = bdd.user();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     // Two deliveries in flight at once.
     membershipEvent(member);
@@ -238,7 +184,7 @@ describe("automatic welcome thread delivery", () => {
 
     // A mode/locale change must not change delivery identity or persisted copy.
     const rows = await welcomeEvents(member, threadId);
-    await setMyOkou(member, true);
+
     await bdd.updateUserLocale(member, "zh-Hans");
     await deliverMembershipCreated(member);
     await expect(welcomeEvents(member, threadId)).resolves.toStrictEqual(rows);
@@ -249,19 +195,8 @@ describe("automatic welcome thread delivery", () => {
     ).resolves.toMatchObject({ id: threadId });
   });
 
-  it("abandons the invocation when the workspace default agent is not ready", async () => {
-    const member = bdd.user({ orgRole: "org:member" });
-    // A member never triggers workspace bootstrap, so no default agent can
-    // appear for this workspace and nothing is scheduled to look again.
-    await deliverMembershipCreated(member);
-
-    await expect(createdThreadIds(member)).resolves.toStrictEqual([]);
-    await deliverMembershipCreated(member);
-    await expect(createdThreadIds(member)).resolves.toStrictEqual([]);
-  });
-
   it("never delivers again after the recipient deletes the thread", async () => {
-    const admin = await establishedWorkspace();
+    const admin = bdd.user();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     await deliverMembershipCreated(member);
     const threadId = await onlyCreatedThreadId(member);

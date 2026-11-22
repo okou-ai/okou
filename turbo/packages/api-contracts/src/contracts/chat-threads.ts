@@ -394,7 +394,6 @@ const chatThreadDetailSchema = object({
 
 const chatThreadMetadataSchema = object({
   id: string(),
-  agentId: uuid(),
   title: string().nullable(),
   selectedModel: string().nullable(),
   modelSettings: modelSettingsSchema,
@@ -412,15 +411,8 @@ export type ComposerDraft = zInfer<typeof composerDraftSchema>;
 
 const chatThreadCreateBodySchema = object({
   projectId: uuid().optional(),
-  agentId: string().min(1),
   clientThreadId: uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
-  connectorSelections: array(connectorAccountSelectionSchema).optional(),
-  /**
-   * Retired opt-in still sent by current clients. Every create rejects an
-   * unavailable selected account; the field no longer changes behavior.
-   */
-  connectorSelectionPolicy: literal("required").optional(),
   initialRemoteAccessOverrides: array(initialRemoteAccessOverrideSchema)
     .superRefine((overrides, ctx) => {
       const seen = new Set<string>();
@@ -451,7 +443,7 @@ const chatThreadCreateBodySchema = object({
   /** Concrete override for the selected model; omission keeps its default. */
   reasoningEffort: reasoningEffortSchema.optional(),
   title: string().optional(),
-});
+}).strict();
 
 const chatThreadModelSelectionUpdateBodySchema = object({
   /** Selected model id, or null for Auto. */
@@ -471,6 +463,13 @@ export const chatThreadsContract = c.router({
     method: "GET",
     path: "/api/indicators",
     headers: authHeadersSchema,
+    query: object({
+      includeActiveUnread: string()
+        .describe(
+          'Set to "true" to include unread watermarks independently of activity.',
+        )
+        .optional(),
+    }),
     responses: {
       200: indicatorsSchema,
       401: apiErrorSchema,
@@ -716,24 +715,22 @@ export const chatThreadMarkUnreadContract = c.router({
 });
 
 /**
- * Mark every unread chat thread under an agent as read.
+ * Mark every unread chat thread for the workspace member as read.
  * Separate sibling route so it cannot collide with the `:id` thread routes.
  */
-export const chatThreadMarkAgentReadContract = c.router({
-  markAgentRead: {
+export const chatThreadMarkAllReadContract = c.router({
+  markAllRead: {
     method: "POST",
     path: "/api/chat-thread-unreads/mark-read",
     headers: authHeadersSchema,
-    body: object({
-      agentId: string().min(1),
-    }),
+    body: object({}),
     responses: {
       204: c.noBody(),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "Mark all unread chat threads under an agent as read",
+    summary: "Mark all unread chat threads for the workspace member as read",
   },
 });
 
@@ -1062,7 +1059,6 @@ const chatSearchMatchRangeSchema = object({
 
 const chatSearchResultSchema = object({
   chatThreadId: string(),
-  agentName: string(),
   matchedMessage: chatSearchMessageSchema,
   matchedRanges: array(chatSearchMatchRangeSchema),
 });
@@ -1097,7 +1093,6 @@ export const chatSearchContract = c.router({
     headers: authHeadersSchema,
     query: object({
       keyword: string().trim().min(1),
-      agentId: uuid().optional(),
     }),
     responses: {
       200: chatSearchResponseSchema,
@@ -1198,6 +1193,7 @@ export const chatThreadArtifactsContract = c.router({
     path: "/api/chat-threads/:threadId/artifacts",
     headers: authHeadersSchema,
     pathParams: chatThreadThreadIdPathParamsSchema,
+    query: object({}).optional(),
     responses: {
       200: object({
         runs: array(chatThreadArtifactRunSchema),
@@ -1216,8 +1212,8 @@ export type ChatThreadByIdContract = typeof chatThreadByIdContract;
 export type ChatThreadDraftContract = typeof chatThreadDraftContract;
 export type ChatThreadMarkReadContract = typeof chatThreadMarkReadContract;
 export type ChatThreadMarkUnreadContract = typeof chatThreadMarkUnreadContract;
-export type ChatThreadMarkAgentReadContract =
-  typeof chatThreadMarkAgentReadContract;
+export type ChatThreadMarkAllReadContract =
+  typeof chatThreadMarkAllReadContract;
 export type ChatThreadPinContract = typeof chatThreadPinContract;
 export type ChatThreadPinOrderContract = typeof chatThreadPinOrderContract;
 export type ChatThreadUnpinContract = typeof chatThreadUnpinContract;

@@ -116,6 +116,7 @@ private struct PermissionBatchDetailsContent: View {
   @Bindable var store: PermissionBatchStore
   let phase: Loadable<ChatPermissionBatchSnapshot>
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.permissionWorkspaceName) private var workspaceName
 
   private var isLoading: Bool { phase.state == .loading }
   private var snapshot: ChatPermissionBatchSnapshot? { store.displayedSnapshot(phase.data) }
@@ -135,12 +136,8 @@ private struct PermissionBatchDetailsContent: View {
           requestSummary
           if let snapshot = snapshot {
             if snapshot.enabled {
-              Text(
-                snapshot.connectorScoped
-                  ? "These permissions apply to these connectors across your chats and accounts."
-                  : "These permissions apply to your account for this Agent."
-              )
-              .font(.footnote).foregroundStyle(.secondary)
+              Text("These permissions apply to these connectors across your chats and accounts.")
+                .font(.footnote).foregroundStyle(.secondary)
               ForEach(snapshot.groups) { group in
                 PermissionBatchGroup(group: group, verifiesGrants: !requiresReadback)
               }
@@ -176,7 +173,7 @@ private struct PermissionBatchDetailsContent: View {
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 6) {
         Text("\(store.action.items.count) permissions requested").font(.headline)
-        Text("Requested by \(snapshot?.agentName ?? String(localized: "this Agent"))")
+        Text("Workspace: \(workspaceName ?? store.action.member.workspaceID)")
           .font(.subheadline).foregroundStyle(.secondary)
         if let snapshot = snapshot, snapshot.enabled && !requiresReadback {
           Text("\(snapshot.allowedCount) of \(store.action.items.count) permissions allowed")

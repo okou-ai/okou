@@ -177,12 +177,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    outputs:
+      release-entry: ${{ steps.check.outputs.release-entry }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Check intervening component releases
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
@@ -214,6 +217,7 @@ jobs:
             echo 'Ordinary merge group; release presence validation is not needed.'
             exit 0
           fi
+          echo 'release-entry=true' >> "$GITHUB_OUTPUT"
           release_pr_head=$(jq -er .headRefOid <<< "$pr")
           git fetch --no-tags origin "$release_pr_head"
 
@@ -1384,6 +1388,18 @@ jobs:
           API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
 
+      - name: Configure Clerk fixture delivery for the isolated API preview
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          JOB_REF: ${{ needs.prepare.outputs.job-ref }}
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
+        run: |
+          node --input-type=module <<'JS'
+          import { configurePreviewClerkWebhook } from "./e2e/scripts/preview-clerk-webhook-key.ts";
+          configurePreviewClerkWebhook(process.env.API_ENV_FILE);
+          JS
+
       # Validate the final rendered environment before deploying either API
       # target. Its decoded record lets their runtimes skip schema validation.
       - name: Validate API runtime environment
@@ -1715,52 +1731,6 @@ jobs:
             '{version: 1, commitSha: $commit_sha, manifestSha256: $manifest_sha256}' \
             > /tmp/okou-app-ready.json
 
-      - name: Upload canonical app artifact
-        if: steps.existing.outputs.exists != 'true'
-        env:
-          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
-        run: |
-          set -euo pipefail
-
-          r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          artifact_uri="s3://${R2_BUCKET_NAME}/${ARTIFACT_PREFIX}"
-          cache_control="public, max-age=31536000, immutable"
-
-          aws s3 rm "$artifact_uri/" \
-            --endpoint-url "$r2_endpoint" \
-            --recursive
-
-          # A single archive keeps readers to one request instead of one per
-          # file, which is where R2 kept breaking the transfer mid-stream.
-          tar -czf /tmp/okou-app-dist.tar.gz -C turbo/apps/platform/dist .
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/dist.tar.gz" \
-            --body /tmp/okou-app-dist.tar.gz \
-            --content-type application/gzip \
-            --cache-control "$cache_control"
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/manifest.json" \
-            --body /tmp/okou-app-manifest.json \
-            --content-type application/json \
-            --cache-control "$cache_control"
-
-          aws s3api put-object \
-            --endpoint-url "$r2_endpoint" \
-            --bucket "$R2_BUCKET_NAME" \
-            --key "${ARTIFACT_PREFIX}/ready.json" \
-            --body /tmp/okou-app-ready.json \
-            --content-type application/json \
-            --cache-control "$cache_control" \
-            --if-none-match "*"
-
-          echo "Artifact ready: ${artifact_uri}/"
-
       - name: Prepare standalone app Worker preview
         id: worker-preview
         env:
@@ -1784,9 +1754,7 @@ jobs:
               "$artifact_uri" \
               "$canonical_dist"
           else
-            # This job built and uploaded the artifact, so the canonical bytes
-            # are still on disk. Reading them back from R2 only adds latency and
-            # a network failure mode.
+            # Publish the archive and shared assets from these same local bytes.
             canonical_dist="turbo/apps/platform/dist"
           fi
 
@@ -1799,15 +1767,27 @@ jobs:
             echo "shell=$worker_shell"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Publish immutable app assets to R2
+      - name: Publish app artifact and immutable assets to R2
         env:
+          ARTIFACT_EXISTS: ${{ steps.existing.outputs.exists }}
+          ARTIFACT_PREFIX: ${{ steps.artifact.outputs.prefix }}
           CANONICAL_ASSETS: ${{ steps.worker-preview.outputs.canonical-dist }}/assets
         run: |
           r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          bash .github/scripts/release/publish-okou-app-assets.sh \
-            "$r2_endpoint" \
-            "$R2_BUCKET_NAME" \
-            "$CANONICAL_ASSETS"
+          if [[ "$ARTIFACT_EXISTS" == "true" ]]; then
+            # Retry any missing shared assets even when the archive is ready.
+            exec bash .github/scripts/release/publish-okou-app-assets.sh "$r2_endpoint" "$R2_BUCKET_NAME" "$CANONICAL_ASSETS"
+          fi
+
+          bash .github/scripts/artifacts/upload-okou-app-artifact.sh "$r2_endpoint" &
+          archive_pid=$!
+          trap 'kill "$archive_pid" 2>/dev/null || true' EXIT
+          asset_status=0
+          bash .github/scripts/release/publish-okou-app-assets.sh "$r2_endpoint" "$R2_BUCKET_NAME" "$CANONICAL_ASSETS" || asset_status=$?
+          archive_status=0
+          wait "$archive_pid" || archive_status=$?
+          trap - EXIT
+          (( asset_status == 0 && archive_status == 0 ))
 
       - name: Deploy standalone app Worker preview
         id: worker-deploy
@@ -1920,6 +1900,44 @@ jobs:
             echo "App Worker upstream: ${WORKER_PREVIEW_URL}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  select-runner-placement:
+    runs-on: ubuntu-latest
+    needs: [prepare]
+    timeout-minutes: 5
+    if: |
+      needs.prepare.outputs.job-ref != '' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (
+        needs.prepare.outputs.turbo-runner-consumer-needed == 'true' ||
+        needs.prepare.outputs.playwright-runner-consumer-needed == 'true'
+      )
+    outputs:
+      host: ${{ steps.select.outputs.host }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup SSH via Cloudflare Tunnel
+        uses: ./.github/actions/setup-ssh-tunnel
+        with:
+          ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+
+      - name: Select the shared Runner and Stripe host
+        id: select
+        shell: bash
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          JOB_REF: ${{ needs.prepare.outputs.runner-image-job-ref }}
+        run: |
+          set -euo pipefail
+          context=$(.github/scripts/runner/runner-host-architecture-groups.sh select-context "$JOB_REF")
+          host=$(jq -er '.host | strings | select(length > 0)' <<<"$context")
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+
   deploy-stripe-listener:
     runs-on: ubuntu-latest
     # Namespace acquisition can wait eight minutes behind a runner owner.
@@ -1928,15 +1946,11 @@ jobs:
     concurrency:
       group: deploy-stripe-listener-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
-    # Runs in parallel with deploy-api whenever a deployed E2E consumer may
-    # exercise a payment flow. The forward URL is the deterministic
-    # prepare.outputs.api-preview-url (a stable alias, not a deploy-api output),
-    # and Stripe webhooks only fire after deploy-api has succeeded — so the
-    # listener never forwards to a dead API.
-    needs: [prepare]
+    needs: [prepare, select-runner-placement]
     if: |
       always() &&
       github.event_name != 'push' &&
+      needs.select-runner-placement.result == 'success' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
       needs.prepare.outputs.job-ref != '' && (
         needs.prepare.outputs.turbo-runner-consumer-needed == 'true' ||
@@ -1945,34 +1959,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.23.4
-
-      - name: Install Ansible
-        run: pip3 install ansible-core
-
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
         with:
           ssh-user: ${{ vars.AWS_METAL_RUNNER_USER }}
-          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
-          require-all-hosts: "false"
+          ssh-hosts: ${{ needs.select-runner-placement.outputs.host }}
+          operation-timeout-seconds: "20"
           ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Start Stripe CLI listener on one metal host
+      - name: Start Stripe CLI listener on the Runner host
         env:
+          GH_TOKEN: ${{ github.token }}
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-          METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          METAL_HOSTS: ${{ needs.select-runner-placement.outputs.host }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
           API_PREVIEW_URL: ${{ needs.prepare.outputs.api-preview-url }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: |
-          .github/scripts/runner/with-runner-lifecycle-lock.sh \
-            bash .github/scripts/runner/start-stripe-listener.sh
+        run: bash .github/scripts/runner/start-stripe-listener.sh
 
   # Exercise the hosted Clerk UI via agent-browser. This is intentionally
   # separate from Playwright because Playwright signs in through Clerk's
@@ -2337,7 +2343,7 @@ jobs:
     concurrency:
       group: deploy-runner-start-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
-    needs: [prepare, deploy-runner-prepare, deploy-api]
+    needs: [prepare, select-runner-placement, deploy-runner-prepare, deploy-api]
     # Normal starts should finish quickly; failures need enough room for the
     # bounded partial-start cleanup watchdog to run before GitHub kills the job.
     timeout-minutes: 8
@@ -2385,6 +2391,7 @@ jobs:
           RUNNER_GROUP: ${{ format('vm0/development-{0}', needs.prepare.outputs.job-ref) }}
           RUNNER_SERVICE_REF: ${{ needs.prepare.outputs.job-ref }}
           RUNNER_SHA_MAP: ${{ needs.deploy-runner-prepare.outputs.runner-sha-map }}
+          SELECTED_HOST: ${{ needs.select-runner-placement.outputs.host }}
           SNAPSHOT_HASH_MAP: ${{ needs.deploy-runner-prepare.outputs.snapshot-hash-map }}
           VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
@@ -3045,6 +3052,7 @@ jobs:
       - cli-e2e-03-runner-bootstrap
       - cli-e2e-03-runner
       - deploy-runner-prepare
+      - select-runner-placement
       - deploy-runner-start
     # Always run so the gate reports an explicit result (not "skipped").
     # Release-please PRs skip CI jobs — auto-pass the gate for them.
@@ -3056,11 +3064,18 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           RELEASE_LOOKUP_FAILED: ${{ needs.detect-release.outputs.lookup-failed }}
+          RELEASE_MQ_ENTRY: ${{ needs.validate-release-presence.outputs.release-entry }}
           RELEASE_PRESENCE_RESULT: ${{ needs.validate-release-presence.result }}
           RELEASE_DEPLOY_APP_RESULT: ${{ needs.deploy-app.result }}
+          PRODUCTION_RELEASE_FREEZE: ${{ vars.PRODUCTION_RELEASE_FREEZE }}
         run: |
           if [[ "$CI_ADMISSION_RESULT" != "success" ]]; then
             echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI limits job and workflow summary for the reason and retry instructions."
+            exit 1
+          fi
+
+          if [[ "$EVENT_NAME" == "merge_group" && "$RELEASE_MQ_ENTRY" == "true" && "${PRODUCTION_RELEASE_FREEZE,,}" == "true" ]]; then
+            echo "::error title=Production release frozen::The repository variable PRODUCTION_RELEASE_FREEZE is enabled. Unset it after maintenance, then requeue the release PR."
             exit 1
           fi
 
@@ -3185,6 +3200,7 @@ jobs:
           check_result "cli-e2e-03-runner-bootstrap" "${{ needs.cli-e2e-03-runner-bootstrap.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner" "${{ needs.cli-e2e-03-runner.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "deploy-runner-prepare" "${{ needs.deploy-runner-prepare.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
+          check_result "select-runner-placement" "${{ needs.select-runner-placement.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
           check_result "deploy-runner-start" "${{ needs.deploy-runner-start.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
 
           echo "::endgroup::"

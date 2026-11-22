@@ -15,7 +15,6 @@ import {
 import { stubCustomConnectors } from "../../__tests__/helpers/custom-connectors";
 import { mailCommand } from "../index";
 
-const AGENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const THREAD_ID = "550e8400-e29b-41d4-a716-446655440001";
 const MAIL_DRAFT_ID = "550e8400-e29b-41d4-a716-446655440002";
 const RUN_GMAIL_CONNECTION_ID = "550e8400-e29b-41d4-a716-446655440003";
@@ -58,7 +57,6 @@ describe("okou mail", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
   });
@@ -72,17 +70,18 @@ describe("okou mail", () => {
   });
 
   it.each([["list"], ["connect", "gmail"]])(
-    "requires Run Agent context: %s",
+    "requires Run context: %s",
     async (...args) => {
-      vi.stubEnv("OKOU_AGENT_ID", "");
+      vi.stubEnv("OKOU_TOKEN", "");
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
       await expect(
         mailCommand.parseAsync(["node", "okou", ...args]),
       ).rejects.toThrow("command exited");
       expect(error.mock.calls.flat().join("\n")).toContain(
-        "OKOU_AGENT_ID is not set",
+        "The current Run execution context is unavailable",
       );
       expect(error.mock.calls.flat().join("\n")).toContain(
-        "Run this command from an active agent run",
+        "Run this command from an active Okou Run",
       );
       expect(mockConsoleLog).not.toHaveBeenCalled();
     },
@@ -211,7 +210,7 @@ describe("okou mail", () => {
       {
         provider: "gmail",
         action: "reconnect",
-        url: `http://localhost:3000/connectors/gmail/reconnect/${RUN_GMAIL_CONNECTION_ID}?agentId=${AGENT_ID}`,
+        url: `http://localhost:3000/connectors/gmail/reconnect/${RUN_GMAIL_CONNECTION_ID}?threadId=${THREAD_ID}`,
         context: "run",
         connectionId: RUN_GMAIL_CONNECTION_ID,
       },
@@ -274,7 +273,6 @@ describe("okou mail", () => {
           );
           expect(await request.json()).toStrictEqual({
             threadId: THREAD_ID,
-            agentId: AGENT_ID,
             gmailDraftId: "r-test-draft",
           });
           return HttpResponse.json(
@@ -305,7 +303,6 @@ describe("okou mail", () => {
         async ({ request }) => {
           expect(await request.json()).toStrictEqual({
             threadId: THREAD_ID,
-            agentId: AGENT_ID,
             provider: "outlook",
             outlookMessageId: "immutable-message-id",
           });
@@ -358,7 +355,6 @@ describe("okou mail", () => {
     expect(reviewUrl.pathname).toBe(`/mail/drafts/${MAIL_DRAFT_ID}`);
     expect(Array.from(reviewUrl.searchParams.entries())).toStrictEqual([
       ["source", "gmail"],
-      ["agentId", AGENT_ID],
       ["callbackPrompt", "Confirm the email was sent"],
       ["threadId", THREAD_ID],
     ]);

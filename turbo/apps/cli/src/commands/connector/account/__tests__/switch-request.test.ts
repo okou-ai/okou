@@ -13,14 +13,13 @@ import {
 } from "../../../__tests__/helpers/connector-catalog";
 import {
   customConnector,
-  stubAgentCustomConnectors,
   stubCustomConnectors,
 } from "../../../__tests__/helpers/custom-connectors";
 import { switchConnectorAccountRequestCommand } from "../switch-request";
+import { stubRunConnectorAccountInventory } from "../../../__tests__/helpers/run-connector-accounts";
 
 const CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
 const CUSTOM_CONNECTOR_ID = "22222222-2222-4222-8222-222222222222";
-const AGENT_ID = "44444444-4444-4444-8444-444444444444";
 const THREAD_ID = "33333333-3333-4333-8333-333333333333";
 
 function availableInspection(
@@ -55,29 +54,20 @@ function stubCatalog(): ReturnType<typeof http.get> {
   ]);
 }
 
-function stubAgent(): ReturnType<typeof http.get> {
-  return http.get(`http://localhost:3000/api/agents/${AGENT_ID}`, () => {
-    return HttpResponse.json({
-      agentId: AGENT_ID,
-      ownerId: "owner-1",
-      displayName: "Nova",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    });
+function stubSwitchInventory(target: ConnectorAccountTarget) {
+  return stubRunConnectorAccountInventory({
+    chatThreadId: THREAD_ID,
+    accounts: [
+      {
+        target,
+        connectionId: CONNECTION_ID,
+        displayName: "Work",
+        enabled: false,
+        isCurrent: false,
+        isDefault: false,
+      },
+    ],
   });
-}
-
-function stubAgentBuiltinConnectors(
-  enabledConnectorSlugs: readonly string[],
-): ReturnType<typeof http.get> {
-  return http.get(
-    `http://localhost:3000/api/agents/${AGENT_ID}/user-connectors`,
-    () => {
-      return HttpResponse.json({ enabledConnectorSlugs });
-    },
-  );
 }
 
 function stubInspection(
@@ -114,7 +104,6 @@ describe("okou connector account switch-request command", () => {
   beforeEach(() => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
     switchConnectorAccountRequestCommand.setOptionValue(
       "connectionId",
@@ -127,9 +116,7 @@ describe("okou connector account switch-request command", () => {
     server.use(
       stubCatalog(),
       stubCustomConnectors([]),
-      stubAgent(),
-      stubAgentBuiltinConnectors(["github"]),
-      stubAgentCustomConnectors([]),
+      stubSwitchInventory({ kind: "builtin", connectorSlug: "github" }),
       stubInspection(availableInspection()),
     );
   });
@@ -168,15 +155,13 @@ describe("okou connector account switch-request command", () => {
       ],
     });
     const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("use Work for GitHub in future runs");
+    expect(output).toContain("Allow and select Work for GitHub in this Chat");
     expect(output).toContain("end the current turn");
     expect(output).toContain("exact callback URL above verbatim");
     expect(output).toContain("omitting any query parameters");
     const url = actionUrlFromOutput(output);
     expect(url.origin).toBe("http://localhost:3000");
-    expect(url.pathname).toBe(
-      `/agents/${AGENT_ID}/connector-accounts/${CONNECTION_ID}/select`,
-    );
+    expect(url.pathname).toBe(`/connectors/accounts/${CONNECTION_ID}/select`);
     expect(Array.from(url.searchParams.entries())).toStrictEqual([
       ["kind", "builtin"],
       ["connectorSlug", "github"],
@@ -204,9 +189,7 @@ describe("okou connector account switch-request command", () => {
           displayName: "Acme Search",
         }),
       ]),
-      stubAgentCustomConnectors([
-        { customConnectorId: CUSTOM_CONNECTOR_ID, permissionNames: [] },
-      ]),
+      stubSwitchInventory(target),
       stubInspection(availableInspection(target)),
     );
 
@@ -221,7 +204,9 @@ describe("okou connector account switch-request command", () => {
     ]);
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("use Work for Acme Search");
+    expect(output).toContain(
+      "Allow and select Work for Acme Search in this Chat",
+    );
     expect(
       Array.from(actionUrlFromOutput(output).searchParams.entries()),
     ).toStrictEqual([
@@ -253,7 +238,7 @@ describe("okou connector account switch-request command", () => {
   });
 
   it("requires the current web chat execution context", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "");
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
 
     await expect(
       switchConnectorAccountRequestCommand.parseAsync([
@@ -319,8 +304,10 @@ describe("okou connector account switch-request command", () => {
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
-  it("rejects a connector target outside the current agent scope", async () => {
-    server.use(stubAgentBuiltinConnectors([]));
+  it("rejects an account belonging to another connector in the inventory", async () => {
+    server.use(
+      stubSwitchInventory({ kind: "builtin", connectorSlug: "notion" }),
+    );
 
     await expect(
       switchConnectorAccountRequestCommand.parseAsync([
@@ -335,7 +322,7 @@ describe("okou connector account switch-request command", () => {
     ).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "Connector github is not authorized for the current web chat execution context",
+      `Connector account ${CONNECTION_ID} is unavailable for github`,
     );
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
@@ -369,27 +356,6 @@ describe("okou connector account switch-request command", () => {
 
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
       "Account inspection temporarily unavailable",
-    );
-    expect(mockConsoleLog).not.toHaveBeenCalled();
-  });
-
-  it("requires the current web chat callback context", async () => {
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
-
-    await expect(
-      switchConnectorAccountRequestCommand.parseAsync([
-        "node",
-        "okou",
-        "github",
-        "--connection-id",
-        CONNECTION_ID,
-        "--callback-prompt",
-        "Continue",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "--callback-prompt requires the current web chat and its execution context",
     );
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });

@@ -1,9 +1,4 @@
 /**
- * Storage name generation functions for skills and shared packages.
- * These functions create standardized storage names used across CLI and Web packages.
- */
-
-/**
  * Sentinel userId for organization-owned storages.
  * Organization-owned storages are shared resources within an organization.
  * They use this constant instead of a real userId so the
@@ -16,27 +11,6 @@ export const VOLUME_ORG_USER_ID = "__org__";
  * Used for official skills that are cached globally, not per-org.
  */
 export const SYSTEM_ORG_ID = "__system__";
-
-/**
- * Generate the storage name for an agent skill.
- * Format: agent-skills@{fullPath}
- *
- * @param fullPath - Full path from GitHub URL (e.g., "owner/repo/tree/branch/path")
- * @returns Storage name for the skill
- */
-export function getSkillStorageName(fullPath: string): string {
-  return `agent-skills@${fullPath}`;
-}
-
-/**
- * Generate the storage name for a custom connector skill.
- * The connector id is used so renaming the connector does not orphan storage.
- */
-export function getCustomConnectorSkillStorageName(
-  connectorId: string,
-): string {
-  return `custom-connector-skill@${connectorId}`;
-}
 
 /**
  * Generate the framework-visible name for a custom connector skill.

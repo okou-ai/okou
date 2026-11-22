@@ -316,7 +316,12 @@ export async function createOrganization(
   createdByUserId: string,
   role: ClerkTestRole,
 ): Promise<string> {
-  return await createOrganizationWithCreatorRole(name, createdByUserId, role);
+  const organization = await createOrganizationRecord(
+    name,
+    createdByUserId,
+    role,
+  );
+  return organization.id;
 }
 
 /** Read settings once for one short preparation; do not cache across batches. */
@@ -339,21 +344,23 @@ export async function prepareOrganizationProvisioner(): Promise<
     throw new Error(`${operation} returned unsupported organization settings`);
   }
 
-  return async (name, createdByUserId, role) =>
-    await createOrganizationWithCreatorRole(
+  return async (name, createdByUserId, role) => {
+    const organization = await createOrganizationRecord(
       name,
       createdByUserId,
       role,
       settings.creator_role,
     );
+    return organization.id;
+  };
 }
 
-async function createOrganizationWithCreatorRole(
+export async function createOrganizationRecord(
   name: string,
   createdByUserId: string,
   role: ClerkTestRole,
   creatorRole?: string,
-): Promise<string> {
+): Promise<ClerkOrganizationSummary> {
   const owner = currentClerkTestOwner(role);
   // Keep the user if cancellation loses an organization's creation response.
   // The existing strict-marker sweep can reconcile that ambiguous outcome.
@@ -386,7 +393,7 @@ async function createOrganizationWithCreatorRole(
   await forgetClerkResource("pending-organization", createdByUserId);
 
   if (creatorRole === "org:admin") {
-    return data.id;
+    return data;
   }
 
   try {
@@ -406,7 +413,7 @@ async function createOrganizationWithCreatorRole(
     }
     throw cause;
   }
-  return data.id;
+  return data;
 }
 
 async function updateOrganizationMembershipRole(

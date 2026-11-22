@@ -93,6 +93,21 @@ impl HomeImageCache {
     pub(super) fn entry_lock_path(&self, cache_key: &str) -> PathBuf {
         CacheEntryPaths::lock_path(&self.inner.lock_dir, cache_key)
     }
+    /// Advisory existing-only probe. Checkout still acquires its own custody.
+    pub fn checkout_lock_is_contended(
+        &self,
+        profile: &str,
+        reuse_key: &str,
+        image_size_bytes: u64,
+    ) -> bool {
+        let key = self.scoped_cache_key(profile, reuse_key, image_size_bytes);
+        matches!(
+            runner_host::lock::try_acquire_existing_or_missing_blocking(
+                &self.entry_lock_path(&key),
+            ),
+            Ok(runner_host::lock::ExistingTryLock::Busy)
+        )
+    }
     pub(super) fn routine_gc_lock_path(&self) -> PathBuf {
         home_image_cache_routine_gc_lock_path(&self.inner.lock_dir)
     }

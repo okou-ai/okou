@@ -87,8 +87,6 @@ async function setupEntryNavigation(
     caseId,
     threads: [older, middle, newest],
   });
-  // My Okou's chat page at `/` chats with the default agent.
-  context.mocks.data.onboardingStatus({ defaultAgentId: newest.agentId });
   mockSuggestionPool([suggestion()]);
   await setupPage({
     context,
@@ -97,7 +95,6 @@ async function setupEntryNavigation(
       : `/chats/${newest.id}`,
     ...workspace.pageOptions,
     featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.AgentSuggestion]: options.suggestions,
     },
   });

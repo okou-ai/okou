@@ -53,9 +53,7 @@ describe("MCP OAuth foundations", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: "OAuth transport owner",
     });
-    oauthCleanups.push(async () => {
-      await bdd.deleteAgent(actor, agent.agentId);
-    });
+
     const connector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "OAuth transport boundaries",
@@ -97,7 +95,6 @@ describe("MCP OAuth foundations", () => {
           actor,
           connector.id,
           statuses,
-          agent.agentId,
         );
       },
     };
@@ -197,7 +194,6 @@ describe("MCP OAuth foundations", () => {
     const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
       oauth.actor,
       oauth.connector.id,
-      oauth.agent.agentId,
     );
 
     expect(new URL(authorizationUrl).searchParams.get("scope")).toBe(
@@ -220,7 +216,6 @@ describe("MCP OAuth foundations", () => {
     const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
       oauth.actor,
       oauth.connector.id,
-      oauth.agent.agentId,
     );
 
     expect(new URL(authorizationUrl).searchParams.get("scope")).toBeNull();
@@ -239,7 +234,6 @@ describe("MCP OAuth foundations", () => {
         await oauth.connectors.startCustomConnectorOAuth2(
           oauth.actor,
           oauth.connector.id,
-          oauth.agent.agentId,
         );
       const url = new URL(authorizationUrl);
       expect(url.searchParams.get("scope")).toBe("read write");
@@ -278,7 +272,6 @@ describe("MCP OAuth foundations", () => {
     const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
       oauth.actor,
       oauth.connector.id,
-      oauth.agent.agentId,
     );
     const state = new URL(authorizationUrl).searchParams.get("state");
     if (!state) {
@@ -306,7 +299,6 @@ describe("MCP OAuth foundations", () => {
       oauth.actor,
       oauth.connector.id,
       [502],
-      oauth.agent.agentId,
       { intent: "reconnect", connectionId: account.id },
     );
     await expect(
@@ -326,7 +318,6 @@ describe("MCP OAuth foundations", () => {
       oauth.actor,
       oauth.connector.id,
       [200],
-      oauth.agent.agentId,
     );
     const [account] = await oauth.connectors.listCustomConnectorAccounts(
       oauth.actor,
@@ -361,7 +352,6 @@ describe("MCP OAuth foundations", () => {
         oauth.actor,
         oauth.connector.id,
         [409],
-        oauth.agent.agentId,
         intent,
       ),
     ]);
@@ -374,7 +364,6 @@ describe("MCP OAuth foundations", () => {
     const url = await oauth.connectors.startCustomConnectorOAuth2(
       oauth.actor,
       oauth.connector.id,
-      oauth.agent.agentId,
       intent,
     );
     const state = new URL(url).searchParams.get("state");
@@ -426,7 +415,6 @@ describe("MCP OAuth foundations", () => {
       oauth.actor,
       oauth.connector.id,
       [200],
-      oauth.agent.agentId,
     );
     expect(response.body).toMatchObject({ result: "connected" });
     await expect(
@@ -635,7 +623,6 @@ describe("MCP OAuth foundations", () => {
     const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
       oauth.actor,
       oauth.connector.id,
-      oauth.agent.agentId,
     );
     const state = new URL(authorizationUrl).searchParams.get("state");
     if (!state) {
@@ -698,9 +685,7 @@ describe("MCP OAuth foundations", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: "OAuth refresh transport owner",
     });
-    oauthCleanups.push(async () => {
-      await bdd.deleteAgent(actor, agent.agentId);
-    });
+
     const tokenRequests: {
       readonly body: string;
       readonly authorization: string | null;
@@ -768,7 +753,6 @@ describe("MCP OAuth foundations", () => {
     const authorizationUrl = await connectors.startCustomConnectorOAuth2(
       actor,
       connector.id,
-      agent.agentId,
     );
     const state = new URL(authorizationUrl).searchParams.get("state");
     if (!state) {

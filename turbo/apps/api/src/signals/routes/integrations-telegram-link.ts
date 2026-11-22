@@ -5,8 +5,6 @@ import {
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import type { infer as zInfer } from "zod";
 
@@ -69,14 +67,6 @@ function invalidConnectSignatureResponse() {
     400,
     "Invalid or expired connect link. Please use /connect again in Telegram.",
     "BAD_REQUEST",
-  );
-}
-
-function missingOfficialAgentResponse() {
-  return errorResult(
-    409,
-    "Finish onboarding before connecting Telegram. Telegram needs a default agent for this workspace.",
-    "CONFLICT",
   );
 }
 
@@ -175,13 +165,6 @@ async function publishTelegramUserChanged(userId: string): Promise<void> {
   await publishUserSignal([userId], "telegram:changed");
 }
 
-function officialConnectAgentCondition(
-  defaultAgentId: string,
-  auth: OrganizationAuth,
-) {
-  return and(eq(agents.id, defaultAgentId), eq(agents.orgId, auth.orgId));
-}
-
 const unlinkInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const { botId } = get(queryOf(integrationsTelegramContract.unlink));
@@ -235,31 +218,6 @@ const linkOfficialInner$ = command(
         return invalidTelegramAuthResponse();
       }
 
-      const db = set(writeDb$);
-      const composeId = await (async (): Promise<string | null> => {
-        const auth = args.auth;
-        const [metadata] = await db
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, auth.orgId))
-          .limit(1);
-        const defaultAgentId = metadata?.defaultAgentId ?? null;
-        if (!defaultAgentId) {
-          return null;
-        }
-
-        const [compose] = await db
-          .select({ id: agents.id })
-          .from(agents)
-          .where(officialConnectAgentCondition(defaultAgentId, auth))
-          .limit(1);
-        return compose?.id ?? null;
-      })();
-      signal.throwIfAborted();
-      if (!composeId) {
-        return missingOfficialAgentResponse();
-      }
-
       const telegramUserId = String(telegramAuth.id);
       const result = await set(
         linkOfficialTelegramUser$,
@@ -299,30 +257,6 @@ const linkOfficialInner$ = command(
         })
       ) {
         return invalidConnectSignatureResponse();
-      }
-      const db = set(writeDb$);
-      const composeId = await (async (): Promise<string | null> => {
-        const auth = args.auth;
-        const [metadata] = await db
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, auth.orgId))
-          .limit(1);
-        const defaultAgentId = metadata?.defaultAgentId ?? null;
-        if (!defaultAgentId) {
-          return null;
-        }
-
-        const [compose] = await db
-          .select({ id: agents.id })
-          .from(agents)
-          .where(officialConnectAgentCondition(defaultAgentId, auth))
-          .limit(1);
-        return compose?.id ?? null;
-      })();
-      signal.throwIfAborted();
-      if (!composeId) {
-        return missingOfficialAgentResponse();
       }
 
       const result = await set(

@@ -24,10 +24,10 @@ import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { db$, writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
-import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
+import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import {
-  createDirectRunDispatchPreparation,
+  prepareDirectRunDispatch$,
   dispatchPreparedRun$,
   type DirectRunDispatchResult,
 } from "./direct-run-dispatch.service";
@@ -53,9 +53,8 @@ export interface OrgPickCursor {
 interface LeasedThreadClaim extends ThreadClaim {
   readonly queuedAt: Date;
   readonly userId: string;
-  readonly agentId: string;
   readonly context?: AgentRunContextSignals;
-  readonly requestFacts?: ChatThreadRequestFacts;
+  readonly requestInput?: EnqueuedChatInputFacts;
 }
 
 /** One pick launches a run, observes full capacity, or launches nothing. */
@@ -99,17 +98,13 @@ function createCapturedClaimObjects(
       claimId: claim.claimId,
     },
     context,
-    claim.requestFacts,
-  );
-  const prepareDispatch$ = createDirectRunDispatchPreparation(
-    preparation.admittedLaunch$,
+    claim.requestInput,
   );
   // Reobserve occupancy after release, but retain the same org capacity snapshot.
   // Newly purchased slots take effect only in a subsequent context.
   const orgHasCapacityAfterRelease$ = createOrgHasCapacity(context);
   return {
     ...preparation,
-    prepareDispatch$,
     context,
     orgHasCapacityAfterRelease$,
   };
@@ -120,7 +115,7 @@ interface PickInput {
   readonly chatThreadId?: string;
   readonly after?: OrgPickCursor | null;
   readonly context?: AgentRunContextSignals;
-  readonly requestFacts?: ChatThreadRequestFacts;
+  readonly requestInput?: EnqueuedChatInputFacts;
   readonly publishedLease?: PublishedChatThreadLease;
 }
 
@@ -130,18 +125,17 @@ export interface PickIteration {
 }
 
 function captureThreadClaim(
-  receipt: Omit<LeasedThreadClaim, "context" | "requestFacts">,
+  receipt: Omit<LeasedThreadClaim, "context" | "requestInput">,
   input: PickInput,
 ): LeasedThreadClaim {
-  const { context, requestFacts } = input;
+  const { context, requestInput } = input;
   return Object.freeze({
     ...receipt,
     ...(context === undefined ? {} : { context }),
-    ...(requestFacts?.orgId === receipt.orgId &&
-    requestFacts.thread.id === receipt.chatThreadId &&
-    requestFacts.thread.userId === receipt.userId &&
-    requestFacts.thread.agentId === receipt.agentId
-      ? { requestFacts }
+    ...(requestInput?.orgId === receipt.orgId &&
+    requestInput.chatThreadId === receipt.chatThreadId &&
+    requestInput.userId === receipt.userId
+      ? { requestInput }
       : {}),
   });
 }
@@ -167,12 +161,7 @@ function createPickObjects() {
         // Install the private receipt node synchronously, before its model
         // promise can yield. Concurrent receipt-list evaluations share it.
         graph = computed(() => {
-          const context = matchAgentRunContextSignals(
-            claim.context,
-            claim.userId,
-            claim.orgId,
-            claim.agentId,
-          );
+          const context = matchAgentRunContextSignals(claim.context, claim);
           return Promise.resolve(createCapturedClaimObjects(claim, context));
         });
         graphCache.set(claim, graph);
@@ -284,6 +273,7 @@ function createPickObjects() {
           .where(
             and(
               eq(chatThreads.id, queuedChatThreads.chatThreadId),
+              eq(chatThreads.orgId, orgId),
               eq(queuedChatThreads.orgId, orgId),
               eq(queuedChatThreads.chatThreadId, threadId),
               or(
@@ -302,12 +292,8 @@ function createPickObjects() {
             chatThreadId: queuedChatThreads.chatThreadId,
             queuedAt: queuedChatThreads.queuedAt,
             userId: chatThreads.userId,
-            agentId: chatThreads.agentId,
           })
       )[0];
-      if (row?.agentId === null) {
-        throw new Error("A queued thread claim requires an Agent identity");
-      }
       const claim: LeasedThreadClaim | null = row
         ? captureThreadClaim(
             {
@@ -316,7 +302,6 @@ function createPickObjects() {
               claimId,
               queuedAt: row.queuedAt,
               userId: row.userId,
-              agentId: row.agentId,
             },
             input,
           )
@@ -428,9 +413,6 @@ function createPickObjects() {
         get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
       ]);
-      // Issue critical availability reads first. This bounded Thread source
-      // can overlap them; each later consumer still joins its own node.
-      waitUntil(settle(get(claimed.threadResources$)));
       const [threadHasActiveRun, hasCapacity, hasInput] = await availability;
       signal.throwIfAborted();
       // Publication can wait for a launch whose active row was not visible in
@@ -459,7 +441,16 @@ function createPickObjects() {
       set(preloadAgentRunContext$, claimed.context, signal);
       waitUntil(settle(get(claimed.inputResources$)));
       signal.throwIfAborted();
-      const pending = await set(claimed.admitRun$, signal);
+      const preparation = set(claimed.prepareRunAdmission$, signal);
+      const bundleCache = settle(get(claimed.executionBundleCache$));
+      // The pick owns the in-flight cache read even when admission loses.
+      waitUntil(bundleCache);
+      const prepared = await preparation;
+      signal.throwIfAborted();
+      const pending = prepared
+        ? await set(claimed.admitRun$, prepared, signal)
+        : null;
+      signal.throwIfAborted();
       // Admission can append a claim or a public rejection. This pick owns
       // publication for its captured thread, independently of Runner dispatch.
       waitUntil(
@@ -473,7 +464,7 @@ function createPickObjects() {
           signal,
         ),
       );
-      if (pending === null) {
+      if (!pending) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
       }
@@ -491,35 +482,34 @@ function createPickObjects() {
       }
       // Activation is outside the admission-failure boundary. Slot scheduling
       // precedes terminal callbacks so they cannot delay the next queued input.
-      const [, preparation] = await joinAllInOrder(
+      const [, dispatchPreparation] = await joinAllInOrder(
         [
           set(claimed.publishPendingRun$, pending, signal),
-          set(claimed.prepareDispatch$, signal),
+          set(
+            prepareDirectRunDispatch$,
+            pending.admittedLaunch,
+            bundleCache,
+            signal,
+          ),
         ],
         signal,
       );
       let dispatched: DirectRunDispatchResult;
-      if (preparation.kind === "failed") {
-        dispatched = preparation.result;
+      if (dispatchPreparation.kind === "failed") {
+        dispatched = dispatchPreparation.result;
       } else {
-        const { input } = preparation.delivery;
         // Signed URLs are already in the payload; optional reuse publication
         // must not hold up ownership, intake or the pick's terminal effects.
         waitUntil(
           set(
             publishDirectRunCache$,
-            {
-              runId: input.run.id,
-              runnerGroup: input.runnerGroup,
-              profile: input.profile,
-              ...preparation.cachePublication,
-            },
+            dispatchPreparation.cachePublication,
             signal,
           ),
         );
         dispatched = await set(
           dispatchPreparedRun$,
-          preparation.delivery,
+          dispatchPreparation.delivery,
           signal,
         );
       }
@@ -531,7 +521,7 @@ function createPickObjects() {
         );
       }
       await set(claimed.finishPendingRun$, pending, dispatched, signal);
-      return { kind: "launched", runId: pending.runId };
+      return { kind: "launched", runId: pending.admittedLaunch.run.id };
     },
   );
 

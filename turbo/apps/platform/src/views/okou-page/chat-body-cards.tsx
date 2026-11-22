@@ -39,7 +39,7 @@ import { CustomConnectorIcon } from "./components/settings/custom-connector-icon
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 import { AttachmentPreview } from "./attachment-preview.tsx";
 import { publicAttachmentUrl } from "./attachment-url";
-import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/contracts/user-permission-grants";
+import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
 import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicyValue,
@@ -335,7 +335,10 @@ export function MarkdownCardView({
           data-testid="permission-batch-action-card"
           className={cn("w-full", CHAT_ACTION_CARD_HEIGHT_CLASS)}
         >
-          <PermissionBatchContent signals={card.signals} />
+          <PermissionBatchContent
+            signals={card.signals}
+            detailsHref={card.originalUrl}
+          />
         </ChatCard>
       );
     }
@@ -390,21 +393,12 @@ function ArtifactCardView({
   const openFileLightbox = useSet(openAttachmentFileLightbox$);
   const openImageLightbox = useSet(openAttachmentImageLightbox$);
   const openVideoLightbox = useSet(openAttachmentVideoLightbox$);
-  const openLightbox = (url: string): void => {
-    detach(
-      openImageLightbox(
-        {
-          threadId,
-          url,
-          filename: signals.filename,
-          contentType: signals.contentType,
-          preview: signals,
-        },
-        undefined,
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
+  const attachment = {
+    threadId,
+    url: signals.url,
+    filename: signals.filename,
+    contentType: signals.contentType,
+    preview: signals,
   };
   const previewImageLoadable = useLastLoadable(signals.previewImageUrl$);
   const previewImagePending = previewImageLoadable.state === "loading";
@@ -428,7 +422,10 @@ function ArtifactCardView({
         imageClassName="block h-full w-full object-contain"
         linkClassName={CHAT_INLINE_IMAGE_PREVIEW_CLASS}
         onPreview={() => {
-          openLightbox(signals.url);
+          detach(
+            openImageLightbox(attachment, undefined, pageSignal),
+            Reason.DomCallback,
+          );
         }}
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
@@ -454,16 +451,7 @@ function ArtifactCardView({
         filename={signals.filename}
         onPreview={() => {
           detach(
-            openVideoLightbox(
-              {
-                url: signals.url,
-                filename: signals.filename,
-                contentType: signals.contentType,
-                preview: signals,
-              },
-              undefined,
-              pageSignal,
-            ),
+            openVideoLightbox(attachment, undefined, pageSignal),
             Reason.DomCallback,
           );
         }}
@@ -477,6 +465,7 @@ function ArtifactCardView({
   return (
     <AttachmentPreview
       preview={signals}
+      threadId={threadId}
       attachment={{
         filename: signals.kind === "html" && label ? label : signals.filename,
         url: signals.url,
@@ -486,16 +475,7 @@ function ArtifactCardView({
       }}
       onPreviewFile={() => {
         detach(
-          openFileLightbox(
-            {
-              filename: signals.filename,
-              contentType: signals.contentType,
-              url: signals.url,
-              preview: signals,
-            },
-            undefined,
-            pageSignal,
-          ),
+          openFileLightbox(attachment, undefined, pageSignal),
           Reason.DomCallback,
         );
       }}
@@ -659,7 +639,6 @@ function CustomConnectorActionCard({
 }: {
   signals: CustomConnectorSignals;
 }) {
-  const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const connectorLoadable = useLastLoadable(signals.connector$);
   const connector = useLastResolved(signals.connector$);
@@ -692,9 +671,6 @@ function CustomConnectorActionCard({
         />
       }
       label={connector.displayName}
-      description={t(($) => {
-        return $.chat.connectors.customAuthorizeDescription;
-      })}
       connected={connected}
       complete={complete}
       reconnectRequired={false}
@@ -978,7 +954,7 @@ function PermissionActionInlineStatus({
           <AlertCircle size={13} className="shrink-0" />
           <span className={textClassName}>
             {t(($) => {
-              return $.chat.permissions.agentNotFound;
+              return $.chat.permissions.memberNotFound;
             })}
           </span>
         </div>
@@ -1026,12 +1002,12 @@ function permissionActionHasControls(
 }
 
 function isPermissionActionLoading(params: {
-  agentLoading: boolean;
+  targetLoading: boolean;
   permissionMetadataLoading: boolean;
   userGrantsLoading: boolean;
 }): boolean {
   return (
-    params.agentLoading ||
+    params.targetLoading ||
     params.permissionMetadataLoading ||
     params.userGrantsLoading
   );
@@ -1042,23 +1018,23 @@ function isPermissionActionSaving(params: { grantLoading: boolean }): boolean {
 }
 
 function isPermissionActionLoadError(params: {
-  agentError: boolean;
+  targetError: boolean;
   permissionMetadataError: boolean;
   userGrantsError: boolean;
 }): boolean {
   return (
-    params.agentError ||
+    params.targetError ||
     params.permissionMetadataError ||
     params.userGrantsError
   );
 }
 
 function isPermissionActionAlreadyApplied(params: {
-  hasAgent: boolean;
+  hasTarget: boolean;
   userGrantPolicy: FirewallPolicyValue | undefined;
   action: "allow" | "deny";
 }): boolean {
-  if (!params.hasAgent) {
+  if (!params.hasTarget) {
     return false;
   }
   return params.userGrantPolicy === params.action;
@@ -1128,7 +1104,7 @@ function permissionActionGrantExpiresAt({
 }
 
 function createPermissionActionCardStatus(params: {
-  hasAgent: boolean;
+  hasTarget: boolean;
   hasPermission: boolean;
   loading: boolean;
   loadError: boolean;
@@ -1149,7 +1125,7 @@ function createPermissionActionCardStatus(params: {
   if (params.loadError) {
     return { kind: "load-error" };
   }
-  if (!params.hasAgent) {
+  if (!params.hasTarget) {
     return { kind: "missing-target" };
   }
   if (!params.hasPermission) {
@@ -1166,8 +1142,8 @@ function createPermissionActionCardStatus(params: {
 
 function createPermissionActionCardViewState(params: {
   block: PermissionSignals;
-  hasAgent: boolean;
-  agentLoadableState: string;
+  hasTarget: boolean;
+  targetLoadableState: string;
   permissionMetadataLoadable: LoadableLike<PlatformConnectorPermissionMetadata | null>;
   userGrantsLoadable: LoadableLike<readonly PermissionActionUserGrant[]>;
   grantLoadableState: string;
@@ -1183,13 +1159,13 @@ function createPermissionActionCardViewState(params: {
   );
   const actionLabel = permissionActionVerb(params.block.action);
   const loading = isPermissionActionLoading({
-    agentLoading: params.agentLoadableState === "loading",
+    targetLoading: params.targetLoadableState === "loading",
     permissionMetadataLoading:
       params.permissionMetadataLoadable.state === "loading",
     userGrantsLoading: params.userGrantsLoadable.state === "loading",
   });
   const loadError = isPermissionActionLoadError({
-    agentError: params.agentLoadableState === "hasError",
+    targetError: params.targetLoadableState === "hasError",
     permissionMetadataError:
       params.permissionMetadataLoadable.state === "hasError",
     userGrantsError: params.userGrantsLoadable.state === "hasError",
@@ -1204,14 +1180,14 @@ function createPermissionActionCardViewState(params: {
     permissionMetadata,
   );
   const alreadyApplied = isPermissionActionAlreadyApplied({
-    hasAgent: params.hasAgent,
+    hasTarget: params.hasTarget,
     userGrantPolicy,
     action: params.block.action,
   });
   const saveDone =
     params.grantLoadableState === "hasData" && params.savedGrantActive;
   const status = createPermissionActionCardStatus({
-    hasAgent: params.hasAgent,
+    hasTarget: params.hasTarget,
     hasPermission: Boolean(focusedPermission),
     loading,
     loadError,
@@ -1369,14 +1345,14 @@ function PermissionActionCardForTarget({
 }: {
   signals: PermissionSignals;
 }) {
-  const agentLoadable = useLastLoadable(signals.agent$);
+  const targetLoadable = useLoadable(signals.target$);
   const lastUserGrants = useLastLoadable(signals.grants$);
   const currentUserGrants = useLoadable(signals.grants$);
   const userGrantsLoadable =
     currentUserGrants.state === "hasError" ? currentUserGrants : lastUserGrants;
   const hasTarget =
-    agentLoadable.state === "hasData" && Boolean(agentLoadable.data);
-  const targetLoadableState = agentLoadable.state;
+    targetLoadable.state === "hasData" && Boolean(targetLoadable.data);
+  const targetLoadableState = targetLoadable.state;
   const pageSignal = useGet(pageSignal$);
   const expirationAvailable = signals.action === "allow";
   const durationScope = `${signals.href}\u0000${signals.expiresIn ?? ""}`;
@@ -1406,8 +1382,8 @@ function PermissionActionCardForTarget({
     : false;
   const actionState = createPermissionActionCardViewState({
     block: signals,
-    hasAgent: hasTarget,
-    agentLoadableState: targetLoadableState,
+    hasTarget,
+    targetLoadableState,
     permissionMetadataLoadable,
     userGrantsLoadable,
     grantLoadableState: grantLoadable.state,
@@ -1449,7 +1425,7 @@ function PermissionActionCardForTarget({
         detach(
           applyGrant(
             {
-              agentId: signals.agentId,
+              owner: signals.owner,
               connectorSlug: signals.connectorSlug,
               permission:
                 actionState.focusedPermission?.name ?? signals.permission,

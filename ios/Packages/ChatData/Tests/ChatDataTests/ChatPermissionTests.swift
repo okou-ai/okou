@@ -1,4 +1,5 @@
 import ChatDataTestSupport
+import ChatDomain
 import Foundation
 import XCTest
 
@@ -20,6 +21,9 @@ final class ChatPermissionTests: XCTestCase {
   func testTrustedOriginsAndCallbackValidationCannotPromoteForeignClaims() throws {
     let webURL = URL(string: "https://app.okou.ai")!
     let relative = PermissionHTTPFixture.actionURL()
+    let legacy = relative.replacingOccurrences(
+      of: "/connectors/permissions", with: "/agents/\(PermissionHTTPFixture.threadID)/permissions")
+    XCTAssertNil(ChatPermissionAction.trustedURL(legacy, webURL: webURL))
     for prefix in [
       "", "https://app.okou.ai", "https://api.okou.ai", "https://dev-platform.vm7.ai"
     ] {
@@ -33,13 +37,14 @@ final class ChatPermissionTests: XCTestCase {
     }
     for suffix in [
       "&threadId=\(PermissionHTTPFixture.threadID)", "&callbackPrompt=Continue",
-      "&callbackPrompt=%20&threadId=\(PermissionHTTPFixture.threadID)", "&permission=another"
+      "&callbackPrompt=%20&threadId=\(PermissionHTTPFixture.threadID)", "&permission=another",
+      "&orgId=another", "&userId=another", "&callbackPrompt", "&threadId"
     ] {
       let source = PermissionHTTPFixture.actionURL(callback: false) + suffix
       let url = try XCTUnwrap(ChatPermissionAction.trustedURL(source, webURL: webURL))
       XCTAssertNil(
         ChatPermissionAction(
-          url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID
+          url: url, threadID: PermissionHTTPFixture.threadID
         ))
     }
   }
@@ -58,14 +63,49 @@ final class ChatPermissionTests: XCTestCase {
       let request = try XCTUnwrap(
         fixture.state.withLock { $0.requests.first { $0.httpMethod == "PUT" } })
       let body = try body(request)
-      XCTAssertEqual(body["agentId"] as? String, PermissionHTTPFixture.agentID)
-      XCTAssertEqual(body["connectorSlug"] as? String, "gmail")
+      XCTAssertEqual(request.url?.path, "/api/connector-permissions")
+      XCTAssertEqual(
+        body["target"] as? [String: String], ["kind": "builtin", "connectorSlug": "gmail"])
       XCTAssertEqual(body["mode"] as? String, "patch")
       let grant = try XCTUnwrap((body["grants"] as? [[String: String]])?.first)
       XCTAssertEqual(
         grant, ["permission": "mail.send", "action": "allow", "expiresIn": duration.rawValue])
       XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Type"), "iOS")
     }
+  }
+
+  func testOnlyTheAddressedMemberCanReviewOrConfirmAnOrdinaryRequest() async throws {
+    let fixture = PermissionHTTPFixture()
+    let service = ChatPermissions(client: fixture.http.client)
+    let origin = fixture.http.baseURL
+    let link = PermissionHTTPFixture.actionURL(callback: false)
+    func parsed(_ link: String) throws -> ChatPermissionAction {
+      let url = try XCTUnwrap(ChatPermissionAction.trustedURL(link, webURL: origin))
+      return try XCTUnwrap(ChatPermissionAction(url: url, threadID: PermissionHTTPFixture.threadID))
+    }
+    let own = try parsed(link)
+    let reviewed = try await service.load(own)
+    let count = fixture.state.withLock { $0.requests.count }
+    for other in [
+      link.replacingOccurrences(of: ChatHTTPFixture.workspaceID, with: "org_other"),
+      link.replacingOccurrences(of: ChatHTTPFixture.userID, with: "user_other")
+    ] {
+      let foreign = try parsed(other)
+      do {
+        _ = try await service.load(foreign)
+        XCTFail("A different member cannot review the request")
+      } catch ChatError.invalidContract {}
+      do {
+        _ = try await service.apply(foreign, duration: .hour, reviewing: reviewed)
+        XCTFail("A previous review cannot authorize a different member")
+      } catch ChatError.invalidContract {}
+    }
+    XCTAssertEqual(fixture.state.withLock { $0.requests.count }, count)
+    _ = try await service.apply(own, duration: .hour, reviewing: reviewed)
+    XCTAssertFalse(
+      fixture.state.withLock {
+        $0.requests.contains { $0.url!.path.hasPrefix("/api/chat-threads/") }
+      })
   }
 
   func testDenyHasNoExpirationAndAlreadyAppliedGrantDoesNotWriteAgain() async throws {
@@ -85,11 +125,11 @@ final class ChatPermissionTests: XCTestCase {
     XCTAssertNil(saved.grants.first?.expiresAt)
   }
 
-  func testMissingMetadataOrReassignedThreadCannotWrite() async throws {
+  func testMissingMetadataOrMismatchedThreadCannotWrite() async throws {
     for missingMetadata in [false, true] {
       var state = PermissionHTTPFixture.State()
       state.missingMetadata = missingMetadata
-      if !missingMetadata { state.threadAgentID = UUID().uuidString }
+      if !missingMetadata { state.metadataThreadID = UUID().uuidString }
       let fixture = PermissionHTTPFixture(initial: state)
       do {
         let service = ChatPermissions(client: fixture.http.client)
@@ -121,14 +161,15 @@ final class ChatPermissionTests: XCTestCase {
     let url = try XCTUnwrap(URL(string: source, relativeTo: URL(string: "https://app.okou.ai")!))
     let parsed = try XCTUnwrap(
       ChatPermissionAction(
-        url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID))
+        url: url, threadID: PermissionHTTPFixture.threadID))
     XCTAssertEqual(parsed.action, .deny)
     XCTAssertEqual(parsed.connectorSlug, "gmail")
     XCTAssertEqual(parsed.callbackPrompt, "Continue after+permission")
+    XCTAssertEqual(
+      parsed.member,
+      WorkspaceMemberID(userID: ChatHTTPFixture.userID, workspaceID: ChatHTTPFixture.workspaceID))
     XCTAssertNil(
-      ChatPermissionAction(url: url, agentID: UUID().uuidString, threadID: parsed.threadID))
-    XCTAssertNil(
-      ChatPermissionAction(url: url, agentID: parsed.agentID, threadID: UUID().uuidString))
+      ChatPermissionAction(url: url, threadID: UUID().uuidString))
   }
 
   private func action(_ value: String = "allow") throws -> ChatPermissionAction {
@@ -138,7 +179,7 @@ final class ChatPermissionTests: XCTestCase {
         relativeTo: URL(string: "https://app.okou.ai")!))
     return try XCTUnwrap(
       ChatPermissionAction(
-        url: url, agentID: PermissionHTTPFixture.agentID, threadID: PermissionHTTPFixture.threadID))
+        url: url, threadID: PermissionHTTPFixture.threadID))
   }
 
   private func body(_ request: URLRequest) throws -> [String: Any] {

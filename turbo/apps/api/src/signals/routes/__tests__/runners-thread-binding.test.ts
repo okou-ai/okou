@@ -41,9 +41,8 @@ describe("Runner first-start Thread binding", () => {
   it("preserves native context when cancellation wins during execution preparation", async () => {
     const { owned, first } = await initializedPredecessor();
     await owned.run(async () => {
-      await createBddApi(context).updateAgentInstructions(
+      await createBddApi(context).updatePersonalInstructions(
         owned.actor,
-        owned.agentId,
         `Continuation ${randomUUID()}`,
       );
       const signing = holdDownloadSigning(context);
@@ -52,7 +51,6 @@ describe("Runner first-start Thread binding", () => {
       await chat.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: first.threadId,
           clientEventId,
           prompt: "Cancel while execution content URLs are being signed",
@@ -73,6 +71,11 @@ describe("Runner first-start Thread binding", () => {
       await api.requestCancelRun(owned.actor, pending.runId, [200]);
       signing.release();
       await flushWaitUntilForTest();
+      expect(api.receivedDispatches(owned.runnerGroup)).not.toContainEqual(
+        expect.objectContaining({
+          executionContext: expect.objectContaining({ runId: pending.runId }),
+        }),
+      );
       const cancelled = await api.readRun(owned.actor, pending.runId);
       expect(cancelled.status).toBe("cancelled");
       expect(cancelled.startedAt).toBeUndefined();
@@ -110,7 +113,6 @@ describe("Runner first-start Thread binding", () => {
       await chat.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: first.threadId,
           clientEventId,
           prompt: "Recall this waiting input before execution",
@@ -120,7 +122,6 @@ describe("Runner first-start Thread binding", () => {
       await chat.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: first.threadId,
           clientEventId: randomUUID(),
           revokesEventId: clientEventId,

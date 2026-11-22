@@ -1,5 +1,50 @@
 use std::io;
-use std::os::fd::{AsRawFd, BorrowedFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+use std::os::unix::net::UnixStream;
+
+use crate::transport::{
+    read_tool_placement_ack, read_tool_placement_confirmation, receive_tool_placement,
+    send_tool_placement, write_tool_placement_ack, write_tool_placement_confirmation,
+};
+
+/// Apply the broker's placement descriptor and wait for its acknowledgement.
+///
+/// The caller owns the connection and timeouts. The placement descriptor
+/// closes before the caller's check runs. A successful check permits sending
+/// confirmation and waiting for ACK.
+///
+/// # Errors
+/// Returns the first descriptor, check, or transport error.
+pub fn apply_tool_placement(
+    stream: &UnixStream,
+    before_confirmation: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
+    let placement = receive_tool_placement(stream)?;
+    write_self_to_cgroup(placement.as_fd())?;
+    drop(placement);
+    before_confirmation()?;
+    write_tool_placement_confirmation(stream)?;
+    read_tool_placement_ack(stream)
+}
+
+/// Send a placement descriptor and acknowledge confirmed, validated placement.
+///
+/// The broker owns the descriptor, peer authentication, timeouts, and rollback.
+/// Its check runs after reading the peer's confirmation and must succeed before
+/// the acknowledgement is sent.
+///
+/// # Errors
+/// Returns the first descriptor, check, or transport error.
+pub fn offer_tool_placement(
+    stream: &UnixStream,
+    placement: BorrowedFd<'_>,
+    before_ack: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
+    send_tool_placement(stream, placement)?;
+    read_tool_placement_confirmation(stream)?;
+    before_ack()?;
+    write_tool_placement_ack(stream)
+}
 
 /// Write the kernel self-selector to a caller-owned cgroup placement descriptor.
 ///

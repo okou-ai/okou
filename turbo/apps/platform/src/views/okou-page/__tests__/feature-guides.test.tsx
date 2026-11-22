@@ -5,7 +5,6 @@ import {
   featureGuidesContract,
   type FeatureGuideEdition,
 } from "@okouai/api-contracts/contracts/feature-guides";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -14,7 +13,7 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const path = "/agents/c0000000-0000-4000-a000-000000000001/chat";
+const path = "/";
 const edition = Object.freeze<FeatureGuideEdition>({
   id: "monthly-update",
   revisionId: "11111111-1111-4111-8111-111111111111",
@@ -160,7 +159,7 @@ function swipe(
   });
 }
 
-test("shows an enabled edition, records its display, and dismisses it with Escape", async () => {
+test("shows a published edition, records its display, and dismisses it with Escape", async () => {
   let seen = false;
   context.mocks.api(featureGuidesContract.current, ({ respond }) => {
     return respond(200, { edition });
@@ -173,7 +172,6 @@ test("shows an enabled edition, records its display, and dismisses it with Escap
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "Prepare a weekly report",
@@ -222,7 +220,6 @@ test("cycles features with swipes and footer controls, resets walkthroughs, and 
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "Prepare a weekly report",
@@ -297,7 +294,6 @@ test("keeps the feature selected during small, vertical, multi-touch, and cancel
   await setupPage({
     context,
     path: `${path}?featureGuidePreview=1`,
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "Prepare a weekly report",
@@ -377,7 +373,6 @@ test("preserves video controls while allowing a swipe from the surrounding descr
   await setupPage({
     context,
     path: `${path}?featureGuidePreview=1`,
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "See Okou in action",
@@ -431,7 +426,6 @@ test("shows a Discord image, hides single-feature navigation, and opens setup wi
   await setupPage({
     context,
     path: `${path}?featureGuidePreview=1`,
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "Your teammate, now in Discord",
@@ -522,7 +516,6 @@ test.each([
     await setupPage({
       context,
       path: `${path}?featureGuidePreview=1`,
-      featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
     });
     const dialog = await screen.findByRole("dialog", {
       name: "This week's updates",
@@ -561,23 +554,7 @@ test("keeps an already-seen edition closed based on the server response", async 
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-});
-
-test("skips the guide request and dialog when the feature switch is off", async () => {
-  let guideRequests = 0;
-  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
-    guideRequests++;
-    return respond(200, { edition });
-  });
-  await setupPage({
-    context,
-    path,
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: false },
-  });
-  expect(guideRequests).toBe(0);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
@@ -594,7 +571,6 @@ test("replays a preview from the home link without acknowledging a real impressi
   await setupPage({
     context,
     path: "/?featureGuidePreview=1",
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "Prepare a weekly report",
@@ -627,10 +603,6 @@ test("renders an illustrated selected preview without recording a view", async (
   await setupPage({
     context,
     path: `/?featureGuidePreview=1&featureGuideEdition=${singleEdition.id}`,
-    featureSwitches: {
-      [FeatureSwitchKey.FeatureGuides]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "One Okou. Your subagents, now projects",
@@ -663,10 +635,6 @@ test("cycles the illustrated project, instructions and workflow preview with but
   await setupPage({
     context,
     path: `/?featureGuidePreview=1&featureGuideEdition=${illustrationEdition.id}`,
-    featureSwitches: {
-      [FeatureSwitchKey.FeatureGuides]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "One Okou. Your subagents, now projects",
@@ -745,7 +713,6 @@ test("starts a newly loaded edition at its first card and walkthrough step", asy
   await setupPage({
     context,
     path: `${path}?featureGuidePreview=1`,
-    featureSwitches: { [FeatureSwitchKey.FeatureGuides]: true },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "Prepare a weekly report",

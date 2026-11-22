@@ -19,19 +19,9 @@ import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const AGENT_CHAT_PATH = "/agents/c0000000-0000-4000-a000-000000000001/chat";
+const HOME_PATH = "/";
 
-function mockAPIs(): void {
-  context.mocks.data.agents([
-    {
-      agentId: "c0000000-0000-4000-a000-000000000001",
-      displayName: null,
-      description: null,
-      sound: null,
-      avatarUrl: null,
-    },
-  ]);
-}
+function mockAPIs(): void {}
 
 test("An unknown route offers both of its destinations", async () => {
   mockAPIs();
@@ -69,7 +59,7 @@ test("An unknown route offers both of its destinations", async () => {
       screen.queryByRole("heading", { name: "That page isn't here." }),
     ).not.toBeInTheDocument();
     expect(
-      within(screen.getByTestId("labeled-nav-rail")).getByText("Agents"),
+      within(screen.getByTestId("labeled-nav-rail")).getByText("Workflows"),
     ).toBeInTheDocument();
   });
 });
@@ -164,20 +154,20 @@ test.each(["Meta"])(
     mockAPIs();
     context.mocks.browser.open();
     const user = userEvent.setup({ delay: null });
-    await setupPage({ context, path: AGENT_CHAT_PATH });
+    await setupPage({ context, path: HOME_PATH });
     const rail = screen.getByTestId("labeled-nav-rail");
-    const link = within(rail).getByText("Agents").closest("a");
+    const link = within(rail).getByText("Workflows").closest("a");
     if (!link) {
-      throw new Error("Expected the Agents link");
+      throw new Error("Expected the Workflows link");
     }
-    expect(link).toHaveAttribute("href", "/agents");
+    expect(link).toHaveAttribute("href", "/workflows");
 
     await user.keyboard(`{${modifier}>}`);
     await user.click(link);
     await user.keyboard(`{/${modifier}}`);
 
-    expect(pathname()).toBe(AGENT_CHAT_PATH);
-    expect(link).toHaveAttribute("href", "/agents");
+    expect(pathname()).toBe(HOME_PATH);
+    expect(link).toHaveAttribute("href", "/workflows");
     expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
     // Native modifier/auxiliary browsing-context choices require a browser;
     // Happy DOM does not expose them through the mocked window.open boundary.
@@ -207,7 +197,7 @@ test("A valid sign-in ticket returns the user home", async () => {
 });
 
 test("A valid sign-in ticket returns to its trusted Okou destination", async () => {
-  const returnUrl = "https://app.okou.ai/agents?source=sign-in-ticket";
+  const returnUrl = "https://app.okou.ai/?source=sign-in-ticket";
   mockAPIs();
 
   await startPage({

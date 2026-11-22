@@ -34,15 +34,15 @@ BEGIN
 
   IF jsonb_array_length(p_messages) > 0 THEN
     INSERT INTO public.chat_event_search_messages (
-      chat_thread_id, seq_id, run_id, user_id, org_id, agent_id,
+      chat_thread_id, seq_id, run_id, user_id, org_id,
       role, created_at, text, text_bigram
     )
     SELECT message.chat_thread_id, message.seq_id, message.run_id,
-      message.user_id, message.org_id, message.agent_id, message.role,
+      message.user_id, message.org_id, message.role,
       message.created_at, message.text, message.text_bigram
     FROM jsonb_to_recordset(p_messages) AS message(
       chat_thread_id uuid, seq_id bigint, run_id uuid, user_id text,
-      org_id text, agent_id uuid, role text,
+      org_id text, role text,
       created_at timestamp without time zone, text text, text_bigram text
     )
     ON CONFLICT (chat_thread_id, seq_id) DO NOTHING;

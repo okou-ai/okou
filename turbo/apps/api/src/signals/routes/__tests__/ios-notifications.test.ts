@@ -56,7 +56,6 @@ async function unreadConversation(actor: ApiTestUser) {
     visibility: "private",
   });
   const sent = await chat.sendAndLaunch(actor, {
-    agentId: agent.agentId,
     prompt: "Unread result",
   });
   await cancelStartedRun(actor, sent.runId);
@@ -118,7 +117,6 @@ describe("iOS notification read-state reconciliation", () => {
       removeIdentifiers: ["unread"],
     });
     const archivedIndicators = await chat.listIndicators(actor);
-    expect(archivedIndicators.agents[unread.agentId]).toBeUndefined();
     expect(archivedIndicators.threads[unread.threadId]).toBe("unread");
     expect(archivedIndicators.unreadAt[unread.threadId]).toBeDefined();
     await expect(
@@ -143,7 +141,7 @@ describe("iOS notification read-state reconciliation", () => {
         )
       ).body.unreadCount,
     ).toBe(1);
-    expect((await chat.listIndicators(actor)).agents[unread.agentId]).toBe(
+    expect((await chat.listIndicators(actor)).threads[unread.threadId]).toBe(
       "unread",
     );
     await expect(
@@ -161,7 +159,6 @@ describe("iOS notification read-state reconciliation", () => {
     const actor = bdd.user();
     const previous = await unreadConversation(actor);
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: previous.agentId,
       threadId: previous.threadId,
       prompt: "A new result after archiving",
     });
@@ -178,7 +175,7 @@ describe("iOS notification read-state reconciliation", () => {
     ).resolves.toMatchObject({
       archived: false,
     });
-    expect((await chat.listIndicators(actor)).agents[previous.agentId]).toBe(
+    expect((await chat.listIndicators(actor)).threads[sent.threadId]).toBe(
       "unread",
     );
     expect((await reconcile(actor, [])).body.unreadCount).toBe(1);
@@ -344,7 +341,6 @@ describe("iOS notification read-state reconciliation", () => {
     const first = await unreadConversation(actor);
     await chat.markThreadRead(actor, first.threadId);
     const next = await chat.sendAndLaunch(actor, {
-      agentId: first.agentId,
       threadId: first.threadId,
       prompt: "A later unread result",
     });

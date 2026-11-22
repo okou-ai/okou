@@ -34,7 +34,6 @@ async function traceRun() {
   const owned = await publicChatActor(context);
   owned.ownsFeatureSwitches();
   const run = await owned.sendChatRun(owned.actor, {
-    agentId: owned.agentId,
     prompt: "deliver an optional diagnostic trace",
   });
   const { sandboxHeaders: headers } = await owned.runExecution(run.runId);

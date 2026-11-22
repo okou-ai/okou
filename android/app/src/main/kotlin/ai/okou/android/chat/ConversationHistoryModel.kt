@@ -33,6 +33,7 @@ data class ConversationUiState(
     val detail: ThreadDetail? = null,
     val detailPhase: ChatReadPhase = ChatReadPhase.Idle,
     val detailFailure: Exception? = null,
+    val initialReadFailed: Boolean = false,
 )
 
 /** A completed network read, distinct from both selection identity and the event cursor. */
@@ -65,10 +66,44 @@ class ConversationHistoryModel(
     private var job: Job? = null
     private var detailJob: Job? = null
     private var visit: ConversationReadSession? = null
-    private var confirmed: CachedHistory? = null
+
+    private data class ConfirmedTimeline(
+        val history: CachedHistory,
+        val transcript: HistoryTranscript,
+    )
+
+    private var confirmed: ConfirmedTimeline? = null
+    // The active timeline is kept separately. Only inactive visits count toward this limit.
+    private val recent = linkedMapOf<String, ConfirmedTimeline>()
+    private val reading = linkedMapOf<String, ConversationAnchor?>()
+    private var readingWrite: Job? = null
+
+    internal suspend fun restoreReadingAnchor(threadId: String): ConversationAnchor? {
+        if (reading.containsKey(threadId)) return reading[threadId]
+        val stored = cache.loadReadingAnchor(threadId)
+        if (reading.containsKey(threadId)) return reading[threadId]
+        reading[threadId] = stored
+        if (reading.size > 4) reading.remove(reading.keys.first())
+        return stored
+    }
+
+    internal fun rememberReadingAnchor(threadId: String, anchor: ConversationAnchor?) {
+        if (!current(generation) || mutable.value.thread?.id != threadId) return
+        if (reading.containsKey(threadId) && reading[threadId] == anchor) return
+        reading.remove(threadId)
+        reading[threadId] = anchor
+        if (reading.size > 4) reading.remove(reading.keys.first())
+        val previousWrite = readingWrite
+        readingWrite =
+            scope.launch {
+                // Preserve the order of the UI actions across the IO dispatcher.
+                previousWrite?.join()
+                cache.saveReadingAnchor(threadId, anchor)
+            }
+    }
 
     internal fun checkpoint(threadId: String): HistoryCheckpoint? =
-        confirmed?.checkpoint?.takeIf { current(generation) && it.threadId == threadId }
+        confirmed?.history?.checkpoint?.takeIf { current(generation) && it.threadId == threadId }
 
     private val dirty = mutableMapOf<String, CachedHistory>()
     private val invalidations = Channel<Long>(Channel.CONFLATED)
@@ -105,8 +140,19 @@ class ConversationHistoryModel(
         visit?.close()
         visit = null
         output.visible(false)
-        confirmed = null
-        publish(ConversationUiState(thread = thread, generation = generation))
+        confirmed?.let { recent[it.history.checkpoint.threadId] = it }
+        val restored = recent.remove(thread.id)
+        if (recent.size > 3) recent.remove(recent.keys.first())
+        confirmed = restored
+        publish(
+            ConversationUiState(
+                thread = thread,
+                transcript = restored?.transcript,
+                source = restored?.let { ChatListSource.Cache },
+                cacheUnavailable = thread.id in dirty,
+                generation = generation,
+            )
+        )
         refresh()
     }
 
@@ -138,8 +184,8 @@ class ConversationHistoryModel(
         }
     }
 
-    internal fun stopAutomaticRead(threadId: String): Job? =
-        if (mutable.value.thread?.id == threadId) visit?.stopAutomaticRead() else null
+    internal fun readSessionFor(threadId: String): ConversationReadSession? =
+        visit?.takeIf { mutable.value.thread?.id == threadId }
 
     fun refresh() {
         refreshHistory()
@@ -153,7 +199,7 @@ class ConversationHistoryModel(
         publish(mutable.value.copy(phase = HistoryPhase.Loading, confirmation = null))
         job =
             scope.launch {
-                var saved = confirmed ?: dirty[thread.id]
+                var saved = dirty[thread.id] ?: confirmed?.history
                 if (saved == null) {
                     try {
                         saved = cache.loadHistory(thread.id)
@@ -167,9 +213,13 @@ class ConversationHistoryModel(
                 if (saved != null && confirmed == null) {
                     val transcript = withContext(dispatcher) { projectHistory(saved.checkpoint) }
                     requireCurrent(ticket)
-                    confirmed = saved
+                    confirmed = ConfirmedTimeline(saved, transcript)
                     publish(
-                        mutable.value.copy(transcript = transcript, source = ChatListSource.Cache)
+                        mutable.value.copy(
+                            transcript = transcript,
+                            source = ChatListSource.Cache,
+                            initialReadFailed = false,
+                        )
                     )
                 }
                 try {
@@ -182,8 +232,8 @@ class ConversationHistoryModel(
                     dirty[thread.id] = next
                     var diskFailed = false
                     try {
-                        cache.saveHistory(next.checkpoint, next.confirmedAt)
-                        val disk = cache.loadHistory(thread.id)
+                        val committed = cache.saveHistory(next.checkpoint, next.confirmedAt, saved)
+                        val disk = cache.loadHistory(thread.id, committed)
                         requireCurrent(ticket)
                         if (disk != null) next = disk
                         dirty.remove(thread.id)
@@ -193,15 +243,19 @@ class ConversationHistoryModel(
                         requireCurrent(ticket)
                         diskFailed = true
                     }
-                    val transcript = withContext(dispatcher) { projectHistory(next.checkpoint) }
+                    // Room may select a different prefix at the same cursor.
+                    val transcript =
+                        confirmed?.takeIf { it.history.checkpoint === next.checkpoint }?.transcript
+                            ?: withContext(dispatcher) { projectHistory(next.checkpoint) }
                     requireCurrent(ticket)
-                    confirmed = next
+                    confirmed = ConfirmedTimeline(next, transcript)
                     publish(
                         mutable.value.copy(
                             transcript = transcript,
                             phase = HistoryPhase.Ready,
                             source = ChatListSource.Network,
                             cacheUnavailable = diskFailed,
+                            initialReadFailed = false,
                             // Equal rows still complete a new read; StateFlow may conflate phases.
                             confirmation =
                                 HistoryConfirmation(ticket, ++revision, next.checkpoint.cursor),
@@ -216,8 +270,15 @@ class ConversationHistoryModel(
                         missing(thread.id, ticket, error)
                     } else {
                         reportAuthorization(error)
-                        if (current(ticket))
-                            publish(mutable.value.copy(phase = HistoryPhase.Failed))
+                        if (current(ticket)) {
+                            val state = mutable.value
+                            publish(
+                                state.copy(
+                                    phase = HistoryPhase.Failed,
+                                    initialReadFailed = state.transcript == null,
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -257,6 +318,7 @@ class ConversationHistoryModel(
 
     private suspend fun missing(threadId: String, ticket: Long, error: Exception) {
         confirmed = null
+        recent.remove(threadId)
         dirty.remove(threadId)
         publish(
             mutable.value.copy(
@@ -264,6 +326,7 @@ class ConversationHistoryModel(
                 source = null,
                 phase = HistoryPhase.Missing,
                 confirmation = null,
+                initialReadFailed = false,
                 detail = null,
                 detailPhase = ChatReadPhase.Failed,
                 detailFailure = error,
@@ -277,6 +340,12 @@ class ConversationHistoryModel(
             requireCurrent(ticket)
             publish(mutable.value.copy(cacheUnavailable = true))
         }
+    }
+
+    internal fun forgetWarmedHistory(threadId: String) {
+        if (retired || !authorized() || mutable.value.thread?.id == threadId) return
+        recent.remove(threadId)
+        dirty.remove(threadId)
     }
 
     fun refreshAfterSend(threadId: String) {
@@ -329,6 +398,9 @@ class ConversationHistoryModel(
         detailJob?.cancel()
         visit?.close()
         visit = null
+        confirmed = null
+        recent.clear()
         dirty.clear()
+        mutable.value = ConversationUiState(generation = generation)
     }
 }

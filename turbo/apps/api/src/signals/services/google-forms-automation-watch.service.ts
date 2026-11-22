@@ -47,10 +47,7 @@ import {
   builtinConnectorCredentialRuntimeValueRef,
 } from "./builtin-connector-credential-runtime.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
-import {
-  loadWorkflowAutomationAccountMode$,
-  readWorkflowAutomationConnectorAccount$,
-} from "./workflow-automation-account.service";
+import { readWorkflowAutomationConnectorAccount$ } from "./workflow-automation-account.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
@@ -1246,18 +1243,11 @@ export const reprojectGoogleFormsAutomationOwnership$ = command(
     args: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<void> => {
-    const chatAccountAccess = await set(
-      loadWorkflowAutomationAccountMode$,
-      args,
-      signal,
-    );
     const db = set(writeDb$);
     // One conditional UPDATE computes each target from the member's current
     // account set and default; an account change committed after its
     // snapshot is picked up by the next repair.
-    await db.execute(
-      googleFormsAccountProjectionStatement({ ...args, chatAccountAccess }),
-    );
+    await db.execute(googleFormsAccountProjectionStatement(args));
     signal.throwIfAborted();
   },
 );

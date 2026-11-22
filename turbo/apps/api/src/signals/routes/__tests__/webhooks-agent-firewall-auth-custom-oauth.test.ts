@@ -26,6 +26,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import {
   createPublicFirewallFixture,
   type PublicFirewallFixture,
@@ -148,7 +149,6 @@ async function setupCustomOAuthFirewall(
     const url = await connectors.startCustomConnectorOAuth2(
       actor,
       connector.id,
-      agent.agentId,
       mutation,
     );
     const state = new URL(url).searchParams.get("state");
@@ -230,8 +230,8 @@ async function setupCustomOAuthFirewall(
     provider,
     connect,
     request,
-    agentId: agent.agentId,
     runId: run.runId,
+    threadId: run.threadId,
     runnerGroup,
     headers,
   };
@@ -717,28 +717,31 @@ test("run network admission uses current bindings and rotation independently of 
       },
     });
     expect(JSON.stringify(rotated.body)).not.toContain("first-secret");
-    await custom.connectors.requestUpdateAgentCustomConnectors(
+    const access = createChatConnectorAccessApi(context);
+    const accountSelection = {
+      target: { kind: "custom" as const, customConnectorId: connector.id },
+      connectionId: custom.account.id,
+    };
+    await access.setThreadOverride(
       custom.actor,
-      custom.agentId,
-      [connector.id],
-      [200],
-      "remove",
+      custom.threadId,
+      accountSelection,
+      false,
     );
     expect(
       (await custom.request(custom.account.id, false, true, intent)).status,
     ).toBe(403);
-    await custom.connectors.requestUpdateAgentCustomConnectors(
+    await access.setThreadOverride(
       custom.actor,
-      custom.agentId,
-      [connector.id],
-      [200],
-      "add",
+      custom.threadId,
+      accountSelection,
+      true,
     );
-    const accountless = await custom.connectors.createCustomConnector(
+    const noAuthConnector = await custom.connectors.createCustomConnector(
       custom.actor,
       {
         kind: "http",
-        displayName: "No application account",
+        displayName: "No application authentication",
         prefixTemplates: ["https://noauth.example.test/"],
         authMode: "none",
         fields: [],
@@ -747,8 +750,8 @@ test("run network admission uses current bindings and rotation independently of 
         networkBinding: { type: "cloudflare_access", configId: config.id },
       },
     );
-    fixture.registerCustomConnector(accountless.id);
-    const accountlessName = `custom_connector_${accountless.id.replaceAll("-", "")}`;
+    const ownedAccountIds = fixture.registerCustomConnector(noAuthConnector.id);
+    const noAuthFirewallName = `custom_connector_${noAuthConnector.id.replaceAll("-", "")}`;
     const networkBody = {
       authHeaders: {},
       networkAdmission: true as const,
@@ -758,9 +761,9 @@ test("run network admission uses current bindings and rotation independently of 
         intent,
       },
       matchedFirewall: {
-        name: accountlessName,
-        apiId: `${accountlessName}:0`,
-        customConnectorId: accountless.id,
+        name: noAuthFirewallName,
+        apiId: `${noAuthFirewallName}:0`,
+        customConnectorId: noAuthConnector.id,
         routingVariables: {},
       },
     };
@@ -769,13 +772,12 @@ test("run network admission uses current bindings and rotation independently of 
       (await firewall.requestFirewallAuth(custom.headers, networkBody, [403]))
         .status,
     ).toBe(403);
-    await custom.connectors.requestUpdateAgentCustomConnectors(
+    const connected = await custom.connectors.setCustomConnectorValues(
       custom.actor,
-      custom.agentId,
-      [accountless.id],
-      [200],
-      "add",
+      noAuthConnector.id,
+      [],
     );
+    ownedAccountIds.add(connected.connectionId);
     await expect(
       firewall.requestFirewallAuth(custom.headers, networkBody, [200]),
     ).resolves.toMatchObject({
@@ -796,7 +798,7 @@ test("run network admission uses current bindings and rotation independently of 
             ...networkBody,
             matchedFirewall: {
               ...networkBody.matchedFirewall,
-              sourceId: custom.account.id,
+              customConnectorId: connector.id,
             },
           },
           [403],

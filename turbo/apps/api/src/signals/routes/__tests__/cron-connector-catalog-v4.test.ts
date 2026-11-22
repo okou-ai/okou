@@ -343,11 +343,7 @@ describe("connector catalog v4 preparation", () => {
         "api-token",
         { credential: "unusable-native-token" },
       );
-      await runs.enableAgentConnectors(owned.actor, owned.agentId, [
-        "catalog-service",
-      ]);
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Continue without usable connector authentication",
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
@@ -498,7 +494,6 @@ describe("connector catalog v4 preparation", () => {
       await connectors.connectManualGrant(owned.actor, "figma", "api-token", {
         accessToken: "accepted-catalog-figma-token",
       });
-      await runs.enableAgentConnectors(owned.actor, owned.agentId, ["figma"]);
       const serving = (await publicCatalog()).body;
       const storage = context.mocks.s3.send.getMockImplementation();
       if (!storage) {
@@ -520,7 +515,6 @@ describe("connector catalog v4 preparation", () => {
       expect((await publicCatalog()).body).toStrictEqual(serving);
 
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Use the accepted connector after a catalog rejection",
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);

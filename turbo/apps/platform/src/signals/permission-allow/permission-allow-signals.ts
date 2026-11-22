@@ -1,30 +1,41 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import type {
   ApplyUserPermissionGrant,
   UserPermissionGrantApplyMode,
   UserPermissionGrantExpiresIn,
   UserPermissionGrantAction,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/client/user-permission-grants";
+} from "@okouai/api-contracts/validators/user-permission-grants";
 import { connectorPermissionsContract } from "@okouai/api-contracts/client/connector-permissions";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
+
 import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-contracts";
 import { apiClient$ } from "../api-client.ts";
 import {
+  chatActionCallbackFromUrl,
   runChatActionCallback$,
   type ChatActionCallback,
   type ChatActionCallbackIds,
 } from "../chat-page/action-callback.ts";
-import { pathParams$, searchParams$ } from "../route.ts";
+import { searchParams$ } from "../route.ts";
 import { accept } from "../../lib/accept.ts";
-import { agentById, currentAgentId$ } from "../agent.ts";
+import { clerk$ } from "../auth.ts";
+import {
+  memberPermissionOwner,
+  type PermissionActionOwner,
+} from "../chat-page/permission-action-owner.ts";
+import {
+  permissionActionTarget,
+  memberPermissionClientOptions,
+  verifyPermissionCallbackThread,
+} from "./permission-action-target.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { resolveActiveUserPermissionGrantPolicy } from "../user-permission-grants.ts";
+import {
+  isActiveUserPermissionGrant,
+  resolveActiveUserPermissionGrantPolicy,
+} from "../user-permission-grants.ts";
 import { parseUserPermissionGrantExpiresIn } from "./permission-grant-expiration.ts";
 import { i18n } from "../../i18n/index.ts";
 import type {
@@ -36,10 +47,18 @@ import type {
 // Route params
 // ---------------------------------------------------------------------------
 
-export const permissionAllowAgentId$ = computed((get) => {
-  const params = get(pathParams$);
-  const agentId = params?.agentId;
-  return typeof agentId === "string" ? agentId : null;
+export const permissionAllowOwner$ = computed(
+  (get): PermissionActionOwner | null => {
+    return memberPermissionOwner(get(searchParams$));
+  },
+);
+
+export const permissionAllowCallback$ = computed((get) => {
+  const params = get(searchParams$);
+  return chatActionCallbackFromUrl(
+    { searchParams: params },
+    { threadId: params.get("threadId") ?? "" },
+  );
 });
 
 export const permissionAllowConnectorSlug$ = computed((get) => {
@@ -66,15 +85,16 @@ export const permissionAllowExpiresIn$ = computed((get) => {
 });
 
 // ---------------------------------------------------------------------------
-// Agent data
+// Permission target
 // ---------------------------------------------------------------------------
 
-export const permissionAllowAgent$ = computed((get) => {
-  const agentId = get(permissionAllowAgentId$);
-  if (!agentId) {
-    return null;
+export const permissionAllowTarget$ = computed((get) => {
+  const owner = get(permissionAllowOwner$);
+  const callback = get(permissionAllowCallback$);
+  if (!owner || !callback) {
+    return Promise.resolve(null);
   }
-  return get(agentById(agentId));
+  return get(permissionActionTarget(owner, callback.threadId));
 });
 
 // ---------------------------------------------------------------------------
@@ -139,51 +159,17 @@ export function resolveUserPermissionGrantPolicy(
   return resolveActiveUserPermissionGrantPolicy(grants, metadata, permission);
 }
 
-interface UserPermissionGrantsByAgentParams {
-  agentId: string;
-}
-
-export function userPermissionGrantsByAgent(
-  params: UserPermissionGrantsByAgentParams,
-): Computed<Promise<readonly PlatformUserPermissionGrant[]>> {
-  return computed(async (get) => {
-    get(internalUserPermissionGrantsReload$);
-    const client = get(apiClient$)(userPermissionGrantsContract);
-    const result = await accept(client.list({ query: params }), [200]);
-    return result.body;
-  });
-}
-
-export function userPermissionGrantsByAgentIfExists(
-  params: UserPermissionGrantsByAgentParams,
-): Computed<Promise<readonly PlatformUserPermissionGrant[] | null>> {
-  return computed(async (get) => {
-    get(internalUserPermissionGrantsReload$);
-    const client = get(apiClient$)(userPermissionGrantsContract);
-    const result = await accept(client.list({ query: params }), [200, 404]);
-    return result.status === 404 ? null : result.body;
-  });
-}
-
-/** Confirmation cards read only their requested targets, with the mode's owner. */
-export function permissionGrantsForConnectors(params: {
-  readonly agentId: string;
-  readonly connectorSlugs: readonly string[];
-}) {
-  const legacy$ = userPermissionGrantsByAgent({ agentId: params.agentId });
+/** Confirmation cards read the member's grants for the requested connectors. */
+export function permissionGrantsForConnectors(
+  connectorSlugs: readonly string[],
+) {
   return computed(
     async (get): Promise<readonly PlatformUserPermissionGrant[]> => {
       get(internalUserPermissionGrantsReload$);
-      if (
-        !(await get(featureSwitches$))[
-          FeatureSwitchKey.ConnectorChatAccountAccess
-        ]
-      ) {
-        return await get(legacy$);
-      }
+
       const client = get(apiClient$)(connectorPermissionsContract);
       const grants = await Promise.all(
-        [...new Set(params.connectorSlugs)].map(async (connectorSlug) => {
+        [...new Set(connectorSlugs)].map(async (connectorSlug) => {
           const result = await accept(
             client.get({ query: { kind: "builtin", connectorSlug } }),
             [200, 404],
@@ -201,28 +187,13 @@ export function permissionGrantsForConnectors(params: {
 }
 
 export const permissionAllowUserPermissionGrants$ = computed(async (get) => {
-  const agentId = get(permissionAllowAgentId$);
-  if (!agentId) {
+  if (!get(permissionAllowOwner$)) {
     return [];
   }
   const connectorSlug = get(permissionAllowConnectorSlug$);
   return connectorSlug
-    ? await get(
-        permissionGrantsForConnectors({
-          agentId,
-          connectorSlugs: [connectorSlug],
-        }),
-      )
+    ? await get(permissionGrantsForConnectors([connectorSlug]))
     : [];
-});
-
-/** The current agent-detail route's permission grants. */
-export const currentAgentUserPermissionGrants$ = computed(async (get) => {
-  const agentId = get(currentAgentId$);
-  if (!agentId) {
-    return [];
-  }
-  return await get(userPermissionGrantsByAgent({ agentId }));
 });
 
 /** Firewall metadata selected by the permission-allow route. */
@@ -240,62 +211,45 @@ export const applyUserPermissionGrants$ = command(
   async (
     { get, set },
     params: {
-      agentId?: string;
+      owner?: PermissionActionOwner;
       connectorSlug: string;
       mode: UserPermissionGrantApplyMode;
       grants: readonly ApplyUserPermissionGrant[];
     },
     signal: AbortSignal,
   ): Promise<readonly PlatformUserPermissionGrant[]> => {
-    if (!params.agentId) {
-      throw new Error("Permission grant scope is required");
-    }
-    const features = await get(featureSwitches$);
     signal.throwIfAborted();
-    if (features[FeatureSwitchKey.ConnectorChatAccountAccess]) {
-      const result = await accept(
-        get(apiClient$)(connectorPermissionsContract).apply({
-          body: {
-            target: { kind: "builtin", connectorSlug: params.connectorSlug },
-            mode: params.mode,
-            grants: [...params.grants],
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-      set(onPermissionUpdated$);
-      return result.body.grants
-        .filter((grant) => {
-          return params.grants.some((requested) => {
-            return requested.permission === grant.permission;
-          });
-        })
-        .map((grant) => {
-          return { connectorSlug: params.connectorSlug, ...grant };
-        });
-    }
-    const client = get(apiClient$)(userPermissionGrantsContract);
+    const options =
+      params.owner?.kind === "member"
+        ? memberPermissionClientOptions(await get(clerk$), params.owner)
+        : undefined;
     const result = await accept(
-      client.apply({
+      get(apiClient$)(connectorPermissionsContract, options).apply({
         body: {
-          agentId: params.agentId,
-          connectorSlug: params.connectorSlug,
+          target: { kind: "builtin", connectorSlug: params.connectorSlug },
           mode: params.mode,
           grants: [...params.grants],
         },
         fetchOptions: { signal },
       }),
       [200],
+      signal,
     );
-    signal.throwIfAborted();
-    return result.body;
+    set(onPermissionUpdated$);
+    return result.body.grants
+      .filter((grant) => {
+        return params.grants.some((requested) => {
+          return requested.permission === grant.permission;
+        });
+      })
+      .map((grant) => {
+        return { connectorSlug: params.connectorSlug, ...grant };
+      });
   },
 );
 
 interface ApplyUserPermissionGrantParams {
-  agentId?: string;
+  owner?: PermissionActionOwner;
   connectorSlug: string;
   permission: string;
   action: UserPermissionGrantAction;
@@ -311,7 +265,7 @@ export const applyUserPermissionGrant$ = command(
     const grants = await set(
       applyUserPermissionGrants$,
       {
-        agentId: params.agentId,
+        owner: params.owner,
         connectorSlug: params.connectorSlug,
         mode: "patch",
         grants: [
@@ -330,8 +284,14 @@ export const applyUserPermissionGrant$ = command(
       signal,
     );
     const grant = grants[0];
-    if (!grant) {
-      throw new Error("User permission grant apply did not return a grant");
+    if (
+      !grant ||
+      grant.action !== params.action ||
+      !isActiveUserPermissionGrant(grant)
+    ) {
+      throw new Error(
+        "Permission response did not acknowledge the requested change",
+      );
     }
     return grant;
   },
@@ -339,20 +299,26 @@ export const applyUserPermissionGrant$ = command(
 
 export const applyPermissionAndResumeChat$ = command(
   async (
-    { set },
-    params: ApplyUserPermissionGrantParams & { agentId: string },
+    { get, set },
+    params: ApplyUserPermissionGrantParams & { owner: PermissionActionOwner },
     callback: ChatActionCallback & {
       readonly callbackIds?: ChatActionCallbackIds;
     },
     signal: AbortSignal,
   ): Promise<PlatformUserPermissionGrant> => {
+    if (callback.threadId) {
+      await verifyPermissionCallbackThread(
+        get(apiClient$),
+        callback.threadId,
+        signal,
+      );
+    }
     const grant = await set(applyUserPermissionGrant$, params, signal);
     signal.throwIfAborted();
     if (callback.callbackPrompt && callback.threadId) {
       await set(
         runChatActionCallback$,
         {
-          agentId: params.agentId,
           threadId: callback.threadId,
           callbackPrompt: callback.callbackPrompt,
           callbackIds: callback.callbackIds,

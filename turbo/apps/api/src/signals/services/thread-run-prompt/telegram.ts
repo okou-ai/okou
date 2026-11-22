@@ -1,17 +1,18 @@
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
 import { getOfficialTelegramBotConfig } from "../../external/telegram-official";
-import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
-import { buildTelegramPrompt } from "../telegram-prompt";
-import type { TelegramThreadContext } from "../telegram-queued-launch-context.service";
-import type { RunPromptAndSkills } from "../run-prompt-and-skills";
+import {
+  telegramPromptFromContext,
+  type TelegramThreadContext,
+} from "../telegram-queued-launch-context.service";
+import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
 export function createTelegramThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   context$: Computed<Promise<TelegramThreadContext>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-): Computed<Promise<RunPromptAndSkills | null>> {
+): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const pickedEvent = await get(pickedEvent$);
     if (pickedEvent?.contextType !== "telegram") {
@@ -21,10 +22,15 @@ export function createTelegramThreadPrompt(
     if (!context) {
       return null;
     }
-    const officialBotConfig = getOfficialTelegramBotConfig();
-    if (officialBotConfig.botId === null) {
+    const { botId, botUsername } = getOfficialTelegramBotConfig();
+    if (botId === null) {
       return null;
     }
+    const material = telegramPromptFromContext(
+      context,
+      { botId, botUsername },
+      await get(featureSwitches$),
+    );
     const identity: string[] = [];
     if (context.senderDisplayName) {
       identity.push(`Telegram display name: ${context.senderDisplayName}`);
@@ -39,27 +45,11 @@ export function createTelegramThreadPrompt(
       identity.push(`Telegram language: ${context.senderLanguage}`);
     }
     return {
-      userPromptVariables: { message: context.messageText },
+      userPromptVariables: { message: material.prompt },
       systemPromptVariables: {
-        integrationContext: buildTelegramPrompt(
-          {
-            botId: officialBotConfig.botId,
-            botUsername: officialBotConfig.botUsername,
-            chatId: context.chatId,
-            chatType: context.chatType,
-            messageId: context.messageId,
-            rootMessageId: context.rootMessageId,
-            messageThreadId: context.messageThreadId,
-          },
-          resolveIntegrationNotePrompt({
-            triggerSource: "telegram",
-            featureSwitchContext: await get(featureSwitches$),
-          }),
-          context.threadContext,
-        ),
+        integrationContext: material.appendSystemPrompt,
         channelUserIdentity: identity.join("\n"),
       },
-      skillVolumes: [],
     };
   });
 }

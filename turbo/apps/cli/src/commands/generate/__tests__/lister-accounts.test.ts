@@ -34,7 +34,6 @@ describe("generation current-member directory", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
     server.use(stubConnectorCatalog([metadata]));
@@ -70,7 +69,7 @@ describe("generation current-member directory", () => {
       "Saved accounts may need setup, reconnect, or permission updates.",
     );
     expect(output()).toContain(
-      "directory membership does not establish runtime availability or agent authorization",
+      "directory membership does not establish availability in a Run",
     );
     expect(output()).not.toMatch(/^ {2}openai\s/mu);
     expect(error).not.toHaveBeenCalled();

@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Validate old native insertion-ABA refusal and independently captured recovery."""
 
-import argparse
-import json
 import pathlib
 
+import observation_report
 import progress_report as foreground
 import pressure_report as pressure
 import report
-import status_failure_report as failure
+import status_evidence
 from cleanup_report import COUNTS, accounting, coverage, supplied_policy
-from later_parking_report import current_status
 from report import exact
 
 PREFIX = "NATIVE_BATCH_ABA_WITNESS "
@@ -28,21 +26,6 @@ def queued(value):
           "batch ABA did not preserve its two unused queued claims")
 
 
-def reads(value, policy, begin, end):
-    if not isinstance(value, list) or len(value) < 2:
-        raise ValueError("batch ABA lacks original paired fresh reads")
-    for sample in value:
-        if (not isinstance(sample, dict) or set(sample) != {"started_ns", "finished_ns", "read_start_offset_ns",
-                "available_bytes", "age_ns", "read_duration_ns"}
-                or any(not pressure.integer(v) for v in sample.values())
-                or not begin < sample["started_ns"] < sample["finished_ns"] < end
-                or not 0 < sample["available_bytes"] <= policy["host_total_bytes"]
-                or not sample["read_duration_ns"] <= sample["age_ns"] <= sample["finished_ns"]-sample["started_ns"]
-                or sample["age_ns"] > policy["max_sample_age_millis"]*1_000_000):
-            raise ValueError("batch ABA observation was fabricated stale or outside resumed admission")
-        begin = sample["finished_ns"]
-
-
 def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"):
     directory = pathlib.Path(directory)
     cases = CASES if cases is None else cases
@@ -57,10 +40,11 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
     runners, paths = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered batch ABA phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
-        if any((e["sandbox_id"], e["backing_generation"]) != identity for e in events):
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered batch ABA phases",
+        )
+        identity = report.witness_identity(terminal[1])
+        if report.witness_identity_changed(events, identity):
             raise ValueError("batch ABA changed its original physical owner")
         ordered = [terminal[1], *events[:5], terminal[2], terminal[3], events[5], terminal[4],
                    events[6], events[7], terminal[5]]
@@ -68,11 +52,11 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
             ordered, "old refusal and new physical recovery ordering changed")
         blocked, pool, admission, waiting, refused, tail, complete, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if not failure.valid_status_path(path) or path in paths:
+        if not status_evidence.valid_status_path(path) or path in paths:
             raise ValueError("batch ABA private status path changed")
         paths.add(path)
         initial = blocked.get("published_status")
-        failure.status(initial, sandbox=identity[0])
+        status_evidence.original_status(initial, sandbox=identity[0])
         reuse = initial["idle_sandboxes"][0]["reuse_key"]
         selected = blocked.get("selected_revision")
         if not pressure.integer(selected, 1):
@@ -108,9 +92,11 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
         resumed = clock(waiting.get("source_resumed_ns"), events[2]["monotonic_ns"], events[3]["monotonic_ns"])
         polled = clock(waiting.get("status_wait_polled_ns"), resumed, events[3]["monotonic_ns"])
         before, after = waiting.get("status_waits_before"), waiting.get("status_waits_after")
-        if not failure.status_wait_advanced(before, after):
+        if not status_evidence.status_wait_advanced(before, after):
             raise ValueError("old batch final status wait was not positively observed")
-        reads(waiting.get("samples"), policy, resumed, polled)
+        observation_report.paired_fresh_reads(
+            waiting.get("samples"), policy, resumed, polled
+        )
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, events[3]["monotonic_ns"])
         exact(waiting.get("accounting"), dict.fromkeys(COUNTS, 0) | {"closed": False}, "unused old claims did not settle")
         exact(waiting, {"source_resumed_ns": resumed, "status_wait_polled_ns": polled,
@@ -120,7 +106,7 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
             "old batch status wait lost its original live owner")
         released = clock(refused.get("status_released_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
         finished = clock(refused.get("batch_joined_ns"), released, events[4]["monotonic_ns"])
-        current_status(refused.get("published_status"), initial, identity[0], reuse)
+        status_evidence.current_status(refused.get("published_status"), initial, identity[0], reuse)
         exact(refused, {"status_released_ns": released, "batch_joined_ns": finished,
             "selected": 1, "completed": 0, "uncertain": 0, "not_started": 1, "status_error": False,
             "is_complete": False, "refusal_sandbox_id": identity[0], "refusal_reuse_key": reuse,
@@ -142,7 +128,7 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
             "new captured batch lost accepted physical custody or progress")
         released = clock(complete.get("io_released_ns"), events[5]["monotonic_ns"], terminal[4]["monotonic_ns"])
         finished = clock(complete.get("batch_joined_ns"), terminal[4]["monotonic_ns"], events[6]["monotonic_ns"])
-        current_status(complete.get("published_status"), refused["published_status"])
+        status_evidence.current_status(complete.get("published_status"), refused["published_status"])
         exact(complete, {"io_released_ns": released, "batch_joined_ns": finished, "selected": 1,
             "completed": 1, "uncertain": 0, "not_started": 0, "status_error": False, "is_complete": True,
             "original_exit_confirmed": True, "original_lease_released": True,
@@ -158,7 +144,4 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    args = parser.parse_args()
-    print(json.dumps(validate(args.directory), indent=2, sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)

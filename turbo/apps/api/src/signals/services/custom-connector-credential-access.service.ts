@@ -1,11 +1,11 @@
 import { computed, type Computed } from "ccstate";
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
-import {
-  orgCustomConnectors,
-  type OrgCustomConnectorAuthMode,
-  type OrgCustomConnectorMcpTransport,
-} from "@okouai/db/schema/org-custom-connector";
+import type {
+  CustomConnectorAuthMode,
+  CustomConnectorMcpTransport,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import {
@@ -53,7 +53,7 @@ const customConnectorRefreshTokenSecret = alias(
 
 export interface CustomConnectorCredentialValueMarker {
   readonly connectorId: string;
-  readonly authMode: OrgCustomConnectorAuthMode;
+  readonly authMode: CustomConnectorAuthMode;
   readonly storageVersion: number;
   readonly kind: "secret" | "variable";
   readonly key: string;
@@ -75,7 +75,7 @@ export type CustomConnectorStoredValue =
 
 export interface CustomConnectorCredentialDefinition {
   readonly id: string;
-  readonly authMode: OrgCustomConnectorAuthMode;
+  readonly authMode: CustomConnectorAuthMode;
   readonly storageVersion: number;
 }
 
@@ -87,8 +87,8 @@ interface CustomConnectorStoredConnection {
   readonly storedStorageVersion: number;
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
-  readonly definitionAuthMethod: OrgCustomConnectorAuthMode;
-  readonly definitionMcpTransport: OrgCustomConnectorMcpTransport | null;
+  readonly definitionAuthMethod: CustomConnectorAuthMode;
+  readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
   readonly definitionStorageVersion: number;
   readonly oauthAccessTokenId: string | null;
   readonly oauthRefreshTokenId: string | null;
@@ -98,7 +98,7 @@ interface CustomConnectorStoredConnection {
 interface ConnectedCustomConnectorConnection {
   readonly id: string;
   readonly updatedAt: Date;
-  readonly authMode: OrgCustomConnectorAuthMode;
+  readonly authMode: CustomConnectorAuthMode;
   readonly storageVersion: number;
 }
 
@@ -119,11 +119,11 @@ export type CustomConnectorCredentialAccess =
   | {
       readonly kind: "incompatible";
       readonly memberConnectorId: string;
-      readonly expectedAuthMethod: OrgCustomConnectorAuthMode;
+      readonly expectedAuthMethod: CustomConnectorAuthMode;
       readonly storedAuthMethod: string;
       readonly expectedStorageVersion: number;
       readonly storedStorageVersion: number;
-      readonly definitionAuthMethod: OrgCustomConnectorAuthMode;
+      readonly definitionAuthMethod: CustomConnectorAuthMode;
       readonly definitionStorageVersion: number;
     };
 
@@ -221,7 +221,7 @@ function customConnectorStoredConnectionsSqlParts(args: {
 }
 
 export function customConnectorAccountAuthMethodIsCompatible(
-  definitionAuthMethod: OrgCustomConnectorAuthMode,
+  definitionAuthMethod: CustomConnectorAuthMode,
   storedAuthMethod: string,
 ): storedAuthMethod is "none" | "manual" | "oauth" {
   if (definitionAuthMethod === "automatic") {
@@ -231,7 +231,7 @@ export function customConnectorAccountAuthMethodIsCompatible(
 }
 
 export function customConnectorDefinitionFieldCompatibility(args: {
-  readonly authMode: OrgCustomConnectorAuthMode;
+  readonly authMode: CustomConnectorAuthMode;
   readonly kind: "http" | "mcp";
   readonly fields: readonly { readonly kind: "secret" | "variable" }[];
 }):
@@ -261,7 +261,7 @@ export function customConnectorDefinitionFieldCompatibility(args: {
 }
 
 function resolveCustomConnectorAccountAuthMethod(
-  definitionAuthMethod: OrgCustomConnectorAuthMode,
+  definitionAuthMethod: CustomConnectorAuthMode,
   storedAuthMethod: string,
 ): "none" | "manual" | "oauth" | null {
   return customConnectorAccountAuthMethodIsCompatible(
@@ -287,7 +287,7 @@ function customConnectorStoredAuthMethodIsCompatibleSql(args: {
 
 export function customConnectorAccountStorageIsCompatible(args: {
   readonly authMethod: string;
-  readonly mcpTransport: OrgCustomConnectorMcpTransport | null;
+  readonly mcpTransport: CustomConnectorMcpTransport | null;
   readonly storageVersion: number;
   readonly definitionStorageVersion: number;
 }): boolean {
@@ -315,7 +315,7 @@ function customConnectorStoredConnectionIsCurrent(
 }
 
 export function customConnectorAccountHasRequiredCredentialMaterial(args: {
-  readonly definitionAuthMode: OrgCustomConnectorAuthMode;
+  readonly definitionAuthMode: CustomConnectorAuthMode;
   readonly storedAuthMethod: string;
   readonly hasAccessToken: boolean;
   readonly hasAutomaticOAuthBinding: boolean;

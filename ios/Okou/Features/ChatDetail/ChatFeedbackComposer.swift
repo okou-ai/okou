@@ -12,7 +12,7 @@ struct ChatFeedbackComposer: View {
   var showsTrailingParagraph = true
   var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
-  var canSendFromKeyboard = false
+  var canSendEmptyFromKeyboard = false
   var submitFromKeyboard: (@MainActor () -> Void)?
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
@@ -92,7 +92,7 @@ struct ChatFeedbackComposer: View {
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: expanded || state.document.hasFeedback || isFocused,
                   returnKeyPreference: returnKeyPreference,
-                  canSendFromKeyboard: canSendFromKeyboard,
+                  canSendEmptyFromKeyboard: canSendEmptyFromKeyboard,
                   submitFromKeyboard: submitFromKeyboard
                 )
               }

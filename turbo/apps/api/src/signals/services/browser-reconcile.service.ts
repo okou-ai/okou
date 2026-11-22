@@ -167,9 +167,11 @@ function browserWindowFailure(error: unknown) {
     return { errorKind: "database", errorCode: sqlState };
   }
   if (error instanceof BrowserUseProviderError) {
+    const { upstreamHttpStatus } = error;
     return {
       errorKind: "provider",
-      providerStatus: error.status,
+      mappedHttpStatus: error.status,
+      ...(upstreamHttpStatus === undefined ? {} : { upstreamHttpStatus }),
       ...(error instanceof BrowserUseWindowHealthTimeoutError
         ? { nativePhase: error.phase }
         : {}),

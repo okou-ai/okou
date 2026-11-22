@@ -1,0 +1,328 @@
+-- Activate reviewed single-member workspaces on their default Agent.
+-- The reviewed Clerk roster is frozen by the workspace/member/Agent key.
+SET LOCAL TIME ZONE 'UTC';
+--> statement-breakpoint
+CREATE TEMP VIEW active_default_agent_eligible AS
+WITH frozen(cohort_key) AS (
+  SELECT value FROM jsonb_array_elements_text($cohort$
+[
+  "0192227e129e857495ba8346255b7b68a97e6b2b9f2b2fa908689355d7759022",
+  "022ff49bdf55aab7415f8498068313186c34d5eeca34bbdc72c9bd9bb9c9ffa9",
+  "02897218acd6d3cd66128afcf95baeba3fd43a516684af7add0fce0a8ffc214e",
+  "0afcc2c9806656ba8368bf749643747bac0fe1c4daa00018ad38c5555a145db1",
+  "0b4469df9b97794f28f344736cab2a13ebe76b92b55c5d5733ea56f04e26733d",
+  "0b59a2db713d8455ee42043558452fb7dcc5d1771192c3289463875b6f0367db",
+  "0cffa05740e1aaa822cfeb15296f00603433692bb9cfc8266217152f8ed590e7",
+  "10185aa8aa66df9922fbee50bc00c07d09bf26e0d99bdbf969b2189bbc11ec73",
+  "11b63ad9487536e0cb911b2ac627221f0f5deac1d9fee7b06d117d2cdab62d65",
+  "12c866e8b5cc6aa0d34fedc7ec82e76523db3f538a2358909439d94c7aeea7c8",
+  "133cbb8b7f869ce29047e4ea2a9cefd90920359f2d7d2aa32b5a3abf04125bb7",
+  "145caee9cb01a162145ab9b2710bf3e9d6636a09c6b400a95461506f5a051ba5",
+  "14d80a00ed4aec77b7e7d32f7af9d0f8129a2fb8181b0e12f50b903910ca7fa8",
+  "1667e23a393e0daede7c3bb67d08e8b51044c11bb97208ecb3dc381a6bfe4220",
+  "16e0c1f2c37ecc7d3f0a9052aec79f2056c6e91b4fcd1577d622483c21ec2c3c",
+  "1838e8bb0679acfaad1b796bfaa63637a8b3fa6e2189f19c97b276334cab494e",
+  "184bc349c4068d787aef5b0ae1ddc696dcd3fd3bac869a858294bf3b25a4d67b",
+  "1987160d6a6647c68420d9d6e822f88d09600c7c918b610e325b82307293b593",
+  "1a4ca0bbbb27756e3c9b5408e300d483db6207d7a95e02a46af0f7728c343025",
+  "1b510103691d1b037e59259db93e12832557a24fbad6a74f9682a399605bd2ca",
+  "1bf8b5315f930f53da3d062939f55a088aab13024904d9dabcb316fdff1c4283",
+  "1bfccdd0e45257a2a24f2dfd46c64f9ff960f2c3eeed0a1cfd77c3dc281091e9",
+  "1e74775c3422572e310ec5ff428cfb371c0467ab8c0b533d66df94d9b79b4d7b",
+  "1f296d4dacc63eaa48efb5fbea5fdd8cd1e37b296839405e2505c153a69bccdf",
+  "20c7a6afc9a5cef27aa68183f37434413ae943d18f47287ce862a2c242f6581f",
+  "2204474cd14618951c76ed11b6bdf47e2a1d0ba451c36f4bebfe8f04f85e6fc2",
+  "23555a4940878d412725e1ad62628cba94ea16f522ec86ebba7576504fa43ff5",
+  "24b15f8f6a52b5d0557fba28f2a519a20b7913d1653a9b624baf06cf477725cb",
+  "2841cee59fd058c7f67988c241c492abaa97e8e5f85b69c9c760615815122229",
+  "296037a74d659181db06d069b149e90b14004e8f1be7e3fe34587bf994496e71",
+  "2a42b5173e88d48a9d13d7e53ba02c17a0fb6d8be66de5f67c2383a184d100f3",
+  "2b79b5c3003e9adad6940deb07ddedf0f3544143956ea736c1f7c0750f19c35c",
+  "2c1a0cd79cbd1ad650952fcbd39f46d70fd5594bac981d7a342694a2f089a91e",
+  "2c4eda53011dce8fffdf8040a0fcd0b2b81742120760a830b38259b4ffa1ea7c",
+  "2c6651a508df9d2e624ef46f48de7ac92775b82d9736dc61b0f01587789add6c",
+  "2ccda655b8019023c6537a88e8683463625666bf2ec87e26cc57289f5611835a",
+  "2d94d918791842eed911b38b00816d9bcff1fde8a1d7ab71a6b8b6844caf7590",
+  "2e1452bc4120ff60c595653bf0700a2be30c273cc63281c3d307433f0743e7bb",
+  "303795225235c1346647089722ab28cc1f9baf537a95f05e43a4419aba74cab9",
+  "30da8b3364b2c4879eda56ba8c2a3ecb6395e379d6ee502e4c4a4ae5785775ac",
+  "313753dcc1aab80d5327563fc843d0a087e312eafe38941489075772910a1936",
+  "31396fea727a342c9b700352fe33109da983a7fb7d92d846da780cbcb3a56bb6",
+  "31530c6271f9d74c53724132fdf08881c480710994ecaf73e438ea2b97598f01",
+  "34be469eb8becda20435ff02748424f00b5327c4f9fc3ee84b4508c45b1a3122",
+  "361a57d78705d546db709d29343a9db238ec9abfd875c85a5c39f660fb952663",
+  "361cc85cb0bc35cb93d33b882079ca5778f6d330c2a6f78009891c26d89c6de8",
+  "3641c254f8831f971bbd5c5e7545f9c075bff42c1f1307236477ad3a18d4546a",
+  "36afa148ad5697c684bcfbb081a8ed03cbb5547afcd05296bd3ace43acb3b679",
+  "3702f1ac9717aec1e28d6d6676bbace61a51d7f768b43ca77a9c501623f287fe",
+  "37b1a3699fe1dd54b4e9388cc39a97582dd171adff3ed1c464eac403360278f1",
+  "386d7a11db09a4c0bfb7e3400f35a812c1cf6ca2543b406f63b65cbd5c14aa64",
+  "3873d51b42ec8bb482da497ba78f5cabc27764e4f0126a342f2cdd91c7466be6",
+  "39e0442c54b5cebc6b61d6d201321d1571188c35721b9f7619e53b0b1a90db2a",
+  "39e20fc943eeb4240b70986c343943e70021c89d995ed4e5b95324d3e8f88a6d",
+  "3bf28b2747f41a7d02d88c38844850f6a74265042ab94015a2bcfcfb16cff848",
+  "3e34cea47524f22cff26785377987dbb6a49308f62c57a77c9f2114dcf8408c0",
+  "3e79ba8d8a2be2f9349f8c9c16f8bed79cbcfe8b92a701c0db0e9142b0a48f74",
+  "3f466f5cb19c9b1076198b942393af68314061befeeb4fca6cffa63eef4413a1",
+  "3fdd725269be8d37c45a3772b47cb7351f1584a61761d8f0b7ea7fdd183ca680",
+  "419cee168cda3b21f2b4c5bdc1ab16223db0e975b1159c0ca3572dcc6766e492",
+  "41eaa2be4ab641e169fd17574c9281e68ee872ef24628c5ce12d9cbfd61795ba",
+  "42748b23b35c567539df4caa5113cf6e65bfd14b287a5a39729c48183305772d",
+  "42b392d5efe475ecfd90f0c084e6e95ea202eb6e4916fab255c6b49eee9dd327",
+  "42db8d7f75920535b9c6d17305d9b5d4d5cd6670a76e6f98b06a39a70b68439d",
+  "4396d58d402129b04149d9069bd9aa60aa5b6a0c8086b791d8fdb8b6d1fc15f4",
+  "44c7fcb8fd7a9926522b7253f577a7d14b0400a7e85d9e812540ef7138612cc6",
+  "4533f9bc5d362b1e679ebe52aba04eee24971b0b71d3995a0c4d9e8eec4aed5e",
+  "460835f9cbce23e4dfd622ee5c44946ea9bb39cf7306b8cac147f4fc8ec885dd",
+  "48911aa15ea0c4d389fc8c5296f012668007be285dd7d86b62c6f9d92d3443a1",
+  "49462442c960a465ea143747d244602ad9116766a3ce6c3694e45b8e2f9b9e22",
+  "495294aa6d3d92b81092db6c33e84284c6db9f4e802e8f1dee0ed7c093d6c0d7",
+  "495b279f284cb49f44a0ab2b8b3dd25b22bfba50f7a15fc574b436dcd7dcee8d",
+  "497b982f51d5daab6a15c37b4d0013f784c5ad3760b6d3851553f3c2b04bef91",
+  "4a75fcdcfd24852738eabd24784dd4daa94c089ec4aa5a4132a5d934fd262711",
+  "4acc6748814766865ff1d4261ab4733f082745b84f9acb1ffed9749982b89d0f",
+  "4aeecdcd9ab9c5a3327f813d4f3c9e509e2f1050c3225b45de112058e1aa0ef9",
+  "4b77c1ea812b2402fd092846b8f003fc9eb5708f00bde2b894fbd590669865d6",
+  "4f05efb61db7e484d5b579c71f92c46d51a8351b4a3ed9ccfb940f182bb24ef1",
+  "50732315303d9c073982822b0eb660ce2a8e939b7d15b5915b7e2dd8414f9efb",
+  "54bd101f016cf972e1dbda4698c67703bbb2faf89ed4430dbc403728c412f98c",
+  "54ed7c5cd3a79042bbf98906b538e13ddb83e1618e4277bf265032a5a02fc4e3",
+  "559d2364789693782f596dbd85f21c225bde32c81c33ca12759e429633f8bcf2",
+  "55abcf30390ac2b2eb44e3d940ec6d9ba5070cd119cce83565dd7db6866f26d7",
+  "55d2ac04837262f22c9ca73fa9fe323a15e4f9ce6ed7342ea4d204b8644e2f43",
+  "57660024024245f3c105bbe23c48e970474719072c73155f224878dc7c2df178",
+  "5789a163f5ddfc929b6d8a61d47103fc8939dc76f300b5ba7ee752ac1acfe6e4",
+  "57fecd0c8ca966c8dcf72b5c4cfcd2e41247be539298e8a54b617e0dff119795",
+  "58d1fd9650871ef0793fda5a67af8bad22a3fce55c9ab268393bc51d19cf43b7",
+  "5abcc569b332445ac12216fa513a9fb4cfa0e1720c821013f1af4ed5e9c0688b",
+  "5d1859cdfc7bd72ea1006e5be93212d44780750de067fb333a2738a3bce9c190",
+  "5d262ed590d6b7301b2fc28d36407bd246debb5bdc6bc3ac6e7a22e66fd631d1",
+  "5dcbeddc3f35295f5de4358fbefff9acfa4725b418c76301a90867301404ac36",
+  "5e5627fb2af1e0f6acc4c10f9e36f13a8566ab781841331c6d90c287c04e5978",
+  "5f8e8ecfe011840d852c598b919b5b5984f0d814254c36474254bbff0b3a88df",
+  "5febc7ca4dc811ca4ac4d5a7f3c0e16e2daa8e02088117b190e4df7e4d334139",
+  "619d5f6acfc38604b801bdbce7266d36d8cd207df10f153be1d2f77cb573dbc6",
+  "64a994c0e90d31f95b7907090386653357ebde54219fefc80002d04e72dc3a83",
+  "66449c8075916d2799e07a92c86418d16dafd7ae2640a1b654408eb8b81d732b",
+  "6964ba5b8632282ff5a59b2c50e6c5896503a8adfc1a531b1a9b5462494ed6be",
+  "6a0232ddc42e1997ad82eaa38f75204270740f268a5d259335081b53c646a99b",
+  "6b467b18e3948728d57a4f6a4425d8e970b056da237db1b36d2b2a29837b2cd1",
+  "6b5e37c43ab5b3c6fd68c2aeceec6c6b58b0848d15686a7161ccce14266de51a",
+  "6bf97b029823ef09c22f7f0b47d1d5a92f1285a5bbc0a4b12ae2b802a8ca48d8",
+  "6c1e68424d168fcbdbd3bd5af9c73aab59a4f1164257faa7e79c6e68a099cf6a",
+  "6e2c968be65114027bda5d9b6d432344c9c3a95689e11bc517ae9d7ab18c6037",
+  "70c93ec9751d7e5011b2d0ea57bf2b5521781fffbdbac070a31c66dd391ff3c8",
+  "7121562420138773a81f83d9ea623ec26412aa731b514779e7d11ceaedd04dbb",
+  "7194828c9af5340dfcf8017f6c252f98ec6d964b002e8e0c38d72b3af6269c84",
+  "71a5da78650d037cff6358a82cd273a408e2e95fd2ab9178f9992212dc7f0c96",
+  "7253d6aab5c6efba122446cbb28970c074a2de1e671459096679f58f61c99451",
+  "726fa422706ae65810b1f4958ae1afb7e47d3e50753c7215cddad0553979a2c7",
+  "72e52490a8aff34b8acb5df7262fe220e0038410d725c087cea5c0e31fe0804d",
+  "77f0a4b993a796a4f400cc914fc093a8f7356aeac28d7a83db7c424bf4369899",
+  "78d2cd3e89257fdc0eabdf23f6f97990797b31e347c8984e7207bdd1c82106b2",
+  "7a56feefed020e1abca29e21068ea121b8ff8b0a694d5c39e9695d28d9fe2577",
+  "7aeaa36c4bdc7590573691f646af10dc75cf57dc246a4e500e289865197a154d",
+  "7bb4d0627f77918a5e634eebede578e5d03a60a8ca0549824246028c9634098a",
+  "7c640796c3754b73fcc373db65c837719de8b625ee00f186f19cb702b9982d2e",
+  "7c9bdd9ffa558c788630c59cae7a4757d40f09e7d2fb5071554c0e76a1e9b6f0",
+  "7cbc77eedfa8306f705d0d1b5e7bc86079355f4ff27df6049015c203794951fc",
+  "7de29478e7d88c34abbb36c1ec9acd61658d70fb3abf43fa5f47d5993f835b51",
+  "7ffc52028aaaa3b2ee15894ad40c4224968b05d12509acaf47db22e5c5ef56ee",
+  "81159da1f226b163a64a346674c2928d9bf5377cdb8774ad1b9eb5330671e737",
+  "811945f2264b7c99c42eeb6bb602aefb742641a1495ad5a72d109dbd956ca191",
+  "836f62c6028f73ffa43a295e9b1d034e239fd707e4ff18b689226b7ce78c8b74",
+  "84f4bb96c15f1065154ba9015f655cbfc1db80975afeebbe413e5237eb914530",
+  "8827836d286086c7fb6b3649e5eae124f2a014ee40d17b94719323a96bb8ed36",
+  "88f68dfd9ee4c45e8d40b7ea8361db6e63f0d30461d03620b5356d770a33ebbc",
+  "8cfec12a5d9329d44ecdd416cd47f6cac2fd9e789dd24d358099f5d8fee25301",
+  "8e49f50021cfc1a784d24fbb038a94fbae5a119ad72c1d43717da03845742235",
+  "91ebcaaf81923da2ab9f88775068767d4adc0ec763fc7d82800349bb932e81a9",
+  "92e48d3349ae9d2bf87105688780b9b90d726f8f6c8c1afb6878e83695aecde4",
+  "9304cc6b422f5d740d783f51f4af70a3419f974a5922c7e62a498a8b06278456",
+  "96196d56413068bbc272ebe39c2ecbfd17c70ac0918fa1c37cc9bdc6f89e6711",
+  "9666cf0a478d1cd3ab6588d2dbfdb4c700640bba0673b8bab7a911e79a8f800b",
+  "96672f736ae654cdb3cf89fe6fb1affc676dc685ce1180eae3c239f62b8dd1c4",
+  "98f33dcc55df72534574ad6b7cb2b68a19c43a1d36ab2a4185e634106ac28ae5",
+  "991ec41e35e6fe97119ab8e2afac9d9c4890940274159a9148594ad7f5f57d53",
+  "99a5ba50a3628433a862496b1032051166cd2dab1a3673422e36ed5be2d2c2db",
+  "9ba45ff206833f0cbd3ba7d96a27b2a4521d8e41e4b388f61fbbf47222c99816",
+  "9f766cf7d5fcc63a25b34c68f10ebd070a852279f3013c1183b0434b07ee6082",
+  "9fb32f7327cdd1b170c9d770f148a82980f2dfdca09b15d5200b5eeabb810a97",
+  "9ff57583585a53028f1f85d71130dec39e2bd57df5c4b717fcdc10b2365da35f",
+  "a1cde91592a5749a625fd16e82b5c0ab48a3d6cd9cdd603bd5f51c79d3283b0d",
+  "a378d0bad1f3d15202fd224796aa65cef3c7314b80196988574b5ad33a9a1376",
+  "a54b7e70c51f6ff8f93bc6d1b167c7c202bfd6ef3bc6cfae5225a99371e5d1e7",
+  "a6815eb353d13b741a8b5e01f02cb3f285c6e196821fc6caff28ab2d0e159cdd",
+  "a759f40a1d35f1e084094759fd786fbe66563720a5a8d79c409728e356442466",
+  "a8a1a5c27d7d3ec16f60d5a3c0a94ed7a735d330d821dceff4f7cd60cc26e46f",
+  "a8bf00339f3f4776874a8e889cdb3cf8f15f03dfae64f1bf15ad9c6e163fbc3f",
+  "a9c082fd0920df72999e9a43a76cf665ec900f6c91ba408547e36cae4abd4064",
+  "aa21fbf9264d0cc705e63624105df11443e288d5326a03a9b8c43f96f9cd6da0",
+  "aa31190359c11649ed4cd406246adceead9facf39a6db52d2b616486c92b1420",
+  "aa89385118d6555011b0dd601c20b391a27d9a0599399685819fb3556831343b",
+  "ab28b7bb5602d0849573d7fb82f376b6208503597e10d48d46d7b2b40bd781e5",
+  "ac05bd351a4ecd1895d3d9f9ef62ed77aa10b16299eecb61ddad3c7803866493",
+  "acd85cf7c273931a0f92ffe8958336612eabde572409e22a490d01812f2b5504",
+  "afc80446eaee965749eb868fbd7fc65fc697dc2ec5e606c3c8ca8dbed4ecacd8",
+  "b070c34a57a1da2d26ed9adab9bd628f40e03a340fdabc078f6fe1c65b3e1612",
+  "b12ffafd26f732d842a0a3c8f4b2d00505d0bfa8d6d5a62ee9287a64568633c0",
+  "b6024bb8996fe48710a07c2c185b98ec576e162ead7ff94545c9b9624b9f44af",
+  "b727e1c72b12550c96ef3935710e7b18f9ceddab7f529282be08d0f3ef462f37",
+  "b74397f5c0d8cbaa541a1b1429bf322b565fcb0fadce4b7631e034dd4b63c05a",
+  "b7ed07139e9b495b49ed8016d4210f86250ac626dd484873bdcee1bede643e5e",
+  "b7f586ee518702a48fc4dcebb4899d678fb7b2bbe5dcbdcd50f6fb45a65942dc",
+  "ba1d60a23b71c772ed34d9e22493e712e54b84515083f424474adcfd93c157de",
+  "bb6a25f18e13e56b07314036e795b8ab619ef07bc31acb9a021df32101f1eee8",
+  "bc5cc1136d21695333f68bf9c986ad74dd5ce05dd133b9567f3e1a971e845395",
+  "bc9382f02d497ec72410df59489156f862d1cf00f151fb4625d2c59fa552b865",
+  "bdbad082754fb72388589be1cbc65a80f02fec11efe545561e51a09997923cd3",
+  "beb79e333dd586cb552e6198476966627c82232e37bad7d292cbe9b198f72edd",
+  "bf8f3808f6c41eece3595602fcf6e51bf93086ab4d5bf3150f4796404837d615",
+  "c0a82cb299daf51a515c4e26ea8121676ccb51e5ad178d98767d85c6c94e0a62",
+  "c0ecc5d08e5fcdd1a4f62704bdfb7d52729c380f8c62edb56a370717cb18554a",
+  "c1a51b279c27227bd05981f8e1723bc1305323b4e4ea1d19d551cc54f33331a0",
+  "c40266b470a07b4cf9c36a64f79d2f01d654b97f31d72293b0607f5feea7c92e",
+  "c54239409d1cf8f65edfc26c848d4f912b5bfdeb5e0bff9f403f8e24fc73f43b",
+  "c54d3ce1c7148759d76e4ab44bd28798b096ba6c90c871b2a25a0995156355bc",
+  "c7bb34c62a6d303a36a0d520511b9b392a17519189d09741152f1281d9ce9250",
+  "c7d8dbf452aaa42a9fbf2c560c7b6de9bb19d95b5ac2c2fbb008a11d8424842d",
+  "c856b224a882f00db0baf626acc95bad687250a8b4d8337968148e3bd2005f81",
+  "c86554d91cc4496fdc685d7118488c0435e29a38613eccf77cc11691ccf26589",
+  "c8b4a95eb790d59e40204e31e7883517f619817e29a66acc69a400ecc5726698",
+  "ca2c58881f3b18e5bcfa076c9a1260bbffa857f75fa4a39f2279e9a5a9a1155a",
+  "cd241d62df76382422faaf2c8dc3685b06f1597cce5063668f16d10cdc8c795e",
+  "cd24a8592720317f5e257e724e519b32bd7f3fbe32ec1f7d73a5c9b6fe6f501b",
+  "cedfd89f31049b70d440ca9589fa3ffb54f03b257ea903e1ba1eb714e17e8afe",
+  "cee55e257790836fe9cf6da91fc74cb058038a4703070f366eb933024c2d51ac",
+  "cf11e396470c9aee8e6fd73c2edfe53a483aacd19c499cac64dc161f7ec99be9",
+  "cf57546b9635eeb29afd93481df8243a69e29efc5ea3e81a4c0ea844a78f8fb0",
+  "d09b3d8bc9c9771f44d964d2c71ccb9a1e1174352a6075f6752b54829d1860e7",
+  "d283755a5f4276d6d5bce06a12b785e0e36936f4585cc0258ecef6d0cf9fe447",
+  "d348fd298fe2d945207bff8a4137141118fae80f6bc6fcec7332c9b953853826",
+  "d38540eb3021a530cdd76d31fef161fa7a74a6529659afcb13973a188703cb63",
+  "d3f12947f2af0afa45be7ef3c0e52cd83998d0682d1c3cf799587b5b6389338f",
+  "d4a6ce8b5ed30e483caa016bdf12e33a95ab0811d6e080129020ed6ce197ec71",
+  "d51f7d3a0f74ce81547e5002c197041be3f3d65fa795919778899bd673a827ca",
+  "d5594cec3d123ca616a669ab1b293d583c9e80058157a9ff263cced33d97956b",
+  "d5ff83a5051969e3c42fe354602652e9b3e9e88a2676a91a5659970ebd48f4a2",
+  "d61bf8cee7faf83861a32396575638f5e8b8275f63b10fb5b1c2596954abb266",
+  "d715916c16bdcc27ebad12060732648dce7725bd224bcb38a868c23e0411740b",
+  "d779eaf8b7a10b9d0341b308f365d8ea865040f8063457649937807deec38282",
+  "d7812fe285e19d7032ecb55d7098f6600daa30989f911d8270a363983734e21a",
+  "d83144f5f508edc552a88e5e98ab217122ce0994e7798410dab2692e0ac3a1dc",
+  "d90c6e24e57a5d94c2e0376fbe82ddc4fe37a44b0db36af741d588c457f209dc",
+  "dc6280c74163657547e64c554e43f299ddeba6450af2a8942904ddb2cdf36e25",
+  "dd35a53f7ba47473b481fa7bc3a338b16bb9f5072f2741e2b0e8d32235bc163a",
+  "dd533aa27feeb345d0aafde0ac658f1f94bce740a7125bf1361917fecfd5341f",
+  "dda51f7a1fb91d0d166e1767fb75ce8cfc573655cccd9ca751ea281b1f89d01e",
+  "de1762fa54f973a66a399efbca9685f9379b9bcbddb264fd1441575d069a9d8d",
+  "e11f698dc6e93114b9ac1e5be26daa0e4463ff7243a9ddf3daead0a672fd3910",
+  "e14118e2303ce2b3a0994d8e70299a93547fc24ba4bbdafc81c676b1b3f5da0a",
+  "e23c8c04c2419a6e9e248ef33c367c880c6f3a7543422271a940d0b87cfd02b1",
+  "e277253465984133f2e236cabc3105a81699511ee6e1d9ac0493d7ebd3ea9fbc",
+  "e3fcc367e744abc6550221772d9218745c3799361fb687f4adb78df945f30a2e",
+  "e48fd6a06e7a8f1cca4b628a69bdf175230aa90e9dda4a3536c57e844984ed67",
+  "e4e1575fa8c6b2045003164239dc2c586b92f90035ddc86ceb4efaaaeeef2666",
+  "e6289ebc1681f340c23629547642ef12b8b7dbe34d269510f101ea4573deb06d",
+  "e668f2843151f77a13684482016db7e9819c582f775be0129c99697ba3960d96",
+  "e7c91e920156aab046fd2b79d45bd7531c3cfe1dec74cd7eaa35ff8cd74f1eb6",
+  "e8428a131820aeb851d70a70900fe8702eca48f305d47648c2935dd2593f8e3b",
+  "e849841f3dbe074d3d53cb25ecea5ba4cb481088cadf93c0024e2c5c02619b3e",
+  "e8b570aea9523cdf77d24a861d7c3315f4f4d443a4fca8aa7924f706069d6aba",
+  "eb1cfc620d187b9b6c206a7d045bf37e44b12068119993d3ab726ca5f553f223",
+  "eb849420d91c18003bd5f714a52bded76387f7963ddeb4a19b43da042000272f",
+  "ebdc078f177fd9bbd7666a16b7a2dca3d1924867da4efc6f55e0fba2a0daa403",
+  "efb3c4311a9f26da8dd34fa0f454acc7bfc724942016e7b0aaeb9c6e47aa5004",
+  "f1e2a933b13cd8cd97b5e89cf47fea38f364e859a1295db7cda52af8724f3782",
+  "f404a7aff13472d5316c1afbcc12840b265d4d048f8e300262c87139e3538736",
+  "f5a29034040bd5af118daf5534875c976bc3c8e8a1357323eeb8fa85705764bd",
+  "f84fc10c9d83028bc0d7e5735ceac37ec78c13525178cbc71681fb70d4503be6",
+  "f860021269f74bfd5f5c6017fcea250819b207d03b5450e6df3289cc55e40454",
+  "f8ca5e32894bd6fd52a8b74e54fca8ed42fac3536c5f9b1c1c33e096fb2b58f9",
+  "fa0e3fc594ea8829a6c4fc162fa99ae6ccd0696e6b7c9549d1f9e711bdf1ec77",
+  "fc3817855a3d04f8c8959c158c5043ff6bfe97f77a4a4ade836791d81e3c932e",
+  "fe7c1ffe753d449c62b4ba93e5c76c02643f5e6d9e34704b202aa2e8b7eda830",
+  "ff2e7a756be71bebb28b98fceba40803a9f31dbcfd6df97c56ea608a764e6d22"
+]
+$cohort$::jsonb)
+)
+SELECT o.org_id, f.user_id, a.id AS agent_id, a.instructions, a.instructions_bundle,
+  a.xmin::text || ':' || a.ctid::text AS agent_row_version
+FROM org_metadata o
+JOIN agents a ON a.id = o.default_agent_id AND a.org_id = o.org_id
+JOIN user_feature_switches f ON f.org_id = o.org_id AND f.user_id = a.owner
+JOIN org_members_metadata m ON m.org_id = o.org_id AND m.user_id = f.user_id
+JOIN frozen x ON x.cohort_key = encode(sha256(convert_to(
+  o.org_id || ':' || f.user_id || ':' || a.id::text,
+  'UTF8')), 'hex')
+WHERE a.visibility = 'public' AND a.instructions_bundle IS NOT NULL
+  AND f.switches->'singleAgent' = 'false'::jsonb
+  AND NOT EXISTS (SELECT 1 FROM agents other WHERE other.org_id = o.org_id AND other.id <> a.id)
+  AND NOT EXISTS (SELECT 1 FROM org_members_metadata other WHERE other.org_id = o.org_id AND other.user_id <> f.user_id)
+  AND NOT EXISTS (SELECT 1 FROM org_members_cache other WHERE other.org_id = o.org_id AND other.user_id <> f.user_id)
+  AND NOT EXISTS (
+    SELECT 1 FROM agent_runs r WHERE r.org_id = o.org_id
+      AND r.created_at >= now() AT TIME ZONE 'UTC' - interval '30 days'
+  )
+  AND NOT EXISTS (SELECT 1 FROM agent_runs r WHERE r.org_id = o.org_id AND r.status IN ('pending', 'running'))
+  AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.org_id = o.org_id)
+  AND NOT EXISTS (SELECT 1 FROM active_agent_runs r WHERE r.org_id = o.org_id)
+  AND NOT EXISTS (SELECT 1 FROM queued_chat_threads q WHERE q.org_id = o.org_id)
+  AND NOT EXISTS (
+    SELECT 1 FROM workflows w WHERE w.org_id = o.org_id
+      AND (w.agent_id IS DISTINCT FROM a.id OR w.owner_user_id IS DISTINCT FROM f.user_id)
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM workflow_automations wa
+    LEFT JOIN workflows w ON w.id = wa.workflow_id
+    WHERE wa.org_id = o.org_id
+      AND (wa.enabled OR wa.owner_user_id IS DISTINCT FROM f.user_id OR w.org_id IS DISTINCT FROM o.org_id)
+  )
+  -- Enabling Single Agent can expose already-published gated Guide cards.
+  -- Defer unseen eligible revisions instead of changing guides or their receipts.
+  AND NOT EXISTS (
+    SELECT 1 FROM feature_guide_editions e
+    JOIN feature_guide_revisions r ON r.id = e.published_revision_id AND r.edition_id = e.id
+    WHERE e.published_at IS NOT NULL AND (r.expires_at IS NULL OR r.expires_at > now())
+      AND f.switches->'featureGuides' IS DISTINCT FROM 'false'::jsonb
+      AND r.content->'items' @> '[{"featureSwitch":"singleAgent"}]'::jsonb
+      AND (
+        r.content->'audience' IS NULL
+        OR r.content->'audience'->'orgIds' @> jsonb_build_array(o.org_id)
+        OR r.content->'audience'->'users' @> jsonb_build_array(jsonb_build_object('orgId', o.org_id, 'userId', f.user_id))
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM feature_guide_receipts receipt WHERE receipt.user_id = f.user_id AND receipt.edition_id = e.id
+      )
+  );
+--> statement-breakpoint
+CREATE TEMP TABLE active_default_agent_targets ON COMMIT DROP AS
+SELECT eligible.*
+FROM active_default_agent_eligible eligible
+JOIN user_feature_switches f USING (org_id, user_id)
+FOR NO KEY UPDATE OF f;
+--> statement-breakpoint
+INSERT INTO instructions (org_id, user_id, content, bundle)
+SELECT org_id, user_id, instructions, instructions_bundle
+FROM active_default_agent_targets
+ON CONFLICT (org_id, user_id) DO NOTHING;
+--> statement-breakpoint
+DO $$
+DECLARE
+  activated integer;
+BEGIN
+  UPDATE user_feature_switches f
+  SET switches = f.switches || '{"singleAgent":true}'::jsonb, updated_at = now()
+  FROM active_default_agent_targets target
+  JOIN active_default_agent_eligible eligible USING (org_id, user_id)
+  WHERE f.org_id = target.org_id AND f.user_id = target.user_id
+    AND eligible.agent_row_version = target.agent_row_version
+    AND eligible.agent_id = target.agent_id
+    AND f.switches->'singleAgent' = 'false'::jsonb;
+  GET DIAGNOSTICS activated = ROW_COUNT;
+  IF activated <> (SELECT count(*) FROM active_default_agent_targets) THEN
+    RAISE EXCEPTION 'Quiet default Agent cohort activation count changed during cutover';
+  END IF;
+END $$;
+--> statement-breakpoint
+DROP VIEW active_default_agent_eligible;

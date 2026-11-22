@@ -18,7 +18,6 @@ final class WorkspaceStore {
     modelBootstrap: modelBootstrap, projectBootstrap: projectBootstrap,
     indicatorsBootstrap: indicatorsBootstrap, createRealtime: createRealtime,
     lifecycleTasks: lifecycleTasks, conversationLimit: conversationLimit,
-    prepareDefaultDraft: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     didRestoreSidebar: { [weak self] in self?.hasRestoredSidebar = true },
     notificationRevision: { [weak self] in self?.notificationReadRevision ?? 0 },
     notificationChanged: { [weak self] in self?.notificationReadStateChanged() },
@@ -94,7 +93,7 @@ final class WorkspaceStore {
   private let voiceCapture: (@MainActor () -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
-  private var draftAgentID: String?
+  private var workspaceComposerReady = false
   private var agentDraftTask: Task<Void, Never>?
   @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
     resources: resources, lifecycleTasks: lifecycleTasks,
@@ -122,7 +121,6 @@ final class WorkspaceStore {
     realtime?.retry()
     do { try resources.retrySidebarDrafts() } catch { handle(error) }
     async let drafts: Void = activateDrafts()
-    await refreshNavigation()
     await refresh()
     await drafts
   }
@@ -146,7 +144,6 @@ final class WorkspaceStore {
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) },
     didChangeReadState: { [weak self] in self?.notificationReadStateChanged() },
-    didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     readRetrySleep: readRetrySleep, indicatorsBootstrap: indicatorsBootstrap,
     lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var projects = ChatProjectStore(
@@ -155,8 +152,8 @@ final class WorkspaceStore {
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) },
     lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var sidebar = ChatSidebarStore(
-    store: resources.store, threads: list.threadsValue, agents: list.agentsValue,
-    projects: projects.confirmedValue, selectedThread: selectedThread)
+    store: resources.store, threads: list.threadsValue,
+    projects: projects.confirmedValue)
   private var realtime: RealtimeService? { synchronization.realtime }
 
   private var refreshGeneration: UUID { synchronization.refreshGeneration }
@@ -225,12 +222,6 @@ final class WorkspaceStore {
 
   func start(userID: String, workspaceID: String) async {
     await synchronization.start(userID: userID, workspaceID: workspaceID)
-  }
-
-  private func prepareDefaultDraft(from agents: [AgentRecord]) {
-    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
-    let id = agents.first(where: \.isDefaultAgent)?.agentId
-    if let id { activateDefaultDraft(agentID: id) }
   }
 
   private(set) var selectedConversation: ConversationStore?
@@ -314,21 +305,25 @@ final class WorkspaceStore {
     synchronization.setPhase(phase)
   }
 
-  private func activateDefaultDraft(agentID: String) {
-    guard !closed, draftAgentID != agentID else { return }
+  func prepareWorkspaceComposer() async {
+    guard !closed, !workspaceComposerReady, !Task.isCancelled else { return }
+    // A previous installation can have unsent text, attachments or voice under its old local key.
+    let previousNavigation = await sync.cachedNavigation()
+    let localAgentID = previousNavigation?.agents.first(where: \.isDefaultAgent)?.agentId
+    guard !closed, !workspaceComposerReady, !Task.isCancelled else { return }
     agentDraftTask?.cancel()
     let previous = newComposer
     let composer = ComposerDraftStore(
-      target: .agent(agentID), commands: commands,
+      target: localAgentID.map(ChatDraftTarget.agent) ?? .workspace, commands: commands,
       repository: draftRepository, storage: draftStorage,
       didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
-    // Preserve input entered before navigation resolves the default Agent.
-    if !isCreating && previous.hasContent && draftAgentID == nil {
+    // Preserve input entered while the on-device draft was loading.
+    if !isCreating && previous.hasContent {
       previous.move(to: composer)
     }
     if !isCreating { previous.close() }
-    draftAgentID = agentID
+    workspaceComposerReady = true
     newComposer = composer
     composer.setForeground(isForeground)
     agentDraftTask = Task { await composer.synchronize() }
@@ -376,7 +371,7 @@ final class WorkspaceStore {
   func removeNewChatProject() { newChatProjectID = nil }
 
   var canOpenNewChatFromSystem: Bool {
-    isForeground && defaultAgentID != nil && !isCreating && !needsUpgrade && !closed
+    isForeground && workspaceComposerReady && !isCreating && !needsUpgrade && !closed
   }
 
   @discardableResult
@@ -435,15 +430,13 @@ final class WorkspaceStore {
         sourceComposer.close()
       }
     }
-    let wasAwaitingAgent = selectedAgentID == nil
+    let wasAwaitingComposer = !workspaceComposerReady
     guard sourceComposer.hasContent, sourceComposer.canSend, newAttachmentDraft.isReady,
       selectedThreadID == nil, !isCreating, !needsUpgrade, !closed, !Task.isCancelled,
       newModelSelection.canSend
     else {
       return
     }
-    let sourceAgentID = defaultAgentID
-    newModelSelection.connectors.configure(agentID: sourceAgentID)
     let options = newModelSelection.connectors.pendingOptions
     let messageID = UUID().uuidString.lowercased()
     let transition = sendTransition ?? ConversationSendTransition()
@@ -474,9 +467,9 @@ final class WorkspaceStore {
       !closed,
       let conversation = conversation(for: created.id)
     else { return }
-    newModelSelection.connectors.consumeNewChatOptions(agentID: sourceAgentID ?? created.agentID)
+    newModelSelection.connectors.consumeNewChatOptions(agentID: nil)
     sourceComposer.move(to: conversation.composer)
-    if wasAwaitingAgent && newComposer !== sourceComposer {
+    if wasAwaitingComposer && newComposer !== sourceComposer {
       newComposer.clear()
       newComposer.requestSync()
     }

@@ -1,3 +1,9 @@
+import { activeRoute$ } from "../active-route.ts";
+import { apiClient$ } from "../api-client.ts";
+import { updateDocumentTitle$ } from "../document-title.ts";
+import { rootSignal$ } from "../root-signal.ts";
+import { pathParams$ } from "../route.ts";
+import { queryChatThreadEventSharedDatabase$ } from "../shared-database.ts";
 import { command, computed, state, type Command } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import type {
@@ -10,14 +16,9 @@ import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import {
-  captureChatThreadMetadataShortcut$,
   type ChatThreadMetadataShortcutOutcome,
+  captureChatThreadMetadataShortcut$,
 } from "../../lib/posthog.ts";
-import { activeRoute$ } from "../active-route.ts";
-import { apiClient$ } from "../api-client.ts";
-import { updateDocumentTitle$ } from "../document-title.ts";
-import { rootSignal$ } from "../root-signal.ts";
-import { pathParams$ } from "../route.ts";
 import {
   resetSignal,
   createDeferredPromise,
@@ -29,7 +30,6 @@ import type {
   ChatThreadEventDataKey,
   ChatThreadEventQueryResult,
 } from "../../shared-database/data-key.ts";
-import { queryChatThreadEventSharedDatabase$ } from "../shared-database.ts";
 import type {
   ChatThreadEventView,
   OptimisticChatThreadEvent,
@@ -56,7 +56,6 @@ interface ChatThreadEventState {
 
 export interface ThreadMeta {
   readonly id: string;
-  readonly agentId: string;
   readonly title: string | null;
   readonly pinnedAt: string | null;
   readonly archived: boolean;
@@ -381,7 +380,6 @@ const canonicalThreadMetaMap$ = computed((get) => {
   for (const thread of get(allEventDrivenChatThreads$)) {
     metaById.set(thread.id, {
       id: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       pinnedAt: thread.pinnedAt,
       archived: thread.archived,
@@ -450,7 +448,6 @@ export function threadComputerAccessVersion(threadId: string) {
 function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
   return {
     id: metadata.id,
-    agentId: metadata.agentId,
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
     archived: metadata.archived,
@@ -716,7 +713,6 @@ export const touchOptimisticChatThreadSort$ = command(
     args: {
       readonly id: string;
       readonly threadId: string;
-      readonly agentId: string;
       readonly createdAt: string;
     },
   ) => {
@@ -724,7 +720,6 @@ export const touchOptimisticChatThreadSort$ = command(
       id: args.id,
       kind: "sort_touched",
       chatThreadId: args.threadId,
-      agentId: args.agentId,
       createdAt: args.createdAt,
     });
   },

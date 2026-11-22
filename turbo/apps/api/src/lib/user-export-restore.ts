@@ -434,6 +434,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix=".okou-restore-", dir=output.parent) as temporary:
         temporary = Path(temporary)
         with sqlite3.connect(temporary / "index.sqlite") as db:
+            # This scratch index is rebuilt from the ZIP on each invocation.
+            db.execute("PRAGMA synchronous=OFF")
             db.execute("PRAGMA cache_size=-8192")
             db.execute("PRAGMA temp_store=FILE")
             archive = Archive(archive_path, db)
@@ -442,7 +444,6 @@ def main():
             restored.mkdir()
             restore_threads(archive, restored)
             restore_instructions(archive, restored, "instructions")
-            restore_instructions(archive, restored, "agents")
             restore_instructions(archive, restored, "workflows")
             restore_memory(archive, restored)
             with create_file(restored, "export-manifest.json") as destination:
@@ -471,7 +472,7 @@ pages, each source file's SHA-256 and byte length, and ZIP CRC32 checksums befor
 restoring any content. Temporary files are removed if verification fails.
 
 The output contains chat-threads.jsonl, chat-messages/<threadId>.jsonl,
-instructions.jsonl, agents.jsonl, workflows.jsonl, and memory/<orgId>/<originalPath>. Chat events
+instructions.jsonl, workflows.jsonl, and memory/<orgId>/<originalPath>. Chat events
 preserve their IDs, sequence numbers, payloads and control/revocation records.
 The newest snapshot of each thread supplies its events. The upper sequence
 bound is the thread's own manifest record raised to that snapshot's coverage,

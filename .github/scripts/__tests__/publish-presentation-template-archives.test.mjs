@@ -152,6 +152,10 @@ for (const outputFormat of ["html", "pptx"]) {
           }),
         );
 
+        for (const slug of config.deferredTemplates ?? []) {
+          await mkdir(path.join(sourceDir, slug));
+        }
+
         const sourceCommit = "a".repeat(40);
         const buildArgs = [
           "build",
@@ -174,7 +178,10 @@ for (const outputFormat of ["html", "pptx"]) {
           ...config.source,
           commit: sourceCommit,
         });
-        assert.equal(publication.packages.length, config.templates.length);
+        assert.deepEqual(
+          publication.packages.map((pkg) => pkg.slug),
+          config.templates.map((release) => release.slug),
+        );
         for (const pkg of publication.packages) {
           assert.equal(pkg.fileCount, outputFormat === "html" ? 4 : 6);
           assert.ok(

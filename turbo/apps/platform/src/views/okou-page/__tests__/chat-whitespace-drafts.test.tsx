@@ -1,4 +1,4 @@
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { ComposerDraft } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -23,17 +23,17 @@ async function openWhitespaceDraft(kind: "agent" | "thread") {
     caseId: 41,
     threads: [thread],
   });
-  let agentDraft = textContinuityDraft("");
+  let workspaceDraft = textContinuityDraft("");
   const agentPatches: ComposerDraft[] = [];
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
-    return respond(200, agentDraft);
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
+    return respond(200, workspaceDraft);
   });
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
-    agentDraft = {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
+    workspaceDraft = {
       draftUserMessage: body.draftUserMessage,
       draftAttachments: body.draftAttachments ?? null,
     };
-    agentPatches.push(agentDraft);
+    agentPatches.push(workspaceDraft);
     return respond(204);
   });
   const latestPatch = () => {
@@ -44,10 +44,7 @@ async function openWhitespaceDraft(kind: "agent" | "thread") {
 
   await setupPage({
     context,
-    path:
-      kind === "agent"
-        ? `/agents/${thread.agentId}/chat`
-        : `/chats/${thread.id}`,
+    path: kind === "agent" ? "/?compose=1" : `/chats/${thread.id}`,
     ...workspace.pageOptions,
   });
   const composer = await screen.findByRole("textbox", { name: "Message" });

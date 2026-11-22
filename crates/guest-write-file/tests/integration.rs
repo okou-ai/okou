@@ -214,6 +214,72 @@ fn batch_mode_truncates_existing_files() {
     assert_eq!(std::fs::read(path).unwrap(), b"new");
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn sealed_batch_reports_failure_after_a_short_transfer() {
+    use guest_control_proto::{WriteFileBatchEntry, encode_write_files};
+    use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
+    use std::fs::File;
+    use std::io;
+    use std::os::unix::process::CommandExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("limited");
+    let later = dir.path().join("later");
+    let prefix = b"prefix";
+    let content = [prefix.as_slice(), b"suffix"].concat();
+    let payload = encode_write_files(&[
+        WriteFileBatchEntry {
+            path: first.to_str().unwrap(),
+            content: &content,
+        },
+        WriteFileBatchEntry {
+            path: later.to_str().unwrap(),
+            content: b"later",
+        },
+    ])
+    .unwrap();
+    let fd = memfd_create(
+        c"short-transfer",
+        MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
+    )
+    .unwrap();
+    let mut input = File::from(fd);
+    input.write_all(&payload).unwrap();
+    fcntl_add_seals(
+        &input,
+        SealFlags::WRITE | SealFlags::SHRINK | SealFlags::GROW,
+    )
+    .unwrap();
+
+    let limit = prefix.len() as libc::rlim_t;
+    let mut command = helper_command(&["--sealed-batch"]);
+    command.stdin(Stdio::from(input));
+    // SAFETY: These async-signal-safe calls only configure the child before exec.
+    // Ignoring SIGXFSZ lets the helper report EFBIG after the prefix is written.
+    unsafe {
+        command.pre_exec(move || {
+            let limits = libc::rlimit {
+                rlim_cur: limit,
+                rlim_max: limit,
+            };
+            if libc::signal(libc::SIGXFSZ, libc::SIG_IGN) == libc::SIG_ERR
+                || libc::setrlimit(libc::RLIMIT_FSIZE, &limits) != 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let output = wait_with_timeout(command.spawn().unwrap(), Duration::from_secs(5));
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains(&io::Error::from_raw_os_error(libc::EFBIG).to_string()));
+    assert_eq!(std::fs::read(first).unwrap(), prefix);
+    assert!(!later.exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn private_batch_mode_writes_private_files_with_restrictive_umask() {

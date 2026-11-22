@@ -21,7 +21,6 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const FIRST_THREAD_ID = "b0000000-0000-4000-a000-000000000101";
 const SECOND_THREAD_ID = "b0000000-0000-4000-a000-000000000102";
 const SNAPSHOT_EVENT_ID = "d0000000-0000-4000-a000-000000000101";
@@ -47,7 +46,6 @@ function isolatedAuth(): Exclude<SetupPageAuth, null> {
 }
 
 function configureChatPrerequisites(): void {
-  context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
     selectedModel: "claude-sonnet-5",
     serviceTier: null,
@@ -71,7 +69,6 @@ function snapshotThread(
 ): ChatThreadSnapshotProjection {
   return {
     id,
-    agentId: AGENT_ID,
     title,
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -90,7 +87,6 @@ function snapshotThread(
 function threadMetadata(id: string, title: string): ChatThreadMetadata {
   return {
     id,
-    agentId: AGENT_ID,
     title,
     selectedModel: "claude-sonnet-5",
     modelSettings: {},
@@ -115,7 +111,6 @@ function threadEvent(args: {
     seqId: args.seqId,
     kind: args.kind,
     chatThreadId: args.threadId,
-    agentId: AGENT_ID,
     title: args.title,
     selectedModel: "claude-sonnet-5",
     serviceTier: null,
@@ -342,12 +337,12 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
 
   const page = await startPage({
     context,
-    path: "/agents",
+    path: "/workflows",
     auth: isolatedAuth(),
   });
   await page.content;
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();
 
   // Enter the pending chat after startup: the initial skeleton intentionally
@@ -359,26 +354,28 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
   await abandonedDetailsRequested.promise;
   await waitFor(() => {
     expect(
-      screen.queryByRole("heading", { name: "Agents" }),
+      screen.queryByRole("heading", { name: "Workflows" }),
     ).not.toBeInTheDocument();
   });
 
-  const agentsLink = await findLink("Agents");
-  await user.click(agentsLink);
-  const agentsHeading = await screen.findByRole("heading", { name: "Agents" });
+  const workflowsLink = await findLink("Workflows");
+  await user.click(workflowsLink);
+  const agentsHeading = await screen.findByRole("heading", {
+    name: "Workflows",
+  });
   expect(agentsHeading).toBeVisible();
 
   abandonedDetails.resolve(undefined);
 
   expect(screen.queryByText("Abandoned visit title")).not.toBeInTheDocument();
-  expect(document.title).toBe("Agents | Okou");
+  expect(document.title).toBe("Workflows | Okou");
 
   window.history.back();
   await returningDetailsRequested.promise;
 
   await waitFor(() => {
     expect(
-      screen.queryByRole("heading", { name: "Agents" }),
+      screen.queryByRole("heading", { name: "Workflows" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Abandoned visit title")).not.toBeInTheDocument();
     expect(

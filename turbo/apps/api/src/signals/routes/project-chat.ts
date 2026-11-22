@@ -6,7 +6,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
-import { projectAccess$ } from "./projects";
+import { personalProjectAccess$ } from "./projects";
 import { sendValidatedChatEvent$ } from "./chat-events";
 import {
   chatThreadDraft,
@@ -40,7 +40,7 @@ function ownedThread(id: string) {
   });
 }
 const send$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return missing;
   }
   const body = await get(bodyResultOf(projectChatContract.send));
@@ -48,10 +48,10 @@ const send$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  return await set(sendValidatedChatEvent$, body.data, signal);
+  return await set(sendValidatedChatEvent$, { data: body.data }, signal);
 });
 const draft$ = computed(async (get) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.draft)).id;
@@ -63,13 +63,14 @@ const draft$ = computed(async (get) => {
     body: await get(
       chatThreadDraft({
         threadId: id,
+        orgId: get(organizationAuthContext$).orgId,
         userId: get(organizationAuthContext$).userId,
       }),
     ),
   };
 });
 const saveDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await get(projectAccess$))) {
+  if (!get(personalProjectAccess$)) {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.saveDraft)).id;
@@ -85,6 +86,7 @@ const saveDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
     updateChatThreadDraft$,
     {
       threadId: id,
+      orgId: get(organizationAuthContext$).orgId,
       userId: get(organizationAuthContext$).userId,
       ...body.data,
     },

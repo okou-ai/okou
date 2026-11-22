@@ -8,9 +8,9 @@ import ai.okou.android.api.generated.SendRequestVariant1RunOptionsCodexServiceTi
 import ai.okou.android.api.generated.SendRequestVariant1UserMessage
 import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItem
 import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant1
-import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant13
-import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant13ServiceTier
-import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant13Type
+import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant12
+import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant12ServiceTier
+import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant12Type
 import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant1Type
 import java.util.UUID
 import kotlinx.serialization.Serializable
@@ -52,11 +52,11 @@ internal fun newRecovery(data: FailureRecoveryData, reset: Boolean): ComposerRec
             )
             selected.model?.let {
                 add(
-                    SendRequestVariant1UserMessagePartsItemVariant13(
-                        SendRequestVariant1UserMessagePartsItemVariant13Type.MODEL,
+                    SendRequestVariant1UserMessagePartsItemVariant12(
+                        SendRequestVariant1UserMessagePartsItemVariant12Type.MODEL,
                         it,
                         if (fast)
-                            SendRequestVariant1UserMessagePartsItemVariant13ServiceTier.PRIORITY
+                            SendRequestVariant1UserMessagePartsItemVariant12ServiceTier.PRIORITY
                         else null,
                     )
                 )
@@ -65,7 +65,6 @@ internal fun newRecovery(data: FailureRecoveryData, reset: Boolean): ComposerRec
     return ComposerRecovery(
         selected,
         SendRequestVariant1(
-            agentId = selected.agentId,
             threadId = selected.threadId,
             prompt = "continue",
             clientEventId = UUID.randomUUID().toString(),

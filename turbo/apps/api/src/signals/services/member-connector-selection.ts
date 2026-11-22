@@ -1,6 +1,6 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import {
   and,
@@ -25,7 +25,19 @@ import {
   customConnectorExecutionDefinitionSelection,
   customConnectorExecutionOAuthSelection,
 } from "./custom-connector-definition-selection";
-import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
+import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
+import { customConnectorSkillPublicationJoin } from "./custom-connector-skill-bundle-columns";
+
+export interface ConnectorMember {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+export const memberConnectorRuleColumns = Object.freeze({
+  permission: connectorPermissionGrants.permission,
+  action: connectorPermissionGrants.action,
+  expiresAt: connectorPermissionGrants.expiresAt,
+});
 
 /** The storage identity is a connector target, never an Agent or account. */
 export function memberConnectorPermissionColumns() {
@@ -36,14 +48,12 @@ export function memberConnectorPermissionColumns() {
       ELSE 'custom_connector_' || replace(${connectorPermissionGrants.customConnectorId}::text, '-', '') END`.mapWith(
         pgTextDecoder,
       ),
-    permission: connectorPermissionGrants.permission,
-    action: connectorPermissionGrants.action,
-    expiresAt: connectorPermissionGrants.expiresAt,
+    ...memberConnectorRuleColumns,
   };
 }
 
 export function activeMemberConnectorPermissionCondition(
-  owner: { readonly orgId: string; readonly userId: string },
+  owner: ConnectorMember,
   at: Date,
 ) {
   return and(
@@ -58,7 +68,7 @@ export function activeMemberConnectorPermissionCondition(
 
 /** Pure builders share the existing bootstrap capture and its decoders. */
 export function memberConnectorSelectionQueries(
-  owner: { readonly orgId: string; readonly userId: string },
+  owner: ConnectorMember,
   at: Date,
 ) {
   const builder = new QueryBuilder();
@@ -80,19 +90,23 @@ export function memberConnectorSelectionQueries(
     customConnectorExecutionDefinitionSelection();
   const connectorColumns = {
     ...definitionColumns,
-    ...customConnectorSkillBundleSelection(),
+    skillContentBundle: orgCustomConnectorSkillPublications.skillContentBundle,
   };
   const oauthColumns = customConnectorExecutionOAuthSelection();
   const custom = builder
     .select({
       payload: sql`jsonb_build_object(
-      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object('networkBinding', ${networkBinding.sql}),
-      'oauthConfig', CASE WHEN ${orgCustomConnectorOauthConfigs.connectorId} IS NULL THEN NULL ELSE ${contextJsonProjection(oauthColumns)} END,
-      'permissionNames', '[]'::jsonb)`
+      'connector', ${contextJsonProjection(connectorColumns)} || jsonb_build_object(
+        'networkBinding', ${networkBinding.sql}, 'hasSkill', ${isNotNull(orgCustomConnectors.skillMarkdown)}),
+      'oauthConfig', CASE WHEN ${orgCustomConnectorOauthConfigs.connectorId} IS NULL THEN NULL ELSE ${contextJsonProjection(oauthColumns)} END)`
         .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
     })
     .from(orgCustomConnectors)
+    .leftJoin(
+      orgCustomConnectorSkillPublications,
+      customConnectorSkillPublicationJoin(),
+    )
     .leftJoin(
       orgCustomConnectorOauthConfigs,
       and(
@@ -121,7 +135,7 @@ export function memberConnectorSelectionQueries(
   const permissions = builder
     .select({
       payload:
-        sql`${contextJsonProjection({ permission: connectorPermissionGrants.permission, action: connectorPermissionGrants.action, expiresAt: connectorPermissionGrants.expiresAt })} || jsonb_build_object('connectorSlug', ${permissionColumns.connectorSlug})`
+        sql`${contextJsonProjection(memberConnectorRuleColumns)} || jsonb_build_object('connectorSlug', ${permissionColumns.connectorSlug})`
           .mapWith(zodDriverValueDecoder(zUnknown()))
           .as("payload"),
     })

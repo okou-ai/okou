@@ -4,7 +4,7 @@ import SwiftUI
 import Textual
 
 struct MessageActionContext: Hashable, Sendable {
-  let agentID: String
+  let agentID: String?
   let threadID: String
 }
 
@@ -50,7 +50,7 @@ struct MessageBodyView: View, Equatable {
     self.loadsDiagrams = loadsDiagrams
     let context = MessageRenderPlan.Context(
       webURL: baseURL, action: connectorActions == nil ? nil : actionContext,
-      permissionsEnabled: permissionActions != nil, artifacts: artifacts)
+      permissionMember: permissionActions?.member, artifacts: artifacts)
     let request = Request(source: text, context: context)
     self.request = request
     _prepared = State(

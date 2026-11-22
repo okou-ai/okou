@@ -11,7 +11,7 @@ import {
 export interface IntegrationChatThreadCreation {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly currentTime: Date;
   readonly initialModel: DefaultModelFirstPin;
 }
@@ -28,7 +28,7 @@ export function integrationChatThreadValues(
   return {
     id,
     userId: args.userId,
-    agentId: args.agentId,
+    orgId: args.orgId,
     selectedModel: args.initialModel.selectedModel,
     codexServiceTier:
       args.initialModel.serviceTier === "priority" ? ("fast" as const) : null,
@@ -53,7 +53,6 @@ export function integrationThreadCreatedEventSql(
       orgId,
       userId: thread.userId,
       chatThreadId: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       selectedModel: thread.selectedModel,
       modelSettings: thread.modelSettings,

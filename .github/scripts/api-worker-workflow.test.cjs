@@ -91,6 +91,7 @@ function context(event = "pull_request", sameRepo = true) {
   needs.prepare.outputs["job-ref"] = event === "push" ? "staging" : "pr-123";
   return {
     needs,
+    vars: {},
     steps: { "api-worker-checks": { outcome: "success" } },
     github: {
       event_name: event,
@@ -163,6 +164,15 @@ test("production release keeps Worker deployment non-blocking and verifies its d
   };
   const worker = byId("api-worker-deploy");
   const verify = byId("api-worker-verify");
+  const migrations = byId("production-migrations");
+  assert.match(
+    field(migrations, "run", 8),
+    /^pnpm -F @okouai\/db db:migrate$/m,
+  );
+  assert.ok(
+    productionSteps.indexOf(migrations) <
+      productionSteps.indexOf(byId("deploy")),
+  );
   assert.equal(field(production, "environment"), "production");
   assert.match(
     production,

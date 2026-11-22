@@ -70,6 +70,9 @@ export function workflowAttachmentFiles(input: {
     if (descriptor.kind === "empty") {
       return [];
     }
+    // Serve the copy's files from its immutable package while the source
+    // Workflow owns the upload.
+    // https://github.com/okou-ai/okou/issues/46783
     if (
       isMigratedWorkflowAttachment({
         ...input,
@@ -297,6 +300,8 @@ export const publishWorkflowContentBundle$ = command(
         objectKey: input.attachments.objectKey,
       })
     ) {
+      // Republish inherited files with their original bytes and executable modes.
+      // https://github.com/okou-ai/okou/issues/46783
       if (!input.contentBundle) {
         throw new Error("Copied Workflow has no immutable content");
       }

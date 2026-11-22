@@ -37,14 +37,6 @@ export function isMarkdownPath(path: string): boolean {
   return /\.(md|markdown|mdx)$/i.test(path);
 }
 
-export function agentLabel(workflow: {
-  readonly agentDisplayName: string | null;
-  readonly agentName: string | null;
-  readonly agentId: string;
-}): string {
-  return workflow.agentDisplayName ?? workflow.agentName ?? workflow.agentId;
-}
-
 const WORKFLOW_INTERVAL_SECONDS_OPTIONS = [5, 15, 30, 60].map((minutes) => {
   return minutes * 60;
 });

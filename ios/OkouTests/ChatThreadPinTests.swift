@@ -255,7 +255,7 @@ final class ChatThreadPinTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, readRetrySleep: { _ in })
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.list.refresh()
     await store.projects.activate()
     let first = PinOrderFixture.id(1)
@@ -285,7 +285,7 @@ final class ChatThreadPinTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, readRetrySleep: { _ in })
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.list.refresh()
     await store.projects.activate()
     let own = PinOrderFixture.id(4)

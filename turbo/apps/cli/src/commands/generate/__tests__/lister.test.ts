@@ -1,9 +1,9 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { http, HttpResponse } from "msw";
 import chalk from "chalk";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { server } from "../../../mocks/server";
@@ -21,7 +21,6 @@ import {
 
 const generateCommand = createGenerateCommand();
 
-const AGENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const RUN_CONNECTION_ID = "00000000-0000-4000-8000-000000000001";
 
 const CONNECTOR_LABELS: Record<string, string> = {
@@ -152,17 +151,6 @@ function stubRunConnectors(
   ]);
 }
 
-function stubUserConnectors(enabledConnectorSlugs: string[]) {
-  return http.get(
-    `http://localhost:3000/api/agents/${AGENT_ID}/user-connectors`,
-    () => {
-      return HttpResponse.json({
-        enabledConnectorSlugs: enabledConnectorSlugs,
-      });
-    },
-  );
-}
-
 describe("okou generate lister", () => {
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
@@ -180,7 +168,7 @@ describe("okou generate lister", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
   });
 
@@ -214,14 +202,14 @@ describe("okou generate lister", () => {
     );
   });
 
-  it("lists ready image generation connectors for the current agent", async () => {
+  it("lists ready image generation connectors from exact Run accounts", async () => {
     server.use(
       ...stubRunConnectors(contextPath, [
         connector("fal", "fal-user"),
         connector("openai", "openai-user"),
         connector("replicate", "replicate-user"),
       ]),
-      stubUserConnectors(["fal", "openai"]),
+
       stubConnectedConnectors(["fal", "openai", "replicate"]),
     );
 
@@ -229,14 +217,13 @@ describe("okou generate lister", () => {
 
     const text = output();
     expect(text).toContain("Image generation choices for current run");
-    expect(text).toContain(`Agent:    ${AGENT_ID}`);
     expect(text).toContain("Connectors:");
     expect(text).toContain("fal");
     expect(text).toContain("fal.ai");
     expect(text).toContain("@fal-user");
     expect(text).toContain("openai");
     expect(text).toContain("OpenAI");
-    expect(text).not.toContain("replicate-user");
+    expect(text).toContain("@replicate-user");
     expect(text).toContain("Built-in command:");
     expect(text).toContain("Okou  Built-in image generation");
     expect(text).toContain("Built-in image generation");
@@ -254,10 +241,7 @@ describe("okou generate lister", () => {
     "omits disabled built-in $type while retaining a ready connector",
     async ({ type, tool, provider }) => {
       vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, JSON.stringify([tool]));
-      server.use(
-        ...stubRunConnectors(contextPath, [connector(provider)]),
-        stubUserConnectors([provider]),
-      );
+      server.use(...stubRunConnectors(contextPath, [connector(provider)]));
 
       await createGenerateCommand().parseAsync(["node", "cli", type]);
 
@@ -272,10 +256,7 @@ describe("okou generate lister", () => {
 
   it("keeps provider discovery available with invalid policy", async () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, "invalid");
-    server.use(
-      ...stubRunConnectors(contextPath, [connector("fal")]),
-      stubUserConnectors(["fal"]),
-    );
+    server.use(...stubRunConnectors(contextPath, [connector("fal")]));
 
     await createGenerateCommand().parseAsync(["node", "cli", "image"]);
 
@@ -295,7 +276,7 @@ describe("okou generate lister", () => {
           connectionStatus: "reconnect-required",
         },
       ]),
-      stubUserConnectors(["fal"]),
+
       stubConnectedConnectors(["fal", "openai", "replicate"]),
     );
 
@@ -304,24 +285,20 @@ describe("okou generate lister", () => {
     const text = output();
     expect(text).toContain("Other image generation connectors");
     expect(text).toContain("Connectors:");
-    expect(text).toContain("Replicate");
-    expect(text).toContain("connected, not authorized for current agent");
+    expect(text).toMatch(/replicate\s+Replicate\s+@replicate-user/u);
     expect(text).toContain("Luma AI");
     expect(text).toContain("not admitted for this run");
     expect(text).toContain("OpenAI");
     expect(text).toContain("connected, reconnect required");
-    expect(text).toContain(
-      `[Authorize Replicate](http://localhost:3000/connectors/replicate/authorize?agentId=${AGENT_ID})`,
-    );
     expect(text).not.toContain("Connect and authorize Luma AI");
     expect(text).toContain(
-      `[Reconnect OpenAI](http://localhost:3000/connectors/openai/reconnect/${RUN_CONNECTION_ID}?agentId=${AGENT_ID})`,
+      `[Reconnect OpenAI](http://localhost:3000/connectors/openai/reconnect/${RUN_CONNECTION_ID})`,
     );
     expect(text).toContain("start a new run");
   });
 
   it("discovers saved providers outside a run and directs users to inspect accounts", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "");
+    vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
     server.use(
       stubConnectorCatalog([
@@ -342,7 +319,7 @@ describe("okou generate lister", () => {
     expect(output()).toContain(
       "saved accounts; inspect with okou connector status fal",
     );
-    expect(output()).toContain("agent authorization could not be checked");
+    expect(output()).toContain("Inspect connector status before use");
   });
 
   it("fails closed when connector-backed discovery has no run projection", async () => {
@@ -356,7 +333,7 @@ describe("okou generate lister", () => {
           authMethods: [manualAuthMethod()],
         }),
       ]),
-      stubUserConnectors(["fal"]),
+
       stubConnectedConnectors(["fal", "openai", "replicate"]),
     );
 
@@ -367,10 +344,7 @@ describe("okou generate lister", () => {
   });
 
   it("does not list providers that are absent from the public catalog", async () => {
-    server.use(
-      ...stubRunConnectorsWithCatalogSlugs(contextPath, [], []),
-      stubUserConnectors([]),
-    );
+    server.use(...stubRunConnectorsWithCatalogSlugs(contextPath, [], []));
 
     await generateCommand.parseAsync(["node", "cli", "text", "--all"]);
 
@@ -440,8 +414,6 @@ describe("okou generate lister", () => {
   });
 
   it("suggests the built-in presentation command", async () => {
-    server.use(stubUserConnectors([]));
-
     await generateCommand.parseAsync(["node", "cli", "presentation"]);
 
     const text = output();
@@ -453,14 +425,12 @@ describe("okou generate lister", () => {
     expect(text).toContain("Built-in command:");
     expect(text).toContain("Built-in presentation generation");
     expect(text).toContain(
-      "Returns authoring instructions for the calling agent.",
+      "Returns authoring instructions for the current Run.",
     );
     expect(text).toContain("Use: okou generate presentation -h");
   });
 
   it("suggests the built-in website command", async () => {
-    server.use(stubUserConnectors([]));
-
     await generateCommand.parseAsync(["node", "cli", "website"]);
 
     const text = output();
@@ -470,7 +440,7 @@ describe("okou generate lister", () => {
     expect(text).toContain("Built-in command:");
     expect(text).toContain("Built-in website generation");
     expect(text).toContain(
-      "Returns authoring instructions for the calling agent.",
+      "Returns authoring instructions for the current Run.",
     );
     expect(text).toContain("Use: okou generate website -h");
     expect(text).toContain("Context:");
@@ -500,8 +470,6 @@ describe("okou generate lister", () => {
       "Built-in mobile app design generation",
     ],
   ])("suggests the built-in %s command", async (type, label, commandLabel) => {
-    server.use(stubUserConnectors([]));
-
     await generateCommand.parseAsync(["node", "cli", type]);
 
     const text = output();
@@ -510,7 +478,7 @@ describe("okou generate lister", () => {
     expect(text).toContain("Built-in command:");
     expect(text).toContain(commandLabel);
     expect(text).toContain(
-      "Returns authoring instructions for the calling agent.",
+      "Returns authoring instructions for the current Run.",
     );
     expect(text).toContain(`Use: okou generate ${type} -h`);
   });
@@ -522,7 +490,6 @@ describe("okou generate lister", () => {
         [connector("elevenlabs", "elevenlabs-user")],
         ["elevenlabs", "minimax"],
       ),
-      stubUserConnectors(["elevenlabs"]),
     );
 
     await generateCommand.parseAsync(["node", "cli", "music"]);

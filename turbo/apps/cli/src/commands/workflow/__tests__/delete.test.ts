@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou workflow delete command
  *
@@ -13,16 +14,12 @@ import { server } from "../../../mocks/server";
 import { deleteCommand } from "../delete";
 import chalk from "chalk";
 
-const AGENT_ID = "11111111-1111-1111-1111-111111111111";
 const WORKFLOW_ID = "22222222-2222-2222-2222-222222222222";
 const RESOLVED_WORKFLOW_ID = "33333333-3333-4333-8333-333333333333";
 
 function detailResponse(overrides: Record<string, unknown> = {}) {
   return {
     id: WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "my-agent",
-    agentDisplayName: "My Agent",
     name: "my-workflow",
     displayName: "My Workflow",
     description: null,
@@ -41,9 +38,6 @@ function detailResponse(overrides: Record<string, unknown> = {}) {
 function workflowSummary(overrides: Record<string, unknown> = {}) {
   return {
     id: RESOLVED_WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "my-agent",
-    agentDisplayName: "My Agent",
     name: "tell-a-joke",
     displayName: "Tell a joke",
     description: null,
@@ -68,7 +62,7 @@ describe("okou workflow delete command", () => {
   beforeEach(() => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
   });
 
   afterEach(() => {
@@ -126,14 +120,7 @@ describe("okou workflow delete command", () => {
         ),
       );
 
-      await deleteCommand.parseAsync([
-        "node",
-        "cli",
-        "tell-a-joke",
-        "--agent",
-        AGENT_ID,
-        "--yes",
-      ]);
+      await deleteCommand.parseAsync(["node", "cli", "tell-a-joke", "--yes"]);
 
       expect(deletedWorkflowId).toBe(RESOLVED_WORKFLOW_ID);
     });

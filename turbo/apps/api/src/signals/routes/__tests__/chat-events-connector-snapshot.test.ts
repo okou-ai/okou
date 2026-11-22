@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+
 import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,7 +12,7 @@ import { mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
-import { chatThreadRoutes } from "../chat-threads";
+
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
@@ -86,11 +86,8 @@ describe("accepted Connector preparation", () => {
       mockNow(startedAt);
       const owned = await publicChatActor(context);
       owned.ownsFeatureSwitches();
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       const connector = await owned.run(async () => {
-        await connectors.updateFeatureSwitches(actor, {
-          connectorChatAccountAccess: true,
-        });
         const connector = await connectors.createCustomConnector(actor, {
           displayName: "Temporary Slack permissions",
           authMode: "none",
@@ -121,7 +118,6 @@ describe("accepted Connector preparation", () => {
         return connector;
       });
       const run = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "use the captured temporary grant",
       });
       const { execution } = await owned.runExecution(run.runId);
@@ -167,129 +163,102 @@ describe("accepted Connector preparation", () => {
     },
   );
 
-  it.each([false, true])(
-    "retains the first Thread account choice while input is prepared (Chat accounts: %s)",
-    async (chatAccounts) => {
-      const owned = await publicChatActor(context);
-      owned.ownsFeatureSwitches();
-      const { actor, agentId } = owned;
-      const { firstAccount, nextAccount, thread } = await owned.run(
-        async () => {
-          await connectors.updateFeatureSwitches(actor, {
-            connectorChatAccountAccess: chatAccounts,
-          });
-          const firstAccount = await connectors.connectManualGrant(
-            actor,
-            "runtime",
-            "api-token",
-            { apiKey: "accepted-runtime-key" },
-            agentId,
-          );
-          const nextAccount = await connectors.connectManualGrant(
-            actor,
-            "runtime",
-            "api-token",
-            { apiKey: "next-runtime-key" },
-            agentId,
-            { intent: "add", displayName: "Later account" },
-          );
-          const thread = await fixture.chat.createThread(actor, { agentId });
-          return { firstAccount, nextAccount, thread };
-        },
+  it("retains the first Thread account choice while input is prepared", async () => {
+    const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
+    const { actor } = owned;
+    const { firstAccount, nextAccount, thread } = await owned.run(async () => {
+      const firstAccount = await connectors.connectManualGrant(
+        actor,
+        "runtime",
+        "api-token",
+        { apiKey: "accepted-runtime-key" },
       );
-      const selectAccount = async (connectionId: string) => {
-        return await owned.run(async () => {
-          const body = {
-            connectionId,
-            target: {
-              kind: "builtin" as const,
-              connectorSlug: "runtime" as const,
-            },
-          };
-          if (chatAccounts) {
-            const client = setupApp({
-              context,
-              routes: chatConnectorAccessRoutes,
-            })(chatConnectorAccessContract);
-            await accept(
-              client.setThreadCurrent({
-                headers,
-                params: { threadId: thread.id },
-                body,
-              }),
-              [200],
-            );
-          } else {
-            const client = setupApp({ context, routes: chatThreadRoutes })(
-              chatThreadConnectorSelectionContract,
-            );
-            await accept(
-              client.update({ headers, params: { id: thread.id }, body }),
-              [200],
-            );
-          }
-        });
-      };
-      await selectAccount(firstAccount.id);
-      const held = holdAttachment(actor.userId);
-      const sending = settleIncludingAbort(
-        owned.sendChatRun(actor, {
-          agentId,
-          threadId: thread.id,
-          prompt: "use the first account",
-          userMessage: held.userMessage,
-        }),
+      const nextAccount = await connectors.connectManualGrant(
+        actor,
+        "runtime",
+        "api-token",
+        { apiKey: "next-runtime-key" },
+        { intent: "add", displayName: "Later account" },
       );
-      onTestFinished(async () => {
-        held.release();
-        await sending;
-      });
-      await held.entered;
-      // Attachment IO proves preload started, not that its database reads finished.
-      await flushWaitUntilForTest();
-      await selectAccount(nextAccount.id);
-      held.release();
-      const sent = await sending;
-      if (!sent.ok) {
-        throw sent.error;
-      }
-      const first = await owned.runExecution(sent.value.runId);
-      expect(
-        first.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
-      ).toMatchObject({ sourceId: firstAccount.id });
-      expect(JSON.stringify(first.execution)).not.toContain(
-        "accepted-runtime-key",
-      );
-      await owned.run(() => {
-        return fixture.cancelChatRun(
-          actor,
-          sent.value.runId,
-          first.sandboxHeaders,
+      const thread = await fixture.chat.createThread(actor, {});
+      return { firstAccount, nextAccount, thread };
+    });
+    const selectAccount = async (connectionId: string) => {
+      return await owned.run(async () => {
+        const body = {
+          connectionId,
+          target: {
+            kind: "builtin" as const,
+            connectorSlug: "runtime" as const,
+          },
+        };
+        const client = setupApp({
+          context,
+          routes: chatConnectorAccessRoutes,
+        })(chatConnectorAccessContract);
+        await accept(
+          client.setThreadCurrent({
+            headers,
+            params: { threadId: thread.id },
+            body,
+          }),
+          [200],
         );
       });
-      const next = await owned.sendChatRun(actor, {
-        agentId,
+    };
+    await selectAccount(firstAccount.id);
+    const held = holdAttachment(actor.userId);
+    const sending = settleIncludingAbort(
+      owned.sendChatRun(actor, {
         threadId: thread.id,
-        prompt: "use the later account",
-      });
-      const execution = await owned.runExecution(next.runId);
-      expect(
-        execution.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
-      ).toMatchObject({ sourceId: nextAccount.id });
-    },
-  );
+        prompt: "use the first account",
+        userMessage: held.userMessage,
+      }),
+    );
+    onTestFinished(async () => {
+      held.release();
+      await sending;
+    });
+    await held.entered;
+    // Attachment IO proves preload started, not that its database reads finished.
+    await flushWaitUntilForTest();
+    await selectAccount(nextAccount.id);
+    held.release();
+    const sent = await sending;
+    if (!sent.ok) {
+      throw sent.error;
+    }
+    const first = await owned.runExecution(sent.value.runId);
+    expect(
+      first.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+    ).toMatchObject({ sourceId: firstAccount.id });
+    expect(JSON.stringify(first.execution)).not.toContain(
+      "accepted-runtime-key",
+    );
+    await owned.run(() => {
+      return fixture.cancelChatRun(
+        actor,
+        sent.value.runId,
+        first.sandboxHeaders,
+      );
+    });
+    const next = await owned.sendChatRun(actor, {
+      threadId: thread.id,
+      prompt: "use the later account",
+    });
+    const execution = await owned.runExecution(next.runId);
+    expect(
+      execution.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+    ).toMatchObject({ sourceId: nextAccount.id });
+  });
 
-  it.each([
-    { chatAccounts: false, change: "reconnect" },
-    { chatAccounts: true, change: "reconnect" },
-    { chatAccounts: false, change: "deletion" },
-    { chatAccounts: true, change: "deletion" },
-  ] as const)(
-    "retains coherent custom configuration and Skill bytes through $change (Chat accounts: $chatAccounts)",
-    async ({ chatAccounts, change }) => {
+  it.each(["reconnect", "deletion"] as const)(
+    "retains coherent custom configuration and Skill bytes through %s",
+    async (change) => {
       const owned = await publicChatActor(context);
       owned.ownsFeatureSwitches();
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       const body = {
         displayName: "Accepted custom source",
         authMode: "none" as const,
@@ -300,9 +269,6 @@ describe("accepted Connector preparation", () => {
         skillMarkdown: "Accepted Connector instructions.",
       };
       const { connector, connectionId, s3 } = await owned.run(async () => {
-        await connectors.updateFeatureSwitches(actor, {
-          connectorChatAccountAccess: chatAccounts,
-        });
         const s3 = installWorkflowVolumeS3Fixture(context);
         const connector = await connectors.createCustomConnector(actor, body);
         const account = await connectors.setCustomConnectorValues(
@@ -310,15 +276,11 @@ describe("accepted Connector preparation", () => {
           connector.id,
           [],
         );
-        await connectors.updateAgentCustomConnectors(actor, agentId, [
-          connector.id,
-        ]);
         return { connector, connectionId: account.connectionId, s3 };
       });
       const held = holdAttachment(actor.userId);
       const sending = settleIncludingAbort(
         owned.sendChatRun(actor, {
-          agentId,
           prompt: "use the accepted custom source",
           userMessage: held.userMessage,
         }),
@@ -386,7 +348,6 @@ describe("accepted Connector preparation", () => {
         );
       });
       const next = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "use the later custom source",
       });
       const execution = await owned.runExecution(next.runId);

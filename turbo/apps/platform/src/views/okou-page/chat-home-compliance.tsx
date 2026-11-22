@@ -20,15 +20,13 @@ import {
  * without competing with it. It sits 12px under the cards, the same step as
  * between the card rows. A member can hide it for good on this device; the
  * block then folds its own height away, so the cards settle instead of
- * jumping. On the first home of the session it rises in after the cards.
+ * jumping.
  *
  * Desktop only; mobile keeps the composer at the foot of the page.
  */
 export function CapabilityHomeCompliance({
-  entrance,
   onHidden,
 }: {
-  readonly entrance: boolean;
   /** Takes focus off the hide control, which leaves with the block. */
   readonly onHidden: () => void;
 }) {
@@ -49,8 +47,6 @@ export function CapabilityHomeCompliance({
       className={cn(
         "-mt-2 hidden grid-rows-[1fr] transition-[grid-template-rows,opacity,margin-top] duration-[240ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none sm:grid",
         folding && "-mt-5 grid-rows-[0fr] opacity-0",
-        entrance &&
-          "motion-safe:animate-capability-row-in [--capability-row-delay:280ms]",
       )}
       onTransitionEnd={(event) => {
         // Rows, opacity and margin fold on one timing; the first of them to

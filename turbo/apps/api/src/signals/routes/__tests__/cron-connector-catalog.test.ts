@@ -208,23 +208,25 @@ async function buildBundledSkillFixture(connectorSlug: string) {
   ];
   const prepared = await prepareContentBundle(files);
   const archiveSize = prepared.archive.length;
+  const descriptor = {
+    kind: "bundled",
+    versionId,
+    size: files.reduce((total, file) => {
+      return total + file.content.length;
+    }, 0),
+    archiveSize,
+    fileCount: files.length,
+  };
   return {
     ...prepared.descriptor,
     archive: prepared.archive,
     files,
-    storageName,
     versionId,
-    archiveSize,
-    descriptor: {
-      kind: "bundled",
+    descriptor,
+    legacyDescriptor: {
+      ...descriptor,
       storageName,
-      versionId,
       storageVersionPrefix: `__system__/volume/${storageName}/${versionId}`,
-      size: files.reduce((total, file) => {
-        return total + file.content.length;
-      }, 0),
-      archiveSize,
-      fileCount: files.length,
     },
   };
 }
@@ -468,7 +470,7 @@ describe("connector catalog valid lifecycle", () => {
     const release = buildRelease({
       version: "2026-11-06.single-character-skill",
       connectorSlug: "x",
-      skill: skill.descriptor,
+      skill: skill.legacyDescriptor,
     });
     const objects = new Map(catalogObjects([release], release));
     objects.set(
@@ -503,12 +505,11 @@ describe("connector catalog valid lifecycle", () => {
         [FeatureSwitchKey.CodexExecution]: false,
       });
       installWorkflowVolumeS3Fixture(context, objects);
-      await fixture.api.enableAgentConnectors(owner.actor, owner.agentId, [
-        "x",
-      ]);
+      await connectorsApi.connectManualGrant(owner.actor, "x", "api-token", {
+        credential: "published-x-credential",
+      });
     });
     const run = await owner.sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Use the X Connector Skill",
       model: "gpt-6-luna",
     });
@@ -628,7 +629,6 @@ describe("connector catalog valid lifecycle", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "gitlab",
       async ({ execution: receivedExecution, resolveAuth }) => {
         expect(receivedExecution.environment).not.toHaveProperty("GITLAB_HOST");
         const resolved = await resolveAuth({
@@ -646,6 +646,7 @@ describe("connector catalog valid lifecycle", () => {
   it("mounts all 17 normally published connector skill versions", async () => {
     clearMockNow();
     const owned = await publicChatActor(context, { clockTime: now() });
+    owned.ownsFeatureSwitches();
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       await fixture.api.createPersonalModelProvider(owned.actor, {
@@ -687,21 +688,20 @@ describe("connector catalog valid lifecycle", () => {
         published: readPublishedArchive(context, start),
       });
     }
-    await owned.run(() => {
-      return connectorsApi.updateAgentCustomConnectors(
-        owned.actor,
-        owned.agentId,
-        skills.map((skill) => {
-          return skill.connector.id;
-        }),
-      );
+    await owned.run(async () => {
+      for (const { connector } of skills) {
+        await connectorsApi.setCustomConnectorValues(
+          owned.actor,
+          connector.id,
+          [{ key: "secret", kind: "secret", value: "skill-fixture-token" }],
+        );
+      }
     });
     for (const prompt of [
       "Use all published connector skills",
       "Reuse all exact published connector skills",
     ]) {
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt,
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
@@ -758,14 +758,11 @@ describe("connector catalog valid lifecycle", () => {
     });
     const published = readPublishedArchive(context, start);
     await owned.run(() => {
-      return connectorsApi.updateAgentCustomConnectors(
-        owned.actor,
-        owned.agentId,
-        [connector.id],
-      );
+      return connectorsApi.setCustomConnectorValues(owned.actor, connector.id, [
+        { key: "secret", kind: "secret", value: "queued-skill-api-token" },
+      ]);
     });
     const queued = await owned.queueChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Use the first published skill",
     });
     const updateStart = context.mocks.s3.send.mock.calls.length;
@@ -802,7 +799,6 @@ describe("connector catalog valid lifecycle", () => {
     const first = await queued.launch();
     await check(first.runId, updated);
     const later = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Use the updated published skill",
     });
     await check(later.runId, updated);
@@ -851,7 +847,6 @@ describe("connector catalog valid lifecycle", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "steam",
       ({ execution: receivedExecution }) => {
         expect(receivedExecution.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
       },
@@ -878,7 +873,6 @@ describe("connector catalog valid lifecycle", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "aws",
       async ({ resolveAuth }) => {
         const resolved = await resolveAuth({
           authHeaders: {},
@@ -995,7 +989,7 @@ describe("connector catalog valid lifecycle", () => {
       connectionStatus: "connected",
     });
     const secondStart = await own(() => {
-      return connectorsApi.startOauth(actor, "slack", "oauth", undefined, {
+      return connectorsApi.startOauth(actor, "slack", "oauth", {
         intent: "reconnect",
         connectionId: firstAccount.id,
       });
@@ -1031,7 +1025,7 @@ describe("connector catalog valid lifecycle", () => {
     });
   });
 
-  it("reuses a prepared Skill bundle in a later catalog release", async () => {
+  it("reuses the published Skill bundle when a compact catalog replaces a legacy descriptor", async () => {
     const app = await setupApp({
       context,
       routes: cronConnectorCatalogRoutes,
@@ -1042,7 +1036,7 @@ describe("connector catalog valid lifecycle", () => {
     const release = buildRelease({
       version: "2026-07-15.bundled-skill",
       connectorSlug: "agora",
-      skill: skill.descriptor,
+      skill: skill.legacyDescriptor,
     });
     const receiptFor = (digest: string) => {
       return Buffer.from(
@@ -1102,7 +1096,6 @@ describe("connector catalog valid lifecycle", () => {
     await withConnectorRuntime(
       context,
       actor,
-      "agora",
       ({ execution: receivedExecution }) => {
         const bundle = receivedExecution.contentBundles.skills.find((entry) => {
           return entry.mountPath.endsWith("/agora");

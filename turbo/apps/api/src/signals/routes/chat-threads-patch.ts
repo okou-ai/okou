@@ -1,16 +1,16 @@
 import { command } from "ccstate";
 import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { authContext$ } from "../auth/auth-context";
+import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { updateChatThreadDraft$ } from "../services/chat-thread.service";
-import { projectReferenceWritesEnabled } from "../services/project-reference.service";
+import { canWriteProjectReferences } from "../services/project-reference.service";
 import { badRequestMessage } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
 const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadByIdContract.patch));
 
   const bodyResult = await get(bodyResultOf(chatThreadByIdContract.patch));
@@ -18,11 +18,7 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
-  if (
-    !(await get(
-      projectReferenceWritesEnabled(auth, bodyResult.data.draftUserMessage),
-    ))
-  ) {
+  if (!canWriteProjectReferences(auth, bodyResult.data.draftUserMessage)) {
     return badRequestMessage("Projects unavailable");
   }
   signal.throwIfAborted();
@@ -30,6 +26,7 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     updateChatThreadDraft$,
     {
       threadId: params.id,
+      orgId: auth.orgId,
       userId: auth.userId,
       draftUserMessage: bodyResult.data.draftUserMessage ?? null,
       draftAttachments: bodyResult.data.draftAttachments ?? null,
@@ -44,6 +41,6 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const chatThreadPatchRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadByIdContract.patch,
-    handler: authRoute({}, patchInner$),
+    handler: authRoute({ requireOrganization: true }, patchInner$),
   },
 ];

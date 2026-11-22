@@ -16,7 +16,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
-  AGENT_ID,
   composerWorkflow,
   findComposerEditor,
   createChatComposerHelpers,
@@ -24,7 +23,7 @@ import {
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000920";
@@ -36,7 +35,6 @@ const BINGJIE = Object.freeze({
 const RECENT_WORKFLOWS_KEY = "okou_recent-workflows";
 
 function mockWorkflows(prefix = "") {
-  mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
   context.mocks.data.userModelPreference({
@@ -210,7 +208,7 @@ test("Server recency preserves accepted timestamps within the same millisecond",
   ]);
 });
 
-test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
+test.each([`/chats/${THREAD_ID}`, `/`])(
   "An abandoned workflow selection at %s does not change recency",
   async (path) => {
     mockWorkflows();
@@ -232,7 +230,7 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
 
 test.each([
   {
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     history: [],
     name: "zulu",
     expected: ["/zulu", "/alpha", "/beta", "/charlie"],
@@ -957,7 +955,7 @@ test("Flag ON sends at most the first 1000 valid distinct legacy IDs in newest-f
   expect(workflowNames()[0]).toBe("/alpha");
 });
 
-test("Flag ON remembers a no-op import when this agent has no timestamps", async () => {
+test("Flag ON remembers a no-op import when the visible catalog has no timestamps", async () => {
   const workflows = mockWorkflows();
   const zulu = workflows[0];
   if (!zulu) {
@@ -972,7 +970,7 @@ test("Flag ON remembers a no-op import when this agent has no timestamps", async
         throw new Error("An acknowledged no-op migration must not be repeated");
       }
       imported = true;
-      // The server already has global recency, but only for another agent.
+      // The server already has recency for a workflow outside this catalog.
       return respond(200, { migrated: false });
     },
   );

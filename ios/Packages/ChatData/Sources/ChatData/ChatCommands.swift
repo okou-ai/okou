@@ -32,7 +32,6 @@ public actor ChatCommands {
     projectID: String? = nil,
     clientThreadID: String = UUID().uuidString
   ) async throws -> ChatThread {
-    async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     let selection: ThreadModelSelection
     if let modelSelection {
       selection = ThreadModelSelection(
@@ -45,17 +44,15 @@ public actor ChatCommands {
       selection = try await resolveThreadModelSelection(
         preference: preference, availableModels: models, catalog: catalog)
     }
-    let agents = try await agentsRequest
-    guard let agent = agents.first(where: \.isDefaultAgent) else { throw ChatError.noDefaultAgent }
     let body = CreateThreadBody(
-      agentId: agent.agentId, clientThreadId: clientThreadID,
+      clientThreadId: clientThreadID,
       eventId: UUID().uuidString, model: selection.model,
       serviceTier: selection.serviceTier,
       reasoningEffort: selection.reasoningEffort, composerOptions: composerOptions,
       projectId: projectID)
     let created: CreatedThread = try await client.request(
       "/api/chat-threads", method: "POST", body: JSONEncoder().encode(body))
-    if let options = composerOptions, options.chatAccountAccess {
+    if let options = composerOptions {
       let access = ChatComposerAccess(client: client)
       for choice in options.initialConnectorAccessOverrides {
         try await access.setConnectorAccess(
@@ -68,7 +65,7 @@ public actor ChatCommands {
       }
     }
     return ChatThread(
-      id: created.id, agentID: agent.agentId, title: created.title ?? "", projectId: projectID,
+      id: created.id, agentID: nil, title: created.title ?? "", projectId: projectID,
       selectedModel: created.selectedModel, createdAt: created.createdAt,
       updatedAt: created.createdAt, sortAt: created.createdAt,
       pinnedAt: nil, pinOrder: nil,
@@ -135,11 +132,8 @@ public actor ChatCommands {
 
     let metadata = try await loadThreadSettings(
       threadID: thread.id, expectedAgentID: expectedAgentID)
-    if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
-      throw ChatError.agentUnavailable
-    }
     let body = SendBody(
-      agentId: metadata.agentId, threadId: thread.id,
+      threadId: thread.id,
       prompt: prompt.isEmpty
         ? (document?.hasFeedback == true
           ? "(see quoted passages)"
@@ -183,14 +177,14 @@ public actor ChatCommands {
     // Stop is explicit. Changing saved settings does not revoke an admitted run.
     for eventID in current.queuedEventIDs {
       let body = RevokeBody(
-        agentId: thread.agentID, threadId: thread.id,
+        threadId: thread.id,
         revokesEventId: eventID, clientEventId: UUID().uuidString)
       let _: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
     }
     for runID in current.activeRunIDs {
       let body = InterruptBody(
-        agentId: thread.agentID, threadId: thread.id,
+        threadId: thread.id,
         interruptsRunId: runID, clientEventId: UUID().uuidString)
       let _: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
@@ -229,7 +223,7 @@ public actor ChatCommands {
     }
   }
 
-  public func markAgentRead(agentID: String) async throws {
+  public func markAllRead() async throws {
     await acquireReadState()
     defer { releaseReadState() }
     try Task.checkCancellation()
@@ -238,8 +232,8 @@ public actor ChatCommands {
     do {
       try await client.data(
         "/api/chat-thread-unreads/mark-read", method: "POST",
-        body: JSONEncoder().encode(["agentId": agentID]))
-      await sync.changeReadState(.agentRead(agentID: agentID, baseline: baseline))
+        body: Data("{}".utf8))
+      await sync.changeReadState(.allRead(baseline: baseline))
     } catch {
       await sync.changeReadState(.invalidated)
       throw error
@@ -300,6 +294,14 @@ public actor ChatCommands {
     }
   }
 
+  /// Permanently deletes the chat. The server stops its running work and pauses linked
+  /// automations.
+  public func deleteThread(threadID: String, eventID: String) async throws {
+    try await client.data(
+      "/api/chat-threads/\(threadID)", method: "DELETE",
+      query: [URLQueryItem(name: "eventId", value: eventID)])
+  }
+
   public func rename(threadID: String, title: String, eventID: String) async throws {
     let body = try JSONEncoder().encode(["title": title, "eventId": eventID])
     try await client.data("/api/chat-threads/\(threadID)/rename", method: "POST", body: body)
@@ -310,14 +312,13 @@ public actor ChatCommands {
   {
     let metadata: ThreadMetadata = try await client.request(
       "/api/chat-threads/\(threadID)/metadata")
-    if let expectedAgentID, metadata.agentId.lowercased() != expectedAgentID.lowercased() {
-      throw ChatError.agentUnavailable
+    guard metadata.id.lowercased() == threadID.lowercased() else {
+      throw APIClientError.incompatibleData
     }
     return metadata
   }
 
   private struct CreateThreadBody: Encodable {
-    let agentId: String
     let clientThreadId: String
     let eventId: String
     /// Nil is Auto and is sent as an explicit JSON null.
@@ -328,32 +329,23 @@ public actor ChatCommands {
     let projectId: String?
 
     enum CodingKeys: String, CodingKey {
-      case agentId, clientThreadId, eventId, model, serviceTier, reasoningEffort, projectId
-      case connectorSelections, connectorSelectionPolicy, initialRemoteAccessOverrides
+      case clientThreadId, eventId, model, serviceTier, reasoningEffort, projectId
+      case initialRemoteAccessOverrides
     }
 
     func encode(to encoder: Encoder) throws {
       var container = encoder.container(keyedBy: CodingKeys.self)
-      try container.encode(agentId, forKey: .agentId)
       try container.encode(clientThreadId, forKey: .clientThreadId)
       try container.encode(eventId, forKey: .eventId)
       try container.encode(model, forKey: .model)
       try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
       try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
       try container.encodeIfPresent(projectId, forKey: .projectId)
-      if composerOptions?.chatAccountAccess != true {
-        try container.encodeIfPresent(
-          composerOptions?.connectorSelections, forKey: .connectorSelections)
-        if composerOptions?.connectorSelections.isEmpty == false {
-          try container.encode("required", forKey: .connectorSelectionPolicy)
-        }
-      }
       try container.encodeIfPresent(
         composerOptions?.initialRemoteAccessOverrides, forKey: .initialRemoteAccessOverrides)
     }
   }
   private struct SendBody: Encodable {
-    let agentId: String
     let threadId: String
     let prompt: String
     let clientEventId: String
@@ -365,12 +357,11 @@ public actor ChatCommands {
     let reasoningEffort: String?
     let computerAccess: ChatComputerAccess
     enum Keys: String, CodingKey {
-      case agentId, threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
+      case threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
       case hasTextContent, sourceRunId, computerUseHostId, cloudBrowserEnabled, model, runOptions
     }
     func encode(to encoder: Encoder) throws {
       var container = encoder.container(keyedBy: Keys.self)
-      try container.encode(agentId, forKey: .agentId)
       try container.encode(threadId, forKey: .threadId)
       try container.encode(prompt, forKey: .prompt)
       try container.encode(clientEventId, forKey: .clientEventId)
@@ -390,13 +381,11 @@ public actor ChatCommands {
     }
   }
   private struct InterruptBody: Encodable {
-    let agentId: String
     let threadId: String
     let interruptsRunId: String
     let clientEventId: String
   }
   private struct RevokeBody: Encodable {
-    let agentId: String
     let threadId: String
     let revokesEventId: String
     let clientEventId: String

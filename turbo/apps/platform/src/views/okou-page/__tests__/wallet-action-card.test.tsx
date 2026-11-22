@@ -24,7 +24,6 @@ const APPROVAL_URL =
 const OAUTH_STATE = "wallet-authorization-state-fixture-01234567890123456789";
 const TRACKED_CONNECT_URL = CONNECT_URL.replace("exact%2Bstate", OAUTH_STATE);
 const AUTHORIZATION_ID = "10000000-0000-4000-a000-000000000001";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
 const CONTINUATION_PROMPT =
   "Link wallet authorization is complete. Continue the previous task.";
 
@@ -84,7 +83,6 @@ function mockAuthorization(
   const read = createDeferredPromise<void>(context.signal);
   context.mocks.api(walletUserContract.connectStatus, ({ body, respond }) => {
     expect(body).toStrictEqual({
-      agentId: AGENT_ID,
       state: OAUTH_STATE,
     });
     if (!read.settled()) {
@@ -118,7 +116,6 @@ test("a workspace notification completes wallet consent and continues the owning
   );
   const prompts: string[] = [];
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    expect(body.agentId).toBe("c0000000-0000-4000-a000-000000000071");
     expect(body.threadId).toBe(context.resourceId);
     expect(body.clientEventId).toBe(AUTHORIZATION_ID);
     expect(body.userMessage).toStrictEqual({
@@ -488,7 +485,6 @@ test("purchase approval cards show approval and continuation after notifications
   );
   context.mocks.api(walletUserContract.spendStatus, ({ body, respond }) => {
     expect(body).toStrictEqual({
-      agentId: AGENT_ID,
       threadId: context.resourceId,
       approvalUrl: APPROVAL_URL,
     });

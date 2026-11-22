@@ -224,7 +224,11 @@ pub async fn read_service_unit_state(unit: &RunnerServiceUnit) -> HostResult<Ser
 pub(super) async fn cat_unit_content(unit: &RunnerServiceUnit) -> HostResult<String> {
     match cat_unit_content_bounded(unit, SYSTEMCTL_QUERY_TIMEOUT).await? {
         BoundedSystemctlQuery::Completed(content) => Ok(content),
-        BoundedSystemctlQuery::TimedOut => Err(systemctl_timeout_error(SYSTEMCTL_QUERY_TIMEOUT)),
+        BoundedSystemctlQuery::TimedOut => Err(HostError::Internal(format!(
+            "systemctl cat timed out after {}ms for {}",
+            SYSTEMCTL_QUERY_TIMEOUT.as_millis(),
+            unit.service_name(),
+        ))),
     }
 }
 

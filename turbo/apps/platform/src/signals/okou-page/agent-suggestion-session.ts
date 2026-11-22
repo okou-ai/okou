@@ -11,7 +11,7 @@ import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { defaultAgentId$ } from "../agent.ts";
+
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
@@ -26,7 +26,11 @@ import {
 } from "./for-you-sources.ts";
 
 type FeedbackKind =
-  "already_done" | "not_planned" | "less_like_this" | "dismissed";
+  | "already_done"
+  | "not_planned"
+  | "dont_nudge"
+  | "less_like_this"
+  | "dismissed";
 type SuggestionMutation =
   | { readonly type: "feedback"; readonly request: SuggestionFeedbackRequest }
   | { readonly type: "consume"; readonly optionId: string };
@@ -125,7 +129,7 @@ function createSuggestionEntry(item: Suggestion) {
     return result;
   });
   // A chosen action is sent from this card's own unsaved draft, so the
-  // default Agent's composer is neither read nor replaced.
+  // workspace composer is neither read nor replaced.
   const optionDraft = createDraftSignals();
   // The chosen action's send, whose progress and failure its sent row shows.
   const sending$ = state<Promise<void> | undefined>(undefined);
@@ -177,8 +181,7 @@ const agentSuggestionsEnabled$ = computed(async (get) => {
   if (!(await get(suggestionsEnabled$))) {
     return false;
   }
-  // A new-chat option starts in the default agent.
-  return (await get(defaultAgentId$)) !== null;
+  return true;
 });
 
 const feedVersion$ = computed((get) => {
@@ -544,7 +547,13 @@ const submitAgentSuggestionFeedback$ = command(
       entry.enqueue$,
       {
         type: "feedback",
-        request: { id, kind, targetId: null, note: "" },
+        request: {
+          id,
+          kind: kind === "dont_nudge" ? "not_planned" : kind,
+          targetId: null,
+          note:
+            kind === "dont_nudge" ? "Do not nudge me about this again." : "",
+        },
       },
       get(rootSignal$),
     );
@@ -614,6 +623,7 @@ export const submitSuggestionFeedbackWithUndo$ = command(
       dismissed: messages.dismissRecorded,
       already_done: messages.doneRecorded,
       not_planned: messages.notPlannedRecorded,
+      dont_nudge: messages.dontNudgeRecorded,
       less_like_this: messages.lessRecorded,
     }[kind];
     toast.success(message, {

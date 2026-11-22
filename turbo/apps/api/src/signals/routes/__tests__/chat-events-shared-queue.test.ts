@@ -6,9 +6,11 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
+import { updateMaxAutonomyBudgetForTest$ } from "../../autonomy-budget-limit";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -64,48 +66,9 @@ async function readPickedInputRun(
   return runId;
 }
 
-/** Construct delegation depth through public sends and Runner completion. */
-async function callerAtDelegationDepth(
-  actor: Parameters<typeof sendChatRun>[0],
-  agentId: string,
-  runnerGroup: string,
-  depth: number,
-) {
-  let run = await sendChatRun(actor, {
-    agentId,
-    prompt: "root of bounded delegation",
-  });
-  let execution = await runExecution(run.runId);
-  for (let level = 1; level <= depth; level += 1) {
-    const eventId = randomUUID();
-    const thread = await chat.createThread(actor, { agentId });
-    const sent = await requestSendEventWithBearer(
-      okouTokenFromExecution(execution.execution),
-      {
-        agentId,
-        threadId: thread.id,
-        clientEventId: eventId,
-        prompt: `delegation depth ${level}`,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected a delegation within the public depth limit");
-    }
-    await flushWaitUntilForTest();
-    const childId = await readPickedInputRun(actor, thread.id, eventId);
-    const childExecution = await runExecution(childId);
-    await completeChatRunOk(run.runId, execution.sandboxHeaders);
-    await flushWaitUntilForTest();
-    run = { runId: childId, threadId: thread.id };
-    execution = childExecution;
-  }
-  return { run, execution };
-}
-
 describe("CHAT-02: shared user message queue", () => {
   it("dispatches idle-thread sends by appending a run-associated replacement", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const messageId = randomUUID();
     const referencedThreadId = randomUUID();
@@ -126,7 +89,6 @@ describe("CHAT-02: shared user message queue", () => {
       return await chat.requestSendEvent(
         actor,
         {
-          agentId,
           prompt: "queue-first direct dispatch",
           userMessage,
           clientEventId: messageId,
@@ -202,7 +164,6 @@ describe("CHAT-02: shared user message queue", () => {
     const replay = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: sent.body.threadId,
         prompt: "queue-first direct dispatch",
         clientEventId: messageId,
@@ -240,8 +201,8 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("launches the FIFO head of overlapping idle sends and steers the other input", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    const thread = await chat.createThread(actor, { agentId });
+    const { actor } = await entitledChatActor();
+    const thread = await chat.createThread(actor, {});
     const inputs = [
       { clientEventId: randomUUID(), prompt: "first overlapping request" },
       { clientEventId: randomUUID(), prompt: "second overlapping request" },
@@ -250,7 +211,7 @@ describe("CHAT-02: shared user message queue", () => {
       inputs.map(async (input) => {
         await chat.requestSendEvent(
           actor,
-          { agentId, threadId: thread.id, ...input },
+          { threadId: thread.id, ...input },
           [201],
         );
       }),
@@ -302,10 +263,9 @@ describe("CHAT-02: shared user message queue", () => {
   });
 
   it("skips a recalled queue head when dispatching a later idle Web send", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "recalled queue head anchor",
     });
     const anchorExecution = await runExecution(anchor.runId);
@@ -313,7 +273,6 @@ describe("CHAT-02: shared user message queue", () => {
     const queued = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "recalled before dispatch",
         clientEventId: recalledId,
@@ -326,7 +285,6 @@ describe("CHAT-02: shared user message queue", () => {
     const recall = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         revokesEventId: recalledId,
         clientEventId: randomUUID(),
@@ -345,7 +303,6 @@ describe("CHAT-02: shared user message queue", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "dispatch after a recalled head",
         clientEventId: nextId,
@@ -376,26 +333,42 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("persists user-forwarded run provenance across chat threads", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    createStore().set(updateMaxAutonomyBudgetForTest$, 1);
+    const { actor } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
     await bdd.readMe(actor);
 
-    // Thirty-two public delegation hops exhaust the source. Human forwarding is
-    // still an ordinary user request, not another agent delegation.
-    const { run: source } = await callerAtDelegationDepth(
-      actor,
-      agentId,
-      runnerGroup,
-      32,
+    // One public delegation exhausts the test budget. Human forwarding can
+    // still start a run from the exhausted source.
+    const root = await sendChatRun(actor, {
+      prompt: "root of bounded delegation",
+    });
+    const rootExecution = await runExecution(root.runId);
+    const sourceThread = await chat.createThread(actor, {});
+    const sourceEventId = randomUUID();
+    await requestSendEventWithBearer(
+      okouTokenFromExecution(rootExecution.execution),
+      {
+        threadId: sourceThread.id,
+        clientEventId: sourceEventId,
+        prompt: "last allowed delegation",
+      },
+      [201],
     );
-    const targetThread = await chat.createThread(actor, { agentId });
+    await flushWaitUntilForTest();
+    const source = {
+      threadId: sourceThread.id,
+      runId: await readPickedInputRun(actor, sourceThread.id, sourceEventId),
+    };
+    await completeChatRunOk(root.runId, rootExecution.sandboxHeaders);
+    await flushWaitUntilForTest();
+    const targetThread = await chat.createThread(actor, {});
     const forwardedEventId = randomUUID();
     const forwarded = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: targetThread.id,
         clientEventId: forwardedEventId,
         prompt: "Forwarded content:\n\n> deployment window is fifteen minutes",
@@ -430,13 +403,10 @@ describe("CHAT-02: shared user message queue", () => {
       },
     );
     expect(forwardedInput?.userMessage.parts).toContainEqual({
-      type: "source",
-      kind: "agent",
+      type: "chat_thread",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "New thread",
-      href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
     const forwardedRun = await api.executionInput(forwardedRunId);
@@ -463,7 +433,6 @@ describe("CHAT-02: shared user message queue", () => {
     const unknownSource = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: targetThread.id,
         clientEventId: randomUUID(),
         prompt: "forwarded with unknown provenance",
@@ -484,7 +453,6 @@ describe("CHAT-02: shared user message queue", () => {
     const unknownThread = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: randomUUID(),
         clientEventId: randomUUID(),
         prompt: "forwarded into an unknown thread",
@@ -503,14 +471,13 @@ describe("CHAT-02: shared user message queue", () => {
     await cancelAndCompleteChatRun(actor, source.runId);
   }, 90_000);
 
-  it("persists agent-run provenance for messages sent across chat threads", async () => {
-    const { actor, agentId } = await entitledChatActor();
+  it("preserves the source run when forwarding between chats", async () => {
+    const { actor } = await entitledChatActor();
 
-    const firstTargetThread = await chat.createThread(actor, { agentId });
-    const secondTargetThread = await chat.createThread(actor, { agentId });
+    const firstTargetThread = await chat.createThread(actor, {});
+    const secondTargetThread = await chat.createThread(actor, {});
 
     const source = await sendChatRun(actor, {
-      agentId,
       prompt: "delegate work to other chat threads",
     });
     const { execution: sourceExecution, sandboxHeaders: sourceSandboxHeaders } =
@@ -521,7 +488,6 @@ describe("CHAT-02: shared user message queue", () => {
     const firstSend = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: firstEventId,
         threadId: firstTargetThread.id,
         prompt: "first delegated prompt",
@@ -544,7 +510,6 @@ describe("CHAT-02: shared user message queue", () => {
     expect(firstTargetSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    expect(firstTargetSystemPrompt).toContain(`SOURCE_AGENT_ID: ${agentId}`);
     expect(firstTargetSystemPrompt).toContain(
       "SOURCE_THREAD_TITLE: New thread",
     );
@@ -579,13 +544,10 @@ describe("CHAT-02: shared user message queue", () => {
         parts: [
           { type: "text", text: "first delegated prompt" },
           {
-            type: "source",
-            kind: "agent",
+            type: "chat_thread",
             runId: source.runId,
             threadId: source.threadId,
-            agentId,
             titleSnapshot: "New thread",
-            href: `/chats/${source.threadId}#run-${source.runId}`,
           },
         ],
       },
@@ -598,7 +560,6 @@ describe("CHAT-02: shared user message queue", () => {
     const { concurrencyLimit } = await api.readBillingStatus(actor);
     for (let index = 2; index < concurrencyLimit; index += 1) {
       await sendChatRun(actor, {
-        agentId,
         prompt: `occupy concurrency slot ${index}`,
       });
     }
@@ -607,7 +568,6 @@ describe("CHAT-02: shared user message queue", () => {
     const secondSend = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: secondEventId,
         threadId: secondTargetThread.id,
         prompt: "second delegated prompt",
@@ -633,22 +593,18 @@ describe("CHAT-02: shared user message queue", () => {
       },
     );
     expect(secondInput?.userMessage.parts).toContainEqual({
-      type: "source",
-      kind: "agent",
+      type: "chat_thread",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "Delegation source",
-      href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
     await chat.renameThread(actor, source.threadId, "now");
-    const nowTargetThread = await chat.createThread(actor, { agentId });
+    const nowTargetThread = await chat.createThread(actor, {});
     const nowEventId = randomUUID();
     const nowSend = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: nowEventId,
         threadId: nowTargetThread.id,
         prompt: "delegated prompt from a placeholder thread title",
@@ -673,20 +629,16 @@ describe("CHAT-02: shared user message queue", () => {
       },
     );
     expect(nowInput?.userMessage.parts).toContainEqual({
-      type: "source",
-      kind: "agent",
+      type: "chat_thread",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "New thread",
-      href: `/chats/${source.threadId}#run-${source.runId}`,
     });
-    const forgedTargetThread = await chat.createThread(actor, { agentId });
+    const forgedTargetThread = await chat.createThread(actor, {});
     const forgedEventId = randomUUID();
     const forged = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: forgedEventId,
         threadId: forgedTargetThread.id,
         prompt: "forged provenance",
@@ -695,13 +647,10 @@ describe("CHAT-02: shared user message queue", () => {
           parts: [
             { type: "text", text: "forged provenance" },
             {
-              type: "source",
-              kind: "agent",
+              type: "chat_thread",
               runId: randomUUID(),
               threadId: randomUUID(),
-              agentId: randomUUID(),
               titleSnapshot: "Forged source",
-              href: `/chats/${randomUUID()}#run-${randomUUID()}`,
             },
           ],
         },
@@ -713,7 +662,7 @@ describe("CHAT-02: shared user message queue", () => {
       body: {
         error: {
           code: "BAD_REQUEST",
-          message: "Agent source annotations are server-managed",
+          message: "Forwarded chat references are server-managed",
         },
       },
     });
@@ -746,13 +695,12 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("keeps Web context and tools for agent prompts sent into existing threads", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
     }
 
     const source = await sendChatRun(actor, {
-      agentId,
       prompt: "delegate into existing chat threads",
     });
     const { execution: sourceExecution, sandboxHeaders: sourceSandboxHeaders } =
@@ -761,7 +709,6 @@ describe("CHAT-02: shared user message queue", () => {
 
     const rotatedAnchorPrompt = "prior Web round before an agent rotation";
     const rotatedAnchor = await sendChatRun(actor, {
-      agentId,
       prompt: rotatedAnchorPrompt,
       model: "claude-fable-5-1",
     });
@@ -780,7 +727,6 @@ describe("CHAT-02: shared user message queue", () => {
     const rotatedQueued = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: rotatedEventId,
         threadId: rotatedAnchor.threadId,
         prompt: "agent prompt after the Web session rotates",
@@ -839,7 +785,6 @@ describe("CHAT-02: shared user message queue", () => {
 
     const incompletePrompt = "failed Web round before an agent retry";
     const incomplete = await sendChatRun(actor, {
-      agentId,
       prompt: incompletePrompt,
     });
     const incompleteExecution = await runExecution(incomplete.runId);
@@ -847,7 +792,6 @@ describe("CHAT-02: shared user message queue", () => {
     const incompleteQueued = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: incompleteEventId,
         threadId: incomplete.threadId,
         prompt: "agent prompt after an incomplete Web round",
@@ -899,19 +843,19 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("blocks cross-thread delegation from a zero-budget run", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const target = await chat.createThread(actor, { agentId });
-    const blockedTarget = await chat.createThread(actor, { agentId });
-    // The thirty-two-hop limit is reached through thirty-one ordinary hops,
-    // then the last allowed delegation below. No budget row is injected.
-    const { run: root, execution: rootExecution } =
-      await callerAtDelegationDepth(actor, agentId, runnerGroup, 31);
+    createStore().set(updateMaxAutonomyBudgetForTest$, 1);
+    const { actor } = await entitledChatActor();
+    const target = await chat.createThread(actor, {});
+    const blockedTarget = await chat.createThread(actor, {});
+    const root = await sendChatRun(actor, {
+      prompt: "root of bounded delegation",
+    });
+    const rootExecution = await runExecution(root.runId);
 
     const delegatedEventId = randomUUID();
     const delegated = await requestSendEventWithBearer(
       okouTokenFromExecution(rootExecution.execution),
       {
-        agentId,
         clientEventId: delegatedEventId,
         threadId: target.id,
         prompt: "last allowed delegation",
@@ -936,7 +880,6 @@ describe("CHAT-02: shared user message queue", () => {
     const blocked = await requestSendEventWithBearer(
       okouTokenFromExecution(delegatedExecution.execution),
       {
-        agentId,
         clientEventId: blockedEventId,
         threadId: blockedTarget.id,
         prompt: "delegation beyond the limit",
@@ -989,7 +932,7 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("derives real-agent preview mode when queued messages are claimed", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
     }
@@ -999,7 +942,6 @@ describe("CHAT-02: shared user message queue", () => {
     });
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "preview override queue anchor",
     });
     const anchorExecution = await runExecution(anchor.runId);
@@ -1022,7 +964,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "queued real-agent preview run",
         clientEventId: previewMessageId,
@@ -1046,7 +987,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "queued preview mock run",
         clientEventId: mockMessageId,
@@ -1121,10 +1061,9 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("projects additional info and inline templates into queued web launch material", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "inline-template queue anchor",
     });
     const anchorExecution = await runExecution(anchor.runId);
@@ -1156,7 +1095,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "queued inline template projection",
         userMessage: queuedUserMessage,
@@ -1217,10 +1155,9 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("appends a claimed queued message after messages that are still queued", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "multiple queue order anchor",
     });
 
@@ -1229,7 +1166,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: firstPrompt,
         clientEventId: firstId,
@@ -1242,7 +1178,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: secondPrompt,
         clientEventId: secondId,
@@ -1298,7 +1233,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         revokesEventId: secondId,
         clientEventId: randomUUID(),
@@ -1312,7 +1246,6 @@ describe("CHAT-02: shared user message queue", () => {
     const { actor, agentId } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "thread list publication failure anchor",
     });
     // Seeing the anchor run does not finish its background pick publication.
@@ -1380,10 +1313,9 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("appends replacements on auto-send and keeps queued recalls idempotent", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "queue-first anchor run",
     });
     const anchorExecution = await runExecution(anchor.runId);
@@ -1392,7 +1324,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "queue-first waits for the anchor",
         clientEventId: queuedId,
@@ -1405,7 +1336,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "queue-first message to recall",
         clientEventId: recalledId,
@@ -1415,7 +1345,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         revokesEventId: recalledId,
         clientEventId: randomUUID(),
@@ -1427,7 +1356,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         revokesEventId: recalledId,
         clientEventId: randomUUID(),
@@ -1500,10 +1428,9 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("waits when a fresh cancellation recovery is the only dispatch blocker", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "cancel before the next send",
     });
     const { sandboxHeaders } = await runExecution(anchor.runId);
@@ -1514,7 +1441,6 @@ describe("CHAT-02: shared user message queue", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "send during cancellation recovery",
         clientEventId: queuedId,
@@ -1553,10 +1479,9 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("auto-fires queued messages after cancellation recovery completes", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "queue-first anchor to cancel",
     });
     const { sandboxHeaders } = await runExecution(anchor.runId);
@@ -1565,7 +1490,6 @@ describe("CHAT-02: shared user message queue", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "queue-first fires after cancel",
         clientEventId: queuedId,

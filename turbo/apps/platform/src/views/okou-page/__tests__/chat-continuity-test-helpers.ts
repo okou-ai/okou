@@ -28,7 +28,6 @@ import {
   chatListAuth,
   chatListThread,
   installActiveChatBoundaries,
-  installChatListAgent,
   installChatListRunModels,
   installChatListStream,
   sidebarThreadLinks,
@@ -214,7 +213,7 @@ export function installContinuityWorkspace(
   options: ContinuityWorkspaceOptions,
 ): ContinuityWorkspace {
   const auth = chatListAuth(200 + options.caseId);
-  installChatListAgent(context);
+
   installChatListRunModels(context);
   installChatListStream(context, {
     caseId: options.caseId,
@@ -291,7 +290,6 @@ export function installContinuityWorkspace(
       }
       return respond(200, {
         id: thread.id,
-        agentId: thread.agentId,
         title: thread.title,
         selectedModel: thread.selectedModel,
         modelSettings: thread.modelSettings ?? {},

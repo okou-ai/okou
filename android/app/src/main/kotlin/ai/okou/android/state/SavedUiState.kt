@@ -1,8 +1,12 @@
 package ai.okou.android.state
 
+import ai.okou.android.artifacts.ArtifactFilter
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.SaveableStateHolder
@@ -27,12 +31,131 @@ internal sealed interface WorkspaceTarget {
 internal enum class SettingsDestination {
     Overview,
     Instructions,
+    ModelAccounts,
+    CreditBalance,
+    Account,
 }
+
+internal enum class SearchRoute {
+    Closed,
+    Open,
+    ReturnOnBack,
+}
+
+@Composable
+internal fun rememberUpdateDetailsOpen(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
+@Composable
+internal fun rememberSettingsFlag(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
+@Composable
+internal fun rememberSettingsReturnFocus(): MutableState<SettingsDestination?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
+@Composable
+internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
+@Composable
+internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
+
+private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
+
+internal data class SearchResultAnchor(val chatId: String, val offset: Int)
+
+internal class ChatSearchState(
+    query: TextFieldValue = TextFieldValue(),
+    anchor: SearchResultAnchor? = null,
+) {
+    var query by mutableStateOf(query)
+        private set
+
+    val position = LazyListState()
+    var pendingAnchor by mutableStateOf(anchor)
+        private set
+
+    fun edit(value: TextFieldValue) {
+        if (query.text != value.text) {
+            pendingAnchor = null
+            position.requestScrollToItem(0)
+        }
+        query = value
+    }
+
+    fun reset() {
+        pendingAnchor = null
+        position.requestScrollToItem(0)
+        query = TextFieldValue()
+    }
+
+    fun restorePosition(index: Int?) {
+        val anchor = pendingAnchor ?: return
+        if (index != null) position.requestScrollToItem(index, anchor.offset)
+        pendingAnchor = null
+    }
+
+    fun savedAnchor(): SearchResultAnchor? {
+        pendingAnchor?.let {
+            return it
+        }
+        return position.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == position.firstVisibleItemIndex }
+            ?.let { item ->
+                (item.key as? String)?.let {
+                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset)
+                }
+            }
+    }
+}
+
+@Composable
+internal fun rememberChatSearchState(): ChatSearchState =
+    rememberSaveable(
+        saver =
+            listSaver<ChatSearchState, Any>(
+                save = {
+                    val query = it.query
+                    if (query.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
+                        val anchor = it.savedAnchor()
+                        listOf(
+                            query.text,
+                            query.selection.start,
+                            query.selection.end,
+                            anchor?.chatId.orEmpty(),
+                            anchor?.offset ?: 0,
+                        )
+                    } else emptyList()
+                },
+                restore = { (text, start, end, chatId, offset) ->
+                    ChatSearchState(
+                        TextFieldValue(text as String, TextRange(start as Int, end as Int)),
+                        (chatId as String)
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { SearchResultAnchor(it, offset as Int) },
+                    )
+                },
+            )
+    ) {
+        ChatSearchState()
+    }
 
 internal data class WorkspaceNavigation(
     val target: WorkspaceTarget = WorkspaceTarget.List,
     val settings: SettingsDestination? = null,
+    val search: SearchRoute = SearchRoute.Closed,
+    val artifacts: ArtifactsDestination? = null,
 )
+
+internal data class ArtifactsDestination(val sourceId: String? = null)
 
 @Composable
 internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
@@ -46,50 +169,103 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                             is WorkspaceTarget.Chat -> "chat" to target.id
                             is WorkspaceTarget.NewChat -> "new" to target.projectId.orEmpty()
                         }
-                    listOf(kind, id, navigation.settings?.name.orEmpty())
+                    listOf(
+                        kind,
+                        id,
+                        navigation.settings?.name.orEmpty(),
+                        navigation.search.name,
+                        navigation.artifacts != null,
+                        navigation.artifacts?.sourceId.orEmpty(),
+                    )
                 },
-                restore = { (kind, id, settings) ->
+                restore = { fields ->
+                    val (kind, id, settings) = fields
                     val target =
                         when (kind) {
                             "chat" -> WorkspaceTarget.Chat(id as String)
                             "new" -> WorkspaceTarget.NewChat((id as String).ifEmpty { null })
                             else -> WorkspaceTarget.List
                         }
+                    // Earlier versions saved only whether Settings was open.
                     val destination =
-                        when (settings) {
-                            // Earlier versions saved only whether Settings was open.
-                            true,
-                            SettingsDestination.Overview.name -> SettingsDestination.Overview
-                            SettingsDestination.Instructions.name ->
-                                SettingsDestination.Instructions
-                            else -> null
-                        }
-                    WorkspaceNavigation(target, destination)
+                        if (settings == true) SettingsDestination.Overview
+                        else SettingsDestination.entries.firstOrNull { it.name == settings }
+                    val search = SearchRoute.entries.firstOrNull { it.name == fields.getOrNull(3) }
+                    val artifacts =
+                        if (fields.getOrNull(4) == true) {
+                            ArtifactsDestination((fields.getOrNull(5) as? String)?.ifEmpty { null })
+                        } else null
+                    WorkspaceNavigation(
+                        target,
+                        destination,
+                        search ?: SearchRoute.Closed,
+                        artifacts,
+                    )
                 },
             )
     ) {
         mutableStateOf(WorkspaceNavigation())
     }
 
-internal class SavedUiIds(private val state: MutableState<List<String>>, private val limit: Int) {
-    val values: List<String>
-        get() = state.value
+internal class ArtifactPageState(
+    filter: ArtifactFilter = ArtifactFilter.All,
+    selectedId: String? = null,
+    restoreRow: String? = null,
+    restoreSource: Boolean = false,
+    pickerArtifactId: String? = null,
+) {
+    var filter by mutableStateOf(filter)
+    var selectedId by mutableStateOf(selectedId)
+    var restoreRow by mutableStateOf(restoreRow)
+    var restoreSource by mutableStateOf(restoreSource)
+    var pickerArtifactId by mutableStateOf(pickerArtifactId)
+}
 
+@Composable
+internal fun rememberArtifactPageState(): ArtifactPageState =
+    rememberSaveable(
+        saver =
+            listSaver<ArtifactPageState, Any>(
+                save = {
+                    listOf(
+                        it.filter.name,
+                        it.selectedId.orEmpty(),
+                        it.restoreRow.orEmpty(),
+                        it.restoreSource,
+                        it.pickerArtifactId.orEmpty(),
+                    )
+                },
+                restore = { (filter, selectedId, restoreRow, restoreSource, pickerArtifactId) ->
+                    ArtifactPageState(
+                        ArtifactFilter.entries.firstOrNull { it.name == filter }
+                            ?: ArtifactFilter.All,
+                        (selectedId as String).ifEmpty { null },
+                        (restoreRow as String).ifEmpty { null },
+                        restoreSource as Boolean,
+                        (pickerArtifactId as String).ifEmpty { null },
+                    )
+                },
+            )
+    ) {
+        ArtifactPageState()
+    }
+
+@Composable
+internal fun rememberArtifactPageHolder(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberArtifactWebScroll(): MutableIntState = rememberSaveable {
+    mutableIntStateOf(0)
+}
+
+internal class SavedUiIds(private val state: MutableState<List<String>>, private val limit: Int) {
     fun record(id: String): List<String> {
-        val next = (values - id) + id
+        val next = (state.value - id) + id
         val evicted = next.dropLast(limit)
         state.value = next.takeLast(limit)
         return evicted
     }
-
-    fun toggle(id: String) {
-        if (id in values) state.value = values - id else record(id)
-    }
 }
-
-@Composable
-internal fun rememberCollapsedProjects(): SavedUiIds =
-    rememberUiIds(SavedStatePolicy.COLLAPSED_PROJECTS)
 
 @Composable
 private fun rememberUiIds(limit: Int): SavedUiIds {

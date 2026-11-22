@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_search_workspace">वर्कस्पेस में खोजें</string>
+    <string name="chat_search_clear">खोज मिटाएँ</string>
+    <string name="chat_search_recent">हाल की चैट</string>
+    <string name="chat_search_empty">कोई मिलती-जुलती चैट नहीं</string>
+</resources>

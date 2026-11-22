@@ -85,7 +85,6 @@ export function workflowCopyRowValues(
   return {
     id: args.targetWorkflowId,
     orgId: args.orgId,
-    agentId: args.targetAgentId,
     name: args.sourceWorkflow.name,
     visibility: "private",
     instruction: args.sourceWorkflow.instruction,
@@ -131,7 +130,6 @@ export function workflowCopyAutomationValues(
 export function workflowCopySlugQuery(args: {
   readonly orgId: string;
   readonly userId: string;
-  readonly targetAgentId: string;
   readonly sourceWorkflow: WorkflowCopyInput["sourceWorkflow"];
 }) {
   return new QueryBuilder()
@@ -140,7 +138,6 @@ export function workflowCopySlugQuery(args: {
     .where(
       and(
         eq(workflows.orgId, args.orgId),
-        eq(workflows.agentId, args.targetAgentId),
         eq(workflows.ownerUserId, args.userId),
         eq(workflows.name, args.sourceWorkflow.name),
         eq(workflows.visibility, "private"),
@@ -151,7 +148,7 @@ export function workflowCopySlugQuery(args: {
     .as("copy_slug");
 }
 export function copySlugConflict(name: string) {
-  return `You already have a private workflow named "/${name}" on this agent. Rename the existing workflow or choose a different name.`;
+  return `You already have a private workflow named "/${name}". Rename the existing workflow or choose a different name.`;
 }
 const copyProjectionEventTypes = {
   gmail: ["gmail-new-message", "gmail-label-applied"],
@@ -225,7 +222,6 @@ export function workflowCopyThreadPlan(args: WorkflowCopyPublicationArgs) {
   return prepareChatThreadInsert({
     orgId: args.orgId,
     userId: args.userId,
-    agentId: args.targetAgentId,
     title: args.threadPreparation.title,
     modelSettings: args.threadPreparation.modelSettings,
     cloudBrowserEnabled: args.threadPreparation.cloudBrowserEnabled,

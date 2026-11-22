@@ -57,7 +57,7 @@ function session(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 }
 
-async function owner(enabled = true) {
+async function owner() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
@@ -65,13 +65,8 @@ async function owner(enabled = true) {
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  if (enabled) {
-    await connectors.updateFeatureSwitches(actor, {
-      connectorChatAccountAccess: true,
-    });
-  }
   const { agentId } = await bdd.createAgent(actor, { visibility: "private" });
-  const thread = await chat.createThread(actor, { agentId });
+  const thread = await chat.createThread(actor, {});
   return { actor, agentId, threadId: thread.id, runnerGroup };
 }
 async function start(value: Awaited<ReturnType<typeof owner>>) {
@@ -116,7 +111,6 @@ async function addAccount(actor: ApiTestUser, name: string) {
     "manual-mcp",
     "api-token",
     { apiKey: `key-${name}` },
-    undefined,
     { intent: "add", displayName: name },
   );
 }
@@ -152,7 +146,6 @@ describe("Chat connector execution", () => {
       "runtime",
       "api-token",
       { apiKey: "selected-native-key" },
-      undefined,
       { intent: "add", displayName: "Selected native account" },
     );
     const registered = await addAccount(value.actor, "Registered MCP");
@@ -203,24 +196,7 @@ describe("Chat connector execution", () => {
     });
   });
 
-  it("retains Agent-gated startup and hides the new approval and switch APIs when disabled", async () => {
-    const value = await owner(false);
-    const account = await addAccount(value.actor, "A");
-    const run = await start(value);
-    expect(run.execution.connectorRuntimeTargets ?? []).toStrictEqual([]);
-    await accept(client().list({ headers: run.headers }), [403]);
-    session(value.actor);
-    await accept(
-      client().approve({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId },
-        body: { target: builtin, connectionId: account.id },
-      }),
-      [404],
-    );
-  });
-
-  it("starts without Agent grants, switches HTTP identity and persists the Chat current account for the next Run", async () => {
+  it("switches HTTP identity and persists the Chat's current account for the next Run", async () => {
     const value = await owner();
     const a = await addAccount(value.actor, "A");
     const b = await addAccount(value.actor, "B");
@@ -413,9 +389,7 @@ describe("Chat connector execution", () => {
     const value = await owner();
     const a = await addAccount(value.actor, "A");
     const b = await addAccount(value.actor, "B");
-    const otherThread = await chat.createThread(value.actor, {
-      agentId: value.agentId,
-    });
+    const otherThread = await chat.createThread(value.actor, {});
     session(value.actor);
     await accept(
       access().setThreadOverride({
@@ -455,9 +429,6 @@ describe("Chat connector execution", () => {
       [403],
     );
     const foreign = bdd.user();
-    await connectors.updateFeatureSwitches(foreign, {
-      connectorChatAccountAccess: true,
-    });
     const foreignAccount = await addAccount(foreign, "foreign");
     await accept(
       client().select({
@@ -497,7 +468,7 @@ describe("Chat connector execution", () => {
   });
 
   it.each(["http", "mcp"] as const)(
-    "rebinds custom %s accounts without Agent grants and retains shared permission expiry",
+    "rebinds custom %s accounts and retains shared permission expiry",
     async (kind) => {
       const value = await owner();
       const definition = await connectors.createCustomConnector(

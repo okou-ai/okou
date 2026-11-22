@@ -34,6 +34,7 @@ import { hasTokenInputValue } from "../../signals/okou-page/settings/token-input
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import {
   connectDirectedConnector$,
+  continueConnectedConnector$,
   directedConnectSlug$,
   directedConnectCustomSlug$,
   directedConnectCustomConnected$,
@@ -41,8 +42,6 @@ import {
   directedConnectCatalogItem$,
   directedConnectExactAccount$,
   directedConnectAccounts$,
-  directedConnectAgentId$,
-  directedConnectAgentName$,
   manualGrantDialogKey$,
   setManualGrantDialogKey$,
   directedConnectModalKey$,
@@ -50,6 +49,7 @@ import {
   directedConnectCustomDialogKey$,
   setDirectedConnectCustomDialogKey$,
 } from "../../signals/connectors-page/directed-connect-slug.ts";
+import { pendingDirectedConnectorCallback$ } from "../../signals/connectors-page/directed-connector-callback.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { Check, Loader2 } from "lucide-react";
 import { DirectedActionError, DirectedCardShell } from "./directed-shared.tsx";
@@ -74,13 +74,11 @@ import {
 
 function ManualGrantForm({
   connectorSlug,
-  agentId,
   connectorLabel,
   manualGrantMethod,
   accountOptions,
 }: {
   connectorSlug: ConnectorSlug;
-  agentId: string | null;
   connectorLabel: string;
   manualGrantMethod: PublicConnectorCatalogAuthMethodDetail;
   accountOptions: ConnectorAccountMutationOptions;
@@ -115,10 +113,9 @@ function ManualGrantForm({
           ),
           options: {
             connectorLabel,
-            ...(agentId ? { agentId } : { authorizeVisibleAgents: true }),
             ...accountOptions,
           },
-          origin: { kind: "directed-connect", agentId },
+          origin: { kind: "directed-connect" },
           surface: "directed-manual-grant-dialog",
         },
         pageSignal,
@@ -182,7 +179,6 @@ function ManualGrantForm({
 
 function ManualGrantDialog({
   connectorSlug,
-  agentId,
   icon,
   connectorLabel,
   manualGrantMethod,
@@ -191,7 +187,6 @@ function ManualGrantDialog({
   onOpenChange,
 }: {
   connectorSlug: ConnectorSlug;
-  agentId: string | null;
   icon: PlatformConnectorCatalogStatusItem["icon"] | undefined;
   connectorLabel: string;
   manualGrantMethod: PublicConnectorCatalogAuthMethodDetail | null;
@@ -213,7 +208,6 @@ function ManualGrantDialog({
         </DialogHeader>
         <ManualGrantForm
           connectorSlug={connectorSlug}
-          agentId={agentId}
           connectorLabel={connectorLabel}
           manualGrantMethod={manualGrantMethod}
           accountOptions={accountOptions}
@@ -288,14 +282,12 @@ function DirectedConnectModal({
   item,
   accountOptions,
   reconnectAuthMethod,
-  agentId,
   onClose,
 }: {
   readonly open: boolean;
   readonly item: PlatformConnectorCatalogStatusItem | undefined;
   readonly accountOptions: ConnectorAccountMutationOptions | null;
   readonly reconnectAuthMethod: ConnectorAuthMethodId | undefined;
-  readonly agentId: string | null;
   readonly onClose: () => void;
 }) {
   if (!open || !item || !accountOptions) {
@@ -304,12 +296,10 @@ function DirectedConnectModal({
   return (
     <ConnectModal
       item={item}
-      {...(agentId ? { agentId } : {})}
       accountOptions={accountOptions}
       reconnectAuthMethod={reconnectAuthMethod}
-      authorizeVisibleAgentsOnConnect={!agentId}
       onClose={onClose}
-      origin={{ kind: "directed-connect", agentId }}
+      origin={{ kind: "directed-connect" }}
     />
   );
 }
@@ -324,7 +314,6 @@ function DirectedConnectDialogs({
   manualGrantMethod,
   manualGrantDialogOpen,
   setManualGrantDialogOpen,
-  agentId,
   connectModalOpen,
   setConnectModalOpen,
 }: {
@@ -337,7 +326,6 @@ function DirectedConnectDialogs({
   readonly manualGrantMethod: PublicConnectorCatalogAuthMethodDetail | null;
   readonly manualGrantDialogOpen: boolean;
   readonly setManualGrantDialogOpen: (open: boolean) => void;
-  readonly agentId: string | null | undefined;
   readonly connectModalOpen: boolean;
   readonly setConnectModalOpen: (open: boolean) => void;
 }) {
@@ -345,7 +333,6 @@ function DirectedConnectDialogs({
     <>
       <ManualGrantDialog
         connectorSlug={connectorSlug}
-        agentId={agentId ?? null}
         icon={icon}
         connectorLabel={connectorLabel}
         manualGrantMethod={manualGrantMethod}
@@ -358,7 +345,6 @@ function DirectedConnectDialogs({
         item={item}
         accountOptions={accountOptions}
         reconnectAuthMethod={reconnectAuthMethod}
-        agentId={agentId ?? null}
         onClose={() => {
           setConnectModalOpen(false);
         }}
@@ -531,7 +517,6 @@ function useDirectedConnectPresentation(connectorSlug: ConnectorSlug | null): {
 
 function useDirectedConnectDialogOpenState(
   connectorSlug: ConnectorSlug | null,
-  agentId: string | null,
   signal: AbortSignal,
 ): {
   readonly manualGrantDialogOpen: boolean;
@@ -542,11 +527,9 @@ function useDirectedConnectDialogOpenState(
   return {
     manualGrantDialogOpen:
       manualGrantDialogKey?.connectorSlug === connectorSlug &&
-      manualGrantDialogKey.agentId === agentId &&
       manualGrantDialogKey.signal === signal,
     connectModalOpen:
       connectModalKey?.connectorSlug === connectorSlug &&
-      connectModalKey.agentId === agentId &&
       connectModalKey.signal === signal,
   };
 }
@@ -561,6 +544,7 @@ function DirectedConnectCardContent({
   isConnecting,
   canConnect,
   onConnect,
+  continuation,
 }: {
   readonly icon: ReactNode;
   readonly connectorLabel: string;
@@ -571,6 +555,7 @@ function DirectedConnectCardContent({
   readonly isConnecting: boolean;
   readonly canConnect: boolean;
   readonly onConnect: () => void;
+  readonly continuation?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -595,6 +580,7 @@ function DirectedConnectCardContent({
       isLoading={isLoading}
     >
       <div className="flex flex-col items-center justify-center gap-2">
+        {continuation}
         <ConnectActions
           isConnected={isConnected}
           isConnecting={isConnecting}
@@ -606,30 +592,49 @@ function DirectedConnectCardContent({
   );
 }
 
+function DirectedConnectContinuation({
+  connected,
+  busy,
+  onContinue,
+}: {
+  readonly connected: boolean;
+  readonly busy: boolean;
+  readonly onContinue: () => void;
+}) {
+  const { t } = useTranslation();
+  const pending = useGet(pendingDirectedConnectorCallback$);
+  const target = useGet(directedConnectAccountTarget$);
+  if (!connected || !pending || target.kind !== "default") {
+    return null;
+  }
+  return (
+    <Button type="button" disabled={busy} onClick={onContinue}>
+      {t(($) => {
+        return $.chat.actions.continue;
+      })}
+    </Button>
+  );
+}
+
 function DirectedConnectCard() {
   const connectorSlug = useDirectedConnectConnectorSlug();
   const assistantName = useGet(assistantName$);
-  const agentId = useGet(directedConnectAgentId$);
-  const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const [connectLoadable, connect] = useLoadableSet(connectDirectedConnector$);
+  const [continueLoadable, continueChat] = useLoadableSet(
+    continueConnectedConnector$,
+  );
   const signal = useGet(pageSignal$);
   const { item, presentation } = useDirectedConnectPresentation(connectorSlug);
   const setManualGrantDialogKey = useSet(setManualGrantDialogKey$);
   const setDirectedConnectModalKey = useSet(setDirectedConnectModalKey$);
   const { manualGrantDialogOpen, connectModalOpen } =
-    useDirectedConnectDialogOpenState(connectorSlug, agentId, signal);
+    useDirectedConnectDialogOpenState(connectorSlug, signal);
 
   if (!connectorSlug) {
     return null;
   }
 
-  const agentName =
-    agentNameLoadable.state === "hasData" &&
-    agentNameLoadable.data.agentId === agentId &&
-    agentNameLoadable.data.displayName
-      ? agentNameLoadable.data.displayName
-      : assistantName;
   const isConnecting =
     pollingDeviceAuthSlug === connectorSlug ||
     connectLoadable.state === "loading";
@@ -652,7 +657,7 @@ function DirectedConnectCard() {
     if (!canConnect || !item) {
       return;
     }
-    detach(connect(item, agentId, accountOptions, signal), Reason.DomCallback);
+    detach(connect(item, accountOptions, signal), Reason.DomCallback);
   };
 
   return (
@@ -661,14 +666,24 @@ function DirectedConnectCard() {
         icon={<ConnectorIcon icon={item?.icon} size={20} />}
         connectorLabel={connectorLabel}
         connectorDescription={connectorDescription}
-        agentName={agentName}
+        agentName={assistantName}
         isLoading={isLoading}
         isConnected={isConnected}
         isConnecting={isConnecting}
-        canConnect={canConnect}
+        canConnect={canConnect && continueLoadable.state !== "loading"}
         onConnect={handleConnect}
+        continuation={
+          <DirectedConnectContinuation
+            connected={isConnected}
+            busy={isConnecting || continueLoadable.state === "loading"}
+            onContinue={() => {
+              detach(continueChat(connectorSlug, signal), Reason.DomCallback);
+            }}
+          />
+        }
       />
       <DirectedActionError loadable={connectLoadable} />
+      <DirectedActionError loadable={continueLoadable} />
       <DirectedConnectDialogs
         connectorSlug={connectorSlug}
         item={item}
@@ -679,18 +694,11 @@ function DirectedConnectCard() {
         manualGrantMethod={manualGrantMethod}
         manualGrantDialogOpen={manualGrantDialogOpen}
         setManualGrantDialogOpen={(open) => {
-          setManualGrantDialogKey(
-            open ? { connectorSlug, agentId } : null,
-            signal,
-          );
+          setManualGrantDialogKey(open ? { connectorSlug } : null, signal);
         }}
-        agentId={agentId}
         connectModalOpen={connectModalOpen}
         setConnectModalOpen={(open) => {
-          setDirectedConnectModalKey(
-            open ? { connectorSlug, agentId } : null,
-            signal,
-          );
+          setDirectedConnectModalKey(open ? { connectorSlug } : null, signal);
         }}
       />
     </>
@@ -749,11 +757,9 @@ function customConnectorConnection(
 function CustomDirectedConnectorDialog({
   connection,
   open,
-  agentId,
 }: {
   readonly connection: CustomConnectorConnection | null;
   readonly open: boolean;
-  readonly agentId: string | null;
 }) {
   if (!connection || !open) {
     return null;
@@ -761,9 +767,8 @@ function CustomDirectedConnectorDialog({
   return (
     <CustomConnectorConnectDialog
       connector={connection.connector}
-      {...(agentId ? { agentId } : {})}
       accountOptions={connection.accountOptions}
-      origin={{ kind: "directed-connect", agentId }}
+      origin={{ kind: "directed-connect" }}
     />
   );
 }
@@ -774,8 +779,6 @@ function CustomDirectedConnectCard({
   readonly connectorSlug: CustomConnectorSlug;
 }) {
   const assistantName = useGet(assistantName$);
-  const agentId = useGet(directedConnectAgentId$);
-  const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
   const connectorsLoadable = useLastLoadable(customConnectors$);
   const connectedLoadable = useLastLoadable(directedConnectCustomConnected$);
   const dialogKey = useGet(directedConnectCustomDialogKey$);
@@ -787,22 +790,14 @@ function CustomDirectedConnectCard({
   const connector = customConnectorForSlug(connectors, connectorSlug);
   const connection = customConnectorConnection(connector);
   const dialogOpen =
-    dialogKey?.connectorSlug === connectorSlug &&
-    dialogKey.agentId === agentId &&
-    dialogKey.signal === signal;
+    dialogKey?.connectorSlug === connectorSlug && dialogKey.signal === signal;
 
   if (connectorsLoadable.state === "hasData" && !connector) {
     return null;
   }
 
-  const agentName =
-    agentNameLoadable.state === "hasData" &&
-    agentNameLoadable.data.agentId === agentId &&
-    agentNameLoadable.data.displayName
-      ? agentNameLoadable.data.displayName
-      : assistantName;
   const setDialogOpen = (open: boolean) => {
-    setDialogKey(open ? { connectorSlug, agentId } : null, signal);
+    setDialogKey(open ? { connectorSlug } : null, signal);
   };
 
   return (
@@ -819,7 +814,7 @@ function CustomDirectedConnectCard({
         }
         connectorLabel={connector?.displayName ?? connectorSlug}
         connectorDescription={connector ? customConnectorTarget(connector) : ""}
-        agentName={agentName}
+        agentName={assistantName}
         isLoading={
           connectorsLoadable.state === "loading" ||
           connectedLoadable.state === "loading"
@@ -843,7 +838,6 @@ function CustomDirectedConnectCard({
       <CustomDirectedConnectorDialog
         connection={connection}
         open={dialogOpen}
-        agentId={agentId}
       />
     </>
   );

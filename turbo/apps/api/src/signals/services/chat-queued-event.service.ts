@@ -2,7 +2,6 @@ import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events"
 import {
   chatEventRunlessInputPredicate,
   chatEvents,
-  type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
 import {
   and,
@@ -30,8 +29,7 @@ export type QueuedUserMessageTriggerSource =
   | "teams"
   | "telegram"
   | "email"
-  | "agentphone"
-  | "automation-schedule";
+  | "agentphone";
 
 export function isWebChatContextType(
   contextType: QueuedUserMessageContextType,
@@ -41,12 +39,7 @@ export function isWebChatContextType(
 
 export interface QueuedUserMessage {
   readonly id: string;
-  readonly createdAt: Date;
-  readonly userMessage: ChatEventUserMessage;
-  readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly selectedModel: string | null;
-  readonly contextType: QueuedUserMessageContextType;
-  readonly contextId: string | null;
+  readonly contextType: Exclude<QueuedUserMessageContextType, "automation">;
   readonly autonomyBudget:
     | ChildAutonomyBudget
     | { readonly kind: "unavailable"; readonly message: string };

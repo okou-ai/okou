@@ -27,8 +27,7 @@ function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
     guildId,
     guildName: "Design team",
     discordUserId: null,
-    defaultAgentId: null,
-    defaultAgentName: null,
+
     onboarding: "oauth",
     dmSelectionConnectionId: null,
     dmBindings: [],
@@ -181,7 +180,7 @@ test.each(["install", "connect"] as const)(
     });
     expect(getAction("button", "Connecting...")).toBeDisabled();
     expect(
-      screen.getByText("Connect your Discord account to chat with your agent."),
+      screen.getByText("Connect your account to chat with Okou in Discord."),
     ).toBeInTheDocument();
     expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
     expect(requestBody).toStrictEqual({ guildId });

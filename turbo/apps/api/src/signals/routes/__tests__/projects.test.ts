@@ -7,7 +7,6 @@ import {
   chatThreadDraftContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -22,7 +21,6 @@ import {
 } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -45,16 +43,11 @@ function client() {
 function threads() {
   return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
 }
-async function owner(options?: ApiTestUserOptions) {
+function owner(options?: ApiTestUserOptions) {
   const actor = bdd.user(options);
   if (!actor.orgId) {
     throw new Error("Project fixture requires an organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.SingleAgent]: true },
-  );
   return actor;
 }
 async function create(
@@ -87,13 +80,16 @@ async function agent(actor: ApiTestUser) {
     visibility: "private",
   });
 }
-async function thread(actor: ApiTestUser, agentId: string, projectId?: string) {
+async function thread(
+  actor: ApiTestUser,
+  _agentId: string,
+  projectId?: string,
+) {
   return (
     await accept(
       threads().create({
         headers: headers(actor),
         body: {
-          agentId,
           clientThreadId: randomUUID(),
           eventId: randomUUID(),
           projectId,
@@ -141,7 +137,7 @@ async function listedIds(actor: ApiTestUser) {
 
 describe("private Project order", () => {
   it("moves whole groups before and after targets, preserves rank on rename and appends new Projects", async () => {
-    const actor = await owner();
+    const actor = owner();
     const first = await create(actor, "First");
     const second = await create(actor, "Second");
     const third = await create(actor, "Third");
@@ -193,7 +189,7 @@ describe("private Project order", () => {
   });
 
   it("settles no-op and replayed moves by event identity without undoing a newer order", async () => {
-    const actor = await owner();
+    const actor = owner();
     const first = await create(actor, "First");
     const second = await create(actor, "Second");
     const third = await create(actor, "Third");
@@ -235,12 +231,12 @@ describe("private Project order", () => {
   });
 
   it("hides foreign source and target Projects from colleagues and other organizations", async () => {
-    const actor = await owner();
+    const actor = owner();
     const first = await create(actor, "First");
     const second = await create(actor, "Second");
-    const peer = await owner({ orgId: actor.orgId });
+    const peer = owner({ orgId: actor.orgId });
     const foreign = await create(peer, "Foreign");
-    const elsewhere = await owner({ userId: actor.userId });
+    const elsewhere = owner({ userId: actor.userId });
     const external = await create(elsewhere, "Elsewhere");
     expect((await reorder(peer, first.id, foreign.id, "before")).status).toBe(
       404,
@@ -263,7 +259,7 @@ describe("private Project order", () => {
   });
 
   it("arbitrates competing owner writes without duplicate tail ranks or partial event publication", async () => {
-    const actor = await owner();
+    const actor = owner();
     const initial = await create(actor, "Initial");
     const ids = [operation(), operation()];
     const responses = await Promise.all(
@@ -333,7 +329,7 @@ describe("private Project order", () => {
 
 describe("private cross-Agent Projects", () => {
   it("preserves structured Project references through ordinary Agent and Thread drafts", async () => {
-    const actor = await owner();
+    const actor = owner();
     const project = await create(actor);
     const a = await agent(actor);
     const t = await thread(actor, a.agentId, project.id);
@@ -403,63 +399,15 @@ describe("private cross-Agent Projects", () => {
         )
       ).body,
     ).toStrictEqual(draft);
-    if (!actor.orgId) {
-      throw new Error("Missing organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.SingleAgent]: false,
-      },
-    );
-    expect(
-      (
-        await threadApi(chatThreadByIdContract).patch({
-          headers: headers(actor),
-          params: { id: t.id },
-          body: draft,
-        })
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await agentApi.patch({
-          headers: headers(actor),
-          params: { id: a.agentId },
-          body: draft,
-        })
-      ).status,
-    ).toBe(404);
   });
 
-  it("follows My Okou membership state and isolates colleagues and organizations", async () => {
-    const disabled = bdd.user();
-    expect((await client().list({ headers: headers(disabled) })).status).toBe(
-      200,
-    );
-    if (!disabled.orgId) {
-      throw new Error("Missing org");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...disabled, orgId: disabled.orgId },
-      { [FeatureSwitchKey.SingleAgent]: false },
-    );
-    expect((await client().list({ headers: headers(disabled) })).status).toBe(
-      404,
-    );
-    const actor = await owner();
+  it("isolates each member’s Projects across colleagues and organizations", async () => {
+    const actor = owner();
     const p = await create(actor);
     const peer = bdd.user({ orgId: actor.orgId });
     if (!peer.orgId) {
       throw new Error("Missing org");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...peer, orgId: peer.orgId },
-      { [FeatureSwitchKey.SingleAgent]: true },
-    );
     expect(
       (await client().get({ headers: headers(peer), params: { id: p.id } }))
         .status,
@@ -468,7 +416,7 @@ describe("private cross-Agent Projects", () => {
       (await accept(client().list({ headers: headers(peer) }), [200])).body
         .projects,
     ).toStrictEqual([]);
-    const elsewhere = await owner({ userId: actor.userId });
+    const elsewhere = owner({ userId: actor.userId });
     expect(
       (
         await client().get({
@@ -479,7 +427,7 @@ describe("private cross-Agent Projects", () => {
     ).toBe(404);
   });
   it("keeps Agent identity and activity while moving across Projects and ignores a replayed old move", async () => {
-    const actor = await owner();
+    const actor = owner();
     const a = await agent(actor);
     const b = await bdd.createAgent(actor, {
       displayName: "Other Agent",
@@ -503,11 +451,11 @@ describe("private cross-Agent Projects", () => {
     ).body.threads;
     expect(
       members
-        .map((t) => {
-          return t.agentId;
+        .map((thread) => {
+          return thread.id;
         })
         .sort(),
-    ).toStrictEqual([a.agentId, b.agentId].sort());
+    ).toStrictEqual([first.id, second.id].sort());
     expect(
       members.find((t) => {
         return t.id === first.id;
@@ -539,7 +487,7 @@ describe("private cross-Agent Projects", () => {
     expect((await move(actor, first.id, p.id, expired)).status).toBe(409);
   });
   it("deletes the Project atomically, clears each membership and never resurrects an old creation", async () => {
-    const actor = await owner();
+    const actor = owner();
     const a = await agent(actor);
     const first = await thread(actor, a.agentId);
     const p = await create(actor, "Launch", first.id);
@@ -593,7 +541,7 @@ describe("private cross-Agent Projects", () => {
     ).toBe(404);
   });
   it("rejects a missing or foreign source without creating a Project or publishing events", async () => {
-    const actor = await owner();
+    const actor = owner();
     const id = operation();
     expect(
       (
@@ -627,7 +575,7 @@ describe("private cross-Agent Projects", () => {
 });
 
 test("serializes concurrent moves, duplicate creates and deletion against new memberships", async () => {
-  const actor = await owner();
+  const actor = owner();
   const a = await agent(actor);
   const first = await thread(actor, a.agentId);
   const p = await create(actor, "Launch");
@@ -724,7 +672,7 @@ test("publishes immutable owner-scoped metadata snapshots with an exact event ta
   const { gunzipSync } = await import("node:zlib");
   const { projectSnapshotArchiveSchema } =
     await import("@okouai/api-contracts/validators/projects");
-  const actor = await owner();
+  const actor = owner();
   const storage = installWorkflowVolumeS3Fixture(context);
   const empty = await accept(
     client().snapshot({ headers: headers(actor) }),

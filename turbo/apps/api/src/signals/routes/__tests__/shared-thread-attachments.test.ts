@@ -3,6 +3,9 @@ import {
   type SharedThreadAudience,
 } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { CopyObjectCommand } from "@aws-sdk/client-s3";
+import { artifactCatalogRoutes } from "../artifact-catalog";
 import { artifactDownloadRoutes } from "../artifact-downloads";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import type { UserMessageInputPart } from "@okouai/api-contracts/contracts/chat-threads";
@@ -14,6 +17,7 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { createDeferredPromise } from "../../utils";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -36,6 +40,7 @@ const api = () => {
     context,
     routes: [
       ...sharedThreadRoutes,
+      ...artifactCatalogRoutes,
       ...artifactReferenceRoutes,
       ...artifactDownloadRoutes,
       ...uploadsPrepareRoutes,
@@ -65,7 +70,7 @@ async function fixture() {
   await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Attachment sharing",
   });
   const storage = installSharedThreadStorage(context);
@@ -76,6 +81,7 @@ async function fixture() {
     contentType: string,
     bytes: string,
     scope: "public" | "private" = "private",
+    purpose?: "artifact",
   ) {
     mocks.clerk.session(actor.userId, scope === "public" ? null : actor.orgId);
     const prepared = await accept(
@@ -85,6 +91,7 @@ async function fixture() {
           filename,
           contentType,
           size: Buffer.byteLength(bytes),
+          purpose,
         },
       }),
       [200],
@@ -117,7 +124,6 @@ async function fixture() {
   }
   async function send(parts: readonly UserMessageInputPart[]) {
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "Use these files",
       userMessage: { version: 1, parts: [...parts] },
     });
@@ -267,6 +273,73 @@ test("sends private attachments and shares independent private snapshots", async
   expect(source.body.publicUrl).toBeNull();
   f.storage.removeUpload(file.uploadUrl);
   await expect(attachmentBytes(url)).resolves.toBe("private bytes");
+});
+
+test("rejects publication when a private attachment is withdrawn during its snapshot copy", async () => {
+  const f = await fixture();
+  const filename = "withdrawn-attachment.pdf";
+  const file = await f.upload(
+    filename,
+    "application/pdf",
+    "private bytes",
+    "private",
+    "artifact",
+  );
+  const message = await f.send([file.part]);
+  const catalog = await chat.listArtifactCatalog(f.actor, {
+    kind: "file",
+    keyword: filename,
+  });
+  const artifact = catalog.artifacts[0];
+  if (!artifact) {
+    throw new Error("Expected the uploaded file in the artifact catalog");
+  }
+
+  const started = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  const send = context.mocks.s3.send.getMockImplementation()!;
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    if (
+      command instanceof CopyObjectCommand &&
+      command.input.Key?.startsWith(
+        `private-artifacts/${file.id}/thread-shares/`,
+      )
+    ) {
+      started.resolve();
+      await release.promise;
+    }
+    return await send(command);
+  });
+
+  const sharing = f.share(message);
+  const withdrawal = (async () => {
+    await Promise.race([
+      started.promise,
+      sharing.then(() => {
+        throw new Error(
+          "Expected the private attachment snapshot copy before publication",
+        );
+      }),
+    ]);
+    await accept(
+      api()(artifactCatalogContract).delete({
+        headers,
+        params: { artifactId: artifact.id },
+      }),
+      [200],
+    );
+  })();
+  await withdrawal.finally(() => {
+    release.resolve();
+  });
+  const rejected = await accept(sharing, [400]);
+  expect(rejected.body).toMatchObject({
+    error: {
+      message:
+        "A selected artifact or hosted dependency is unavailable for sharing",
+    },
+  });
+  await f.expectNoShare(message.threadId);
 });
 
 test("shares attachment-only prompts and reuses a copy for repeated references", async () => {

@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Write as _;
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -475,6 +476,19 @@ struct StoppedInfo {
     config_info: String,
 }
 
+#[derive(Clone, Copy)]
+enum DoctorScope<'a> {
+    Host,
+    Config(&'a Path),
+    Ready(&'a LiveRunnerInstance),
+}
+
+struct DoctorReport {
+    runners: Vec<RunnerReport>,
+    stopped: Vec<StoppedInfo>,
+    global_warnings: Vec<Warning>,
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -491,23 +505,85 @@ pub async fn run_doctor(args: DoctorArgs) -> RunnerResult<ExitCode> {
     // Phase 2: Resolve the selected service or discover installed services
     let (config_path_filter, installed_services) =
         discover_services(args.name.as_deref(), Path::new(SYSTEMD_SYSTEM_DIR)).await?;
-
-    // Phase 3: Build runner reports
+    let scope = config_path_filter
+        .as_deref()
+        .map_or(DoctorScope::Host, DoctorScope::Config);
     let live_runners = crate::live_runner_instances::try_list(&home).await?;
+    let report = inspect_runners(
+        &home,
+        &discovered,
+        &live_runners,
+        scope,
+        &installed_services,
+    )
+    .await?;
+    Ok(write_report(
+        &report.runners,
+        &report.stopped,
+        &report.global_warnings,
+        io::stdout().lock(),
+    )?)
+}
+
+pub(super) async fn check_ready_runner(
+    home: &HomePaths,
+    unit: &super::service::RunnerServiceUnit,
+    live_runners: &[LiveRunnerInstance],
+    runner: &LiveRunnerInstance,
+) -> RunnerResult<()> {
+    let discovered = process::discover_all().await;
+    let report = inspect_runners(
+        home,
+        &discovered,
+        live_runners,
+        DoctorScope::Ready(runner),
+        &[],
+    )
+    .await?;
+    let result = write_report(
+        &report.runners,
+        &report.stopped,
+        &report.global_warnings,
+        io::stderr().lock(),
+    )?;
+    if !crate::live_runner_instances::is_current(home, runner).await? {
+        return Err(RunnerError::Internal(format!(
+            "{} runner process {} exited or was replaced during health verification",
+            unit.service_name(),
+            runner.pid,
+        )));
+    }
+    if result != ExitCode::SUCCESS {
+        return Err(RunnerError::Internal(format!(
+            "{} failed runner health verification",
+            unit.service_name(),
+        )));
+    }
+    Ok(())
+}
+
+async fn inspect_runners(
+    home: &HomePaths,
+    discovered: &process::DiscoveredProcesses,
+    live_runners: &[LiveRunnerInstance],
+    scope: DoctorScope<'_>,
+    installed_services: &[InstalledService],
+) -> RunnerResult<DoctorReport> {
+    // Phase 3: Build runner reports
     let api_client = build_api_client();
     let mut reports = build_runner_reports(
-        &live_runners,
-        config_path_filter.as_deref(),
+        live_runners,
+        scope,
         api_client.as_ref(),
-        &discovered,
-        &installed_services,
+        discovered,
+        installed_services,
     )
     .await;
 
     // Phase 4: Find stopped services (installed but no matching running process)
     // Skip when filtering by service — other runners' stopped services are irrelevant.
-    let stopped = if args.name.is_none() {
-        find_stopped_services(&installed_services, &reports)
+    let stopped = if matches!(scope, DoctorScope::Host) {
+        find_stopped_services(installed_services, &reports)
     } else {
         vec![]
     };
@@ -516,7 +592,7 @@ pub async fn run_doctor(args: DoctorArgs) -> RunnerResult<ExitCode> {
     // When --name is set, run orphan firecracker detection scoped to that
     // service's selected Runner. Orphan mitmproxy and namespace are skipped (no
     // runner-identifying info on orphaned processes).
-    let mut global_warnings: Vec<Warning> = if args.name.is_none() {
+    let mut global_warnings: Vec<Warning> = if matches!(scope, DoctorScope::Host) {
         detect_global_orphans(&reports, &discovered.firecrackers, &discovered.mitmdumps).await
     } else {
         // Scoped detection: orphan firecracker for the selected service.
@@ -549,12 +625,15 @@ pub async fn run_doctor(args: DoctorArgs) -> RunnerResult<ExitCode> {
             break;
         }
 
-        tokio::time::sleep(RECHECK_DELAY).await;
+        let delay = tokio::time::sleep(RECHECK_DELAY);
+        #[cfg(test)]
+        let delay = tests::wait_for_recheck_delay(delay);
+        delay.await;
 
         // Single /proc scan shared across all warning rechecks.
         let fresh = process::discover_all().await;
 
-        recheck_per_runner_warnings(&home, api_client.as_ref(), &fresh, &mut reports).await?;
+        recheck_per_runner_warnings(home, api_client.as_ref(), &fresh, &mut reports).await?;
 
         let rechecks_orphan_process = global_warnings.iter().any(|warning| {
             matches!(
@@ -563,7 +642,7 @@ pub async fn run_doctor(args: DoctorArgs) -> RunnerResult<ExitCode> {
             )
         });
         let fresh_runner_pids: Vec<u32> = if rechecks_orphan_process {
-            crate::live_runner_instances::try_list(&home)
+            crate::live_runner_instances::try_list(home)
                 .await?
                 .into_iter()
                 .map(|runner| runner.pid)
@@ -601,8 +680,11 @@ pub async fn run_doctor(args: DoctorArgs) -> RunnerResult<ExitCode> {
         global_warnings = rechecked_global;
     }
 
-    // Phase 7: Output
-    Ok(print_report(&reports, &stopped, &global_warnings))
+    Ok(DoctorReport {
+        runners: reports,
+        stopped,
+        global_warnings,
+    })
 }
 
 async fn recheck_per_runner_warnings(
@@ -682,7 +764,7 @@ async fn collect_doctor_io<F: Future>(operations: impl IntoIterator<Item = F>) -
 
 async fn build_runner_reports(
     live_runners: &[LiveRunnerInstance],
-    config_path_filter: Option<&Path>,
+    scope: DoctorScope<'_>,
     api_client: Option<&Client>,
     discovered: &process::DiscoveredProcesses,
     installed: &[InstalledService],
@@ -690,8 +772,10 @@ async fn build_runner_reports(
     collect_doctor_io(
         live_runners
             .iter()
-            .filter(|runner| {
-                config_path_filter.is_none_or(|config_path| runner.config_path == config_path)
+            .filter(|runner| match scope {
+                DoctorScope::Host => true,
+                DoctorScope::Config(path) => runner.config_path == path,
+                DoctorScope::Ready(ready) => *runner == ready,
             })
             .map(|runner| {
                 build_runner_report(
@@ -1402,57 +1486,62 @@ async fn is_lock_free(lock_path: &Path) -> bool {
 // Pretty-print output
 // ---------------------------------------------------------------------------
 
-fn print_report(
+fn write_report(
     reports: &[RunnerReport],
     stopped: &[StoppedInfo],
     global_warnings: &[Warning],
-) -> ExitCode {
+    mut out: impl io::Write,
+) -> io::Result<ExitCode> {
     let running = reports.len();
     let stopped_count = stopped.len();
-    println!("Runners ({running} running, {stopped_count} stopped):\n");
+    writeln!(
+        out,
+        "Runners ({running} running, {stopped_count} stopped):\n"
+    )?;
 
     for (i, r) in reports.iter().enumerate() {
-        println!(
+        writeln!(
+            out,
             "[{}] {} (PID {}) [{}]",
             i + 1,
             r.live_runner.config_path.display(),
             r.live_runner.pid,
             r.live_runner.subcommand,
-        );
+        )?;
 
         // Service type
         match &r.service_type {
-            ServiceType::Installed(name) => println!("    Service: {name} (installed)"),
-            ServiceType::Transient(name) => println!("    Service: {name} (transient)"),
-            ServiceType::Bare => println!("    Service: none (bare process)"),
+            ServiceType::Installed(name) => writeln!(out, "    Service: {name} (installed)")?,
+            ServiceType::Transient(name) => writeln!(out, "    Service: {name} (transient)")?,
+            ServiceType::Bare => writeln!(out, "    Service: none (bare process)")?,
         }
 
         // Mode + uptime
         if let Some(st) = &r.status {
             let uptime = format_uptime(&st.started_at);
-            println!("    Mode:    {} ({uptime})", st.mode);
+            writeln!(out, "    Mode:    {} ({uptime})", st.mode)?;
         }
 
         // API
         match r.api_ok {
-            Some(true) => println!("    API:     ok"),
-            Some(false) => println!("    API:     UNREACHABLE"),
-            None => println!("    API:     not configured"),
+            Some(true) => writeln!(out, "    API:     ok")?,
+            Some(false) => writeln!(out, "    API:     UNREACHABLE")?,
+            None => writeln!(out, "    API:     not configured")?,
         }
 
         // Proxy
         match (r.proxy_pid, r.status.as_ref().and_then(|st| st.proxy_port)) {
-            (Some(pid), Some(port)) => println!("    Proxy:   PID {pid} (port {port})"),
-            (Some(pid), None) => println!("    Proxy:   PID {pid}"),
-            (None, Some(port)) => println!("    Proxy:   NOT FOUND (port {port})"),
-            (None, None) => println!("    Proxy:   unknown"),
+            (Some(pid), Some(port)) => writeln!(out, "    Proxy:   PID {pid} (port {port})")?,
+            (Some(pid), None) => writeln!(out, "    Proxy:   PID {pid}")?,
+            (None, Some(port)) => writeln!(out, "    Proxy:   NOT FOUND (port {port})")?,
+            (None, None) => writeln!(out, "    Proxy:   unknown")?,
         }
 
         // DNS proxy
         match (r.dns_pid, r.status.as_ref().and_then(|st| st.dns_port)) {
-            (Some(pid), Some(port)) => println!("    DNS:     PID {pid} (port {port})"),
-            (Some(pid), None) => println!("    DNS:     PID {pid}"),
-            (None, Some(port)) => println!("    DNS:     NOT FOUND (port {port})"),
+            (Some(pid), Some(port)) => writeln!(out, "    DNS:     PID {pid} (port {port})")?,
+            (Some(pid), None) => writeln!(out, "    DNS:     PID {pid}")?,
+            (None, Some(port)) => writeln!(out, "    DNS:     NOT FOUND (port {port})")?,
             (None, None) => {}
         }
 
@@ -1470,69 +1559,73 @@ fn print_report(
                     )
                 })
                 .count();
-            println!("    Jobs:    {active_count} active");
+            writeln!(out, "    Jobs:    {active_count} active")?;
             for job in &r.jobs {
                 match &job.status {
                     JobStatus::Running { run_id, pid } => {
-                        println!("      - run {run_id} -> PID {pid}");
+                        writeln!(out, "      - run {run_id} -> PID {pid}")?;
                     }
                     JobStatus::Preparing { run_id, pid } => {
                         if let Some(pid) = pid {
-                            println!("      - run {run_id} -> PREPARING (PID {pid})");
+                            writeln!(out, "      - run {run_id} -> PREPARING (PID {pid})")?;
                         } else {
-                            println!("      - run {run_id} -> PREPARING");
+                            writeln!(out, "      - run {run_id} -> PREPARING")?;
                         }
                     }
                     JobStatus::NoProcess { run_id } => {
-                        println!("      - run {run_id} -> NO PROCESS");
+                        writeln!(out, "      - run {run_id} -> NO PROCESS")?;
                     }
                     JobStatus::NotInStatus { sandbox_id } => {
-                        println!("      - sandbox {sandbox_id} -> not in status.json");
+                        writeln!(out, "      - sandbox {sandbox_id} -> not in status.json")?;
                     }
                 }
             }
         } else if r.status.is_some() {
-            println!("    Jobs:    0 active");
+            writeln!(out, "    Jobs:    0 active")?;
         }
 
         if let Some(st) = &r.status {
-            print!("{}", format_parked_sandbox_diagnostics(st));
+            write!(out, "{}", format_parked_sandbox_diagnostics(st))?;
         }
 
         // Per-runner warnings
         if !r.warnings.is_empty() {
             for w in &r.warnings {
-                println!("    WARNING: {w}");
+                writeln!(out, "    WARNING: {w}")?;
             }
         }
-        println!();
+        writeln!(out)?;
     }
 
     // Stopped services
     if !stopped.is_empty() {
-        println!("Stopped services:");
+        writeln!(out, "Stopped services:")?;
         for svc in stopped {
-            println!("  {} ({}) -- not running", svc.unit_name, svc.config_info);
+            writeln!(
+                out,
+                "  {} ({}) -- not running",
+                svc.unit_name, svc.config_info
+            )?;
         }
-        println!();
+        writeln!(out)?;
     }
 
     // Global warnings (orphans only — per-runner warnings printed above)
     if !global_warnings.is_empty() {
-        println!("Warnings:");
+        writeln!(out, "Warnings:")?;
         for w in global_warnings {
-            println!("  ! {w}");
+            writeln!(out, "  ! {w}")?;
         }
-        println!();
+        writeln!(out)?;
     }
 
     let total_warnings: usize =
         reports.iter().map(|r| r.warnings.len()).sum::<usize>() + global_warnings.len();
-    println!("{total_warnings} warning(s) found");
+    writeln!(out, "{total_warnings} warning(s) found")?;
     if total_warnings > 0 {
-        ExitCode::FAILURE
+        Ok(ExitCode::FAILURE)
     } else {
-        ExitCode::SUCCESS
+        Ok(ExitCode::SUCCESS)
     }
 }
 
@@ -1598,3 +1691,6 @@ fn format_uptime(started_at: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(super) use tests::with_advanced_recheck_delays;

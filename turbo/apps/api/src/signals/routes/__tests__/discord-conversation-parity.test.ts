@@ -619,7 +619,7 @@ describe("Discord context parity through public OAuth bindings", () => {
       })
       .join("");
     expect(content.startsWith(text)).toBeTruthy();
-    expect(content.match(/Sent via /g)).toHaveLength(1);
+    expect(content.match(/Triggered by /g)).toHaveLength(1);
     expect(content).toContain(`Triggered by <@${actor.discordUserId}>`);
     expect(sent.body.messages.length).toBeGreaterThan(1);
   });

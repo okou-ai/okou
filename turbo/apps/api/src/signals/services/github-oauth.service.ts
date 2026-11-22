@@ -1,9 +1,4 @@
 import { accept } from "@okouai/connectors/accept";
-import {
-  featureSwitchContextFromRows,
-  userFeatureSwitchRowCondition,
-} from "./feature-switch-scope";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { Buffer } from "node:buffer";
 import {
   createHmac,
@@ -23,8 +18,6 @@ import {
 } from "@okouai/connectors/connector-auth-method";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
@@ -68,7 +61,6 @@ interface GitHubInstallationInfo {
 interface GithubOAuthState {
   readonly userId: string | null;
   readonly orgId: string | null;
-  readonly composeId: string | null;
   readonly sig: string | null;
   readonly callbackRedirectUri: string | null;
   readonly callbackRedirectUriSig: string | null;
@@ -224,11 +216,10 @@ export async function getGithubInstallationAccessToken(
 async function createGithubOauthStateSignature(args: {
   readonly userId: string;
   readonly orgId: string | null;
-  readonly composeId: string | null;
   readonly secretsEncryptionKey: string;
 }): Promise<string> {
   return await createGithubOauthStateHmac(
-    `github-app-install-v2:${args.userId}:${args.orgId ?? ""}:${args.composeId ?? ""}`,
+    `github-app-install-v3:${args.userId}:${args.orgId ?? ""}`,
     args.secretsEncryptionKey,
   );
 }
@@ -257,15 +248,13 @@ async function createGithubOauthStateHmac(
 async function createGithubOauthCallbackRedirectUriSignature(args: {
   readonly userId: string | null;
   readonly orgId: string | null;
-  readonly composeId: string | null;
   readonly callbackRedirectUri: string;
   readonly secretsEncryptionKey: string;
 }): Promise<string> {
   const payload = [
-    "github-oauth-callback-redirect-uri-v2",
+    "github-oauth-callback-redirect-uri-v3",
     args.userId ?? "",
     args.orgId ?? "",
-    args.composeId ?? "",
     args.callbackRedirectUri,
   ].join(":");
   return await createGithubOauthStateHmac(payload, args.secretsEncryptionKey);
@@ -274,15 +263,13 @@ async function createGithubOauthCallbackRedirectUriSignature(args: {
 async function createGithubOauthRequestedScopesSignature(args: {
   readonly userId: string | null;
   readonly orgId: string | null;
-  readonly composeId: string | null;
   readonly oauthRequestedScopes: readonly string[];
   readonly secretsEncryptionKey: string;
 }): Promise<string> {
   const payload = [
-    "github-oauth-requested-scopes-v2",
+    "github-oauth-requested-scopes-v3",
     args.userId ?? "",
     args.orgId ?? "",
-    args.composeId ?? "",
     JSON.stringify(args.oauthRequestedScopes),
   ].join(":");
   return await createGithubOauthStateHmac(payload, args.secretsEncryptionKey);
@@ -349,7 +336,6 @@ export function verifyGithubConnectSignature(args: {
 async function buildGithubOauthState(args: {
   readonly userId?: string;
   readonly orgId?: string;
-  readonly composeId?: string;
   readonly callbackRedirectUri: string;
   readonly oauthRequestedScopes?: readonly string[];
   readonly secretsEncryptionKey: string;
@@ -358,7 +344,6 @@ async function buildGithubOauthState(args: {
     nonce: string;
     userId?: string;
     orgId?: string;
-    composeId?: string;
     sig?: string;
     callbackRedirectUri?: string;
     callbackRedirectUriSig?: string;
@@ -371,14 +356,10 @@ async function buildGithubOauthState(args: {
   if (args.orgId) {
     state.orgId = args.orgId;
   }
-  if (args.composeId) {
-    state.composeId = args.composeId;
-  }
   if (state.userId) {
     state.sig = await createGithubOauthStateSignature({
       userId: state.userId,
       orgId: state.orgId ?? null,
-      composeId: state.composeId ?? null,
       secretsEncryptionKey: args.secretsEncryptionKey,
     });
   }
@@ -387,7 +368,6 @@ async function buildGithubOauthState(args: {
     await createGithubOauthCallbackRedirectUriSignature({
       userId: state.userId ?? null,
       orgId: state.orgId ?? null,
-      composeId: state.composeId ?? null,
       callbackRedirectUri: args.callbackRedirectUri,
       secretsEncryptionKey: args.secretsEncryptionKey,
     });
@@ -397,7 +377,6 @@ async function buildGithubOauthState(args: {
       await createGithubOauthRequestedScopesSignature({
         userId: state.userId ?? null,
         orgId: state.orgId ?? null,
-        composeId: state.composeId ?? null,
         oauthRequestedScopes: args.oauthRequestedScopes,
         secretsEncryptionKey: args.secretsEncryptionKey,
       });
@@ -417,7 +396,6 @@ export const buildGithubAppInstallUrl$ = command(
       readonly appSlug: string;
       readonly userId: string;
       readonly orgId: string;
-      readonly composeId?: string;
       readonly callbackOrigin: string;
       readonly providerCallbackOrigin: string;
       readonly oauthRequestedScopes?: readonly string[];
@@ -435,7 +413,6 @@ export const buildGithubAppInstallUrl$ = command(
     const state = await buildGithubOauthState({
       userId: args.userId,
       orgId: args.orgId,
-      composeId: args.composeId,
       callbackRedirectUri,
       oauthRequestedScopes: args.oauthRequestedScopes,
       secretsEncryptionKey: args.secretsEncryptionKey,
@@ -465,7 +442,6 @@ export const buildGithubAppInstallUrl$ = command(
         authMethod: "github-app-install",
         userId: args.userId,
         orgId: args.orgId,
-        agentId: args.composeId,
         redirectUri: callbackRedirectUri,
         oauthContext: args.userAuthorization
           ? JSON.stringify({
@@ -584,7 +560,6 @@ export function parseGithubOauthState(
     return {
       userId: null,
       orgId: null,
-      composeId: null,
       sig: null,
       callbackRedirectUri: null,
       callbackRedirectUriSig: null,
@@ -601,7 +576,6 @@ export function parseGithubOauthState(
   const stateObject = parsed as {
     readonly userId?: unknown;
     readonly orgId?: unknown;
-    readonly composeId?: unknown;
     readonly sig?: unknown;
     readonly callbackRedirectUri?: unknown;
     readonly callbackRedirectUriSig?: unknown;
@@ -628,8 +602,6 @@ export function parseGithubOauthState(
   return {
     userId: typeof stateObject.userId === "string" ? stateObject.userId : null,
     orgId: typeof stateObject.orgId === "string" ? stateObject.orgId : null,
-    composeId:
-      typeof stateObject.composeId === "string" ? stateObject.composeId : null,
     sig: typeof stateObject.sig === "string" ? stateObject.sig : null,
     callbackRedirectUri: callbackRedirectUri.redirectUri,
     callbackRedirectUriSig: callbackRedirectUri.signature,
@@ -647,7 +619,6 @@ export async function isGithubOauthStateSignatureValid(args: {
     const expectedSig = await createGithubOauthStateSignature({
       userId: args.state.userId,
       orgId: args.state.orgId,
-      composeId: args.state.composeId,
       secretsEncryptionKey: args.secretsEncryptionKey,
     });
     identitySignatureValid = signaturesMatch(args.state.sig, expectedSig);
@@ -665,7 +636,6 @@ export async function isGithubOauthStateSignatureValid(args: {
       await createGithubOauthCallbackRedirectUriSignature({
         userId: args.state.userId,
         orgId: args.state.orgId,
-        composeId: args.state.composeId,
         callbackRedirectUri: args.state.callbackRedirectUri,
         secretsEncryptionKey: args.secretsEncryptionKey,
       });
@@ -686,7 +656,6 @@ export async function isGithubOauthStateSignatureValid(args: {
     await createGithubOauthRequestedScopesSignature({
       userId: args.state.userId,
       orgId: args.state.orgId,
-      composeId: args.state.composeId,
       oauthRequestedScopes: args.state.oauthRequestedScopes,
       secretsEncryptionKey: args.secretsEncryptionKey,
     });
@@ -839,77 +808,6 @@ export const tryLinkGithubFromLocalRecord$ = command(
   },
 );
 
-export const loadComposeFeatureSwitchContext$ = command(
-  async (
-    { get },
-    args: {
-      readonly composeId: string;
-      readonly userId?: string | null;
-    },
-    signal: AbortSignal,
-  ): Promise<FeatureSwitchContext> => {
-    const db = get(db$);
-    const [compose] = await db
-      .select({ orgId: agents.orgId, userId: agents.owner })
-      .from(agents)
-      .where(eq(agents.id, args.composeId))
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!compose) {
-      throw new Error(`Agent compose not found: composeId=${args.composeId}`);
-    }
-
-    const featureSwitchContextRows0 = await db
-      .select({
-        userId: userFeatureSwitches.userId,
-        switches: userFeatureSwitches.switches,
-      })
-      .from(userFeatureSwitches)
-      .where(
-        userFeatureSwitchRowCondition(
-          compose.orgId,
-          args.userId ?? compose.userId,
-        ),
-      );
-    signal.throwIfAborted();
-    return featureSwitchContextFromRows(
-      compose.orgId,
-      args.userId ?? compose.userId,
-      featureSwitchContextRows0,
-    );
-  },
-);
-
-export const resolveGithubOauthOrgId$ = command(
-  async (
-    { get },
-    args: {
-      readonly orgId: string | null;
-      readonly composeId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<string> => {
-    if (args.orgId) {
-      return args.orgId;
-    }
-
-    const db = get(db$);
-    const [compose] = await db
-      .select({ orgId: agents.orgId })
-      .from(agents)
-      .where(eq(agents.id, args.composeId))
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!compose) {
-      throw new Error(`Agent compose not found: composeId=${args.composeId}`);
-    }
-
-    return compose.orgId;
-  },
-);
-
 export const findGithubInstallationByInstallationId$ = command(
   async (
     { get },
@@ -949,7 +847,6 @@ export const createOrActivateGithubInstallation$ = command(
       readonly installInfo: GitHubInstallationInfo;
       readonly encryptedAccessToken: string;
       readonly adminGithubUserId: string | null;
-      readonly composeId: string;
     },
     signal: AbortSignal,
   ): Promise<string> => {

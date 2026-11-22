@@ -210,7 +210,7 @@ export const ensureAgentPhoneChatThreadRoute$ = command(
       .returning(ROUTE_COLUMNS);
     const insertedRoute = db.$with("inserted_agentphone_route").as(insertRoute);
     const insertThread = sql`${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)}
-      RETURNING ${chatThreads.agentId}`;
+      RETURNING ${chatThreads.id}`;
     // Thread RETURNING gates the existing lifecycle sequence reservation. The
     // final result depends on event publication, not a base-table snapshot.
     const [route] = parseRawRows(
@@ -220,7 +220,7 @@ export const ensureAgentPhoneChatThreadRoute$ = command(
           cte: sql`inserted_agentphone_route AS (${insertRoute.getSQL()}),
             inserted_agentphone_thread AS (${insertThread})`,
           gate: sql`EXISTS (SELECT 1 FROM inserted_agentphone_thread)`,
-          agentId: sql`(SELECT agent_id FROM inserted_agentphone_thread)`,
+
           result: sql`SELECT id, conversation_id AS "conversationId",
             chat_thread_id AS "chatThreadId" FROM inserted_agentphone_route
             WHERE EXISTS (SELECT 1 FROM inserted)`,

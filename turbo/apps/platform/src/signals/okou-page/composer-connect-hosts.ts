@@ -1,5 +1,4 @@
 import { command, computed, state, type Command } from "ccstate";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ComposerConnectorSignals } from "./connectors.ts";
 
 /**
@@ -8,20 +7,8 @@ import type { ComposerConnectorSignals } from "./connectors.ts";
  * composer's own connect surface.
  */
 export interface ComposerConnectHost {
-  readonly agentId: string;
-  readonly connector: Pick<
-    ComposerConnectorSignals,
-    "data$" | "updateConnectorUiState$"
-  >;
-  /** Resolves to whether this addition newly authorized the connector. */
-  readonly completeConnectorAddition$: Command<
-    Promise<boolean>,
-    [ConnectorSlug, boolean, AbortSignal]
-  >;
-  readonly completeCustomConnectorAddition$: Command<
-    Promise<void>,
-    [AbortSignal]
-  >;
+  readonly connector: Pick<ComposerConnectorSignals, "updateConnectorUiState$">;
+  readonly refreshConnectors$: Command<void, []>;
 }
 
 const internalComposerConnectHosts$ = state<

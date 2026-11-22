@@ -1,44 +1,24 @@
 import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "tsup";
 import type { Duplex } from "node:stream";
 import { afterAll, beforeAll, expect, onTestFinished, test } from "vitest";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../../../test/fixtures/build-process-entry";
 
-let directory: string;
+let preparation: ReturnType<typeof buildProcessEntry> | undefined;
+let compiled: Awaited<ReturnType<typeof buildProcessEntry>>;
 beforeAll(async () => {
-  directory = await mkdtemp(
-    fileURLToPath(
-      new URL("../../../../.computer-use-process-", import.meta.url),
-    ),
+  preparation = buildProcessEntry(
+    fileURLToPath(new URL("../../../okou.ts", import.meta.url)),
   );
-  await build({
-    config: false,
-    entry: [fileURLToPath(new URL("../../../okou.ts", import.meta.url))],
-    outDir: directory,
-    outExtension: () => {
-      return { js: ".js" };
-    },
-    format: ["esm"],
-    splitting: false,
-    dts: false,
-    silent: true,
-    external: ["ably", "commander"],
-    shims: true,
-    banner: {
-      js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
-    },
-    define: {
-      __CLI_VERSION__: JSON.stringify("0.0.0-test"),
-      __DEFAULT_SENTRY_DSN__: JSON.stringify(""),
-    },
-  });
+  compiled = await preparation;
 });
 afterAll(async () => {
-  await rm(directory, { recursive: true, force: true });
+  await disposePreparedProcessEntry(preparation);
 });
 
 test.each(["headers", "body", "websocket"] as const)(
@@ -151,7 +131,7 @@ test.each(["headers", "body", "websocket"] as const)(
             import.meta.url,
           ),
         ),
-        join(directory, "okou.js"),
+        compiled.entry,
         "computer-use",
         "list-apps",
       ],

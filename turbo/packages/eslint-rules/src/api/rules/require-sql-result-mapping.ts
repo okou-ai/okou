@@ -12,6 +12,7 @@ import {
   propertyName,
   resolveLocalExpression,
 } from "../syntax.ts";
+import { isRuntimeTableExport } from "../runtime-table-exports.ts";
 import { createRule } from "../utils.ts";
 
 const RESULT_FIELD_ARGUMENT = new Map<string, number>([
@@ -94,6 +95,13 @@ type MessageId =
 interface SelectionFinding {
   readonly messageId: "uninspectableResultSelection" | "unmappedResult";
   readonly node: TSESTree.Node;
+}
+
+function isResultTableImport(source: string, name: string): boolean {
+  return (
+    source.startsWith("@okouai/db/schema/") ||
+    isRuntimeTableExport(source, name)
+  );
 }
 
 function isDbStructuredResultSource(source: string): boolean {
@@ -250,7 +258,7 @@ function hasReviewedDecoder(
     return false;
   }
   visited.add(resolved);
-  if (isColumnExpression(sourceCode, resolved)) {
+  if (isColumnExpression(sourceCode, resolved, isResultTableImport)) {
     return true;
   }
   const importedName = reviewedDecoderImport(sourceCode, resolved);
@@ -306,7 +314,7 @@ function selectionFindings(
     );
   }
   if (node.type === AST_NODE_TYPES.Identifier) {
-    if (isSchemaTableExpression(sourceCode, node)) {
+    if (isSchemaTableExpression(sourceCode, node, isResultTableImport)) {
       return [];
     }
     const resolved = resolveLocalExpression(sourceCode, node);

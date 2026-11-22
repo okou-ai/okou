@@ -8,6 +8,7 @@ import { validatePermanentProjectStorage } from "./test-project-storage-permanen
 
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 import { validatePiMemoryRetirement } from "./test-pi-memory-retirement";
+import { validatePiResourceIndexRetirement } from "./test-pi-resource-index-retirement";
 import { validateRunOutputMemoryCitationRetirement } from "./test-run-output-memory-citation-retirement";
 import { validateStripeInvoicePaidRetirement } from "./test-stripe-invoice-paid-retirement";
 import { validateManagedDataRetirement } from "./test-managed-data-retirement";
@@ -48,8 +49,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import postgres from "postgres";
-import { array, literal, number, object, string } from "zod";
+import { array, literal, object, string } from "zod";
+import { migrationTimestamp } from "./migration-timestamp";
 import { applyPendingMigrations } from "./migration-runner";
+import { validateChatThreadEventExecutorRetirement } from "./test-chat-thread-event-executor-retirement";
 import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
@@ -57,7 +60,7 @@ import { validateOfficialWorkflowStorageRetirement } from "./test-official-workf
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateInactiveWorkflowAttachmentDeletion } from "./test-inactive-workflow-attachment-deletion";
-import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
+import { validateCustomConnectorSkillCutover } from "./test-custom-connector-skill-cutover";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
@@ -77,6 +80,7 @@ import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
+import { validatePermanentRegistryArchives } from "./test-registry-archives-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
@@ -86,6 +90,7 @@ import { validateCustomConnectorCloudflareStorage } from "./test-custom-connecto
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
+import { validateWorkspaceWorkflowIdentity } from "./test-workspace-workflow-identity";
 import { validatePermanentWorkflowNameScopes } from "./test-workflow-name-scopes-permanent";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -173,23 +178,12 @@ async function runMigrations(dbUrl: string): Promise<void> {
 async function validateHistoricalRunCleanupBeforeGuard(
   dbUrl: string,
 ): Promise<void> {
-  const journal = object({
-    entries: array(object({ tag: string(), when: number() })),
-  }).parse(
-    JSON.parse(
-      await fs.readFile(
-        path.join(MIGRATIONS_DIR, "meta/_journal.json"),
-        "utf8",
-      ),
-    ),
+  const beforeMillis = await migrationTimestamp(
+    "1484_threadless_run_restrictive_references",
   );
-  const guard = journal.entries.find((entry) => {
-    return entry.tag === "1484_threadless_run_restrictive_references";
-  });
-  assert.ok(guard, "Missing restrictive Run reference migration");
   const client = postgres(dbUrl, { max: 1 });
   try {
-    await applyPendingMigrations(client, { beforeMillis: guard.when });
+    await applyPendingMigrations(client, { beforeMillis });
     await validateHistoricalRunCleanup(dbUrl);
   } finally {
     await client.end();
@@ -461,28 +455,19 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
-  const agentId = "00000000-0000-4000-8000-000000074401";
   let threadId: string | undefined;
 
   try {
-    await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, 'append-only-test-org', 'append-only-test-user',
-         'append-only-migration-test')`,
-      [agentId],
-    );
-
     const thread = await client.query<{ id: string }>(
       `
         INSERT INTO "chat_threads" (
           "user_id",
-          "agent_id",
+          "org_id",
           "title"
         )
-        VALUES ('append-only-test-user', $1, 'append-only migration test')
+        VALUES ('append-only-test-user', 'append-only-test-org', 'append-only migration test')
         RETURNING "id"
       `,
-      [agentId],
     );
     threadId = thread.rows[0]?.id;
     if (!threadId) {
@@ -501,15 +486,15 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title", "selected_model"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "title", "selected_model"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 1,
-          $1, 'created', $2, 'append-only migration test', 'auto'
+          $1, 'created', 'append-only migration test', 'auto'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, agentId],
+      [threadId],
     );
     const eventId = event.rows[0]?.id;
     if (!eventId) {
@@ -539,15 +524,15 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const nextEvent = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "title"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 2,
-          $1, 'renamed', $2, 'advanced append-only migration test'
+          $1, 'renamed', 'advanced append-only migration test'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, agentId],
+      [threadId],
     );
     const nextEventId = nextEvent.rows[0]?.id;
     if (!nextEventId) {
@@ -600,7 +585,11 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
           AND "org_id" = 'append-only-test-org'
       `,
     );
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    if (threadId !== undefined) {
+      await client.query(`DELETE FROM "chat_threads" WHERE "id" = $1`, [
+        threadId,
+      ]);
+    }
     await client.end();
   }
 }
@@ -612,7 +601,6 @@ async function validateChatEventContextPointerConstraints(
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
-  const agentId = "00000000-0000-4000-8000-000000074501";
   const threadId = "00000000-0000-4000-8000-000000074502";
 
   try {
@@ -650,28 +638,20 @@ async function validateChatEventContextPointerConstraints(
     ]);
     await client.query(
       `
-        INSERT INTO "agents" ("id", "org_id", "owner", "name")
-        VALUES ($1, 'context-pointer-test-org', 'context-pointer-test-user',
-          'context-pointer-test')
-      `,
-      [agentId],
-    );
-    await client.query(
-      `
         INSERT INTO "chat_threads" (
           "id",
           "user_id",
-          "agent_id",
+          "org_id",
           "title"
         )
         VALUES (
           $1,
           'context-pointer-test-user',
-          $2,
+          'context-pointer-test-org',
           'context pointer test'
         )
       `,
-      [threadId, agentId],
+      [threadId],
     );
 
     await client.query(
@@ -871,7 +851,9 @@ async function validateChatEventContextPointerConstraints(
       "   ✅ Chat event contexts require input discriminators, including rejected inputs\n",
     );
   } finally {
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    await client.query(`DELETE FROM "chat_threads" WHERE "id" = $1`, [
+      threadId,
+    ]);
     await client.end();
   }
 }
@@ -1028,28 +1010,15 @@ async function generateFreshMigrations(): Promise<void> {
   // Drizzle does not model routines. Install the independently maintained
   // current definition, then validate its exact body on both schema shapes.
   const agentMetadata = await fs.readFile(
-    path.join(PACKAGE_DIR, "src/functions/update-agent-metadata.sql"),
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/update-legacy-agent-api-metadata.sql",
+    ),
     "utf-8",
   );
   await fs.appendFile(
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${agentMetadata}`,
-  );
-  const userBuiltinConnectors = await fs.readFile(
-    path.join(PACKAGE_DIR, "src/functions/update-user-builtin-connectors.sql"),
-    "utf-8",
-  );
-  await fs.appendFile(
-    path.join(MIGRATIONS_DIR, finalSql),
-    `\n--> statement-breakpoint\n${userBuiltinConnectors}`,
-  );
-  const agentDeletion = await fs.readFile(
-    path.join(PACKAGE_DIR, "src/functions/delete-agent-rows.sql"),
-    "utf-8",
-  );
-  await fs.appendFile(
-    path.join(MIGRATIONS_DIR, finalSql),
-    `\n--> statement-breakpoint\n${agentDeletion}`,
   );
   const workflowDeletion = await fs.readFile(
     path.join(PACKAGE_DIR, "src/functions/delete-workflow-rows.sql"),
@@ -1402,7 +1371,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "91c7e4000e63fc2b8c901635c53304bd",
+    bodyHash: "25db80210453a692dd82a9d70e1dffe3",
   },
   {
     schemaName: "public",
@@ -1416,36 +1385,14 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
   },
   {
     schemaName: "public",
-    functionName: "update_agent_metadata",
+    functionName: "update_legacy_agent_api_metadata",
     identityArguments:
       "p_org_id text, p_agent_id uuid, p_member_id text, p_is_admin boolean, p_identity_changes boolean, p_visibility text, p_public_limit integer, p_body bytea, p_now timestamp without time zone",
     kind: "f",
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "80d63df57c2cf7e352b6f691c40d30f8",
-  },
-  {
-    schemaName: "public",
-    functionName: "update_user_builtin_connectors",
-    identityArguments:
-      "p_org_id text, p_user_id text, p_agent_id uuid, p_operation text, p_slugs bytea",
-    kind: "f",
-    volatility: "v",
-    securityDefiner: false,
-    parallel: "u",
-    bodyHash: "8a2a556c87ae25537c4d58abe23305cf",
-  },
-  {
-    schemaName: "public",
-    functionName: "delete_agent_rows",
-    identityArguments:
-      "p_agent_id uuid, p_org_id text, p_member_user_id text, p_is_org_admin boolean",
-    kind: "f",
-    volatility: "v",
-    securityDefiner: false,
-    parallel: "u",
-    bodyHash: "e1afcce07ecfa041ebf00a63550f2a19",
+    bodyHash: "0f83156a5ae4ec2301c9e52da6356f62",
   },
   {
     schemaName: "public",
@@ -1456,7 +1403,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "276d29ce4338e19f10fae30624787723",
+    bodyHash: "92c17b395a82669b0ed147c68a59ae5e",
   },
   {
     schemaName: "public",
@@ -1467,7 +1414,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "6c1bccc08d6ef1bfd6f65c4042f82575",
+    bodyHash: "ce4cdadf93bef2a2e177ebcfdf0e069f",
   },
   {
     schemaName: "public",
@@ -1489,7 +1436,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "0e8b8d597400c863a0b0364df18e8fef",
+    bodyHash: "c37bef810332eec7f0d107e4d8b1a791",
   },
 ];
 
@@ -1612,7 +1559,6 @@ async function validatePermanentAgentRunMetadataState(
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
   const fixture = {
-    agentId: "00000000-0000-4000-8000-000000270951",
     lifecycleRunId: "00000000-0000-4000-8000-000000270953",
     outOfRangeRunId: "00000000-0000-4000-8000-000000270955",
     partialRunId: "00000000-0000-4000-8000-000000270954",
@@ -1791,11 +1737,6 @@ async function validatePermanentAgentRunMetadataState(
     ]);
 
     await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, $2, $3, 'permanent-agent-run-metadata')`,
-      [fixture.agentId, fixture.orgId, fixture.userId],
-    );
-    await client.query(
       `INSERT INTO "agent_runs" (
          "id", "user_id", "status", "prompt", "org_id"
        ) VALUES
@@ -1810,7 +1751,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     await client.query(
       `UPDATE "agent_runs"
-       SET "trigger_source" = 'chat', "autonomy_budget" = 32
+       SET "trigger_source" = 'chat', "autonomy_budget" = 128
        WHERE "id" = $1`,
       [fixture.productRunId],
     );
@@ -1836,7 +1777,7 @@ async function validatePermanentAgentRunMetadataState(
       query: `INSERT INTO "agent_runs" (
         "id", "user_id", "status", "prompt", "org_id",
         "trigger_source", "autonomy_budget"
-      ) VALUES ($1, $2, 'failed', 'invalid budget', $3, 'chat', 33)`,
+      ) VALUES ($1, $2, 'failed', 'invalid budget', $3, 'chat', 129)`,
       values: [fixture.outOfRangeRunId, fixture.userId, fixture.orgId],
     });
 
@@ -1890,7 +1831,7 @@ async function validatePermanentAgentRunMetadataState(
     );
     assert.deepEqual(validStates.rows, [
       {
-        autonomyBudget: 32,
+        autonomyBudget: 128,
         id: fixture.productRunId,
         summary: null,
         triggerSource: "chat",
@@ -1907,9 +1848,6 @@ async function validatePermanentAgentRunMetadataState(
       "   ✅ nullable two-state metadata, range, permanent readers, and physical zero_runs removal are enforced\n",
     );
   } finally {
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [
-      fixture.agentId,
-    ]);
     await client.end();
   }
 }
@@ -2352,131 +2290,6 @@ async function validateConnectorAutomaticOAuthConstraints(
   }
   console.log(
     "   ✅ Builtin Automatic OAuth retains method ownership and rejects cross-owner or cross-method bindings\n",
-  );
-}
-
-async function validateCustomConnectorSkillVersionPair(
-  dbUrl: string,
-): Promise<void> {
-  console.log(
-    "=== Phase 2.8: Validate custom connector skill version pair ===\n",
-  );
-  const fixture = {
-    connectorId: "73000000-0000-4000-8000-000000000001",
-    orgId: "migration-custom-connector-skill-org",
-    storageId: "73000000-0000-4000-8000-000000000002",
-    userId: "migration-custom-connector-skill-user",
-    versionId: "7".repeat(64),
-  } as const;
-  const client = new Client({ connectionString: dbUrl });
-  await client.connect();
-
-  try {
-    await client.query(
-      `
-        INSERT INTO "storages" (
-          "id", "user_id", "name", "org_id", "s3_prefix"
-        ) VALUES ($1, '__org__', '_migration_skill_storage', $2, $3)
-      `,
-      [
-        fixture.storageId,
-        fixture.orgId,
-        `${fixture.orgId}/volume/_migration_skill_storage`,
-      ],
-    );
-    await client.query(
-      `
-        INSERT INTO "storage_versions" (
-          "id", "storage_id", "s3_key", "archive_size", "created_by"
-        ) VALUES ($1, $2, $3, 1, $4)
-      `,
-      [
-        fixture.versionId,
-        fixture.storageId,
-        `${fixture.orgId}/volume/_migration_skill_storage/${fixture.versionId}`,
-        fixture.userId,
-      ],
-    );
-    await client.query(
-      `
-        INSERT INTO "org_custom_connectors" (
-          "id",
-          "org_id",
-          "slug",
-          "display_name",
-          "prefix_templates",
-          "fields",
-          "header_injections",
-          "query_injections",
-          "auth_mode",
-          "created_by"
-        ) VALUES (
-          $1,
-          $2,
-          '_migration_skill_pair',
-          'Migration Skill Pair',
-          '["https://api.example.test/"]'::jsonb,
-          '[{"key":"secret","label":"Secret","kind":"secret","required":true}]'::jsonb,
-          '[{"name":"Authorization","valueTemplate":"Bearer {{secrets.secret}}"}]'::jsonb,
-          '[]'::jsonb,
-          'manual',
-          $3
-        )
-      `,
-      [fixture.connectorId, fixture.orgId, fixture.userId],
-    );
-    await client.query(
-      `
-        UPDATE "org_custom_connectors"
-        SET
-          "skill_markdown" = 'Use the migration skill.',
-          "skill_storage_version_id" = $2
-        WHERE "id" = $1
-      `,
-      [fixture.connectorId, fixture.versionId],
-    );
-
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "chk_org_custom_connectors_skill_version_pair",
-      query: `
-        UPDATE "org_custom_connectors"
-        SET "skill_markdown" = NULL
-        WHERE "id" = $1
-      `,
-      values: [fixture.connectorId],
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "chk_org_custom_connectors_skill_version_pair",
-      query: `
-        UPDATE "org_custom_connectors"
-        SET "skill_storage_version_id" = NULL
-        WHERE "id" = $1
-      `,
-      values: [fixture.connectorId],
-    });
-
-    await client.query(
-      `
-        UPDATE "org_custom_connectors"
-        SET "skill_markdown" = NULL, "skill_storage_version_id" = NULL
-        WHERE "id" = $1
-      `,
-      [fixture.connectorId],
-    );
-    await client.query(`DELETE FROM "org_custom_connectors" WHERE "id" = $1`, [
-      fixture.connectorId,
-    ]);
-    await client.query(`DELETE FROM "storages" WHERE "id" = $1`, [
-      fixture.storageId,
-    ]);
-  } finally {
-    await client.end();
-  }
-
-  console.log(
-    "   ✅ Custom connector skill columns accept complete pairs and reject mixed state\n",
   );
 }
 
@@ -3045,12 +2858,6 @@ async function main(): Promise<void> {
   let migrationsBackedUp = false;
 
   try {
-    console.log(
-      execCommand("tsx scripts/test-migration-cli-stderr.ts", {
-        cwd: PACKAGE_DIR,
-      }),
-    );
-
     // Step 0: Validate snapshot files
     await validateSnapshotFiles();
 
@@ -3068,6 +2875,20 @@ async function main(): Promise<void> {
     await createDatabase(TEST_DB_1);
     const dbUrl1 = createTestDbUrl(TEST_DB_1);
     await validateHistoricalRunCleanupBeforeGuard(dbUrl1);
+    await validatePiResourceIndexRetirement(
+      dbUrl1,
+      await migrationTimestamp("1595_drop_legacy_pi_resource_version_indexes"),
+    );
+    await validateCustomConnectorSkillCutover(
+      dbUrl1,
+      await migrationTimestamp("1608_prepare_custom_connector_skill_cutover"),
+      await migrationTimestamp("1613_retire_custom_connector_skill_mirror"),
+    );
+    await validateChatThreadEventExecutorRetirement(
+      dbUrl1,
+      await migrationTimestamp("1615_drop_chat_thread_event_executor"),
+      await migrationTimestamp("1616_retire_agents_table"),
+    );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
 
@@ -3077,52 +2898,14 @@ async function main(): Promise<void> {
     await runMigrations(dbUrl1);
     console.log("   ✅ Consecutive database resets completed successfully\n");
 
-    console.log("=== Workflow Storage retirement CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
+    await validatePermanentRegistryArchives(dbUrl1);
 
-    console.log("=== Registry resource inventory CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
-    console.log("=== Registry resource dual publication CLI ===");
+    console.log("=== Registry resource publication CLI ===");
     console.log(
       execCommand("node scripts/test-registry-publication.mjs", {
         cwd: PACKAGE_DIR,
         env: { DATABASE_URL: dbUrl1 },
       }),
-    );
-
-    console.log("=== Registry resource backfill CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
-    console.log("=== Frozen template guidance backfill CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
-    );
-
-    console.log("=== Presentation template copy CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/025-presentation-template-copy/test-copy.ts",
-        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
-      ),
     );
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
@@ -3171,9 +2954,9 @@ async function main(): Promise<void> {
     await validateWorkflowPublicationContraction(dbUrl1);
     await validateStaffWorkflowAttachmentDeletion(dbUrl1);
     await validateInactiveWorkflowAttachmentDeletion(dbUrl1);
-    await validateSeedSkillBundleSchema(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
+    await validateWorkspaceWorkflowIdentity(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
     await validateOfficialAutomationBindingSchema(dbUrl1);
     await validateCanonicalChatEventTypes(dbUrl1);
@@ -3181,7 +2964,6 @@ async function main(): Promise<void> {
     await validateChatEventContextPointerConstraints(dbUrl1);
     await validateCustomConnectorOauthModeConstraints(dbUrl1);
     await validateConnectorAutomaticOAuthConstraints(dbUrl1);
-    await validateCustomConnectorSkillVersionPair(dbUrl1);
 
     // Step 2: Backup and regenerate migrations
     console.log("=== Phase 3: Test regenerated migrations ===\n");
@@ -3227,7 +3009,6 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
-    await validateSeedSkillBundleSchema(dbUrl2);
     await validateConnectorSkillBundleSchema(dbUrl2);
     await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);

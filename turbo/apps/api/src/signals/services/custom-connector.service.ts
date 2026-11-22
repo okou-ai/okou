@@ -29,7 +29,7 @@ import {
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
 import {
@@ -38,7 +38,6 @@ import {
   publishedCustomConnectorNetworkBinding,
   type PreparedCustomConnectorNetworkBinding,
 } from "./custom-connector-network-publication";
-import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -134,10 +133,9 @@ import {
   prepareCustomConnectorSkillBundle$,
   type PreparedCustomConnectorSkill,
 } from "./custom-connector-skill-bundle.service";
+import { customConnectorSkillBundleValues } from "./custom-connector-skill-bundle-columns";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
-
-import { addUserCustomConnector$ } from "./user-connectors.service";
 
 const L = logger("CustomConnectorService");
 
@@ -261,7 +259,6 @@ interface CustomConnectorSharedRow<
   readonly oauthConfig: OAuthConfig | null;
   readonly enabled: boolean;
   readonly skillMarkdown: string | null;
-  readonly skillStorageVersionId: string | null;
   readonly storageVersion: number;
   readonly createdBy: string;
   readonly createdAt: Date;
@@ -293,12 +290,7 @@ export type CustomConnectorRow<
 > = CustomConnectorHttpRow<OAuthConfig> | CustomConnectorMcpRow<OAuthConfig>;
 
 type CustomConnectorDefinitionMetadata =
-  | "enabled"
-  | "skillMarkdown"
-  | "skillStorageVersionId"
-  | "createdBy"
-  | "createdAt"
-  | "updatedAt";
+  "enabled" | "skillMarkdown" | "createdBy" | "createdAt" | "updatedAt";
 
 export type CustomConnectorConnectionDefinitionRow = Omit<
   CustomConnectorDefinitionRow,
@@ -549,7 +541,6 @@ export function normaliseCustomConnectorRow<
     ...normaliseCustomConnectorConnectionDefinition(row, oauthConfig),
     enabled: row.enabled,
     skillMarkdown: row.skillMarkdown,
-    skillStorageVersionId: row.skillStorageVersionId,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -1884,6 +1875,7 @@ export function customConnectorCreateSource(
   >,
 ) {
   const protocol = protocolColumns(args.definition);
+  const skill = customConnectorSkillBundleValues(args.preparedSkill);
   return {
     id: sql`${sql.param(args.connectorId, orgCustomConnectors.id)}`
       .mapWith(orgCustomConnectors.id)
@@ -1935,16 +1927,12 @@ export function customConnectorCreateSource(
       sql`${sql.param(args.definition.skillMarkdown, orgCustomConnectors.skillMarkdown)}`
         .mapWith(orgCustomConnectors.skillMarkdown)
         .as("skill_markdown"),
-    skillStorageVersionId:
-      sql`${sql.param(args.preparedSkill?.sourceVersionId ?? null, orgCustomConnectors.skillStorageVersionId)}`
-        .mapWith(orgCustomConnectors.skillStorageVersionId)
-        .as("skill_storage_version_id"),
     skillContentBundle:
-      sql`${sql.param(args.preparedSkill?.contentBundle ?? null, orgCustomConnectorSkillBundles.skillContentBundle)}`
+      sql`${sql.param(skill.skillContentBundle, orgCustomConnectors.skillContentBundle)}`
         .mapWith(zodDriverValueDecoder(contentBundleSchema.nullable()))
         .as("skill_content_bundle"),
     skillContentBundleSourceVersionId:
-      sql`${sql.param(args.preparedSkill?.sourceVersionId ?? null, orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId)}`
+      sql`${sql.param(skill.skillContentBundleSourceVersionId, orgCustomConnectors.skillContentBundleSourceVersionId)}`
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("skill_content_bundle_source_version_id"),
     storageVersion:
@@ -2047,9 +2035,16 @@ const persistCustomConnectorCreate$ = command(
     }
     const source = sql`(VALUES (1)) AS connector_create_source`;
     const values = db.select(customConnectorCreateSource(args)).from(source);
+    const { networkBinding: _networkBinding, ...definitionColumns } =
+      customConnectorDefinitionSelection();
     const created = db
       .$with("created_connector")
-      .as(db.insert(orgCustomConnectors).select(values).returning());
+      .as(
+        db
+          .insert(orgCustomConnectors)
+          .select(values)
+          .returning(definitionColumns),
+      );
     const createdCtes: WithSubquery[] = [created];
     if (args.networkBindingChange?.kind === "bind") {
       const change = args.networkBindingChange;
@@ -2373,10 +2368,7 @@ function customConnectorDefinitionUpdateValues(
     queryInjections: [...args.definition.queryInjections],
     authMode: args.definition.authMode,
     skillMarkdown: args.definition.skillMarkdown,
-    skillStorageVersionId: args.preparedSkill?.sourceVersionId ?? null,
-    skillContentBundle: args.preparedSkill?.contentBundle ?? null,
-    skillContentBundleSourceVersionId:
-      args.preparedSkill?.sourceVersionId ?? null,
+    ...customConnectorSkillBundleValues(args.preparedSkill),
     storageVersion: args.storageVersion,
     updatedAt: at,
   };
@@ -3086,7 +3078,6 @@ export const deleteCustomConnector$ = command(
             reportConnectorRuntimeWakeupDiscoveryFailure({
               orgId: wakeup.scope.orgId,
               scopedToUser: wakeup.scope.userId !== undefined,
-              scopedToAgent: wakeup.scope.agentId !== undefined,
               targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
               error: result.error,
             });
@@ -3776,7 +3767,6 @@ export const setCustomConnectorValues$ = command(
             reportConnectorRuntimeWakeupDiscoveryFailure({
               orgId: wakeup.scope.orgId,
               scopedToUser: wakeup.scope.userId !== undefined,
-              scopedToAgent: wakeup.scope.agentId !== undefined,
               targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
               error: result.error,
             });
@@ -3914,7 +3904,6 @@ export const deleteCustomConnectorAccountAndPublish$ = command(
             reportConnectorRuntimeWakeupDiscoveryFailure({
               orgId: wakeup.scope.orgId,
               scopedToUser: wakeup.scope.userId !== undefined,
-              scopedToAgent: wakeup.scope.agentId !== undefined,
               targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
               error: result.error,
             });
@@ -4179,13 +4168,12 @@ interface SaveCustomConnectorProposalArgs {
   readonly isAdmin: boolean;
   readonly proposal: CustomConnectorProposal;
   readonly values: readonly CustomConnectorValueInput[];
-  readonly agentId?: string;
 }
 
 type SaveCustomConnectorProposalResult =
   | {
       readonly connector: CustomConnectorResponse;
-      readonly authorizedAgentId?: string;
+      readonly connectionId?: string;
     }
   | BadRequestResponse
   | NotFoundResponse
@@ -4251,43 +4239,6 @@ const saveProposalDefinition$ = command(
   },
 );
 
-const authorizeProposalAgent$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly connectorId: string;
-      readonly agentId: string | undefined;
-    },
-    signal: AbortSignal,
-  ): Promise<string | undefined | NotFoundResponse> => {
-    if (!args.agentId) {
-      return undefined;
-    }
-    const added = await set(addUserCustomConnector$, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: args.agentId,
-      customConnectorId: args.connectorId,
-    });
-    signal.throwIfAborted();
-    if (added.status === "agentNotFound") {
-      return notFound("Agent not found");
-    }
-    if (added.status === "customConnectorsNotFound") {
-      return notFound("Custom connector not found");
-    }
-    if (
-      added.status === "customConnectorPermissionSelectionRequired" ||
-      added.status === "invalidCustomConnectorPermissions"
-    ) {
-      return undefined;
-    }
-    return args.agentId;
-  },
-);
-
 export const saveCustomConnectorProposal$ = command(
   async (
     { get, set },
@@ -4344,20 +4295,6 @@ export const saveCustomConnectorProposal$ = command(
       connectionId = valueResult.connectionId;
     }
 
-    const authorizedAgentId = await set(
-      authorizeProposalAgent$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorId: connector.id,
-        agentId: args.agentId,
-      },
-      signal,
-    );
-    if (authorizedAgentId && typeof authorizedAgentId !== "string") {
-      return authorizedAgentId;
-    }
-
     const response = await get(
       getCustomConnectorResponse({
         orgId: args.orgId,
@@ -4372,7 +4309,6 @@ export const saveCustomConnectorProposal$ = command(
     return {
       connector: response,
       ...(connectionId ? { connectionId } : {}),
-      ...(authorizedAgentId ? { authorizedAgentId } : {}),
     };
   },
 );

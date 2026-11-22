@@ -218,7 +218,6 @@ export const loadWorkflowUserAutomationThreadId$ = command(
 );
 
 interface WorkflowThreadOwner extends WorkflowUserAutomationThreadOwner {
-  readonly agentId: string;
   readonly workflowTitle: string;
   readonly currentTime: Date;
 }
@@ -233,7 +232,7 @@ export function preparedWorkflowThreadValues(
     id: threadId,
     hidden: preparation.hidden,
     userId: args.userId,
-    agentId: args.agentId,
+    orgId: args.orgId,
     title: preparation.title,
     selectedModel: pin.selectedModel,
     codexServiceTier: pin.serviceTier === "priority" ? ("fast" as const) : null,
@@ -270,7 +269,7 @@ export function workflowThreadInsertFromBindingSql(
       : sql`WHERE accepted_binding.chat_thread_id = ${sql.param(onlyThreadId, chatThreads.id)}`;
   return sql`INSERT INTO ${chatThreads} (${sql.join(names, sql`, `)})
     SELECT ${sql.join(values, sql`, `)} FROM accepted_binding ${gate}
-    RETURNING id, agent_id`;
+    RETURNING id`;
 }
 
 const createdWorkflowThreadRowSchema = object({ id: uuid() });
@@ -333,7 +332,6 @@ export const ensureWorkflowUserAutomationThread$ = command(
         cte: sql`accepted_binding AS (${binding.getSQL()}),
             inserted_thread AS (${workflowThreadInsertFromBindingSql(values)})`,
         gate: sql`EXISTS (SELECT 1 FROM inserted_thread)`,
-        agentId: sql`(SELECT agent_id FROM inserted_thread)`,
         result: sql`SELECT id FROM inserted_thread`,
       },
     );

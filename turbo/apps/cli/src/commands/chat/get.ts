@@ -1,4 +1,3 @@
-import { singleAgentEnabled } from "../../lib/api/single-agent";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -45,16 +44,29 @@ Notes:
         await getPlatformOrigin(),
       ).href;
       if (options.json) {
-        console.log(JSON.stringify({ ...thread, url }));
+        console.log(
+          JSON.stringify({
+            id: thread.id,
+            title: thread.title,
+            selectedModel: thread.selectedModel,
+            modelSettings: thread.modelSettings,
+            reasoningEffort: thread.reasoningEffort,
+            serviceTier: thread.serviceTier,
+            pinnedAt: thread.pinnedAt,
+            archived: thread.archived,
+            hidden: thread.hidden,
+            muted: thread.muted,
+            computerUseHostId: thread.computerUseHostId,
+            cloudBrowserEnabled: thread.cloudBrowserEnabled,
+            url,
+          }),
+        );
         return;
       }
 
       console.log(chalk.green("✓ Chat thread loaded"));
       console.log(chalk.dim(`  Thread: ${thread.id}`));
       console.log(chalk.cyan(`  URL:    [Open chat](${url})`));
-      if (thread.agentId && !(await singleAgentEnabled())) {
-        console.log(chalk.dim(`  Agent:  ${thread.agentId}`));
-      }
       console.log(chalk.dim(`  Title:  ${thread.title ?? "(untitled)"}`));
       const catalog = await getModelCatalog();
       console.log(

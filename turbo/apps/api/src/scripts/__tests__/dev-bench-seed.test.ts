@@ -81,7 +81,6 @@ describe("dev bench seed profile rows", () => {
         userId: "00000000-0000-0000-0000-000000000001",
         orgId: "00000000-0000-0000-0000-000000000002",
         threadId: "00000000-0000-0000-0000-000000000003",
-        agentId: "00000000-0000-0000-0000-000000000005",
         profile,
       });
 
@@ -90,7 +89,7 @@ describe("dev bench seed profile rows", () => {
         expect(runMetadata(runRow)).toStrictEqual(
           expect.objectContaining({
             triggerSource: expect.any(String),
-            autonomyBudget: 32,
+            autonomyBudget: 128,
             selectedImageModel: null,
           }),
         );

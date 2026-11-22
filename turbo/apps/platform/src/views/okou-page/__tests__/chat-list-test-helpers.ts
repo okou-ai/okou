@@ -1,5 +1,4 @@
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   chatThreadEventsContract,
@@ -26,8 +25,6 @@ import {
   mockChatThreadSnapshotResponse,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
-
-export const CHAT_LIST_AGENT_ID = "c7000000-0000-4000-a000-000000000001";
 
 export function chatListThreadId(index: number): string {
   return `b7000000-0000-4000-a000-${index.toString().padStart(12, "0")}`;
@@ -59,7 +56,6 @@ export function chatListThread(
   const timestamp = `2026-08-01T00:${minute}:00.000Z`;
   return {
     id: chatListThreadId(index),
-    agentId: CHAT_LIST_AGENT_ID,
     title,
     sortAt: timestamp,
     createdAt: timestamp,
@@ -88,7 +84,6 @@ export function chatListEvent(
     seqId: sequence,
     kind,
     chatThreadId: threadId,
-    agentId: CHAT_LIST_AGENT_ID,
     title: null,
     selectedModel: null,
     serviceTier: null,
@@ -154,7 +149,7 @@ export function installChatListStream(
     return respond(200, { draftThreadIds: [] });
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [] });
@@ -164,27 +159,6 @@ export function installChatListStream(
       currentEvents = [...events];
     },
   };
-}
-
-export function installChatListAgent(
-  context: TestContext,
-  gate?: Promise<void>,
-): void {
-  context.mocks.api(agentsMainContract.list, async ({ respond }) => {
-    await gate;
-    return respond(200, [
-      {
-        isDefaultAgent: false,
-        agentId: CHAT_LIST_AGENT_ID,
-        ownerId: "chat-list-owner",
-        displayName: "List agent",
-        description: null,
-        sound: null,
-        avatarUrl: null,
-        visibility: "private",
-      },
-    ]);
-  });
 }
 
 export function installChatListRunModels(context: TestContext): void {
@@ -224,7 +198,6 @@ export function installActiveChatBoundaries(
     }
     return respond(200, {
       id: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       selectedModel: thread.selectedModel ?? null,
       modelSettings: thread.modelSettings ?? {},

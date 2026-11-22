@@ -409,7 +409,7 @@ function ThreadArtifactDetail({
         artifactId={detail.id}
         deletionOrigin={{ kind: "thread-sidebar", threadId: thread.threadId }}
         syncTarget={artifactSidebarSyncTarget({
-          agentId: thread.agentId,
+          threadId: thread.threadId,
           file: {
             artifactId: detail.id,
             filename: preview.filename,

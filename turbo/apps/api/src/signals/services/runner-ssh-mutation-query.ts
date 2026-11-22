@@ -1,5 +1,4 @@
 import type { RunnerSshResolveRequest } from "@okouai/api-contracts/contracts/runner-ssh";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
@@ -102,17 +101,6 @@ function authorityQuery(
       .from(agentRuns)
 
       .innerJoin(
-        agents,
-        and(
-          eq(agents.id, agentRuns.agentId),
-          eq(agents.orgId, agentRuns.orgId),
-          or(
-            eq(agents.visibility, "public"),
-            eq(agents.owner, agentRuns.userId),
-          ),
-        ),
-      )
-      .innerJoin(
         host,
         and(
           eq(host.id, input.connectionId),
@@ -125,7 +113,7 @@ function authorityQuery(
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.agentId, agentRuns.agentId),
+          eq(chatThreads.orgId, agentRuns.orgId),
         ),
       )
       .leftJoin(

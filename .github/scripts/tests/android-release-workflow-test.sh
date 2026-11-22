@@ -3,6 +3,7 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 python3 - "$root" <<'PY'
 import gzip
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 root = Path(sys.argv[1])
 workflow = json.loads(subprocess.check_output(
@@ -24,7 +26,39 @@ for value, expected in [('true', True), ('false', False), ('', False)]:
 checkout = next(step for step in job['steps'] if step.get('uses', '').startswith('actions/checkout'))
 assert checkout['with']['ref'] == '${{ needs.release-please.outputs.release_target }}'
 assert checkout['with']['persist-credentials'] is False
-assert checkout['with']['fetch-depth'] == 0
+assert checkout['with']['fetch-depth'] == 1
+assert job['env']['ANDROID_RELEASE_SOURCE_SHA'] == checkout['with']['ref']
+history, = (step for step in job['steps'] if step.get('name') == 'Fetch complete history for the release source')
+publisher, = (step for step in job['steps'] if 'SENTRY_DSN_ANDROID' in step.get('env', {}))
+assert job['steps'].index(checkout) < job['steps'].index(history) < job['steps'].index(publisher)
+
+with tempfile.TemporaryDirectory() as temp:
+    origin = Path(temp) / 'origin'
+    source = Path(temp) / 'source'
+
+    def git(directory, *args):
+        return subprocess.check_output(['git', '-C', str(directory), *args], text=True).strip()
+
+    origin.mkdir()
+    git(origin, 'init', '-q', '--initial-branch=main')
+    git(origin, 'config', 'uploadpack.allowFilter', 'true')
+    for message in ('ancestor', 'release', 'later push'):
+        git(origin, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com',
+            'commit', '-q', '--allow-empty', '-m', message)
+    release_sha = git(origin, 'rev-parse', 'HEAD^')
+    git(origin, 'tag', 'later-tag')
+    source.mkdir()
+    git(source, 'init', '-q')
+    git(source, 'remote', 'add', 'origin', origin.as_uri())
+    git(source, 'fetch', '-q', '--depth=1', '--no-tags', 'origin', release_sha)
+    git(source, 'switch', '-q', '--detach', release_sha)
+    subprocess.run(['bash', '-ec', history['run']], cwd=source, check=True,
+                   env=dict(os.environ, ANDROID_RELEASE_SOURCE_SHA=release_sha, GITHUB_SHA='invalid'))
+    assert git(source, 'rev-parse', 'HEAD') == release_sha
+    assert git(source, 'rev-parse', '--is-shallow-repository') == 'false'
+    assert git(source, 'rev-list', '--count', 'HEAD') == '2'
+    assert git(source, 'for-each-ref', 'refs/remotes', 'refs/tags') == ''
+
 assert job['environment'] == 'production'
 assert job['permissions'] == {'contents': 'write'}
 assert not any('artifact' in step.get('uses', '') for step in job['steps'])
@@ -47,17 +81,52 @@ assert 'publish-android' in jobs['update-rollback-dashboard']['needs']
 
 # Execute the shared release action and Android's aggregate gate as Actions does.
 android = json.loads(subprocess.check_output(
-    ['yq', '-o=json', '.', str(root / '.github/workflows/android.yml')], text=True))['jobs']
+    ['yq', '-o=json', 'explode(.)', str(root / '.github/workflows/android.yml')], text=True))['jobs']
+smoke, = (step for step in android['release-smoke']['steps'] if step.get('id') == 'release-smoke')
+assert smoke['env']['SENTRY_DSN_ANDROID'] == publisher['env']['SENTRY_DSN_ANDROID']
+screenshots = json.loads(subprocess.check_output(
+    ['yq', '-o=json', '.', str(root / '.github/workflows/android-screenshots.yml')], text=True))['jobs']['capture']
+
+# A path or pin mismatch changes the Actions cache version even when the key matches.
+restores = []
+for consumer in (android['build-test'], android['instrumentation'], android['release-smoke'], screenshots, job):
+    setup, = (step for step in consumer['steps'] if step.get('uses', '').startswith('gradle/actions/setup-gradle@'))
+    assert setup['with']['cache-provider'] == 'external'
+    restore, = (step for step in consumer['steps'] if step.get('uses', '').startswith('actions/cache/restore@'))
+    restores.append((restore['uses'], restore['with']))
+    saves = [step for step in consumer['steps'] if step.get('uses', '').startswith('actions/cache/save@')]
+    if consumer is android['instrumentation']:
+        save, = saves
+        assert save['with']['path'] == restore['with']['path']
+        assert save['with']['key'] == '${{ steps.' + restore['id'] + '.outputs.cache-primary-key }}'
+        assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in save['if']
+    else:
+        assert not saves
+assert all(spec == restores[0] for spec in restores)
 action = json.loads(subprocess.check_output(
     ['yq', '-o=json', '.', str(root / '.github/actions/detect-release/action.yml')], text=True))
 classify = action['runs']['steps'][0]['run']
 gate = android['ci-gate-android']['steps'][0]['run']
 assert android['detect-release']['permissions']['pull-requests'] == 'read'
 assert android['detect']['needs'] == ['detect-release']
+assert android['detect']['outputs']['shallow-discovery'] == '${{ steps.changes.outputs.shallow-discovery }}'
+build_steps = android['build-test']['steps']
+shallow = next(step for step in build_steps if step.get('name') == 'Verify dependency discovery with shallow history')
+history = next(step for step in build_steps if step.get('name') == 'Fetch complete history for versioned builds')
+assert shallow['if'] == "needs.detect.outputs.shallow-discovery == 'true'"
+assert 'if' not in history
+assert build_steps.index(shallow) < build_steps.index(history)
 assert 'detect-release' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
-for native in ['build-test', 'instrumentation']:
+for native in ['build-test', 'instrumentation', 'release-smoke']:
     assert android[native]['needs'] == 'detect'
+retrace = android['retrace-failure']
+assert retrace['needs'] == 'release-smoke'
+assert '!cancelled()' in retrace['if']
+assert "needs.release-smoke.result == 'failure'" in retrace['if']
+assert 'retrace-failure' not in android['ci-gate-android']['needs']
+download, = (step for step in retrace['steps'] if step.get('uses', '').startswith('actions/download-artifact@'))
+assert download['with']['artifact-ids'] == '${{ needs.release-smoke.outputs.retrace-artifact-id }}'
 
 with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)
@@ -107,11 +176,11 @@ print(os.environ['QUEUED_BRANCH'])
     assert failed.returncode != 0, failed.stderr
 
     gate_env = dict(RELEASE_DETECT='success', IS_RELEASE='false', DETECT='success',
-                    NEEDED='true', BUILD='success', INSTRUMENTATION='success')
+                    NEEDED='true', BUILD='success', INSTRUMENTATION='success', RELEASE_SMOKE='success')
     for values, passed in [
         ({}, True),
-        ({'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': '', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped'}, True),
-        ({'NEEDED': 'false', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped'}, True),
+        ({'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': '', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
+        ({'NEEDED': 'false', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
         ({'RELEASE_DETECT': 'failure', 'IS_RELEASE': 'true'}, False),
         ({'RELEASE_DETECT': 'cancelled'}, False),
         ({'IS_RELEASE': ''}, False),
@@ -120,6 +189,8 @@ print(os.environ['QUEUED_BRANCH'])
         ({'BUILD': 'failure'}, False),
         ({'INSTRUMENTATION': 'cancelled'}, False),
         ({'INSTRUMENTATION': 'skipped'}, False),
+        ({'RELEASE_SMOKE': 'failure'}, False),
+        ({'RELEASE_SMOKE': 'skipped'}, False),
     ]:
         result = execute(gate, gate_env | values)
         assert (result.returncode == 0) is passed, (values, result.stdout, result.stderr)
@@ -133,7 +204,6 @@ with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)
     binary = work / 'gh'
     binary.write_text('''#!/usr/bin/env python3
-import gzip
 import hashlib
 import json
 import os
@@ -155,7 +225,8 @@ elif args[:2] == ['release', 'upload']:
     assert args[2] == 'android-v0.2.0'
     assert '--clobber' not in args
     if args[3].endswith('-mapping.txt.gz'):
-        assert gzip.decompress(Path(args[3]).read_bytes()) == b'fixture-r8-mapping'
+        assert Path(args[3]).read_bytes() == (
+            root / 'android-release' / 'okou-android-0.2.0-mapping.txt.gz').read_bytes()
         if os.environ.get('FAIL_MAPPING_UPLOAD') == 'true':
             sys.exit(29)
         with (root / 'archived-map').open('xb') as output:
@@ -163,7 +234,8 @@ elif args[:2] == ['release', 'upload']:
         if os.environ.get('UNKNOWN_MAPPING_UPLOAD') == 'true':
             sys.exit(31)  # Commit happened before the caller lost the receipt.
         sys.exit(0)
-    assert Path(args[3]).read_bytes() == b'fixture-apk'
+    assert Path(args[3]).read_bytes() == (
+        root / 'android-release' / 'okou-android-0.2.0.apk').read_bytes()
     if os.environ.get('FAIL_UPLOAD') == 'true':
         sys.exit(23)
     with (root / 'uploaded').open('x') as output:
@@ -177,13 +249,32 @@ else:
     binary.chmod(0o755)
     apk_dir = work / 'android-release'
     apk_dir.mkdir()
-    (apk_dir / 'okou-android-0.2.0.apk').write_bytes(b'fixture-apk')
-    (apk_dir / 'okou-android-0.2.0-mapping.txt.gz').write_bytes(
-        gzip.compress(b'fixture-r8-mapping', mtime=0))
+    apk_path = apk_dir / 'okou-android-0.2.0.apk'
+    map_uuid = 'e1ae3b30-0b1d-3184-a915-040836dd85bd'
+    with zipfile.ZipFile(apk_path, 'w') as apk:
+        apk.writestr('classes.dex', '~~R8{"version":"fixture","pg-map-id":"fixture-map"}')
+        apk.writestr('assets/sentry-debug-meta.properties', f'io.sentry.ProguardUuids={map_uuid}\n')
+    map_body = b'fixture-r8-mapping'
+    mapping = (f'# compiler_version: fixture\n# pg_map_id: fixture-map\n'
+               f'# pg_map_hash: SHA-256 {hashlib.sha256(map_body).hexdigest()}\n').encode() + map_body
+    (apk_dir / 'okou-android-0.2.0-mapping.txt.gz').write_bytes(gzip.compress(mapping, mtime=0))
+    cli = work / 'sentry-cli'
+    cli.write_text('''#!/usr/bin/env python3
+import gzip
+import os
+from pathlib import Path
+import sys
+archived = Path(os.environ['RUNNER_TEMP']) / 'archived-map'
+assert sys.argv[1:5] == ['upload-proguard', '--require-one', '--uuid', os.environ['FIXTURE_MAP_UUID']]
+assert Path(sys.argv[5]).read_bytes() == gzip.decompress(archived.read_bytes())
+sys.exit(37 if os.environ.get('FAIL_SENTRY_UPLOAD') == 'true' else 0)
+''')
+    cli.chmod(0o755)
     env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ['PATH'],
                RUNNER_TEMP=str(work), GITHUB_REPOSITORY='okou-ai/okou',
                ANDROID_VERSION='0.2.0', ANDROID_TAG='android-v0.2.0',
-               ANDROID_RELEASE_SOURCE_SHA='a' * 40)
+               ANDROID_RELEASE_SOURCE_SHA='a' * 40, FIXTURE_MAP_UUID=map_uuid,
+               SENTRY_AUTH_TOKEN='fixture', SENTRY_ORG='okou', SENTRY_PROJECT='android')
     def run(**overrides):
         for step in [verify, publish]:
             result = subprocess.run(['bash', '-e', '-c', step['run']], env=env | overrides,
@@ -252,6 +343,8 @@ else:
     source = work / 'source'
     for relative in ['.github/scripts/release/publish-android-update.py',
                      '.github/scripts/release/archive-android-mapping.py',
+                     'android/scripts/release_mapping.py',
+                     'android/scripts/upload-sentry-mapping.py',
                      'android/scripts/version-code.sh']:
         target = source / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -262,7 +355,7 @@ else:
     subprocess.run(['git', '-C', str(source), '-c', 'user.name=Release Fixture',
                     '-c', 'user.email=release-fixture@example.com', 'commit', '-m', 'fixture'],
                    check=True, capture_output=True)
-    tools = work / 'sdk/build-tools/36.0.0'
+    tools = work / 'sdk/build-tools/37.0.0'
     tools.mkdir(parents=True)
     for name in ['apksigner', 'aapt2']:
         tool = tools / name
@@ -283,6 +376,7 @@ else:
     steps = [step for step in job['steps'] if step.get('name') in {
         'Verify Android release tag', 'Publish verified Android update',
         'Publish APK on the Android Release', 'Archive Android release mapping',
+        'Upload Android R8 mapping to Sentry',
     }]
     def run_publication(**overrides):
         for step in steps:
@@ -300,7 +394,7 @@ else:
     data = json.loads(manifest.read_text())
     assert data['release']['version'] == '0.2.0'
     assert data['release']['minimumSdk'] == 24
-    assert (work / 'r2' / data['release']['url'].removeprefix('https://static.okou.io/')).read_bytes() == b'fixture-apk'
+    assert (work / 'r2' / data['release']['url'].removeprefix('https://static.okou.io/')).read_bytes() == apk_path.read_bytes()
     assert (work / 'uploaded').read_text() == 'android-v0.2.0'
     assert (work / 'archived-map').read_bytes() == (apk_dir / 'okou-android-0.2.0-mapping.txt.gz').read_bytes()
 
@@ -309,6 +403,10 @@ else:
     result = run_publication(TAG_SOURCE='b' * 40)
     assert result.returncode != 0
     assert not (work / 'r2').exists(), 'Wrong release source reached R2'
+    assert not (work / 'uploaded').exists()
+    result = run_publication(FAIL_SENTRY_UPLOAD='true')
+    assert result.returncode != 0
+    assert not manifest.exists(), 'Failed Sentry upload allowed update discovery'
     assert not (work / 'uploaded').exists()
     result = run_publication(FAIL_R2='true')
     assert result.returncode != 0

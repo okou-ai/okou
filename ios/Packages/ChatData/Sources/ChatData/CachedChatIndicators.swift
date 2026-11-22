@@ -38,7 +38,7 @@ struct ChatIndicatorsRead: Sendable {
 enum ChatReadStateChange: Sendable {
   case read(threadID: String, through: Date?)
   case unread(threadID: String)
-  case agentRead(agentID: String, baseline: CachedChatIndicators?)
+  case allRead(baseline: CachedChatIndicators?)
   case invalidated
 }
 
@@ -63,10 +63,10 @@ struct ChatIndicatorCacheState: Codable {
     snapshot = CachedChatIndicators(
       revision: (snapshot?.revision ?? 0) + 1, savedAt: Date(),
       unreadAt: indicators.unreadAt.filter { indicators.threads[$0.key] == .unread },
-      unreadAgentIDs: Set(indicators.agents.filter { $0.value == .unread }.map(\.key)),
+      unreadAgentIDs: indicators.unreadAgentIDs(in: threads),
       threadAgentIDs: Dictionary(
         uniqueKeysWithValues: threads.filter { indicators.unreadAt[$0.id] != nil }
-          .map { ($0.id, $0.agentID) }))
+          .compactMap { thread in thread.agentID.map { (thread.id, $0) } }))
     return true
   }
 
@@ -88,16 +88,12 @@ struct ChatIndicatorCacheState: Codable {
       // Clearing the server cursor alone does not establish a terminal marker.
       // Retain other chats and let the following indicators read confirm this one.
       break
-    case .agentRead(let agentID, let baseline):
+    case .allRead(let baseline):
       if let baseline {
-        for (threadID, timestamp) in baseline.unreadAt
-        where snapshot.threadAgentIDs[threadID] == agentID {
-          snapshot.markRead(threadID: threadID, through: timestamp)
-        }
-        if !snapshot.unreadAt.keys.contains(where: { snapshot.threadAgentIDs[$0] == agentID }),
-          snapshot.unreadAt.keys.allSatisfy({ snapshot.threadAgentIDs[$0] != nil })
-        {
-          snapshot.unreadAgentIDs.remove(agentID)
+        for thread in threads where !thread.isMuted {
+          if let timestamp = baseline.unreadAt[thread.id] {
+            snapshot.markRead(threadID: thread.id, through: timestamp)
+          }
         }
       }
     case .invalidated: break

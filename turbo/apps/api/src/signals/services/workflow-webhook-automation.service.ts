@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   workflowUserAutomationThreads,
   workflowWebhookAutomations,
@@ -47,7 +48,6 @@ function sha256Hex(value: string): string {
 interface WorkflowWebhookAutomationDispatchRow {
   readonly automation: AutomationRow;
   readonly webhook: WebhookAutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly chatThreadId: string;
 }
@@ -177,7 +177,6 @@ const loadWebhookAutomationForToken$ = command(
       .select({
         automation: workflowAutomationColumns(),
         webhook: workflowWebhookAutomations,
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -187,7 +186,7 @@ const loadWebhookAutomationForToken$ = command(
         workflowAutomations,
         eq(workflowWebhookAutomations.automationId, workflowAutomations.id),
       )
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -231,7 +230,6 @@ const loadWebhookAutomationForToken$ = command(
       workflowAutomationCanFire$,
       {
         automation: row.automation,
-        agentId: row.agentId,
       },
       signal,
     );
@@ -248,7 +246,6 @@ const loadWebhookAutomationForToken$ = command(
           orgId: row.automation.orgId,
           userId: row.automation.ownerUserId,
           workflowId: row.automation.workflowId,
-          agentId: row.agentId,
           workflowTitle: row.workflowDisplayName ?? row.workflowName,
           currentTime,
         },
@@ -258,7 +255,6 @@ const loadWebhookAutomationForToken$ = command(
     return {
       automation: row.automation,
       webhook: row.webhook,
-      agentId: row.agentId,
       workflowName: row.workflowName,
       chatThreadId,
     };
@@ -478,11 +474,8 @@ const startWorkflowWebhookRun$ = command(
     return await set(
       runWorkflowAutomationNow$,
       {
-        due: {
-          automation: args.row.automation,
-          agentId: args.row.agentId,
-          chatThreadId: args.row.chatThreadId,
-        },
+        automation: args.row.automation,
+        chatThreadId: args.row.chatThreadId,
         automationContext: runInput.context,
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",

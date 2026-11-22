@@ -15,7 +15,7 @@ final class ThreadListStore {
     isClosed: { [weak self] in self?.closed != false },
     isBlocked: { [weak self] in self?.blocked != false },
     setBlocked: { [weak self] in self?.blocked = $0 },
-    isMarkingRead: { [weak self] in self?.markingAgentRead != false },
+    isMarkingRead: { [weak self] in self?.markingAllRead != false },
     canMute: { [weak self] in self?.canMute($0) == true },
     didProject: { [weak self] in self?.publishThreads($0) },
     refreshList: { [weak self] wait, indicators in
@@ -23,14 +23,9 @@ final class ThreadListStore {
     },
     didMarkRead: { [weak self] in self?.markRead($0, through: $1) },
     advanceReadRevision: { [weak self] in self?.readRevision += 1 }, didFail: didFail)
-  @ObservationIgnored private lazy var navigation = ThreadListNavigation(
-    resources: resources, sync: sync, lifecycleTasks: lifecycleTasks,
-    didLoadAgents: didLoadAgents, didFail: didFail,
-    didBlock: { [weak self] in self?.blocked = true })
   @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
   @ObservationIgnored private let replaceThreads: Command<Void, [ChatThread]>
   let threadsValue: Computed<[ChatThread]>
-  var agentsValue: Computed<[AgentRecord]> { navigation.agentsValue }
 
   private(set) var threads: [ChatThread] {
     get {
@@ -46,9 +41,8 @@ final class ThreadListStore {
       }
     }
   }
-  var agents: [AgentRecord] { navigation.agents }
   private(set) var unreadAgentIDs: Set<String> = []
-  private(set) var markingAgentRead = false
+  private(set) var markingAllRead = false
   private var readRevision = 0
   var actionError: String? { actions.actionError }
 
@@ -64,7 +58,6 @@ final class ThreadListStore {
   private let commands: ChatCommands
   private let didRefresh: @MainActor ([ChatThread]) -> Void
   private let didChangeReadState: @MainActor () -> Void
-  private let didLoadAgents: @MainActor ([AgentRecord]) -> Void
   private let didFail: @MainActor (Error) -> Void
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let indicatorsBootstrap: WorkspaceReadBootstrap?
@@ -98,7 +91,6 @@ final class ThreadListStore {
     didRefresh: @escaping @MainActor ([ChatThread]) -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
     didChangeReadState: @escaping @MainActor () -> Void = {},
-    didLoadAgents: @escaping @MainActor ([AgentRecord]) -> Void = { _ in },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -122,15 +114,12 @@ final class ThreadListStore {
     self.commands = commands
     self.didRefresh = didRefresh
     self.didChangeReadState = didChangeReadState
-    self.didLoadAgents = didLoadAgents
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
     self.indicatorsBootstrap = indicatorsBootstrap
   }
 
   func restoreCached() async {
-    guard !closed, !Task.isCancelled else { return }
-    await navigation.restoreCached()
     guard !closed, !Task.isCancelled else { return }
     let revision = creationRevision
     let sequence = hasLoadedThreads ? appliedThreadSequence : nil
@@ -157,7 +146,6 @@ final class ThreadListStore {
   }
 
   var stateStore: CCState.Store { resources.store }
-  var navigationValue: Computed<Task<[AgentRecord], Error>> { resources.navigation }
   @ObservationIgnored lazy var listValue = makeListValue()
 
   private func makeListValue() -> Computed<Task<Void, Error>> {
@@ -250,8 +238,6 @@ final class ThreadListStore {
     }
   }
 
-  func refreshNavigation() async { await navigation.refreshNavigation() }
-
   /// Explicit invalidations coalesce into the resident read and one follow-up cycle.
   /// Only an awaited successful cycle can authorize navigation that needed fresh chats.
   @discardableResult
@@ -307,7 +293,7 @@ final class ThreadListStore {
 
   func setRead(_ thread: ChatThread, read: Bool) async -> Bool {
     guard updateTasks[thread.id] == nil, !updatingThreads.contains(thread.id), !closed, !blocked,
-      !markingAgentRead,
+      !markingAllRead,
       !Task.isCancelled
     else {
       return false
@@ -343,15 +329,15 @@ final class ThreadListStore {
     return succeeded && !closed && !Task.isCancelled
   }
 
-  func markAgentRead(_ agentID: String) async {
-    guard !closed, !blocked, !markingAgentRead, updatingThreads.isEmpty, !Task.isCancelled else {
+  func markAllRead() async {
+    guard !closed, !blocked, !markingAllRead, updatingThreads.isEmpty, !Task.isCancelled else {
       return
     }
-    markingAgentRead = true
+    markingAllRead = true
     readRevision += 1
-    defer { markingAgentRead = false }
-    await actions.updateThread("agent-read", includingIndicators: true) { [self, commands] in
-      try await commands.markAgentRead(agentID: agentID)
+    defer { markingAllRead = false }
+    await actions.updateThread("mark-all-read", includingIndicators: true) { [self, commands] in
+      try await commands.markAllRead()
       try Task.checkCancellation()
       didChangeReadState()
       readRevision += 1
@@ -393,7 +379,7 @@ final class ThreadListStore {
             continue
           }
           activeThreadIDs = Set(result.threads.filter { $0.value == .active }.map(\.key))
-          unreadAgentIDs = Set(result.agents.filter { $0.value == .unread }.map(\.key))
+          unreadAgentIDs = result.unreadAgentIDs(in: threads)
           threads = threads.map { thread in
             var updated = thread
             updated.indicator = result.threads[thread.id]
@@ -535,14 +521,12 @@ final class ThreadListStore {
     activeThreadIDs.removeAll()
     cancelRefresh()
     do { try stateStore.set(listLifetime, false) } catch { didFail(error) }
-    navigation.close()
     for task in updateTasks.values { task.cancel() }
     actions.close()
     cancelRename()
   }
 
   /// Startup retirement detaches confirmation without cancelling another consumer's I/O.
-  func cancelNavigationPublication() { navigation.cancelNavigationPublication() }
 
   private func show(_ failure: Error) {
     actions.show(failure)
@@ -566,4 +550,18 @@ final class ThreadListStore {
   }
 
   isolated deinit { listTask?.cancel() }
+}
+
+extension ThreadListStore {
+  func canWrite(_ id: String) -> Bool {
+    actions.canWrite(id)
+  }
+
+  @discardableResult
+  func delete(
+    _ id: String, agentID: String?, eventID: String,
+    onFailure: (@MainActor (String) -> Void)? = nil
+  ) async -> Bool {
+    return await actions.delete(id, agentID: agentID, eventID: eventID, onFailure: onFailure)
+  }
 }

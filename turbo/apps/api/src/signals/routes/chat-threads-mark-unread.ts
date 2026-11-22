@@ -1,30 +1,26 @@
 import { synchronizeUserPushBadge$ } from "../services/push-notifications.service";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { writeDb$ } from "../external/db";
+import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import { waitUntil } from "../context/wait-until";
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { chatThreadMarkUnreadContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 
-import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
 const markUnreadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(authContext$);
+  const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadMarkUnreadContract.markUnread));
   signal.throwIfAborted();
 
   const writeDb = set(writeDb$);
 
-  // One single-row UPDATE outside any transaction, then a primary-key read of
-  // the Agent's organization for the publication. Like mark-read, the route
-  // keeps its user-only authorization, and clearing stays unconditional so a
-  // repeated request keeps its success and publication.
   const [cleared] = await writeDb
     .update(chatThreads)
     .set({ lastReadAt: null })
@@ -32,32 +28,21 @@ const markUnreadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         eq(chatThreads.id, params.id),
         eq(chatThreads.userId, auth.userId),
-        isNotNull(chatThreads.agentId),
+        chatThreadOrganizationPredicate(auth.orgId),
       ),
     )
-    .returning({ agentId: chatThreads.agentId });
+    .returning({ id: chatThreads.id });
   signal.throwIfAborted();
-  if (!cleared?.agentId) {
+  if (!cleared) {
     return notFound("Chat thread not found");
   }
-  const [agent] = await writeDb
-    .select({ orgId: agents.orgId })
-    .from(agents)
-    .where(eq(agents.id, cleared.agentId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!agent) {
-    return notFound("Chat thread not found");
-  }
-
   waitUntil(
     set(synchronizeUserPushBadge$, auth.userId, new AbortController().signal),
   );
   await publishChatThreadReadCursorUpdatedSafely(
-    { userId: auth.userId, orgId: agent.orgId },
+    { userId: auth.userId, orgId: auth.orgId },
     {
       threadId: params.id,
-      agentId: cleared.agentId,
       lastReadAt: null,
     },
   );
@@ -74,6 +59,6 @@ const markUnreadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const chatThreadMarkUnreadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadMarkUnreadContract.markUnread,
-    handler: authRoute({}, markUnreadInner$),
+    handler: authRoute({ requireOrganization: true }, markUnreadInner$),
   },
 ];

@@ -16,7 +16,7 @@ Place route tests under the API route test directory:
 
 ```text
 turbo/apps/api/src/signals/routes/__tests__/
-+-- agents.test.ts
++-- agents-list.test.ts
 ```
 
 API service-directory tests are prohibited; there are no file exceptions. A
@@ -192,12 +192,10 @@ business scenario; fixture methods that seed business rows or force workers do.
 For example, the agent create/list example above uses
 [`agentsMainContract`](../../turbo/packages/api-contracts/src/contracts/agents.ts)
 and [`agentsRoutes`](../../turbo/apps/api/src/signals/routes/agents.ts) for both
-construction and observation. The `updates canonical connector slugs` case in
-[`agents.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agents.test.ts)
-creates an agent, updates its connector grants through the authenticated API,
-and checks the returned grants. Neither path needs a private DB seed or a forced
-worker visit. Apply that same standard to usage reports, storage, and automation
-lifecycles instead of using a private driver to manufacture their prerequisites.
+construction and observation. See
+[`agents-list.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agents-list.test.ts)
+for the integration test. Apply that same standard to usage reports, storage,
+and automation lifecycles.
 
 ### Apply the Boundary to the Complete Lifecycle
 
@@ -529,10 +527,10 @@ never construct business state:
 - the delegation limit `updateMaxAutonomyBudgetForTest$`.
 
 The delegation limit is an exception Ethan approved in #37440. Production
-always grants a user-started chain the fixed 32-hop budget, and no API,
+always grants a user-started chain the fixed production budget, and no API,
 configuration or environment value changes it. Tests lower it through
 `setupWorkflowOrg({ maxAutonomyBudget })` so the real Automation, copy and
-Runner execution chain reaches exhaustion in a few hops instead of 32. Test context
+Runner execution chain reaches exhaustion in a few hops. Test context
 restores the default after every case. Keep this control: it is not a private
 state driver, and it must not be cleaned up as one.
 
@@ -579,7 +577,7 @@ exists, so remove an entry together with the file or the case that needed it.
 Run route-focused tests from `turbo`:
 
 ```shell
-pnpm -F api exec vitest run src/signals/routes/__tests__/agents.test.ts
+pnpm -F api exec vitest run src/signals/routes/__tests__/agents-list.test.ts
 pnpm -F api lint
 pnpm -F api check-types
 ```

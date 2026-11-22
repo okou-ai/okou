@@ -55,7 +55,6 @@ function telegramStatus(): MockTelegramBotStatus {
     kind: "official",
     username: "agent_bot",
     avatarUrl: null,
-    agent: { id: "c0000000-0000-4000-a000-000000000001", name: "zero" },
     isOwner: false,
     isConnected: false,
     connectedUser: null,
@@ -127,7 +126,7 @@ test("A user links GitHub for agent mentions", async () => {
   ).resolves.toBeInTheDocument();
   expect(
     screen.getByText(
-      "Link your Okou account to @octo-dev so GitHub mentions can run your agents from issues and pull requests.",
+      "Link your Okou account to @octo-dev to start chats from GitHub issues and pull requests.",
     ),
   ).toBeInTheDocument();
 
@@ -138,7 +137,7 @@ test("A user links GitHub for agent mentions", async () => {
   ).resolves.toBeInTheDocument();
   expect(
     screen.getByText(
-      "You're connected as @octo-dev. Mention your agent in GitHub issues or pull requests to start chatting.",
+      "You’re connected as @octo-dev. Mention Okou in a GitHub issue or pull request to chat.",
     ),
   ).toBeInTheDocument();
   expect(getAction("link", "Back to workflows")).toBeInTheDocument();
@@ -423,9 +422,7 @@ test.each(["/telegram/connect", "/settings/telegram"])(
       screen.findByText("Connect to Telegram"),
     ).resolves.toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Link your account to this Telegram bot so you can interact with your agent directly from Telegram.",
-      ),
+      screen.getByText("Connect your account to chat with Okou in Telegram."),
     ).toBeInTheDocument();
 
     click(getAction("button", "Connect"));

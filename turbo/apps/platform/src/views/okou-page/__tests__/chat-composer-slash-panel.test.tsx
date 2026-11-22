@@ -12,7 +12,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  AGENT_ID,
   composerWorkflow,
   expectInlineTemplateInComposer,
   findComposerEditor,
@@ -24,18 +23,17 @@ import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import { CREATE_WORKFLOW_WITH_CHAT_PROMPT } from "../../../signals/chat-page/workflow-prompt-action.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
 const THIRD_WORKFLOW_NAME = "axiom-traces";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000900";
-const HOME_PATH = `/agents/${AGENT_ID}/chat?compose=1`;
+const HOME_PATH = `/?compose=1`;
 const COMPOSER_PATHS = [`/chats/${THREAD_ID}`, HOME_PATH] as const;
 
 function setupModels(): void {
-  mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
   context.mocks.data.userModelPreference({

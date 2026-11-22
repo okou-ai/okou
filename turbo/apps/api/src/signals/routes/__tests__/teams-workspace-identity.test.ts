@@ -576,7 +576,7 @@ test.each([
         const runnerGroup = await runs.configureRunnerGroup();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
-        const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
+        await bdd.bootstrapLimitedFreeOnboarding(actor, {
           displayName: "Identity's own Agent",
         });
         await runs.grantProEntitlement(actor);
@@ -695,7 +695,6 @@ test.each([
         expect(listed.body.data).toHaveLength(1);
         const run = listed.body.data[0]!;
         expect(run).toMatchObject({
-          agentId,
           triggerSource: "teams",
           status: "running",
         });
@@ -749,7 +748,7 @@ test.each([
         expect(messages).toContainEqual({
           conversationId: sender.teamsConversationId,
           text: expect.stringMatching(
-            /^Run-scoped result\n\nSent via .+ · Triggered by <at>.+<\/at>$/u,
+            /^Run-scoped result\n\nTriggered by <at>.+<\/at>$/u,
           ),
         });
         await accept(

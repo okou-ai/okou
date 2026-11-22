@@ -29,6 +29,7 @@ content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/cont
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 member_memory_protocol_floor=$(<"${repo_root}/.github/rollback-floors/member-memory-dual-writer")
 widget_push_columns_floor=$(<"${repo_root}/.github/rollback-floors/ios-widget-push-columns-independent-api")
+agent_connector_schema_floor=$(<"${repo_root}/.github/rollback-floors/agent-connector-schema-independent-api")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -97,6 +98,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "046a7bac03cc5f5a94cc67394756f69be2eaf111" ]; then
       [ "${MOCK_MARKETING_SHORT_ADDRESS_WRITER_TARGET_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "d1739bed31dcde34fead64d82e54489fda10549f" ]; then
+      [ "${MOCK_MARKETING_REWARD_OWNERSHIP_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "ac0609591b2a0a5f159afb50b7561df46a23f6a4" ]; then
       [ "${MOCK_CHAT_INDICATORS_CHANGED_PUBLISHER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
@@ -185,6 +188,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "625c4607ccdcd2d46a5c7227f61419928035e13f" ]; then
       [ "${MOCK_PAIR_FREE_DISK_WRITER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "ced5af12a0a881d545d7b6f571fb107365ea9c65" ]; then
+      [ "${MOCK_CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "968063848aea8cf54acd6f56facdf7cdcbd79051" ]; then
@@ -252,6 +257,12 @@ case "${1:-}" in
         [ "${MOCK_WIDGET_PUSH_COLUMNS_ON_MAIN:-1}" = "1" ]
       else
         [ "${MOCK_WIDGET_PUSH_COLUMNS_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_AGENT_CONNECTOR_SCHEMA_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_AGENT_CONNECTOR_SCHEMA_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -402,6 +413,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_WORKFLOW_ATTACHMENT_COMMIT-7171717171717171717171717171717171717171}"
     elif [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
       printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
+    elif [[ "$*" == *1616_retire_agents_table.sql* ]]; then
+      printf '%s\n' "bcd1540000000000000000000000000000000000"
     elif [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"
     elif [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
@@ -519,6 +532,11 @@ case "${1:-}" in
     if [ "${2:-}" = "origin/main:.github/rollback-floors/ios-widget-push-columns-independent-api" ]; then
       [ "${MOCK_WIDGET_PUSH_COLUMNS_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_WIDGET_PUSH_COLUMNS_COMMIT-$MOCK_WIDGET_PUSH_COLUMNS_FLOOR}"
+      exit 0
+    fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/agent-connector-schema-independent-api" ]; then
+      [ "${MOCK_AGENT_CONNECTOR_SCHEMA_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_AGENT_CONNECTOR_SCHEMA_COMMIT-$MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR}"
       exit 0
     fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/member-memory-dual-writer" ]; then
@@ -673,6 +691,7 @@ run_resolver() {
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR="$member_memory_protocol_floor" \
     MOCK_WIDGET_PUSH_COLUMNS_FLOOR="$widget_push_columns_floor" \
+    MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR="$agent_connector_schema_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
@@ -770,6 +789,16 @@ assert_failure "Rollback target predates Marketing handoff short-address respons
 [ ! -s "${tmp_dir}/marketing-short-address.output" ] || fail "full-hash-only API must not publish outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "full-hash-only API must fail before provider or host access"
+fi
+
+# Removing the retired routing variable must not let rollback select a writer
+# that can independently fund campaign rewards in App.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target cannot preserve sole Marketing reward ownership" \
+  run_resolver "${tmp_dir}/marketing-reward-ownership.output" MOCK_MARKETING_REWARD_OWNERSHIP_TARGET_VALID=0
+[ ! -s "${tmp_dir}/marketing-reward-ownership.output" ] || fail "incompatible campaign owner must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "incompatible campaign owner must fail before provider or host access"
 fi
 
 # Current Apps refresh chat indicators only from chatIndicatorsChanged.
@@ -1010,6 +1039,14 @@ assert_failure "Rollback target predates the model execution capture writer" \
 [ ! -s "${tmp_dir}/model-execution-capture-floor.output" ] || fail "pre-capture writer must not publish rollback outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-capture writer must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the mirror-free custom connector Skill API" \
+  run_resolver "${tmp_dir}/custom-connector-skill-writer.output" MOCK_CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_VALID=0
+[ ! -s "${tmp_dir}/custom-connector-skill-writer.output" ] || fail "legacy Skill writer must not publish rollback outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "legacy Skill writer must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
@@ -2177,8 +2214,10 @@ ruby - \
     raise "production migrations must finish before API deployment"
   end
 
-  artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Upload canonical app artifact" }
-  artifact_upload_run = artifact_upload_step.fetch("run")
+  artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Publish app artifact and immutable assets to R2" }
+  script = ".github/scripts/artifacts/upload-okou-app-artifact.sh"
+  raise "deploy-app must publish the archive" unless artifact_upload_step.fetch("run").include?(script)
+  artifact_upload_run = File.read(File.join(File.dirname(ARGV[0]), "../../", script))
   raise "deploy-app must upload the archived App artifact" unless artifact_upload_run.include?("/dist.tar.gz")
   raise "deploy-app must not upload per-file App artifacts" if artifact_upload_run.include?("aws s3 cp turbo/apps/platform/dist")
 RUBY
@@ -2391,7 +2430,7 @@ for expectation in \
   "MOCK_BUILT_IN_SKILL_CATALOG_API_AVAILABLE=0|Cannot read the built-in Skill catalog API rollback floor" \
   "MOCK_BUILT_IN_SKILL_CATALOG_API_COMMIT=invalid|Missing or invalid built-in Skill catalog API rollback floor" \
   "MOCK_BUILT_IN_SKILL_CATALOG_API_ON_MAIN=0|Built-in Skill catalog API rollback floor is not on main" \
-  "MOCK_BUILT_IN_SKILL_CATALOG_API_VALID=0|Rollback target predates the built-in Skill catalog reader"; do
+  "MOCK_BUILT_IN_SKILL_CATALOG_API_VALID=0|Rollback target predates the independent built-in Skill publisher"; do
   : >"${tmp_dir}/boundaries.log"
   setting=${expectation%%|*}
   message=${expectation#*|}
@@ -2498,6 +2537,19 @@ for widget_case in \
   [ ! -s "${tmp_dir}/widget-push-policy.output" ] || fail "invalid widget push columns floor must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Widget push columns floor must reject before provider or host access"
+  fi
+done
+for connector_schema_case in \
+  "MOCK_AGENT_CONNECTOR_SCHEMA_AVAILABLE=0|Cannot read the Agent connector schema rollback floor from main" \
+  "MOCK_AGENT_CONNECTOR_SCHEMA_COMMIT=invalid|Missing or invalid Agent connector schema rollback floor" \
+  "MOCK_AGENT_CONNECTOR_SCHEMA_ON_MAIN=0|Agent connector schema rollback floor is not on main" \
+  "MOCK_AGENT_CONNECTOR_SCHEMA_VALID=0|Rollback target predates the Agent connector schema retirement"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${connector_schema_case#*|}" \
+    run_resolver "${tmp_dir}/agent-connector-schema-policy.output" "${connector_schema_case%%|*}"
+  [ ! -s "${tmp_dir}/agent-connector-schema-policy.output" ] || fail "invalid Agent connector schema floor must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Agent connector schema floor must reject before provider or host access"
   fi
 done
 

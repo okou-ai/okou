@@ -17,9 +17,7 @@ use crate::helper_output::{captured_or_empty, truncate_utf8};
 use crate::log::log;
 use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
-use crate::wait::{
-    WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
-};
+use crate::wait::{WaitOutcome, collect_bounded_output, wait_for_helper_with_group_cleanup};
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as GuestStateRestoreSubmitError;
 use crate::worker_ownership::{LazyConnectionWorker, SingleActivePermit};
 use crate::writer::GuestWriter;
@@ -222,8 +220,7 @@ fn handle_request(
 
     writer
         .write_frame_after_lock_unless_cancelled(&frame, connection_cancel, || {
-            operation_guard.release();
-            drop(admission);
+            admission.finish_operation(&operation_guard);
         })
         .map(|_| ())
 }
@@ -334,14 +331,7 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
         }
     };
 
-    let outcome = wait_with_kill_timeout_or_connection_cancelled(
-        child,
-        timeout_ms,
-        connection_cancel,
-        // Reap the full group before an exited leader can release its process
-        // group identity, so helper descendants cannot outlive restore.
-        || true,
-    );
+    let outcome = wait_for_helper_with_group_cleanup(child, timeout_ms, connection_cancel);
     let cancellation_observed = connection_cancel.load(Ordering::Acquire);
     let stdin_result = stdin_writer.join();
     if !matches!(outcome, WaitOutcome::Exited(_)) || cancellation_observed {

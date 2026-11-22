@@ -110,7 +110,7 @@ async function sendChatPrompt(
   const clientEventId = randomUUID();
   const sent = await chat.requestSendEvent(
     actor,
-    { agentId, prompt, clientEventId },
+    { prompt, clientEventId },
     [201],
   );
   if (sent.status !== 201) {
@@ -371,7 +371,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     }
   });
 
-  it("lists and reads runs through public logs with status, agent, and since filters", async () => {
+  it("lists and reads runs through public logs with status and since filters", async () => {
     // Keep this capacity scenario independent of the product-tier limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
@@ -444,25 +444,23 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       }),
     ).toContain("other run b");
 
-    const completedByAgent = await reads.requestListLogs(
+    const completed = await reads.requestListLogs(
       actor,
-      { status: "completed", agentId: other.agentId, limit: 1 },
+      { status: "completed", limit: 1 },
       [200],
     );
-    expect(completedByAgent.body.data).toHaveLength(1);
-    expect(completedByAgent.body.data[0]).toMatchObject({
+    expect(completed.body.data).toHaveLength(1);
+    expect(completed.body.data[0]).toMatchObject({
       id: runB.runId,
-      agentId: other.agentId,
       status: "completed",
       prompt: "other run b",
     });
-    expect(completedByAgent.body.data[0]?.startedAt).not.toBeNull();
+    expect(completed.body.data[0]?.startedAt).not.toBeNull();
 
     const insideWindow = await reads.requestListLogs(
       actor,
       {
         status: "completed",
-        agentId: other.agentId,
         since: now() - 60 * 60_000,
       },
       [200],
@@ -655,12 +653,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         displayName: "BDD resume agent",
         visibility: "private",
       });
-      const [readonlySkill] = await readonlyConnectorSkills(
-        context,
-        actor,
-        agent.agentId,
-        ["session continuation"],
-      );
+      const [readonlySkill] = await readonlyConnectorSkills(context, actor, [
+        "session continuation",
+      ]);
       if (!readonlySkill) {
         throw new Error("Expected a readonly Connector skill");
       }
@@ -973,7 +968,7 @@ describe("RUN-01: run admission boundaries", () => {
     await api.requestCancelRun(actor, third.runId, [200]);
   });
 
-  it("rejects a foreign agent before admitting a run", async () => {
+  it("ignores a legacy foreign agent ID when admitting a member run", async () => {
     const actor = await entitledActor();
     const compose = await createThreadAgent(actor, "bdd-admission");
     const first = await api.createThreadRun(actor, {
@@ -985,18 +980,16 @@ describe("RUN-01: run admission boundaries", () => {
       prompt: "second concurrent run",
     });
     const outsider = bdd.user();
-    const foreignCompose = await createThreadAgent(outsider, "bdd-foreign");
+    await createThreadAgent(outsider, "bdd-foreign");
     const crossOrgCompose = await chat.requestSendEvent(
       actor,
       {
-        agentId: foreignCompose.agentId,
         prompt: "run a foreign compose",
         model: "claude-fable-5-1",
       },
-      [404],
+      [201],
     );
-    expectApiError(crossOrgCompose.body);
-    expect(crossOrgCompose.body.error.message).toBe("Agent not found");
+    expect(crossOrgCompose.status).toBe(201);
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
   });
@@ -2685,10 +2678,11 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       description: "Member isolation.",
       visibility: "private",
     });
-    const automationCompose = await bdd.createAgent(actor, {
-      displayName: "BDD logs automation agent",
-      visibility: "private",
-    });
+    const defaultAgentId = await bdd.readDefaultAgentId(actor);
+    if (!defaultAgentId) {
+      throw new Error("Expected a default executor for the automation");
+    }
+    const automationCompose = await bdd.readAgent(actor, defaultAgentId);
     // Public creation names an Agent by its canonical id.
     const agentOneName = agentOne.agentId;
 
@@ -2729,15 +2723,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   }
 
   it("lists organization run logs with their filter metadata", async () => {
-    const {
-      actor,
-      agentOne,
-      agentTwo,
-      secondAgentRun,
-      automationCompose,
-      automationRun,
-      webRun,
-    } = await setupRunLogFixture();
+    const { actor, secondAgentRun, automationRun, webRun } =
+      await setupRunLogFixture();
     const listed = await reads.requestListLogs(actor, {}, [200]);
     mustOk(listed, "the logs list");
     const listedIds = listed.body.data.map((entry) => {
@@ -2751,8 +2738,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       return entry.id === webRun.runId;
     });
     expect(webEntry).toMatchObject({
-      agentId: agentOne.agentId,
-      displayName: "BDD logs agent one",
       framework: "claude-code",
       triggerSource: "web",
       status: "cancelled",
@@ -2762,8 +2747,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       return entry.id === automationRun.runId;
     });
     expect(automationEntry).toMatchObject({
-      agentId: automationCompose.agentId,
-      displayName: "BDD logs automation agent",
       triggerSource: "automation-event",
     });
     expect(listed.body.filters.statuses).toContain("cancelled");
@@ -2771,11 +2754,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       "automation-event",
       "web",
     ]);
-    expect(listed.body.filters.agents).toContain(agentOne.agentId);
-    expect(listed.body.filters.agents).toContain(agentTwo.agentId);
-    expect([...listed.body.filters.agents].sort()).toStrictEqual(
-      [agentOne.agentId, agentTwo.agentId, automationCompose.agentId].sort(),
-    );
+    expect(listed.body.filters).not.toHaveProperty("agents");
   });
 
   it("pages run logs and falls back from malformed cursors", async () => {
@@ -2808,52 +2787,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     expect(malformedCursor.body.data[0]?.id).toBe(pageOne.body.data[0]?.id);
   });
 
-  it("filters run logs by search, agent, status, and source", async () => {
-    const { actor, agentOne, agentOneName, secondAgentRun, webRun } =
-      await setupRunLogFixture();
-    const agentOneRunIds = [webRun.runId];
-    const fuzzy = await reads.requestListLogs(
-      actor,
-      { search: agentOneName.toUpperCase() },
-      [200],
-    );
-    mustOk(fuzzy, "the fuzzy search list");
-    expect(
-      fuzzy.body.data
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual(agentOneRunIds);
-
-    const byName = await reads.requestListLogs(
-      actor,
-      { name: agentOneName },
-      [200],
-    );
-    mustOk(byName, "the name-filtered list");
-    expect(
-      byName.body.data
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual(agentOneRunIds);
-
-    const byAgentId = await reads.requestListLogs(
-      actor,
-      { agentId: agentOne.agentId, search: "zzz-no-such-agent" },
-      [200],
-    );
-    mustOk(byAgentId, "the agent-id list");
-    expect(
-      byAgentId.body.data
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual(agentOneRunIds);
-
+  it("filters run logs by status and source", async () => {
+    const { actor, secondAgentRun, webRun } = await setupRunLogFixture();
     const byStatusAndSource = await reads.requestListLogs(
       actor,
       { status: "cancelled", triggerSource: "web" },
@@ -2888,13 +2823,9 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("returns pending and failed run-log detail residue", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     await owned.run(async () => {
-      await bdd.updateAgentInstructions(
-        actor,
-        agentId,
-        `Run detail ${randomUUID()}`,
-      );
+      await bdd.updatePersonalInstructions(actor, `Run detail ${randomUUID()}`);
       const signing = holdDownloadSigning(context);
       const clientEventId = randomUUID();
       let pendingRunId: string | undefined;
@@ -2902,7 +2833,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
         const sent = await chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "pending detail run",
             clientEventId,
           },
@@ -2960,7 +2890,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       );
 
       const failedRun = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "failed detail run",
       });
       const { execution } = await owned.runExecution(failedRun.runId);

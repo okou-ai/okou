@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   userMessageDocumentSchema,
   resolveChatEventRecommendedFollowups,
@@ -69,8 +70,6 @@ import {
   createChatThreadScrollSignals,
   createThreadScrollPositionSignals,
   type ChatThreadScrollSignals,
-  type ReadyScrollAfterRenderRequest,
-  type ScrollAfterRenderRequest,
   type ThreadScrollPosition,
 } from "./chat-thread-scroll.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -140,10 +139,6 @@ import {
 } from "../okou-page/user-message-document-codec.ts";
 import { parseComposerVisualizationPreferences } from "../okou-page/composer-additional-info.ts";
 import {
-  createAgentReferenceSignalsRegistry,
-  type AgentReferenceSignalsRegistry,
-} from "./agent-reference-signals.ts";
-import {
   createArtifactCardSignalsRegistry,
   type ArtifactCardSignalsRegistry,
 } from "./artifact-card-signals.ts";
@@ -203,7 +198,7 @@ import {
   createChatThreadFeedbackSignals,
   type ChatForwardComposerFactory,
 } from "./chat-thread-feedback.ts";
-import { createForwardAgentComposerSignals } from "../okou-page/agent-composer-signals.ts";
+import { createForwardChatComposerSignals } from "../okou-page/agent-composer-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
 import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
 import {
@@ -372,9 +367,6 @@ function createThreadMetadata(threadMeta$: Computed<ThreadMeta | null>) {
   const threadExists$ = computed((get) => {
     return get(threadMeta$) !== null;
   });
-  const threadAgentId$ = computed((get) => {
-    return get(threadMeta$)?.agentId ?? null;
-  });
   const threadTitle$ = computed((get): string | null => {
     return get(threadMeta$)?.title ?? null;
   });
@@ -389,7 +381,6 @@ function createThreadMetadata(threadMeta$: Computed<ThreadMeta | null>) {
   });
   return {
     threadExists$,
-    threadAgentId$,
     threadTitle$,
     threadTitleEmoji$,
     threadTitleText$,
@@ -1034,56 +1025,55 @@ function createRenderedChatGroups(
   };
 }
 
-const registerFeedbackNoteRenderPart$ = command(
-  (
-    { set },
-    part: FeedbackNotePart,
-    agentReferenceSignals: AgentReferenceSignalsRegistry,
-  ): UserMessageFeedbackNoteRenderPart => {
-    switch (part.type) {
-      case "text": {
-        return { type: "text", part };
-      }
-      case "project": {
-        return { type: "project", part };
-      }
-      case "chat_thread": {
-        return { type: "chat_thread", part };
-      }
-      case "template": {
-        return { type: "template", part };
-      }
-      case "agent": {
-        return {
-          type: part.type,
-          part,
-          signals: set(agentReferenceSignals.register$, part.agentId),
-        };
-      }
+function feedbackNoteRenderPart(
+  part: FeedbackNotePart,
+): UserMessageFeedbackNoteRenderPart {
+  switch (part.type) {
+    case "text": {
+      const text = part.text;
+      return {
+        type: "text",
+        part: text === part.text ? part : { ...part, text },
+      };
     }
-  },
-);
+    case "project": {
+      return { type: "project", part };
+    }
+    case "chat_thread": {
+      return { type: "chat_thread", part };
+    }
+    case "template": {
+      return { type: "template", part };
+    }
+  }
+}
 
 interface UserMessagePartRegistries {
   readonly artifactCardSignals: ArtifactCardSignalsRegistry;
-  readonly agentReferenceSignals: AgentReferenceSignalsRegistry;
 }
 
 const registerUserMessageRenderPart$ = command(
   (
     { set },
-    part: Exclude<UserMessagePart, { type: "additional_info" }>,
+    part: Exclude<UserMessagePart, { type: "additional_info" | "voice" }>,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderPart => {
-    const { artifactCardSignals, agentReferenceSignals } = registries;
+    const { artifactCardSignals } = registries;
     switch (part.type) {
       case "text": {
-        return { type: "text", part };
+        const text = part.text;
+        return {
+          type: "text",
+          part: text === part.text ? part : { ...part, text },
+        };
       }
       case "project": {
         return { type: "project", part };
       }
       case "chat_thread": {
+        if (isChatRunReference(part)) {
+          return { type: "source", kind: "chat", part };
+        }
         return { type: "chat_thread", part };
       }
       case "template": {
@@ -1095,24 +1085,10 @@ const registerUserMessageRenderPart$ = command(
       case "model": {
         return { type: "model", part };
       }
-      case "agent": {
-        return {
-          type: part.type,
-          part,
-          signals: set(agentReferenceSignals.register$, part.agentId),
-        };
-      }
       case "source": {
-        return part.kind === "agent"
-          ? {
-              type: part.type,
-              kind: "agent",
-              part,
-              signals: set(agentReferenceSignals.register$, part.agentId),
-            }
-          : part.kind === "mcp"
-            ? { type: part.type, kind: "mcp", part }
-            : { type: part.type, kind: "external", part };
+        return part.kind === "mcp"
+          ? { type: part.type, kind: "mcp", part }
+          : { type: part.type, kind: "external", part };
       }
       case "file": {
         const renderFileId = part.annotatedFileId ?? part.fileId;
@@ -1139,13 +1115,7 @@ const registerUserMessageRenderPart$ = command(
         return {
           type: part.type,
           part,
-          note: part.note.map((notePart) => {
-            return set(
-              registerFeedbackNoteRenderPart$,
-              notePart,
-              agentReferenceSignals,
-            );
-          }),
+          note: part.note.map(feedbackNoteRenderPart),
         };
       }
     }
@@ -1179,6 +1149,25 @@ const registerUserMessageRenderDocument$ = command(
       (part, index) => {
         if (part.type === "additional_info") {
           return [];
+        }
+        if (part.type === "voice") {
+          return part.clips.map(({ fileId }, clipIndex) => {
+            return set(
+              registerUserMessageRenderPart$,
+              {
+                type: "file",
+                fileId,
+                filenameSnapshot: i18n.t(
+                  ($) => {
+                    return $.chat.messageDocument.voiceClip;
+                  },
+                  { index: clipIndex + 1 },
+                ),
+                contentType: "audio/*",
+              },
+              registries,
+            );
+          });
         }
         const rendered = set(registerUserMessageRenderPart$, part, registries);
         const context = readSuggestionContext(
@@ -1526,11 +1515,20 @@ function createLatestEventSignals(
   };
 }
 
-function createThreadArtifactRuns(threadId: string) {
+function createThreadArtifactRuns(
+  threadId: string,
+  driveAccountRevision$: Computed<string>,
+) {
   return computed(async (get): Promise<ChatThreadArtifactRun[]> => {
     get(artifactCatalogRevision$);
+    get(driveAccountRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
-    const result = await accept(client.list({ params: { threadId } }), [200]);
+    const result = await accept(
+      client.list({
+        params: { threadId },
+      }),
+      [200],
+    );
     return result.body.runs;
   });
 }
@@ -1599,6 +1597,7 @@ function createPermissionCardRefRegistrar(cards: EventTreeRegistries) {
       if (descriptor.type === "permission-batch-action") {
         return {
           kind: descriptor.type,
+          originalUrl: descriptor.descriptor.originalUrl,
           signals: set(
             cards.permissionBatchCardSignals.register$,
             descriptor.descriptor,
@@ -1831,6 +1830,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
         math: true,
         mermaid: true,
         cards,
+        tableExportThreadId: chatActionContext.threadId,
       });
       const diagramCodes: string[] = [];
       embedMermaidSignals(tree, (code) => {
@@ -2061,7 +2061,6 @@ function createPagedEventResources({
     onBrowserPageInput$,
   );
   const artifactCardSignals = createArtifactCardSignalsRegistry();
-  const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
@@ -2131,7 +2130,7 @@ function createPagedEventResources({
           set(
             registerUserMessageRenderDocument$,
             document,
-            { artifactCardSignals, agentReferenceSignals },
+            { artifactCardSignals },
             event.contextType,
           ),
         );
@@ -2284,6 +2283,7 @@ function createMarkThreadReadIfNeeded({
 
 function createEventChangeEffects({
   threadId,
+  driveAccountRevision$,
   mailDraftCardSignals,
   chatEvents,
   projections,
@@ -2291,6 +2291,7 @@ function createEventChangeEffects({
   syncVisibleEventTrees$,
 }: {
   readonly threadId: string;
+  readonly driveAccountRevision$: Computed<string>;
   readonly mailDraftCardSignals: MailDraftCardSignalsRegistry;
   readonly chatEvents: ChatEventSignals;
   readonly projections: Pick<
@@ -2303,7 +2304,10 @@ function createEventChangeEffects({
     [boolean, AbortSignal]
   >;
 }) {
-  const catalogs = createThreadArtifactCatalogs(threadId);
+  const catalogs = createThreadArtifactCatalogs(
+    threadId,
+    driveAccountRevision$,
+  );
   const sidebar = createThreadSidebarSignals(
     threadId,
     mailDraftCardSignals,
@@ -2328,7 +2332,13 @@ function createEventChangeEffects({
       const scrollPosition = followLatest
         ? null
         : set(scroll.readCapturedThreadScrollPosition$);
-      await set(scroll.autoScroll$, scrollPosition, signal);
+      // A background tab may suspend RAF. Receiving the next batch must not
+      // wait for the viewport; a newer scroll request supersedes this one.
+      detach(
+        set(scroll.autoScroll$, scrollPosition, signal),
+        Reason.Deferred,
+        "align the updated transcript after paint",
+      );
     },
   );
   const afterEventsChange$ = command(
@@ -2404,31 +2414,6 @@ function createChatEventPresentationLifecycle({
   return { setup$, catchUp$ };
 }
 
-function createReadyScrollAfterRenderRequest(
-  pendingScrollAfterRenderRequest$: Computed<ScrollAfterRenderRequest | null>,
-  visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>,
-): Computed<Promise<ReadyScrollAfterRenderRequest | null>> {
-  return computed(async (get) => {
-    const request = get(pendingScrollAfterRenderRequest$);
-    if (request === null) {
-      return null;
-    }
-    const renderedGroups = await get(visibleRenderedChatGroups$);
-    const currentRequest = get(pendingScrollAfterRenderRequest$);
-    if (currentRequest?.revision !== request.revision) {
-      return null;
-    }
-    return {
-      request,
-      renderedEventKeys: renderedGroups.flatMap((group) => {
-        return group.events.map((event) => {
-          return `${event.id}:${event.isQueued ? "queued" : "active"}`;
-        });
-      }),
-    };
-  });
-}
-
 const EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX = 100;
 // Safari reverts a scrollTop write made while its scrolling thread still
 // animates a gesture, momentum, or smooth scroll. Every animated frame delivers
@@ -2474,6 +2459,7 @@ interface ChatThreadMessagePipelineOptions {
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
   connector: ComposerConnectorSignals;
+  driveAccountRevision$: Computed<string>;
   thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
 }
 
@@ -2481,6 +2467,7 @@ function createChatThreadMessagePipeline({
   chatActionContext,
   chatEvents,
   connector,
+  driveAccountRevision$,
   thinkingSummaries$,
   onBrowserPageInput$,
 }: ChatThreadMessagePipelineOptions) {
@@ -2532,11 +2519,12 @@ function createChatThreadMessagePipeline({
         renderWindow.preloadPreviousRenderWindowForEvent$,
       loadEarlierGroups$: renderWindow.loadMoreRenderedChatGroups$,
     },
-    chatEvents.chatEvents$,
+    chatEvents,
     initialEventsReadyView$,
   );
   const effects = createEventChangeEffects({
     threadId,
+    driveAccountRevision$,
     mailDraftCardSignals: resources.publicSignals.mailDraftCardSignals,
     chatEvents,
     projections,
@@ -2555,10 +2543,6 @@ function createChatThreadMessagePipeline({
     chatEvents,
     visibleRenderedChatGroups$: renderWindow.visibleRenderedChatGroups$,
   });
-  const readyScrollAfterRenderRequest$ = createReadyScrollAfterRenderRequest(
-    scroll.pendingScrollAfterRenderRequest$,
-    renderWindow.visibleRenderedChatGroups$,
-  );
   const loadEarlierGroupsAfterScroll$ = createLoadEarlierGroupsAfterScroll(
     scroll,
     renderWindow.loadMoreRenderedChatGroups$,
@@ -2578,7 +2562,6 @@ function createChatThreadMessagePipeline({
     ...resources.publicSignals,
     visibleRunUsageSignals$: usage.visibleRunUsageSignals$,
     ...renderWindow,
-    readyScrollAfterRenderRequest$,
     loadEarlierGroupsAfterScroll$,
   };
 }
@@ -3192,7 +3175,6 @@ function sendRuntimeOptions(
 
 interface SendMessageDeps {
   readonly threadId: string;
-  readonly agentId: string;
   modelSelectionForSend$: Command<
     Promise<ModelSelectionForSend>,
     [AbortSignal]
@@ -3206,7 +3188,6 @@ interface SendMessageDeps {
 interface ValidatedSendMessageRequest {
   readonly prompt: string;
   readonly options: SendMessageOptions | undefined;
-  readonly agentId: string;
   readonly modelSelection: ModelSelectionForSend;
 }
 
@@ -3247,7 +3228,6 @@ function sendInputForRequest(args: {
   return {
     kind: "input",
     delivery: "run",
-    agentId: request.agentId,
     prompt: result.prompt,
     hasTextContent: result.hasTextContent,
     userMessage: args.userMessage,
@@ -3340,7 +3320,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
 }
 
 function createSendMessage(deps: SendMessageDeps) {
-  const { threadId, agentId, modelSelectionForSend$ } = deps;
+  const { threadId, modelSelectionForSend$ } = deps;
   const performSendMessage$ = createPerformSendMessage(deps);
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
@@ -3362,7 +3342,6 @@ function createSendMessage(deps: SendMessageDeps) {
         {
           prompt,
           options,
-          agentId,
           modelSelection,
         },
         signal,
@@ -3374,7 +3353,6 @@ function createSendMessage(deps: SendMessageDeps) {
 function createQueueMessage(deps: SendMessageDeps) {
   const {
     threadId,
-    agentId,
     modelSelectionForSend$,
     draft,
     cancelDraftSync$,
@@ -3427,7 +3405,6 @@ function createQueueMessage(deps: SendMessageDeps) {
           {
             kind: "input",
             delivery: "queue",
-            agentId,
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,
@@ -3457,7 +3434,6 @@ function createQueueMessage(deps: SendMessageDeps) {
 
 interface RecallMessageDeps {
   readonly threadId: string;
-  readonly agentId: string;
   readonly queuedEvents$: ChatEventSignals["queuedEvents$"];
   draft: DraftSignals;
   queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -3465,7 +3441,7 @@ interface RecallMessageDeps {
 }
 
 function createRecallMessage(deps: RecallMessageDeps) {
-  const { agentId, queuedEvents$, draft, queueDraftSync$, sendEvent$ } = deps;
+  const { queuedEvents$, draft, queueDraftSync$, sendEvent$ } = deps;
 
   return command(async ({ get, set }, eventId: string, signal: AbortSignal) => {
     const event = get(queuedEvents$).find((candidate) => {
@@ -3496,7 +3472,6 @@ function createRecallMessage(deps: RecallMessageDeps) {
       sendEvent$,
       {
         kind: "revoke",
-        agentId,
         revokesEventId: event.id,
       },
       signal,
@@ -3508,7 +3483,6 @@ function createRecallMessage(deps: RecallMessageDeps) {
 }
 
 function createSkipAutomationEvent({
-  agentId,
   queuedEvents$,
   sendEvent$,
 }: RecallMessageDeps) {
@@ -3531,7 +3505,6 @@ function createSkipAutomationEvent({
         sendEvent$,
         {
           kind: "revoke",
-          agentId,
           revokesEventId: event.id,
         },
         signal,
@@ -3567,12 +3540,10 @@ function createThreadMessageActions(deps: MessageCommandsDeps) {
  */
 function createInterruptLiveRuns({
   threadId,
-  agentId,
   liveRunIds$,
   sendEvent$,
 }: {
   readonly threadId: string;
-  readonly agentId: string;
   readonly liveRunIds$: ChatEventSignals["liveRunIds$"];
   sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }) {
@@ -3591,7 +3562,6 @@ function createInterruptLiveRuns({
           sendEvent$,
           {
             kind: "interrupt",
-            agentId,
             interruptsRunId: runId,
           },
           signal,
@@ -3627,7 +3597,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
     visibleRows$: events.visibleRows$,
     visibleRunUsageSignals$: events.visibleRunUsageSignals$,
-    readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
@@ -3647,7 +3616,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
 
 interface CreateChatThreadComposerSignalsOptions {
   readonly chatEvents: ChatEventSignals;
-  readonly agentId: string;
   readonly draft: DraftSignals;
   readonly loadDraft$: Command<Promise<void>, [AbortSignal]>;
   readonly queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -3658,17 +3626,19 @@ interface CreateChatThreadComposerSignalsOptions {
   readonly messageActions: ReturnType<typeof createThreadMessageActions>;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
-  readonly onOptimisticSend?: () => void;
+  /** Writes in a dialog over another page rather than under the thread. */
+  readonly inPlace: boolean;
+  readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
   readonly connector: ComposerSignals["connector"];
 }
 
 interface ChatThreadComposerContext {
   readonly threadMeta$: Computed<ThreadMeta | null>;
-  readonly preserveThreadDraft?: boolean;
-  readonly agentId: string;
+  /** A dialog composer that leaves the thread's saved draft untouched. */
+  readonly inPlace?: boolean;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
-  readonly onOptimisticSend?: () => void;
+  readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
 }
 
 function createThreadSubmitMessageSignal(
@@ -3689,6 +3659,11 @@ function createThreadSubmitMessageSignal(
       const cloudBrowserEnabled = get(
         computerUseHostSelection.cloudBrowserEnabled$,
       );
+      const onOptimisticSend = options.onOptimisticSend
+        ? () => {
+            options.onOptimisticSend?.(submission);
+          }
+        : undefined;
       const submitted =
         action === "queue"
           ? await set(
@@ -3700,9 +3675,7 @@ function createThreadSubmitMessageSignal(
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
                 ...(options.forward ? { forward: options.forward } : {}),
-                ...(options.onOptimisticSend
-                  ? { onOptimisticSend: options.onOptimisticSend }
-                  : {}),
+                onOptimisticSend,
               },
               signal,
             )
@@ -3715,9 +3688,7 @@ function createThreadSubmitMessageSignal(
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
                 ...(options.forward ? { forward: options.forward } : {}),
-                ...(options.onOptimisticSend
-                  ? { onOptimisticSend: options.onOptimisticSend }
-                  : {}),
+                onOptimisticSend,
               },
               signal,
             );
@@ -3765,7 +3736,6 @@ function createChatThreadComposerSignals(
     },
   );
   return createComposerSignals({
-    agentId: options.agentId,
     connector: options.connector,
     draft: {
       signals: options.draft,
@@ -3778,7 +3748,7 @@ function createChatThreadComposerSignals(
     threadId: options.chatEvents.threadId,
     voiceDraftTarget: `thread:${options.chatEvents.threadId}`,
     singleLineOnMobile: true,
-    forwardComposer: options.forward !== undefined,
+    forwardComposer: options.forward !== undefined || options.inPlace,
     modelSelection$: composerModelSelection$,
     selectedModelOauthAvailable$: modelSelection.selectedModelOauthAvailable$,
     setModelSelection$: modelSelection.setModelSelection$,
@@ -3818,7 +3788,7 @@ function createThreadComposerSignalsWithContext(
   draft: DraftSignals,
   persistence: ThreadDraftPersistence,
 ): ComposerSignals {
-  const connector = createComposerConnectorSignals(context.agentId, threadId);
+  const connector = createComposerConnectorSignals(threadId);
   const modelSelection = createModelSelection(threadId, context.threadMeta$);
   const modelSelectionForSend$ = createModelSelectionForSend(modelSelection);
   const computerUseHostSelection = createComputerUseHostSelection(
@@ -3826,7 +3796,7 @@ function createThreadComposerSignalsWithContext(
     context.threadMeta$,
   );
   const { queueDraftSync$, cancelDraftSync$, flushDraftClear$, loadDraft$ } =
-    context.preserveThreadDraft
+    context.inPlace
       ? {
           queueDraftSync$: noOpComposerDraftAction$,
           cancelDraftSync$: command(() => {
@@ -3838,7 +3808,6 @@ function createThreadComposerSignalsWithContext(
       : persistence;
   const messageActions = createThreadMessageActions({
     threadId,
-    agentId: context.agentId,
     modelSelectionForSend$,
     queuedEvents$: chatEvents.queuedEvents$,
     liveRunIds$: chatEvents.liveRunIds$,
@@ -3850,7 +3819,6 @@ function createThreadComposerSignalsWithContext(
   });
   return createChatThreadComposerSignals({
     chatEvents,
-    agentId: context.agentId,
     draft,
     loadDraft$,
     queueDraftSync$,
@@ -3860,6 +3828,7 @@ function createThreadComposerSignalsWithContext(
     cancellationRecoveryPending$: context.cancellationRecoveryPending$,
     connector,
     forward: context.forward,
+    inPlace: context.inPlace === true,
     onOptimisticSend: context.onOptimisticSend,
   });
 }
@@ -3871,12 +3840,11 @@ function createThreadComposerSignalsWithContext(
  */
 export function createThreadComposerSignals(
   threadId: string,
-  agentId: string,
   chatEvents: ChatEventSignals,
   options: {
     readonly forward?: ChatForwardContext;
-    readonly onOptimisticSend?: () => void;
-    readonly preserveThreadDraft?: boolean;
+    readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
+    readonly inPlace?: boolean;
   } = {},
 ): ComposerSignals {
   const threadMeta$ = createThreadMeta(threadId);
@@ -3888,11 +3856,10 @@ export function createThreadComposerSignals(
     chatEvents,
     {
       threadMeta$,
-      agentId,
       cancellationRecoveryPending$: cancellationRecovery.pending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
-      preserveThreadDraft: options.preserveThreadDraft,
+      inPlace: options.inPlace,
     },
     draft,
     createThreadDraftPersistence(threadId, draft, threadDraft$),
@@ -3900,8 +3867,7 @@ export function createThreadComposerSignals(
 }
 
 /**
- * Builds the composer a forward is written in: a new agent chat, or an
- * existing thread whose events it catches up before the member writes.
+ * Forks a passage into a new Chat with the default executor.
  */
 const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   target: ChatForwardTarget,
@@ -3909,43 +3875,45 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   onOptimisticSend: () => void,
   projectId?: string,
 ) => {
-  if (target.kind === "agent") {
-    const composer = createForwardAgentComposerSignals(
-      target.id,
-      forward,
-      onOptimisticSend,
-      projectId,
-    );
-    const prepare$ = command(
-      ({ set }, signal: AbortSignal): ChatForwardComposerState => {
-        signal.throwIfAborted();
-        set(composer.setup$, signal);
-        set(composer.feedback.add$, forward);
-        return { target, composer };
-      },
-    );
-    return { prepare$ };
-  }
-  const chatEvents = createChatEventSignals(target.id);
-  const composer = createThreadComposerSignals(
-    target.id,
-    target.agentId,
-    chatEvents,
-    { forward, onOptimisticSend },
+  const composer = createForwardChatComposerSignals(
+    forward,
+    onOptimisticSend,
+    projectId,
   );
   const prepare$ = command(
-    async ({ set }, signal: AbortSignal): Promise<ChatForwardComposerState> => {
+    ({ set }, signal: AbortSignal): ChatForwardComposerState => {
       signal.throwIfAborted();
       set(composer.setup$, signal);
       set(composer.feedback.add$, forward);
-      await set(chatEvents.setup$, signal);
-      await set(chatEvents.catchUp$, signal);
-      signal.throwIfAborted();
       return { target, composer };
     },
   );
   return { prepare$ };
 };
+
+/**
+ * A dialog composer that replies in an existing thread from another page. It
+ * catches up the thread's events so the member can join running work there,
+ * and it leaves that thread's saved draft untouched.
+ */
+export function createInPlaceThreadComposerSignals(
+  threadId: string,
+  onOptimisticSend: (submission: ComposerSubmission) => void,
+) {
+  const chatEvents = createChatEventSignals(threadId);
+  const composer = createThreadComposerSignals(threadId, chatEvents, {
+    onOptimisticSend,
+    inPlace: true,
+  });
+  const setup$ = command(async ({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(composer.setup$, signal);
+    await set(chatEvents.setup$, signal);
+    await set(chatEvents.catchUp$, signal);
+    signal.throwIfAborted();
+  });
+  return { composer, setup$ };
+}
 
 /**
  * Creates the complete signal graph of one chat panel. The graph carries no
@@ -3955,7 +3923,6 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
   return {
     scrollContainerOnRef$: scroll.scrollContainerOnRef$,
     scrollContentOnRef$: scroll.scrollContentOnRef$,
-    scrollCommitOnRef$: scroll.scrollCommitOnRef$,
     scrollContainer$: scroll.scrollContainer$,
     threadScrollPosition$: scroll.threadScrollPosition$,
     awayFromBottom$: scroll.awayFromBottom$,
@@ -3972,12 +3939,10 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
 
 export function createChatPanelSignals(
   threadId: string,
-  agentId: string,
   draft: DraftSignals,
   persistence: ThreadDraftPersistence,
 ): ChatPanelSignals {
   const chatEvents = createChatEventSignals(threadId);
-  const artifacts$ = createThreadArtifactRuns(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
   const optimisticCreateUnsettled$ =
@@ -3990,18 +3955,24 @@ export function createChatPanelSignals(
     threadMeta$,
   );
   const container = createChatThreadContainerSignals();
-  const cancellationRecovery = createCancellationRecoverySignals(threadId);
+  const cancellationRecovery = createCancellationRecoverySignals(threadId, {
+    deferInitialRead: true,
+  });
   const composer = createThreadComposerSignalsWithContext(
     threadId,
     chatEvents,
     {
       threadMeta$,
-      agentId,
       cancellationRecoveryPending$: cancellationRecovery.pending$,
     },
     draft,
     persistence,
   );
+  const driveAccountRevision$ = composer.connector.chatAccess.targetRevision({
+    kind: "builtin",
+    connectorSlug: "google-drive",
+  });
+  const artifacts$ = createThreadArtifactRuns(threadId, driveAccountRevision$);
   // The native input graph invokes this only after admitting page input.
   const onPageInput$ = command(({ get, set }) => {
     detach(
@@ -4011,14 +3982,14 @@ export function createChatPanelSignals(
     );
   });
   const messagePipeline = createChatThreadMessagePipeline({
-    chatActionContext: { threadId, agentId },
+    chatActionContext: { threadId },
     chatEvents,
     connector: composer.connector,
+    driveAccountRevision$,
     thinkingSummaries$: activity.thinkingSummaries$,
     onBrowserPageInput$: onPageInput$,
   });
   const browserPresence = createBrowserPresenceSignals({
-    agentId,
     latestRunId$: messagePipeline.latestRunId$,
     liveRunId$: messagePipeline.liveRunId$,
     sendEvent$: chatEvents.sendEvent$,
@@ -4050,13 +4021,11 @@ export function createChatPanelSignals(
     subscribeSessionOutput$: sessionOutput.subscribe$,
     automationSignals: threadOwned,
     cancellationRecovery,
-    reloadConnectorAccountPreference$:
-      composer.connector.reloadAccountPreference$,
+    reloadConnectorAccountPreference$: composer.connector.chatAccess.reload$,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
     threadId,
-    agentId,
     threadDraft$,
     threadMeta$,
     optimisticCreateUnsettled$,

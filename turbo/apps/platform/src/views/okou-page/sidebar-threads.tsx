@@ -1,4 +1,3 @@
-import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 import {
   draggingProjectThread$,
   endProjectThreadDrag$,
@@ -94,6 +93,7 @@ import {
   type SidebarChatThreadListSignals,
   type SidebarChatThreadRow,
   type SidebarChatThreadScrollSignals,
+  getSidebarChatThreadWindow,
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import type { SidebarChatThreadItemSignals } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
@@ -101,8 +101,6 @@ import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { ForYouChatListRow, OkouChatListRow } from "./sidebar-okou-row.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
 import {
-  currentChatAgentScope$,
-  currentChatAgentId$,
   currentChatThreadId$,
   hasCurrentChatThread$,
 } from "../../signals/agent-chat.ts";
@@ -113,12 +111,11 @@ import {
   selectChatThreadFilter$,
   type ChatThreadFilter,
 } from "../../signals/okou-page/chat-thread-filter-selection.ts";
-import { currentChatAgentHasUnread$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
-import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
+import { workspaceHasUnreadChats$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
+import { markWorkspaceThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
   closeRenameChatThreadDialog$,
   pendingDeleteThreadId$,
-  renameDialogAgentId$,
   renameDialogOpen$,
   setPendingDeleteThreadId$,
   renameDialogThreadId$,
@@ -133,7 +130,6 @@ import { Link } from "../router/link.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ThreadPinMoveMenuItems } from "./sidebar-thread-reorder.tsx";
 import { ChatThreadMenuShortcut } from "./chat-thread-menu-shortcut.tsx";
-import { equalArrays } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 
 // The row glyphs draw at 17px, which the shared button base (`[&_svg]:size-4`)
@@ -478,7 +474,7 @@ function ChatThreadMenuItems({
 }: Pick<ChatThreadMenuProps, "signals">) {
   const { t } = useTranslation();
   const requestDelete = useSet(signals.requestDelete$);
-  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
+
   const move = useSet(openProjectMembership$);
 
   return (
@@ -488,18 +484,16 @@ function ChatThreadMenuItems({
       <ChatThreadMuteMenuItem signals={signals} />
       <ChatThreadArchiveMenuSection signals={signals} />
       <ChatThreadRenameMenuItem signals={signals} />
-      {projectsEnabled && (
-        <DropdownMenuItem
-          onClick={() => {
-            move(signals.threadId);
-          }}
-        >
-          <FolderInput size={16} className="mr-2" />
-          {t(($) => {
-            return $.projects.move;
-          })}
-        </DropdownMenuItem>
-      )}
+      <DropdownMenuItem
+        onClick={() => {
+          move(signals.threadId);
+        }}
+      >
+        <FolderInput size={16} className="mr-2" />
+        {t(($) => {
+          return $.projects.move;
+        })}
+      </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
           requestDelete();
@@ -521,15 +515,13 @@ function ChatThreadMenu({
   touch = false,
 }: ChatThreadMenuProps) {
   const projectDialog = useGet(projectDialog$);
-  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
+
   const menuOpenChanged = useSet(projectThreadMenuOpenChanged$);
   return (
     <TooltipProvider delay={200}>
       <DropdownMenu
         onOpenChange={(open, details) => {
-          if (projectsEnabled) {
-            menuOpenChanged(signals.threadId, open, details.trigger);
-          }
+          menuOpenChanged(signals.threadId, open, details.trigger);
         }}
       >
         <ChatThreadMenuTrigger
@@ -582,11 +574,11 @@ function ChatThreadItemLink({
   const select = useSet(signals.select$);
   const renaming = useGet(signals.inlineRenaming$);
   const startInlineRename = useSet(signals.startInlineRename$);
-  const projectsEnabled = useLastResolved(projectsEnabled$) ?? false;
+
   const draggingThread = useGet(draggingProjectThread$);
   const startDrag = useSet(startProjectThreadDrag$);
   const endDrag = useSet(endProjectThreadDrag$);
-  const draggable = projectsEnabled && !touch && !renaming;
+  const draggable = !touch && !renaming;
   const titleReveal = useTitleReveal();
 
   return (
@@ -824,7 +816,6 @@ function ChatThreadRenameDialog() {
 function ChatThreadRenameDialogBody() {
   const { t } = useTranslation();
   const renameDialogThreadId = useGet(renameDialogThreadId$);
-  const renameDialogAgentId = useGet(renameDialogAgentId$);
   const renameDialogInput = useGet(renameDialogInput$);
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
@@ -844,7 +835,6 @@ function ChatThreadRenameDialogBody() {
         {
           threadId: renameDialogThreadId,
           input: renameDialogInput,
-          agentId: renameDialogAgentId,
         },
         pageSignal,
       ),
@@ -1079,9 +1069,8 @@ function InboxEmptyState({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
-  const hasHiddenArchivedThreads = useGet(
-    listSignals.hasHiddenArchivedThreads$,
-  );
+  const hasHiddenArchivedThreads =
+    useLastResolved(listSignals.hasHiddenArchivedThreads$) ?? false;
 
   if (hasHiddenArchivedThreads) {
     return (
@@ -1114,8 +1103,6 @@ function VirtualizedChatThreads({
 }) {
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
-  const rowCount = useGet(listSignals.rowCount$);
-  const count = useGet(listSignals.count$);
 
   // Only list rows have a fixed height. Keep the filter action in normal flow
   // so its divider and spacing remain reachable at the end of a long list.
@@ -1127,9 +1114,8 @@ function VirtualizedChatThreads({
         touch={false}
         layout="sidebar"
         shortcuts={!searchOpen}
-        height={count * CHAT_THREAD_VIRTUAL_ROW_HEIGHT}
       />
-      {rowCount > count ? <ShowAllChatsRow /> : null}
+      {listSignals.showAllChatsRow ? <ShowAllChatsRow /> : null}
     </div>
   );
 }
@@ -1142,7 +1128,10 @@ function ChatThreads({
   const { t } = useTranslation();
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const rowCount = useGet(listSignals.count$);
+  const rowCount = useLastResolved(listSignals.count$);
+  if (rowCount === undefined) {
+    return null;
+  }
 
   if (rowCount === 0) {
     const showAllChats = {
@@ -1199,53 +1188,36 @@ function ChatThreadsListMenuTooltip() {
 }
 
 function useNewChatAction() {
-  const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
   const createNewChat = useSet(createNewChatThread$);
   const rootSignal = useGet(rootSignal$);
   const newChatDisabled = useGet(newChatThreadDisabled$);
 
   function onSelect(pane: NewChatThreadPane) {
-    if (!currentChatAgentId) {
-      return;
-    }
-    detach(
-      createNewChat({ agentId: currentChatAgentId }, pane, rootSignal),
-      Reason.DomCallback,
-    );
+    detach(createNewChat({}, pane, rootSignal), Reason.DomCallback);
   }
 
   return {
-    disabled: !currentChatAgentId || newChatDisabled,
+    disabled: newChatDisabled,
     onSelect,
   };
 }
 
 function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
-  const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
-  const currentAgentHasUnread =
-    useLastResolved(currentChatAgentHasUnread$) ?? false;
-  const [markReadLoadable, markAgentThreadsRead] = useLoadableSet(
-    markAgentThreadsRead$,
+  const hasUnread = useLastResolved(workspaceHasUnreadChats$) ?? false;
+  const [markReadLoadable, markWorkspaceThreadsRead] = useLoadableSet(
+    markWorkspaceThreadsRead$,
   );
   const pageSignal = useGet(pageSignal$);
-  const markingRead = markReadLoadable.state === "loading";
-  const visible = showMarkAllRead && currentChatAgentId !== null;
-  // Keep the item mounted and toggle availability so the menu layout does
-  // not jump when the unread state changes.
-  const hasUnread = currentChatAgentId !== null && currentAgentHasUnread;
 
   function onSelect() {
-    if (!currentChatAgentId) {
-      return;
-    }
-    detach(
-      markAgentThreadsRead(currentChatAgentId, pageSignal),
-      Reason.DomCallback,
-      "markAgentThreadsRead",
-    );
+    detach(markWorkspaceThreadsRead(pageSignal), Reason.DomCallback);
   }
 
-  return { disabled: markingRead || !hasUnread, onSelect, visible };
+  return {
+    disabled: markReadLoadable.state === "loading" || !hasUnread,
+    onSelect,
+    visible: showMarkAllRead,
+  };
 }
 
 function MarkAllReadMenuItem({
@@ -1255,7 +1227,7 @@ function MarkAllReadMenuItem({
   disabled: boolean;
   onSelect: () => void;
 }) {
-  const { t } = useTranslation("agents");
+  const { t } = useTranslation("common");
 
   return (
     <DropdownMenuItem onClick={onSelect} disabled={disabled}>
@@ -1620,7 +1592,9 @@ function CurrentChatThreadScrollMarker({
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const currentMainThreadId = useGet(currentChatThreadId$);
-  const currentMainThreadListed = useGet(listSignals.currentThreadListed$);
+  const currentMainThreadListed = useLastResolved(
+    listSignals.currentThreadListed$,
+  );
   const scrollCurrentChatThreadOnRef = useSet(
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
@@ -1740,17 +1714,13 @@ export function ChatThreadsSection({
   /** False when the surrounding header already carries the title actions. */
   showTitle?: boolean;
 }) {
-  const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
 
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", showTitle && "mt-4")}>
       {showTitle ? (
         <div className={contentClassName}>
-          <ChatThreadsTitle
-            key={agentScope ?? "no-agent"}
-            showMarkAllRead={showMarkAllRead}
-          />
+          <ChatThreadsTitle showMarkAllRead={showMarkAllRead} />
         </div>
       ) : null}
       {/* Okou's entry leads the list and stays outside its scroll viewport,
@@ -1765,48 +1735,6 @@ export function ChatThreadsSection({
         stylesheetLoaded={mainStylesheetLoaded === true}
       />
     </div>
-  );
-}
-
-function equalRows(
-  left: SidebarChatThreadRow,
-  right: SidebarChatThreadRow,
-): boolean {
-  if (left === right) {
-    return true;
-  }
-  if (left.kind === "thread" && right.kind === "thread") {
-    return (
-      left.signals === right.signals &&
-      left.projectId === right.projectId &&
-      left.listIndex === right.listIndex &&
-      left.projectEnd === right.projectEnd
-    );
-  }
-  if (left.kind === "project" && right.kind === "project") {
-    return (
-      left.project === right.project &&
-      left.expanded === right.expanded &&
-      left.projectEnd === right.projectEnd
-    );
-  }
-  return (
-    left.kind === right.kind &&
-    left.key === right.key &&
-    left.projectEnd === right.projectEnd
-  );
-}
-
-function equalChatThreadListWindows(
-  previous: SidebarChatThreadWindow,
-  next: SidebarChatThreadWindow,
-): boolean {
-  return (
-    previous.startIndex === next.startIndex &&
-    previous.showAllChatsRow === next.showAllChatsRow &&
-    previous.motion === next.motion &&
-    previous.indexes === next.indexes &&
-    equalArrays(previous.rows, next.rows, equalRows)
   );
 }
 
@@ -2109,20 +2037,28 @@ function ChatThreadListRowsView({
 export function ChatThreadListRows({
   listSignals,
   rowHeight,
-  height,
   children,
   ...options
 }: ChatThreadListRowsOptions & {
   listSignals: SidebarChatThreadListSignals;
   rowHeight: number;
-  height: number;
   /** Trailing visible rows that stack inside the same virtual window. */
-  children?: ReactNode;
+  children?: ReactNode | ((showAllChatsRow: boolean) => ReactNode);
 }) {
-  const window = useGet(listSignals.window$, {
-    equalityFn: equalChatThreadListWindows,
-  });
+  const rows = useLastResolved(listSignals.rows$);
+  const metrics = useGet(listSignals.scrollMetrics$);
+  const motion = useGet(listSignals.motion$);
   const motionHostRef = useSet(listSignals.motionHostRef$);
+  if (!rows) {
+    return null;
+  }
+  const window = getSidebarChatThreadWindow(
+    rows,
+    metrics,
+    motion,
+    listSignals.showAllChatsRow,
+    rowHeight,
+  );
   return (
     <ChatThreadListRowsView
       {...options}
@@ -2132,9 +2068,14 @@ export function ChatThreadListRows({
       motion={window.motion}
       motionHostRef={motionHostRef}
       rowHeight={rowHeight}
-      height={height}
+      height={
+        (rows.length + (options.touch && listSignals.showAllChatsRow ? 1 : 0)) *
+        rowHeight
+      }
     >
-      {children}
+      {typeof children === "function"
+        ? children(window.showAllChatsRow)
+        : children}
     </ChatThreadListRowsView>
   );
 }

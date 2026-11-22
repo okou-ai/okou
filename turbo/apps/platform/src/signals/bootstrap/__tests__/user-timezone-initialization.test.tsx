@@ -19,7 +19,6 @@ function preferences(
     timezone,
     locale,
     supportedLocales: ["en-US"],
-    pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: true,
@@ -96,10 +95,10 @@ test("A member's first organization visit stores the browser timezone", async ()
   const requests = mockTimezonePreferences(null);
   setBrowserTimezone("Asia/Shanghai");
 
-  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
+  await setupPage({ context, path: "/workflows", host: "app.okou.ai" });
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
   await waitFor(() => {
     expect(requests.initializationBody()).toStrictEqual({
@@ -119,10 +118,10 @@ test("An initialized member without memory initializes it without replacing pref
   );
   setBrowserTimezone("Asia/Shanghai");
 
-  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
+  await setupPage({ context, path: "/workflows", host: "app.okou.ai" });
 
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
   await waitFor(() => {
     expect(requests.stored().memoryInitialized).toBeTruthy();
@@ -138,7 +137,7 @@ test("A stored organization timezone is not replaced on a later visit", async ()
 
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=preference",
     host: "app.okou.ai",
   });
 
@@ -156,9 +155,9 @@ test("A missing locale initializes without replacing the stored timezone", async
   setBrowserTimezone("Asia/Shanghai");
   context.mocks.browser.languages(["fr-FR"]);
 
-  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
+  await setupPage({ context, path: "/workflows", host: "app.okou.ai" });
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
+    screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeVisible();
   await waitFor(() => {
     expect(requests.initializationBody()).toStrictEqual({

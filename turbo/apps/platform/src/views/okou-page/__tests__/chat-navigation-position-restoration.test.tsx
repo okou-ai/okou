@@ -26,7 +26,6 @@ const { mockChatLifecycleWithoutBrowserSession } =
   createChatLifecycleHelpers(context);
 
 const APP_HOST = "app.okou.ai";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const VIEWPORT_TOP = 100;
 const VIEWPORT_HEIGHT = 360;
 const ANCHOR_HEIGHT = 80;
@@ -124,7 +123,7 @@ function mockThreadStories(
       return {
         id: story.id,
         title: story.title,
-        agent: { id: AGENT_ID, avatarUrl: null },
+
         createdAt: "2026-07-01T10:00:00Z",
         updatedAt: `2026-07-01T10:10:${sortSecond}Z`,
         pinnedAt: null,
@@ -312,6 +311,10 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
       if (contentTop === undefined) {
         throw new Error(`No content position for ${text}`);
       }
+      fireEvent.scroll(container);
+      fireEvent.wheel(container, {
+        deltaY: contentTop - viewportOffsetTop - container.scrollTop,
+      });
       setScrollTop(contentTop - viewportOffsetTop);
       fireEvent.scroll(container);
     },
@@ -378,6 +381,8 @@ async function loadEarlierThreadMessage(
 ): Promise<void> {
   await waitForThreadMessage(threadId, latestText);
   const container = threadContainer(threadId);
+  fireEvent.scroll(container);
+  fireEvent.wheel(container, { deltaY: 0 - container.scrollTop });
   container.scrollTop = 0;
   fireEvent.scroll(container);
   await waitForThreadMessage(threadId, earlierText);
@@ -829,13 +834,10 @@ test("Follow the Resources origin link to its parent run", async () => {
               parts: [
                 { type: "text", text: "Child message 1" },
                 {
-                  type: "source",
-                  kind: "agent",
+                  type: "chat_thread",
                   threadId: DEEP_LINK_THREAD_ID,
                   runId: linkedRunId,
                   titleSnapshot: "Parent conversation",
-                  agentId: AGENT_ID,
-                  href: `https://${APP_HOST}/chats/${DEEP_LINK_THREAD_ID}#run-${linkedRunId}`,
                 },
               ],
             },

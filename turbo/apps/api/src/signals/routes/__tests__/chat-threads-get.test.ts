@@ -1,4 +1,5 @@
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -26,12 +27,11 @@ interface ChatThreadFixture {
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Chat thread metadata agent",
     visibility: "private",
   });
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title,
   });
   if (!actor.orgId) {
@@ -42,10 +42,14 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     { orgId: actor.orgId, userId: actor.userId },
     context.signal,
   );
+  const defaultAgentId = await bdd.readDefaultAgentId(actor);
+  if (!defaultAgentId) {
+    throw new Error("Expected the compatibility Agent for this organization");
+  }
   return {
     userId: actor.userId,
     orgId: actor.orgId,
-    agentId: agent.agentId,
+    agentId: defaultAgentId,
     threadId: thread.id,
   };
 }
@@ -57,6 +61,25 @@ function client() {
 }
 
 describe("GET /api/chat-threads/:id/metadata", () => {
+  it("hides the thread from the same user's other workspace", async () => {
+    const fixture = await seedChatThread("Workspace notes");
+    const orgId = `org_${randomUUID()}`;
+    await store.set(
+      seedOrgMembership$,
+      { orgId, userId: fixture.userId },
+      context.signal,
+    );
+    const token = await executionToken({ orgId, userId: fixture.userId });
+    const response = await accept(
+      client().get({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: fixture.threadId },
+      }),
+      [404],
+    );
+    expect(response.body.error.code).toBe("NOT_FOUND");
+  });
+
   it("returns thread metadata with an Okou run token carrying chat-thread:read", async () => {
     const fixture = await seedChatThread("Launch plan");
     const token = await executionToken({
@@ -74,7 +97,6 @@ describe("GET /api/chat-threads/:id/metadata", () => {
 
     expect(response.body).toStrictEqual({
       id: fixture.threadId,
-      agentId: fixture.agentId,
       title: "Launch plan",
       selectedModel: "auto",
       modelSettings: {},

@@ -8,10 +8,7 @@ import {
   userMessageInputDocumentSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
-import {
-  getChatThreadAgentId,
-  sendChatEvent,
-} from "../../lib/api/domains/chat";
+import { sendChatEvent } from "../../lib/api/domains/chat";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { printChatUsageError, resolveChatThreadId } from "./shared";
 
@@ -34,6 +31,7 @@ User message JSON (--user-message-file), one version 1 document:
                    "selection": { ... } } }
   file         { "type": "file", "fileId": "...",
                  "filenameSnapshot": "...", "contentType": "..." }
+  voice        { "type": "voice", "clips": [{ "fileId": "<private audio file UUID>" }, ...] }
   feedback     { "type": "feedback", "quote": "...",
                  "note": [ text | chat_thread | template parts ],
                  "source": { "type": "mail", "id": "...",
@@ -198,11 +196,9 @@ Notes:
     withErrorHandler(async (options: SendOptions) => {
       const threadId = resolveChatThreadId(options.threadId);
       const message = resolveUserMessage(options);
-      const agentId = await getChatThreadAgentId({ threadId });
       const eventId = randomUUID();
 
       const result = await sendChatEvent({
-        agentId,
         threadId,
         prompt: message.prompt,
         hasTextContent: message.hasTextContent,

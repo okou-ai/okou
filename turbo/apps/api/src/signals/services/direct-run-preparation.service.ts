@@ -1,46 +1,70 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
-import { array, boolean, object } from "zod";
+import { sql } from "drizzle-orm";
+import { array, object } from "zod";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
+import { joinAll, type settle } from "../utils";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
+import {
+  type selectExecutionContentBundles,
+  signExecutionContentBundles$,
+} from "./execution-content-bundle";
 import type { AcceptedMemoryMount } from "./execution-storage.service";
-import { createExecutionRuntimeContext } from "./execution-runtime-context";
+import { prepareExecutionRuntimeContext$ } from "./execution-runtime-context";
+import type { ExecutionPackageMounts } from "./execution-workflow-selection";
 import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
   contentBundleUrlCacheSnapshotSql,
+  type ContentBundleUrlCacheSnapshot,
 } from "./content-bundle-presigned-url-cache";
 import {
-  prepareExecutionPublication$,
-  executionBundleHashes,
+  buildExecutionContext,
+  prepareExecutionNetworkPolicy$,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
-import type { RunnerReusePreparation } from "./runner-reuse-preference";
 import {
   persistStoragePresignedUrls$,
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
 
-/** Receipt from durable Thread Run admission, before first-run classification. */
+/** Receipt from durable Thread Run admission. */
 export interface AdmittedRunLaunch {
-  readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
-  readonly memoryMounts: readonly AcceptedMemoryMount[];
+  readonly run: ExecutionPublicationRun;
+  readonly memoryMount: AcceptedMemoryMount;
   readonly facts: AdmittedExecutionFacts;
+  readonly packages: {
+    readonly mounts: ExecutionPackageMounts;
+    readonly bundles: ReturnType<typeof selectExecutionContentBundles>;
+  };
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
   readonly createdAt: Date;
-  readonly reusePreparation: RunnerReusePreparation;
+  readonly predecessorRunId: string | null;
 }
 
+export interface ExecutionBundleCacheObservation {
+  readonly bundleUrlCache: ContentBundleUrlCacheSnapshot;
+  readonly timing: {
+    readonly timestamp: string;
+    readonly startedAt: number;
+    readonly readyAt: number;
+  };
+}
+
+export type ExecutionBundleCacheRead = ReturnType<
+  typeof settle<ExecutionBundleCacheObservation | null>
+>;
+
 export interface DirectRunCachePublication {
+  readonly runId: string;
+  readonly runnerGroup: string;
+  readonly profile: string;
   readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
   readonly bundleCacheRead: {
     readonly startedAt: string;
@@ -49,115 +73,114 @@ export interface DirectRunCachePublication {
   };
 }
 
-const executionPublicationFactsSchema = object({
-  pending: boolean(),
-  isFirstRun: boolean(),
+const bundleCacheRowSchema = object({
   cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
 
-/** Constructed before admission commands run; all execution reads depend on their result. */
-export function createDirectRunPreparation(
-  input$: Computed<Promise<AdmittedRunLaunch>>,
+export function createExecutionBundleCache(
+  bundleHashes$: Computed<Promise<readonly string[] | null>>,
 ) {
-  const { prepared$, packageContext$ } = createExecutionRuntimeContext(input$);
-  const packages$ = computed(async (get) => {
-    const [input, packageContext] = await Promise.all([
-      get(input$),
-      get(packageContext$),
-    ]);
-    const db = get(rawSqlReadDb$);
-    const cache = get(contentBundleUrlCacheContext$);
-    const { instructionsBundle, workflows } = input.facts.executionPackages;
-    const bundleHashes = [
-      instructionsBundle.sha256,
-      ...workflows.map((workflow) => {
-        return workflow.contentBundle.sha256;
-      }),
-      ...executionBundleHashes(packageContext),
-    ];
-    const timestamp = nowDate().toISOString();
-    const startedAt = monotonicNow();
-    const rows = await db.execute(sql`SELECT EXISTS(
-      SELECT 1 FROM ${agentRuns}
-      WHERE ${and(eq(agentRuns.id, input.run.id), eq(agentRuns.userId, input.run.userId), eq(agentRuns.orgId, input.run.orgId), eq(agentRuns.status, "pending"))}
-    ) AS pending,
-      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
-      ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
-    const [row] = parseRawRows(executionPublicationFactsSchema, rows);
-    if (!row?.pending) {
-      throw new Error("Run is no longer pending for execution publication");
-    }
-    const readyAt = monotonicNow();
-    return {
-      row: { ...input.facts.executionPackages, ...row },
-      skillRoot: packageContext.skillRoot,
-      cache,
-      timing: { timestamp, startedAt, readyAt },
-    };
-  });
-  return computed(async (get) => {
-    const [input, context, packages] = await Promise.all([
-      get(input$),
-      (async () => {
-        const prepared = await get(prepared$);
-        return { prepared, readyAt: monotonicNow() };
-      })(),
-      get(packages$),
-    ]);
-    return {
-      input,
-      prepared: context.prepared,
-      packages,
-      bundleCacheWaitMs: Math.max(0, packages.timing.readyAt - context.readyAt),
-    };
-  });
+  return computed(
+    async (get): Promise<ExecutionBundleCacheObservation | null> => {
+      const bundleHashes = await get(bundleHashes$);
+      if (bundleHashes === null) {
+        return null;
+      }
+      const db = get(rawSqlReadDb$);
+      const cache = get(contentBundleUrlCacheContext$);
+      const timestamp = nowDate().toISOString();
+      const startedAt = monotonicNow();
+      const rows = await db.execute(sql`SELECT
+        ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
+      const [row] = parseRawRows(bundleCacheRowSchema, rows);
+      if (!row) {
+        throw new Error("Execution bundle cache query returned no row");
+      }
+      const readyAt = monotonicNow();
+      return {
+        bundleUrlCache: { context: cache, rows: row.cachedBundleUrls },
+        timing: { timestamp, startedAt, readyAt },
+      };
+    },
+  );
 }
-
-type PreparationInput<T> =
-  T extends Computed<Promise<infer Value>> ? Value : never;
-type DirectRunPreparationInput = PreparationInput<
-  ReturnType<typeof createDirectRunPreparation>
->;
 
 export const prepareDirectRun$ = command(
   async (
     { set },
-    { input, prepared, packages, bundleCacheWaitMs }: DirectRunPreparationInput,
+    input: AdmittedRunLaunch,
+    bundleCache: ExecutionBundleCacheRead,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    const run = {
-      ...input.run,
-      isFirstRun: packages.row.isFirstRun,
-    };
-    const context = prepared.context;
-    const publication = await set(
-      prepareExecutionPublication$,
-      {
-        run,
-        reuseKey: input.reuseKey,
-        preparedContext: context,
-        networkPolicyInputs: prepared.networkPolicyInputs,
-        packages: packages.row,
-        skillRoot: packages.skillRoot,
-        bundleUrlCache: packages.cache,
-      },
-      signal,
-    );
+    const { mounts, bundles } = input.packages;
+    const [runtime, publication] = await joinAll([
+      (async () => {
+        const prepared = await set(
+          prepareExecutionRuntimeContext$,
+          input,
+          mounts,
+          signal,
+        );
+        signal.throwIfAborted();
+        const readyAt = monotonicNow();
+        const networkPolicyInputs = await set(prepareExecutionNetworkPolicy$, {
+          connectorRuntimeTargets: prepared.context.connectorRuntimeTargets,
+          networkPolicyInputs: prepared.networkPolicyInputs,
+        });
+        return { prepared, readyAt, networkPolicyInputs };
+      })(),
+      (async () => {
+        const snapshot = await bundleCache;
+        signal.throwIfAborted();
+        if (!snapshot.ok) {
+          throw snapshot.error;
+        }
+        if (snapshot.value === null) {
+          throw new Error(
+            "Admitted Run is missing its bundle URL cache snapshot",
+          );
+        }
+        const signed = await set(
+          signExecutionContentBundles$,
+          bundles,
+          snapshot.value.bundleUrlCache,
+          signal,
+        );
+        return { signed, timing: snapshot.value.timing };
+      })(),
+    ]);
     signal.throwIfAborted();
+    const { prepared } = runtime;
+    const bundleCacheWaitMs = Math.max(
+      0,
+      publication.timing.readyAt - runtime.readyAt,
+    );
+    const { run } = input;
+    const context = prepared.context;
+    const executionContext = buildExecutionContext({
+      run,
+      reuseKey: input.reuseKey,
+      preparedContext: context,
+      networkPolicyInputs: runtime.networkPolicyInputs,
+      contentBundles: publication.signed.contentBundles,
+    });
     return {
       cachePublication: {
+        runId: run.id,
+        runnerGroup: input.runnerGroup,
+        profile: input.profile,
         cacheWrites: [
           ...prepared.storageCacheWrites,
-          ...publication.cacheWrites,
+          ...publication.signed.cacheWrites,
         ],
         bundleCacheRead: {
-          startedAt: packages.timing.timestamp,
-          durationMs: packages.timing.readyAt - packages.timing.startedAt,
+          startedAt: publication.timing.timestamp,
+          durationMs: publication.timing.readyAt - publication.timing.startedAt,
           consumerWaitMs: bundleCacheWaitMs,
         },
       } satisfies DirectRunCachePublication,
-      executionContext: publication.executionContext,
+      executionContext,
       contextSnapshot: {
         runId: run.id,
         userId: run.userId,
@@ -166,10 +189,10 @@ export const prepareDirectRun$ = command(
         vars: run.vars,
         context: {
           ...context,
-          networkPolicies: publication.executionContext.networkPolicies,
+          networkPolicies: executionContext.networkPolicies,
         },
         secretNames: ["OKOU_TOKEN"],
-        secretValues: publication.executionContext.secretValues,
+        secretValues: executionContext.secretValues,
       },
     };
   },
@@ -177,15 +200,7 @@ export const prepareDirectRun$ = command(
 
 /** The pick entry owns this optional publication independently of delivery. */
 export const publishDirectRunCache$ = command(
-  async (
-    { set },
-    args: DirectRunCachePublication & {
-      readonly runId: string;
-      readonly runnerGroup: string;
-      readonly profile: string;
-    },
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, args: DirectRunCachePublication, signal: AbortSignal) => {
     const publication = await set(
       persistStoragePresignedUrls$,
       args.cacheWrites,

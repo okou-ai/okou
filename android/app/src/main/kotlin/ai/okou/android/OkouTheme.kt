@@ -17,11 +17,29 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.core.graphics.ColorUtils
+
+internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB5790C) }
+internal val LocalUndoActionColor = staticCompositionLocalOf { Color.Unspecified }
+
+private fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
+    when (palette) {
+        UserPreferencesColorTheme.DEFAULT -> Color(if (dark) 0xFFFFA500 else 0xFFB5790C)
+        UserPreferencesColorTheme.GOLDEN_HOUR -> Color(if (dark) 0xFFCC9655 else 0xFFBB731B)
+        UserPreferencesColorTheme.CITRUS_SPARK -> Color(if (dark) 0xFFF4E33C else 0xFF908730)
+        UserPreferencesColorTheme.BERRY_BLUSH -> Color(if (dark) 0xFFE1829E else 0xFFC22E5A)
+        UserPreferencesColorTheme.COTTON_SKY -> Color(if (dark) 0xFFE4ABC8 else 0xFF9F7A8D)
+        UserPreferencesColorTheme.BLUE_HORIZON -> Color(if (dark) 0xFF819EE0 else 0xFF3758A1)
+        UserPreferencesColorTheme.DAYDREAM -> Color(if (dark) 0xFF9CB7F2 else 0xFF7385AC)
+        UserPreferencesColorTheme.DEEP_LAGOON -> Color(if (dark) 0xFF53C6B3 else 0xFF017562)
+    }
 
 internal fun UserPreferencesTheme.resolveDark(systemDark: Boolean): Boolean =
     when (this) {
@@ -42,6 +60,14 @@ fun OkouTheme(
     val resolved =
         remember(context, configuration, dark, palette) { resolvePalette(context, dark, palette) }
     val colors = resolved.scheme
+    val undoAction =
+        Color(
+            ColorUtils.blendARGB(
+                colors.background.toArgb(),
+                activityStatusColor(palette, !dark).toArgb(),
+                0.5f,
+            )
+        )
     val font = remember { FontFamily(Font(R.font.geist)) }
     val typography = remember { Typography() }
     MaterialTheme(
@@ -66,6 +92,8 @@ fun OkouTheme(
             ),
         content = {
             CompositionLocalProvider(
+                LocalActivityStatusColor provides activityStatusColor(palette, dark),
+                LocalUndoActionColor provides undoAction,
                 LocalTextSelectionColors provides
                     TextSelectionColors(
                         handleColor = colors.onSurface,
@@ -77,7 +105,11 @@ fun OkouTheme(
     )
 }
 
-internal data class PaletteColors(val scheme: ColorScheme, val selection: Color)
+internal data class PaletteColors(
+    val scheme: ColorScheme,
+    val selection: Color,
+    val swatchCompanion: Color,
+)
 
 /** The wrapper is used only for color lookup; native controls keep the real Activity context. */
 internal fun resolvePalette(
@@ -145,5 +177,9 @@ internal fun resolvePalette(
             inverseOnSurface = role(R.attr.okou_palette_background),
             inversePrimary = role(R.attr.okou_palette_primary),
         )
-    return PaletteColors(colors, role(R.attr.okou_palette_selection))
+    return PaletteColors(
+        colors,
+        role(R.attr.okou_palette_selection),
+        role(R.attr.okou_palette_swatch_companion),
+    )
 }

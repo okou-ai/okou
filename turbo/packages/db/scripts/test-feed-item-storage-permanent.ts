@@ -83,8 +83,8 @@ export async function validateFeedItemStorage(databaseUrl: string) {
     );
     const eventOrgId = `${orgId}-event`;
     await client.query(
-      `INSERT INTO feed_items (org_id, user_id, id, type, source_type, content, state, created_at, updated_at)
-       VALUES ($1, $2, $3, 'event', 'platform-event', $4, '{"status":"active"}', now(), now())`,
+      `INSERT INTO feed_items (org_id, user_id, id, type, content, state, created_at, updated_at)
+       VALUES ($1, $2, $3, 'event', $4, '{"status":"active"}', now(), now())`,
       [
         eventOrgId,
         userId,
@@ -100,13 +100,6 @@ export async function validateFeedItemStorage(databaseUrl: string) {
           recoveryScheduled: false,
         },
       ],
-    );
-    await assert.rejects(
-      client.query(
-        "UPDATE feed_items SET source_type = 'agent' WHERE org_id = $1",
-        [eventOrgId],
-      ),
-      { code: "23514", constraint: "feed_items_source_type" },
     );
     await assert.rejects(
       client.query(

@@ -160,7 +160,6 @@ describe("pinned thread fractional ordering", () => {
 it("replays rank events without touching activity, pin time, or an unpinned thread", () => {
   const snapshot: ChatThreadSnapshotProjection = {
     id: "thread",
-    agentId: "agent",
     title: "Original",
     sortAt: "2026-09-01T01:00:00Z",
     createdAt: "2026-09-01T00:00:00Z",
@@ -176,7 +175,6 @@ it("replays rank events without touching activity, pin time, or an unpinned thre
     id: "event",
     kind: "sort_touched",
     chatThreadId: "thread",
-    agentId: "agent",
     title: null,
     pinOrder: "a0",
     createdAt: "2026-09-05T00:00:00Z",

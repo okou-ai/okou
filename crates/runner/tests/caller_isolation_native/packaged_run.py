@@ -20,6 +20,7 @@ from run import (
     artifact_identity,
     copy_artifact,
     initramfs,
+    reap_owned_vmm,
     sha256,
     unique_fields,
 )
@@ -322,13 +323,7 @@ def vm(command, log_path, receipt, timeout=240, max_bytes=131072):
         signal.pthread_sigmask(signal.SIG_BLOCK, signals)
         try:
             if child is not None:
-                if child.poll() is None:
-                    try:
-                        os.killpg(child.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        # It already exited; wait below still joins the owned child.
-                        pass
-                child.wait(timeout=5)
+                reap_owned_vmm(child)
                 child.stdout.close()
                 receipt["cleanup"] = "vmm_joined"
         finally:

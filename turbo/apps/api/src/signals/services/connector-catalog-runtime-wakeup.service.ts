@@ -1,7 +1,7 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import type { ConnectorCatalogArtifact } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { command } from "ccstate";
 
@@ -45,7 +45,6 @@ function reportCatalogWakeupDiscoveryFailure(
   reportConnectorRuntimeWakeupDiscoveryFailure({
     orgId: wakeup.scope.orgId,
     scopedToUser: wakeup.scope.userId !== undefined,
-    scopedToAgent: wakeup.scope.agentId !== undefined,
     targetCount: uniqueConnectorRuntimeTargets(wakeup.targets).length,
     error,
   });

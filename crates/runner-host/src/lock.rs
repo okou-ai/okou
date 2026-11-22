@@ -4,7 +4,8 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use nix::fcntl::{Flock, FlockArg};
+use nix::fcntl::{Flock, FlockArg, OFlag, openat};
+use nix::sys::stat::Mode;
 
 use crate::error::{HostError, HostResult};
 use crate::host_file::{self, DirMode, PRIVATE_FILE_MODE};
@@ -200,7 +201,7 @@ fn acquire_result_blocking_with_open(
     )))
 }
 
-fn open_existing_lock_file(path: &Path) -> HostResult<Option<File>> {
+fn open_existing_lock_parent(path: &Path) -> HostResult<Option<File>> {
     let parent = host_file::file_parent(path);
     match std::fs::symlink_metadata(parent) {
         Ok(_) => {}
@@ -212,23 +213,30 @@ fn open_existing_lock_file(path: &Path) -> HostResult<Option<File>> {
             )));
         }
     }
-    match host_file::validate_file_parent(path, "lock directory") {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => {
-            return Err(HostError::Internal(format!(
-                "validate lock parent {}: {e}",
-                path.display()
-            )));
-        }
+    match host_file::open_file_parent(path, "lock directory") {
+        Ok(directory) => Ok(Some(directory)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(HostError::Internal(format!(
+            "validate lock parent {}: {e}",
+            path.display()
+        ))),
     }
+}
 
-    let file = match File::options()
+fn open_existing_lock_file(path: &Path) -> HostResult<Option<File>> {
+    if open_existing_lock_parent(path)?.is_none() {
+        return Ok(None);
+    }
+    let opened = File::options()
         .read(true)
         .write(true)
         .custom_flags(host_file::private_file_open_flags())
-        .open(path)
-    {
+        .open(path);
+    validate_existing_lock_file(path, opened)
+}
+
+fn validate_existing_lock_file(path: &Path, opened: io::Result<File>) -> HostResult<Option<File>> {
+    let file = match opened {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
@@ -393,11 +401,7 @@ pub async fn try_acquire_existing_or_missing(path: PathBuf) -> HostResult<Existi
 }
 
 pub fn try_acquire_existing_or_missing_blocking(path: &Path) -> HostResult<ExistingTryLock> {
-    match acquire_existing_result_blocking(path, LockMode::TryExclusive)? {
-        Some(LockAcquire::Acquired(lock)) => Ok(ExistingTryLock::Acquired(lock)),
-        Some(LockAcquire::Busy) => Ok(ExistingTryLock::Busy),
-        None => Ok(ExistingTryLock::Missing),
-    }
+    acquire_existing_result_blocking(path, LockMode::TryExclusive).map(existing_try_lock)
 }
 
 /// Try to acquire a shared flock on an existing path without waiting for an
@@ -406,21 +410,112 @@ pub fn try_acquire_existing_or_missing_blocking(path: &Path) -> HostResult<Exist
 /// This is an existing-only probe: it does not create missing parent
 /// directories or a lock file. `ExistingTryLock::Missing` is returned when
 /// either is absent, while contention is returned as
-/// `ExistingTryLock::Busy`. An existing path is still required to be a
-/// trusted, runner-owned, regular, private lock file; invalid or insecure
-/// paths return a `HostError` rather than `Missing`. A successful
+/// `ExistingTryLock::Busy`. The path must have a trusted parent and a
+/// runner-owned, regular lock file. Group- or other-writable files are
+/// rejected. Other legacy modes are tightened to owner-only permissions.
+/// Invalid or insecure paths return a `HostError`. A successful
 /// `ExistingTryLock::Acquired` guard holds the shared lock until dropped.
-pub async fn try_acquire_existing_shared_or_missing(path: PathBuf) -> HostResult<ExistingTryLock> {
-    tokio::task::spawn_blocking(move || try_acquire_existing_shared_or_missing_blocking(&path))
-        .await
-        .map_err(|e| HostError::Internal(format!("lock task: {e}")))?
+pub fn try_acquire_existing_shared_or_missing_blocking(path: &Path) -> HostResult<ExistingTryLock> {
+    acquire_existing_result_blocking(path, LockMode::TryShared).map(existing_try_lock)
 }
 
-pub fn try_acquire_existing_shared_or_missing_blocking(path: &Path) -> HostResult<ExistingTryLock> {
-    match acquire_existing_result_blocking(path, LockMode::TryShared)? {
-        Some(LockAcquire::Acquired(lock)) => Ok(ExistingTryLock::Acquired(lock)),
-        Some(LockAcquire::Busy) => Ok(ExistingTryLock::Busy),
-        None => Ok(ExistingTryLock::Missing),
+fn existing_try_lock(result: Option<LockAcquire>) -> ExistingTryLock {
+    match result {
+        Some(LockAcquire::Acquired(lock)) => ExistingTryLock::Acquired(lock),
+        Some(LockAcquire::Busy) => ExistingTryLock::Busy,
+        None => ExistingTryLock::Missing,
+    }
+}
+
+/// Retain one verified lock parent for a batch of nonblocking shared acquisitions.
+#[derive(Default)]
+pub struct ExistingSharedLockBatch {
+    parent: Option<ExistingLockParent>,
+}
+
+struct ExistingLockParent {
+    path: PathBuf,
+    directory: File,
+    attributes: std::fs::Metadata,
+}
+
+impl ExistingLockParent {
+    fn open(lock_path: &Path) -> HostResult<Option<Self>> {
+        let Some(directory) = open_existing_lock_parent(lock_path)? else {
+            return Ok(None);
+        };
+        let path = host_file::file_parent(lock_path).to_owned();
+        let attributes = directory.metadata().map_err(|error| {
+            HostError::Internal(format!("stat lock parent {}: {error}", path.display()))
+        })?;
+        // The cached identity must describe a trusted snapshot of the parent.
+        host_file::validate_trusted_parent(
+            attributes.uid(),
+            nix::unistd::geteuid().as_raw(),
+            attributes.mode(),
+            "lock directory",
+            &path,
+        )
+        .map_err(|error| {
+            HostError::Internal(format!("validate lock parent {}: {error}", path.display()))
+        })?;
+        Ok(Some(Self {
+            path,
+            directory,
+            attributes,
+        }))
+    }
+
+    fn is_current(&self, path: &Path) -> bool {
+        self.path.as_os_str() == path.as_os_str()
+            && std::fs::symlink_metadata(path).is_ok_and(|current| {
+                current.dev() == self.attributes.dev()
+                    && current.ino() == self.attributes.ino()
+                    && current.uid() == self.attributes.uid()
+                    && current.mode() == self.attributes.mode()
+            })
+    }
+}
+
+impl ExistingSharedLockBatch {
+    /// Retains the per-file validation and checks the named inode after flock.
+    pub fn try_acquire_or_missing(&mut self, path: &Path) -> HostResult<ExistingTryLock> {
+        // A relative open must use the exact final path component.
+        let Some(name) = path.file_name().filter(|name| {
+            path.as_os_str()
+                .as_encoded_bytes()
+                .ends_with(name.as_encoded_bytes())
+        }) else {
+            return try_acquire_existing_shared_or_missing_blocking(path);
+        };
+        // Reuse only on the first attempt. An inode replacement retry
+        // validates a fresh directory from the full path.
+        let mut cached_parent = self
+            .parent
+            .take()
+            .filter(|parent| parent.is_current(host_file::file_parent(path)));
+        let flags = OFlag::O_RDWR | OFlag::from_bits_truncate(host_file::private_file_open_flags());
+        acquire_result_blocking_with_open(path, LockMode::TryShared, |path| {
+            let reused = cached_parent.is_some();
+            let parent = match cached_parent.take() {
+                Some(parent) => parent,
+                None => match ExistingLockParent::open(path)? {
+                    Some(parent) => parent,
+                    None => return Ok(None),
+                },
+            };
+            let opened = openat(&parent.directory, name, flags, Mode::empty())
+                .map(File::from)
+                .map_err(io::Error::from);
+            self.parent = Some(parent);
+            let file = validate_existing_lock_file(path, opened)?;
+            if reused && file.is_none() {
+                // A directory replacement can race the parent check.
+                return open_existing_lock_file(path);
+            }
+            Ok(file)
+        })
+        .map(existing_try_lock)
     }
 }
 

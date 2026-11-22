@@ -1,12 +1,8 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_IN_PROJECT
-import ai.okou.android.CHAT_OTHER_AGENT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
-import ai.okou.android.api.generated.AgentsItem
-import ai.okou.android.api.generated.AgentsItemVisibility
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.Indicators
@@ -34,30 +30,22 @@ class ChatReplayTest {
         )
     }
 
-    private fun event(
-        seq: Long,
-        kind: String,
-        extra: String = "",
-        agent: String = CHAT_AGENT,
-        thread: String = CHAT_PERSONAL,
-    ) =
+    private fun event(seq: Long, kind: String, extra: String = "", thread: String = CHAT_PERSONAL) =
         chatEventWire(
             id = "00000000-0000-4000-8000-${seq.toString().padStart(12, '0')}",
             seq = seq,
             kind = kind,
             extra = extra,
-            agent = agent,
             thread = thread,
         )
 
     @Test
-    fun metadataTouchesPreserveOriginalAgentActivityAndUnrelatedModelSettings() {
+    fun metadataTouchesPreserveActivityAndUnrelatedModelSettings() {
         val row =
             replay(
                     event(
                         1,
                         "created",
-                        agent = CHAT_OTHER_AGENT,
                         extra = ",\"modelSettings\":{\"codex/test\":{\"effort\":\"high\"}}",
                     ),
                     event(3, "sort_touched", extra = ",\"muted\":true")
@@ -71,7 +59,7 @@ class ChatReplayTest {
                     event(12, "sort_touched"),
                 )
                 .single()
-        assertEquals(CHAT_OTHER_AGENT, row.agentId)
+
         assertEquals(true, row.muted)
         assertEquals("2026-11-13T00:00:00.000Z", row.sortAt)
         assertEquals(setOf("codex/test", "claude-code/test"), row.modelSettings?.keys)
@@ -79,21 +67,14 @@ class ChatReplayTest {
     }
 
     @Test
-    fun projectEventsClearMembershipAndOnlyExplicitReassignmentChangesAgent() {
+    fun projectEventsClearMembership() {
         val row =
             replay(
-                    event(
-                        1,
-                        "created",
-                        extra = ",\"projectId\":\"$CHAT_PROJECT\"",
-                        agent = CHAT_OTHER_AGENT,
-                    ),
+                    event(1, "created", extra = ",\"projectId\":\"$CHAT_PROJECT\""),
                     event(4, "project_updated", extra = ",\"projectId\":null"),
-                    event(9, "sort_touched", extra = ",\"reassignedAgentId\":\"$CHAT_AGENT\""),
                 )
                 .single()
         assertNull(row.projectId)
-        assertEquals(CHAT_AGENT, row.agentId)
     }
 
     @Test
@@ -108,7 +89,7 @@ class ChatReplayTest {
                 event(8, "sort_touched", extra = ",\"hidden\":true", thread = other),
             )
         assertEquals(listOf(other, CHAT_PERSONAL), rows.map { it.id })
-        val state = ChatListUiState(threads = rows, agents = agents())
+        val state = ChatListUiState(threads = rows)
         assertEquals(
             listOf(CHAT_PERSONAL),
             chatListGroups(state).flatMap { it.threads }.map { it.id },
@@ -117,15 +98,10 @@ class ChatReplayTest {
     }
 
     @Test
-    fun projectGroupsSpanOriginalAgentsAndUnreadIncludesArchivedButExcludesMuted() {
+    fun projectGroupsIncludeArchivedUnreadAndExcludeMutedChats() {
         val projectRow =
             replay(
-                    event(
-                        1,
-                        "created",
-                        extra = ",\"projectId\":\"$CHAT_PROJECT\"",
-                        agent = CHAT_OTHER_AGENT,
-                    ),
+                    event(1, "created", extra = ",\"projectId\":\"$CHAT_PROJECT\""),
                     event(2, "archived"),
                     event(3, "sort_touched", extra = ",\"muted\":false"),
                 )
@@ -134,43 +110,41 @@ class ChatReplayTest {
         val state =
             ChatListUiState(
                 threads = listOf(projectRow, outside),
-                agents = agents(),
-                projectsEnabled = true,
-                projects =
-                    listOf(
-                        ConfirmedProject(
-                            CHAT_PROJECT,
-                            "Research",
-                            "2026-11-13T00:00:00Z",
-                            "2026-11-13T00:00:00Z",
-                        )
+                projectList =
+                    ProjectListUiState(
+                        rows =
+                            listOf(
+                                ConfirmedProject(
+                                    CHAT_PROJECT,
+                                    "Research",
+                                    "2026-11-13T00:00:00Z",
+                                    "2026-11-13T00:00:00Z",
+                                )
+                            )
                     ),
                 indicators =
                     Indicators(
-                        emptyMap(),
                         mapOf(projectRow.id to IndicatorsThreadsValue.UNREAD),
-                        emptyMap(),
+                        mapOf(projectRow.id to "2026-11-13T00:00:00Z"),
                     ),
                 filter = ChatListFilter.Unread,
             )
-        assertEquals(CHAT_OTHER_AGENT, chatListGroups(state).first().threads.single().agentId)
+        assertEquals(projectRow.id, chatListGroups(state).first().threads.single().id)
         assertTrue(chatListGroups(state).last().threads.isEmpty())
         assertTrue(
             chatListGroups(state.copy(threads = listOf(projectRow.copy(muted = true)))).all {
                 it.threads.isEmpty()
             }
         )
-        assertTrue(
-            chatListGroups(
-                    state.copy(
-                        indicators =
-                            state.indicators?.copy(
-                                threads = mapOf(projectRow.id to IndicatorsThreadsValue.ACTIVE)
-                            )
-                    )
-                )
-                .all { it.threads.isEmpty() }
+        val active =
+            checkNotNull(state.indicators)
+                .copy(threads = mapOf(projectRow.id to IndicatorsThreadsValue.ACTIVE))
+        assertEquals(
+            projectRow,
+            chatListGroups(state.copy(indicators = active)).first().threads.single(),
         )
+        val read = state.copy(indicators = active.copy(unreadAt = emptyMap()))
+        assertTrue(chatListGroups(read).all { it.threads.isEmpty() })
     }
 
     @Test
@@ -193,14 +167,11 @@ class ChatReplayTest {
                         event(3, "created"),
                         event(4, "pinned", thread = CHAT_IN_PROJECT, extra = ",\"pinOrder\":\"a1\""),
                     ),
-                agents = agents(),
-                projectsEnabled = true,
-                projects = listOf(project),
+                projectList = ProjectListUiState(rows = listOf(project)),
                 indicators =
                     Indicators(
-                        emptyMap(),
                         mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD),
-                        emptyMap(),
+                        mapOf(CHAT_IN_PROJECT to "2026-11-13T00:00:00Z"),
                     ),
             )
         val (projectGroup, outsideGroup) = chatListGroups(state)
@@ -211,6 +182,7 @@ class ChatReplayTest {
         val unreadProject = chatListGroups(state.copy(filter = ChatListFilter.Unread)).first()
         assertEquals(listOf(CHAT_IN_PROJECT), unreadProject.threads.map { it.id })
         assertEquals(-1, unreadProject.pinnedTailIndex())
+        assertEquals(0, unreadProject.pinnedTailIndex(hasProvisional = true))
     }
 
     @Test
@@ -259,25 +231,30 @@ class ChatReplayTest {
     @Test
     fun rankingIncludesHiddenAndArchivedPeersButDoesNotCrossListGroups() {
         val outside = replay(event(1, "created"), event(2, "pinned")).single()
+        val otherOutside = outside.copy(id = "other-outside")
         val member = outside.copy(id = CHAT_IN_PROJECT, projectId = CHAT_PROJECT)
-        val hidden = member.copy(id = "hidden", hidden = true, agentId = CHAT_OTHER_AGENT)
+        val unresolved = member.copy(id = "unresolved", projectId = "missing")
+        val hidden = member.copy(id = "hidden", hidden = true)
         val archived = member.copy(id = "archived", archived = true)
         val project =
             ConfirmedProject(CHAT_PROJECT, "Research", outside.createdAt, outside.createdAt)
         val state =
             ChatListUiState(
-                threads = listOf(outside, member, hidden, archived),
+                threads = listOf(outside, otherOutside, member, hidden, archived, unresolved),
                 listPhase = ChatReadPhase.Ready,
-                agents = agents(),
-                projectsEnabled = true,
-                projectsSettingsSource = ChatListSource.Network,
-                projectsSource = ChatListSource.Network,
-                projects = listOf(project),
+                source = ChatListSource.Network,
+                projectList =
+                    ProjectListUiState(rows = listOf(project), source = ChatListSource.Network),
             )
-        val (projectGroup, outsideGroup) = chatListGroups(state)
+        val (projectGroup, unresolvedGroup, outsideGroup) = chatListGroups(state)
         assertEquals(listOf(member), projectGroup.threads)
         assertEquals(listOf(member, hidden, archived), projectGroup.rankScope(state))
-        assertEquals(listOf(outside), outsideGroup.rankScope(state))
+        assertEquals(listOf(outside, otherOutside), outsideGroup.threads)
+        assertEquals(listOf(outside, otherOutside), outsideGroup.rankScope(state))
+        assertEquals(listOf(unresolved), unresolvedGroup.threads)
+        assertTrue(ChatRowAction.Unpin in state.rowActions(unresolved, unresolvedGroup, 0))
+        val unpinned = unresolved.copy(pinnedAt = null)
+        assertFalse(ChatRowAction.Pin in state.rowActions(unpinned, unresolvedGroup, 0))
         val actions = state.rowActions(member, projectGroup, 0)
         assertTrue(ChatRowAction.Unpin in actions)
         assertFalse(ChatRowAction.MovePinUp in actions)
@@ -291,7 +268,7 @@ class ChatReplayTest {
     }
 
     @Test
-    fun mutedChatsKeepRunningStatusAndCollapsedProjectsPreferVisibleUnread() {
+    fun mutedChatsSuppressActivityAndCollapsedProjectsPreferVisibleUnread() {
         val rows =
             replay(
                 event(1, "created"),
@@ -305,22 +282,34 @@ class ChatReplayTest {
                 running.id to IndicatorsThreadsValue.ACTIVE,
                 unread.id to IndicatorsThreadsValue.UNREAD,
             )
+        val unreadIds = setOf(running.id, unread.id)
         assertEquals(
-            ChatRowStatus.Running,
-            chatRowStatus(indicators[running.id], running.muted == true),
-        )
-        assertEquals(ChatRowStatus.Muted, chatRowStatus(indicators[unread.id], muted = true))
-        assertEquals(
-            ChatRowStatus.Unread,
-            collapsedProjectStatus(listOf(running, unread), indicators),
+            ChatRowStatus.Muted,
+            chatRowStatus(indicators[running.id], running.muted == true, unread = false),
         )
         assertEquals(
-            ChatRowStatus.Running,
-            collapsedProjectStatus(listOf(running, unread.copy(muted = true)), indicators),
+            ChatRowStatus.Muted,
+            chatRowStatus(indicators[unread.id], muted = true, unread = true),
         )
         assertEquals(
-            ChatRowStatus.None,
-            collapsedProjectStatus(listOf(unread.copy(muted = true)), indicators),
+            ProjectActivity(unread = 1, running = 0),
+            collapsedProjectActivity(listOf(running, unread), indicators, unreadIds),
+        )
+        assertEquals(
+            ProjectActivity(unread = 1, running = 1),
+            collapsedProjectActivity(
+                listOf(running.copy(muted = false), unread.copy(muted = true)),
+                indicators,
+                unreadIds,
+            ),
+        )
+        assertEquals(
+            ProjectActivity(unread = 0, running = 0),
+            collapsedProjectActivity(
+                listOf(running, unread.copy(muted = true)),
+                indicators,
+                unreadIds,
+            ),
         )
     }
 
@@ -344,19 +333,23 @@ class ChatReplayTest {
             chatListGroups(
                 ChatListUiState(
                     threads = threads,
-                    agents = agents(),
-                    projectsEnabled = true,
-                    projects = listOf(project),
+                    projectList = ProjectListUiState(rows = listOf(project)),
                 )
             )
         val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
+        val provisional =
+            mapOf<String?, List<ProvisionalChat>>(
+                project.id to listOf(ProvisionalChat("pending", project.id))
+            )
 
-        val (open, afterOpen) = chatListSections(groups, emptyList(), indicators)
+        val (open, afterOpen) =
+            chatListSections(groups, setOf(project.id), indicators, emptySet(), provisional)
         assertEquals(0, open.firstRow)
         assertEquals(1, open.firstChatRow)
-        assertEquals(3, afterOpen.firstChatRow)
+        assertEquals(4, afterOpen.firstChatRow)
 
-        val (folded, afterFolded) = chatListSections(groups, listOf(project.id), indicators)
+        val (folded, afterFolded) =
+            chatListSections(groups, emptySet(), indicators, emptySet(), provisional)
         assertEquals(ChatRowStatus.Running, folded.foldedStatus)
         assertEquals(1, afterFolded.firstChatRow)
     }
@@ -380,18 +373,4 @@ class ChatReplayTest {
         val newer = event(2, "created").replace("00:00:00.000Z", "00:00:00.000002Z")
         assertEquals(CHAT_PERSONAL, replay(older, newer).first().id)
     }
-
-    private fun agents() =
-        listOf(
-            AgentsItem(
-                CHAT_AGENT,
-                true,
-                "user-a",
-                null,
-                "My Okou",
-                null,
-                null,
-                AgentsItemVisibility.PRIVATE,
-            )
-        )
 }

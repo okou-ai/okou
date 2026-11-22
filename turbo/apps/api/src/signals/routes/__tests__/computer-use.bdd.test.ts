@@ -35,7 +35,10 @@ import {
   teamsConnectFixture,
   teamsMessageActivityForTest,
 } from "./helpers/teams-connect";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  threadEventCursor,
+} from "./helpers/api-bdd-chat-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
@@ -107,6 +110,7 @@ function createScenario() {
   async function readCanonicalIntegrationExecution(args: {
     readonly actor: ApiTestUser;
     readonly source: "slack" | "teams";
+    readonly sinceSeqId: number | undefined;
     readonly prompt: string;
     readonly runs: ReturnType<typeof createRunsApi>;
     readonly runnerGroup: string;
@@ -116,7 +120,11 @@ function createScenario() {
     });
     const chat = createChatFilesBddApi(context);
     const lifecycle = await scenario.run(() => {
-      return chat.requestThreadEvents(args.actor, {}, [200]);
+      return chat.requestThreadEvents(
+        args.actor,
+        { sinceSeqId: args.sinceSeqId },
+        [200],
+      );
     });
     if (lifecycle.status !== 200) {
       throw new Error("Expected the integration actor's thread lifecycle");
@@ -688,7 +696,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
               seqId: expect.any(Number),
               kind: "computer_use_host_updated",
               chatThreadId: run.threadId,
-              agentId: created.agentId,
               title: null,
               pinOrder: null,
               selectedModel: null,
@@ -839,6 +846,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
             run: scenario.run,
           });
         });
+        const sinceSeqId = await scenario.run(() => {
+          return threadEventCursor(context, actor);
+        });
         const prompt = "Authorize this Slack thread to use my desktop";
         await scenario.run(() => {
           return integrations.postSlackEvent(teamId, {
@@ -852,6 +862,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
         const run = await readCanonicalIntegrationExecution({
           actor,
+          sinceSeqId,
           source: "slack",
           prompt,
           runs,
@@ -969,6 +980,9 @@ describe("FILE-03 desktop computer-use runtime", () => {
             learnSender: false,
           });
         });
+        const sinceSeqId = await scenario.run(() => {
+          return threadEventCursor(context, actor);
+        });
         const prompt = "Authorize this Teams thread to use my desktop";
         const message = await scenario.run(() => {
           return postTeamsActivityForTest({
@@ -982,6 +996,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         expect(message.status).toBe(200);
         const run = await readCanonicalIntegrationExecution({
           actor,
+          sinceSeqId,
           source: "teams",
           prompt,
           runs,

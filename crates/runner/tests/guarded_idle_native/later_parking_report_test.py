@@ -15,6 +15,7 @@ import later_parking_report as later
 import report
 import report_test
 import status_failure_report_test as failure_test
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class LaterParkingReportTests(unittest.TestCase):
@@ -54,11 +55,6 @@ class LaterParkingReportTests(unittest.TestCase):
                 [{"sandbox_id":new}] if blank else [{"reuse_key":reuse,"sandbox_id":new}])
             empty = {k:v for k,v in current.items() if k not in ("idle_sandboxes", "blank_sandboxes")}
             empty["updated_at"] = "2026-10-19T01:00:03Z"
-            def heartbeat(sequence, begin, end, allocated):
-                return {"receipt":{"received_ns":at(begin),"acknowledgement_status":204,
-                    "state":{"runnerId":runner,"snapshotGeneration":1,"snapshotSequence":sequence,
-                        "group":"native-foreground","mode":"running","allocatedVcpu":allocated[0],
-                        "allocatedMemoryMb":allocated[1]}},"send_joined":True,"completed_ns":at(end)}
             values = (
                 {"policy":self.policy,"published_status":initial,"status_path":str(self.root/f"case-{index}"/"status.json"),
                  "receiver_polled_pending":True,"preparation":{"sandbox_id":new,"backing_generation":new_backing,
@@ -67,14 +63,13 @@ class LaterParkingReportTests(unittest.TestCase):
                  "later_reuse_key":reuse,"blank":blank,"profile_name":"vm0/default","coverage":coverage},
                 {"inserted_ns":at(9),"revision":3,"pool_held_ns":at(10),"status_held_ns":at(11),
                  "heartbeat_pending_ns":at(12),"heartbeat_polled_pending":True,
-                 "observer":{"started_ns":at(13),"completed_ns":at(14),"available_bytes":32*1024**3,
-                    "age_ns":2,"read_duration_ns":1,"joined":True},"coverage":coverage},
-                {"pool_released_ns":at(17),"heartbeat":heartbeat(1,18,19,(4,8192)),
+                 "observer":joined_observer(at(13), at(14)),"coverage":coverage},
+                {"pool_released_ns":at(17),"heartbeat":foreground_heartbeat(runner, 1, at(18), at(19), (4, 8192)),
                  "receiver_polled_pending":True,"coverage":coverage},
                 {"io_released_ns":at(22),"status_wait_polled_ns":at(26),"status_waits_before":0,"status_waits_after":1,
                  "receiver_polled_pending":True,"original_exit_confirmed":True,"original_lease_released":True,
                  "later_exit_polled_pending":True,"allocated":[2,4096,1],"accounting":zero,
-                 "heartbeat":heartbeat(2,27,28,(2,4096))},
+                 "heartbeat":foreground_heartbeat(runner, 2, at(27), at(28), (2, 4096))},
                 {"status_released_ns":at(32),"batch_joined_ns":at(33),"selected":1,"completed":1,"uncertain":0,
                  "not_started":0,"status_error":False,"is_complete":True,"revision":3,"published_status":current,
                  "regular_file":True,"later_exit_polled_pending":True,"allocated":[2,4096,1]},
@@ -87,8 +82,14 @@ class LaterParkingReportTests(unittest.TestCase):
                  "allocated":[0,0,0],"accounting":zero|{"closed":True}},
             )
             for phase, value, offset in zip(later.PHASES, values, (8,16,21,30,35,40,45)):
-                self.witnesses.append({"version":1,"case":case,"phase":phase,"monotonic_ns":at(offset),
-                    "unix_ns":at(offset)+1000,"sandbox_id":old,"backing_generation":backing,"evidence":copy.deepcopy(value)})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(offset),
+                    unix_ns=at(offset)+1000,
+                    sandbox_id=old,
+                    backing_generation=backing,
+                    evidence=copy.deepcopy(value),
+                ))
 
     def event(self, phase, case=None):
         return next(e for e in self.witnesses if e["phase"] == phase and (case is None or e["case"] == case))

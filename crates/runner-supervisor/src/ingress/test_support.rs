@@ -6,6 +6,7 @@ use tokio::net::{TcpListener, UnixStream};
 use tokio::sync::{Notify, Semaphore};
 
 pub(crate) const HOST: &str = "runner-ingress.example.org";
+pub(crate) const RUNNER_VERSION: &str = "1.2.3";
 pub(crate) const TOKEN: &str =
     "vm0_official_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 

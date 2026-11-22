@@ -30,7 +30,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class AssistantRecoveryModelTest {
     @get:Rule val temporary = TemporaryFolder()
-    private val target = ComposerTarget(threadId = CHAT_PERSONAL, agentId = CHAT_AGENT)
+    private val target = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Fixture(
         val api: ChatListApiFixture,
@@ -43,10 +43,12 @@ class AssistantRecoveryModelTest {
         val auth: AtomicBoolean,
         val retired: CompletableDeferred<Unit>,
         val controls: RunControlsModel,
+        val list: ChatListModel?,
     )
 
     private suspend fun TestScope.withRecovery(
         directory: File = temporary.newFolder(),
+        withList: Boolean = false,
         before: suspend (ChatListApiFixture, RecoveryApiFixture, ComposerJournalStore) -> Unit =
             { _, _, _ ->
             },
@@ -66,22 +68,35 @@ class AssistantRecoveryModelTest {
                 val remote = RecoveryApiFixture(api)
                 remote.set(RecoveryApiFixture.input(), RecoveryApiFixture.failure())
                 before(api, remote, journal)
-                val lease = cache.open(api.identity) { auth.get() }
                 val failure: (Exception) -> Unit = {
                     auth.set(false)
                     owners.clear()
                     retired.complete(Unit)
                 }
+                val list =
+                    if (withList)
+                        ChatListModel(
+                                api.service,
+                                cache,
+                                api.identity,
+                                auth::get,
+                                failure,
+                                dispatcher,
+                            )
+                            .also { owners.put("list", it) }
+                    else null
+                val lease = if (list == null) cache.open(api.identity, auth::get) else null
                 val history =
-                    ConversationHistoryModel(
-                        api.service,
-                        lease,
-                        backgroundScope,
-                        { auth.get() },
-                        failure,
-                        {},
-                        dispatcher,
-                    )
+                    list?.history
+                        ?: ConversationHistoryModel(
+                            api.service,
+                            checkNotNull(lease),
+                            backgroundScope,
+                            { auth.get() },
+                            failure,
+                            {},
+                            dispatcher,
+                        )
                 try {
                     val provider =
                         ViewModelProvider(
@@ -120,11 +135,12 @@ class AssistantRecoveryModelTest {
                             failure,
                             {},
                             recovery,
+                            chatList = list,
                         )
                     owners.put("composer", composer)
                     val thread =
                         Json.decodeFromString<ChatArchive>(
-                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","agentId":"$CHAT_AGENT","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}"""
+                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}"""
                             )
                             .chatThreads
                             .single()
@@ -150,12 +166,15 @@ class AssistantRecoveryModelTest {
                             auth,
                             retired,
                             controls,
+                            list,
                         )
                     )
                 } finally {
                     owners.clear()
-                    history.close()
-                    lease.close()
+                    if (lease != null) {
+                        history.close()
+                        lease.close()
+                    }
                 }
             }
         } finally {
@@ -441,6 +460,65 @@ class AssistantRecoveryModelTest {
             assertNull(saved.entries.getValue(target.key).pending)
             assertTrue(f.remote.resets.isEmpty())
             assertTrue(f.remote.inputs.isEmpty())
+        }
+    }
+
+    @Test
+    fun recoveredInputStopsPromotingTheRowAfterCanonicalRefresh() = runTest {
+        withRecovery(withList = true) { f ->
+            val list = checkNotNull(f.list)
+            val other =
+                chatEventWire(
+                        id = "77777777-7777-4777-8777-777777777777",
+                        seq = 18,
+                        thread = CHAT_IN_PROJECT,
+                    )
+                    .replace(CHAT_DATE, "2026-11-14T00:00:00.000Z")
+            f.api.events = { request ->
+                if (request.requestUrl?.queryParameter("sinceSeqId") == null)
+                    jsonResponse("""{"events":[${chatEventWire()},$other],"hasMore":false}""")
+                else jsonResponse("""{"events":[],"hasMore":false}""")
+            }
+            list.refresh()
+            list.uiState.first { it.listPhase == ChatReadPhase.Ready }
+            val baseline = list.uiState.value.threads.map { it.id }
+            assertEquals(listOf(CHAT_IN_PROJECT, CHAT_PERSONAL), baseline)
+
+            f.remote.send = {
+                jsonResponse("""{"error":{"code":"UNKNOWN","message":"Lost response"}}""")
+                    .setResponseCode(503)
+            }
+            f.composer.recover(target, RecoveryApiFixture.FAILURE)
+            f.idle()
+            runCurrent()
+            list.uiState.first { it.listPhase == ChatReadPhase.Ready }
+            assertNotNull(f.composer.uiState.value.entry(target).pending)
+            assertEquals(CHAT_PERSONAL, list.uiState.value.threads.first().id)
+            val previous = f.api.commandResponse
+            f.api.commandResponse = { request ->
+                val path = request.requestUrl!!.pathSegments
+                if (path.getOrNull(3) == "inputs") {
+                    val id = path[4]
+                    jsonResponse(
+                        """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":{"eventId":"$id","seqId":3,"createdAt":"$CHAT_DATE"},"replacement":null,"status":"queued","runId":null,"terminal":null}"""
+                    )
+                } else previous(request)
+            }
+            f.composer.retry(target)
+            f.idle()
+            assertEquals(
+                TextDisposition.Queued,
+                f.composer.uiState.value.entry(target).receipt?.disposition,
+            )
+            assertEquals(1, f.remote.inputs.size)
+            assertEquals(CHAT_PERSONAL, list.uiState.value.threads.first().id)
+            val refreshed = async {
+                list.uiState.first { it.listPhase == ChatReadPhase.Loading }
+                list.uiState.first { it.listPhase == ChatReadPhase.Ready }
+            }
+            runCurrent()
+            list.refresh()
+            assertEquals(baseline, refreshed.await().threads.map { it.id })
         }
     }
 

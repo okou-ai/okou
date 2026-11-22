@@ -1,11 +1,10 @@
 import type { NativeContinuation } from "@okouai/api-contracts/contracts/runners";
-import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
+import type { PickedChatThread } from "./chat-run-preparation-facts";
 
 export const NATIVE_CONTEXT_RECOVERY_PROMPT =
   "This Run did not resume the earlier native conversation context. Before processing the current request, you must run `okou chat messages --output-dir /tmp/okou-chat-history`, read and understand this Thread's earlier messages, and then continue the current request using that context. Chat history files are temporary caches. Store them under `/tmp`, outside personal memory. If removed, synchronize again.";
 
 export interface ChatThreadNativeBinding {
-  readonly threadAgentId: string | null;
   readonly framework: string | null;
   readonly frameworkSessionId: string | null;
   /** Latest executed predecessor; native readiness also requires the pair above. */
@@ -31,7 +30,7 @@ export interface ChatThreadContinuation {
 
 /** A native binding must cover the same executed predecessor as resource affinity. */
 export function resolveChatThreadContinuation(
-  thread: ChatThreadRequestRow,
+  thread: PickedChatThread,
   args: {
     readonly cliAgentType: string | null;
     readonly officialWorkflow: boolean;
@@ -60,7 +59,6 @@ export function resolveChatThreadContinuation(
   return {
     admission: args.admission,
     expected: {
-      threadAgentId: thread.agentId,
       framework: thread.framework,
       frameworkSessionId: thread.frameworkSessionId,
       frameworkSessionRunId: thread.frameworkSessionRunId,

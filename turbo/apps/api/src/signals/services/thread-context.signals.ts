@@ -1,48 +1,27 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { phoneUseDevices, phoneUseGrants } from "@okouai/db/schema/phone-use";
 import { createEmailMailboxConnections } from "./email-mailbox-context.service";
 import { createEmailThreadContext } from "./email-queued-launch-context.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
-import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
-import { workflows } from "@okouai/db/schema/workflow";
-import {
-  officialWorkflowCatalogState,
-  officialWorkflowCatalogReleases,
-  officialWorkflowDefinitionRevisions,
-} from "@okouai/db/schema/official-workflow-catalog";
-import { officialWorkflowSourcePlan } from "./official-workflow-context.signals";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { object } from "zod";
-import { parseRawRows } from "../../lib/db-raw-rows";
-import { db$, rawSqlReadDb$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   type ChatThreadContinuation,
   resolveChatThreadContinuation,
 } from "./chat-session-continuity.service";
-import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
-import {
-  executionPackageSourcesDecoder,
-  executionPackageSourcesSchema,
-  executionPackageSourcesSql,
-  resolveOrdinaryAutomationWorkflowName,
-  type ExecutionPackageSources,
-} from "./execution-workflow-selection";
+import type { ExecutionPackageSources } from "./execution-package-sources";
 import { createRunTemplates } from "./run-templates.service";
 import {
   type ConnectedAccounts,
   createConnectedAccountsSignals,
 } from "./thread-connected-accounts.signals";
-import { createThreadConnectorSources } from "./thread-connector-sources.service";
-import { createThreadAutomationContext } from "./thread-automation-context.service";
+import {
+  createThreadAutomationPayload,
+  createThreadAutomationSnapshot,
+  type ThreadAutomationTarget,
+} from "./thread-automation-context.service";
 import { createThreadModelSignals } from "./thread-model.signals";
 import { createThreadProjectContext } from "./thread-project-context.service";
 import { createIncompletePrompt } from "./thread-run-prompt/incomplete";
@@ -59,62 +38,17 @@ import {
   type ThreadWorkflowContext,
 } from "./thread-workflow-context.signals";
 
-export interface ThreadAutomationTarget {
-  readonly automation: typeof workflowAutomations.$inferSelect;
-  readonly agentId: string;
-  /** Authorized ordinary package winner for this picked Automation. */
-  readonly ordinaryWorkflowName: string | null;
-  readonly officialCatalog:
-    | (Pick<
-        typeof officialWorkflowCatalogReleases.$inferSelect,
-        "payload" | "hiddenThreadDefinitionNames"
-      > & { readonly releaseId: string })
-    | null;
-  readonly officialRevision: Pick<
-    typeof officialWorkflowDefinitionRevisions.$inferSelect,
-    "definitionName" | "revision" | "payload" | "contentBundle"
-  > | null;
-  readonly proactivePreferences: {
-    readonly suggestionsEnabled: boolean | null;
-    readonly learningEnabled: boolean | null;
-  } | null;
-  readonly workflow: Pick<
-    typeof workflows.$inferSelect,
-    | "id"
-    | "orgId"
-    | "agentId"
-    | "name"
-    | "ownerUserId"
-    | "visibility"
-    | "officialDefinitionName"
-    | "officialInstallationState"
-  >;
-}
-
-type CapturedAutomationTarget = ThreadAutomationTarget & {
-  readonly packageSources: ExecutionPackageSources;
-};
-
 type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one claimed Thread and its eventual picked event. */
 export interface ThreadContext extends ThreadWorkflowContext {
-  readonly threadConnectorSources$: ReturnType<
-    typeof createThreadConnectorSources
-  >;
   /** Background source acquisition; consumers join the individual nodes below. */
   readonly inputResources$: Computed<Promise<void>>;
   readonly projectContext$: ReturnType<typeof createThreadProjectContext>;
   readonly incompleteContext$: ReturnType<typeof createIncompletePrompt>;
-  readonly phoneUseGrant$: Computed<
-    Promise<{ readonly deviceId: string; readonly grantId: string } | null>
-  >;
   /** Whether this run resumes the thread's native session, and its binding. */
   readonly threadContinuation$: Computed<
     Promise<ChatThreadContinuation | null>
-  >;
-  readonly computerUseHostGrant$: Computed<
-    Promise<{ readonly hostId: string; readonly displayName: string } | null>
   >;
   readonly slackContext$: ReturnType<typeof createSlackThreadContext>;
   readonly feishuContext$: ReturnType<typeof createFeishuThreadContext>;
@@ -127,7 +61,10 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly agentPhoneContext$: ReturnType<typeof createAgentPhoneThreadContext>;
   readonly wechatContext$: ReturnType<typeof createWechatThreadContext>;
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
-  readonly automationContext$: ReturnType<typeof createThreadAutomationContext>;
+  readonly automationSnapshot$: ReturnType<
+    typeof createThreadAutomationSnapshot
+  >;
+  readonly automationPayload$: ReturnType<typeof createThreadAutomationPayload>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
   readonly executionPackageSources$: Computed<
     Promise<ExecutionPackageSources | null>
@@ -161,13 +98,6 @@ export function createThreadContext(
     return new ApiDispatchTimingCollector();
   });
   const sourceSettings = createThreadSourceSettings(bootstrap);
-  const threadConnectorSources$ = createThreadConnectorSourceContext(
-    bootstrap,
-    chatThreadId,
-  );
-  const thread$ = computed(async (get) => {
-    return (await get(pickedEvent$))?.thread ?? null;
-  });
   const integrations = createThreadIntegrationContexts(
     pickedEvent$,
     bootstrap,
@@ -189,8 +119,7 @@ export function createThreadContext(
   const workflowContext = createThreadWorkflowContext(
     bootstrap,
     pickedEvent$,
-    integrations.automationContext$,
-    integrations.automationTarget$,
+    integrations.automationSnapshot$,
   );
   const templateOrgId$ = createThreadOrgId(orgId);
   const templates = createRunTemplates(
@@ -199,8 +128,6 @@ export function createThreadContext(
     sourceSettings.disabledPaidTools$,
     bootstrap,
   );
-  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
-  const phoneUseGrant$ = createThreadPhoneUseGrant(bootstrap, thread$);
   const runIds$ = createRunIds();
   const threadContinuation$ = createThreadContinuation(
     pickedEvent$,
@@ -208,28 +135,18 @@ export function createThreadContext(
     integrations.automationTarget$,
     runIds$,
   );
-  const connectorSourceId$ = createConnectorSourceId(
-    pickedEvent$,
-    integrations.automationContext$,
-    integrations.feishuContext$,
-  );
   const connectedAccounts = createConnectedAccountsSignals(
     bootstrap,
     pickedEvent$,
-    connectorSourceId$,
     dispatchTiming$,
-    threadConnectorSources$,
   );
   const emailMailboxConnections$ = createEmailMailboxConnections(
     pickedEvent$,
-    connectedAccounts.selectedStoredConnectorSources$,
-    orgId,
+    connectedAccounts.selectedStoredConnectorAccounts$,
   );
   const inputSources = {
     connectorSelection$: connectedAccounts.connectorSelection$,
     templateSources$: templates.sources$,
-    computerUseHostGrant$,
-    phoneUseGrant$,
     modelRoute$: model.modelRoute$,
     threadContinuation$,
     discordContext$,
@@ -238,18 +155,15 @@ export function createThreadContext(
   };
   const resources = createThreadInputResources(
     pickedEvent$,
-    sourceSettings.featureSwitches$,
+    bootstrap,
     integrations,
     inputSources,
   );
   return {
-    threadConnectorSources$,
     inputResources$: resources.inputResources$,
     projectContext$: resources.projectContext$,
     incompleteContext$: resources.incompleteContext$,
     threadContinuation$,
-    computerUseHostGrant$,
-    phoneUseGrant$,
     slackContext$: integrations.slackContext$,
     feishuContext$: integrations.feishuContext$,
     teamsContext$: integrations.teamsContext$,
@@ -259,7 +173,8 @@ export function createThreadContext(
     agentPhoneContext$: integrations.agentPhoneContext$,
     wechatContext$: integrations.wechatContext$,
     discordContext$,
-    automationContext$: integrations.automationContext$,
+    automationSnapshot$: integrations.automationSnapshot$,
+    automationPayload$: integrations.automationPayload$,
     automationTarget$: integrations.automationTarget$,
     executionPackageSources$: integrations.executionPackageSources$,
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
@@ -276,37 +191,6 @@ export function createThreadContext(
     connectorSnapshot$: connectedAccounts.connectorSnapshot$,
     connectorThreadSelections$: connectedAccounts.threadSelections$,
   };
-}
-
-/** Bind a request's first Thread observation without waiting for unrelated sources. */
-function createThreadConnectorSourceContext(
-  bootstrap: AgentRunContextSignals,
-  chatThreadId: string,
-) {
-  const orgId = bootstrap.orgId;
-  const identity$ = computed(() => {
-    return Promise.resolve({
-      chatThreadId,
-      userId: bootstrap.userId,
-      orgId,
-      agentId: bootstrap.agentId,
-    });
-  });
-  const ownConnectorSources$ = createThreadConnectorSources(identity$);
-  const threadConnectorSources$ = computed(async (get) => {
-    const identity = await get(bootstrap.requestThreadConnectorIdentity$);
-    const matches =
-      identity?.chatThreadId === chatThreadId &&
-      identity.userId === bootstrap.userId &&
-      identity.orgId === orgId &&
-      identity.agentId === bootstrap.agentId;
-    // A matching cached miss or failure remains authoritative. The cold source
-    // is selected only for another identity, never to recheck accepted data.
-    return await get(
-      matches ? bootstrap.requestThreadConnectorSources$ : ownConnectorSources$,
-    );
-  });
-  return threadConnectorSources$;
 }
 
 function createThreadModelContext(
@@ -348,14 +232,12 @@ function createThreadModelContext(
 
 function createThreadInputResources(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  featureSwitches$: AgentRunContextSignals["featureSwitches$"],
+  owner: { readonly userId: string; readonly orgId: string },
   integrations: ReturnType<typeof createThreadIntegrationContexts>,
   context: Pick<
     ThreadContext,
     | "connectorSelection$"
     | "templateSources$"
-    | "computerUseHostGrant$"
-    | "phoneUseGrant$"
     | "modelRoute$"
     | "threadContinuation$"
     | "discordContext$"
@@ -363,10 +245,7 @@ function createThreadInputResources(
     | "executionPackageSources$"
   >,
 ) {
-  const projectContext$ = createThreadProjectContext(
-    pickedEvent$,
-    featureSwitches$,
-  );
+  const projectContext$ = createThreadProjectContext(pickedEvent$, owner);
   const incompleteContext$ = createIncompletePrompt(pickedEvent$);
   const emailResources$ = computed(async (get) => {
     await Promise.allSettled([
@@ -376,7 +255,7 @@ function createThreadInputResources(
   });
   const integrationSources: Readonly<
     Record<
-      NonNullable<PickedThreadInputEvent["contextType"]>,
+      Exclude<PickedThreadInputEvent["contextType"], "automation" | null>,
       Computed<Promise<unknown>>
     >
   > = {
@@ -390,7 +269,6 @@ function createThreadInputResources(
     agentphone: integrations.agentPhoneContext$,
     wechat: integrations.wechatContext$,
     discord: context.discordContext$,
-    automation: integrations.automationContext$,
   };
   const inputResources$ = computed(async (get) => {
     const event = await get(pickedEvent$);
@@ -405,8 +283,6 @@ function createThreadInputResources(
     await Promise.allSettled([
       get(context.connectorSelection$),
       get(context.templateSources$),
-      get(context.computerUseHostGrant$),
-      get(context.phoneUseGrant$),
       get(incompleteContext$),
       get(integrationSources[event.contextType]),
       get(context.modelRoute$),
@@ -449,12 +325,15 @@ function createThreadIntegrationContexts(
     orgId,
     featureSwitches$,
   );
-  const automationContext$ = createThreadAutomationContext(pickedEvent$);
-  const automationTarget$ = createAutomationTarget(
-    automationContext$,
+  const automationSnapshot$ = createThreadAutomationSnapshot(
+    pickedEvent$,
     bootstrap,
     dispatchTiming$,
   );
+  const automationPayload$ = createThreadAutomationPayload(automationSnapshot$);
+  const automationTarget$ = computed(async (get) => {
+    return (await get(automationSnapshot$))?.target ?? null;
+  });
   const executionPackageSources$ = createThreadExecutionPackageSources(
     bootstrap,
     pickedEvent$,
@@ -469,7 +348,8 @@ function createThreadIntegrationContexts(
     emailContext$,
     agentPhoneContext$,
     wechatContext$,
-    automationContext$,
+    automationSnapshot$,
+    automationPayload$,
     automationTarget$,
     executionPackageSources$,
   };
@@ -496,72 +376,10 @@ function createOfficialWorkflowCreditWaiver(
   });
 }
 
-function createAutomationTarget(
-  automationContext$: ReturnType<typeof createThreadAutomationContext>,
-  bootstrap: AgentRunContextSignals,
-  dispatchTiming$: ThreadContext["dispatchTiming$"],
-) {
-  return computed(async (get): Promise<CapturedAutomationTarget | null> => {
-    const event = await get(automationContext$);
-    if (!event) {
-      return null;
-    }
-    const source = officialWorkflowSourcePlan(bootstrap);
-    const query = get(db$)
-      .select({
-        ...source.columns,
-        automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
-        packageSources: executionPackageSourcesSql(bootstrap).mapWith(
-          executionPackageSourcesDecoder,
-        ),
-        workflow: {
-          id: workflows.id,
-          orgId: workflows.orgId,
-          agentId: workflows.agentId,
-          name: workflows.name,
-          ownerUserId: workflows.ownerUserId,
-          visibility: workflows.visibility,
-          officialDefinitionName: workflows.officialDefinitionName,
-          officialInstallationState: workflows.officialInstallationState,
-        },
-      })
-      .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-      .leftJoin(officialWorkflowCatalogState, source.catalogCondition)
-      .leftJoin(officialWorkflowCatalogReleases, source.releaseJoin)
-      .leftJoin(officialWorkflowDefinitionRevisions, source.revisionJoin)
-      .leftJoinLateral(source.preferences, sql`true`)
-      .where(eq(workflowAutomations.id, event.automationId))
-      .limit(1);
-    const [row] = await get(dispatchTiming$).measure(
-      "api_dispatch_prepare_execution_package_sources",
-      "nested",
-      () => {
-        return query;
-      },
-    );
-    return row
-      ? {
-          ...row,
-          ordinaryWorkflowName: resolveOrdinaryAutomationWorkflowName(
-            row,
-            bootstrap,
-            row.packageSources,
-          ),
-        }
-      : null;
-  });
-}
-
-const packageSourcesRowSchema = object({
-  packages: executionPackageSourcesSchema,
-});
-
 function createThreadExecutionPackageSources(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationTarget$: Computed<Promise<CapturedAutomationTarget | null>>,
+  automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>,
   dispatchTiming$: ThreadContext["dispatchTiming$"],
 ) {
   return computed(async (get) => {
@@ -573,68 +391,19 @@ function createThreadExecutionPackageSources(
       const target = await get(automationTarget$);
       return target?.packageSources ?? null;
     }
-    const db = get(rawSqlReadDb$);
-    const rows = await get(dispatchTiming$).measure(
+    const { result, durationMs, finishedAt } = await get(
+      bootstrap.executionPackageSources$,
+    );
+    get(dispatchTiming$).recordDuration(
       "api_dispatch_prepare_execution_package_sources",
       "nested",
-      () => {
-        return db.execute(
-          sql`SELECT ${executionPackageSourcesSql(bootstrap)} AS packages`,
-        );
-      },
+      durationMs,
+      finishedAt,
     );
-    const [row] = parseRawRows(packageSourcesRowSchema, rows);
-    return row?.packages ?? null;
-  });
-}
-
-function createConnectorSourceId(
-  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  automationContext$: ThreadContext["automationContext$"],
-  feishuContext$: ThreadContext["feishuContext$"],
-) {
-  return computed(async (get): Promise<string | undefined> => {
-    const event = await get(pickedEvent$);
-    // Only these inputs carry the integration account that delivered them.
-    switch (event?.contextType) {
-      case "automation": {
-        return (await get(automationContext$))?.connectorSourceId ?? undefined;
-      }
-      case "feishu": {
-        return (await get(feishuContext$))?.connectorSourceId;
-      }
-      default: {
-        return undefined;
-      }
+    if (!result.ok) {
+      throw result.error;
     }
-  });
-}
-
-function createThreadHostGrant(
-  selected: AgentRunContextSignals,
-  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
-) {
-  return computed(async (get) => {
-    const thread = await get(thread$);
-    if (!thread?.computerUseHostId || thread.userId !== selected.userId) {
-      return null;
-    }
-    const [host] = await get(db$)
-      .select({
-        hostId: computerUseHosts.id,
-        displayName: computerUseHosts.displayName,
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.id, thread.computerUseHostId),
-          eq(computerUseHosts.orgId, selected.orgId),
-          eq(computerUseHosts.userId, selected.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
-    return host ?? null;
+    return result.value;
   });
 }
 
@@ -675,41 +444,6 @@ function createThreadContinuation(
         finalizingSourceRunId: event.thread.frameworkSessionRunId,
       },
     });
-  });
-}
-
-function createThreadPhoneUseGrant(
-  bootstrap: AgentRunContextSignals,
-  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
-) {
-  return computed(async (get) => {
-    const features = await get(bootstrap.featureSwitches$);
-    if (!isFeatureEnabled(FeatureSwitchKey.PhoneUse, features)) {
-      return null;
-    }
-    const thread = await get(thread$);
-    if (!thread || thread.userId !== bootstrap.userId) {
-      return null;
-    }
-    const [grant] = await get(db$)
-      .select({ deviceId: phoneUseDevices.id, grantId: phoneUseGrants.id })
-      .from(phoneUseGrants)
-      .innerJoin(
-        phoneUseDevices,
-        eq(phoneUseDevices.id, phoneUseGrants.deviceId),
-      )
-      .where(
-        and(
-          eq(phoneUseGrants.threadId, thread.id),
-          eq(phoneUseGrants.orgId, bootstrap.orgId),
-          eq(phoneUseGrants.userId, bootstrap.userId),
-          eq(phoneUseDevices.orgId, bootstrap.orgId),
-          eq(phoneUseDevices.userId, bootstrap.userId),
-          eq(phoneUseDevices.generation, phoneUseGrants.deviceGeneration),
-        ),
-      )
-      .limit(1);
-    return grant ?? null;
   });
 }
 

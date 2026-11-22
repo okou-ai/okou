@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.21.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.6...runner-provider-v0.21.7) (2026-11-22)
+
+## [0.21.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.5...runner-provider-v0.21.6) (2026-11-21)
+
+## [0.21.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.4...runner-provider-v0.21.5) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+## [0.21.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.3...runner-provider-v0.21.4) (2026-11-20)
+
+## [0.21.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.2...runner-provider-v0.21.3) (2026-11-20)
+
+## [0.21.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.1...runner-provider-v0.21.2) (2026-11-20)
+
+## [0.21.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.0...runner-provider-v0.21.1) (2026-11-20)
+
+## [0.21.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.34...runner-provider-v0.21.0) (2026-11-20)
+
+
+### Features
+
+* **runner:** accept optionality on execution Skill bundles ([#49266](https://github.com/okou-ai/okou/issues/49266)) ([64bd508](https://github.com/okou-ai/okou/commit/64bd508da7156eac1672d135fdca8fe9437501ec))
+
+## [0.20.34](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.33...runner-provider-v0.20.34) (2026-11-19)
+
+## [0.20.33](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.32...runner-provider-v0.20.33) (2026-11-19)
+
 ## [0.20.32](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.31...runner-provider-v0.20.32) (2026-11-19)
 
 ## [0.20.31](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.30...runner-provider-v0.20.31) (2026-11-18)

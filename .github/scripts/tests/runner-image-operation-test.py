@@ -266,6 +266,52 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(self.records("executions"), [])
         self.assertFalse(self.result.exists())
 
+    def test_failed_teardown_revokes_admission_for_detached_older_worker(self):
+        self.invoke("claim")
+        binary_root = self.root / "var/lib/vm0-runner/bin"
+        directory = binary_root / "pr-123-image-1234"
+        marker = next(directory.glob(".image-owner-*"))
+        sibling = binary_root / "pr-1234-image-1234"
+        sibling.mkdir()
+        sibling_marker = sibling / (".image-owner-" + "a" * 64)
+        sibling_marker.touch()
+
+        # Inventory can see this unit, but teardown cannot delete it through
+        # the symlinked ancestor. The image runner directory stays in place.
+        etc = self.root / "alternate-etc"
+        systemd = etc / "systemd/system"
+        systemd.mkdir(parents=True)
+        (systemd / "vm0-runner-pr-123.service").touch()
+        (self.root / "etc").symlink_to(etc, target_is_directory=True)
+
+        with self.image_call(
+            "run",
+            "build",
+            str(self.result),
+            environment=dict(
+                self.environment,
+                IMAGE_FAULT="pending-launch",
+                IMAGE_PRE_CLOSURE_WORKER="1",
+            ),
+        ) as launch:
+            try:
+                self.wait_for(lambda: bool(self.records("detached-servers")))
+                launch.kill()
+                self.assertEqual(launch.wait(timeout=5), -signal.SIGKILL)
+                with self.cleanup_session() as cleanup:
+                    self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
+                    result = self.clean_namespace(cleanup)
+                    self.assertEqual(result["outcome"], "failed")
+                    self.assertIn("resource ancestor is a symlink", result["error"])
+                self.assertTrue(directory.is_dir())
+            finally:
+                (self.root / "release-launch").touch()
+
+        self.wait_for(lambda: bool(self.records("legacy-image-admission")))
+        self.assertEqual(self.records("legacy-image-admission"), [False])
+        self.assertFalse(marker.exists())
+        self.assertTrue(sibling_marker.is_file())
+
     def test_missing_owner_creation_time_blocks_reclaim_and_worker(self):
         with self.cleanup_session() as cleanup:
             self.assertEqual(self.cleanup_reply(cleanup), {"ready": [123]})
@@ -418,9 +464,29 @@ class ImageOperationTest(unittest.TestCase):
         ]
         self.assertEqual(len(marker_installs), 1)
 
+    def test_claim_retries_a_timed_out_unit_observation(self):
+        prior = self.start_blocked("wait-for-retirement")
+        claim_request = {"action": "claim", "phase": None}
+        claim_count = self.records("requests").count(claim_request)
+
+        self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="claim-observation-timeout")
+        self.invoke("claim")
+
+        self.assertTrue((self.root / "fault-used").exists())
+        self.assertEqual(self.records("requests").count(claim_request), claim_count + 1)
+        self.assertTrue(self.records("stops"))
+        output, error = prior.communicate(timeout=15)
+        self.assertNotEqual(prior.returncode, 0, output + error)
+        self.assert_one_build()
+        successor = self.root / "var/lib/vm0-runner/bin/pr-123-image-1235"
+        self.assertTrue(successor.is_dir())
+
     def test_claim_budget_includes_prior_worker_retirement(self):
         self.invoke("claim")
         self.invoke("run", "warm", str(self.result))
+        owner_path = next(self.root.glob("vm0-runner-image-*/*/owner.json"))
+        previous_owner = owner_path.read_bytes()
+        intent_path = next(owner_path.parent.glob("*/intent.json"))
         self.environment.update(GITHUB_RUN_ID="1235", IMAGE_FAULT="slow-claim-retirement")
         with self.image_call("claim") as claim:
             output, error = claim.communicate(timeout=5)
@@ -429,6 +495,8 @@ class ImageOperationTest(unittest.TestCase):
         binary_root = self.root / "var/lib/vm0-runner/bin"
         self.assertTrue((binary_root / "pr-123-image-1234").is_dir())
         self.assertFalse((binary_root / "pr-123-image-1235").exists())
+        self.assertEqual(owner_path.read_bytes(), previous_owner)
+        self.assertTrue(intent_path.is_file())
 
     def test_waiting_claim_retires_a_late_prior_worker(self):
         self.invoke("claim")
@@ -537,6 +605,31 @@ class ImageOperationTest(unittest.TestCase):
     def assert_one_build(self):
         self.assertEqual([r["phase"] for r in self.records("executions")], ["build"])
 
+    def test_launch_timeout_observes_the_original_accepted_service(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "launch-timeout-after-acceptance"
+        self.invoke("run", "build", str(self.result))
+        result = json.loads(self.result.read_text())
+        self.assertEqual(result["status"], 0)
+        self.assertEqual(result["rootfsHash"], "1" * 64)
+        self.assertEqual(result["snapshotHash"], "2" * 64)
+        self.assert_one_build()
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+
+    def test_expiration_submission_failure_blocks_worker_launch(self):
+        self.invoke("claim")
+        self.environment["IMAGE_FAULT"] = "expiration-submission-failed"
+        outcome = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(outcome.returncode, 0)
+        self.assertIn("image service command failed: systemd-run", outcome.stderr)
+        self.assertEqual(self.records("expiration-credentials-present"), [False])
+        self.assertFalse(self.records("executions"))
+        self.assertFalse(self.result.exists())
+        self.assertEqual(len(self.records("systemd")), 1)
+
     def test_truncated_result_reattaches_to_verified_build(self):
         self.environment["IMAGE_FAULT"] = "partial-result"
         self.invoke("claim")
@@ -552,7 +645,6 @@ class ImageOperationTest(unittest.TestCase):
         calls = json.dumps(self.records("privileged"))
         self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"], calls)
         self.assertIn("--property=RuntimeMaxSec=570", calls)
-        self.assertIn("--on-active=1h", calls)
         for path in self.root.glob("vm0-runner-image-*/*/*/*"):
             if path.is_file():
                 self.assertNotIn(
@@ -560,6 +652,16 @@ class ImageOperationTest(unittest.TestCase):
                     path.read_bytes(),
                     str(path),
                 )
+
+        # The verified result belongs to the original inputs, even after reattachment.
+        self.environment["HEAD_SHA"] = "c" * 40
+        self.result.unlink()
+        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+        self.assertNotEqual(
+            self.invoke("run", "build", str(self.result), check=False).returncode, 0
+        )
+        self.assertFalse(self.result.exists())
+        self.assert_one_build()
 
     def test_lost_reply_while_original_launch_is_still_submitting(self):
         self.environment["IMAGE_FAULT"] = "pending-launch"
@@ -657,11 +759,17 @@ class ImageOperationTest(unittest.TestCase):
                 self.result.unlink(missing_ok=True)
                 previous_executions = len(self.records("executions"))
                 self.invoke("claim")
+                previous_requests = len(self.records("requests"))
                 result = self.invoke("run", "build", str(self.result), check=False)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(error, result.stderr)
                 self.assertFalse(self.result.exists())
                 self.assertEqual(len(self.records("executions")), previous_executions + 1)
+                requests = self.records("requests")[previous_requests:]
+                self.assertEqual(
+                    [request["action"] for request in requests],
+                    ["run", "cancel"],
+                )
 
     def test_cancellation_retires_worker_and_preserves_lease_successor(self):
         process = self.start_blocked()
@@ -753,39 +861,54 @@ class ImageOperationTest(unittest.TestCase):
         output, error = process.communicate(timeout=15)
         self.assertEqual(process.returncode, 0, output + error)
 
-    def test_ambiguous_launch_never_restarts_and_permanent_ssh_never_retries(self):
+    def test_lost_launch_without_a_service_cannot_replay_or_start_late(self):
         self.invoke("claim")
-        self.environment["IMAGE_FAULT"] = "absent-launch"
-        self.assertNotEqual(
-            self.invoke("run", "build", str(self.result), check=False).returncode, 0
+        self.environment["IMAGE_FAULT"] = "lost-launch-without-unit"
+        observed = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(observed.returncode, 0)
+        self.assertIn("execution outcome unknown", observed.stderr)
+        self.assertEqual(
+            self.records("requests").count({"action": "run", "phase": "build"}), 2
         )
         self.environment["IMAGE_FAULT"] = ""
-        self.assertNotEqual(
-            self.invoke("run", "build", str(self.result), check=False).returncode, 0
+        # Check the first call's cancellation before a retry can cancel the owner.
+        operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
+        late = subprocess.run(
+            [sys.executable, str(operation / "worker.py"), "worker", str(operation)],
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
+        self.assertNotEqual(late.returncode, 0)
+        self.assertIn("cancelled", late.stderr)
         self.assertFalse(self.records("executions"))
-        self.environment["IMAGE_FAULT"] = "ssh-error"
-        before = len(self.records("requests"))
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
-        self.assertEqual(len(self.records("requests")) - before, 1)
 
-    def test_changed_inputs_cannot_consume_existing_success(self):
-        self.invoke("claim")
-        self.invoke("run", "build", str(self.result))
-        self.environment["HEAD_SHA"] = "c" * 40
-        self.result.unlink()
-        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
         self.assertNotEqual(
             self.invoke("run", "build", str(self.result), check=False).returncode, 0
         )
         self.assertFalse(self.result.exists())
-        self.assert_one_build()
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+        self.assertFalse(self.records("executions"))
 
     def test_expired_result_cannot_permit_execution_again(self):
         self.invoke("claim")
+        before = time.monotonic_ns()
         self.invoke("run", "build", str(self.result))
+        after = time.monotonic_ns()
         operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
-        timer = next(args for args in self.records("systemd") if "--on-active=1h" in args)
+        unit = f"--unit=vm0-ci-image-{operation.name}-expire"
+        timer = next(args for args in self.records("systemd") if unit in args)
+        schedule = next(arg for arg in timer if arg.startswith("--on-boot="))
+        self.assertRegex(schedule, r"^--on-boot=[0-9]+ms$")
+        expiration_ms = int(schedule.removeprefix("--on-boot=").removesuffix("ms"))
+        submitted_at = (expiration_ms - 3_600_000) * 1_000_000
+        self.assertLessEqual(before, submitted_at)
+        self.assertLess(submitted_at, after + 1_000_000)
         self.assertIn(f"--uid={os.getuid()}", timer)
         self.assertIn(f"--gid={os.getgid()}", timer)
         expiration = subprocess.run(
@@ -813,31 +936,17 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(json.loads(self.result.read_text())["status"], 0)
         self.assertEqual([r["phase"] for r in self.records("executions")], ["warm"])
 
-    def test_broken_request_pipe_recovers_before_submission(self):
+    def test_claim_retries_transport_loss_but_not_a_command_error(self):
         self.environment["IMAGE_FAULT"] = "early-eof"
         self.invoke("claim")
         self.assertEqual(self.records("requests")[0]["action"], "unread")
         self.invoke("run", "build", str(self.result))
         self.assert_one_build()
 
-    def test_cancellation_fences_late_systemd_acceptance(self):
-        self.invoke("claim")
-        self.environment["IMAGE_FAULT"] = "absent-launch"
-        self.assertNotEqual(
-            self.invoke("run", "build", str(self.result), check=False).returncode, 0
-        )
-        operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
-        late = subprocess.run(
-            ["python3", str(operation / "worker.py"), "worker", str(operation)],
-            env=self.environment,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        self.assertNotEqual(late.returncode, 0)
-        self.assertIn("cancelled", late.stderr)
-        self.assertFalse(self.records("executions"))
+        self.environment["IMAGE_FAULT"] = "ssh-error"
+        before = len(self.records("requests"))
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+        self.assertEqual(len(self.records("requests")) - before, 1)
 
     def test_cancellation_before_first_claim_fences_that_generation(self):
         for existing_owner in (False, True):
@@ -899,22 +1008,7 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(log.stat().st_size, 1024 * 1024)
         self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"].encode(), log.read_bytes())
 
-    def test_guarded_preparation_is_fenced_and_does_not_replay(self):
-        self.invoke("claim")
-        output = self.invoke("guard", "bash", "-s", input_text="printf prepared")
-        self.assertEqual(output.stdout, "prepared")
-        self.environment["HEAD_SHA"] = "c" * 40
-        output = self.invoke(
-            "guard",
-            "bash",
-            "-s",
-            check=False,
-            input_text="echo unsafe > '" + str(self.root / "unsafe") + "'",
-        )
-        self.assertNotEqual(output.returncode, 0)
-        self.assertFalse((self.root / "unsafe").exists())
-
-    def test_lost_preparation_reply_does_not_repeat_mutation(self):
+    def test_guarded_preparation_does_not_replay_or_accept_stale_inputs(self):
         self.invoke("claim")
         self.environment["IMAGE_FAULT"] = "lost-guard"
         marker = self.root / "mutations"
@@ -922,10 +1016,27 @@ class ImageOperationTest(unittest.TestCase):
             "guard",
             "bash",
             "-s",
+            "--",
+            str(marker),
             check=False,
-            input_text="echo prepared >> '" + str(marker) + "'",
+            input_text='printf "prepared stdout\\n"\nprintf "prepared\\n" >> "$1"',
         )
         self.assertEqual(output.returncode, 0, output.stderr)
+        self.assertIn("prepared stdout", output.stdout.splitlines())
+        self.assertTrue((self.root / "fault-used").is_file())
+        self.assertEqual(marker.read_text().splitlines(), ["prepared"])
+
+        self.environment["HEAD_SHA"] = "c" * 40
+        result = self.invoke(
+            "guard",
+            "bash",
+            "-s",
+            "--",
+            str(marker),
+            check=False,
+            input_text='printf "unsafe\\n" >> "$1"',
+        )
+        self.assertNotEqual(result.returncode, 0)
         self.assertEqual(marker.read_text().splitlines(), ["prepared"])
 
 

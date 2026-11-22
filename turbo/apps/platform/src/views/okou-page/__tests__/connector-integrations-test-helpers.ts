@@ -131,8 +131,6 @@ export function mockFeishu(
     messageReceived: false,
     tenantKey: null,
     tenantName: null,
-    defaultAgentId: null,
-    defaultAgentName: "Okou",
   };
   context.mocks.api(contract.getStatus, ({ respond }) => {
     return respond(200, { ...defaults, ...overrides });
@@ -145,6 +143,7 @@ export function mockFeishu(
 export function setupIntegrationsPage(
   context: TestContext,
   options: {
+    readonly compact?: boolean;
     readonly feishu?: boolean;
     readonly lark?: boolean;
   } = {},
@@ -153,6 +152,7 @@ export function setupIntegrationsPage(
     context,
     path: "/works",
     featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: options.compact ?? false,
       [FeatureSwitchKey.FeishuIntegration]: options.feishu ?? false,
       [FeatureSwitchKey.LarkIntegration]: options.lark ?? false,
     },

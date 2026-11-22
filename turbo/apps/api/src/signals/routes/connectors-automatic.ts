@@ -10,7 +10,6 @@ import type { RouteEntry } from "../route-entry";
 import {
   badRequestMessage,
   conflict,
-  notFound,
   providerUnavailable,
   resourceUnavailable,
 } from "../../lib/error";
@@ -21,11 +20,6 @@ import {
   completeBuiltinConnectorAutomatic$,
   startBuiltinConnectorAutomatic$,
 } from "../services/builtin-connector-automatic-oauth.service";
-import {
-  authorizeConnectedConnector$,
-  connectorAgentAuthorizationRequested,
-  validateConnectorAuthorizationTarget$,
-} from "../services/connected-connector-authorization.service";
 import { recordConnectorOAuthCompletion$ } from "../services/connector-oauth-completion.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
 import {
@@ -99,18 +93,6 @@ const startBuiltinAutomaticInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const agentTarget = await set(
-      validateConnectorAuthorizationTarget$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: body.data.agentId,
-      },
-      signal,
-    );
-    if (!agentTarget.ok) {
-      return notFound(agentTarget.message);
-    }
     const resolver = await set(readConnectorResolver$, [params.connectorSlug]);
     signal.throwIfAborted();
     const resolved = resolver.resolveNewActionMethod({
@@ -131,7 +113,6 @@ const startBuiltinAutomaticInner$ = command(
     }
 
     const request = get(request$).raw;
-    const authorizeAgent = connectorAgentAuthorizationRequested(body.data);
     const result = await set(
       startBuiltinConnectorAutomatic$,
       {
@@ -139,8 +120,6 @@ const startBuiltinAutomaticInner$ = command(
         userId: auth.userId,
         resolved,
         account: body.data.account,
-        agentId: body.data.agentId ?? null,
-        authorizeAgent,
         redirectUri: builtinConnectorAutomaticOAuthRedirectUri(request),
         cimdClientId: okouMcpOAuthClientMetadata(request).client_id,
         dcrClientMetadata: okouMcpOAuthDynamicClientMetadata(
@@ -167,21 +146,6 @@ const startBuiltinAutomaticInner$ = command(
               : undefined,
         },
       };
-    }
-    if (authorizeAgent) {
-      const authorization = await set(
-        authorizeConnectedConnector$,
-        {
-          orgId: auth.orgId,
-          userId: auth.userId,
-          agentId: body.data.agentId ?? null,
-          connectorSlug: resolved.connectorSlug,
-        },
-        signal,
-      );
-      if (authorization.status === "agentNotFound") {
-        return notFound(authorization.message);
-      }
     }
     return {
       status: 200 as const,
@@ -228,24 +192,6 @@ const completeBuiltinAutomatic$ = command(
         connectorSlug: completed.connectorSlug ?? "automatic",
         result: { status: "error", message: failureMessage(completed.reason) },
       };
-    }
-    if (completed.authorizeAgent) {
-      const authorization = await set(
-        authorizeConnectedConnector$,
-        {
-          orgId: completed.orgId,
-          userId: completed.userId,
-          agentId: completed.agentId,
-          connectorSlug: completed.connectorSlug,
-        },
-        signal,
-      );
-      if (authorization.status === "agentNotFound") {
-        return {
-          connectorSlug: completed.connectorSlug,
-          result: { status: "error", message: authorization.message },
-        };
-      }
     }
     await set(
       recordConnectorOAuthCompletion$,

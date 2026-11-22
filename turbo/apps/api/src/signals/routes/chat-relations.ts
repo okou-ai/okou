@@ -1,6 +1,5 @@
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { notFound } from "../../lib/error";
@@ -22,12 +21,11 @@ const authorize$ = command(
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.id, threadId),
           eq(chatThreads.userId, auth.userId),
-          eq(agents.orgId, auth.orgId),
+          eq(chatThreads.orgId, auth.orgId),
         ),
       )
       .limit(1);

@@ -14,7 +14,6 @@ import {
   jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { agents } from "./agent";
 import { chatThreads } from "./chat-thread";
 import { connectors } from "./connector";
 import { workflowAutomationColumns } from "../columns/workflow-automation";
@@ -26,8 +25,7 @@ export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/w
  * Workflow visibility.
  *
  * Public workflows are visible within the org. Private workflows are visible
- * only to their owner. The backing package is still a skill directory and is
- * stored through the existing custom-skill volume storage name.
+ * only to their owner.
  */
 export type WorkflowVisibility = "public" | "private";
 export type OfficialWorkflowInstallationState = "installing" | "installed";
@@ -38,32 +36,22 @@ export type OfficialWorkflowReconciliationStatus =
 export type OfficialWorkflowAutomationIdentityState =
   "active" | "reconciling" | "needs_reconfiguration" | "failed" | "removed";
 
-/**
- * Workflows table
- * Org-scoped registry of workflows. Each row represents workflow metadata.
- * Workflow content is stored in the storages system.
- */
+/** Org-scoped Workflow definitions and their published content references. */
 export const workflows = pgTable(
   "workflows",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
-    // Hard 1:N ownership: every workflow belongs to exactly one agent. Deleting
-    // the agent cascades to its workflows and their volumes.
-    agentId: uuid("agent_id").notNull(),
     name: varchar("name", { length: 64 }).notNull(),
     visibility: varchar("visibility", { length: 16 })
       .$type<WorkflowVisibility>()
       .notNull()
       .default("private"),
-    // Instruction body (the SKILL.md content below the frontmatter). DB is the
-    // single source of truth; the SKILL.md written to the volume is synthesized
-    // from (name, description, instruction).
+    // Publication builds SKILL.md from the name, description and instruction.
     instruction: text("instruction"),
-    // Additive preparation: NULL means unconverted, never an empty file set.
-    // Published with the legacy HEAD until claim-time distribution is activated.
+    // An empty attachment set has an explicit descriptor distinct from SQL NULL.
     attachments: jsonb("attachments").$type<WorkflowAttachments>(),
-    // Complete SKILL.md + attachments; inactive until reference-only claims activate.
+    // Published SKILL.md and attachments delivered together for execution.
     contentBundle: jsonb("content_bundle").$type<ContentBundle>(),
     ownerUserId: text("owner_user_id").notNull(),
     displayName: varchar("display_name", { length: 256 }),
@@ -86,47 +74,33 @@ export const workflows = pgTable(
   },
   (table) => {
     return {
-      canonicalAgentFk: foreignKey({
-        name: "workflows_agent_id_agents_id_fk",
-        columns: [table.agentId],
-        foreignColumns: [agents.id],
-      }).onDelete("cascade"),
-      agentIdx: index("idx_workflows_agent").on(table.agentId, table.name),
       importSessionIdx: index("idx_workflows_import_session").on(
         table.importSessionId,
       ),
-      // Public workflow slugs are the shared namespace for an agent. Private
-      // workflows may duplicate public slugs as user-specific forks/overrides,
-      // but one owner cannot have two ordinary private workflows with the same
-      // slug on the same agent.
-      publicAgentNameIdx: uniqueIndex("idx_workflows_public_agent_name_unique")
-        .on(table.orgId, table.agentId, table.name)
+      // Public names are shared across the workspace; private names belong to members.
+      publicOrgNameIdx: uniqueIndex("idx_workflows_public_org_name_unique")
+        .on(table.orgId, table.name)
         .where(sql`visibility = 'public'`),
       // Ordinary names and Official definitions have independent identities.
-      ordinaryPrivateOwnerAgentNameIdx: uniqueIndex(
-        "idx_workflows_ordinary_private_owner_agent_name_unique",
+      ordinaryPrivateOwnerNameIdx: uniqueIndex(
+        "idx_workflows_ordinary_private_owner_name_unique",
       )
-        .on(table.orgId, table.agentId, table.ownerUserId, table.name)
+        .on(table.orgId, table.ownerUserId, table.name)
         .where(
           sql`visibility = 'private' AND official_definition_name IS NULL`,
         ),
-      officialOwnerAgentDefinitionIdx: uniqueIndex(
-        "idx_workflows_official_owner_agent_definition_unique",
+      officialOwnerDefinitionIdx: uniqueIndex(
+        "idx_workflows_official_owner_definition_unique",
       )
-        .on(
-          table.orgId,
-          table.agentId,
-          table.ownerUserId,
-          table.officialDefinitionName,
-        )
+        .on(table.orgId, table.ownerUserId, table.officialDefinitionName)
         .where(sql`official_definition_name IS NOT NULL`),
       // Both rollout definitions are one Morning Brief installation identity.
       // At GA (#39591), remove this index after installations converge to
       // morning-brief; the canonical Official definition index then suffices.
-      morningBriefOwnerAgentIdx: uniqueIndex(
-        "idx_workflows_morning_brief_owner_agent_unique",
+      morningBriefOwnerIdx: uniqueIndex(
+        "idx_workflows_morning_brief_owner_unique",
       )
-        .on(table.orgId, table.agentId, table.ownerUserId)
+        .on(table.orgId, table.ownerUserId)
         .where(
           sql`official_definition_name IN ('morning-brief', 'internal-test-morning-brief')`,
         ),
@@ -305,7 +279,7 @@ export const workflowAutomations = pgTable(
       ),
       check(
         "workflow_automations_autonomy_budget_check",
-        sql`${table.autonomyBudget} BETWEEN 0 AND 32`,
+        sql`${table.autonomyBudget} BETWEEN 0 AND 128`,
       ),
       uniqueIndex("idx_workflow_automations_official_blueprint_unique")
         .on(table.workflowId, table.officialBlueprintKey)

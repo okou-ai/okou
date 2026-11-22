@@ -86,12 +86,11 @@ async function seedSendableContext() {
   await fixture.run(() => {
     return runsApi.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
   });
-  const agent = await fixture.run(() => {
+  await fixture.run(() => {
     return bdd.createAgent(fixture.actor, { displayName: "Telegram upload" });
   });
   const sent = await fixture.run(() => {
     return chatApi.sendAndLaunch(fixture.actor, {
-      agentId: agent.agentId,
       prompt: "Create a run for Telegram upload completion",
     });
   });
@@ -251,7 +250,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
           ),
           caption: fullCaption
             ? caption
-            : `Daily report\n\n<i>Sent via Telegram upload · Triggered by <a href="tg://user?id=${fixture.telegramUserId}">Test</a></i>`,
+            : `Daily report\n\n<i>Triggered by <a href="tg://user?id=${fixture.telegramUserId}">Test</a></i>`,
           parse_mode: "HTML",
           message_thread_id: 42,
         });

@@ -1,10 +1,12 @@
+import { connectX } from "./helpers/connector-auth-provider-fixtures";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { http, HttpResponse } from "msw";
+
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
-import { server } from "../../../mocks/server";
+
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -25,7 +27,7 @@ async function connectorActor() {
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   const runnerGroup = await api.configureRunnerGroup();
-  const agents: string[] = [];
+
   const providerIds: string[] = [];
   const waitingThreads = new Set<string>();
   const owner = publicRunOwner(context, actor, {
@@ -38,9 +40,8 @@ async function connectorActor() {
       }
     },
     afterRuns: async () => {
-      for (const agentId of agents) {
-        await bdd.deleteAgent(actor, agentId);
-      }
+      await connectors.deleteFeatureSwitches(actor);
+
       for (const id of providerIds) {
         await createAuthDeviceSupportApi(
           context,
@@ -63,6 +64,7 @@ async function connectorActor() {
   return await owner.run(async () => {
     await publicPlanLifecycle(context, actor).update("active");
     await bdd.completeOnboarding(actor);
+
     const provider = await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -71,44 +73,9 @@ async function connectorActor() {
       displayName: "Connector selection",
       visibility: "private",
     });
-    agents.push(agent.agentId);
+
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
-    server.use(
-      http.post("https://api.x.com/2/oauth2/token", () => {
-        return HttpResponse.json({
-          access_token: "x-selection-access",
-          refresh_token: "x-selection-refresh",
-          token_type: "Bearer",
-          scope: "",
-        });
-      }),
-      http.get("https://api.x.com/2/users/me", () => {
-        return HttpResponse.json({
-          data: {
-            id: "selection-x",
-            username: "selection-x",
-            name: "Selection X",
-          },
-        });
-      }),
-    );
-    const started = await connectors.requestOauthStart(actor, "x", "oauth", {
-      statuses: [200],
-    });
-    if (started.status !== 200) {
-      throw new Error("Expected X OAuth start");
-    }
-    const state = new URL(started.body.authorizationUrl).searchParams.get(
-      "state",
-    );
-    if (!state) {
-      throw new Error("Expected issued OAuth state");
-    }
-    const connected = await connectors.completeOauthCallbackResult("x", {
-      state,
-      code: `selection-${randomUUID()}`,
-    });
-    expect(connected.body.status).toBe("success");
+    await connectX(connectors, actor);
     return {
       actor,
       agentId: agent.agentId,
@@ -129,7 +96,7 @@ async function connectorActor() {
       async queue(prompt: string) {
         const queued = await createChatEventsFixture(context).queueChatRun(
           actor,
-          { agentId: agent.agentId, prompt, model: "claude-fable-5-1" },
+          { prompt, model: "claude-fable-5-1" },
           (blocker) => {
             owner.rememberExecution(blocker.runId, blocker.sandboxToken);
             waitingThreads.add(blocker.threadId);
@@ -160,8 +127,16 @@ async function connectorActor() {
 describe("Run connector selection through normal user changes", () => {
   it("omits a connected but unselected connector from a real Runner execution", async () => {
     const fixture = await connectorActor();
-    const { actor, agentId, api } = fixture;
-    await api.enableAgentConnectors(actor, agentId, []);
+    const { actor, connectors } = fixture;
+    const account = await connectors.readDefaultBuiltinAccount(actor, "x");
+    await createChatConnectorAccessApi(context).setDefault(
+      actor,
+      {
+        target: { kind: "builtin", connectorSlug: "x" },
+        connectionId: account.id,
+      },
+      false,
+    );
     const run = await fixture.send("omit an unselected connector");
     const execution = await fixture.executionInput(run.runId);
     expect(execution.environment ?? {}).not.toHaveProperty("X_TOKEN");
@@ -178,24 +153,41 @@ describe("Run connector selection through normal user changes", () => {
 
   it("uses current native connector selections during preparation and keeps the delivered Run configuration", async () => {
     const fixture = await connectorActor();
-    const { actor, agentId, api, connectors } = fixture;
+    const { actor, connectors } = fixture;
     const connection = await connectors.connectManualGrant(
       actor,
       "openai",
       "api-token",
       { apiKey: `bootstrap-owned-${randomUUID()}` },
-      agentId,
     );
     const runtime = await connectors.connectManualGrant(
       actor,
       "runtime",
       "api-token",
       { apiKey: `runtime-owned-${randomUUID()}` },
-      agentId,
     );
-    await api.enableAgentConnectors(actor, agentId, ["openai"]);
+    const access = createChatConnectorAccessApi(context);
+    const selection = {
+      target: { kind: "builtin", connectorSlug: "openai" },
+      connectionId: connection.id,
+    } as const;
+    const runtimeSelection = {
+      target: { kind: "builtin", connectorSlug: "runtime" },
+      connectionId: runtime.id,
+    } as const;
+    const x = await connectors.readDefaultBuiltinAccount(actor, "x");
+    await access.setDefault(
+      actor,
+      {
+        target: { kind: "builtin", connectorSlug: "x" },
+        connectionId: x.id,
+      },
+      false,
+    );
+    await access.setDefault(actor, runtimeSelection, false);
     const queued = await fixture.queue("use the prepared connector selection");
-    await api.enableAgentConnectors(actor, agentId, ["runtime"]);
+    await access.setDefault(actor, selection, false);
+    await access.setDefault(actor, runtimeSelection, true);
     const prepared = await queued.launch();
     const execution = await fixture.executionInput(prepared.runId);
     expect(execution.secretConnectorMetadataMap?.RUNTIME_API_KEY).toMatchObject(
@@ -207,7 +199,8 @@ describe("Run connector selection through normal user changes", () => {
     expect(execution.secretConnectorMap ?? {}).not.toHaveProperty(
       "OPENAI_TOKEN",
     );
-    await api.enableAgentConnectors(actor, agentId, ["openai"]);
+    await access.setDefault(actor, selection, true);
+    await access.setDefault(actor, runtimeSelection, false);
     expect(execution.environment).toHaveProperty("RUNTIME_API_KEY");
     await fixture.cancel(prepared.runId, execution.sandboxToken);
     const next = await fixture.send(

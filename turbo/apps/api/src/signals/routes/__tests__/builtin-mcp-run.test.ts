@@ -2,12 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { builtinConnectorNoAuthGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
-import { agentsRoutes } from "../agents";
 import { builtinConnectorsRoutes } from "../connectors";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -42,7 +40,7 @@ async function runActor() {
   return { actor, agentId: agent.agentId, runnerGroup };
 }
 
-async function connectPublic(actor: ApiTestUser, agentId: string) {
+async function connectPublic(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const response = await accept(
     setupApp({ context, routes: builtinConnectorsRoutes })(
@@ -52,8 +50,6 @@ async function connectPublic(actor: ApiTestUser, agentId: string) {
       params: { connectorSlug: "public-mcp" },
       body: {
         authMethod: "none",
-        agentId,
-        authorizeAgent: true,
         account: { intent: "add" },
       },
     }),
@@ -63,60 +59,12 @@ async function connectPublic(actor: ApiTestUser, agentId: string) {
 }
 
 describe("builtin MCP Run admission", () => {
-  it("advertises an authorized MCP connector without admitting an unconnected account", async () => {
+  it("pins execution input, refreshes discovery and keeps MCP credentials behind firewall auth", async () => {
     const { actor, agentId, runnerGroup } = await runActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    await accept(
-      setupApp({ context, routes: agentsRoutes })(
-        userBuiltinConnectorsContract,
-      ).update({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { id: agentId },
-        body: { enabledConnectorSlugs: ["manual-mcp", "github"] },
-      }),
-      [200],
-    );
-
-    const run = await runs.createThreadRun(actor, {
-      agentId,
-      prompt: "Find out which MCP connectors are authorized",
+    const publicAccountId = await connectPublic(actor);
+    await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
+      apiKey: "admitted-mcp-token",
     });
-    await runs.heartbeatRunner(runnerGroup);
-    const execution = await runs.executionInput(run.runId);
-    expect(execution.appendSystemPrompt).toContain(
-      "The following MCP connectors are authorized for this Agent:",
-    );
-    expect(execution.appendSystemPrompt).toContain("- `manual-mcp`");
-    expect(execution.appendSystemPrompt).not.toContain("- `public-mcp`");
-    expect(execution.appendSystemPrompt).not.toContain("- `github`");
-    expect(execution.connectorRuntimeTargets).toStrictEqual([]);
-    expect(execution.environment).not.toHaveProperty("MCP_API_KEY");
-    const token = execution.platformEnvironment.OKOU_TOKEN;
-    if (!token) {
-      throw new Error("Expected the Run authentication context");
-    }
-    const discovery = await accept(
-      setupApp({ context, routes: mcpConnectorsRoutes })(
-        mcpConnectorsContract,
-      ).list({
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [200],
-    );
-    expect(discovery.body.connectors).toStrictEqual([]);
-    await runs.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("pins the admitted accounts and keeps MCP credentials behind firewall auth", async () => {
-    const { actor, agentId, runnerGroup } = await runActor();
-    const publicAccountId = await connectPublic(actor, agentId);
-    await connectors.connectManualGrant(
-      actor,
-      "manual-mcp",
-      "api-token",
-      { apiKey: "admitted-mcp-token" },
-      agentId,
-    );
     const [admittedAccount] = await connectors.listBuiltinConnectorAccounts(
       actor,
       "manual-mcp",
@@ -129,13 +77,9 @@ describe("builtin MCP Run admission", () => {
       prompt: "Use the admitted builtin MCP tools",
     });
 
-    await connectors.connectManualGrant(
-      actor,
-      "manual-mcp",
-      "api-token",
-      { apiKey: "new-default-mcp-token" },
-      agentId,
-    );
+    await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
+      apiKey: "new-default-mcp-token",
+    });
     const replacementAccount = (
       await connectors.listBuiltinConnectorAccounts(actor, "manual-mcp")
     ).find((account) => {
@@ -201,7 +145,7 @@ describe("builtin MCP Run admission", () => {
       expect.arrayContaining([
         expect.objectContaining({
           target: { kind: "builtin", connectorSlug: "manual-mcp" },
-          connectionId: admittedAccount.id,
+          connectionId: replacementAccount.id,
           runtimeAvailable: true,
         }),
         expect.objectContaining({

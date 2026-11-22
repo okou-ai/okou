@@ -3554,8 +3554,225 @@
     {
       "idx": 1586,
       "version": "7",
-      "when": 1795082681446,
-      "tag": "1586_member_workflow_recency",
+      "when": 1795082318249,
+      "tag": "1586_activate_priority_multi_agent_my_okou",
+      "breakpoints": true
+    },
+    {
+      "idx": 1587,
+      "version": "7",
+      "when": 1795096381838,
+      "tag": "1587_activate_quiet_default_without_cache_my_okou",
+      "breakpoints": true
+    },
+    {
+      "idx": 1588,
+      "version": "7",
+      "when": 1795098319799,
+      "tag": "1588_expand_autonomy_budget_to_128",
+      "breakpoints": true
+    },
+    {
+      "idx": 1589,
+      "version": "7",
+      "when": 1795098339218,
+      "tag": "1589_validate_expanded_autonomy_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 1590,
+      "version": "7",
+      "when": 1795133029099,
+      "tag": "1590_activate_remaining_my_okou_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1591,
+      "version": "7",
+      "when": 1795146005372,
+      "tag": "1591_drop_retired_agent_connector_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 1592,
+      "version": "7",
+      "when": 1795147356083,
+      "tag": "1592_restore_my_okou_for_uninitialized_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1593,
+      "version": "7",
+      "when": 1795159373060,
+      "tag": "1593_drop_legacy_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 1594,
+      "version": "7",
+      "when": 1795161273116,
+      "tag": "1594_activate_held_my_okou_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 1595,
+      "version": "7",
+      "when": 1795164449391,
+      "tag": "1595_drop_legacy_pi_resource_version_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1596,
+      "version": "7",
+      "when": 1795172051644,
+      "tag": "1596_activate_final_my_okou_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1597,
+      "version": "7",
+      "when": 1795175981832,
+      "tag": "1597_retry_held_my_okou_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 1598,
+      "version": "7",
+      "when": 1795193646173,
+      "tag": "1598_drop_retired_drive_agent_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 1599,
+      "version": "7",
+      "when": 1795206895123,
+      "tag": "1599_retire_agent_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1600,
+      "version": "7",
+      "when": 1795208704447,
+      "tag": "1600_chat_thread_org_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 1601,
+      "version": "7",
+      "when": 1795210327730,
+      "tag": "1601_preserve_chat_thread_reassignment_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 1602,
+      "version": "7",
+      "when": 1795210374026,
+      "tag": "1602_retire_chat_thread_reassigned_agent_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 1603,
+      "version": "7",
+      "when": 1795210655967,
+      "tag": "1603_member_wallet_spend_intent",
+      "breakpoints": true
+    },
+    {
+      "idx": 1604,
+      "version": "7",
+      "when": 1795211330416,
+      "tag": "1604_member_run_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 1605,
+      "version": "7",
+      "when": 1795213062931,
+      "tag": "1605_browser_user_action_member",
+      "breakpoints": true
+    },
+    {
+      "idx": 1606,
+      "version": "7",
+      "when": 1795213062932,
+      "tag": "1606_retire_secondary_agent_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1607,
+      "version": "7",
+      "when": 1795232889487,
+      "tag": "1607_custom_connector_skill_publications",
+      "breakpoints": true
+    },
+    {
+      "idx": 1608,
+      "version": "7",
+      "when": 1795260992027,
+      "tag": "1608_prepare_custom_connector_skill_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 1609,
+      "version": "7",
+      "when": 1795286891342,
+      "tag": "1609_stage-agent-retirement",
+      "breakpoints": true
+    },
+    {
+      "idx": 1610,
+      "version": "7",
+      "when": 1795292457882,
+      "tag": "1610_contract_chat_run_agent_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1611,
+      "version": "7",
+      "when": 1795299232423,
+      "tag": "1611_workspace_workflow_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1612,
+      "version": "7",
+      "when": 1795310579598,
+      "tag": "1612_voice_transcription",
+      "breakpoints": true
+    },
+    {
+      "idx": 1613,
+      "version": "7",
+      "when": 1795317432970,
+      "tag": "1613_retire_custom_connector_skill_mirror",
+      "breakpoints": true
+    },
+    {
+      "idx": 1614,
+      "version": "7",
+      "when": 1795319867619,
+      "tag": "1614_drop_feed_source_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 1615,
+      "version": "7",
+      "when": 1795320055038,
+      "tag": "1615_drop_chat_thread_event_executor",
+      "breakpoints": true
+    },
+    {
+      "idx": 1616,
+      "version": "7",
+      "when": 1795320110045,
+      "tag": "1616_retire_agents_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 1617,
+      "version": "7",
+      "when": 1795337641406,
+      "tag": "1617_member_workflow_recency",
       "breakpoints": true
     }
   ]

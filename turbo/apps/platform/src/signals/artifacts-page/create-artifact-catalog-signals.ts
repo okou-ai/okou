@@ -108,7 +108,10 @@ export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
   readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
 }
 
-function createCatalogSource(chatThreadId?: string) {
+function createCatalogSource(
+  chatThreadId?: string,
+  driveAccountRevision$?: Computed<string>,
+) {
   const kind$ = state<ArtifactCatalogKind | null>(null);
   const reloadVersion$ = state(0);
   const firstPage$ = computed(
@@ -130,7 +133,13 @@ function createCatalogSource(chatThreadId?: string) {
       return withThumbnailLoad(result.body, revision);
     },
   );
-  return { chatThreadId, kind$, reloadVersion$, firstPage$ };
+  return {
+    chatThreadId,
+    driveAccountRevision$,
+    kind$,
+    reloadVersion$,
+    firstPage$,
+  };
 }
 
 type CatalogSource = ReturnType<typeof createCatalogSource>;
@@ -212,7 +221,7 @@ function createCatalogPagingSignals({
 
 function createCatalogSelectionSignals(
   catalog$: Computed<Promise<ArtifactCatalogPage>>,
-  { reloadVersion$, chatThreadId }: CatalogSource,
+  { reloadVersion$, chatThreadId, driveAccountRevision$ }: CatalogSource,
 ): ArtifactCatalogSelection {
   const internalDetailVersion$ = state(0);
   const reloadSelectedArtifactDetail$ = command(({ set }) => {
@@ -238,6 +247,9 @@ function createCatalogSelectionSignals(
       get(reloadVersion$);
       get(artifactCatalogRevision$);
       get(internalDetailVersion$);
+      if (driveAccountRevision$) {
+        get(driveAccountRevision$);
+      }
       const artifactId = get(internalSelectedArtifactId$);
       if (!artifactId) {
         return null;
@@ -379,11 +391,14 @@ export function createArtifactCatalogSignals(): ArtifactCatalogSignals {
 }
 
 /** Each chat shares one unfiltered first page. Each view owns its cursor and selection. */
-export function createThreadArtifactCatalogs(chatThreadId: string): {
+export function createThreadArtifactCatalogs(
+  chatThreadId: string,
+  driveAccountRevision$: Computed<string>,
+): {
   readonly gallery: ArtifactCatalogViewSignals;
   readonly resources: ArtifactCatalogViewSignals;
 } {
-  const source = createCatalogSource(chatThreadId);
+  const source = createCatalogSource(chatThreadId, driveAccountRevision$);
   const { resetPages$: resetGallery$, ...gallery } = createCatalogView(source);
   const { resetPages$: resetResources$, ...resources } =
     createCatalogView(source);

@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.regex.Pattern
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -93,7 +94,7 @@ class NativeRealtimeTest {
         var controls: RunControlsModel? = null
         val controlPosts = AtomicInteger()
         val controlResponse = CountDownLatch(1)
-        val target = ComposerTarget(CHAT_PERSONAL, CHAT_AGENT)
+        val target = ComposerTarget(threadId = CHAT_PERSONAL)
         var step = "Launch native realtime scenario"
         var stopBounds = "not located"
         fun diagnostics(): String {
@@ -129,14 +130,23 @@ class NativeRealtimeTest {
                 checkNotNull(device.wait(Until.findObject(label(value)), 10_000))
             fun reveal(value: String) {
                 val target = label(value)
+                val scrollable = By.pkg(app.packageName).scrollable(true)
+                check(
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice) =
+                                device.hasObject(target) || device.hasObject(scrollable)
+                        },
+                        10_000,
+                    )
+                ) {
+                    "Native reply and its scroll container are both unavailable"
+                }
                 if (!device.hasObject(target)) {
-                    val container =
-                        checkNotNull(
-                            device.wait(
-                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
-                                10_000,
-                            )
-                        )
+                    val container = checkNotNull(device.findObject(scrollable))
+                    // Start swipes above the floating conversation jump button.
+                    val jumpInset = (56 * app.resources.displayMetrics.density).roundToInt()
+                    container.setGestureMargins(0, 0, 0, jumpInset)
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Compose exposes virtual descendants through the current window.
@@ -168,7 +178,7 @@ class NativeRealtimeTest {
                                 By.pkg(app.packageName)
                                     .clickable(true)
                                     .enabled(true)
-                                    .hasDescendant(label(app.getString(R.string.controls_stop)))
+                                    .hasDescendant(label(app.getString(R.string.conversation_stop)))
                             ),
                             10_000,
                         )
@@ -185,8 +195,9 @@ class NativeRealtimeTest {
                 }
                 shown == visible
             }
-            text(app.getString(R.string.chat_list_title))
-            text(app.getString(R.string.realtime_connecting))
+            device.awaitChatList(app)
+            val connecting = app.getString(R.string.realtime_connecting)
+            assertFalse(device.hasObject(label(connecting)))
             scenario.onActivity {
                 val ready =
                     checkNotNull(
@@ -201,6 +212,8 @@ class NativeRealtimeTest {
             condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
             reveal("Personal chat")
             text("Personal chat").click()
+            step = "Show realtime status in the open conversation"
+            text(connecting)
             assertNotNull(
                 device.wait(
                     Until.findObject(By.pkg(app.packageName).textContains("Native history")),
@@ -504,7 +517,18 @@ class NativeRealtimeTest {
                     device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
                 )
             followupEditor.setText("Native follow-up")
-            text("Send").click()
+            checkNotNull(
+                    device.wait(
+                        Until.findObject(
+                            By.pkg(app.packageName)
+                                .desc(app.getString(R.string.composer_send))
+                                .clickable(true)
+                                .enabled(true)
+                        ),
+                        10_000,
+                    )
+                )
+                .click()
             condition { followup.get() != null }
             condition {
                 chats?.history?.uiState?.value?.transcript?.messages?.any {
@@ -531,7 +555,7 @@ class NativeRealtimeTest {
                     !device.hasObject(label(app.getString(R.string.composer_sync_saving))) &&
                     !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
             }
-            reveal(app.getString(R.string.controls_stop))
+            reveal(app.getString(R.string.conversation_stop))
             clickStop()
             condition("Single interrupt reaches transport while the response is held") {
                 controlPosts.get() == 1 &&
@@ -548,9 +572,16 @@ class NativeRealtimeTest {
                 activeRun,
                 interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
             )
-            // Wait for the new control panel before the duplicate native action.
+            // An ambiguous receipt keeps Stop unavailable until readback settles it.
             reveal(app.getString(R.string.controls_unknown))
-            clickStop()
+            val pendingStop =
+                device.findObject(
+                    By.pkg(app.packageName)
+                        .clickable(true)
+                        .hasDescendant(label(app.getString(R.string.conversation_stop)))
+                )
+            checkNotNull(pendingStop)
+            assertTrue(!pendingStop.isEnabled)
             device.waitForIdle()
             scenario.onActivity {
                 assertEquals(1, controls?.uiState?.value?.journal?.pending?.size)
@@ -610,6 +641,11 @@ class NativeRealtimeTest {
                     .setResponseCode(201)
             }
             external.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+            condition("The failure is confirmed before scrolling to the recovery action") {
+                chats?.history?.uiState?.value?.transcript?.messages?.any {
+                    it.id == RecoveryApiFixture.FAILURE && it.status == "run.failed"
+                } == true
+            }
             reveal(app.getString(R.string.recovery_continue))
             text(app.getString(R.string.recovery_continue)).click()
             condition { recovery.inputs.size == 1 }
@@ -638,7 +674,7 @@ class NativeRealtimeTest {
                     device.findObject(
                         By.pkg(app.packageName)
                             .clickable(true)
-                            .hasDescendant(By.text(app.getString(R.string.controls_stop)))
+                            .hasDescendant(By.text(app.getString(R.string.conversation_stop)))
                     )
                 val summary =
                     diagnostics() +

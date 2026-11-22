@@ -1,4 +1,4 @@
-import { agents } from "@okouai/db/schema/agent";
+import { db$ } from "../external/db";
 import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
@@ -7,7 +7,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, exists, ne, or } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";
-import { db$ } from "../external/db";
 import { command, computed } from "ccstate";
 import {
   agentphoneDeliveryTargetSchema,
@@ -41,9 +40,7 @@ type AgentPhoneLaunchContextRow = Pick<
   | "toNumber"
   | "userLinkId"
   | "agentphoneAgentId"
-> & {
-  readonly agentId: string;
-};
+> & {};
 
 function requiredAgentPhoneLaunchContext(
   row: AgentPhoneLaunchContextRow | undefined,
@@ -110,7 +107,6 @@ export function createAgentPhoneLaunchContext(args: AgentPhoneLaunchSource) {
         toNumber: chatAgentphoneContext.toNumber,
         userLinkId: chatAgentphoneContext.userLinkId,
         agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
-        agentId: agents.id,
       })
       .from(chatEvents)
       .innerJoin(
@@ -125,9 +121,9 @@ export function createAgentPhoneLaunchContext(args: AgentPhoneLaunchSource) {
         and(
           eq(chatThreads.id, chatEvents.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatEvents.id, args.eventId),
@@ -181,6 +177,32 @@ export function createAgentPhoneLaunchContext(args: AgentPhoneLaunchSource) {
   });
 }
 
+function agentphoneDeliveryFromContext(
+  context: NonNullable<AgentPhoneThreadContext>,
+) {
+  return agentphoneDeliveryTargetSchema.parse({
+    messageId: context.messageId,
+    conversationId: context.conversationId,
+    ...(context.isGroup ? { groupId: context.groupId } : {}),
+    channel: context.channel,
+    isGroup: context.isGroup,
+    rootMessageId: context.rootMessageId,
+    phoneHandle: context.phoneHandle,
+    fromNumber: context.fromNumber,
+    toNumber: context.toNumber,
+    userLinkId: context.userLinkId,
+    agentphoneAgentId: context.agentphoneAgentId,
+  });
+}
+
+export function createAgentPhoneQueuedDelivery(args: AgentPhoneLaunchSource) {
+  const context$ = createAgentPhoneLaunchContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context ? agentphoneDeliveryFromContext(context) : null;
+  });
+}
+
 export const loadAgentPhoneQueuedLaunchMaterial$ = command(
   async (
     { get },
@@ -194,39 +216,36 @@ export const loadAgentPhoneQueuedLaunchMaterial$ = command(
     }
     return {
       prompt: context.messageText,
-      appendSystemPrompt: buildAgentPhonePrompt(
-        {
-          sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
-          phoneHandle: context.phoneHandle,
-          conversationId: context.conversationId,
-          groupId: context.groupId,
-          channel: context.channel,
-          isGroup: context.isGroup,
-          messageId: context.messageId,
-          agentphoneAgentId: context.agentphoneAgentId,
-        },
-        resolveIntegrationNotePrompt({
-          triggerSource: "agentphone",
-          agentPhoneChannel: context.channel,
-          featureSwitchContext: args.featureSwitchContext,
-        }),
-        context.threadContext,
+      appendSystemPrompt: agentphoneSystemPromptFromContext(
+        context,
+        args.featureSwitchContext,
       ),
-      agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
-        messageId: context.messageId,
-        conversationId: context.conversationId,
-        ...(context.isGroup ? { groupId: context.groupId } : {}),
-        channel: context.channel,
-        isGroup: context.isGroup,
-        rootMessageId: context.rootMessageId,
-        phoneHandle: context.phoneHandle,
-        fromNumber: context.fromNumber,
-        toNumber: context.toNumber,
-        userLinkId: context.userLinkId,
-        agentId: context.agentId,
-        agentphoneAgentId: context.agentphoneAgentId,
-      }),
+      agentphoneDelivery: agentphoneDeliveryFromContext(context),
       userInfoExtras: { agentphoneHandle: context.phoneHandle },
     };
   },
 );
+
+export function agentphoneSystemPromptFromContext(
+  context: NonNullable<AgentPhoneThreadContext>,
+  featureSwitchContext: FeatureSwitchContext,
+) {
+  return buildAgentPhonePrompt(
+    {
+      sharedNumber: optionalEnv("AGENTPHONE_PHONE_NUMBER") ?? "",
+      phoneHandle: context.phoneHandle,
+      conversationId: context.conversationId,
+      groupId: context.groupId,
+      channel: context.channel,
+      isGroup: context.isGroup,
+      messageId: context.messageId,
+      agentphoneAgentId: context.agentphoneAgentId,
+    },
+    resolveIntegrationNotePrompt({
+      triggerSource: "agentphone",
+      agentPhoneChannel: context.channel,
+      featureSwitchContext,
+    }),
+    context.threadContext,
+  );
+}

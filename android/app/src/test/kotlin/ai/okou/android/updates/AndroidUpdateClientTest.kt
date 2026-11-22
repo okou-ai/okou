@@ -12,8 +12,13 @@ import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -62,6 +67,47 @@ class AndroidUpdateClientTest {
                     } catch (error: UpdateException) {
                         assertEquals(UpdateProblem.Check, error.problem)
                     }
+                }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun temporaryDiscoveryRejectionRetriesThroughThePublicClient() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val directory = files.newFolder()
+            val info = AndroidUpdates(null, updateRelease())
+            server.enqueue(MockResponse().setResponseCode(503))
+            server.enqueue(MockResponse().setBody(Json.encodeToString(info)))
+            val client =
+                AndroidUpdateClient(
+                    ApplicationProvider.getApplicationContext(),
+                    server.url("/"),
+                    "0.12.0",
+                    directory,
+                )
+            AppUpdates(
+                    client,
+                    FileUpdateStore(directory),
+                    "0.12.0",
+                    35,
+                    StandardTestDispatcher(testScheduler),
+                )
+                .use { owner ->
+                    owner.check()
+                    val rejected =
+                        owner.state.first {
+                            it.check == UpdateCheck.Waiting || it.check == UpdateCheck.Failed
+                        }
+                    assertEquals(UpdateCheck.Waiting, rejected.check)
+                    advanceTimeBy(59_999)
+                    assertEquals(1, server.requestCount)
+
+                    advanceTimeBy(1)
+                    val confirmed = owner.state.first { it.check == UpdateCheck.Checked }
+                    assertEquals(info.release, confirmed.candidate)
+                    assertEquals(2, server.requestCount)
                 }
         }
     }
@@ -220,21 +266,51 @@ class AndroidUpdateClientTest {
         val directory = files.newFolder()
         val record =
             UpdateRecord(
-                "0.12.0",
-                AndroidUpdates(null, updateRelease()),
-                true,
-                "0.13.0",
-                "0.13.0",
-                12345,
-                updateRelease(),
+                installedVersion = "0.12.0",
+                info = AndroidUpdates(null, updateRelease()),
+                blocked = true,
+                minimum = "0.13.0",
+                checkedAt = 12345,
+                target = updateRelease(),
             )
-        FileUpdateStore(directory).save(record)
-        assertEquals(record, FileUpdateStore(directory).load())
-        File(directory, "state.json").writeBytes(ByteArray(131_073))
+        val store = FileUpdateStore(directory)
+        val stateFile = File(directory, "state.json")
+        store.save(record)
+        assertEquals(record, store.load())
+        stateFile.writeText(stateFile.readText().replaceFirst("{", "{\"deferred\":\"0.13.0\","))
+        assertEquals(record, store.load())
+        stateFile.writeBytes(ByteArray(131_073))
         try {
-            FileUpdateStore(directory).load()
+            store.load()
             fail("Expected bounded read")
         } catch (_: java.io.IOException) {}
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startupAfterUpgradeRemovesTheDownloadedApk() = runTest {
+        val directory = files.newFolder()
+        val release = updateRelease()
+        val downloaded = File(directory, "${release.sha256}.apk").apply { writeText("APK") }
+        val unrelated = File(directory, "unmanaged.apk").apply { writeText("keep") }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = FileUpdateStore(directory, dispatcher)
+        store.save(UpdateRecord("0.12.0", target = release))
+        val client =
+            AndroidUpdateClient(
+                ApplicationProvider.getApplicationContext(),
+                "https://api.okou.ai/".toHttpUrl(),
+                release.version,
+                directory,
+                dispatcher,
+            )
+
+        AppUpdates(client, store, release.version, 35, dispatcher).use { owner ->
+            advanceUntilIdle()
+            assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
+            assertFalse(downloaded.exists())
+            assertEquals("keep", unrelated.readText())
+        }
     }
 
     @Test
@@ -255,6 +331,7 @@ class AndroidUpdateClientTest {
                     url = "https://static.okou.io/android-updates/releases/0.13.0/$digest.apk",
                 )
         val file = File(directory, "$digest.apk").apply { writeBytes(bytes) }
+        val previous = File(directory, "${"f".repeat(64)}.apk").apply { writeText("old APK") }
         fun setSigners(info: PackageInfo, signature: String) {
             val signers = arrayOf(Signature(signature))
             if (Build.VERSION.SDK_INT >= 28) {
@@ -281,6 +358,8 @@ class AndroidUpdateClientTest {
         manager.setPackageArchiveInfo(file.path, archive)
         AndroidUpdateClient(context, "https://api.okou.ai/".toHttpUrl(), "0.12.0", directory).use {
             updater ->
+            updater.initialize(release)
+            assertFalse(previous.exists())
             assertEquals(file, updater.recover(release))
             archive.versionCode = installed.versionCode
             manager.setPackageArchiveInfo(file.path, archive)

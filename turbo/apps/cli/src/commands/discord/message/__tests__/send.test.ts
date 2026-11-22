@@ -1,36 +1,40 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../../../../test/fixtures/build-process-entry";
 
 const channelId = "1346579924358245999";
 const messageId = "18446744073709551614";
+let preparation: ReturnType<typeof buildProcessEntry> | undefined;
+let entry: string;
 
 function sendWithStdin(input: string, args: readonly string[] = []) {
-  return execFileSync(
-    process.execPath,
-    [
-      "--import",
-      "tsx",
-      "--import",
-      'data:text/javascript,globalThis.__CLI_VERSION__="0.0.0-test"',
-      fileURLToPath(new URL("./fixtures/send.fixture.ts", import.meta.url)),
-      "--to",
-      channelId,
-      ...args,
-    ],
-    {
-      input,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        OKOU_TOKEN: "test-token",
-        OKOU_API_BACKEND_URL: "http://localhost:3000",
-      },
+  return execFileSync(process.execPath, [entry, "--to", channelId, ...args], {
+    input,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      OKOU_TOKEN: "test-token",
+      OKOU_API_BACKEND_URL: "http://localhost:3000",
     },
-  );
+  });
 }
 
 describe("okou discord message send stdin", () => {
+  beforeAll(async () => {
+    preparation = buildProcessEntry(
+      fileURLToPath(new URL("./fixtures/send.fixture.ts", import.meta.url)),
+    );
+    entry = (await preparation).entry;
+  });
+
+  afterAll(async () => {
+    await disposePreparedProcessEntry(preparation);
+  });
+
   it("reads real piped multiline text and preserves exact reply IDs", () => {
     const output = sendWithStdin("First line\nSecond line\n", [
       "--reply-to",

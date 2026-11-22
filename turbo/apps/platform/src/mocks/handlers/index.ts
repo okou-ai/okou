@@ -6,11 +6,7 @@
  */
 
 import { resetAblySubscriptions } from "../ably.ts";
-import {
-  apiAgentsHandlers,
-  resetMockAgents,
-  resetMockUserConnectors,
-} from "./api-agents.ts";
+import { apiAgentsHandlers } from "./api-agents.ts";
 import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
 import { apiBuildInfoHandlers } from "./api-build-info.ts";
 import {
@@ -90,10 +86,6 @@ import {
   resetMockUserModelPreference,
 } from "./api-user-model-preference.ts";
 import {
-  apiUserPermissionGrantsHandlers,
-  resetMockUserPermissionGrants,
-} from "./api-user-permission-grants.ts";
-import {
   apiUserPreferencesHandlers,
   resetMockUserPreferences,
 } from "./api-user-preferences.ts";
@@ -156,7 +148,6 @@ export const handlers = [
   ...apiGetStartedHandlers,
   ...apiFeatureGuidesHandlers,
   ...apiRealtimeHandlers,
-  ...apiUserPermissionGrantsHandlers,
   ...apiVoiceIoHandlers,
   ...apiWalletHandlers,
   ...apiWebFilesHandlers,
@@ -181,15 +172,12 @@ export function resetAllMockHandlers(): void {
   resetMockBilling();
   resetMockSlackConnect();
   resetAblySubscriptions();
-  resetMockUserPermissionGrants();
   resetMockOrg();
   resetMockOrgLogo();
   resetMockOrgMembers();
   resetMockUsageMembers();
   resetMockUsageRecord();
   resetMockWorkflowAutomations();
-  resetMockAgents();
-  resetMockUserConnectors();
   resetMockWorkflows();
   resetMockOnboardingStatus();
 }

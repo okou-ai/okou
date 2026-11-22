@@ -7,36 +7,88 @@ import ai.okou.android.auth.SessionRoot
 import ai.okou.android.auth.SessionStage
 import ai.okou.android.auth.WorkspaceSessionFactory
 import ai.okou.android.preferences.applyApplicationLocale
+import ai.okou.android.preferences.resetApplicationLocale
 import ai.okou.android.state.SavedStatePolicy
+import ai.okou.android.state.rememberUpdateDetailsOpen
 import ai.okou.android.updates.AppUpdateSettings
+import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateHost
+import ai.okou.android.updates.updateFocusOutline
+import ai.okou.android.updates.updateToolbarAction
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.ActionMode
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
-    private var updateSourceAuthorized by mutableStateOf(false)
+    private val updates
+        get() = (application as OkouApplication).updates
+
+    private var editing by mutableStateOf(false)
+    private var windowFocused by mutableStateOf(false)
+    private var contextualAction by mutableStateOf<ActionMode?>(null)
+    private val updateInstall by
+        viewModels<UpdateInstallModel> {
+            viewModelFactory { initializer { UpdateInstallModel(updates) } }
+        }
+    private val sourceSettings =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            updateInstall.authorizationReturned(canInstallPackages())
+        }
+    private val packageInstaller =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            updateInstall.installerReturned(result.resultCode == Activity.RESULT_FIRST_USER)
+        }
     private val session: SessionModel by viewModels {
         viewModelFactory {
             initializer {
@@ -50,7 +102,9 @@ class MainActivity : AppCompatActivity() {
                     app.composerJournal,
                     app.runControlJournal,
                     app.memberAppearanceCache,
+                    app.projectExpansionStore,
                     updatesRequired = app.updates.required,
+                    connectivity = app.connectivity,
                 )
             }
         }
@@ -60,10 +114,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val authentication = session
-        val updates = (application as OkouApplication).updates
         setContent {
             val sessionState by authentication.uiState.collectAsStateWithLifecycle()
+            val account by authentication.account.collectAsStateWithLifecycle(initialValue = null)
             val updateState by updates.state.collectAsStateWithLifecycle()
+            val lifecycleState by lifecycle.currentStateAsState()
+            val updateRequired =
+                updateState.required || sessionState.stage == SessionStage.UpdateRequired
             // Capture the rendered owner, rather than reading a newer State value on an old click.
             val presentedGeneration = sessionState.generation
             val preferences =
@@ -72,9 +129,22 @@ class MainActivity : AppCompatActivity() {
                     // predecessor.
                     sessionState.ready?.preferences?.uiState?.collectAsStateWithLifecycle()?.value
                 }
-            LaunchedEffect(presentedGeneration, preferences?.locale) {
-                if (authentication.isPresentationCurrent(presentedGeneration)) {
-                    applyApplicationLocale(preferences?.locale)
+            val locale = preferences?.locale
+            val clearLocale =
+                !updateState.preparing &&
+                    when (sessionState.stage) {
+                        SessionStage.SignIn,
+                        SessionStage.ChooseWorkspace,
+                        SessionStage.AccessRemoved -> true
+                        else -> false
+                    }
+            LaunchedEffect(presentedGeneration, locale, updateRequired, clearLocale) {
+                // Session restoration keeps the native locale until membership is resolved.
+                if (updateRequired || !authentication.isPresentationCurrent(presentedGeneration))
+                    return@LaunchedEffect
+                when {
+                    locale != null -> applyApplicationLocale(locale)
+                    clearLocale -> resetApplicationLocale()
                 }
             }
             val systemDark = isSystemInDarkTheme()
@@ -97,28 +167,72 @@ class MainActivity : AppCompatActivity() {
                     ?: cachedAppearance?.colorTheme
                     ?: UserPreferencesColorTheme.DEFAULT,
             ) {
+                val updateDetails = rememberUpdateDetailsOpen()
+                var updateDetailsFocused by remember { mutableStateOf(false) }
+                val insideUpdateFlow = updateDetails.value || updateRequired
+                val installProgress = updateInstall.progressLabel
+                val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+                val interactionActive = editing || contextualAction != null || keyboardVisible
+                val verified = updateInstall.attempt as? UpdateInstallAttempt.Verified
+                LaunchedEffect(
+                    verified,
+                    updateState.selectedRelease,
+                    updateState.canInstall,
+                    lifecycleState,
+                    windowFocused,
+                    updateDetailsFocused,
+                    insideUpdateFlow,
+                    interactionActive,
+                ) {
+                    if (verified != null) {
+                        if (verified.automatic && !insideUpdateFlow)
+                            updateInstall.deferAutomaticInstall(verified)
+                        else launchInstaller(verified, updateDetailsFocused)
+                    }
+                }
+                val pending = updateInstall.automaticRelease
+                val automaticInstall =
+                    pending?.takeIf {
+                        insideUpdateFlow &&
+                            installProgress == null &&
+                            updateState.canInstall &&
+                            updateState.selectedRelease == it &&
+                            lifecycleState == Lifecycle.State.RESUMED &&
+                            !interactionActive
+                    }
+                LaunchedEffect(pending, updateState.selectedRelease) {
+                    updateInstall.discardObsoleteDownload()
+                }
+                LaunchedEffect(insideUpdateFlow, updateState.canInstall, pending) {
+                    if (!insideUpdateFlow && updateState.canInstall)
+                        updateInstall.skipAutomaticInstall()
+                }
                 UpdateHost(
-                    if (sessionState.stage == SessionStage.UpdateRequired)
-                        updateState.copy(required = true)
-                    else updateState,
+                    updateState.copy(required = updateRequired),
                     { updates.check() },
-                    updates::download,
-                    updates::cancelDownload,
-                    updates::defer,
+                    updateInstall::download,
                     ::installUpdate,
-                    updateSourceAuthorized,
-                    showAnnouncement =
-                        sessionState.stage != SessionStage.Ready || sessionState.ready == null,
+                    installProgress,
+                    automaticInstall,
+                    windowFocused,
+                    startAutomaticInstall = { release, fromDetails ->
+                        if ((fromDetails || windowFocused) && canAutomaticallyPrepare()) {
+                            updateInstall.install(release, automatic = true, canInstallPackages())
+                        }
+                    },
+                    detailsOpen = updateDetails,
+                    onDetailsFocusChanged = { updateDetailsFocused = it },
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,
                         { authentication.retry(presentedGeneration) },
                         { id -> authentication.chooseWorkspace(id, presentedGeneration) },
                         { authentication.signOut(presentedGeneration) },
+                        account = account,
                         openWorkspaceSetup = {
                             try {
                                 startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.WEB_ORIGIN))
+                                    Intent(Intent.ACTION_VIEW, BuildConfig.WEB_ORIGIN.toUri())
                                 )
                             } catch (_: ActivityNotFoundException) {
                                 Toast.makeText(
@@ -129,9 +243,102 @@ class MainActivity : AppCompatActivity() {
                                     .show()
                             }
                         },
-                        appUpdates = { AppUpdateSettings(updateState, openUpdates) },
-                        openUpdate = openUpdates.takeIf { updateState.announce },
+                        appUpdates = {
+                            AppUpdateSettings(
+                                updateState,
+                                installProgress,
+                                openUpdates,
+                                updateDetails.value,
+                            )
+                        },
+                        updateToolbarAction =
+                            updateToolbarAction(
+                                updateState,
+                                updateInstall::download,
+                                ::installUpdate,
+                                installProgress,
+                                openUpdates,
+                            ),
+                        onUpdateEditingChanged = { editing = it },
                     )
+                }
+                val explanation = updateInstall.attempt as? UpdateInstallAttempt.Explain
+                if (explanation != null) {
+                    if (
+                        updateState.canInstall && updateState.selectedRelease == explanation.release
+                    ) {
+                        val compact =
+                            with(LocalDensity.current) {
+                                currentWindowSizeDp().height.dp - 48.dp < 16.sp.toDp() * 12
+                            }
+                        AlertDialog(
+                            onDismissRequest = { updateInstall.dismissExplanation(explanation) },
+                            modifier = Modifier.widthIn(max = 360.dp),
+                            shape = RoundedCornerShape(28.dp),
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            title = {
+                                Text(
+                                    stringResource(R.string.updates_allow_install),
+                                    style =
+                                        MaterialTheme.typography.headlineSmall.copy(
+                                            fontSize = if (compact) 20.sp else 24.sp,
+                                            lineHeight = if (compact) 28.sp else 32.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        ),
+                                )
+                            },
+                            text = {
+                                Text(
+                                    stringResource(R.string.updates_permission),
+                                    Modifier.verticalScroll(rememberScrollState()),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            },
+                            confirmButton = {
+                                val buttonShape = RoundedCornerShape(12.dp)
+                                Button(
+                                    onClick = { authorizeUpdate(explanation) },
+                                    modifier =
+                                        Modifier.heightIn(min = 48.dp)
+                                            .updateFocusOutline(
+                                                buttonShape,
+                                                MaterialTheme.colorScheme.inverseOnSurface,
+                                            ),
+                                    shape = buttonShape,
+                                    colors =
+                                        ButtonDefaults.buttonColors(
+                                            containerColor =
+                                                MaterialTheme.colorScheme.inverseSurface,
+                                            contentColor =
+                                                MaterialTheme.colorScheme.inverseOnSurface,
+                                        ),
+                                ) {
+                                    Text(stringResource(R.string.updates_open_settings))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(
+                                    onClick = { updateInstall.dismissExplanation(explanation) },
+                                    modifier =
+                                        Modifier.heightIn(min = 48.dp)
+                                            .updateFocusOutline(
+                                                ButtonDefaults.shape,
+                                                LocalActivityStatusColor.current,
+                                            ),
+                                    colors =
+                                        ButtonDefaults.textButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                ) {
+                                    Text(stringResource(R.string.updates_later))
+                                }
+                            },
+                        )
+                    } else {
+                        LaunchedEffect(explanation) {
+                            updateInstall.dismissExplanation(explanation)
+                        }
+                    }
                 }
             }
         }
@@ -146,38 +353,219 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        session.refreshPreferences()
-        updateSourceAuthorized =
-            Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()
-        (application as OkouApplication).updates.check(manual = false)
+        session.foregroundChanged(true)
+        updates.check(manual = false)
+    }
+
+    override fun onPause() {
+        session.foregroundChanged(false)
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        windowFocused = hasFocus
+    }
+
+    override fun onActionModeStarted(mode: ActionMode) {
+        super.onActionModeStarted(mode)
+        contextualAction = mode
+    }
+
+    override fun onActionModeFinished(mode: ActionMode) {
+        super.onActionModeFinished(mode)
+        if (contextualAction === mode) contextualAction = null
+    }
+
+    private fun canInstallPackages() =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()
+
+    private fun canAutomaticallyPrepare() =
+        lifecycle.currentState == Lifecycle.State.RESUMED &&
+            !editing &&
+            contextualAction == null &&
+            ViewCompat.getRootWindowInsets(window.decorView)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) != true
+
+    private fun authorizeUpdate(explanation: UpdateInstallAttempt.Explain) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!updateInstall.beginAuthorization(explanation, canInstallPackages())) return
+        try {
+            sourceSettings.launch(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri())
+            )
+        } catch (_: ActivityNotFoundException) {
+            updateInstall.launchFailed(explanation.release)
+        } catch (_: SecurityException) {
+            updateInstall.launchFailed(explanation.release)
+        }
     }
 
     private fun installUpdate(release: AndroidUpdatesRelease) {
-        val updates = (application as OkouApplication).updates
-        lifecycleScope.launch {
-            val file = updates.installationFile(release) ?: return@launch
+        updateInstall.install(release, automatic = false, canInstallPackages())
+    }
+
+    private fun launchInstaller(verified: UpdateInstallAttempt.Verified, detailsFocused: Boolean) {
+        val foregroundReady =
+            lifecycle.currentState == Lifecycle.State.RESUMED &&
+                (windowFocused || detailsFocused) &&
+                (!verified.automatic || canAutomaticallyPrepare())
+        val file =
+            updateInstall.takeVerifiedFile(verified, foregroundReady, canInstallPackages())
+                ?: return
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.updates", file)
+            packageInstaller.launch(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            )
+        } catch (_: ActivityNotFoundException) {
+            updateInstall.launchFailed(verified.release)
+        } catch (_: SecurityException) {
+            updateInstall.launchFailed(verified.release)
+        }
+    }
+}
+
+private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() {
+    var attempt by mutableStateOf<UpdateInstallAttempt>(UpdateInstallAttempt.Idle)
+        private set
+
+    var automaticRelease by mutableStateOf<AndroidUpdatesRelease?>(null)
+        private set
+
+    @get:StringRes
+    val progressLabel: Int?
+        get() =
+            when (attempt) {
+                UpdateInstallAttempt.Idle -> null
+                is UpdateInstallAttempt.Installer -> R.string.updates_installing
+                else -> R.string.updates_preparing
+            }
+
+    fun download(release: AndroidUpdatesRelease) {
+        if (updates.download(release)) automaticRelease = release
+    }
+
+    fun discardObsoleteDownload() {
+        if (automaticRelease != updates.state.value.selectedRelease) automaticRelease = null
+    }
+
+    fun skipAutomaticInstall() {
+        automaticRelease = null
+    }
+
+    fun deferAutomaticInstall(verified: UpdateInstallAttempt.Verified) {
+        if (attempt != verified) return
+        skipAutomaticInstall()
+        attempt = UpdateInstallAttempt.Idle
+    }
+
+    fun install(release: AndroidUpdatesRelease, automatic: Boolean, authorized: Boolean) {
+        if (attempt != UpdateInstallAttempt.Idle || !canInstall(release)) return
+        if (automatic && automaticRelease != release) return
+        updates.clearInstallFailure(release)
+        if (authorized) verify(release, automatic)
+        else {
+            automaticRelease = null
+            attempt = UpdateInstallAttempt.Explain(release)
+        }
+    }
+
+    fun dismissExplanation(explanation: UpdateInstallAttempt.Explain) {
+        if (attempt == explanation) attempt = UpdateInstallAttempt.Idle
+    }
+
+    fun beginAuthorization(
+        explanation: UpdateInstallAttempt.Explain,
+        authorized: Boolean,
+    ): Boolean {
+        if (attempt != explanation) return false
+        val release = explanation.release
+        if (!canInstall(release)) {
+            dismissExplanation(explanation)
+            return false
+        }
+        if (authorized) {
+            verify(release, automatic = false)
+            return false
+        }
+        attempt = UpdateInstallAttempt.Authorizing(release)
+        return true
+    }
+
+    fun authorizationReturned(authorized: Boolean) {
+        val pending = attempt as? UpdateInstallAttempt.Authorizing ?: return
+        attempt = UpdateInstallAttempt.Idle
+        if (authorized) install(pending.release, automatic = false, authorized = true)
+    }
+
+    private fun verify(release: AndroidUpdatesRelease, automatic: Boolean) {
+        attempt = UpdateInstallAttempt.Verifying
+        viewModelScope.launch {
             try {
-                if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-                    startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                            Uri.parse("package:$packageName"),
-                        )
-                    )
-                } else {
-                    val uri =
-                        FileProvider.getUriForFile(this@MainActivity, "$packageName.updates", file)
-                    startActivity(
-                        Intent(Intent.ACTION_VIEW)
-                            .setDataAndType(uri, "application/vnd.android.package-archive")
-                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    )
-                }
-            } catch (_: ActivityNotFoundException) {
-                updates.installFailed(release)
-            } catch (_: SecurityException) {
-                updates.installFailed(release)
+                val file = updates.installationFile(release) ?: return@launch
+                attempt = UpdateInstallAttempt.Verified(release, file, automatic)
+            } finally {
+                if (attempt == UpdateInstallAttempt.Verifying) attempt = UpdateInstallAttempt.Idle
             }
         }
     }
+
+    fun takeVerifiedFile(
+        verified: UpdateInstallAttempt.Verified,
+        foregroundReady: Boolean,
+        authorized: Boolean,
+    ): File? {
+        if (attempt != verified) return null
+        val release = verified.release
+        if (!canInstall(release)) {
+            attempt = UpdateInstallAttempt.Idle
+            return null
+        }
+        if (!foregroundReady) return null
+        automaticRelease = null
+        if (!authorized) {
+            attempt = UpdateInstallAttempt.Explain(release)
+            return null
+        }
+        attempt = UpdateInstallAttempt.Installer(release)
+        return verified.file
+    }
+
+    fun installerReturned(failed: Boolean) {
+        val installer = attempt as? UpdateInstallAttempt.Installer ?: return
+        if (failed) updates.installFailed(installer.release)
+        attempt = UpdateInstallAttempt.Idle
+    }
+
+    fun launchFailed(release: AndroidUpdatesRelease) {
+        attempt = UpdateInstallAttempt.Idle
+        updates.installFailed(release)
+    }
+
+    private fun canInstall(release: AndroidUpdatesRelease): Boolean {
+        val current = updates.state.value
+        return current.canInstall && current.selectedRelease == release
+    }
+}
+
+private sealed interface UpdateInstallAttempt {
+    data object Idle : UpdateInstallAttempt
+
+    data class Explain(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
+
+    data class Authorizing(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
+
+    data object Verifying : UpdateInstallAttempt
+
+    data class Verified(
+        val release: AndroidUpdatesRelease,
+        val file: File,
+        val automatic: Boolean,
+    ) : UpdateInstallAttempt
+
+    data class Installer(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
 }

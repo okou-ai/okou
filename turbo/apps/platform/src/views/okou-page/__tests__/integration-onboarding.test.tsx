@@ -17,8 +17,7 @@ function mockDisconnectedDiscord(): void {
       guildId: null,
       guildName: null,
       discordUserId: null,
-      defaultAgentId: null,
-      defaultAgentName: null,
+
       onboarding: "oauth",
       dmSelectionConnectionId: null,
       dmBindings: [],
@@ -59,9 +58,6 @@ test("The legacy callback bridge can finish before a pending onboarding response
     requested.resolve();
     await response.promise;
     return respond(200, {
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
-      hasDefaultAgent: true,
       hasOrg: true,
       isAdmin: true,
       needsOnboarding: true,

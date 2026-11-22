@@ -15,7 +15,7 @@ const {
 
 describe("chat enqueue telemetry failures", () => {
   it("keeps an input claimable and its retry idempotent when timing delivery throws AbortError", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     mockAxiomSdkTelemetryFailure({
       mode: "ingest",
       datasets: ["vm0-sandbox-op-log-dev"],
@@ -25,7 +25,6 @@ describe("chat enqueue telemetry failures", () => {
     const eventId = randomUUID();
     const prompt = "enqueue despite an unavailable timing sink";
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt,
       clientEventId: eventId,
     });
@@ -36,7 +35,6 @@ describe("chat enqueue telemetry failures", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: sent.threadId,
         prompt,
         clientEventId: eventId,

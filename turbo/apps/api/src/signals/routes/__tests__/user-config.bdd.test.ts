@@ -63,212 +63,6 @@ async function onboardAdmin(
   return bootstrap.body.agentId;
 }
 
-describe("AUTH-03 agent user connectors", () => {
-  it("replaces, dedupes, clears, validates, and isolates per-agent user connectors", async () => {
-    const admin = api.user();
-    const otherAdmin = api.user();
-    await onboardAdmin(admin, { slug: slug("bdd-uc-b1") });
-    api.acceptAgentStorageWrites();
-    const agent = await api.createAgent(admin, {
-      displayName: "BDD Connector Agent",
-    });
-
-    const set = await cfg.updateUserBuiltinConnectors(admin, agent.agentId, [
-      "github",
-      "slack",
-    ]);
-    expect(new Set(set.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["github", "slack"]),
-    );
-    const readBack = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(new Set(readBack.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["github", "slack"]),
-    );
-
-    const deduped = await cfg.updateUserBuiltinConnectors(
-      admin,
-      agent.agentId,
-      ["slack", "github", "slack"],
-    );
-    expect(deduped.enabledConnectorSlugs).toHaveLength(2);
-    expect(new Set(deduped.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["github", "slack"]),
-    );
-
-    for (const operation of ["add", "remove"] as const) {
-      const unchanged = await cfg.updateUserBuiltinConnectors(
-        admin,
-        agent.agentId,
-        [],
-        operation,
-      );
-      expect(new Set(unchanged.enabledConnectorSlugs)).toStrictEqual(
-        new Set(["github", "slack"]),
-      );
-      const readUnchanged = await cfg.readUserConnectors(admin, agent.agentId);
-      expect(new Set(readUnchanged.enabledConnectorSlugs)).toStrictEqual(
-        new Set(["github", "slack"]),
-      );
-    }
-
-    const added = await cfg.updateUserBuiltinConnectors(
-      admin,
-      agent.agentId,
-      ["linear"],
-      "add",
-    );
-    expect(new Set(added.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["github", "slack", "linear"]),
-    );
-    const readAfterAdd = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(new Set(readAfterAdd.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["github", "slack", "linear"]),
-    );
-
-    const replaced = await cfg.updateUserBuiltinConnectors(
-      admin,
-      agent.agentId,
-      ["linear"],
-    );
-    expect(replaced.enabledConnectorSlugs).toStrictEqual(["linear"]);
-    const readReplaced = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(readReplaced.enabledConnectorSlugs).toStrictEqual(["linear"]);
-
-    const cleared = await cfg.updateUserBuiltinConnectors(
-      admin,
-      agent.agentId,
-      [],
-    );
-    expect(cleared.enabledConnectorSlugs).toStrictEqual([]);
-    const readCleared = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(readCleared.enabledConnectorSlugs).toStrictEqual([]);
-
-    const invalid = await cfg.requestUpdateUserConnectors(
-      admin,
-      agent.agentId,
-      ["github", "not-a-connector"],
-      [400],
-    );
-    expectApiError(invalid.body);
-    expect(invalid.body.error).toStrictEqual({
-      message: "Invalid connector slugs: not-a-connector",
-      code: "VALIDATION_ERROR",
-    });
-
-    const discoveryHidden = await cfg.updateUserBuiltinConnectors(
-      admin,
-      agent.agentId,
-      ["bentoml"],
-    );
-    expect(discoveryHidden.enabledConnectorSlugs).toStrictEqual(["bentoml"]);
-    const readAfterHidden = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(readAfterHidden.enabledConnectorSlugs).toStrictEqual(["bentoml"]);
-
-    const missingAgentId = randomUUID();
-    const missingRead = await cfg.requestReadUserConnectors(
-      admin,
-      missingAgentId,
-      [404],
-    );
-    expectApiError(missingRead.body);
-    expect(missingRead.body.error.code).toBe("NOT_FOUND");
-    const missingUpdate = await cfg.requestUpdateUserConnectors(
-      admin,
-      missingAgentId,
-      ["github"],
-      [404],
-    );
-    expectApiError(missingUpdate.body);
-    expect(missingUpdate.body.error.code).toBe("NOT_FOUND");
-    const missingEmptyUpdate = await cfg.requestUpdateUserConnectors(
-      admin,
-      missingAgentId,
-      [],
-      [404],
-    );
-    expectApiError(missingEmptyUpdate.body);
-    expect(missingEmptyUpdate.body.error.code).toBe("NOT_FOUND");
-
-    const crossOrgRead = await cfg.requestReadUserConnectors(
-      otherAdmin,
-      agent.agentId,
-      [404],
-    );
-    expectApiError(crossOrgRead.body);
-    expect(crossOrgRead.body.error.code).toBe("NOT_FOUND");
-
-    const pat = await api.createCliToken(admin);
-    cfg.mockMembership(admin, "org:admin");
-    const patSet = await cfg.updateUserBuiltinConnectors(
-      { bearer: pat.token },
-      agent.agentId,
-      ["github"],
-    );
-    expect(patSet.enabledConnectorSlugs).toStrictEqual(["github"]);
-    const readAfterPat = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(readAfterPat.enabledConnectorSlugs).toStrictEqual(["github"]);
-  });
-
-  it("serializes concurrent user-connector replaces for the same agent", async () => {
-    const admin = api.user();
-    await onboardAdmin(admin, { slug: slug("bdd-uc-b1r") });
-    api.acceptAgentStorageWrites();
-    const agent = await api.createAgent(admin, {
-      displayName: "BDD Concurrent Connector Agent",
-    });
-
-    const sameSetUpdates = await Promise.all([
-      cfg.updateUserBuiltinConnectors(admin, agent.agentId, [
-        "github",
-        "slack",
-      ]),
-      cfg.updateUserBuiltinConnectors(admin, agent.agentId, [
-        "github",
-        "slack",
-      ]),
-    ]);
-    for (const update of sameSetUpdates) {
-      expect(new Set(update.enabledConnectorSlugs)).toStrictEqual(
-        new Set(["github", "slack"]),
-      );
-    }
-
-    await Promise.all([
-      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["github"]),
-      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["slack"]),
-    ]);
-    const readBack = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(readBack.enabledConnectorSlugs).toHaveLength(1);
-    const enabledType = readBack.enabledConnectorSlugs[0];
-    expect(["github", "slack"]).toContain(enabledType);
-
-    await cfg.updateUserBuiltinConnectors(admin, agent.agentId, [], "replace");
-    await Promise.all([
-      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["github"], "add"),
-      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["slack"], "add"),
-    ]);
-    const readAfterAdds = await cfg.readUserConnectors(admin, agent.agentId);
-    expect(new Set(readAfterAdds.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["github", "slack"]),
-    );
-
-    await Promise.all([
-      cfg.updateUserBuiltinConnectors(
-        admin,
-        agent.agentId,
-        ["github"],
-        "remove",
-      ),
-      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["slack"], "add"),
-    ]);
-    const readAfterRemoveAdd = await cfg.readUserConnectors(
-      admin,
-      agent.agentId,
-    );
-    expect(readAfterRemoveAdd.enabledConnectorSlugs).toStrictEqual(["slack"]);
-  });
-});
-
 describe("AUTH-03 user model preference", () => {
   it("defaults to canonical Auto and accepts a null selection", async () => {
     const admin = api.user();
@@ -630,7 +424,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
         }
       }
       await flushWaitUntilForTest();
-      await api.deleteAgent(carrier.actor, carrier.agentId);
       await flushWaitUntilForTest();
     });
     await owner.run(async () => {
@@ -643,7 +436,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       };
       carrier = activeCarrier;
       const run = await fixture.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "read the identity issued to this Run",
         model: "claude-fable-5-1",
       });
@@ -677,11 +469,10 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     });
   });
 
-  it("updates user connectors with an execution agent token and rejects push registration", async () => {
+  it("rejects push registration with an execution token", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
-      prompt: "configure connectors with the issued agent credential",
+      prompt: "register for push with the issued agent credential",
     });
     const { execution } = await owned.runExecution(run.runId);
     const token = execution.platformEnvironment?.OKOU_TOKEN;
@@ -690,15 +481,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     }
     await owned.run(async () => {
       cfg.mockMembership(owned.actor, "org:admin");
-      const updated = await cfg.updateUserBuiltinConnectors(
-        { bearer: token },
-        owned.agentId,
-        ["github"],
-      );
-      expect(updated.enabledConnectorSlugs).toStrictEqual(["github"]);
-      const readBack = await cfg.readUserConnectors(owned.actor, owned.agentId);
-      expect(readBack.enabledConnectorSlugs).toStrictEqual(["github"]);
-
       const pushForbidden = await cfg.requestRegisterPush(
         { bearer: token },
         {
@@ -720,7 +502,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
   it("drops the organization from execution agent identity after public member removal", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "read identity after organization membership removal",
     });
     const { execution } = await owned.runExecution(run.runId);

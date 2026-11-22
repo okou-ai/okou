@@ -13,22 +13,13 @@ import uuid
 import observer_loss_report as loss
 import report
 import report_test
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class ObserverLossReportTests(unittest.TestCase):
     def setUp(self):
         report_test.NativeReportTests.setUp(self)
-        gib = 1024**3
-        self.policy = {
-            "host_total_bytes": 64*gib, "operating_floor_bytes": gib,
-            "cleanup_reserve_bytes": 256*1024**2, "critical_available_bytes": 12*gib,
-            "recovery_available_bytes": 20*gib, "live_growth_bytes": 4*1024**2,
-            "tail_growth_bytes": 65*1024**2, "replacement_preparation_bytes": 32*1024**2,
-            "max_sample_age_millis": 1000, "max_operations": 8, "max_cleanup_inflight": 2,
-            "pressure_sample_period_millis": 50, "pressure_recovery_sustain_millis": 100,
-            "pressure_wave_cooldown_millis": 100, "pressure_optional_start_interval_millis": 100,
-            "pressure_max_wave_entries": 1,
-        }
+        self.policy = report_test.pressure_policy_fixture()
         raw = json.dumps(self.policy)
         self.artifacts["policy_sha256"] = hashlib.sha256(raw.encode()).hexdigest()
         self.collector["metadata"]["native_observer_loss_policy_json"] = raw
@@ -53,11 +44,6 @@ class ObserverLossReportTests(unittest.TestCase):
             first = copy.deepcopy(covered)
             first["accounting"]["closed"] = False
             runner = str(uuid.uuid4())
-            def heartbeat(sequence, received, finished, allocated):
-                return {"receipt": {"received_ns": at(received), "acknowledgement_status": 204,
-                    "state": {"runnerId": runner, "snapshotGeneration": 1, "snapshotSequence": sequence,
-                        "group": "native-foreground", "mode": "running", "allocatedVcpu": allocated[0],
-                        "allocatedMemoryMb": allocated[1]}}, "send_joined": True, "completed_ns": at(finished)}
             values = (
                 {"mode": "panic" if "Panic" in case else "drop", "policy": self.policy, "coverage": first},
                 {"mode": "panic" if "Panic" in case else "drop", "panic_confirmed": "Panic" in case,
@@ -65,15 +51,13 @@ class ObserverLossReportTests(unittest.TestCase):
                     "receiver_pending_ns": at(5), "observer_joined_ns": at(6),
                     "tracker_shutdown_pending": True, "accounting_shutdown_pending": True, "coverage": covered},
                 {"pool_held_ns": at(8), "status_held_ns": at(9), "heartbeat_pending_ns": at(10),
-                    "heartbeat_polled_pending": True, "observer": {"started_ns": at(10)+1,
-                        "completed_ns": at(11), "available_bytes": 32*gib, "age_ns": 2,
-                        "read_duration_ns": 1, "joined": True}, "coverage": covered},
+                    "heartbeat_polled_pending": True, "observer": joined_observer(at(10)+1, at(11)), "coverage": covered},
                 {"pool_released_ns": at(13), "status_held_ns": at(9),
-                    "heartbeat": heartbeat(1,14,15,(2,4096)), "tracker_shutdown_pending": True,
-                    "accounting_shutdown_pending": True, "coverage": covered},
+                    "heartbeat": foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
+                    "tracker_shutdown_pending": True, "accounting_shutdown_pending": True, "coverage": covered},
                 {"io_released_ns": at(17), "status_held_ns": at(9), "status_wait_polled_ns": at(21),
                     "status_waits_before": 0, "status_waits_after": 1, "tracker_shutdown_pending": True,
-                    "accounting_joined": True, "heartbeat": heartbeat(2,23,24,(0,0)),
+                    "accounting_joined": True, "heartbeat": foreground_heartbeat(runner, 2, at(23), at(24), (0, 0)),
                     "accounting": accounts, "allocated": [0,0,0]},
                 {"tracker_joined": True, "accounting_joined": True, "observer_joined": True,
                     "heartbeat_joined": True, "provider_joined": True, "peer_joined": True,
@@ -81,10 +65,14 @@ class ObserverLossReportTests(unittest.TestCase):
                     "allocated": [0,0,0], "accounting": accounts},
             )
             for phase, value, clock in zip(loss.PHASES, values, (4,7,12,16,25,28)):
-                self.witnesses.append({"version": 1, "case": case, "phase": phase,
-                    "monotonic_ns": at(clock), "unix_ns": at(clock)+1000,
-                    "sandbox_id": terminal[1]["sandbox_id"], "backing_generation": terminal[1]["backing_generation"],
-                    "evidence": copy.deepcopy(value)})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(clock),
+                    unix_ns=at(clock)+1000,
+                    sandbox_id=terminal[1]["sandbox_id"],
+                    backing_generation=terminal[1]["backing_generation"],
+                    evidence=copy.deepcopy(value),
+                ))
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

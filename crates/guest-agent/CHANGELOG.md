@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.110.21](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.20...guest-agent-v0.110.21) (2026-11-21)
+
+## [0.110.20](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.19...guest-agent-v0.110.20) (2026-11-21)
+
+## [0.110.19](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.18...guest-agent-v0.110.19) (2026-11-21)
+
+## [0.110.18](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.17...guest-agent-v0.110.18) (2026-11-21)
+
+## [0.110.17](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.16...guest-agent-v0.110.17) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+## [0.110.16](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.15...guest-agent-v0.110.16) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+## [0.110.15](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.14...guest-agent-v0.110.15) (2026-11-20)
+
+## [0.110.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.13...guest-agent-v0.110.14) (2026-11-20)
+
+## [0.110.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.12...guest-agent-v0.110.13) (2026-11-20)
+
+## [0.110.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.11...guest-agent-v0.110.12) (2026-11-20)
+
+## [0.110.11](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.10...guest-agent-v0.110.11) (2026-11-20)
+
+## [0.110.10](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.9...guest-agent-v0.110.10) (2026-11-20)
+
+## [0.110.9](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.8...guest-agent-v0.110.9) (2026-11-20)
+
+## [0.110.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.7...guest-agent-v0.110.8) (2026-11-20)
+
+## [0.110.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.6...guest-agent-v0.110.7) (2026-11-19)
+
+## [0.110.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.5...guest-agent-v0.110.6) (2026-11-19)
+
+## [0.110.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.4...guest-agent-v0.110.5) (2026-11-19)
+
 ## [0.110.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.3...guest-agent-v0.110.4) (2026-11-19)
 
 ## [0.110.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.2...guest-agent-v0.110.3) (2026-11-19)

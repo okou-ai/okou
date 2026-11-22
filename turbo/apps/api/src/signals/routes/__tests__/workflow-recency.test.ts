@@ -33,6 +33,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const wf = createWorkflowsBddApi(context);
@@ -68,11 +69,11 @@ function automationsClient() {
   );
 }
 
-async function composer(actor: ApiTestUser, agentId: string) {
+async function composer(actor: ApiTestUser) {
   const response = await accept(
     collectionClient().composer({
       headers: headers(actor),
-      query: { agentId },
+      query: {},
     }),
     [200],
   );
@@ -88,8 +89,8 @@ async function setup(tier: "pro" | "team" = "pro", enabled = true) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const { agentId } = await wf.createAgent(actor);
-  return { actor, agentId };
+  installWorkflowVolumeS3Fixture(context);
+  return { actor };
 }
 
 function acceptedTime(body: { readonly createdAt?: string }): string {
@@ -105,17 +106,16 @@ function recencyTime(value: string | number): string {
 
 async function createWorkflow(
   actor: ApiTestUser,
-  agentId: string,
   name: string,
   visibility: "public" | "private" = "public",
 ) {
-  return await wf.createWorkflow(actor, { agentId, name, visibility });
+  return await wf.createWorkflow(actor, { name, visibility });
 }
 
 describe("server-owned workflow recency", () => {
   it("keeps default-off sessions on the baseline without recording slash, direct runs or Run now usage", async () => {
-    const { actor, agentId } = await setup("pro", false);
-    const workflowId = await createWorkflow(actor, agentId, "recency-disabled");
+    const { actor } = await setup("pro", false);
+    const workflowId = await createWorkflow(actor, "recency-disabled");
     const automation = await accept(
       automationsClient().create({
         headers: headers(actor),
@@ -126,11 +126,7 @@ describe("server-owned workflow recency", () => {
     );
     await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
-    await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "/recency-disabled" },
-      [201],
-    );
+    await chat.requestSendEvent(actor, { prompt: "/recency-disabled" }, [201]);
     await accept(
       detailClient().run({ headers: headers(actor), params: { workflowId } }),
       [200],
@@ -149,7 +145,7 @@ describe("server-owned workflow recency", () => {
       }),
       [403],
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
     await flushWaitUntilForTest();
@@ -160,9 +156,9 @@ describe("server-owned workflow recency", () => {
   });
 
   it("hides stored recency when opted out and leaves it unchanged until opted back in", async () => {
-    const { actor, agentId } = await setup();
-    const workflowId = await createWorkflow(actor, agentId, "recency-opt-out");
-    const ignoredId = await createWorkflow(actor, agentId, "recency-off-send");
+    const { actor } = await setup();
+    const workflowId = await createWorkflow(actor, "recency-opt-out");
+    const ignoredId = await createWorkflow(actor, "recency-off-send");
     await accept(
       collectionClient().migrateRecency({
         headers: headers(actor),
@@ -170,7 +166,7 @@ describe("server-owned workflow recency", () => {
       }),
       [200],
     );
-    const before = await composer(actor, agentId);
+    const before = await composer(actor);
     if (!actor.orgId) {
       throw new Error("Expected a workflow workspace");
     }
@@ -179,17 +175,13 @@ describe("server-owned workflow recency", () => {
       { ...actor, orgId: actor.orgId },
       { [FeatureSwitchKey.WorkflowRecency]: false },
     );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(
+    await expect(composer(actor)).resolves.toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: workflowId, lastUsedAt: null }),
         expect.objectContaining({ id: ignoredId, lastUsedAt: null }),
       ]),
     );
-    await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "/recency-off-send" },
-      [201],
-    );
+    await chat.requestSendEvent(actor, { prompt: "/recency-off-send" }, [201]);
     await accept(
       collectionClient().migrateRecency({
         headers: headers(actor),
@@ -202,24 +194,18 @@ describe("server-owned workflow recency", () => {
       { ...actor, orgId: actor.orgId },
       { [FeatureSwitchKey.WorkflowRecency]: true },
     );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(before);
+    await expect(composer(actor)).resolves.toStrictEqual(before);
   });
 
   it("records accepted visible tokens and their private winner, preserving model preferences and replay time", async () => {
-    const { actor, agentId } = await setup();
-    const publicId = await createWorkflow(actor, agentId, "recency-alpha");
-    const privateId = await createWorkflow(
-      actor,
-      agentId,
-      "recency-alpha",
-      "private",
-    );
-    const betaId = await createWorkflow(actor, agentId, "recency-beta");
-    const ignoredId = await createWorkflow(actor, agentId, "recency-ignored");
+    const { actor } = await setup();
+    const publicId = await createWorkflow(actor, "recency-alpha");
+    const privateId = await createWorkflow(actor, "recency-alpha", "private");
+    const betaId = await createWorkflow(actor, "recency-beta");
+    const ignoredId = await createWorkflow(actor, "recency-ignored");
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: randomUUID(),
         prompt: "/recency-ignored",
       },
@@ -229,7 +215,6 @@ describe("server-owned workflow recency", () => {
     const accepted = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         clientEventId,
         model: "claude-fable-5-1",
         prompt: "assembled prompt /recency-ignored",
@@ -250,7 +235,7 @@ describe("server-owned workflow recency", () => {
       throw new Error("Expected the workflow input to be accepted");
     }
     const acceptedAt = acceptedTime(accepted.body);
-    const listed = await composer(actor, agentId);
+    const listed = await composer(actor);
     expect(listed).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -286,22 +271,21 @@ describe("server-owned workflow recency", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: accepted.body.threadId,
         clientEventId,
         prompt: "/recency-ignored",
       },
       [201],
     );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(listed);
+    await expect(composer(actor)).resolves.toStrictEqual(listed);
   });
 
   it("atomically retains concurrent uses, never regresses a timestamp, and keeps the deterministic top ten", async () => {
-    const { actor, agentId } = await setup();
+    const { actor } = await setup();
     const workflows = await Promise.all(
       Array.from({ length: 12 }, async (_, index) => {
         const name = `recency-top-${index}`;
-        return { id: await createWorkflow(actor, agentId, name), name };
+        return { id: await createWorkflow(actor, name), name };
       }),
     );
     const first = workflows[0];
@@ -315,13 +299,13 @@ describe("server-owned workflow recency", () => {
       [first, second].map(async (workflow) => {
         await chat.requestSendEvent(
           actor,
-          { agentId, prompt: `/${workflow.name}` },
+          { prompt: `/${workflow.name}` },
           [201],
         );
       }),
     );
     expect(
-      (await composer(actor, agentId)).filter((workflow) => {
+      (await composer(actor)).filter((workflow) => {
         return workflow.lastUsedAt === recencyTime(latest);
       }),
     ).toHaveLength(2);
@@ -330,7 +314,6 @@ describe("server-owned workflow recency", () => {
     const older = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         prompt: workflows
           .map((workflow) => {
             return `/${workflow.name}`;
@@ -342,7 +325,7 @@ describe("server-owned workflow recency", () => {
     if (older.status !== 201) {
       throw new Error("Expected the older workflow input to be accepted");
     }
-    const recent = (await composer(actor, agentId)).filter((workflow) => {
+    const recent = (await composer(actor)).filter((workflow) => {
       return workflow.lastUsedAt !== null;
     });
     expect(recent).toHaveLength(10);
@@ -380,17 +363,9 @@ describe("server-owned workflow recency", () => {
   it.each(["import-first", "send-first", "concurrent"] as const)(
     "preserves live accepted usage over legacy markers with %s ordering",
     async (ordering) => {
-      const { actor, agentId } = await setup();
-      const legacyId = await createWorkflow(
-        actor,
-        agentId,
-        "recency-legacy-race",
-      );
-      const actualId = await createWorkflow(
-        actor,
-        agentId,
-        "recency-actual-race",
-      );
+      const { actor } = await setup();
+      const legacyId = await createWorkflow(actor, "recency-legacy-race");
+      const actualId = await createWorkflow(actor, "recency-actual-race");
       const importHistory = () => {
         return accept(
           collectionClient().migrateRecency({
@@ -403,7 +378,7 @@ describe("server-owned workflow recency", () => {
       const send = () => {
         return chat.requestSendEvent(
           actor,
-          { agentId, prompt: "/recency-actual-race" },
+          { prompt: "/recency-actual-race" },
           [201],
         );
       };
@@ -424,7 +399,7 @@ describe("server-owned workflow recency", () => {
       if (accepted.status !== 201) {
         throw new Error("Expected the workflow input to be accepted");
       }
-      const history = await composer(actor, agentId);
+      const history = await composer(actor);
       expect(history).toContainEqual(
         expect.objectContaining({
           id: actualId,
@@ -451,13 +426,13 @@ describe("server-owned workflow recency", () => {
         [200],
       );
       expect(replay.body).toStrictEqual({ migrated: false });
-      await expect(composer(actor, agentId)).resolves.toStrictEqual(history);
+      await expect(composer(actor)).resolves.toStrictEqual(history);
     },
   );
 
   it("does not count preparation, direct runs, webhooks or repeated manual Run now requests", async () => {
-    const { actor, agentId } = await setup("team");
-    const workflowId = await createWorkflow(actor, agentId, "recency-manual");
+    const { actor } = await setup("team");
+    const workflowId = await createWorkflow(actor, "recency-manual");
     await accept(
       detailClient().chatThread({
         headers: headers(actor),
@@ -465,7 +440,7 @@ describe("server-owned workflow recency", () => {
       }),
       [200],
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
     const automation = await accept(
@@ -503,7 +478,7 @@ describe("server-owned workflow recency", () => {
       body: payload,
     });
     expect(response.status).toBe(200);
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
 
@@ -519,7 +494,7 @@ describe("server-owned workflow recency", () => {
         }),
         [201],
       );
-      await expect(composer(actor, agentId)).resolves.toContainEqual(
+      await expect(composer(actor)).resolves.toContainEqual(
         expect.objectContaining({ id: workflowId, lastUsedAt: null }),
       );
       await flushWaitUntilForTest();
@@ -528,7 +503,7 @@ describe("server-owned workflow recency", () => {
       detailClient().run({ headers: headers(actor), params: { workflowId } }),
       [200],
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
     await flushWaitUntilForTest();
@@ -544,15 +519,11 @@ describe("server-owned workflow recency", () => {
       routes: cronExecuteWorkflowAutomationsRoutes,
       isolatePg: true,
     });
-    const { actor, agentId } = await setup();
-    const workflowId = await createWorkflow(actor, agentId, "recency-schedule");
+    const { actor } = await setup();
+    const workflowId = await createWorkflow(actor, "recency-schedule");
     mockNow(now());
-    await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "/recency-schedule" },
-      [201],
-    );
-    const beforeSchedule = await composer(actor, agentId);
+    await chat.requestSendEvent(actor, { prompt: "/recency-schedule" }, [201]);
+    const beforeSchedule = await composer(actor);
     expect(beforeSchedule).toContainEqual(
       expect.objectContaining({
         id: workflowId,
@@ -587,9 +558,7 @@ describe("server-owned workflow recency", () => {
       [200],
     );
     expect(updated.body.nextRunAt).not.toBe(automation.body.nextRunAt);
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(
-      beforeSchedule,
-    );
+    await expect(composer(actor)).resolves.toStrictEqual(beforeSchedule);
     await accept(
       automationsClient().run({
         headers: headers(actor),
@@ -597,17 +566,15 @@ describe("server-owned workflow recency", () => {
       }),
       [201],
     );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(
-      beforeSchedule,
-    );
+    await expect(composer(actor)).resolves.toStrictEqual(beforeSchedule);
   });
 
   it("keeps user/workspace history isolated and follows workflow identity through rename and replacement", async () => {
-    const { actor, agentId } = await setup();
-    const workflowId = await createWorkflow(actor, agentId, "recency-identity");
+    const { actor } = await setup();
+    const workflowId = await createWorkflow(actor, "recency-identity");
     const accepted = await chat.requestSendEvent(
       actor,
-      { agentId, prompt: "/recency-identity" },
+      { prompt: "/recency-identity" },
       [201],
     );
     if (accepted.status !== 201) {
@@ -628,7 +595,7 @@ describe("server-owned workflow recency", () => {
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    await expect(composer(other, agentId)).resolves.toContainEqual(
+    await expect(composer(other)).resolves.toContainEqual(
       expect.objectContaining({ id: workflowId, lastUsedAt: null }),
     );
     // The default-off peer can send, but cannot create or read server history.
@@ -636,19 +603,18 @@ describe("server-owned workflow recency", () => {
     await chat.requestSendEvent(
       other,
       {
-        agentId,
         prompt: "/recency-identity",
         model: null,
       },
       [201],
     );
-    await expect(composer(other, agentId)).resolves.toContainEqual(
+    await expect(composer(other)).resolves.toContainEqual(
       expect.objectContaining({
         id: workflowId,
         lastUsedAt: null,
       }),
     );
-    await expect(composer(wf.user(), agentId)).resolves.toStrictEqual([]);
+    await expect(composer(wf.user())).resolves.toStrictEqual([]);
     await accept(
       detailClient().update({
         headers: headers(actor),
@@ -657,7 +623,7 @@ describe("server-owned workflow recency", () => {
       }),
       [200],
     );
-    await expect(composer(actor, agentId)).resolves.toContainEqual(
+    await expect(composer(actor)).resolves.toContainEqual(
       expect.objectContaining({
         id: workflowId,
         name: "recency-renamed",
@@ -671,12 +637,8 @@ describe("server-owned workflow recency", () => {
       }),
       [204],
     );
-    const replacementId = await createWorkflow(
-      actor,
-      agentId,
-      "recency-renamed",
-    );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual([
+    const replacementId = await createWorkflow(actor, "recency-renamed");
+    await expect(composer(actor)).resolves.toStrictEqual([
       expect.objectContaining({ id: replacementId, lastUsedAt: null }),
     ]);
   });
@@ -684,8 +646,8 @@ describe("server-owned workflow recency", () => {
   it.each([true, false])(
     "honors the recency flag for PAT migration and slash, excluding direct runs and Run now (enabled: %s)",
     async (enabled) => {
-      const { actor, agentId } = await setup();
-      const workflowId = await createWorkflow(actor, agentId, "recency-pat");
+      const { actor } = await setup();
+      const workflowId = await createWorkflow(actor, "recency-pat");
       if (!actor.orgId) {
         throw new Error("Expected a workflow workspace");
       }
@@ -706,7 +668,7 @@ describe("server-owned workflow recency", () => {
       if (enabled) {
         expect(migrated.body).toStrictEqual({ migrated: true });
       }
-      await expect(composer(actor, agentId)).resolves.toContainEqual(
+      await expect(composer(actor)).resolves.toContainEqual(
         expect.objectContaining({
           id: workflowId,
           lastUsedAt: enabled ? "1970-01-01T00:00:00.000010Z" : null,
@@ -720,7 +682,6 @@ describe("server-owned workflow recency", () => {
         ).send({
           headers: tokenHeaders,
           body: {
-            agentId,
             prompt: "/recency-pat",
             hasTextContent: true,
             userMessage: {
@@ -731,7 +692,7 @@ describe("server-owned workflow recency", () => {
         }),
         [201],
       );
-      await expect(composer(actor, agentId)).resolves.toContainEqual(
+      await expect(composer(actor)).resolves.toContainEqual(
         expect.objectContaining({
           id: workflowId,
           lastUsedAt: enabled ? recencyTime(acceptedTime(sent.body)) : null,
@@ -755,7 +716,7 @@ describe("server-owned workflow recency", () => {
         }),
         [201],
       );
-      await expect(composer(actor, agentId)).resolves.toContainEqual(
+      await expect(composer(actor)).resolves.toContainEqual(
         expect.objectContaining({
           id: workflowId,
           lastUsedAt: enabled ? recencyTime(acceptedTime(sent.body)) : null,
@@ -778,7 +739,7 @@ describe("server-owned workflow recency", () => {
           { [FeatureSwitchKey.WorkflowRecency]: true },
         );
       }
-      await expect(composer(actor, agentId)).resolves.toContainEqual(
+      await expect(composer(actor)).resolves.toContainEqual(
         expect.objectContaining({
           id: workflowId,
           lastUsedAt: enabled ? recencyTime(acceptedTime(sent.body)) : null,
@@ -788,17 +749,16 @@ describe("server-owned workflow recency", () => {
     },
   );
 
-  it("records a real agent token's prompt in its newly created chat, not creation, replay, Run now or direct runs", async () => {
-    const { actor, agentId } = await setup();
-    const workflowId = await createWorkflow(actor, agentId, "recency-agent");
+  it("records a real Run token's prompt in its newly created chat, not creation, replay, Run now or direct runs", async () => {
+    const { actor } = await setup();
+    const workflowId = await createWorkflow(actor, "recency-agent");
     const anchor = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Start the parent run",
     });
     const execution = await runs.executionInput(anchor.runId);
     const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the production Run agent token");
+      throw new Error("Expected the production Run token");
     }
     const tokenHeaders = { authorization: `Bearer ${token}` };
     await accept(
@@ -808,7 +768,7 @@ describe("server-owned workflow recency", () => {
       }),
       [200],
     );
-    const beforeCreation = await composer(actor, agentId);
+    const beforeCreation = await composer(actor);
     expect(beforeCreation).toContainEqual(
       expect.objectContaining({
         id: workflowId,
@@ -820,15 +780,12 @@ describe("server-owned workflow recency", () => {
         chatThreadsContract,
       ).create({
         headers: tokenHeaders,
-        body: { agentId, title: "Agent-created workflow chat" },
+        body: { title: "Run-created workflow chat" },
       }),
       [201],
     );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(
-      beforeCreation,
-    );
+    await expect(composer(actor)).resolves.toStrictEqual(beforeCreation);
     const sendBody = {
-      agentId,
       threadId: thread.body.id,
       clientEventId: randomUUID(),
       chatThreadSortEventId: randomUUID(),
@@ -847,7 +804,7 @@ describe("server-owned workflow recency", () => {
       [201],
     );
     expect(sent.body.threadId).toBe(thread.body.id);
-    const afterPrompt = await composer(actor, agentId);
+    const afterPrompt = await composer(actor);
     expect(afterPrompt).toContainEqual(
       expect.objectContaining({
         id: workflowId,
@@ -861,7 +818,7 @@ describe("server-owned workflow recency", () => {
       [201],
     );
     expect(replayed.body.threadId).toBe(thread.body.id);
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(afterPrompt);
+    await expect(composer(actor)).resolves.toStrictEqual(afterPrompt);
     const automation = await accept(
       automationsClient().create({
         headers: headers(actor),
@@ -877,7 +834,7 @@ describe("server-owned workflow recency", () => {
       }),
       [201],
     );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(afterPrompt);
+    await expect(composer(actor)).resolves.toStrictEqual(afterPrompt);
     await flushWaitUntilForTest();
     mockNow(Date.parse(acceptedTime(sent.body)) + 120_000);
     await accept(
@@ -887,7 +844,7 @@ describe("server-owned workflow recency", () => {
       }),
       [200],
     );
-    await expect(composer(actor, agentId)).resolves.toStrictEqual(afterPrompt);
+    await expect(composer(actor)).resolves.toStrictEqual(afterPrompt);
     await flushWaitUntilForTest();
   });
 });

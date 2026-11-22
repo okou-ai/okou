@@ -33,7 +33,6 @@ describe("personal native subscription activation", () => {
     async (source) => {
       const {
         actor,
-        agentId,
         run: own,
         ownsFeatureSwitches,
         runExecution,
@@ -44,7 +43,6 @@ describe("personal native subscription activation", () => {
       await own(async () => {
         const workflows = createWorkflowsBddApi(context);
         const workflowId = await workflows.createWorkflow(actor, {
-          agentId,
           name: `personal-source-${source}`,
         });
         const created = await accept(
@@ -130,9 +128,8 @@ describe("personal native subscription activation", () => {
   );
 
   it("keeps official Claude member subscription credentials on Claude Code with Pi enabled", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const run = await sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "retain official Claude subscription ownership",
     });

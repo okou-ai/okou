@@ -32,7 +32,6 @@ const slackConnectStatusSchema = object({
   isConnected: boolean(),
   isAdmin: boolean(),
   workspaceName: string().nullable().optional(),
-  defaultAgentName: string().nullable().optional(),
 });
 
 const slackConnectLinkStatusResponseSchema = slackConnectStatusSchema.extend({

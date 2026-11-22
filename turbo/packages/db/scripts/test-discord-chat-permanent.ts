@@ -39,8 +39,8 @@ export async function validatePermanentDiscordChat(
       [connection, guild, user, org],
     );
     await client.query(
-      "INSERT INTO chat_threads (id, user_id) VALUES ($1, $2)",
-      [thread, user],
+      "INSERT INTO chat_threads (id, user_id, org_id) VALUES ($1, $2, $3)",
+      [thread, user, org],
     );
     await client.query(
       `INSERT INTO discord_chat_thread_routes

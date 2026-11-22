@@ -49,8 +49,6 @@ async function admittedConfiguredMcp(
       body: {
         authMethod: catalog.methodId,
         account: { intent: "add" },
-        agentId: owned.agentId,
-        authorizeAgent: true,
       },
     }),
     [200],
@@ -86,7 +84,6 @@ async function admittedConfiguredMcp(
   );
   const connectionId = receipt.body.connectionId;
   const run = await owned.sendChatRun(owned.actor, {
-    agentId: owned.agentId,
     prompt: "Use the admitted configured MCP profile",
   });
   const { execution } = await owned.runExecution(run.runId);

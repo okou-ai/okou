@@ -1,8 +1,8 @@
+import { apiClient$ } from "../api-client.ts";
+import { searchParams$ } from "../route.ts";
 import { command, computed } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import { accept } from "../../lib/accept.ts";
-import { apiClient$ } from "../api-client.ts";
-import { searchParams$ } from "../route.ts";
 import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
 import { sendChatEvent } from "./chat-event-api.ts";
 import {
@@ -21,7 +21,7 @@ export interface ChatActionCallbackIds {
 }
 
 export function chatActionCallbackFromUrl(
-  url: URL,
+  url: Pick<URL, "searchParams">,
   context: Pick<ChatActionContext, "threadId">,
 ): ChatActionCallback | null {
   const callbackPrompt = url.searchParams.get("callbackPrompt");
@@ -56,7 +56,6 @@ export const runChatActionCallback$ = command(
     { get },
     args: {
       readonly threadId: string;
-      readonly agentId: string;
       readonly callbackPrompt: string;
       readonly callbackIds?: ChatActionCallbackIds;
     },
@@ -69,7 +68,6 @@ export const runChatActionCallback$ = command(
     await sendChatEvent(
       get(apiClient$),
       {
-        agentId: args.agentId,
         threadId: args.threadId,
         prompt: args.callbackPrompt,
         hasTextContent: true,
@@ -116,7 +114,7 @@ export const runAuthorizationChatCallback$ = command(
     if (!callback.callbackPrompt) {
       return;
     }
-    const thread = await accept(
+    await accept(
       get(apiClient$)(chatThreadMetadataContract).get({
         params: { id: args.chatThreadId },
         fetchOptions: { signal },
@@ -127,7 +125,6 @@ export const runAuthorizationChatCallback$ = command(
     await set(
       runChatActionCallback$,
       {
-        agentId: thread.body.agentId,
         threadId: args.chatThreadId,
         callbackPrompt: callback.callbackPrompt,
         callbackIds: {

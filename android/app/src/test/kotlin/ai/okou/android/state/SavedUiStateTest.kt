@@ -2,6 +2,11 @@ package ai.okou.android.state
 
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.chat.ChatListSource
+import ai.okou.android.chat.ChatListUiState
+import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatTitleSearch
+import ai.okou.android.chat.ConfirmedChat
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
@@ -19,15 +24,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
@@ -43,6 +51,85 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = TestOkouApplication::class)
 class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun searchRestoresTheSameResultWhenCacheAddsAnEarlierMatch() {
+        checkSearchRestoration("Result", "Result 5")
+    }
+
+    @Test
+    fun searchDropsTheOldResultPositionWhenTheQueryIsTooLongToRestore() {
+        val longQuery = "Result " + "x".repeat(256)
+        checkSearchRestoration(longQuery, "$longQuery 5", queryIsSaved = false)
+    }
+
+    private fun checkSearchRestoration(
+        query: String,
+        targetTitle: String,
+        queryIsSaved: Boolean = true,
+    ) {
+        val restoration = StateRestorationTester(compose)
+        var source by mutableStateOf(ChatListSource.Network)
+        var rows by
+            mutableStateOf(
+                List(40) { index ->
+                    val date = "2026-11-13T00:00:00Z"
+                    ConfirmedChat(
+                        id = index.toString(),
+                        title = "$query $index",
+                        sortAt = date,
+                        createdAt = date,
+                        updatedAt = date,
+                        pinnedAt = null,
+                        archived = false,
+                        renamedAt = null,
+                    )
+                }
+            )
+        restoration.setContent {
+            DisposableEffect(Unit) {
+                onDispose {
+                    source = ChatListSource.Cache
+                    rows = listOf(rows.first().copy(id = "new", title = "$query newest")) + rows
+                }
+            }
+            val search = rememberChatSearchState()
+            OkouTheme(false) {
+                ChatTitleSearch(
+                    state =
+                        ChatListUiState(
+                            listPhase = ChatReadPhase.Ready,
+                            confirmedAt = 1,
+                            source = source,
+                            threadsByRecency = rows,
+                        ),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    workspaceName = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    retry = {},
+                )
+            }
+        }
+        val results = compose.onNodeWithTag("chat_search_results")
+        val field = compose.onNodeWithTag("chat_search_query")
+        field.performTextInput(query)
+        val target = compose.onNodeWithText(targetTitle)
+        results.performScrollToIndex(6)
+        val originalTop = target.fetchSemanticsNode().boundsInRoot.top
+        restoration.emulateSavedInstanceStateRestore()
+        if (queryIsSaved) {
+            field.assert(hasText(query))
+            assertEquals(originalTop, target.fetchSemanticsNode().boundsInRoot.top)
+        } else {
+            compose.onNodeWithText("Recent chats").assertIsDisplayed()
+            compose.onNodeWithText("$query newest").assertIsDisplayed()
+        }
+    }
 
     @Test
     fun restoredSelectionWaitsForTheJournalBody() {
@@ -79,10 +166,8 @@ class SavedUiStateTest {
     fun recentConversationScrollRestoresAndOldPresentationIsEvicted() {
         val restoration = StateRestorationTester(compose)
         var next = 0
-        lateinit var collapsed: SavedUiIds
         restoration.setContent {
             val histories = rememberConversationUiState()
-            collapsed = rememberCollapsedProjects()
             var navigation by rememberWorkspaceNavigation()
             fun open(id: Int) {
                 val target = "00000000-0000-4000-8000-${id.toString().padStart(12, '0')}"
@@ -91,7 +176,6 @@ class SavedUiStateTest {
             }
             OkouTheme(false) {
                 Column {
-                    Text("${collapsed.values.size} collapsed Projects")
                     Button(onClick = { open(++next) }) { Text("Next conversation") }
                     Button(onClick = { open(1) }) { Text("First conversation") }
                     Button(onClick = { open(SavedStatePolicy.CONVERSATION_STATES) }) {
@@ -113,12 +197,6 @@ class SavedUiStateTest {
                 }
             }
         }
-        // Exercise both retention maxima together with canonical-length target IDs.
-        compose.runOnIdle {
-            for (id in 1..SavedStatePolicy.COLLAPSED_PROJECTS) collapsed.toggle(
-                "00000000-0000-4000-8000-${id.toString().padStart(12, '0')}"
-            )
-        }
         compose.onNodeWithText("Next conversation").performClick()
         compose.onNodeWithTag("retained_history").performScrollToIndex(60)
         for (id in 2..SavedStatePolicy.CONVERSATION_STATES + 1) {
@@ -132,38 +210,7 @@ class SavedUiStateTest {
         compose.onNodeWithText("History row 70").assertIsDisplayed()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("History row 70").assertIsDisplayed()
-        compose
-            .onNodeWithText("${SavedStatePolicy.COLLAPSED_PROJECTS} collapsed Projects")
-            .assertIsDisplayed()
         compose.runOnIdle {
-            val saved = Bundle()
-            InstrumentationRegistry.getInstrumentation()
-                .callActivityOnSaveInstanceState(compose.activity, saved)
-            SavedStatePolicy.verify(saved)
-        }
-    }
-
-    @Test
-    fun projectPresentationStaysBoundedAcrossManyChoicesAndRestoresRecentOnes() {
-        val restoration = StateRestorationTester(compose)
-        lateinit var collapsed: SavedUiIds
-        restoration.setContent {
-            collapsed = rememberCollapsedProjects()
-            Text(collapsed.values.joinToString())
-        }
-        compose.runOnIdle {
-            for (id in 1..2_000) collapsed.toggle(
-                "00000000-0000-4000-8000-${id.toString().padStart(12, '0')}"
-            )
-        }
-        val recent = compose.runOnIdle { collapsed.values }
-        assertEquals(SavedStatePolicy.COLLAPSED_PROJECTS, recent.size)
-        assertEquals("00000000-0000-4000-8000-000000002000", recent.last())
-        restoration.emulateSavedInstanceStateRestore()
-        assertEquals(recent, compose.runOnIdle { collapsed.values })
-        compose.runOnIdle {
-            collapsed.toggle(recent.last())
-            assertEquals(recent.dropLast(1), collapsed.values)
             val saved = Bundle()
             InstrumentationRegistry.getInstrumentation()
                 .callActivityOnSaveInstanceState(compose.activity, saved)

@@ -1,29 +1,20 @@
+import { ensureLegacyDefaultAgentProfile$ } from "../services/legacy-default-agent-profile.service";
+import { DEFAULT_AGENT_NAME } from "../services/default-agent-profile";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, asc, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, lt, ne, or, sql } from "drizzle-orm";
 import { enum as zodEnum, int, object, string } from "zod";
-import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
   agentsMainContract,
   type AgentResponse,
   type AgentVisibility,
 } from "@okouai/api-contracts/contracts/agents";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import {
-  connectorCatalog,
-  connectorCatalogEntries,
-} from "@okouai/db/runtime/connector-catalog";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -38,33 +29,13 @@ import {
 import { conflict, notFound } from "../../lib/error";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import { deleteAgentById$ } from "../services/agent-deletion.service";
-import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wakeup.service";
 import {
   agentResponse,
-  agentEnabledConnectorSlugsCondition,
-  agentCustomConnectorGrantJoinCondition,
-  agentCustomConnectorGrantsCondition,
+  defaultProfileId,
   visibleAgentIdentityCondition,
   agentList,
-  visibleJoinedAgentCondition,
-  nonDefaultAgentCondition,
   publicAgentCountReadPlan,
 } from "../services/agent-data.service";
-import {
-  createConnectorActionResolver,
-  readConnectorResolver$,
-} from "../services/connector-action-resolver.service";
-import {
-  connectorCatalogCurrentWhere,
-  connectorRuntimeSlugSelectionReadPlan,
-  connectorRuntimeSlugSelectionFromRows,
-} from "../services/connector-catalog-slug-source.service";
-
-import {
-  updateUserBuiltinConnectors$,
-  updateUserCustomConnectors$,
-} from "../services/user-connectors.service";
 import type { RouteEntry } from "../route-entry";
 
 // This is a soft limit: concurrent requests may both observe an available slot.
@@ -101,13 +72,6 @@ function forbidden(message: string) {
   return {
     status: 403 as const,
     body: { error: { message, code: "FORBIDDEN" as const } },
-  };
-}
-
-function validationError(message: string) {
-  return {
-    status: 400 as const,
-    body: { error: { message, code: "VALIDATION_ERROR" as const } },
   };
 }
 
@@ -234,20 +198,9 @@ function agentConfigurationUpdateRejection(
   return null;
 }
 
-function agentUpdateResponseSelection() {
-  return {
-    agentId: agents.id,
-    defaultAgentId: orgMetadata.defaultAgentId,
-    owner: agents.owner,
-    displayName: agents.displayName,
-    description: agents.description,
-    sound: agents.sound,
-    avatarUrl: agents.avatarUrl,
-    visibility: agents.visibility,
-  };
-}
-
-function agentCreateSelection(values: typeof agents.$inferSelect) {
+function agentCreateSelection(
+  values: typeof legacyAgentApiProfiles.$inferSelect,
+) {
   // Defer text admission until the eligible INSERT row is projected. Binding
   // raw NUL text would reject before the public-count predicate can run.
   const displayName =
@@ -255,7 +208,9 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       ? null
       : Buffer.from(
           pgTextDecoder.mapFromDriverValue(
-            agents.displayName.mapToDriverValue(values.displayName),
+            legacyAgentApiProfiles.displayName.mapToDriverValue(
+              values.displayName,
+            ),
           ),
           "utf8",
         );
@@ -264,7 +219,9 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       ? null
       : Buffer.from(
           pgTextDecoder.mapFromDriverValue(
-            agents.description.mapToDriverValue(values.description),
+            legacyAgentApiProfiles.description.mapToDriverValue(
+              values.description,
+            ),
           ),
           "utf8",
         );
@@ -273,7 +230,7 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       ? null
       : Buffer.from(
           pgTextDecoder.mapFromDriverValue(
-            agents.sound.mapToDriverValue(values.sound),
+            legacyAgentApiProfiles.sound.mapToDriverValue(values.sound),
           ),
           "utf8",
         );
@@ -282,49 +239,53 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       ? null
       : Buffer.from(
           pgTextDecoder.mapFromDriverValue(
-            agents.avatarUrl.mapToDriverValue(values.avatarUrl),
+            legacyAgentApiProfiles.avatarUrl.mapToDriverValue(values.avatarUrl),
           ),
           "utf8",
         );
   return {
-    id: sql`${sql.param(values.id, agents.id)}`.mapWith(agents.id).as("id"),
-    orgId: sql`${sql.param(values.orgId, agents.orgId)}`
-      .mapWith(agents.orgId)
+    id: sql`${sql.param(values.id, legacyAgentApiProfiles.id)}`
+      .mapWith(legacyAgentApiProfiles.id)
+      .as("id"),
+    orgId: sql`${sql.param(values.orgId, legacyAgentApiProfiles.orgId)}`
+      .mapWith(legacyAgentApiProfiles.orgId)
       .as("org_id"),
-    owner: sql`${sql.param(values.owner, agents.owner)}`
-      .mapWith(agents.owner)
+    owner: sql`${sql.param(values.owner, legacyAgentApiProfiles.owner)}`
+      .mapWith(legacyAgentApiProfiles.owner)
       .as("owner"),
-    name: sql`${sql.param(values.name, agents.name)}`
-      .mapWith(agents.name)
+    name: sql`${sql.param(values.name, legacyAgentApiProfiles.name)}`
+      .mapWith(legacyAgentApiProfiles.name)
       .as("name"),
-    visibility: sql`${sql.param(values.visibility, agents.visibility)}`
-      .mapWith(agents.visibility)
-      .as("visibility"),
+    visibility:
+      sql`${sql.param(values.visibility, legacyAgentApiProfiles.visibility)}`
+        .mapWith(legacyAgentApiProfiles.visibility)
+        .as("visibility"),
     displayName: sql`convert_from(${sql.param(displayName)}, 'UTF8')`
-      .mapWith(nullableDriverValueDecoder(agents.displayName))
+      .mapWith(nullableDriverValueDecoder(legacyAgentApiProfiles.displayName))
       .as("display_name"),
     description: sql`convert_from(${sql.param(description)}, 'UTF8')`
-      .mapWith(nullableDriverValueDecoder(agents.description))
+      .mapWith(nullableDriverValueDecoder(legacyAgentApiProfiles.description))
       .as("description"),
-    instructions: sql`${sql.param(values.instructions, agents.instructions)}`
-      .mapWith(agents.instructions)
-      .as("instructions"),
+    instructions:
+      sql`${sql.param(values.instructions, legacyAgentApiProfiles.instructions)}`
+        .mapWith(legacyAgentApiProfiles.instructions)
+        .as("instructions"),
     instructionsBundle:
-      sql`${sql.param(values.instructionsBundle, agents.instructionsBundle)}`
-        .mapWith(nullableDriverValueDecoder(agents.instructionsBundle))
+      sql`${sql.param(values.instructionsBundle, legacyAgentApiProfiles.instructionsBundle)}`
+        .mapWith(
+          nullableDriverValueDecoder(legacyAgentApiProfiles.instructionsBundle),
+        )
         .as("instructions_bundle"),
     sound: sql`convert_from(${sql.param(sound)}, 'UTF8')`
-      .mapWith(nullableDriverValueDecoder(agents.sound))
+      .mapWith(nullableDriverValueDecoder(legacyAgentApiProfiles.sound))
       .as("sound"),
     avatarUrl: sql`convert_from(${sql.param(avatarUrl)}, 'UTF8')`
-      .mapWith(nullableDriverValueDecoder(agents.avatarUrl))
+      .mapWith(nullableDriverValueDecoder(legacyAgentApiProfiles.avatarUrl))
       .as("avatar_url"),
-    createdAt: sql`${sql.param(values.createdAt, agents.createdAt)}`
-      .mapWith(agents.createdAt)
-      .as("created_at"),
-    updatedAt: sql`${sql.param(values.updatedAt, agents.updatedAt)}`
-      .mapWith(agents.updatedAt)
-      .as("updated_at"),
+    updatedAt:
+      sql`${sql.param(values.updatedAt, legacyAgentApiProfiles.updatedAt)}`
+        .mapWith(legacyAgentApiProfiles.updatedAt)
+        .as("updated_at"),
   };
 }
 
@@ -332,14 +293,14 @@ const createAgentBody$ = bodyResultOf(agentsMainContract.create);
 
 function createdAgentSelection() {
   return {
-    agentId: agents.id,
-    defaultAgentId: orgMetadata.defaultAgentId,
-    owner: agents.owner,
-    displayName: agents.displayName,
-    description: agents.description,
-    sound: agents.sound,
-    avatarUrl: agents.avatarUrl,
-    visibility: agents.visibility,
+    agentId: legacyAgentApiProfiles.id,
+    defaultAgentId: defaultProfileId.as("default_executor_id"),
+    owner: legacyAgentApiProfiles.owner,
+    displayName: legacyAgentApiProfiles.displayName,
+    description: legacyAgentApiProfiles.description,
+    sound: legacyAgentApiProfiles.sound,
+    avatarUrl: legacyAgentApiProfiles.avatarUrl,
+    visibility: legacyAgentApiProfiles.visibility,
   };
 }
 
@@ -351,13 +312,12 @@ const committedClientAgent$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const [agent] = await get(db$)
     .select(createdAgentSelection())
-    .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .from(legacyAgentApiProfiles)
     .where(
       and(
-        eq(agents.id, body.data.clientAgentId),
-        eq(agents.orgId, auth.orgId),
-        eq(agents.owner, auth.userId),
+        eq(legacyAgentApiProfiles.id, body.data.clientAgentId),
+        eq(legacyAgentApiProfiles.orgId, auth.orgId),
+        eq(legacyAgentApiProfiles.owner, auth.userId),
       ),
     )
     .limit(1);
@@ -372,6 +332,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
+  await set(ensureLegacyDefaultAgentProfile$, auth.orgId, signal);
   const committed = await get(committedClientAgent$);
   signal.throwIfAborted();
   if (committed) {
@@ -387,7 +348,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     const countPlan = publicAgentCountReadPlan(auth.orgId);
     const [publicAgentCount] = await writeDb
       .select(countPlan.selection)
-      .from(agents)
+      .from(legacyAgentApiProfiles)
       .where(countPlan.condition);
     signal.throwIfAborted();
     if ((publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT) {
@@ -421,21 +382,19 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     ),
     ...metadata,
-    createdAt,
     updatedAt: createdAt,
   };
   let blocked = false;
-  // Concurrent replays can collide on either id or the (orgId, name) index.
-  // The final scoped read resolves the accepted identity after either conflict.
+  // The final scoped read resolves concurrent replays of a client identity.
   if (visibility === "public") {
     const countPlan = publicAgentCountReadPlan(auth.orgId);
     const publicAgentCount = writeDb
       .select({ value: countPlan.selection.value.as("value") })
-      .from(agents)
+      .from(legacyAgentApiProfiles)
       .where(countPlan.condition)
       .as("public_agent_count");
     const inserted = await writeDb
-      .insert(agents)
+      .insert(legacyAgentApiProfiles)
       .select(
         writeDb
           .select(agentCreateSelection(values))
@@ -443,23 +402,25 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           .where(lt(publicAgentCount.value, PUBLIC_AGENT_LIMIT)),
       )
       .onConflictDoNothing()
-      .returning({ id: agents.id });
+      .returning({ id: legacyAgentApiProfiles.id });
     signal.throwIfAborted();
     blocked = inserted.length === 0;
   } else {
-    await writeDb.insert(agents).values(values).onConflictDoNothing();
+    await writeDb
+      .insert(legacyAgentApiProfiles)
+      .values(values)
+      .onConflictDoNothing();
   }
   signal.throwIfAborted();
 
   const [agent] = await writeDb
     .select(createdAgentSelection())
-    .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .from(legacyAgentApiProfiles)
     .where(
       and(
-        eq(agents.orgId, auth.orgId),
-        eq(agents.owner, auth.userId),
-        eq(agents.id, agentId),
+        eq(legacyAgentApiProfiles.orgId, auth.orgId),
+        eq(legacyAgentApiProfiles.owner, auth.userId),
+        eq(legacyAgentApiProfiles.id, agentId),
       ),
     )
     .limit(1);
@@ -481,12 +442,16 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 201 as const, body: agentResponse(agent) };
 });
 
-const agentListResponse$ = computed(
+const agentListResponse$ = command(
   async (
-    get,
+    { get, set },
+    signal: AbortSignal,
   ): Promise<{ readonly status: 200; readonly body: AgentResponse[] }> => {
     const auth = get(organizationAuthContext$);
+    await set(ensureLegacyDefaultAgentProfile$, auth.orgId, signal);
+    signal.throwIfAborted();
     const agents = await get(agentList(auth.orgId, auth.userId));
+    signal.throwIfAborted();
     return { status: 200 as const, body: [...agents] };
   },
 );
@@ -501,17 +466,16 @@ const getAgentInner$ = computed(async (get) => {
   };
   const [row] = await get(db$)
     .select({
-      agentId: agents.id,
-      defaultAgentId: orgMetadata.defaultAgentId,
-      owner: agents.owner,
-      displayName: agents.displayName,
-      description: agents.description,
-      sound: agents.sound,
-      avatarUrl: agents.avatarUrl,
-      visibility: agents.visibility,
+      agentId: legacyAgentApiProfiles.id,
+      defaultAgentId: defaultProfileId.as("default_executor_id"),
+      owner: legacyAgentApiProfiles.owner,
+      displayName: legacyAgentApiProfiles.displayName,
+      description: legacyAgentApiProfiles.description,
+      sound: legacyAgentApiProfiles.sound,
+      avatarUrl: legacyAgentApiProfiles.avatarUrl,
+      visibility: legacyAgentApiProfiles.visibility,
     })
-    .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .from(legacyAgentApiProfiles)
     .where(visibleAgentIdentityCondition(agentScope))
     .limit(1);
   const agent = row ? agentResponse(row) : null;
@@ -520,120 +484,6 @@ const getAgentInner$ = computed(async (get) => {
   }
   return { status: 200 as const, body: agent };
 });
-
-const getAgentUserConnectorsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(userBuiltinConnectorsContract.get));
-  const agentScope = {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    agentId: params.id,
-  };
-  const [visibleAgent] = await get(db$)
-    .select({ id: agents.id })
-    .from(agents)
-    .where(visibleAgentIdentityCondition(agentScope))
-    .limit(1);
-  const exists = Boolean(visibleAgent);
-  if (!exists) {
-    return agentNotFound(params.id);
-  }
-
-  const connectorScope = {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    agentId: params.id,
-  };
-  const rows = await get(db$)
-    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
-    .from(userBuiltinConnectors)
-    .where(agentEnabledConnectorSlugsCondition(connectorScope))
-    .orderBy(asc(userBuiltinConnectors.connectorSlug));
-  const enabledConnectorSlugs = rows.map((row) => {
-    return connectorSlugSchema.parse(row.connectorSlug);
-  });
-  const connectorSlugs = enabledConnectorSlugs;
-  const catalogDb = get(db$);
-  const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
-    connectorSlugs,
-  });
-  const snapshot = connectorRuntimeSlugSelectionFromRows(
-    catalogPlan.selection,
-    await catalogDb
-      .select(catalogPlan.columns)
-      .from(connectorCatalog)
-      .leftJoin(connectorCatalogEntries, catalogPlan.join)
-      .where(connectorCatalogCurrentWhere()),
-  );
-  const resolver = createConnectorActionResolver(snapshot);
-  const availableEnabledConnectorSlugs: (typeof enabledConnectorSlugs)[number][] =
-    [];
-  for (const connectorSlug of enabledConnectorSlugs) {
-    const resolved = await resolver.resolveSlug({
-      connectorSlug,
-      requireExecutable: true,
-    });
-    if (resolved.ok) {
-      availableEnabledConnectorSlugs.push(connectorSlug);
-    }
-  }
-  return {
-    status: 200 as const,
-    body: {
-      enabledConnectorSlugs: availableEnabledConnectorSlugs,
-    },
-  };
-});
-
-const getAgentCustomConnectorsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(agentCustomConnectorsContract.get));
-  const agentScope = {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    agentId: params.id,
-  };
-  const [visibleAgent] = await get(db$)
-    .select({ id: agents.id })
-    .from(agents)
-    .where(visibleAgentIdentityCondition(agentScope))
-    .limit(1);
-  const exists = Boolean(visibleAgent);
-  if (!exists) {
-    return agentNotFound(params.id);
-  }
-
-  const connectorScope = {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    agentId: params.id,
-  };
-  const rows = await get(db$)
-    .select({
-      customConnectorId: userCustomConnectors.customConnectorId,
-      permissionNames: userCustomConnectors.permissionNames,
-    })
-    .from(userCustomConnectors)
-    .innerJoin(orgCustomConnectors, agentCustomConnectorGrantJoinCondition())
-    .where(agentCustomConnectorGrantsCondition(connectorScope))
-    .orderBy(asc(userCustomConnectors.customConnectorId));
-  const grants = rows.map((row) => {
-    return {
-      customConnectorId: row.customConnectorId,
-      permissionNames: [...row.permissionNames],
-    };
-  });
-  return {
-    status: 200 as const,
-    body: {
-      grants: [...grants],
-    },
-  };
-});
-
-const updateAgentCustomConnectorsBody$ = bodyResultOf(
-  agentCustomConnectorsContract.update,
-);
 
 const updateAgentBody$ = bodyResultOf(agentsByIdContract.update);
 
@@ -652,41 +502,48 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const countPlan = publicAgentCountReadPlan(auth.orgId);
   const publicAgentCount = writeDb
     .select(countPlan.selection)
-    .from(agents)
+    .from(legacyAgentApiProfiles)
     .where(countPlan.condition);
   // Retain the existing Agent row lock. Immutable default identity and the
   // documented soft public limit use this statement's snapshot.
   const locked = writeDb.$with("configuration_agent").as(
     writeDb
       .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        defaultAgentId: orgMetadata.defaultAgentId,
+        id: legacyAgentApiProfiles.id,
+        owner: legacyAgentApiProfiles.owner,
+        visibility: legacyAgentApiProfiles.visibility,
+        defaultAgentId: defaultProfileId.as("default_executor_id"),
         publicAgentCount: (updateBody.visibility === "public"
-          ? sql`CASE WHEN ${and(eq(agents.visibility, "private"), eq(agents.owner, member.userId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
+          ? sql`CASE WHEN ${and(eq(legacyAgentApiProfiles.visibility, "private"), eq(legacyAgentApiProfiles.owner, member.userId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
           : sql`0::bigint`
         )
           .mapWith(pgInt8ToSafeIntegerDecoder)
           .as("public_agent_count"),
       })
-      .from(agents)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-      .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-      .for("update", { of: agents }),
+      .from(legacyAgentApiProfiles)
+      .where(
+        and(
+          eq(legacyAgentApiProfiles.orgId, auth.orgId),
+          eq(legacyAgentApiProfiles.id, params.id),
+        ),
+      )
+      .for("update", { of: legacyAgentApiProfiles }),
   );
   const updated = writeDb.$with("updated_configuration_agent").as(
     writeDb
-      .update(agents)
+      .update(legacyAgentApiProfiles)
       // The dependent locking CTE completes before this SQL clock is read.
       .set(agentConfigurationUpdateValues(updateBody))
       .from(locked)
       .where(
         and(
-          eq(agents.orgId, auth.orgId),
-          eq(agents.id, locked.id),
+          eq(legacyAgentApiProfiles.orgId, auth.orgId),
+          eq(legacyAgentApiProfiles.id, locked.id),
           agentIdentityUpdateError(true, updateBody)
-            ? nonDefaultAgentCondition(auth.orgId)
+            ? or(
+                ne(legacyAgentApiProfiles.name, DEFAULT_AGENT_NAME),
+                ne(legacyAgentApiProfiles.visibility, "public"),
+              )
             : undefined,
           or(
             eq(locked.owner, member.userId),
@@ -706,8 +563,13 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         ),
       )
       .returning({
-        ...agentUpdateResponseSelection(),
-        defaultAgentId: locked.defaultAgentId,
+        agentId: legacyAgentApiProfiles.id,
+        owner: legacyAgentApiProfiles.owner,
+        displayName: legacyAgentApiProfiles.displayName,
+        description: legacyAgentApiProfiles.description,
+        sound: legacyAgentApiProfiles.sound,
+        avatarUrl: legacyAgentApiProfiles.avatarUrl,
+        visibility: legacyAgentApiProfiles.visibility,
       }),
   );
   const [row] = await writeDb
@@ -722,7 +584,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       agent: {
         agentId: updated.agentId,
-        defaultAgentId: updated.defaultAgentId,
         owner: updated.owner,
         displayName: updated.displayName,
         description: updated.description,
@@ -749,22 +610,12 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw new Error(`Canonical Agent missing after update: ${params.id}`);
   }
 
-  if (body.data.visibility === "private") {
-    await set(
-      publishVncLifecycleInvalidation$,
-      {
-        kind: "agent",
-        orgId: auth.orgId,
-        agentId: params.id,
-        ownerId: row.agent.owner,
-      },
-      signal,
-    );
-  }
-
   return {
     status: 200 as const,
-    body: agentResponse(row.agent),
+    body: agentResponse({
+      ...row.agent,
+      defaultAgentId: row.existing.defaultAgentId,
+    }),
   };
 });
 
@@ -833,7 +684,7 @@ const updateAgentMetadataInner$ = command(
     // including default publication by a supported outgoing writer.
     const [result] = parseRawRows(
       agentMetadataUpdateRow,
-      await writeDb.execute(sql`SELECT * FROM public.update_agent_metadata(
+      await writeDb.execute(sql`SELECT * FROM public.update_legacy_agent_api_metadata(
         ${auth.orgId}::text, ${params.id}::uuid, ${member.userId}::text,
         ${member.role === "admin"}::boolean,
         ${agentIdentityUpdateError(true, updateBody) !== null}::boolean,
@@ -873,222 +724,9 @@ const updateAgentMetadataInner$ = command(
       throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
 
-    if (body.data.visibility === "private") {
-      await set(
-        publishVncLifecycleInvalidation$,
-        {
-          kind: "agent",
-          orgId: auth.orgId,
-          agentId: params.id,
-          ownerId: result.agent.owner,
-        },
-        signal,
-      );
-    }
-
     return {
       status: 200 as const,
       body: agentResponse(result.agent),
-    };
-  },
-);
-
-const initialDeleteAgent$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(agentsByIdContract.delete));
-  const db = get(db$);
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-    .limit(1);
-  return agent;
-});
-
-const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const member = { userId: auth.userId, role: auth.orgRole ?? "member" };
-  const params = get(pathParamsOf(agentsByIdContract.delete));
-
-  const agent = await get(initialDeleteAgent$);
-  signal.throwIfAborted();
-
-  if (!agent) {
-    return agentNotFound(params.id);
-  }
-
-  const permissionError = requireAgentPermission(
-    agent.owner,
-    member,
-    "delete agent",
-    { visibility: agent.visibility },
-  );
-  if (permissionError) {
-    return permissionError;
-  }
-
-  const result = await set(
-    deleteAgentById$,
-    { agentId: agent.id, orgId: auth.orgId, member },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  if (result) {
-    return result;
-  }
-
-  return { status: 204 as const, body: undefined };
-});
-
-const updateAgentCustomConnectorsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(agentCustomConnectorsContract.update));
-    const body = await get(updateAgentCustomConnectorsBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-
-    const agentScope = {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    };
-    const [visibleAgent] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(visibleAgentIdentityCondition(agentScope))
-      .limit(1);
-    signal.throwIfAborted();
-    const exists = Boolean(visibleAgent);
-    if (!exists) {
-      return agentNotFound(params.id);
-    }
-
-    const operation = body.data.operation ?? "replace";
-
-    const updated = await set(updateUserCustomConnectors$, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-      grants: body.data.grants,
-      permissionIntent: "exact",
-      operation,
-    });
-    signal.throwIfAborted();
-    if (updated.status === "agentNotFound") {
-      return agentNotFound(params.id);
-    }
-    if (updated.status === "customConnectorsNotFound") {
-      return {
-        status: 400 as const,
-        body: {
-          error: {
-            message: `Unknown custom connector ids: ${updated.missingIds.join(", ")}`,
-            code: "VALIDATION_ERROR",
-          },
-        },
-      };
-    }
-    if (updated.status === "customConnectorPermissionSelectionRequired") {
-      return validationError(
-        `Permission selection is required for custom connector ids: ${updated.connectorIds.join(", ")}`,
-      );
-    }
-    if (updated.status === "invalidCustomConnectorPermissions") {
-      return validationError(updated.message);
-    }
-
-    return {
-      status: 200 as const,
-      body: {
-        grants: [...updated.grants],
-      },
-    };
-  },
-);
-
-const updateAgentUserConnectorsBody$ = bodyResultOf(
-  userBuiltinConnectorsContract.update,
-);
-
-const updateAgentUserConnectorsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(userBuiltinConnectorsContract.update));
-    const body = await get(updateAgentUserConnectorsBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-
-    const writeDb = set(writeDb$);
-    const [agent] = await writeDb
-      .select({
-        id: agents.id,
-      })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.orgId, auth.orgId),
-          eq(agents.id, params.id),
-          visibleJoinedAgentCondition(auth.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!agent) {
-      return agentNotFound(params.id);
-    }
-
-    const uniqueConnectorSlugs = Array.from(
-      new Set(body.data.enabledConnectorSlugs),
-    );
-    const operation = body.data.operation ?? "replace";
-    if (operation !== "remove") {
-      // Agent connector selection is persisted execution configuration, not a
-      // discovery surface. Validate that each connector can execute, but do
-      // not consult feature switches or authored visibility: rollout changes
-      // must not invalidate direct API updates or an existing agent config.
-      const resolver = await set(readConnectorResolver$, uniqueConnectorSlugs);
-      signal.throwIfAborted();
-      const resolved = await resolver.resolveSlugs({
-        connectorSlugs: uniqueConnectorSlugs,
-        requireExecutable: true,
-      });
-      signal.throwIfAborted();
-      if (!resolved.ok) {
-        return validationError(
-          `Invalid connector slugs: ${resolved.connectorSlug}`,
-        );
-      }
-    }
-
-    const updated = await set(updateUserBuiltinConnectors$, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-      enabledConnectorSlugs: uniqueConnectorSlugs,
-      operation,
-    });
-    signal.throwIfAborted();
-    if (updated.status === "agentNotFound") {
-      return agentNotFound(params.id);
-    }
-
-    const enabledConnectorSlugs = [...updated.enabledConnectorSlugs];
-    return {
-      status: 200 as const,
-      body: {
-        enabledConnectorSlugs,
-      },
     };
   },
 );
@@ -1103,12 +741,6 @@ const agentWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
   requiredCapability: "agent:write",
-} as const;
-
-const agentDeleteAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-  requiredCapability: "agent:delete",
 } as const;
 
 export const agentsRoutes: readonly RouteEntry[] = [
@@ -1134,25 +766,5 @@ export const agentsRoutes: readonly RouteEntry[] = [
   {
     route: agentsByIdContract.updateMetadata,
     handler: authRoute(agentWriteAuth, updateAgentMetadataInner$),
-  },
-  {
-    route: agentsByIdContract.delete,
-    handler: authRoute(agentDeleteAuth, deleteAgentInner$),
-  },
-  {
-    route: userBuiltinConnectorsContract.get,
-    handler: authRoute(agentReadAuth, getAgentUserConnectorsInner$),
-  },
-  {
-    route: agentCustomConnectorsContract.get,
-    handler: authRoute(agentReadAuth, getAgentCustomConnectorsInner$),
-  },
-  {
-    route: agentCustomConnectorsContract.update,
-    handler: authRoute(agentReadAuth, updateAgentCustomConnectorsInner$),
-  },
-  {
-    route: userBuiltinConnectorsContract.update,
-    handler: authRoute(agentReadAuth, updateAgentUserConnectorsInner$),
   },
 ];

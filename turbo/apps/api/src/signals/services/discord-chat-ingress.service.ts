@@ -1,3 +1,5 @@
+import { writeDb$ } from "../external/db";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import { createHash, randomUUID } from "node:crypto";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { explicitModelSettings } from "@okouai/core/auto-run-model";
@@ -42,9 +44,7 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
-import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import type { DefaultModelFirstPin } from "./model-selection.service";
 import {
   canonicalChatEventAppendCtes,
@@ -90,7 +90,6 @@ export function discordIngressFailureSql(args: {
   const touchCondition = and(
     exists(sql`(SELECT 1 FROM inserted)`),
     eq(chatThreads.id, route.chatThreadId),
-    isNotNull(chatThreads.agentId),
     eq(chatThreads.userId, route.userId),
     chatThreadOrganizationCondition(route.orgId),
   );
@@ -103,7 +102,7 @@ export function discordIngressFailureSql(args: {
       UPDATE ${chatThreads}
       SET last_message_at = GREATEST(${chatThreads.lastMessageAt}, ${event.createdAt.toISOString()}::timestamp)
       WHERE ${touchCondition}
-      RETURNING id, user_id, agent_id, last_message_at
+      RETURNING id, user_id, last_message_at
     ), failure_sort_reserved AS (
       -- A published error requires the authorized touch identity. Its missing
       -- scalar fails the existing user_id NOT NULL constraint, rolling back
@@ -116,10 +115,10 @@ export function discordIngressFailureSql(args: {
       RETURNING user_id, org_id, last_seq_id
     ), failure_sort_inserted AS (
       INSERT INTO ${chatThreadEvents}
-        (id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+        (id, user_id, org_id, seq_id, chat_thread_id, kind,
          cloud_browser_enabled, created_at)
       SELECT ${event.id}::uuid, reserved.user_id, reserved.org_id,
-        reserved.last_seq_id, touched.id, 'sort_touched', touched.agent_id,
+        reserved.last_seq_id, touched.id, 'sort_touched',
         false, date_trunc('milliseconds', touched.last_message_at)
       FROM failure_sort_reserved AS reserved CROSS JOIN failure_touched AS touched
       ON CONFLICT (id) DO NOTHING
@@ -209,7 +208,6 @@ export const findDiscordChatThreadRoute$ = command(
 
 interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
   readonly orgId: string;
-  readonly agentId: string;
   readonly currentTime: Date;
   readonly ingressId: string;
   readonly claimToken: string;
@@ -275,8 +273,7 @@ function canonicalRouteCreationInput(
   const t = chatThreads;
   const e = chatThreadEvents;
   return sql`, creation_input AS MATERIALIZED (
-    SELECT ${sql.param(args.agentId, t.agentId)}::uuid AS agent_id,
-      ${sql.param(args.initialModel.selectedModel, t.selectedModel)}::text AS selected_model,
+    SELECT ${sql.param(args.initialModel.selectedModel, t.selectedModel)}::text AS selected_model,
       ${sql.param(args.initialModel.serviceTier === "priority" ? "fast" : null, t.codexServiceTier)}::text AS codex_service_tier,
       ${sql.param(explicitModelSettings(defaults.modelSettings), t.modelSettings)}::jsonb AS model_settings,
       ${sql.param(defaults.cloudBrowserEnabled, t.cloudBrowserEnabled)}::boolean AS cloud_browser_enabled,
@@ -305,15 +302,15 @@ function canonicalRouteCreationWrites(): SQL {
       destination_channel_id, created_at
   ), inserted_thread AS (
     INSERT INTO ${t} (
-      id, user_id, agent_id, selected_model, codex_service_tier, model_settings,
+      id, user_id, org_id, selected_model, codex_service_tier, model_settings,
       cloud_browser_enabled, title, last_read_at, last_message_at, created_at, updated_at
     )
-    SELECT inserted_route.chat_thread_id, inserted_route.user_id, creation_input.agent_id,
+    SELECT inserted_route.chat_thread_id, inserted_route.user_id, creation_input.org_id,
       creation_input.selected_model, creation_input.codex_service_tier, creation_input.model_settings,
       creation_input.cloud_browser_enabled, NULL, creation_input.current_time,
       creation_input.current_time, creation_input.current_time, creation_input.current_time
     FROM inserted_route CROSS JOIN creation_input
-    RETURNING id, user_id, agent_id, title, selected_model, codex_service_tier,
+    RETURNING id, user_id, title, selected_model, codex_service_tier,
       model_settings, cloud_browser_enabled, created_at
   ), reserved AS (
     INSERT INTO ${q} (user_id, org_id, last_seq_id)
@@ -324,13 +321,12 @@ function canonicalRouteCreationWrites(): SQL {
     RETURNING last_seq_id
   ), created_event AS (
     INSERT INTO ${e} (
-      user_id, org_id, seq_id, chat_thread_id, kind, agent_id, reassigned_agent_id,
+      user_id, org_id, seq_id, chat_thread_id, kind,
       title, pin_order, muted, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     )
     SELECT inserted_thread.user_id, creation_input.org_id, reserved.last_seq_id,
-      inserted_thread.id, 'created'::chat_thread_event_kind, inserted_thread.agent_id,
-      NULL, inserted_thread.title, NULL, NULL, inserted_thread.selected_model,
+      inserted_thread.id, 'created'::chat_thread_event_kind, inserted_thread.title, NULL, NULL, inserted_thread.selected_model,
       inserted_thread.model_settings, NULL,
       CASE WHEN ${eq(sql`inserted_thread.codex_service_tier`, sql`'fast'`)} THEN 'priority' ELSE NULL END,
       NULL, inserted_thread.cloud_browser_enabled, inserted_thread.created_at

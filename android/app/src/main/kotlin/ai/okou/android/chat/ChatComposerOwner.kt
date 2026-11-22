@@ -38,6 +38,8 @@ internal class ChatComposerOwner(
         val onFailure: (Exception) -> Unit,
         val accepted: (String) -> Unit,
         val recovery: AssistantRecoveryModel? = null,
+        val history: ConversationHistoryModel? = null,
+        val chatList: ChatListModel? = null,
     ) {
         var retired = false
 
@@ -51,6 +53,7 @@ internal class ChatComposerOwner(
     ) {
         var job: Job? = null
         var unsentReset: UnsentReset? = null
+        var inputMayHaveBeenSent = false
     }
 
     private class UnsentReset(val previous: ComposerRecovery?, val prepared: ComposerRecovery)
@@ -75,9 +78,16 @@ internal class ChatComposerOwner(
 
     fun attach(connection: Connection) {
         connections += connection
+        if (!connection.current()) return
+        connection.chatList?.onAcceptedChatMissing = { acknowledge(connection, it) }
+        val journal = mutable.value.journal
+        if (journal == null) restoreJournal()
+        else
+            connection.chatList?.retainAcceptedNewChats(journal.acceptedNewChats(), restored = true)
     }
 
     fun detach(connection: Connection): Boolean {
+        connection.chatList?.onAcceptedChatMissing = null
         val retired = draftWork.values.filter { it.connection === connection }.toList()
         retired.forEach {
             draftWork.remove(it.target.key)
@@ -91,8 +101,7 @@ internal class ChatComposerOwner(
                 mutable.value.context != ComposerContext.Ready ||
                     connections.none { it !== connection && it.current() }
             )
-                mutable.value =
-                    mutable.value.copy(context = ComposerContext.Idle, defaultAgentId = null)
+                mutable.value = mutable.value.copy(context = ComposerContext.Idle)
         }
         operations.values
             .filter { it.connection === connection }
@@ -120,7 +129,10 @@ internal class ChatComposerOwner(
         if (!current(op)) throw CancellationException("Composer connection retired")
     }
 
-    private fun replace(journal: ComposerJournal, readyAgent: String? = null) {
+    private fun replace(
+        journal: ComposerJournal,
+        receiptMessages: Map<String, ComposerMessagePreview> = mutable.value.receiptMessages,
+    ) {
         val ticket = ++revision
         val value =
             if (journal.format < 2 && journal.entries.values.any { it.recovery != null })
@@ -131,8 +143,7 @@ internal class ChatComposerOwner(
             mutable.value.copy(
                 journal = value,
                 persistence = ComposerPersistence.Pending,
-                defaultAgentId = readyAgent ?: mutable.value.defaultAgentId,
-                context = if (readyAgent != null) ComposerContext.Ready else mutable.value.context,
+                receiptMessages = receiptMessages,
             )
         localScope.launch {
             val result =
@@ -153,7 +164,11 @@ internal class ChatComposerOwner(
         }
     }
 
-    private fun put(key: String, value: ComposerEntry) {
+    private fun put(
+        key: String,
+        value: ComposerEntry,
+        receiptMessages: Map<String, ComposerMessagePreview> = mutable.value.receiptMessages,
+    ) {
         val journal = mutable.value.journal ?: return
         val value = if (journal.format == 3) value.copy(text = "") else value
         val entries =
@@ -166,51 +181,59 @@ internal class ChatComposerOwner(
             )
                 journal.entries - key
             else journal.entries + (key to value)
-        replace(journal.copy(entries = entries))
+        replace(journal.copy(entries = entries), receiptMessages = receiptMessages)
+    }
+
+    private fun restoreJournal() {
+        if (mutable.value.journal != null || restoring?.isActive == true) return
+        mutable.value = mutable.value.copy(persistence = ComposerPersistence.Loading)
+        restoring =
+            localScope.launch {
+                try {
+                    val saved = store.load(identity)
+                    if (connections.none { it.current() }) return@launch
+                    val restored = saved.journal.withServerDrafts()
+                    mutable.value =
+                        mutable.value.copy(
+                            journal = restored,
+                            persistence =
+                                if (saved.durable) ComposerPersistence.Durable
+                                else ComposerPersistence.Failed,
+                        )
+                    if (restored != saved.journal && saved.journal != ComposerJournal())
+                        replace(restored)
+                    val accepted = restored.acceptedNewChats()
+                    connections
+                        .filter { it.current() }
+                        .forEach { it.chatList?.retainAcceptedNewChats(accepted, restored = true) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (connections.any { it.current() })
+                        mutable.value = mutable.value.copy(persistence = ComposerPersistence.Failed)
+                }
+            }
     }
 
     fun open(connection: Connection, target: ComposerTarget) {
         if (!connection.current()) return
-        if (mutable.value.journal == null && restoring?.isActive != true) {
-            mutable.value = mutable.value.copy(persistence = ComposerPersistence.Loading)
-            restoring =
-                localScope.launch {
-                    try {
-                        val saved = store.load(identity)
-                        val restored = saved.journal.withServerDrafts()
-                        mutable.value =
-                            mutable.value.copy(
-                                journal = restored,
-                                persistence =
-                                    if (saved.durable) ComposerPersistence.Durable
-                                    else ComposerPersistence.Failed,
-                            )
-                        if (restored != saved.journal && saved.journal.entries.isNotEmpty())
-                            replace(restored)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        mutable.value = mutable.value.copy(persistence = ComposerPersistence.Failed)
-                    }
-                }
-        }
+        restoreJournal()
         if (target.threadId == null && contextJob?.isActive != true) {
             contextConnection = connection
             mutable.value = mutable.value.copy(context = ComposerContext.Loading)
             contextJob =
                 connection.scope.launch {
                     try {
-                        val agent = connection.service.newChatAgent()
+                        val ready = connection.service.newChatReady()
                         currentCoroutineContext().ensureActive()
                         restoring?.join()
                         if (connection.current()) {
-                            if (agent != null) selectAgent(agent)
-                            else
-                                mutable.value =
-                                    mutable.value.copy(
-                                        defaultAgentId = null,
-                                        context = ComposerContext.Unavailable,
-                                    )
+                            mutable.value =
+                                mutable.value.copy(
+                                    context =
+                                        if (ready) ComposerContext.Ready
+                                        else ComposerContext.Unavailable
+                                )
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -227,49 +250,12 @@ internal class ChatComposerOwner(
             if (target.threadId == null) contextJob?.join()
             if (connection.current() && mutable.value.journal != null) {
                 val server =
-                    if (target.threadId != null) ServerDraftTarget(target.threadId, true)
-                    else
-                        mutable.value.defaultAgentId
-                            ?.takeIf { mutable.value.context == ComposerContext.Ready }
-                            ?.let { ServerDraftTarget(it, false) }
+                    if (target.threadId != null || mutable.value.context == ComposerContext.Ready)
+                        ServerDraftTarget(target.threadId)
+                    else null
                 server?.let { synchronize(connection, it, refresh = true) }
             }
         }
-    }
-
-    private fun selectAgent(agent: String) {
-        val journal = mutable.value.journal
-        if (journal == null) {
-            mutable.value =
-                mutable.value.copy(defaultAgentId = agent, context = ComposerContext.Ready)
-            return
-        }
-        val key = "agent:$agent"
-        val provisional = journal.drafts["new:"]
-        var drafts = journal.drafts - "new:"
-        var retained = journal.retainedDrafts
-        if (provisional != null) {
-            if (drafts[key]?.text?.isNotEmpty() == true)
-                retained = retained + ("new:" to provisional.text)
-            else drafts = drafts + (key to provisional)
-        }
-        if (journal.defaultAgentId != null && journal.defaultAgentId != agent) {
-            val previous = "agent:${journal.defaultAgentId}"
-            drafts[previous]
-                ?.text
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { retained = retained + (previous to it) }
-            draftWork.remove(previous)?.job?.cancel()
-            readableDrafts.remove(previous)
-        }
-        if (journal.defaultAgentId != agent || provisional != null)
-            replace(
-                journal.copy(defaultAgentId = agent, drafts = drafts, retainedDrafts = retained),
-                readyAgent = agent,
-            )
-        else
-            mutable.value =
-                mutable.value.copy(defaultAgentId = agent, context = ComposerContext.Ready)
     }
 
     fun edit(connection: Connection, target: ComposerTarget, text: String) {
@@ -325,8 +311,8 @@ internal class ChatComposerOwner(
 
     private fun serverTarget(key: String): ServerDraftTarget? =
         when {
-            key.startsWith("thread:") -> ServerDraftTarget(key.removePrefix("thread:"), true)
-            key.startsWith("agent:") -> ServerDraftTarget(key.removePrefix("agent:"), false)
+            key.startsWith("thread:") -> ServerDraftTarget(key.removePrefix("thread:"))
+            key == "new:" -> ServerDraftTarget()
             else -> null
         }
 
@@ -346,9 +332,7 @@ internal class ChatComposerOwner(
     ) {
         if (
             !connection.current() ||
-                !target.thread &&
-                    (mutable.value.context != ComposerContext.Ready ||
-                        mutable.value.defaultAgentId != target.id)
+                target.threadId == null && mutable.value.context != ComposerContext.Ready
         )
             return
         draftWork[target.key]?.let {
@@ -498,9 +482,6 @@ internal class ChatComposerOwner(
 
     fun send(connection: Connection, target: ComposerTarget) {
         if (!mutable.value.canSend(target) || !connection.current()) return
-        val agent =
-            (if (target.threadId == null) mutable.value.defaultAgentId else target.agentId)
-                ?: return
         val op = begin(connection, target.key) ?: return
         val entry = mutable.value.entry(target)
         val threadId = target.threadId ?: UUID.randomUUID().toString()
@@ -511,14 +492,12 @@ internal class ChatComposerOwner(
                 threadId,
                 if (target.threadId == null)
                     CreateThreadRequest(
-                        agentId = agent,
                         projectId = target.projectId,
                         clientThreadId = threadId,
                         eventId = UUID.randomUUID().toString(),
                     )
                 else null,
                 SendRequestVariant1(
-                    agentId = agent,
                     prompt = entry.text,
                     threadId = threadId,
                     clientEventId = eventId,
@@ -595,9 +574,7 @@ internal class ChatComposerOwner(
         val recovery = connection.recovery ?: return
         val selected =
             recovery.selection()?.takeIf {
-                it.failureId == failureId &&
-                    it.threadId == target.threadId &&
-                    it.agentId == target.agentId
+                it.failureId == failureId && it.threadId == target.threadId
             } ?: return
         val state = mutable.value
         if (
@@ -719,6 +696,17 @@ internal class ChatComposerOwner(
             put(key, entry.copy(recovery = null))
     }
 
+    fun reconcileMessages(connection: Connection, threadId: String, persistedIds: Set<String>) {
+        if (!connection.current()) return
+        val state = mutable.value
+        val matched =
+            state.receiptMessages.values
+                .filter { it.threadId == threadId && it.eventId in persistedIds }
+                .map { it.eventId }
+        if (matched.isNotEmpty())
+            mutable.value = state.copy(receiptMessages = state.receiptMessages - matched)
+    }
+
     private suspend fun durable(op: Operation, pending: PendingText) {
         val saved = store.load(identity)
         requireCurrent(op)
@@ -759,6 +747,8 @@ internal class ChatComposerOwner(
         generation: Long? = null,
     ) {
         var pending = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
+        op.inputMayHaveBeenSent = pending.stage == TextStage.Sending
+        op.connection.chatList?.showOutgoingActivity(pending)
         val recoveryAttempt =
             mutable.value.journal?.entries?.get(op.key)?.recovery?.takeIf {
                 it.send.clientEventId == pending.eventId
@@ -805,6 +795,7 @@ internal class ChatComposerOwner(
             checkNotNull(op.connection.recovery)
                 .requireWritable(it.selection, checkNotNull(recoveryGeneration))
         }
+        op.inputMayHaveBeenSent = true
         val result = op.connection.service.sendInput(pending.send)
         requireCurrent(op)
         if (result.threadId != pending.threadId) throw ApiFailure.IncompatibleResponse()
@@ -831,9 +822,15 @@ internal class ChatComposerOwner(
                             mutable.value =
                                 mutable.value.copy(unobserved = mutable.value.unobserved + op.key)
                     } else if (latest.receipt?.eventId == event && observed.disposition != null) {
+                        val messages = mutable.value.receiptMessages
+                        val preview = messages[event]
                         put(
                             op.key,
                             latest.copy(receipt = TextReceipt(thread, event, observed.disposition)),
+                            if (preview == null) messages
+                            else
+                                messages +
+                                    (event to preview.copy(disposition = observed.disposition)),
                         )
                         connection.accepted(thread)
                     }
@@ -883,7 +880,7 @@ internal class ChatComposerOwner(
             entries = entries + (op.key to ComposerEntry(createdThreadId = pending.threadId))
         var drafts = journal.drafts
         if (pending.create != null) {
-            val source = "agent:${pending.send.agentId}"
+            val source = "new:"
             val draft = drafts[source]
             if (draft != null && draft.source == op.key && draft.text.isNotEmpty()) {
                 drafts =
@@ -893,11 +890,28 @@ internal class ChatComposerOwner(
                             draft.copy(text = "", dirty = true, revision = draft.revision + 1))
             }
         }
-        replace(journal.copy(entries = entries, drafts = drafts))
+        val history = op.connection.history?.uiState?.value
+        val hasMessage =
+            history?.thread?.id == pending.threadId &&
+                pending.eventId in history.transcript?.persistedIds.orEmpty()
+        val receiptMessages = mutable.value.receiptMessages
+        replace(
+            journal.copy(entries = entries, drafts = drafts),
+            receiptMessages =
+                if (hasMessage) receiptMessages
+                else receiptMessages + (pending.eventId to pending.preview(disposition)),
+        )
         if (pending.create != null) {
-            synchronize(op.connection, ServerDraftTarget(pending.send.agentId, false))
-            synchronize(op.connection, ServerDraftTarget(pending.threadId, true))
+            synchronize(op.connection, ServerDraftTarget())
+            synchronize(op.connection, ServerDraftTarget(pending.threadId))
         }
+        val list = op.connection.chatList
+        val create = pending.create
+        if (create == null) list?.acknowledgeOutgoingActivity(pending)
+        else
+            list?.retainAcceptedNewChats(
+                listOf(ProvisionalChat(pending.threadId, create.projectId))
+            )
         op.connection.accepted(pending.threadId)
     }
 
@@ -912,6 +926,14 @@ internal class ChatComposerOwner(
 
     private fun fail(op: Operation, error: Exception) {
         if (current(op)) {
+            if (!op.checking) {
+                mutable.value.journal?.entries?.get(op.key)?.pending?.let { pending ->
+                    val rejected =
+                        !op.inputMayHaveBeenSent ||
+                            error is ApiFailure.Http && error.status in setOf(400, 403, 404, 422)
+                    op.connection.chatList?.refreshAfterSendFailure(pending, rejected)
+                }
+            }
             if (error is RecoveryUnavailable) {
                 val entry = mutable.value.journal?.entries?.get(op.key)
                 val pending = entry?.pending

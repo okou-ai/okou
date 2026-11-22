@@ -434,7 +434,7 @@ describe("POST /api/integrations/feishu/message", () => {
           target: "oc_target_chat",
           msgType: "text",
           content: {
-            text: 'Hello chat\n\nSent via API caller credential · Triggered by <at user_id="ou_current_user">Feishu CLI User</at>',
+            text: 'Hello chat\n\nTriggered by <at user_id="ou_current_user">Feishu CLI User</at>',
           },
           replyInThread: false,
         },
@@ -452,8 +452,7 @@ describe("POST /api/integrations/feishu/message", () => {
                 { tag: "hr" },
                 {
                   tag: "markdown",
-                  content:
-                    "Sent via API caller credential · Triggered by <at id=ou_current_user></at>",
+                  content: "Triggered by <at id=ou_current_user></at>",
                   text_size: "notation",
                 },
               ],
@@ -476,8 +475,7 @@ describe("POST /api/integrations/feishu/message", () => {
                 elements: [
                   {
                     tag: "lark_md",
-                    content:
-                      "Sent via API caller credential · Triggered by <at id=ou_current_user></at>",
+                    content: "Triggered by <at id=ou_current_user></at>",
                   },
                 ],
               },
@@ -504,7 +502,7 @@ describe("POST /api/integrations/feishu/message", () => {
           target: "om_parent",
           msgType: "text",
           content: {
-            text: 'Thread reply\n\nSent via API caller credential · Triggered by <at user_id="ou_current_user">Feishu CLI User</at>',
+            text: 'Thread reply\n\nTriggered by <at user_id="ou_current_user">Feishu CLI User</at>',
           },
           replyInThread: true,
         },
@@ -948,8 +946,10 @@ describe("POST /api/integrations/feishu/message", () => {
   ] as const)(
     "authorizes a stored %s file (membership revoked: %s; other recipient DM: %s)",
     async (platform, revokeDuringUpload, otherRecipient) => {
-      const { actor, agentId, installationId } =
-        await createOnboardedFeishuInstallation(undefined, platform);
+      const { actor, installationId } = await createOnboardedFeishuInstallation(
+        undefined,
+        platform,
+      );
       await runsApi.grantProEntitlement(actor);
       await runsApi.ensurePersonalSubscriptionModel(actor);
       const runnerGroup = await runsApi.configureRunnerGroup();
@@ -959,7 +959,6 @@ describe("POST /api/integrations/feishu/message", () => {
       });
       const sent = await owner.run(() => {
         return chatApi.sendAndLaunch(actor, {
-          agentId,
           prompt: "Create a run for Feishu file upload completion",
         });
       });

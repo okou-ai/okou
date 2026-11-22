@@ -2,7 +2,6 @@ import type {
   ModelProviderType,
   ModelProviderCodexRuntimeConfig,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { InternalRunCallbackKind } from "./internal-run-callback";
 import type {
   PiModelConfig,
   SecretConnectorMetadata,
@@ -13,14 +12,6 @@ import type {
   NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
-
-export interface InternalRunCallback {
-  readonly internalKind: InternalRunCallbackKind;
-  readonly payload: unknown;
-}
-
-export type AgentRunPreCreateSource =
-  "chat_callback_auto_send" | "workflow_slash_command";
 
 export interface ResolvedModelProviderEnvironment {
   readonly credentialOwner: "builtin" | "member";

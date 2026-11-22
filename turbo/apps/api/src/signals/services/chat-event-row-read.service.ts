@@ -8,24 +8,13 @@ import {
   type ChatEventCursor,
 } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { command, computed, type Computed } from "ccstate";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  exists,
-  gt,
-  isNotNull,
-  lte,
-  not,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, lte, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
@@ -43,7 +32,7 @@ export interface CompletedRunOutput {
   } | null;
 }
 
-/** The callback observes cancellation after timing this complete read batch. */
+/** The callback observes cancellation after this complete read batch. */
 export const loadCompletedRunOutput$ = command(
   async (
     { get },
@@ -226,7 +215,7 @@ type ChatEventRowsPage =
 interface ChatEventRowsBaseArgs {
   readonly threadId: string;
   readonly userId: string;
-  readonly orgId?: string;
+  readonly orgId: string;
   readonly limit: number;
 }
 
@@ -242,15 +231,12 @@ type ChatEventRowsArgs = ChatEventRowsBaseArgs &
 export const ownedThread = (
   threadId: string,
   userId: string,
-  orgId?: string,
+  orgId: string,
 ) => {
   return and(
     eq(chatThreads.id, threadId),
     eq(chatThreads.userId, userId),
-    orgId === undefined
-      ? undefined
-      : exists(sql`(SELECT 1 FROM ${agents}
-      WHERE ${eq(agents.id, chatThreads.agentId)} AND ${eq(agents.orgId, orgId)})`),
+    chatThreadOrganizationPredicate(orgId),
   );
 };
 

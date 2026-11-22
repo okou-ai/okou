@@ -34,6 +34,7 @@ use tokio::sync::oneshot;
 use tokio::time::Instant;
 
 use crate::connection::{FrameWriteDecision, FrameWriteTiming};
+use crate::protocol_error;
 use crate::{
     ConnectionState, FrameWriteObserver, RouteId, RouteReservation, Shared,
     normal_operation_transition_error,
@@ -168,7 +169,9 @@ fn mark_exec_operation_possible_guest_write(
                 ));
             };
             if let Some(normal_operation) = operation.normal_operation.as_mut() {
-                normal_operation.mark_possible_guest_write_started()
+                normal_operation
+                    .mark_possible_guest_write_started()
+                    .map_err(normal_operation_transition_error)
             } else {
                 Ok(())
             }
@@ -351,7 +354,7 @@ async fn write_frame_with_pre_write_decision(
     pre_write: impl FnOnce() -> io::Result<FrameWriteDecision>,
 ) -> io::Result<FrameWriteDecision> {
     let data = guest_control_proto::encode(msg_type, seq, payload)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+        .map_err(protocol_error::invalid_input)?;
     write_encoded_frame_with_pre_write_decision(shared, &data, diagnostic, pre_write).await
 }
 

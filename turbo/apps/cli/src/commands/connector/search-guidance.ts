@@ -1,14 +1,11 @@
-import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
-import type { ConnectorDiscoveryAgentContext } from "./agent-context";
 import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   connectorActionUrl,
-  currentChatSupportsActionCallback,
+  connectorActionCallbackAvailable,
   finalizeActionUrl,
 } from "./action-url";
 import {
-  isConnectorDiscoveryAuthorized,
   connectorHasSavedAccounts,
   type ConnectorDiscoveryDefinition,
   type ConnectorDiscoveryItem,
@@ -23,10 +20,9 @@ export interface ConnectorSearchAction {
 
 function accountSettingsAction(
   connector: Pick<ConnectorDiscoveryDefinition, "kind" | "slug" | "label">,
-  personal = decodeSandboxTokenPayload()?.singleAgent === true,
 ): ConnectorSearchAction {
   return {
-    label: `Review ${connector.label} accounts and ${personal ? "Okou" : "agent"} access`,
+    label: `Review ${connector.label} accounts`,
     path: "/connectors",
     supportsCallback: false,
   };
@@ -34,12 +30,11 @@ function accountSettingsAction(
 
 function connectAction(
   connector: Pick<ConnectorDiscoveryDefinition, "kind" | "slug" | "label">,
-  personal = decodeSandboxTokenPayload()?.singleAgent === true,
 ): ConnectorSearchAction {
   return connector.kind === "custom"
-    ? accountSettingsAction(connector, personal)
+    ? accountSettingsAction(connector)
     : {
-        label: `Connect or authorize ${connector.label}`,
+        label: `Connect ${connector.label}`,
         path: `/connectors/${connector.slug}/connect`,
         supportsCallback: true,
       };
@@ -71,33 +66,16 @@ export function runConnectorSearchAction(
 
 export function currentConnectorSearchAction(
   connector: ConnectorDiscoveryItem,
-  agentContext: ConnectorDiscoveryAgentContext | null,
   directory: ConnectedConnectors,
-): ConnectorSearchAction | null {
-  const authorized =
-    !agentContext || isConnectorDiscoveryAuthorized(connector, agentContext);
-  const hasSavedAccounts = connectorHasSavedAccounts(connector, directory);
-  if (connector.kind === "custom") {
-    return accountSettingsAction(connector, agentContext?.personal);
-  }
-  if (!hasSavedAccounts) {
-    return connectAction(connector, agentContext?.personal);
-  }
-  // The directory cannot establish the health or default of a saved account.
-
-  return authorized
-    ? accountSettingsAction(connector, agentContext?.personal)
-    : {
-        label: `Authorize ${connector.label}`,
-        path: `/connectors/${connector.slug}/authorize`,
-        supportsCallback: true,
-      };
+): ConnectorSearchAction {
+  return connectorHasSavedAccounts(connector, directory)
+    ? accountSettingsAction(connector)
+    : connectAction(connector);
 }
 
 export function connectorSearchActionLinks(args: {
   readonly actions: readonly ConnectorSearchAction[];
   readonly origin: string;
-  readonly agentId: string | undefined;
   readonly callbackPrompt: string | undefined;
 }) {
   return args.actions.map((action) => {
@@ -109,11 +87,10 @@ export function connectorSearchActionLinks(args: {
     const url = connectorActionUrl({
       origin: args.origin,
       path: action.path,
-      agentId: args.agentId,
     });
     return {
       label: action.label,
-      url: finalizeActionUrl(new URL(url), args.callbackPrompt, args.agentId),
+      url: finalizeActionUrl(new URL(url), args.callbackPrompt),
       supportsCallback: action.supportsCallback,
     };
   });
@@ -122,7 +99,6 @@ export function connectorSearchActionLinks(args: {
 export function printConnectorSearchGuidance(args: {
   readonly actions: readonly ConnectorSearchAction[];
   readonly origin: string;
-  readonly agentId: string | undefined;
   readonly runBound: boolean;
   readonly callbackPrompt: string | undefined;
 }): void {
@@ -134,11 +110,11 @@ export function printConnectorSearchGuidance(args: {
   console.log("");
   console.log("Connection context:");
   console.log(
-    "These services are supported by Okou. When a service is needed for the user's task, the connection links below let you help the user connect or authorize it now. The user completes sign-in or approval in Okou; credentials stay out of chat and private files can remain private.",
+    "These services are supported by Okou. When a service is needed for the user's task, the connection links below open account setup in Okou. The user completes sign-in there; credentials stay out of chat and private files can remain private.",
   );
   if (args.runBound) {
     console.log(
-      '"Not admitted" means no account was selected for this run; it does not establish whether the user already has a connected account. Connector changes apply to future runs. The command okou connector account list <slug> --json shows existing account IDs, and okou connector account switch-request --help describes selecting one for this chat.',
+      "Run okou connector account list <slug> --json to inspect this Chat's accounts. Switch an enabled account with okou connector account switch. For a disabled account, use okou connector account switch-request to get owner approval.",
     );
   }
   for (const link of links) {
@@ -150,7 +126,7 @@ export function printConnectorSearchGuidance(args: {
       "This link starts the next round in the current chat with the supplied prompt after the user completes the action. The current turn can end after sharing the exact link, including all query parameters; the connection is pending until the user completes it.",
     );
   } else if (
-    currentChatSupportsActionCallback(args.agentId) &&
+    connectorActionCallbackAvailable() &&
     args.actions.some((action) => {
       return action.supportsCallback;
     })

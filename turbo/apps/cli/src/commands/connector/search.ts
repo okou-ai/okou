@@ -1,4 +1,3 @@
-import { modeHelp } from "../../lib/command/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -9,10 +8,6 @@ import {
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
-import {
-  resolveConnectorAgentId,
-  resolveConnectorDiscoveryAgentContext,
-} from "./agent-context";
 import { padEndAnsi, stripAnsi } from "./connected-as";
 import {
   connectorDiscoveryDefinitions,
@@ -20,7 +15,6 @@ import {
   connectorDiscoveryItems,
   connectorDiscoveryJson,
   connectorDiscoveryTarget,
-  isConnectorDiscoveryAuthorized,
   renderConnectorDiscoveryConnectedAsCell,
   type ConnectorDiscoveryDefinition,
 } from "./discovery";
@@ -96,9 +90,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
   readonly origin: string;
   readonly runBound: boolean;
   readonly callbackPrompt: string | undefined;
-  readonly agentContext: Awaited<
-    ReturnType<typeof resolveConnectorDiscoveryAgentContext>
-  >;
 }): void {
   const effectiveLimit = args.limit ?? args.connectors.length;
   const { results, total } = searchConnectorCatalog(
@@ -123,12 +114,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
         {
           context: args.runBound ? "run" : "current",
           query: { keyword: args.keyword, limit: args.limit ?? null },
-          agent: args.agentContext
-            ? {
-                agentId: args.agentContext.agentId,
-                displayName: args.agentContext.displayName,
-              }
-            : null,
           total,
           exactMatch:
             results.length > 0 && results[0]!.score >= EXACT_MATCH_THRESHOLD,
@@ -141,7 +126,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
           actions: connectorSearchActionLinks({
             actions,
             origin: args.origin,
-            agentId: args.agentContext?.agentId,
             callbackPrompt: args.callbackPrompt,
           }),
         },
@@ -198,13 +182,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
     args.availabilityHeader.padEnd(availabilityWidth),
     args.accountHeader.padEnd(accountWidth),
   ];
-  if (args.agentContext) {
-    headerParts.push(
-      args.agentContext.personal
-        ? "YOUR OKOU ACCESS"
-        : `AUTHORIZED FOR ${args.agentContext.displayName}`,
-    );
-  }
   console.log(chalk.dim(headerParts.join("  ")));
 
   for (let index = 0; index < results.length; index++) {
@@ -214,13 +191,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
       padEndAnsi(availabilityCells[index]!, availabilityWidth),
       padEndAnsi(accountCells[index]!, accountWidth),
     ];
-    if (args.agentContext) {
-      parts.push(
-        isConnectorDiscoveryAuthorized(result.connector, args.agentContext)
-          ? chalk.green("✓")
-          : chalk.dim("-"),
-      );
-    }
     console.log(parts.join("  "));
   }
 
@@ -230,7 +200,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
       return action ? [action] : [];
     }),
     origin: args.origin,
-    agentId: args.agentContext?.agentId,
     runBound: args.runBound,
     callbackPrompt: args.callbackPrompt,
   });
@@ -242,10 +211,6 @@ export const searchCommand = new Command()
     "Search supported connectors by slug, label, category, generation type, or tag and show availability and connection links",
   )
   .argument("<keyword>", "Search keyword (case-insensitive)")
-  .option(
-    "--agent <id>",
-    "Show per-agent authorization column (must match the current Agent inside a run)",
-  )
   .option("--json", "Output connector matches and actions as JSON")
   .option(
     "--callback-prompt <prompt>",
@@ -258,64 +223,41 @@ export const searchCommand = new Command()
   )
   .addHelpText(
     "after",
-    modeHelp(
-      `
-Scope:
-  Searches the builtin catalog and org custom HTTP/MCP definitions.
-  Inside a run, availability and account identity describe the accounts admitted
-  to that run. A supported connector can still be unavailable in this run.
-  Outside a run, hasSavedAccounts describes saved-account directory membership,
-  including accounts needing reconnect, not health, defaults, scopes or availability.
-  Inspect connector status or accounts for details. Agent authorization is separate.
-  Omit --agent inside a run to use the current Agent's authorization context;
-  an explicit --agent must match that Agent and cannot change admitted accounts.
+    `
+Search the builtin catalog and workspace custom HTTP/MCP definitions.
+Inside a Run, availability and account identity come from the Run's accounts.
+Outside a Run, saved-account presence includes accounts that need reconnect.
+Inspect connector status for account details.
 
-Callbacks:
-  Use --callback-prompt only in the current web chat for its current Agent,
-  when the task needs exactly one connector action; use --limit 1.
-  Only direct connection, reconnect, or Agent authorization actions support it.
-  Custom connectors and other actions that open Connectors settings do not.
-  ${CALLBACK_PROMPT_GUIDANCE}
+Use --callback-prompt --limit 1 for a single supported connection or reconnect
+action in the current Web Chat. ${CALLBACK_PROMPT_GUIDANCE}
 
-Examples:
+Examples
   okou connector search github --limit 1
-  okou connector search notion`,
-      `
-Discover supported builtin and custom HTTP/MCP connectors and their availability.
-Accounts and Okou access resolve automatically in the current workspace.
-Inside a Run, distinguish admitted accounts from saved accounts not admitted here.
-Use --json to inspect identifiers; unknown metadata never establishes access.
-For one connection action, use --limit 1 with --callback-prompt when supported.
-Return the exact action URL and end the turn for approval; keep the prompt concise
-and free of secrets. Multiple access actions require ordinary links and no callback.
+  okou connector search notion --json
 `,
-    ),
   )
   .action(
     withErrorHandler(
       async (
         keyword: string,
         options: {
-          agent?: string;
           limit?: number;
           callbackPrompt?: string;
           json?: boolean;
         },
       ) => {
-        const agentId = await resolveConnectorAgentId(options.agent);
         const trimmed = keyword.trim();
         if (!trimmed) {
           throw new Error("Keyword cannot be empty.");
         }
 
         if (isRunBoundConnectorContext()) {
-          const [{ connectors }, customConnectors, agentContext, origin] =
-            await Promise.all([
-              listConnectorCatalog(),
-              listCustomConnectors(),
-              resolveConnectorDiscoveryAgentContext(agentId),
-              getPlatformOrigin(),
-            ]);
+          const [{ connectors }, customConnectors, origin] = await Promise.all([
+            listConnectorCatalog(),
+            listCustomConnectors(),
+            getPlatformOrigin(),
+          ]);
           const definitions = connectorDiscoveryDefinitions(
             connectors,
             customConnectors,
@@ -365,9 +307,6 @@ and free of secrets. Multiple access actions require ordinary links and no callb
                     ? null
                     : account.state === "available" &&
                       account.metadata.connectionStatus === "connected",
-                authorized: agentContext
-                  ? isConnectorDiscoveryAuthorized(connector, agentContext)
-                  : null,
               };
             },
             availabilityHeader: "AVAILABLE THIS RUN",
@@ -389,24 +328,17 @@ and free of secrets. Multiple access actions require ordinary links and no callb
             origin,
             runBound: true,
             callbackPrompt: options.callbackPrompt,
-            agentContext,
           });
           return;
         }
 
-        const [
-          { connectors },
-          customConnectors,
-          agentContext,
-          origin,
-          directory,
-        ] = await Promise.all([
-          listConnectorCatalog(),
-          listCustomConnectors(),
-          resolveConnectorDiscoveryAgentContext(agentId),
-          getPlatformOrigin(),
-          listConnectedConnectors(),
-        ]);
+        const [{ connectors }, customConnectors, origin, directory] =
+          await Promise.all([
+            listConnectorCatalog(),
+            listCustomConnectors(),
+            getPlatformOrigin(),
+            listConnectedConnectors(),
+          ]);
         const discoveredConnectors = connectorDiscoveryItems(
           connectors,
           customConnectors,
@@ -417,7 +349,7 @@ and free of secrets. Multiple access actions require ordinary links and no callb
           limit: options.limit,
           json: options.json,
           jsonConnector: (connector) => {
-            return connectorDiscoveryJson(connector, agentContext, directory);
+            return connectorDiscoveryJson(connector, directory);
           },
           availabilityHeader: "SAVED ACCOUNTS",
           renderAvailability: (connector) => {
@@ -433,16 +365,11 @@ and free of secrets. Multiple access actions require ordinary links and no callb
             );
           },
           connectionAction: (connector) => {
-            return currentConnectorSearchAction(
-              connector,
-              agentContext,
-              directory,
-            );
+            return currentConnectorSearchAction(connector, directory);
           },
           origin,
           runBound: false,
           callbackPrompt: options.callbackPrompt,
-          agentContext,
         });
       },
     ),

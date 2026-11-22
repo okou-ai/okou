@@ -39,8 +39,7 @@ export type WorkflowVisibility = zInfer<typeof workflowVisibilitySchema>;
 /**
  * Workflow name (slug) validation regex.
  * Must be lowercase alphanumeric with hyphens, no leading/trailing hyphens.
- * Minimum 2 characters. Slugs are NOT unique — duplicates across and within an
- * agent are allowed; run-time picks a winner by a fixed priority rule.
+ * Minimum 2 characters. A private slug may shadow a public slug in the same workspace.
  */
 export const workflowNameSchema = string()
   .min(2)
@@ -674,9 +673,7 @@ export const workflowScheduleSchema = discriminatedUnion("type", [
 export type WorkflowSchedule = zInfer<typeof workflowScheduleSchema>;
 
 /**
- * Automation summary. Under 1:N the agent is derived from the workflow, so
- * automations no longer carry an agentId. Detail responses only ever list the
- * caller's own automations.
+ * Workflow details list the caller's automations.
  */
 const workflowAutomationSummaryBaseSchema = object({
   id: string(),
@@ -910,7 +907,6 @@ export type WorkflowAutomationSummary = zInfer<
 
 const chatThreadWorkflowSchema = object({
   id: uuid(),
-  agentId: uuid(),
   name: workflowNameSchema,
   displayName: string().nullable(),
   description: string().nullable(),
@@ -1336,16 +1332,10 @@ export type WorkflowAutomationUpdateRequest = zInfer<
 >;
 
 /**
- * Workflow summary. A workflow belongs to exactly one agent (`agentId`).
- * `canManage` allows editing, deletion and demotion: workflow ownership or agent
- * write-permission for public workflows; ownership for private ones.
  * Official workflows remain read-only.
  */
 export const workflowSummarySchema = object({
   id: uuid(),
-  agentId: uuid(),
-  agentName: string().nullable(),
-  agentDisplayName: string().nullable(),
   name: workflowNameSchema,
   displayName: string().max(256).nullable(),
   description: string().max(1024).nullable(),
@@ -1387,7 +1377,7 @@ export const workflowListResponseSchema = array(workflowSummarySchema);
 
 /**
  * What the chat composer needs to offer and highlight `/workflow` commands:
- * the agent's own workflows that are not shadowed by a private override.
+ * visible workspace workflows after applying private overrides.
  */
 export const composerWorkflowSchema = workflowSummarySchema
   .pick({
@@ -1411,7 +1401,6 @@ export const workflowAutomationsListResponseSchema = array(
 );
 
 export const workflowCreateRequestSchema = object({
-  agentId: uuid(),
   chatThreadId: uuid().optional(),
   name: workflowNameSchema,
   instruction: workflowInstructionSchema.optional(),
@@ -1440,9 +1429,7 @@ export const workflowUpdateRequestSchema = object({
   { message: "At least one workflow update is required" },
 );
 
-export const workflowCopyRequestSchema = object({
-  toAgentId: uuid(),
-});
+export const workflowCopyRequestSchema = object({});
 
 export const workflowRunResponseSchema = object({
   chatThreadId: uuid(),
@@ -1463,19 +1450,21 @@ export const workflowsCollectionContract = c.router({
     method: "GET",
     path: "/api/workflows",
     headers: authHeadersSchema,
-    query: object({ agentId: uuid().optional() }),
+    query: object({
+      scope: literal("workspace").optional(),
+    }),
     responses: {
       200: workflowListResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "List visible workflows, optionally scoped to one agent",
+    summary: "List visible workspace workflows",
   },
   composer: {
     method: "GET",
     path: "/api/workflows/for-composer",
     headers: authHeadersSchema,
-    query: object({ agentId: uuid() }),
+    query: object({}),
     responses: {
       200: composerWorkflowListResponseSchema,
       400: apiErrorSchema,
@@ -1483,7 +1472,7 @@ export const workflowsCollectionContract = c.router({
       403: apiErrorSchema,
     },
     summary:
-      "List the slash-command workflows the composer offers for one agent",
+      "List the slash-command workflows the composer offers for the workspace member",
   },
   migrateRecency: {
     method: "POST",
@@ -1512,7 +1501,7 @@ export const workflowsCollectionContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary: "Create a workflow under an agent",
+    summary: "Create a workflow in the workspace",
   },
 });
 
@@ -1597,7 +1586,7 @@ export const workflowsDetailContract = c.router({
       404: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary: "Copy (fork) a workflow onto another agent",
+    summary: "Copy (fork) a workflow into a private workflow",
   },
   chatThread: {
     method: "POST",

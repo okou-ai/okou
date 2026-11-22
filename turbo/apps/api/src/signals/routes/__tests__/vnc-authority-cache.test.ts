@@ -54,7 +54,7 @@ function notifications() {
 
 describe("VNC authority and revocation", () => {
   it.each(["configuration", "metadata"] as const)(
-    "agent %s privacy changes revoke member Runs and preserve the owner's authority",
+    "legacy agent %s privacy changes preserve member Run authority",
     async (entry) => {
       const owner = await executionApi.paidOwner();
       const actor = bdd.user(owner);
@@ -70,7 +70,6 @@ describe("VNC authority and revocation", () => {
       await runs.ensurePersonalSubscriptionModel(bdd.user(member), {
         model: "claude-fable-5-1",
       });
-      await bdd.readOnboardingStatus(bdd.user(member));
       await bdd.completeOnboarding(bdd.user(member));
       const memberRun = await executionApi.runtime({
         ...member,
@@ -95,15 +94,10 @@ describe("VNC authority and revocation", () => {
           visibility: "private",
         });
       }
-      expect(notifications()).toStrictEqual([
-        [
-          "vnc-authority-invalidated",
-          { runId: memberRun.runId, connectionId: null },
-        ],
-      ]);
+      expect(notifications()).toStrictEqual([]);
       expect(
         (await check({ ...memberRun, connectionId: desktop.body.id })).body,
-      ).toStrictEqual({ outcome: "unavailable" });
+      ).toStrictEqual({ outcome: "valid" });
       await expect(bdd.readAgent(actor, agent.agentId)).resolves.toMatchObject({
         visibility: "private",
       });

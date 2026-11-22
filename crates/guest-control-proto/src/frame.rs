@@ -2,6 +2,7 @@ use crate::error::ProtocolError;
 use crate::read::{read_u8_at, read_u32_at};
 use crate::wire::{HEADER_SIZE, MAX_MESSAGE_SIZE, MIN_BODY_SIZE};
 use std::convert::Infallible;
+use std::ops::RangeBounds;
 
 const INITIAL_BUFFER_CAPACITY: usize = 64 * 1024;
 const OVERSIZED_BUFFER_CAPACITY: usize = 4 * 1024 * 1024;
@@ -81,40 +82,56 @@ pub(crate) fn encode_into(
     payload_len: usize,
     append_payload: impl FnOnce(&mut Vec<u8>),
 ) -> Result<(), ProtocolError> {
-    encode_prefix_into(frame, msg_type, seq, payload_len, &[], append_payload).map(|_| ())
+    encode_with_borrowed_payload_into(frame, msg_type, seq, payload_len, 0, append_payload)
 }
 
-pub(crate) fn encode_prefix_into<'a>(
+pub(crate) fn encode_with_borrowed_payload_into(
     frame: &mut Vec<u8>,
     msg_type: u8,
     seq: u32,
-    prefix_payload_len: usize,
-    suffix: &'a [u8],
-    append_prefix: impl FnOnce(&mut Vec<u8>),
-) -> Result<&'a [u8], ProtocolError> {
+    copied_payload_len: usize,
+    borrowed_payload_len: usize,
+    append_copied_payload: impl FnOnce(&mut Vec<u8>),
+) -> Result<(), ProtocolError> {
     frame.clear();
-    let prefix_body_len = MIN_BODY_SIZE
-        .checked_add(prefix_payload_len)
+    let copied_body_len = MIN_BODY_SIZE
+        .checked_add(copied_payload_len)
         .ok_or(ProtocolError::MessageTooLarge(usize::MAX))?;
-    let body_len = prefix_body_len
-        .checked_add(suffix.len())
+    let body_len = copied_body_len
+        .checked_add(borrowed_payload_len)
         .ok_or(ProtocolError::MessageTooLarge(usize::MAX))?;
     if body_len > MAX_MESSAGE_SIZE {
         return Err(ProtocolError::MessageTooLarge(body_len));
     }
 
-    frame.reserve(HEADER_SIZE + prefix_body_len);
+    frame.reserve(HEADER_SIZE + copied_body_len);
     frame.extend_from_slice(&(body_len as u32).to_be_bytes());
     frame.push(msg_type);
     frame.extend_from_slice(&seq.to_be_bytes());
-    append_prefix(frame);
-    debug_assert_eq!(frame.len(), HEADER_SIZE + prefix_body_len);
-    Ok(suffix)
+    append_copied_payload(frame);
+    debug_assert_eq!(frame.len(), HEADER_SIZE + copied_body_len);
+    Ok(())
 }
 
 /// Buffered message decoder for streaming data.
 pub struct Decoder {
     buf: Vec<u8>,
+}
+
+/// A validated frame header and the payload bytes received before it completed.
+pub struct IncompleteFrame {
+    /// Sequence number from the frame header.
+    pub seq: u32,
+    /// Total payload length declared by the frame header.
+    pub payload_len: usize,
+    prefix: Vec<u8>,
+}
+
+impl IncompleteFrame {
+    /// The already buffered part of the payload.
+    pub fn received_payload(&self) -> &[u8] {
+        self.prefix.split_at(HEADER_SIZE + MIN_BODY_SIZE).1
+    }
 }
 
 impl Decoder {
@@ -156,34 +173,13 @@ impl Decoder {
         mut visitor: impl FnMut(BorrowedRawMessage<'_>) -> Result<(), E>,
     ) -> Result<(), DecodeWithError<E>> {
         self.buf.extend_from_slice(data);
-        let mut verified_offset = 0;
-
-        while verified_offset + HEADER_SIZE <= self.buf.len() {
-            let length = match read_u32_at(&self.buf, verified_offset) {
-                Some(v) => v as usize,
-                None => break,
-            };
-
-            if length > MAX_MESSAGE_SIZE {
+        let verified_offset = match complete_frame_prefix_len(&self.buf) {
+            Ok(offset) => offset,
+            Err(error) => {
                 self.clear_after_protocol_error();
-                return Err(DecodeWithError::Protocol(ProtocolError::MessageTooLarge(
-                    length,
-                )));
+                return Err(DecodeWithError::Protocol(error));
             }
-            if length < MIN_BODY_SIZE {
-                self.clear_after_protocol_error();
-                return Err(DecodeWithError::Protocol(ProtocolError::MessageTooSmall(
-                    length,
-                )));
-            }
-
-            let total = HEADER_SIZE + length;
-            if verified_offset + total > self.buf.len() {
-                break;
-            }
-
-            verified_offset += total;
-        }
+        };
 
         let mut offset = 0;
         while offset < verified_offset {
@@ -225,6 +221,40 @@ impl Decoder {
         Ok(())
     }
 
+    /// Move a pending frame of the selected type and payload size to a
+    /// specialized receiver once its header is complete. The caller must
+    /// finish or abandon it before feeding the next bytes back to this decoder.
+    pub fn take_incomplete_frame(
+        &mut self,
+        msg_type: u8,
+        payload_lengths: impl RangeBounds<usize>,
+    ) -> Option<IncompleteFrame> {
+        if read_u8_at(&self.buf, HEADER_SIZE)? != msg_type {
+            return None;
+        }
+        let seq = read_u32_at(&self.buf, HEADER_SIZE + 1)?;
+        let length = read_u32_at(&self.buf, 0)? as usize;
+        let payload_len = length.checked_sub(MIN_BODY_SIZE)?;
+        if length > MAX_MESSAGE_SIZE
+            || !payload_lengths.contains(&payload_len)
+            || self.buf.len() >= HEADER_SIZE + length
+        {
+            return None;
+        }
+        let prefix = std::mem::replace(&mut self.buf, Vec::with_capacity(INITIAL_BUFFER_CAPACITY));
+        Some(IncompleteFrame {
+            seq,
+            payload_len,
+            prefix,
+        })
+    }
+
+    /// Check all frame lengths visible in a buffer, including the header of
+    /// an incomplete trailing frame, without visiting any messages.
+    pub fn validate_buffered_framing(bytes: &[u8]) -> Result<(), ProtocolError> {
+        complete_frame_prefix_len(bytes).map(|_| ())
+    }
+
     fn clear_after_protocol_error(&mut self) {
         self.buf.clear();
         self.release_oversized_buffer();
@@ -243,6 +273,24 @@ impl Decoder {
             self.buf = buf;
         }
     }
+}
+
+fn complete_frame_prefix_len(bytes: &[u8]) -> Result<usize, ProtocolError> {
+    let mut offset = 0;
+    while let Some(length) = read_u32_at(bytes, offset).map(|value| value as usize) {
+        if length > MAX_MESSAGE_SIZE {
+            return Err(ProtocolError::MessageTooLarge(length));
+        }
+        if length < MIN_BODY_SIZE {
+            return Err(ProtocolError::MessageTooSmall(length));
+        }
+        let next = offset + HEADER_SIZE + length;
+        if next > bytes.len() {
+            break;
+        }
+        offset = next;
+    }
+    Ok(offset)
 }
 
 impl Default for Decoder {

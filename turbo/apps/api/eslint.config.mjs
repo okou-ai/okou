@@ -274,7 +274,7 @@ const boundaryTestControls = [
     file: "src/signals/autonomy-budget-limit.ts",
     exports: ["updateMaxAutonomyBudgetForTest$"],
     reason:
-      "Ethan-approved exception (#37440): lets tests drive the real delegation chain with a tiny limit instead of 32 hops; production stays at 32.",
+      "Ethan-approved exception (#37440): lets tests drive the real delegation chain with a tiny limit instead of 128 hops; production stays at 128.",
   },
   {
     file: "src/signals/auth/tokens.ts",
@@ -658,14 +658,6 @@ export default [
           ],
         },
       ],
-    },
-  },
-  {
-    files: ["src/scripts/dev-seed.ts"],
-    rules: {
-      // PostgreSQL's DO statement requires a code literal, so this local-only
-      // seed script uses pg.escapeLiteral before passing the block to sql.raw.
-      "api/no-sql-raw": "off",
     },
   },
   {

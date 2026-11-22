@@ -44,13 +44,15 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
   return { ...run, agentId: targetAgentId, headers, completion };
 }
 
-test("deletes a native-only completed Run with its Agent", async () => {
+test("retains the member’s completed Run after a rejected legacy Agent deletion", async () => {
   const actor = bdd.user();
   const run = await completedRun(actor);
-  await bdd.requestDeleteAgent(actor, run.agentId, [204]);
-  const deleted = await runs.requestReadRun(actor, run.runId, [404]);
-  expect(deleted.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-  await bdd.requestDeleteAgent(actor, run.agentId, [404]);
+  await bdd.expectAgentDeleteUnavailable(actor, run.agentId);
+  await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
+    runId: run.runId,
+    status: "completed",
+  });
+  await bdd.expectAgentDeleteUnavailable(actor, run.agentId);
 });
 
 test.each(["user", "organization"] as const)(
@@ -74,11 +76,11 @@ test.each(["user", "organization"] as const)(
   },
 );
 
-test("agent deletion preserves another Agent's completed Run and callback", async () => {
+test("a rejected Agent deletion preserves another Agent's completed Run and callback", async () => {
   const actor = bdd.user();
   const target = await completedRun(actor);
   const survivor = await completedRun(actor);
-  await bdd.requestDeleteAgent(actor, target.agentId, [204]);
+  await bdd.expectAgentDeleteUnavailable(actor, target.agentId);
   await expect(runs.readRun(actor, survivor.runId)).resolves.toMatchObject({
     runId: survivor.runId,
     status: "completed",
@@ -88,5 +90,5 @@ test("agent deletion preserves another Agent's completed Run and callback", asyn
     survivor.headers,
     [200],
   );
-  await bdd.requestDeleteAgent(actor, survivor.agentId, [204]);
+  await bdd.expectAgentDeleteUnavailable(actor, survivor.agentId);
 });

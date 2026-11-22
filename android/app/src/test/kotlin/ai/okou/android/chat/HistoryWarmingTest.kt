@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_EVENT
 import ai.okou.android.CHAT_IN_PROJECT
@@ -234,11 +233,12 @@ class HistoryWarmingTest {
                 runCurrent()
                 model.warming.state.first { it.phase == ChatReadPhase.Failed && it.revision > next }
                 assertEquals(503, (ready.errors.single() as ApiFailure.Http).status)
+                assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
                 ready.store.clear()
+                assertNull(model.history.uiState.value.transcript)
                 val lease = ready.cache.open(api.identity) { true }
                 assertEquals(55L, lease.loadHistory(recoveringThreads[0])!!.checkpoint.cursor.seqId)
                 assertEquals(66L, lease.loadHistory(recoveringThreads[1])!!.checkpoint.cursor.seqId)
-                assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
                 assertEquals(0, api.readRequests.get())
             } finally {
                 release.countDown()
@@ -530,7 +530,7 @@ class HistoryWarmingTest {
                 }
                 api.archive = {
                     jsonResponse(
-                        """{"chatThreads":[${ids.joinToString(",") { id -> """{"id":"$id","agentId":"$CHAT_AGENT","title":"History","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"hidden":${id == hidden},"renamedAt":null}""" }}]}"""
+                        """{"chatThreads":[${ids.joinToString(",") { id -> """{"id":"$id","title":"History","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"hidden":${id == hidden},"renamedAt":null}""" }}]}"""
                     )
                 }
                 api.events = { jsonResponse("""{"events":[],"hasMore":false}""") }

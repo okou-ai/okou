@@ -23,13 +23,8 @@ import type {
 import {
   onboardingCompleteContract,
   onboardingStatusContract,
-  type OnboardingStatusResponse,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
-import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrants,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   agentsByIdContract,
   agentsMainContract,
@@ -55,7 +50,6 @@ import {
   orgMembersContract,
   orgMembershipRequestsContract,
 } from "@okouai/api-contracts/contracts/org-member-routes";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   userPreferencesContract,
   type UpdateUserPreferencesRequest,
@@ -759,9 +753,10 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       return { token: token.body.access_token };
     },
 
-    async readOnboardingStatus(
-      actor: ApiTestUser,
-    ): Promise<OnboardingStatusResponse> {
+    readDefaultAgentId: createBddApi(context).readDefaultAgentId,
+    provisionWorkspace: createBddApi(context).provisionWorkspace,
+
+    async readOnboardingStatus(actor: ApiTestUser) {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
         onboardingStatusContract,
       );
@@ -1210,23 +1205,6 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       return { status: response.status, body: responseBody };
     },
 
-    async readEnabledConnectorSlugs(
-      actor: ApiTestUser,
-      agentId: string,
-    ): Promise<readonly string[]> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        userBuiltinConnectorsContract,
-      );
-      const response = await accept(
-        client.get({
-          headers: authenticate(actor),
-          params: { id: agentId },
-        }),
-        [200],
-      );
-      return response.body.enabledConnectorSlugs;
-    },
-
     async createAgent(
       actor: ApiTestUser,
       body: AgentRequest = {},
@@ -1391,36 +1369,6 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       );
     },
 
-    async deleteAgent(actor: ApiTestUser, agentId: string): Promise<void> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      await accept(
-        client.delete({
-          params: { id: agentId },
-          headers: authenticate(actor),
-        }),
-        [204],
-      );
-    },
-
-    async requestDeleteAgent(
-      actor: ApiTestUser | null,
-      agentId: string,
-      statuses: readonly (204 | 400 | 401 | 403 | 404 | 409)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      return await accept(
-        client.delete({
-          params: { id: agentId },
-          headers: authenticate(actor),
-        }),
-        statuses,
-      );
-    },
-
     async createCustomConnector(
       actor: ApiTestUser,
       body: CreateCustomConnectorBody,
@@ -1528,69 +1476,6 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
           params: { id: connectorId },
         }),
         [204],
-      );
-    },
-
-    async readAgentCustomConnectors(
-      actor: ApiTestUser,
-      agentId: string,
-    ): Promise<AgentCustomConnectorGrants> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentCustomConnectorsContract,
-      );
-      const response = await accept(
-        client.get({
-          headers: authenticate(actor),
-          params: { id: agentId },
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async updateAgentCustomConnectors(
-      actor: ApiTestUser,
-      agentId: string,
-      connectorIds: readonly string[],
-    ): Promise<AgentCustomConnectorGrants> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentCustomConnectorsContract,
-      );
-      const response = await accept(
-        client.update({
-          headers: authenticate(actor),
-          params: { id: agentId },
-          body: {
-            grants: connectorIds.map((customConnectorId) => {
-              return { customConnectorId, permissionNames: [] };
-            }),
-          },
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async requestUpdateAgentCustomConnectors(
-      actor: ApiTestUser | null,
-      agentId: string,
-      connectorIds: readonly string[],
-      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentCustomConnectorsContract,
-      );
-      return await accept(
-        client.update({
-          headers: authenticate(actor),
-          params: { id: agentId },
-          body: {
-            grants: connectorIds.map((customConnectorId) => {
-              return { customConnectorId, permissionNames: [] };
-            }),
-          },
-        }),
-        statuses,
       );
     },
 

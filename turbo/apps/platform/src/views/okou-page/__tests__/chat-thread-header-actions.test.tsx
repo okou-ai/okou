@@ -1,7 +1,6 @@
 import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadArchiveContract,
   chatThreadMuteContract,
@@ -26,14 +25,8 @@ import { pathname } from "../../../signals/location.ts";
 
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
-async function setupHeaderPage(
-  threadEvents: readonly ChatThreadEvent[] = [],
-  options: {
-    readonly singleAgent?: boolean;
-  } = {},
-) {
+async function setupHeaderPage(threadEvents: readonly ChatThreadEvent[] = []) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "😀 Header planning",
@@ -73,10 +66,6 @@ async function setupHeaderPage(
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches:
-      options.singleAgent === undefined
-        ? {}
-        : { [FeatureSwitchKey.SingleAgent]: options.singleAgent },
   });
   await screen.findByText("Review the header layout");
   await waitFor(() => {
@@ -127,7 +116,6 @@ test("Keep menu pin changes responsive across resize and save", async () => {
       events.push(
         chatListEvent(951, events.length + 1, "pinned", params.id, {
           id: query?.eventId,
-          agentId: "c0000000-0000-4000-a000-000000000001",
           pinOrder: query?.pinOrder,
         }),
       );
@@ -140,13 +128,11 @@ test("Keep menu pin changes responsive across resize and save", async () => {
       events.push(
         chatListEvent(951, events.length + 1, "unpinned", params.id, {
           id: query?.eventId,
-          agentId: "c0000000-0000-4000-a000-000000000001",
         }),
       );
       // A following server event makes completed reconciliation observable.
       events.push(
         chatListEvent(951, events.length + 1, "renamed", params.id, {
-          agentId: "c0000000-0000-4000-a000-000000000001",
           title: "😀 Pin changes saved",
         }),
       );
@@ -271,55 +257,44 @@ test("Keep primary icon actions accessible and open emails from the desktop menu
   await screen.findByRole("complementary", { name: "Automations" });
 });
 
-test.each([
-  {
-    name: "the thread's agent",
-    singleAgent: false,
-    leavesTo: `/agents/${AGENT_ID}/chat`,
-  },
-  { name: "My Okou's chat page", singleAgent: true, leavesTo: "/" },
-])(
-  "Archive from the mobile header and return to $name before saving",
-  async ({ singleAgent, leavesTo }) => {
-    context.mocks.browser.matchMedia(false);
-    const archiveResponse = context.mocks.deferred<void>();
-    const events: ChatThreadEvent[] = [];
-    let archiveRequestAborted = false;
-    context.mocks.api(
-      chatThreadArchiveContract.archive,
-      async ({ params, query, request, respond }) => {
-        request.signal.addEventListener("abort", () => {
-          archiveRequestAborted = true;
-        });
-        await archiveResponse.promise;
-        events.push(
-          chatListEvent(951, 1, "archived", params.id, {
-            id: query?.eventId,
-            agentId: AGENT_ID,
-          }),
-        );
-        changeChatThreadList();
-        return respond(204);
-      },
-    );
-    await setupHeaderPage(events, { singleAgent });
-    click(buttonNamed("More actions"));
-    await screen.findByRole("menu");
-    click(menuItemNamed("Archive chat"));
-    await waitFor(() => {
-      expect(pathname()).toBe(leavesTo);
-    });
-    expect(
-      screen.queryByText("Review the header layout"),
-    ).not.toBeInTheDocument();
+test("Archive from the mobile header and return home before saving", async () => {
+  context.mocks.browser.matchMedia(false);
+  const archiveResponse = context.mocks.deferred<void>();
+  const events: ChatThreadEvent[] = [];
+  let archiveRequestAborted = false;
+  context.mocks.api(
+    chatThreadArchiveContract.archive,
+    async ({ params, query, request, respond }) => {
+      request.signal.addEventListener("abort", () => {
+        archiveRequestAborted = true;
+      });
+      await archiveResponse.promise;
+      events.push(
+        chatListEvent(951, 1, "archived", params.id, {
+          id: query?.eventId,
+        }),
+      );
+      changeChatThreadList();
+      return respond(204);
+    },
+  );
+  await setupHeaderPage(events);
+  click(buttonNamed("More actions"));
+  await screen.findByRole("menu");
+  click(menuItemNamed("Archive chat"));
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  expect(
+    screen.queryByText("Review the header layout"),
+  ).not.toBeInTheDocument();
 
-    archiveResponse.resolve();
-    await waitFor(() => {
-      expect(events).toHaveLength(1);
-    });
-    expect(archiveRequestAborted).toBeFalsy();
-  },
-);
+  archiveResponse.resolve();
+  await waitFor(() => {
+    expect(events).toHaveLength(1);
+  });
+  expect(archiveRequestAborted).toBeFalsy();
+});
 
 test("Undo a header archive from its toast and return to the thread", async () => {
   context.mocks.browser.matchMedia(false);
@@ -330,7 +305,6 @@ test("Undo a header archive from its toast and return to the thread", async () =
       events.push(
         chatListEvent(951, 1, "archived", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
         }),
       );
       changeChatThreadList();
@@ -343,7 +317,6 @@ test("Undo a header archive from its toast and return to the thread", async () =
       events.push(
         chatListEvent(951, 2, "unarchived", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
         }),
       );
       changeChatThreadList();
@@ -358,7 +331,7 @@ test("Undo a header archive from its toast and return to the thread", async () =
   await expect(
     screen.findByText("Chat archived."),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  expect(pathname()).toBe("/");
 
   click(buttonNamed("Undo"));
   await waitFor(() => {
@@ -383,7 +356,6 @@ function mockMuteRequests(events: ChatThreadEvent[]) {
       events.push(
         chatListEvent(951, events.length + 1, "sort_touched", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
           muted,
         }),
       );
@@ -446,14 +418,14 @@ test("Show the archive API error after leaving the thread", async () => {
   await expect(
     screen.findByText("Archive request failed"),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  expect(pathname()).toBe("/");
 });
 
 test("Unarchive from the mobile header and stay in the current thread", async () => {
   context.mocks.browser.matchMedia(false);
   const unarchiveResponse = context.mocks.deferred<void>();
   const events: ChatThreadEvent[] = [
-    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
+    chatListEvent(951, 1, "archived", THREAD_ID),
   ];
   context.mocks.api(
     chatThreadArchiveContract.unarchive,
@@ -462,7 +434,6 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
       events.push(
         chatListEvent(951, 2, "unarchived", params.id, {
           id: query?.eventId,
-          agentId: AGENT_ID,
         }),
       );
       changeChatThreadList();
@@ -504,9 +475,7 @@ test("Stay in the archived thread and show the unarchive API error", async () =>
   context.mocks.api(chatThreadArchiveContract.unarchive, ({ respond }) => {
     return respond(500, { error: { message: "Unarchive request failed" } });
   });
-  await setupHeaderPage([
-    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
-  ]);
+  await setupHeaderPage([chatListEvent(951, 1, "archived", THREAD_ID)]);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Unarchive chat"));
@@ -536,7 +505,6 @@ test("Open linked automations from the mobile menu", async () => {
           scheduleSummary: "Every two hours",
           workflow: {
             id: "a0000000-0000-4000-a000-000000000952",
-            agentId: "c0000000-0000-4000-a000-000000000001",
             name: "header-check",
             displayName: "Header check",
             description: null,

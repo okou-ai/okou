@@ -147,9 +147,8 @@ class GitHub:
         # owners() reconciles known run IDs and stabilizes selected PR owners.
         return records
 
-    def owners(self, pulls):
-        previous = None
-        for _ in range(4):
+    def owners(self, pulls, previous=None):
+        for sweep in range(4):
             runs = {}
             for status in ACTIVE_STATUSES:
                 for record in self.status_runs(status).values():
@@ -182,7 +181,9 @@ class GitHub:
                         )
             owners = self.resolve_owners(pulls, runs)
             identities = {number: sorted(set(ids)) for number, ids in owners.items()}
-            if previous == identities:
+            # A previous preparation can seed exact rechecks, but the new
+            # preparation still needs two matching owner sweeps.
+            if sweep and previous == identities:
                 return identities
             previous = identities
         raise RuntimeError("selected owner discovery did not stabilize")
@@ -258,46 +259,80 @@ class GitHub:
         return owners
 
 
+class WorkerChannelClosed(RuntimeError):
+    pass
+
+
 class Session:
     """One SSH channel whose remote mutation worker owns the namespace locks."""
 
-    def __init__(self, host, user, numbers):
+    def __init__(self, host, user, numbers, *, recovery_deadline=None):
         self.host = host
         self.numbers = numbers
         self.stopped = threading.Event()
         self.writer = threading.Lock()
         self.write_error = None
-        self.response_buffer = b""
         source = base64.b64encode(
             (HERE / "cleanup-metal-resources.py").read_bytes()
         ).decode()
         code = shlex.quote(f'import base64;exec(base64.b64decode("{source}"))')
-        self.process = subprocess.Popen(
-            [
-                "ssh",
-                f"{user}@{host}",
-                "sudo",
-                "python3",
-                "-c",
-                code,
-                "session",
-                *map(str, numbers),
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            start_new_session=True,
+        command = [
+            "ssh",
+            f"{user}@{host}",
+            "sudo",
+            "python3",
+            "-c",
+            code,
+            "session",
+            *map(str, numbers),
+        ]
+        self.deadline = (
+            time.monotonic() + 70 if recovery_deadline is None else recovery_deadline
         )
-        CHILDREN.add(self.process.pid)
-        try:
-            if self.read(70) != {"ready": numbers}:
-                raise RuntimeError(f"invalid lock readiness from {host}")
-        except BaseException:
-            self.abort()
-            raise
+        for attempt in range(2 if recovery_deadline is None else 1):
+            if time.monotonic() >= self.deadline:
+                raise TimeoutError(f"lock readiness deadline exceeded on {host}")
+            self.response_buffer = b""
+            self.process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                start_new_session=True,
+            )
+            CHILDREN.add(self.process.pid)
+            try:
+                if self.read(self.deadline - time.monotonic()) != {"ready": numbers}:
+                    raise RuntimeError(f"invalid lock readiness from {host}")
+            except WorkerChannelClosed:
+                try:
+                    can_retry = self.exited_255_before_deadline()
+                finally:
+                    self._close_process()
+                if attempt or recovery_deadline is not None or not can_retry:
+                    raise
+                # No cleanup was sent. The replacement still has to acquire
+                # the same flock, even if the first worker has yet to retire.
+                print(
+                    f"Retrying metal lock readiness on {host} after SSH exit 255",
+                    file=sys.stderr,
+                )
+            except BaseException:
+                self._close_process()
+                raise
+            else:
+                break
         self.heartbeat = threading.Thread(target=self.keep_alive, daemon=True)
         self.heartbeat.start()
+
+    def exited_255_before_deadline(self):
+        # The wrapper closes stdout before finishing its diagnostics.
+        try:
+            status = self.process.wait(timeout=max(0, self.deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            return False
+        return status == 255 and time.monotonic() < self.deadline
 
     def send(self, message):
         with self.writer:
@@ -317,7 +352,7 @@ class Session:
                 raise TimeoutError(f"worker response deadline exceeded on {self.host}")
             chunk = os.read(self.process.stdout.fileno(), 65536)
             if not chunk:
-                raise RuntimeError(f"worker channel closed on {self.host}")
+                raise WorkerChannelClosed(f"worker channel closed on {self.host}")
             self.response_buffer += chunk
         line, _, self.response_buffer = self.response_buffer.partition(b"\n")
         return json.loads(line)
@@ -330,9 +365,21 @@ class Session:
                 self.write_error = error
                 return
 
+    def require_active(self):
+        # An idle worker sends no frames. Reject unexpected output as a
+        # protocol failure, and classify a readable EOF as a lost channel.
+        readable = select.select([self.process.stdout], [], [], 0)[0]
+        if self.response_buffer or (
+            readable and os.read(self.process.stdout.fileno(), 65536)
+        ):
+            raise RuntimeError(f"unexpected idle worker output on {self.host}")
+        if readable or self.write_error is not None or self.process.poll() is not None:
+            raise WorkerChannelClosed(
+                f"namespace lock worker unavailable on {self.host}"
+            )
+
     def cleanup(self, closed_at):
-        if self.write_error is not None or self.process.poll() is not None:
-            raise RuntimeError(f"namespace lock worker unavailable on {self.host}")
+        self.require_active()
         self.send({"operation": "cleanup", "closedAt": closed_at})
         result = self.read(510)["results"]
         if set(result) != {str(number) for number in closed_at}:
@@ -361,6 +408,9 @@ class Session:
         heartbeat = getattr(self, "heartbeat", None)
         if heartbeat is not None:
             heartbeat.join(timeout=1)
+        self._close_process()
+
+    def _close_process(self):
         if self.process.poll() is None:
             try:
                 os.killpg(self.process.pid, signal.SIGTERM)
@@ -443,31 +493,77 @@ def reconcile_batch(github, hosts, user, numbers):
     started = time.monotonic()
     pages_before = github.requests
     try:
-        # Lock all selected namespaces on every configured host before asking
-        # for fresh authority. The mutation worker itself retains each flock.
-        for host in hosts:
-            sessions[host] = Session(host, user, numbers)
-        locked = time.monotonic()
-        pulls = github.pulls(numbers)
-        state_finished = time.monotonic()
-        owners = github.owners(pulls)
-        owners_finished = time.monotonic()
-        # Owner discovery may take several API pages. A scheduled sweep is not
-        # cancelled by a reopen event, so refresh PR state at the mutation
-        # boundary instead of authorizing from the earlier CLOSED snapshot.
-        pulls = github.pulls(numbers)
-        authorized = time.monotonic()
-        selected = []
-        for number in numbers:
-            if pulls[number]["state"] == "OPEN":
-                decisions[number] = {"outcome": "skipped_open"}
-            elif owners[number]:
-                decisions[number] = {
-                    "outcome": "deferred_owner",
-                    "runs": owners[number],
-                }
+        recovery_deadline = None
+        attempt_started = started
+        owners = None
+        while True:
+            # All hosts must hold the locks before reading fresh authority.
+            for host in hosts:
+                sessions[host] = Session(
+                    host, user, numbers, recovery_deadline=recovery_deadline
+                )
+            locked = time.monotonic()
+            pulls = github.pulls(numbers)
+            state_finished = time.monotonic()
+            owners = github.owners(pulls, previous=owners)
+            owners_finished = time.monotonic()
+            # A scheduled sweep is not cancelled by a reopen event. Refresh
+            # PR state after owner discovery, at the mutation boundary.
+            pulls = github.pulls(numbers)
+            authorized = time.monotonic()
+            selected = []
+            for number in numbers:
+                if pulls[number]["state"] == "OPEN":
+                    decisions[number] = {"outcome": "skipped_open"}
+                elif owners[number]:
+                    decisions[number] = {
+                        "outcome": "deferred_owner",
+                        "runs": owners[number],
+                    }
+                else:
+                    selected.append(number)
+            if not selected:
+                break
+            try:
+                for session in sessions.values():
+                    session.require_active()
+            except WorkerChannelClosed:
+                if (
+                    recovery_deadline is not None
+                    or not session.exited_255_before_deadline()
+                ):
+                    raise
+                recovery_deadline = session.deadline
+                print(
+                    f"Restarting metal cleanup preparation after SSH exit 255 on {session.host}",
+                    file=sys.stderr,
+                )
+                # No cleanup has been dispatched. Retire the entire set so
+                # reacquisition cannot invert the original host lock order.
+                for host in reversed(list(sessions)):
+                    previous = sessions[host]
+                    if previous is session:
+                        previous.abort()
+                    else:
+                        try:
+                            previous.close()
+                        except (
+                            OSError,
+                            ValueError,
+                            RuntimeError,
+                            subprocess.SubprocessError,
+                        ) as error:
+                            # Close retires the local channel even without a
+                            # receipt. Reacquisition verifies lock availability.
+                            print(
+                                f"Metal lock release before restart unconfirmed on {host}: {error}",
+                                file=sys.stderr,
+                            )
+                    del sessions[host]
+                decisions.clear()
+                attempt_started = time.monotonic()
             else:
-                selected.append(number)
+                break
         if selected:
             with ThreadPoolExecutor(max_workers=min(len(hosts), 2)) as pool:
                 futures = {
@@ -508,7 +604,10 @@ def reconcile_batch(github, hosts, user, numbers):
             json.dumps(
                 {
                     "batch": numbers,
-                    "lock_seconds": round(locked - started, 3),
+                    "discarded_preparation_seconds": round(
+                        attempt_started - started, 3
+                    ),
+                    "lock_seconds": round(locked - attempt_started, 3),
                     "pr_state_seconds": round(state_finished - locked, 3),
                     "owner_seconds": round(owners_finished - state_finished, 3),
                     "authorization_seconds": round(authorized - owners_finished, 3),

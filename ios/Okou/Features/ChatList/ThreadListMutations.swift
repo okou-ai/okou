@@ -24,7 +24,7 @@ final class ThreadListMutations {
 
   private var threads: [ChatThread] { readThreads() }
   private var closed: Bool { isClosed() }
-  private var markingAgentRead: Bool { isMarkingRead() }
+  private var markingAllRead: Bool { isMarkingRead() }
   private var blocked: Bool {
     get { isBlocked() }
     set { setBlocked(newValue) }
@@ -83,7 +83,7 @@ final class ThreadListMutations {
       pinOrder =
         pinned
         ? try ChatThreadReplay.firstPinOrder(
-          threads.filter { $0.agentID == current.agentID && $0.id != current.id }) : nil
+          threads.filter { $0.projectId == current.projectId && $0.id != current.id }) : nil
     } catch {
       show(error)
       return
@@ -137,7 +137,7 @@ final class ThreadListMutations {
     else { return }
     let ranked = threads.filter { thread in
       if let projectID { return thread.projectId == projectID }
-      return thread.agentID == current.agentID
+      return thread.projectId == nil
     }
     let updates: [ChatThreadReplay.PinOrderUpdate]
     do {
@@ -222,9 +222,14 @@ final class ThreadListMutations {
     actionError = nil
   }
 
+  /// Whether a write may start, apart from the chat still being listed: a delete retry targets
+  /// a chat its own optimistic event already hides.
+  func canWrite(_ id: String) -> Bool {
+    !closed && !blocked && !updatingThreads.contains(id) && !markingAllRead
+  }
+
   func canUpdate(_ id: String) -> Bool {
-    !closed && !blocked && !updatingThreads.contains(id) && !markingAgentRead
-      && threads.contains(where: { $0.id == id })
+    canWrite(id) && threads.contains(where: { $0.id == id })
   }
 
   @discardableResult
@@ -249,6 +254,30 @@ final class ThreadListMutations {
       thread.id, includingIndicators: true, onFailure: onFailure
     ) { [commands] in
       try await commands.setArchived(threadID: thread.id, archived: archived, eventID: eventID)
+    }
+  }
+
+  /// The chat leaves the list at once. Its optimistic event stays until the persistent event
+  /// settles it, even when the request fails; a retry resends the same event.
+  @discardableResult
+  func delete(
+    _ id: String, agentID: String?, eventID: String,
+    onFailure: (@MainActor (String) -> Void)? = nil
+  ) async -> Bool {
+    let pending = optimisticChanges.contains { $0.id == eventID }
+    guard pending ? canWrite(id) : canUpdate(id), !Task.isCancelled else { return false }
+    if !pending {
+      optimisticChanges.append(
+        (
+          eventID,
+          ChatThreadChange(kind: .deleted, chatThreadId: id, agentId: agentID, createdAt: .now)
+        ))
+      projectThreads(threads)
+    }
+    return await updateThread(
+      id, includingIndicators: true, onFailure: onFailure
+    ) { [commands] in
+      try await commands.deleteThread(threadID: id, eventID: eventID)
     }
   }
 

@@ -150,9 +150,12 @@ fn template_guidance_remote_archive_above_skill_and_host_cache_limits_is_verifie
         .collect::<Vec<_>>();
     // Exercise package size and identity without searching for compression matches
     // in the original 34 MiB payload. Other cases retain compressed/canonical inputs.
-    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+    let names = ["first.bin", "second.bin"];
+    // Reserve space for the file payloads and the tar and gzip framing.
+    let output = Vec::with_capacity(data.len() * names.len() + 64 * 1024);
+    let encoder = flate2::write::GzEncoder::new(output, flate2::Compression::none());
     let mut builder = tar::Builder::new(encoder);
-    for name in ["first.bin", "second.bin"] {
+    for name in names {
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);
         header.set_mode(0o644);

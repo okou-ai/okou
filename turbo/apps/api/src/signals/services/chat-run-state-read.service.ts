@@ -3,7 +3,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agents } from "@okouai/db/schema/agent";
 import {
   chatEvents,
   chatEventTerminalPredicate,
@@ -11,7 +10,6 @@ import {
 import { command } from "ccstate";
 import {
   and,
-  asc,
   desc,
   eq,
   exists,
@@ -88,56 +86,26 @@ export function runLifecycleMarkerReadPlan(
   };
 }
 
-export function sourceChatCallbackReadPlan(args: {
-  readonly runId: string;
-  readonly sourceCallbackId?: string;
-}) {
-  return {
-    columns: {
-      id: agentRunCallbacks.id,
-      encryptedSecret: agentRunCallbacks.encryptedSecret,
-    },
-    condition: and(
-      eq(agentRunCallbacks.runId, args.runId),
-      eq(agentRunCallbacks.internalKind, "chat"),
-      args.sourceCallbackId
-        ? eq(agentRunCallbacks.id, args.sourceCallbackId)
-        : undefined,
-    ),
-    order: asc(agentRunCallbacks.id),
-    limit: 1,
-  };
-}
-
-export function requiredSourceChatCallback(
-  source:
-    | Pick<typeof agentRunCallbacks.$inferSelect, "id" | "encryptedSecret">
-    | undefined,
-) {
-  if (!source) {
-    throw new Error("Canonical delivery run is missing its chat callback");
-  }
-
-  return source;
-}
-
 export const requireSourceChatCallback$ = command(
   async (
     { get },
-    args: {
-      readonly runId: string;
-      readonly sourceCallbackId?: string;
-    },
-  ) => {
-    const db = get(db$);
-    const plan = sourceChatCallbackReadPlan(args);
-    const [source] = await db
-      .select(plan.columns)
+    args: { readonly runId: string; readonly sourceCallbackId: string },
+  ): Promise<string> => {
+    const [source] = await get(db$)
+      .select({ id: agentRunCallbacks.id })
       .from(agentRunCallbacks)
-      .where(plan.condition)
-      .orderBy(plan.order)
-      .limit(plan.limit);
-    return requiredSourceChatCallback(source);
+      .where(
+        and(
+          eq(agentRunCallbacks.id, args.sourceCallbackId),
+          eq(agentRunCallbacks.runId, args.runId),
+          eq(agentRunCallbacks.internalKind, "chat"),
+        ),
+      )
+      .limit(1);
+    if (!source) {
+      throw new Error("Canonical delivery run is missing its chat callback");
+    }
+    return source.id;
   },
 );
 
@@ -145,7 +113,6 @@ export interface ChatThreadForRunRow {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly title: string | null;
 }
 
@@ -197,12 +164,17 @@ export const loadTerminalChatCallback$ = command(
           chatThreadId: agentRuns.chatThreadId,
           userId: chatThreads.userId,
           orgId: agentRuns.orgId,
-          agentId: agents.id,
           title: chatThreads.title,
         })
         .from(agentRuns)
-        .innerJoin(chatThreads, eq(agentRuns.chatThreadId, chatThreads.id))
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+        .innerJoin(
+          chatThreads,
+          and(
+            eq(agentRuns.chatThreadId, chatThreads.id),
+            eq(agentRuns.orgId, chatThreads.orgId),
+            eq(agentRuns.userId, chatThreads.userId),
+          ),
+        )
         .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
         .limit(1);
 
@@ -213,7 +185,6 @@ export const loadTerminalChatCallback$ = command(
         chatThreadId: row.chatThreadId,
         userId: row.userId,
         orgId: row.orgId,
-        agentId: row.agentId,
         title: row.title,
       };
     })();

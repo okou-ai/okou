@@ -2,9 +2,12 @@ import {
   array,
   discriminatedUnion,
   object,
+  number,
   union,
   undefined as zUndefined,
 } from "zod";
+import { chatThreadSnapshotProjectionSchema } from "../validators/chat-threads";
+import { initContract } from "./base";
 import { chatEventRowSchema } from "./chat-event-rows";
 import { chatThreadEventsContract, chatThreadsContract } from "./chat-threads";
 import {
@@ -22,10 +25,16 @@ const mcpThreadReferences = {
 };
 const mcpThreadEventSchema = discriminatedUnion("kind", [
   ordinaryThreadEvent
-    .omit({ id: true, chatThreadId: true })
+    .omit({
+      id: true,
+      chatThreadId: true,
+    })
     .extend(mcpThreadReferences),
   projectThreadEvent
-    .omit({ id: true, chatThreadId: true })
+    .omit({
+      id: true,
+      chatThreadId: true,
+    })
     .extend(mcpThreadReferences),
 ]);
 
@@ -43,15 +52,31 @@ const mcpChatEventRowSchema = discriminatedUnion("eventType", [
   }),
 ]);
 
-const [threadPointer, emptyThreads] =
-  chatThreadsContract.snapshot.responses[200].options;
-/** Native snapshot metadata and one inline page with canonical entity references. */
+export const mcpChatThreadSchema = chatThreadSnapshotProjectionSchema
+  .omit({ id: true })
+  .extend({ threadId: mcpThreadIdSchema });
+
+const mcpThreadSnapshotSchema = object({
+  chatThreads: array(mcpChatThreadSchema),
+  latestEventId: mcpEventIdSchema.nullable(),
+  latestSeqId: number().int().positive().nullable(),
+});
+
+export const mcpThreadSnapshotContract = initContract().router({
+  get: {
+    ...chatThreadsContract.snapshot,
+    path: "/internal/mcp/chat/thread-snapshot",
+    responses: {
+      ...chatThreadsContract.snapshot.responses,
+      200: mcpThreadSnapshotSchema,
+    },
+  },
+});
+
+/** Projected snapshot and one inline page with canonical entity references. */
 export const mcpGetChatThreadInputSchema = chatThreadsContract.events.query;
 export const mcpGetChatThreadOutputSchema = object({
-  snapshot: union([
-    threadPointer.extend({ latestEventId: mcpEventIdSchema.nullable() }),
-    emptyThreads,
-  ]),
+  snapshot: mcpThreadSnapshotSchema.nullable(),
   ...chatThreadsContract.events.responses[200].shape,
   events: array(mcpThreadEventSchema),
 });

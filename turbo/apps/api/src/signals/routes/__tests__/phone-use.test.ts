@@ -356,10 +356,10 @@ test("chat consent stays owner-scoped and can be revoked without native readines
   const scenario = createPublicComputerUseScenario(context);
   const orgId = `org_${randomUUID()}`;
   const actor = scenario.user({ orgId });
-  const setup = await scenario.prepareActor(actor);
+  await scenario.prepareActor(actor);
   const chat = createChatFilesBddApi(context);
   const thread = await scenario.run(() => {
-    return chat.createThread(actor, { agentId: setup.agentId });
+    return chat.createThread(actor, {});
   });
   const nativeSession = `sess_native_${randomUUID()}`;
   const client = api();
@@ -458,11 +458,10 @@ test(
     const orgId = `org_${randomUUID()}`;
     const scenario = createPublicComputerUseScenario(context);
     const actor = scenario.user({ orgId });
-    const setup = await scenario.prepareActor(actor);
+    await scenario.prepareActor(actor);
     const chat = createChatFilesBddApi(context);
     const thread = await scenario.run(() => {
       return chat.createThread(actor, {
-        agentId: setup.agentId,
         title: "Phone task",
       });
     });
@@ -517,6 +516,10 @@ test(
       );
     });
     const run = await scenario.launchRun(actor, undefined, thread.id);
+    const execution = await scenario.executionInput(actor, run.runId);
+    expect(execution.appendSystemPrompt).toContain(
+      "This Run captured a Phone Use grant",
+    );
     const agentHeaders = { authorization: `Bearer ${run.token}` };
     await scenario.run(async () => {
       // Retrying the same owner selection preserves the Run's captured grant.
@@ -971,5 +974,38 @@ test(
         [409],
       );
     });
+
+    const replacement = await scenario.run(() => {
+      authenticate(actor.userId, orgId, sessionId);
+      return accept(client.register({ headers, body }), [200]);
+    });
+    expect(replacement.body).toMatchObject({
+      id: device.body.id,
+      generation: generation + 1,
+    });
+    const afterReplacement = await scenario.launchRun(
+      actor,
+      undefined,
+      thread.id,
+    );
+    const ungranted = await scenario.executionInput(
+      actor,
+      afterReplacement.runId,
+    );
+    expect(ungranted.appendSystemPrompt).toContain(
+      "No phone is authorized for this Run",
+    );
+    const denied = await scenario.run(() => {
+      return accept(
+        client.create({
+          headers: { authorization: `Bearer ${afterReplacement.token}` },
+          body: { id: randomUUID(), action: { kind: "observe" } },
+        }),
+        [403],
+      );
+    });
+    expect(denied.body.error.message).toContain(
+      "Enable your phone in this chat's Connectors menu",
+    );
   },
 );

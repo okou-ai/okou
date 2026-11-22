@@ -42,13 +42,13 @@ pub(super) struct AcceptanceTasks {
 }
 
 impl AcceptanceTasks {
-    pub(super) fn new(context: AcceptanceContext) -> Self {
+    pub(super) fn new(context: AcceptanceContext, slots: Arc<Semaphore>) -> Self {
         Self {
             context: Arc::new(context),
             tasks: FuturesUnordered::new(),
             in_flight: HashSet::new(),
             preparing: None,
-            slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_ACCEPTANCES)),
+            slots,
         }
     }
 
@@ -58,10 +58,6 @@ impl AcceptanceTasks {
 
     pub(super) fn is_preparing(&self) -> bool {
         self.preparing.is_some()
-    }
-
-    pub(super) fn slots(&self) -> Arc<Semaphore> {
-        self.slots.clone()
     }
 
     pub(super) fn submit_supplied(
@@ -103,8 +99,9 @@ impl AcceptanceTasks {
             .await;
             let outcome = match acceptance {
                 SuppliedAcceptance::Accepted(acceptance) => {
-                    work.settle(Disposition::Accepted);
-                    prepare_accepted(*acceptance, profile, context).await
+                    work.settle(Disposition::Accepted(acceptance.accepted_at));
+                    prepare_accepted(*acceptance, profile, context, work.preferred_home_source)
+                        .await
                 }
                 SuppliedAcceptance::Rejected => {
                     work.settle(Disposition::Rejected);
@@ -189,7 +186,7 @@ impl AcceptanceTasks {
             .await;
             let outcome = match outcome {
                 LocalAcceptanceOutcome::Accepted(acceptance) => {
-                    prepare_accepted(*acceptance, job.profile, context).await
+                    prepare_accepted(*acceptance, job.profile, context, None).await
                 }
                 LocalAcceptanceOutcome::Deferred => AcceptanceTaskOutcome::Deferred,
             };
@@ -276,6 +273,7 @@ async fn prepare_accepted(
     acceptance: AcceptedJob,
     profile: ExecutionProfile,
     context: Arc<AcceptanceContext>,
+    preferred_home_source: Option<RunId>,
 ) -> AcceptanceTaskOutcome {
     let AcceptedJob {
         job,
@@ -300,6 +298,7 @@ async fn prepare_accepted(
                     job,
                     cancellation,
                     handoff_context,
+                    preferred_home_source,
                     accepted_at,
                     profile_name,
                     rootfs_hash,
@@ -320,6 +319,7 @@ async fn prepare_accepted(
     let spawn_ctx = &context.spawn_ctx;
     let prepared = prepare_accepted_job(
         SandboxAcceptedJob {
+            preferred_home_source,
             job,
             resource,
             cancellation,

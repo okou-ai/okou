@@ -1,19 +1,10 @@
 import type { ComposerSignals } from "../okou-page/composer-signals.ts";
 import type { FeedbackInput } from "../okou-page/chat-feedback.ts";
-import type { ChatAgentRunSource } from "./chat-event-signals.ts";
+import type { ChatRunSource } from "./chat-event-signals.ts";
 
-export type ChatForwardTarget =
-  | {
-      readonly kind: "agent";
-      readonly id: string;
-      readonly title: string;
-    }
-  | {
-      readonly kind: "thread";
-      readonly id: string;
-      readonly agentId: string;
-      readonly title: string;
-    };
+export interface ChatForwardTarget {
+  readonly title: string;
+}
 
 export interface ChatForwardSelection extends FeedbackInput {
   readonly threadId: string;
@@ -25,4 +16,4 @@ export interface ChatForwardComposerState {
   readonly composer: ComposerSignals;
 }
 
-export interface ChatForwardContext extends ChatAgentRunSource, FeedbackInput {}
+export interface ChatForwardContext extends ChatRunSource, FeedbackInput {}

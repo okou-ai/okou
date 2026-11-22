@@ -1,6 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { i18n } from "../../i18n/index.ts";
+import { delay } from "signal-timers";
 import type { AgentPhoneLinkStatusResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/validators/get-started";
@@ -12,7 +11,7 @@ import type {
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
-import { pageSignal$ } from "../page-signal.ts";
+import { pageSignal$, pageVersion$ } from "../page-signal.ts";
 import { accept } from "../../lib/accept.ts";
 import { resetSignal, settle } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
@@ -46,7 +45,7 @@ const getStartedStatus$ = computed(
     await get(runtimeAuthenticatedIdentity$);
     const response = await accept(
       get(apiClient$)(getStartedContract).status(),
-      [200, 403],
+      [200, 403, 404],
       undefined,
       { showErrorToast: false },
     );
@@ -58,7 +57,15 @@ const reloadGetStarted$ = command(({ set }) => {
     return value + 1;
   });
 });
-export const setGetStartedMenuOpen$ = command(({ set }, open: boolean) => {
+const menuOpenPageVersion$ = state<number | null>(null);
+const resetMenuClose$ = resetSignal();
+export const getStartedMenuOpen$ = computed((get) => {
+  return get(menuOpenPageVersion$) === get(pageVersion$);
+});
+export const setGetStartedMenuOpen$ = command(({ get, set }, open: boolean) => {
+  // Dismissing or reopening the menu cancels a previous check-in's auto-close.
+  set(resetMenuClose$);
+  set(menuOpenPageVersion$, open ? get(pageVersion$) : null);
   if (open) {
     set(reloadSlackOrg$);
     set(reloadGetStarted$);
@@ -254,17 +261,13 @@ export const setQuestIntroKey$ = command(
   },
 );
 
-/** Whether the success dialog is showing after a completed check-in. */
-const internalCheckinClaimedOpen$ = state(false);
-export const checkinClaimedOpen$ = computed((get) => {
-  return get(internalCheckinClaimedOpen$);
-});
-export const setCheckinClaimedOpen$ = command(({ set }, open: boolean) => {
-  set(internalCheckinClaimedOpen$, open);
+const checkinRequestState$ = state<Promise<boolean> | null>(null);
+export const checkinRequest$ = computed((get) => {
+  return get(checkinRequestState$);
 });
 
-export const checkInGetStarted$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+const claimGetStartedCheckin$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
     const result = await accept(
       get(apiClient$)(getStartedContract).checkin({
         fetchOptions: { signal },
@@ -275,19 +278,29 @@ export const checkInGetStarted$ = command(
     signal.throwIfAborted();
     set(reloadGetStarted$);
     await Promise.all([
-      get(getStartedStatus$),
+      get(getStartedSummary$),
       set(reloadAccountMenuCreditBalances$, signal),
     ]);
     signal.throwIfAborted();
-    if (result.status === 200 && result.body.status === "granted") {
-      set(internalCheckinClaimedOpen$, true);
-    } else {
-      toast.info(
-        i18n.t(($) => {
-          return $.chat.agentPage.getStarted.checkin.pendingDescription;
-        }),
-      );
+    return result.status === 200 && result.body.status === "granted";
+  },
+);
+
+export const checkInGetStarted$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    const closeSignal = set(resetMenuClose$, signal);
+    const request = set(claimGetStartedCheckin$, signal);
+    set(checkinRequestState$, request);
+    const granted = await request;
+    signal.throwIfAborted();
+    if (!granted || closeSignal.aborted) {
+      return;
     }
+    // The refreshed row confirms the reward in place before the menu closes.
+    await delay(800, { signal: closeSignal });
+    signal.throwIfAborted();
+    closeSignal.throwIfAborted();
+    set(setGetStartedMenuOpen$, false);
   },
 );
 

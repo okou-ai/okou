@@ -13,7 +13,6 @@ import { now, withMockNowForTest } from "../../../lib/time";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { expect, test } from "vitest";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import {
@@ -22,6 +21,7 @@ import {
   workflowsDetailContract,
   type WorkflowFileEntry,
   type WorkflowAutomationSummary,
+  type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -30,10 +30,7 @@ import {
   PI_SKILLS_ROOT,
   type ExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import {
-  proactiveSuggestionsRoutes,
-  proactiveLearningRoutes,
-} from "../proactive-preferences";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -52,7 +49,7 @@ import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 
 const context = testContext();
@@ -97,12 +94,9 @@ async function saveCompletedActionFeedback(
   }
 }
 
-async function saveOwnedFeedback(
+async function withFeedbackRun<T>(
   owned: Awaited<ReturnType<typeof publicChatActor>>,
-  title: string,
-  reason: string,
-  kind: "less_like_this" | "option_selected" | "dismissed" = "less_like_this",
-  completedActionTitles: readonly string[] = [],
+  write: (agentToken: string) => Promise<T>,
 ) {
   const fixture = createChatEventsFixture(context);
   const orgId = owned.actor.orgId;
@@ -117,18 +111,10 @@ async function saveOwnedFeedback(
       { [FeatureSwitchKey.AgentSuggestion]: true },
     );
   });
-  const { defaultAgentId } = await owned.run(() => {
-    return fixture.bdd.readOnboardingStatus(owned.actor);
-  });
-  if (!defaultAgentId) {
-    throw new Error("Expected the owner's default Agent");
-  }
-  mockOptionalEnv("RUNNER_DEFAULT_GROUP", owned.runnerGroup);
   await owned.run(() => {
     return createRunsApi(context).registerDirectRunner(owned.runnerGroup);
   });
   const ordinary = await owned.sendChatRun(owned.actor, {
-    agentId: defaultAgentId,
     model: owned.model,
     prompt: "Review the owner's current suggestions",
   });
@@ -138,190 +124,260 @@ async function saveOwnedFeedback(
   expect(execution.appendSystemPrompt).not.toContain(
     "# Suggestions feedback context",
   );
-  const api = setupApp({ context, routes: feedRoutes })(feedContract);
-  const id = randomUUID();
-  const feedbackId = randomUUID();
-  const rationale = "Review the owner's pending decision";
-  const headers = { authorization: "Bearer clerk-session" };
   return owned.run(async () => {
-    const created = await accept(
-      api.create({
-        headers: {
-          authorization: `Bearer ${okouTokenFromExecution(execution)}`,
-        },
-        body: {
-          id,
-          type: "suggestion",
-          priority: 0,
-          content: {
-            title,
-            rationale,
-            options: [
-              {
-                id: "review",
-                label: "Review",
-                description: "Review this decision",
-                threadId: null,
-                draft: {
-                  draftUserMessage: {
-                    version: 1,
-                    parts: [{ type: "text", text: "Review this decision" }],
-                  },
-                  draftAttachments: null,
-                },
-              },
-            ],
-            customOption: {
-              id: "custom",
-              threadId: null,
-              draft: {
-                draftUserMessage: {
-                  version: 1,
-                  parts: [{ type: "feedback", quote: rationale, note: [] }],
-                },
-                draftAttachments: null,
-              },
-            },
-          },
-        },
-      }),
-      [200],
-    );
     createRouteMocks(context).clerk.session(
       owned.actor.userId,
       orgId,
       owned.actor.orgRole,
     );
-    if (kind === "option_selected") {
-      await accept(
-        api.consume({ headers, params: { id }, body: { optionId: "review" } }),
-        [200],
-      );
-    } else {
+    const result = await write(okouTokenFromExecution(execution));
+    await fixture.failChatRun(ordinary.runId, sandboxHeaders, "Feedback saved");
+    await flushWaitUntilForTest();
+    return result;
+  });
+}
+
+async function saveFeedback(
+  agentToken: string,
+  title: string,
+  reason: string,
+  kind: "less_like_this" | "option_selected" | "dismissed" = "less_like_this",
+  completedActionTitles: readonly string[] = [],
+) {
+  const api = setupApp({ context, routes: feedRoutes })(feedContract);
+  const id = randomUUID();
+  const feedbackId = randomUUID();
+  const rationale = "Review the owner's pending decision";
+  const headers = { authorization: "Bearer clerk-session" };
+  const created = await accept(
+    api.create({
+      headers: {
+        authorization: `Bearer ${agentToken}`,
+      },
+      body: {
+        id,
+        type: "suggestion",
+        priority: 0,
+        content: {
+          title,
+          rationale,
+          options: [
+            {
+              id: "review",
+              label: "Review",
+              description: "Review this decision",
+              threadId: null,
+              draft: {
+                draftUserMessage: {
+                  version: 1,
+                  parts: [{ type: "text", text: "Review this decision" }],
+                },
+                draftAttachments: null,
+              },
+            },
+          ],
+          customOption: {
+            id: "custom",
+            threadId: null,
+            draft: {
+              draftUserMessage: {
+                version: 1,
+                parts: [{ type: "feedback", quote: rationale, note: [] }],
+              },
+              draftAttachments: null,
+            },
+          },
+        },
+      },
+    }),
+    [200],
+  );
+  if (kind === "option_selected") {
+    await accept(
+      api.consume({ headers, params: { id }, body: { optionId: "review" } }),
+      [200],
+    );
+  } else {
+    await accept(
+      api.feedback({
+        headers,
+        params: { id },
+        body: {
+          id: feedbackId,
+          kind,
+          targetId: null,
+          note: "Initial preference",
+        },
+      }),
+      [200],
+    );
+    if (kind === "less_like_this") {
       await accept(
         api.feedback({
           headers,
           params: { id },
           body: {
-            id: feedbackId,
-            kind,
-            targetId: null,
-            note: "Initial preference",
+            id: randomUUID(),
+            kind: "reason",
+            targetId: feedbackId,
+            note: reason,
           },
         }),
         [200],
       );
-      if (kind === "less_like_this") {
-        await accept(
-          api.feedback({
-            headers,
-            params: { id },
-            body: {
-              id: randomUUID(),
-              kind: "reason",
-              targetId: feedbackId,
-              note: reason,
-            },
-          }),
-          [200],
-        );
-      }
     }
-    await saveCompletedActionFeedback(
-      created.body.content,
-      okouTokenFromExecution(execution),
-      completedActionTitles,
-    );
-    await fixture.failChatRun(ordinary.runId, sandboxHeaders, "Feedback saved");
-    await flushWaitUntilForTest();
-    return {
-      expected: {
-        kind,
-        title,
-        rationale,
-        ...(kind === "less_like_this" ? { reason } : {}),
-        ...(kind === "option_selected" ? { choice: "Review" } : {}),
-      },
-      undo: () => {
-        return owned.run(async () => {
-          await accept(
-            api.feedback({
-              headers,
-              params: { id },
-              body: {
-                id: randomUUID(),
-                kind: "undo",
-                targetId: feedbackId,
-                note: "",
-                snapshot: created.body,
-              },
-            }),
-            [200],
-          );
-        });
-      },
-    };
-  });
+  }
+  await saveCompletedActionFeedback(
+    created.body.content,
+    agentToken,
+    completedActionTitles,
+  );
+  return {
+    expected: {
+      kind,
+      title,
+      rationale,
+      ...(kind === "less_like_this" ? { reason } : {}),
+      ...(kind === "option_selected" ? { choice: "Review" } : {}),
+    },
+    undo: async () => {
+      await accept(
+        api.feedback({
+          headers,
+          params: { id },
+          body: {
+            id: randomUUID(),
+            kind: "undo",
+            targetId: feedbackId,
+            note: "",
+            snapshot: created.body,
+          },
+        }),
+        [200],
+      );
+    },
+  };
 }
 
 async function prepareForeignFeedback(
   definitionName: string,
   failUpload: boolean,
 ) {
-  if (definitionName !== "agent-suggestions" || failUpload) {
+  if (
+    (definitionName !== "agent-suggestions" &&
+      definitionName !== "proactive-learning") ||
+    failUpload
+  ) {
     return;
   }
   const foreign = await publicChatActor(context);
-  await saveOwnedFeedback(
-    foreign,
-    "Another workspace's private decision",
-    "Private foreign workspace preference",
-  );
+  await withFeedbackRun(foreign, (token) => {
+    return saveFeedback(
+      token,
+      "Another workspace's private decision",
+      "Private foreign workspace preference",
+    );
+  });
   const peer = await publicChatActor(context);
-  await saveOwnedFeedback(
-    peer,
-    "Another member's private decision",
-    "Private same-workspace preference",
-  );
+  await withFeedbackRun(peer, (token) => {
+    return saveFeedback(
+      token,
+      "Another member's private decision",
+      "Private same-workspace preference",
+    );
+  });
   return peer.actor.orgId;
 }
 
-function expectFeedbackContext(
-  prompt: string | null | undefined,
-  curatesSuggestions: boolean,
-  expectedFeedback: readonly Awaited<
-    ReturnType<typeof saveOwnedFeedback>
-  >["expected"][],
-) {
-  if (curatesSuggestions) {
-    expect(prompt).toContain("# Suggestions feedback context");
-    const json = prompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
-    expect(json).toBeDefined();
-    const injected: unknown = JSON.parse(json ?? "null");
-    expect(injected).toMatchObject({
-      complete: true,
-      feedback: expectedFeedback,
-    });
-  } else {
-    expect(prompt).not.toContain("# Suggestions feedback context");
+type ExpectedFeedback = Awaited<ReturnType<typeof saveFeedback>>["expected"];
+
+interface SuggestionFeedbackLifecycle {
+  startedAt: number;
+  existing: ExpectedFeedback;
+  selected: ExpectedFeedback;
+  undo: () => Promise<void>;
+}
+
+async function prepareWorkflowFeedback(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  definitionName: string,
+): Promise<{
+  initial: ExpectedFeedback[];
+  lifecycle?: SuggestionFeedbackLifecycle;
+}> {
+  const learning = definitionName === "proactive-learning";
+  if (definitionName !== "agent-suggestions" && !learning) {
+    return { initial: [] };
   }
+  const { expected: existing } = await withFeedbackRun(owned, (token) => {
+    return saveFeedback(
+      token,
+      "Review the launch decision",
+      "A teammate owns these reviews",
+      learning ? "option_selected" : "less_like_this",
+    );
+  });
+  if (learning) {
+    return { initial: [existing] };
+  }
+  const startedAt = now();
+  return withMockNowForTest(startedAt, () => {
+    return withFeedbackRun(owned, async (token) => {
+      const undone = await saveFeedback(
+        token,
+        "Undo this preference",
+        "Temporary preference",
+      );
+      const selected = await saveFeedback(
+        token,
+        "Selected direction",
+        "",
+        "option_selected",
+      );
+      await saveFeedback(token, "Dismissed suggestion", "", "dismissed");
+      return {
+        initial: [existing, undone.expected, selected.expected],
+        lifecycle: {
+          startedAt,
+          existing,
+          selected: selected.expected,
+          undo: undone.undo,
+        },
+      };
+    });
+  });
+}
+
+const feedbackSchema = object({
+  complete: boolean(),
+  feedback: array(
+    object({
+      kind: string(),
+      title: string(),
+      rationale: string(),
+      reason: string().optional(),
+      choice: string().optional(),
+    }),
+  ),
+});
+
+function readFeedbackContext(
+  prompt: string | null | undefined,
+  expectedComplete = true,
+) {
+  expect(prompt).toContain("# Suggestions feedback context");
+  const json = prompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
+  expect(json).toBeDefined();
+  const feedback = feedbackSchema.parse(JSON.parse(json ?? "null"));
+  expect(feedback.complete).toBe(expectedComplete);
+  return feedback.feedback;
 }
 
 async function expectSuggestionFeedbackLifecycle(
   owned: Awaited<ReturnType<typeof publicChatActor>>,
   workflowId: string,
-  definitionName: string,
-  expectedFeedback: readonly Awaited<
-    ReturnType<typeof saveOwnedFeedback>
-  >["expected"][],
+  { startedAt, existing, selected, undo }: SuggestionFeedbackLifecycle,
 ) {
-  if (definitionName !== "agent-suggestions") {
-    return;
-  }
-  const existing = expectedFeedback[0];
-  if (!existing) {
-    throw new Error("Expected the owner's saved feedback");
-  }
   const fixture = createChatEventsFixture(context);
   const app = setupApp({
     context,
@@ -333,19 +389,6 @@ async function expectSuggestionFeedbackLifecycle(
   });
   const headers = { authorization: "Bearer clerk-session" };
   const day = 86_400_000;
-  const startedAt = now();
-  const feedbackSchema = object({
-    complete: boolean(),
-    feedback: array(
-      object({
-        kind: string(),
-        title: string(),
-        rationale: string(),
-        reason: string().optional(),
-        choice: string().optional(),
-      }),
-    ),
-  });
   function readFeedback(at: number, expectedComplete = true) {
     return withMockNowForTest(at, async () => {
       await owned.run(() => {
@@ -414,12 +457,10 @@ async function expectSuggestionFeedbackLifecycle(
             throw new Error("Expected a scheduled Suggestions Run");
           }
           const { execution, sandboxHeaders } = await owned.runExecution(runId);
-          expect(execution.appendSystemPrompt).toContain(
-            "# Suggestions feedback context",
+          const feedback = readFeedbackContext(
+            execution.appendSystemPrompt,
+            expectedComplete,
           );
-          const json =
-            execution.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
-          const feedback = feedbackSchema.parse(JSON.parse(json ?? "null"));
           await owned.run(() => {
             return fixture.failChatRun(
               runId,
@@ -437,35 +478,17 @@ async function expectSuggestionFeedbackLifecycle(
               [200],
             );
           });
-          expect(feedback.complete).toBe(expectedComplete);
-          return feedback.feedback;
+          return feedback;
         },
       );
     });
   }
   await withMockNowForTest(startedAt, async () => {
-    const undone = await saveOwnedFeedback(
-      owned,
-      "Undo this preference",
-      "Temporary preference",
-    );
-    const selected = await saveOwnedFeedback(
-      owned,
-      "Selected direction",
-      "",
-      "option_selected",
-    );
-    await saveOwnedFeedback(owned, "Dismissed suggestion", "", "dismissed");
-    const initial = await readFeedback(startedAt);
-    expect(initial).toHaveLength(3);
-    expect(initial).toStrictEqual(
-      expect.arrayContaining([existing, undone.expected, selected.expected]),
-    );
-    await undone.undo();
+    await owned.run(undo);
     const afterUndo = await readFeedback(startedAt);
     expect(afterUndo).toHaveLength(2);
     expect(afterUndo).toStrictEqual(
-      expect.arrayContaining([existing, selected.expected]),
+      expect.arrayContaining([existing, selected]),
     );
     await expect(readFeedback(startedAt + 7 * day)).resolves.toStrictEqual([
       existing,
@@ -475,13 +498,15 @@ async function expectSuggestionFeedbackLifecycle(
       const completedTitles = Array.from({ length: 101 }, (_, index) => {
         return `Completed owner task ${index + 1}`;
       });
-      await saveOwnedFeedback(
-        owned,
-        "Retained owner preference",
-        "Consider the owner's completed work",
-        "less_like_this",
-        completedTitles,
-      );
+      await withFeedbackRun(owned, (token) => {
+        return saveFeedback(
+          token,
+          "Retained owner preference",
+          "Consider the owner's completed work",
+          "less_like_this",
+          completedTitles,
+        );
+      });
       // The real scheduled Run must disclose omitted action facts so its
       // instructions skip maintenance instead of repeating completed work.
       const bounded = await readFeedback(now(), false);
@@ -638,7 +663,6 @@ function expectScopeGuidance(
     );
   } else {
     expect(instruction).toContain("okou chat list --help");
-    expect(instruction).not.toContain("--all-agents");
   }
 }
 
@@ -680,6 +704,61 @@ test("requires authentication to publish the Official Workflow catalog", async (
   expect(unauthorized.status).toBe(401);
 });
 
+function isProactiveProfileWorkflow(workflow: WorkflowSummary) {
+  return (
+    workflow.official?.definitionName === "agent-suggestions" ||
+    workflow.official?.definitionName === "proactive-learning"
+  );
+}
+
+async function expectSharedProactiveSchedules(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  workflows: readonly WorkflowSummary[],
+  enabled: boolean,
+) {
+  const proactive = workflows.filter(isProactiveProfileWorkflow);
+  if (proactive.length === 0) {
+    return;
+  }
+  expect(
+    proactive
+      .map((workflow) => {
+        return workflow.official?.definitionName;
+      })
+      .sort(),
+  ).toStrictEqual(["agent-suggestions", "proactive-learning"]);
+  const app = setupApp({
+    context,
+    routes: [...proactiveSuggestionsRoutes, ...workflowAutomationsRoutes],
+  });
+  const headers = { authorization: "Bearer clerk-session" };
+  if (!enabled) {
+    await owned.run(() => {
+      return accept(
+        app(proactiveSuggestionsContract).update({
+          headers,
+          body: { enabled: false },
+        }),
+        [200],
+      );
+    });
+  }
+  for (const workflow of proactive) {
+    const schedules = await owned.run(() => {
+      return accept(
+        app(workflowAutomationsContract).list({
+          headers,
+          params: { workflowId: workflow.id },
+        }),
+        [200],
+      );
+    });
+    expect(schedules.body).toMatchObject([
+      { enabled, official: { intendedEnabled: enabled } },
+    ]);
+  }
+}
+
 const scenarios = [
   { kind: "suggestions", failUpload: false, suggestionsEnabled: true },
   { kind: "suggestions", failUpload: true, suggestionsEnabled: true },
@@ -693,7 +772,6 @@ const scenarios = [
     ...scenario,
     learning,
     morningBrief,
-    needsTimezone: learning || morningBrief,
     curatesSuggestions: !learning && scenario.suggestionsEnabled,
     curatesMorningBrief: morningBrief && scenario.suggestionsEnabled,
     definitionName: learning
@@ -708,11 +786,9 @@ const scenarios = [
       : morningBrief
         ? "# Morning Brief"
         : "# Proactive Suggestions",
-    preferenceContract: learning
-      ? proactiveLearningContract
-      : morningBrief
-        ? morningBriefPreferenceContract
-        : proactiveSuggestionsContract,
+    preferenceContract: morningBrief
+      ? morningBriefPreferenceContract
+      : proactiveSuggestionsContract,
   };
 });
 
@@ -749,7 +825,6 @@ test.each(scenarios)(
     failUpload,
     learning,
     curatesMorningBrief,
-    needsTimezone,
     curatesSuggestions,
     definitionName,
     heading,
@@ -763,7 +838,6 @@ test.each(scenarios)(
         ...cronOfficialWorkflowCatalogRoutes,
         ...cronExecuteWorkflowAutomationsRoutes,
         ...proactiveSuggestionsRoutes,
-        ...proactiveLearningRoutes,
         ...morningBriefPreferenceRoutes,
         ...workflowAutomationsRoutes,
         ...workflowsRoutes,
@@ -832,17 +906,14 @@ test.each(scenarios)(
         { ...actor, orgId },
         {
           [FeatureSwitchKey.AgentSuggestion]: true,
-          [FeatureSwitchKey.ProactiveLearning]: learning,
         },
       );
     });
-    if (needsTimezone) {
-      await owned.run(() => {
-        return fixture.bdd.completeOnboarding(actor, {
-          timezone: "Asia/Shanghai",
-        });
+    await owned.run(() => {
+      return fixture.bdd.completeOnboarding(actor, {
+        timezone: "Asia/Shanghai",
       });
-    }
+    });
     createRouteMocks(context).clerk.session(
       actor.userId,
       actor.orgId,
@@ -868,20 +939,7 @@ test.each(scenarios)(
       return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
-    const expectedFeedback: Awaited<
-      ReturnType<typeof saveOwnedFeedback>
-    >["expected"][] = [];
-    if (definitionName === "agent-suggestions") {
-      expectedFeedback.push(
-        (
-          await saveOwnedFeedback(
-            owned,
-            "Review the launch decision",
-            "A teammate owns these reviews",
-          )
-        ).expected,
-      );
-    }
+    const feedback = await prepareWorkflowFeedback(owned, definitionName);
     createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
     const workflows = await owned.run(() => {
       return accept(
@@ -889,12 +947,14 @@ test.each(scenarios)(
         [200],
       );
     });
+    await expectSharedProactiveSchedules(owned, workflows.body, true);
     const workflow = workflows.body.find((item) => {
       return item.official?.definitionName === definitionName;
     });
     if (!workflow) {
       throw new Error("Expected the Official workflow installation");
     }
+    const selectedWorkflowId = workflow.id;
     const detail = await owned.run(() => {
       return accept(
         app(workflowsDetailContract).get({
@@ -926,21 +986,20 @@ test.each(scenarios)(
     if (learning) {
       expectLearningSchedule(automation);
     }
-    await withMockNowForTest(
-      new Date(automation.nextRunAt).getTime(),
-      async () => {
-        await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
-        await owned.run(() => {
-          return accept(
-            app(cronExecuteWorkflowAutomationsContract).execute({
-              headers: cronHeaders,
-            }),
-            [200],
-          );
-        });
-        await owned.run(flushWaitUntilForTest);
-      },
-    );
+    // Feedback setup may finish after this occurrence becomes due.
+    const dispatchedAt = Math.max(now(), Date.parse(automation.nextRunAt));
+    await withMockNowForTest(dispatchedAt, async () => {
+      await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
+      await owned.run(() => {
+        return accept(
+          app(cronExecuteWorkflowAutomationsContract).execute({
+            headers: cronHeaders,
+          }),
+          [200],
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
+    });
     const current = await owned.run(() => {
       return accept(
         app(workflowAutomationsContract).get({
@@ -968,11 +1027,28 @@ test.each(scenarios)(
     }
     const runId = launched.runId;
     const { execution, sandboxHeaders } = await owned.runExecution(runId);
-    expectFeedbackContext(
-      execution.appendSystemPrompt,
-      curatesSuggestions,
-      expectedFeedback,
-    );
+    if (learning || curatesSuggestions) {
+      const initial = readFeedbackContext(execution.appendSystemPrompt);
+      expect(initial).toHaveLength(feedback.initial.length);
+      expect(initial).toStrictEqual(expect.arrayContaining(feedback.initial));
+    } else {
+      expect(execution.appendSystemPrompt).not.toContain(
+        "# Suggestions feedback context",
+      );
+    }
+    if (learning) {
+      await owned.run(() => {
+        return accept(
+          setupApp({ context, routes: feedRoutes })(feedContract).manage({
+            headers: {
+              authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+            },
+            query: { type: "suggestion" },
+          }),
+          [403],
+        );
+      });
+    }
     const bundle = officialWorkflowBundle(execution, definitionName);
     const files = readExecutionContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
@@ -982,7 +1058,7 @@ test.each(scenarios)(
       detail.body.fileContents,
       !curatesSuggestions,
     );
-    await withMockNowForTest(Date.parse(automation.nextRunAt), async () => {
+    await withMockNowForTest(dispatchedAt, async () => {
       await owned.run(() => {
         return fixture.failChatRun(
           runId,
@@ -992,12 +1068,13 @@ test.each(scenarios)(
       });
       await owned.run(flushWaitUntilForTest);
     });
-    await expectSuggestionFeedbackLifecycle(
-      owned,
-      workflow.id,
-      definitionName,
-      expectedFeedback,
-    );
+    if (feedback.lifecycle) {
+      await expectSuggestionFeedbackLifecycle(
+        owned,
+        workflow.id,
+        feedback.lifecycle,
+      );
+    }
     if (definitionName === "morning-brief") {
       await expectPublishedMorningBriefRecovery(
         owned,
@@ -1005,49 +1082,56 @@ test.each(scenarios)(
         workflow.id,
       );
     }
-    async function finishConcurrentSuggestions() {
-      const suggestions = workflows.body.find((item) => {
-        return item.official?.definitionName === "agent-suggestions";
-      });
-      if (!suggestions) {
-        throw new Error("Expected the Suggestions installation");
-      }
-      const schedules = await owned.run(() => {
-        return accept(
-          app(workflowAutomationsContract).list({
-            headers,
-            params: { workflowId: suggestions.id },
-          }),
-          [200],
+    async function finishConcurrentProactiveWorkflows() {
+      const concurrent = workflows.body.filter((item) => {
+        return (
+          item.id !== selectedWorkflowId && isProactiveProfileWorkflow(item)
         );
       });
-      const threadId = schedules.body[0]?.chatThreadId;
-      if (threadId) {
+      for (const item of concurrent) {
+        const schedules = await owned.run(() => {
+          return accept(
+            app(workflowAutomationsContract).list({
+              headers,
+              params: { workflowId: item.id },
+            }),
+            [200],
+          );
+        });
+        const threadId = schedules.body[0]?.chatThreadId;
+        if (!threadId) {
+          continue;
+        }
         const events = await owned.run(() => {
           return createChatFilesBddApi(context).listThreadEventRows(
             actor,
             threadId,
           );
         });
-        const runId = events.find((event) => {
-          return event.eventType === "input.prompt" && event.runId;
-        })?.runId;
-        if (!runId) {
-          throw new Error("Expected the concurrent Suggestions Run");
+        for (const event of events) {
+          if (event.eventType !== "input.prompt" || !event.runId) {
+            continue;
+          }
+          const runId = event.runId;
+          const run = await owned.run(() => {
+            return createRunsApi(context).readRun(actor, runId);
+          });
+          if (run.status !== "pending" && run.status !== "running") {
+            continue;
+          }
+          const { sandboxHeaders } = await owned.runExecution(runId);
+          await owned.run(() => {
+            return fixture.failChatRun(
+              runId,
+              sandboxHeaders,
+              "Concurrent proactive Run inspected",
+            );
+          });
+          await owned.run(flushWaitUntilForTest);
         }
-        const { sandboxHeaders } = await owned.runExecution(runId);
-        await owned.run(() => {
-          return fixture.failChatRun(
-            runId,
-            sandboxHeaders,
-            "Concurrent Suggestions inspected",
-          );
-        });
-        await owned.run(flushWaitUntilForTest);
       }
     }
-    if (curatesMorningBrief) {
-      await finishConcurrentSuggestions();
-    }
+    await finishConcurrentProactiveWorkflows();
+    await expectSharedProactiveSchedules(owned, workflows.body, false);
   },
 );

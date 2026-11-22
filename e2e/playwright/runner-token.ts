@@ -8,7 +8,6 @@ import { refreshClerkSessionToken } from "./lib/auth";
 import { issueCliToken } from "./lib/cli-token";
 import { runnerTestAccounts } from "./lib/clerk-api";
 import { formatErrorReport } from "./lib/error-report";
-import { ensureRunnerOrganizationReady } from "./lib/onboarding";
 import { capturePaidOnboardingFailure } from "./lib/paid-onboarding-diagnostics";
 import {
   completeRunnerOnboarding,
@@ -165,11 +164,6 @@ async function provisionRunnerCredential(
         ),
       },
     );
-    await ensureRunnerOrganizationReady({
-      apiUrl,
-      clerkSessionToken,
-      vercelAutomationBypassSecret,
-    });
     await completeRunnerOnboarding({
       apiUrl,
       clerkSessionToken,
@@ -190,7 +184,7 @@ async function provisionRunnerCredential(
     const outputFile = join(outputDirectory, target.fileName);
     await writeFile(
       outputFile,
-      `${JSON.stringify({ token, apiUrl }, null, 2)}\n`,
+      `${JSON.stringify({ token, apiUrl, appUrl }, null, 2)}\n`,
       { encoding: "utf8", mode: 0o600 },
     );
     console.log("Generated runner E2E API credential", {

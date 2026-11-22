@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """Verify complete native saving, explicit status-write refusal and current retry."""
 
-import argparse
-import datetime
-import json
 import pathlib
 
 import progress_report as foreground
-import pressure_report as pressure
 import report
+import status_evidence
 from cleanup_report import accounting, coverage, supplied_policy
 from report import exact
 
@@ -16,46 +13,6 @@ PREFIX = "NATIVE_STATUS_FAILURE_WITNESS "
 CASES = {f"StatusFailure-{mode}" for mode in ("fresh", "snapshot")}
 PHASES = ("tail_blocked", "pool_wait_progress", "tail_wait_progress", "status_wait_progress",
           "status_failed", "status_retried", "producers_joined")
-
-
-def valid_status_path(value):
-    """Check the private status destination without resolving or rewriting it."""
-    return (
-        isinstance(value, str)
-        and pathlib.PurePosixPath(value).is_absolute()
-        and str(pathlib.PurePosixPath(value)) == value
-        and ".." not in pathlib.PurePosixPath(value).parts
-        and pathlib.PurePosixPath(value).name == "status.json"
-    )
-
-
-def status_wait_advanced(before, after):
-    """Require one observed status wait between exact unsigned 64-bit counters."""
-    return pressure.integer(before) and pressure.integer(after) and after == before + 1
-
-
-def status(value, sandbox=None, previous=None):
-    if not isinstance(value, dict):
-        raise ValueError("status publication has no original JSON")
-    for field in ("started_at", "updated_at"):
-        text = value.get(field)
-        if not isinstance(text, str) or datetime.datetime.fromisoformat(text).utcoffset() is None:
-            raise ValueError("status publication has invalid original timestamps")
-    expected = {"mode": "starting", "max_concurrent": 1, "active_runs": [],
-                "started_at": value["started_at"], "updated_at": value["updated_at"]}
-    if sandbox is not None:
-        entries = value.get("idle_sandboxes")
-        if not isinstance(entries, list) or len(entries) != 1 or not isinstance(entries[0], dict):
-            raise ValueError("original parked status was not positively published")
-        reuse = entries[0].get("reuse_key")
-        prefix = "thread:native-guarded-"
-        if (not isinstance(reuse, str) or not reuse.startswith(prefix)
-                or not report.is_canonical_uuid(reuse[len(prefix):])):
-            raise ValueError("original status reuse identity changed")
-        expected["idle_sandboxes"] = [{"reuse_key": reuse, "sandbox_id": sandbox}]
-    if previous is not None and value["started_at"] != previous["started_at"]:
-        raise ValueError("status retry changed original tracker")
-    exact(value, expected, "status publication resurrected inventory or changed its shape")
 
 
 def validate(directory):
@@ -71,19 +28,20 @@ def validate(directory):
     runners, paths = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
-        if tuple(e["phase"] for e in events) != PHASES:
-            raise ValueError("missing duplicate or unordered status-failure phases")
-        identity = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
+        report.validate_witness_phases(
+            events, PHASES, "missing duplicate or unordered status-failure phases",
+        )
+        identity = report.witness_identity(terminal[1])
         clocks = [terminal[3]["monotonic_ns"], *(e["monotonic_ns"] for e in events), terminal[-1]["monotonic_ns"]]
         if (any(a >= b for a, b in zip(clocks, clocks[1:]))
-                or any((e["sandbox_id"], e["backing_generation"]) != identity for e in events)):
+                or report.witness_identity_changed(events, identity)):
             raise ValueError("status failure changed original identity or tail ordering")
         blocked, pool, tail, waiting, failed, retried, joined = [e["evidence"] for e in events]
         status_path = blocked.get("status_path")
-        if not valid_status_path(status_path) or status_path in paths:
+        if not status_evidence.valid_status_path(status_path) or status_path in paths:
             raise ValueError("status-failure private destination identity changed")
         paths.add(status_path)
-        status(blocked.get("published_status"), sandbox=identity[0])
+        status_evidence.original_status(blocked.get("published_status"), sandbox=identity[0])
         coverage(blocked.get("coverage"), policy, False)
         exact(blocked, {"policy": policy, "published_status": blocked["published_status"],
                         "status_path": status_path, "receiver_polled_pending": True,
@@ -116,7 +74,7 @@ def validate(directory):
         if (not all(report.positive_integer(t) for t in (io_released, polled, injected))
                 or not events[2]["monotonic_ns"] < io_released < terminal[4]["monotonic_ns"]
                 < polled < injected < events[3]["monotonic_ns"]
-                or not status_wait_advanced(before, after)):
+                or not status_evidence.status_wait_advanced(before, after)):
             raise ValueError("status fault was not after complete IO and a positive final wait")
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, injected, (0, 0))
         if first != second or first in runners:
@@ -142,7 +100,7 @@ def validate(directory):
         if (not all(report.positive_integer(t) for t in (started, finished))
                 or not events[4]["monotonic_ns"] < started < finished < events[5]["monotonic_ns"]):
             raise ValueError("current status retry was not completed after the joined write failure")
-        status(retried.get("published_status"), previous=blocked["published_status"])
+        status_evidence.original_status(retried.get("published_status"), previous=blocked["published_status"])
         exact(retried, {"retry_started_ns": started, "retry_completed_ns": finished,
                         "published_status": retried["published_status"], "regular_file": True,
                         "original_batch_complete": False}, "retry lost current publication or rewrote the failed report")
@@ -158,7 +116,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    args = parser.parse_args()
-    print(json.dumps(validate(args.directory), indent=2, sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)

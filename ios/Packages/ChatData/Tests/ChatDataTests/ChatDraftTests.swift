@@ -51,7 +51,7 @@ final class ChatDraftTests: XCTestCase {
     } catch APIClientError.incompatibleData {}
   }
 
-  func testCanonicalThreadAndAgentDraftHTTPReadWriteAndExplicitNull() async throws {
+  func testMemberAndHistoricalLocalKeysUseCanonicalComposerAndThreadDraftRoutes() async throws {
     let writes = Mutex<[String: ComposerDraft]>([:])
     let paths = Mutex<[String]>([])
     let draft = try JSONDecoder().decode(
@@ -71,7 +71,7 @@ final class ChatDraftTests: XCTestCase {
         json: draft)
     }
     let repository = ChatDraftRepository(client: fixture.client)
-    for target in [ChatDraftTarget.agent("agent"), .thread("thread")] {
+    for target in [ChatDraftTarget.workspace, .agent("agent"), .thread("thread")] {
       let restored = try await repository.load(target)
       XCTAssertEqual(restored, draft)
       try await repository.save(restored, to: target)
@@ -80,8 +80,10 @@ final class ChatDraftTests: XCTestCase {
     XCTAssertEqual(
       paths.withLock { $0 },
       [
-        "GET /api/agents/agent/draft", "PATCH /api/agents/agent/draft",
-        "PATCH /api/agents/agent/draft", "GET /api/chat-threads/thread/draft",
+        "GET /api/chat-drafts/composer", "PATCH /api/chat-drafts/composer",
+        "PATCH /api/chat-drafts/composer",
+        "GET /api/chat-drafts/composer", "PATCH /api/chat-drafts/composer",
+        "PATCH /api/chat-drafts/composer", "GET /api/chat-threads/thread/draft",
         "PATCH /api/chat-threads/thread", "PATCH /api/chat-threads/thread"
       ])
     XCTAssertTrue(writes.withLock { $0.values.allSatisfy { $0 == ComposerDraft() } })

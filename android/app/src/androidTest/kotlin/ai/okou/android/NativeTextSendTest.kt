@@ -47,7 +47,10 @@ class NativeTextSendTest {
         val journal = ComposerJournalStore(app, directory)
         val fixture = ComposerApiFixture()
         val held = CountDownLatch(1)
+        val create = CountDownLatch(1)
+        val followup = CountDownLatch(1)
         fixture.beforeContextReturn = { held.await() }
+        fixture.beforeCreateReturn = { create.await() }
         app.chatService = fixture.service
         app.composerService = fixture.service
         app.journalStore = journal
@@ -68,6 +71,8 @@ class NativeTextSendTest {
                     .findObject(UiSelector().packageName(app.packageName).text(app.getString(id)))
                     .click()
             }
+            val send =
+                By.pkg(app.packageName).desc(app.getString(R.string.composer_send)).clickable(true)
             fun editor() =
                 checkNotNull(
                     device.wait(
@@ -95,9 +100,8 @@ class NativeTextSendTest {
                     )
                 )
             }
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
             click(R.string.composer_new)
-            text(app.getString(R.string.composer_target_loading))
             scenario.onActivity {
                 val ready =
                     checkNotNull(
@@ -132,13 +136,7 @@ class NativeTextSendTest {
                                             ?.value
                                             ?.canSend(target) == true
                                 }
-                                return ready &&
-                                    device
-                                        .findObject(
-                                            By.pkg(app.packageName)
-                                                .text(app.getString(R.string.composer_send))
-                                        )
-                                        ?.isEnabled == true
+                                return ready && device.findObject(send)?.isEnabled == true
                             }
                         },
                         10_000,
@@ -146,7 +144,16 @@ class NativeTextSendTest {
                 )
             }
             readyToSend(ComposerTarget())
-            click(R.string.composer_send)
+            checkNotNull(device.findObject(send)).click()
+            text("Native first message\n你好")
+            assertEquals(0, fixture.inputs.size)
+            val back = By.pkg(app.packageName).desc(app.getString(R.string.back))
+            checkNotNull(device.wait(Until.findObject(back), 10_000)).click()
+            device.awaitChatList(app)
+            text(app.getString(R.string.chat_untitled)).click()
+            text("Native first message\n你好")
+            assertEquals(0, fixture.inputs.size)
+            create.countDown()
             text("New conversation")
             assertEquals(1, fixture.inputs.size)
             editor().click()
@@ -156,11 +163,14 @@ class NativeTextSendTest {
             ime(false)
             readyToSend(
                 ComposerTarget(
-                    checkNotNull(fixture.created.single()["clientThreadId"]).jsonPrimitive.content,
-                    CHAT_AGENT,
+                    checkNotNull(fixture.created.single()["clientThreadId"]).jsonPrimitive.content
                 )
             )
-            click(R.string.composer_send)
+            fixture.beforeSendReturn = { followup.await() }
+            checkNotNull(device.findObject(send)).click()
+            text("Native follow-up")
+            assertEquals("", editor().text)
+            followup.countDown()
             assertTrue(
                 device.wait(
                     object : Condition<UiDevice, Boolean> {
@@ -173,7 +183,7 @@ class NativeTextSendTest {
             assertEquals("", editor().text)
             assertEquals(1, fixture.created.size)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            text(app.getString(R.string.chat_list_title))
+            device.awaitChatList(app)
         } catch (error: Throwable) {
             failures += error
             try {
@@ -183,6 +193,8 @@ class NativeTextSendTest {
             }
         } finally {
             held.countDown()
+            create.countDown()
+            followup.countDown()
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },

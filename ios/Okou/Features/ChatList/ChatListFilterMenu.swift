@@ -70,24 +70,22 @@ struct ChatListFilterMenu: UIViewRepresentable {
     var groups: [UIMenuElement] = [
       UIMenu(options: [.displayInline, .singleSelection], children: filters)
     ]
-    if let agentID = store.selectedAgentID {
-      let list = store.list
-      let enabled =
-        !list.markingAgentRead && list.updatingThreads.isEmpty
-        && (list.unreadAgentIDs.contains(agentID)
-          || list.threads.contains {
-            $0.agentID == agentID && !$0.isMuted && $0.indicator == .unread
-          })
-      groups.append(
-        UIMenu(
-          options: .displayInline,
-          children: [
-            UIAction(
-              title: String(localized: "Mark all as read"), image: OkouIcon.uiImage("check-check"),
-              attributes: enabled ? [] : .disabled
-            ) { _ in Task { await list.markAgentRead(agentID) } }
-          ]))
-    }
+    let list = store.list
+    let enabled =
+      !list.markingAllRead && list.updatingThreads.isEmpty
+      && (!list.unreadAgentIDs.isEmpty
+        || list.threads.contains {
+          !$0.isMuted && $0.indicator == .unread
+        })
+    groups.append(
+      UIMenu(
+        options: .displayInline,
+        children: [
+          UIAction(
+            title: String(localized: "Mark all as read"), image: OkouIcon.uiImage("check-check"),
+            attributes: enabled ? [] : .disabled
+          ) { _ in Task { await list.markAllRead() } }
+        ]))
     let newProject = newProject
     groups.append(
       UIMenu(

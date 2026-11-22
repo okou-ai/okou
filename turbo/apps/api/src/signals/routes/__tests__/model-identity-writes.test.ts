@@ -27,8 +27,8 @@ describe("model identity new writes", () => {
   it.each([null, "auto"])(
     "creates canonical Auto from intent %s",
     async (model) => {
-      const { actor, agentId } = await actorWithAgent();
-      const thread = await chat.createThread(actor, { agentId, model });
+      const { actor } = await actorWithAgent();
+      const thread = await chat.createThread(actor, { model });
       await expect(
         chat.readThreadMetadata(actor, thread.id),
       ).resolves.toMatchObject({
@@ -50,7 +50,7 @@ describe("model identity new writes", () => {
   );
 
   it("resolves an omitted creation model from the member's personal preference", async () => {
-    const { actor, agentId } = await actorWithAgent();
+    const { actor } = await actorWithAgent();
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-sonnet-5-5",
     });
@@ -60,7 +60,7 @@ describe("model identity new writes", () => {
     const created = await accept(
       client.create({
         headers: { authorization: "Bearer clerk-session" },
-        body: { agentId },
+        body: {},
       }),
       [201],
     );
@@ -80,7 +80,6 @@ describe("model identity new writes", () => {
       model: "claude-sonnet-5-5",
     });
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-sonnet-5-5",
     });
     await chat.updateThreadModelSelection(
@@ -137,12 +136,11 @@ describe("model identity new writes", () => {
   });
 
   it("keeps personal effort when switching to Auto and rejects Auto effort and Fast", async () => {
-    const { actor, agentId } = await actorWithAgent();
+    const { actor } = await actorWithAgent();
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-sonnet-5-5",
     });
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-sonnet-5-5",
     });
     await chat.updateThreadModelSelection(

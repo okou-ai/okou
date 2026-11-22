@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "Close"
+  },
   "activity": {
     "codex": {
       "codexError": "Codex error",
@@ -86,7 +89,6 @@
           "title": "Provider temporarily unavailable"
         }
       },
-      "fallbackAgent": "Agent",
       "fields": {
         "duration": "Duration",
         "model": "Model",
@@ -333,15 +335,12 @@
   },
   "appShell": {
     "pwaNavigation": {
-      "agentsUnavailable": "Could not load agents",
       "back": "Back",
       "backToChats": "Back to chats",
       "chatListUnavailable": "Could not load chats",
       "chats": "Chats",
       "me": "Me",
-      "navigation": "Main navigation",
-      "searchAgents": "Search agents",
-      "switchAgent": "Switch agent"
+      "navigation": "Main navigation"
     },
     "shortcutHelp": {
       "close": "Close keyboard shortcuts",
@@ -358,10 +357,8 @@
         "collapseProject": "Collapse Project",
         "expandProject": "Expand Project",
         "newChat": "New chat",
-        "nextAgent": "Next agent",
         "nextThread": "Next thread",
         "openFirstThread": "Open first thread",
-        "previousAgent": "Previous agent",
         "previousThread": "Previous thread",
         "renameChat": "Rename chat",
         "scrollBottom": "Scroll to bottom",
@@ -383,7 +380,6 @@
         "openAutomations": "Open mobile automations"
       },
       "navigation": {
-        "agents": "Agents",
         "artifacts": "Artifacts",
         "connectors": "Connectors",
         "settings": "Settings",
@@ -525,10 +521,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agent is still loading",
       "connect": "Connect Google Drive",
-      "connectTooltip": "Connect Google Drive to upload artifacts",
-      "conversionNotice": "Creates an editable copy. Some formatting may change.",
       "conversionUnconfirmed": "Google conversion could not be confirmed. Check Drive before retrying.",
       "openDocs": "Open in Google Docs",
       "openSheets": "Open in Google Sheets",
@@ -998,11 +991,9 @@
         "twentyFourHours": "24 hours"
       },
       "errors": {
-        "agentNotFound": "Agent not found",
-        "loadAgent": "Failed to load agent",
         "loadGrants": "Failed to load permission grants",
+        "loadMember": "Couldn’t load the workspace member.",
         "loadMetadata": "Failed to load permission metadata",
-        "missingAgentId": "Missing agent ID in URL parameters",
         "missingPermission": "Missing permission in URL parameters",
         "unknownAction": "Unknown permission action: {{action}}",
         "unknownConnector": "Unknown connector: {{connector}}",
@@ -1050,14 +1041,11 @@
       "invalid": "This permission link is invalid or unavailable.",
       "loadFailed": "Could not verify all requested permissions. No permissions can be changed.",
       "loading": "Loading permissions",
-      "myOkouScopeNote": "Applies to your use of Okou in this workspace, not only the current task.",
       "myOkouSharedScopeNote": "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.",
       "notNow": "Not now",
       "pending_one": "{{count}} permission to allow",
       "pending_other": "{{count}} permissions to allow",
       "review": "Review permissions",
-      "scopeNote": "Applies to this agent, not only the current task.",
-      "sharedScopeNote": "Applies to this connector across all your chats and agents.",
       "title": "Allow the following permissions"
     }
   },
@@ -1530,7 +1518,6 @@
           "action": "Check in",
           "description": "Check in once a day. Resets at 00:00 UTC.",
           "name": "Check in daily",
-          "pendingDescription": "Your check-in was saved. Credits will update after confirmation.",
           "unit": "a day"
         },
         "connector": {
@@ -1547,12 +1534,6 @@
         },
         "inReview": "In review",
         "intro": {
-          "checkin": {
-            "amount": "+{{amount}} credits",
-            "confirm": "Back to work",
-            "description": "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
-            "title": "Checked in for today"
-          },
           "connector": {
             "confirm": "Browse all connectors",
             "connected": "Connected",
@@ -1637,8 +1618,7 @@
         "whatsCooking": "What's cooking, {{userName}}?",
         "whatsOnYourMind": "What's on your mind, {{userName}}?",
         "whatsTheMove": "What's the move, {{userName}}?"
-      },
-      "viewAgentProfile": "View agent profile"
+      }
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
@@ -1650,9 +1630,19 @@
       "dismiss": "Dismiss",
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
+      "dontNudge": "Don’t nudge me",
+      "dontNudgeRecorded": "Noted — please don’t nudge me about this again",
+      "editDraft": "Prepare a draft in the existing chat",
       "editReason": "Edit reason",
+      "feedbackPrompt": "How is this suggestion?",
       "feedLabel": "Feed",
       "forYou": {
+        "cover": {
+          "change": "Change cover",
+          "default": "Default",
+          "gallery": "Covers",
+          "option": "Cover {{index}}"
+        },
         "loading": "Loading suggestions",
         "next": "Next suggestion",
         "previous": "Previous suggestion",
@@ -1665,10 +1655,11 @@
           "title": "For you sources",
           "whatsNew": "What’s new"
         },
-        "subtitle": "One thing at a time",
+        "subtitle": "Okou’s picks to handle",
         "title": "For you"
       },
       "homeCard": {
+        "completeDescription": "Okou will bring the next thing here when there is something worth your time.",
         "completeTitle": "All caught up",
         "feedback": "Suggestion actions",
         "navigation": "Browse suggestions",
@@ -1684,9 +1675,12 @@
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
       "sending": "Sending…",
+      "sendNew": "Send to a new chat",
       "sent": "Sent to a new chat",
+      "sentToChat": "Sent to the chat",
       "unavailable": "That suggestion is no longer available. Suggestions have been refreshed.",
-      "undoFeedback": "Undo"
+      "undoFeedback": "Undo",
+      "viewSource": "View source"
     },
     "attachments": {
       "attach": "Attach",
@@ -1824,7 +1818,7 @@
       "repair": "Repair",
       "repairRequired": "{{institution}} needs repair",
       "revoke": "Revoke",
-      "revokeConfirm": "Revoke this Agent's banking access?",
+      "revokeConfirm": "Revoke banking access for this workspace?",
       "selectAccounts": "Select accounts",
       "sevenDays": "7 days",
       "thirtyDays": "30 days",
@@ -1882,7 +1876,7 @@
       "optional": "(Optional)",
       "required": "(Required)",
       "savedPasswordsChrome": "Chrome (desktop): Right-click the username or password field, choose “Select password”, and search for the website.",
-      "savedPasswordsHelp": "How to fill",
+      "savedPasswordsHelp": "Use a saved password",
       "savedPasswordsHint": "You can use passwords saved in your browser.",
       "savedPasswordsSafari": "Safari (Mac): Click the key icon in the field, then choose “Other passwords…”.",
       "savedPasswordsSite": "Your browser may suggest your Okou account first. Search for the website shown above.",
@@ -2005,7 +1999,6 @@
     },
     "composer": {
       "add": "Add",
-      "agentSuggestions": "Agents",
       "configureModel": "Configure model",
       "create": {
         "addStyle": "Add style",
@@ -2017,7 +2010,7 @@
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
       },
-      "mentionHint": "Search agents or chats…",
+      "mentionHint": "Search chats or projects…",
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
@@ -2104,13 +2097,8 @@
       "unavailableTitle": "Account unavailable"
     },
     "connectors": {
-      "accountForThread": "Account for this chat",
-      "add": "Add {{connectorName}}",
       "addConnectors": "Add connectors",
-      "authorized": "{{connectorName}} connected and authorized for {{agentName}}",
       "back": "Back",
-      "configurePermissions": "Configure {{connectorName}} permissions",
-      "customAuthorizeDescription": "Review, connect, and authorize this custom connector for the agent.",
       "directory": {
         "allCategories": "All",
         "askAdmin": "Ask an admin to enable",
@@ -2140,14 +2128,8 @@
         "tabCustom": "Custom",
         "tabDiscover": "Discover"
       },
-      "fallsBackTo": "Falls back to {{account}}",
       "find": "Find connectors...",
-      "loadFailed": "Couldn't load connectors.",
-      "noUsableAccount": "No usable account",
-      "remove": "Remove {{connectorName}}",
-      "selectedAccountFor": "{{connector}} · Selected account: {{account}}",
-      "title": "Connectors",
-      "useDefault": "Use default"
+      "title": "Connectors"
     },
     "documentTitle": "Chat",
     "errors": {
@@ -2236,16 +2218,7 @@
       "sent": "New chat created"
     },
     "forward": {
-      "action": "Forward",
-      "agents": "Agents",
-      "back": "Back",
       "composerPlaceholder": "Add a message",
-      "content": "Content",
-      "description": "Send selected content to an agent or chat to continue working on it.",
-      "noResults": "No agents or chats found",
-      "search": "Search agents and chats...",
-      "sent": "Forwarded successfully",
-      "threads": "Chats",
       "title": "Forward to"
     },
     "mail": {
@@ -2311,10 +2284,11 @@
       "unavailable": "This email is no longer available."
     },
     "messageDocument": {
-      "agent": "[Agent: {{name}}]",
       "chatThread": "[Chat thread: {{title}}]",
       "file": "[File: {{filename}}]",
-      "template": "[Template: {{title}}]"
+      "template": "[Template: {{title}}]",
+      "voice": "Voice message",
+      "voiceClip": "Voice clip {{index}}"
     },
     "newChat": "New chat",
     "origins": {
@@ -2342,7 +2316,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "Agent not found",
       "allow": "Allow",
       "alreadyAllowed": "Already allowed",
       "alreadyDenied": "Already denied",
@@ -2357,6 +2330,7 @@
       "expiresInHours_one": "Expires in {{count}} hour",
       "expiresInHours_other": "Expires in {{count}} hours",
       "loadFailed": "Couldn't load permission status",
+      "memberNotFound": "Workspace member unavailable.",
       "otherEndpoints": "other endpoints",
       "unknown": "Unknown permission",
       "updated": "Permissions updated",
@@ -2505,19 +2479,29 @@
       "workingFor": "Working for {{duration}}"
     },
     "sharing": {
+      "accessNote": "Only you can change access.",
       "cancel": "Cancel",
       "close": "Close",
       "copyFailed": "Could not copy the link",
       "create": "Share",
       "createFailed": "Could not create the shared chat.",
+      "createLink": "Create link",
+      "deselectAll": "Deselect all",
       "deselectGroup": "Deselect message group",
+      "done": "Done",
       "everyone": "Everyone",
       "linkCopied": "Link copied",
+      "linkCreated_one": "Link created for {{count}} message",
+      "linkCreated_other": "Link created for {{count}} messages",
       "messageShareFailed": "The shared link could not be created.",
       "organizationDescription": "Only people in your organization",
+      "selectAll": "Select all",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
+      "selectedOfTotal_one": "{{count}} of {{total}} selected",
+      "selectedOfTotal_other": "{{count}} of {{total}} selected",
       "selectGroup": "Select message group",
+      "selectPrompt": "Select the messages to share",
       "shareLink": "Shared chat link",
       "start": "Share messages",
       "tooLarge": "Select fewer messages to share",
@@ -2819,7 +2803,6 @@
       "noEmojiFound": "No emoji found",
       "notFound": "Chat thread not found",
       "openBrowser": "Open browser",
-      "openNamedAgent": "Open agent {{name}}",
       "openNamedChat": "Open chat {{title}}",
       "pickEmoji": "Pick an emoji",
       "scrollToBottom": "Scroll to bottom",
@@ -2952,28 +2935,12 @@
     "totalAccounts": "{{value}} accounts"
   },
   "connectors": {
-    "access": {
-      "accessFor": "{{action}} {{connector}} access for {{agent}}",
-      "accessUpdated": "{{connector}} access updated",
-      "clearSearch": "Clear agent search",
-      "description": "Choose which agents can use this connector.",
-      "loading": "Loading agents...",
-      "managePermissions": "Manage permissions",
-      "managePermissionsFor": "Manage {{connector}} permissions for {{agent}}",
-      "noAgents": "No agents found",
-      "noMatchingAgents": "No agents matching \"{{search}}\"",
-      "permissionsUpdated": "Permissions updated",
-      "search": "Find agents",
-      "title": "Manage {{connector}} access",
-      "unnamedAgent": "Unnamed"
-    },
     "accounts": {
       "accountName": "Account name",
       "accountsUnavailable": "Accounts are unavailable for this connector.",
       "actions": "Account actions",
       "addAccount": "Add account",
       "connected": "Connected",
-      "default": "Default",
       "disconnectAccount": "Disconnect account",
       "disconnectDescription": "This disconnects the account from Okou. Threads using it will return to default inheritance. The provider account will not be deleted.",
       "disconnectDescriptionWithCount": "This disconnects the account from Okou. {{value}} threads will return to default inheritance. The provider account will not be deleted.",
@@ -2987,8 +2954,6 @@
       "find": "Find accounts",
       "loading": "Loading accounts…",
       "loadMore": "Load more",
-      "makeDefault": "Make default",
-      "managerDescription": "New runs use your default account.",
       "managerTitle": "Manage {{connector}} accounts",
       "namePromptDescription": "You can skip this and name the account later.",
       "namePromptTitle": "Name your {{connector}} account",
@@ -3002,7 +2967,6 @@
     },
     "actions": {
       "apply": "Apply",
-      "authorize": "Authorize",
       "cancel": "Cancel",
       "close": "Close",
       "closeWindow": "Close window",
@@ -3049,7 +3013,6 @@
     },
     "card": {
       "accessFor": "{{action}} {{connector}} access",
-      "authorized": "Authorized",
       "connectAria": "Connect {{connector}}",
       "connected": "Connected",
       "connectionExpired": "Connection expired",
@@ -3062,11 +3025,7 @@
     },
     "catalog": {
       "access": {
-        "add": "Add access",
-        "manage": "Manage {{connector}} access",
-        "summaryMany": "{{value}} agents",
-        "unavailable": "Access unavailable",
-        "usedBy": "Used by "
+        "manage": "Manage {{connector}} access"
       },
       "categories": {
         "ai": {
@@ -3122,8 +3081,6 @@
           "menu": "Sales and business"
         }
       },
-      "description": "Connect third-party services for your agents to use.",
-      "descriptionWithCount": "Connect {{value}} services for your agents to use.",
       "directory": {
         "browse": "Browse",
         "builtin": "Built-in connectors",
@@ -3137,18 +3094,13 @@
         "searchAll": "Search all connectors"
       },
       "empty": {
-        "agent": "No connectors for this agent",
         "connected": "No connected connectors",
-        "search": "No connectors matching \"{{search}}\"",
-        "unshared": "Every connector is shared with an agent"
+        "search": "No connectors matching \"{{search}}\""
       },
       "filterCategory": "Category",
       "filters": {
-        "agents": "Agents",
         "all": "All",
-        "allAgents": "All agents",
-        "aria": "Filter connectors",
-        "unshared": "Not shared with any agent"
+        "aria": "Filter connectors"
       },
       "filterWith": "Filter: {{category}}",
       "myOkouDescription": "Connect third-party services for your Okou to use.",
@@ -3178,8 +3130,7 @@
         "seeMore_other": "See {{names}} and {{count}} more",
         "top": "Top connectors"
       },
-      "title": "Connectors",
-      "unnamedAgent": "Unnamed"
+      "title": "Connectors"
     },
     "connectDialog": {
       "connectedAs": "Connected as {{username}}",
@@ -3300,7 +3251,7 @@
         "tokenUrl": "Token URL"
       },
       "delete": {
-        "description": "This removes the connector and every member's stored secret for it. Agents authorized for this connector will lose access immediately. This can't be undone.",
+        "description": "Deleting this connector immediately removes access and the secrets saved by all workspace members. This cannot be undone.",
         "title": "Delete {{connector}}?"
       },
       "edit": {
@@ -3323,9 +3274,6 @@
       }
     },
     "directed": {
-      "authorizeAgent": "Authorize {{agent}}",
-      "authorized": "{{connector}} authorized",
-      "authorizeDocumentTitle": "Authorize {{connector}}",
       "connectDocumentTitle": "Connect {{connector}}",
       "connected": "{{connector}} connected",
       "needsConnector": "{{agent}} needs {{connector}} to proceed",
@@ -3353,10 +3301,8 @@
       "allowOptions": "{{permission}} allow options",
       "always": "Always",
       "clearSearch": "Clear permission search",
-      "descriptionAgent": "Configure which actions this agent is allowed to perform via this connector.",
       "find": "Find permissions",
       "findPlaceholder": "Find permissions...",
-      "forTarget": "for {{target}}",
       "loadError": "Failed to load permission metadata",
       "loading": "Loading permissions...",
       "metadataMissing": "No permission metadata found for {{connector}}",
@@ -3413,13 +3359,13 @@
       },
       "github": {
         "accountFallback": "this GitHub account",
-        "alreadyDescription": "You're already connected as {{account}}. Mention your agent in GitHub issues or pull requests to start chatting.",
+        "alreadyDescription": "You’re connected as {{account}}. Mention Okou in a GitHub issue or pull request to chat.",
         "alreadyTitle": "Already connected to GitHub",
         "back": "Back to workflows",
         "checkingConnectionDescription": "Please wait while we check your GitHub connection.",
         "checkingConnectionTitle": "Checking connection...",
         "checkingSession": "Please wait while we verify your {{brandName}} session.",
-        "connectDescription": "Link your {{brandName}} account to {{account}} so GitHub mentions can run your agents from issues and pull requests.",
+        "connectDescription": "Link your {{brandName}} account to {{account}} to start chats from GitHub issues and pull requests.",
         "connectTitle": "Connect to GitHub",
         "errorFallback": "We couldn't connect GitHub. Try again from GitHub.",
         "invalidInstallation": "The GitHub installation on this link is not valid.",
@@ -3437,7 +3383,7 @@
         "signInCheckFailed": "Couldn't check sign-in",
         "signInDescription": "Use your {{brandName}} account before connecting this GitHub user.",
         "signInTitle": "Sign in to continue",
-        "successDescription": "You're connected as {{account}}. Mention your agent in GitHub issues or pull requests to start chatting.",
+        "successDescription": "You’re connected as {{account}}. Mention Okou in a GitHub issue or pull request to chat.",
         "successTitle": "Connected to GitHub!",
         "wrongOrganizationDescription": "Your active organization doesn't match this GitHub installation. Switch to the correct organization and open the link again.",
         "wrongOrganizationTitle": "Switch organization"
@@ -3452,7 +3398,7 @@
         "accountMismatchDescriptionWorkspace": "Your Okou account currently uses Slack account {{currentAccount}} in {{workspace}}. Switch to {{requestedAccount}}, the account that opened this link?",
         "accountMismatchTitle": "Switch Slack account?",
         "authorizationFailed": "Slack authorization was not completed. Your current connection is shown below. You can try again.",
-        "connectDescription": "Link your account to this Slack workspace so you can interact with your agent directly from Slack.",
+        "connectDescription": "Connect your account to chat with Okou in Slack.",
         "connectTitle": "Connect to Slack",
         "currentConnection": "Slack is connected",
         "errorFallback": "Could not check or start the Slack connection.",
@@ -3470,7 +3416,7 @@
       },
       "teams": {
         "authorize": "Authorize Microsoft Teams",
-        "connectDescription": "Link your Teams account so you can interact with your agent directly from Microsoft Teams.",
+        "connectDescription": "Connect your account to chat with Okou in Microsoft Teams.",
         "connectedDescription": "Your Teams account is connected.",
         "connectTitle": "Connect Microsoft Teams",
         "identityMismatch": "The requested Teams account or workspace does not match the current connection.",
@@ -3491,7 +3437,7 @@
         "checkingConnectionTitle": "Checking connection...",
         "conflictDescription": "You are connected as {{current}}, but this link requests {{requested}}. Keep your connection, or manage it explicitly before trying again.",
         "conflictTitle": "A different Telegram account is connected",
-        "connectDescription": "Link your account to this Telegram bot so you can interact with your agent directly from Telegram.",
+        "connectDescription": "Connect your account to chat with Okou in Telegram.",
         "connectionCheckFailed": "We couldn't reach Telegram to check the connection.",
         "connectTitle": "Connect to Telegram",
         "continue": "Continue with Telegram",
@@ -3546,7 +3492,6 @@
         "addBot": "Add bot",
         "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Feishu developer console.",
         "addDialogTitle": "Add a Feishu bot",
-        "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
         "botFallback": "Feishu bot",
         "botIconAlt": "{{bot}} bot icon",
@@ -3573,12 +3518,9 @@
           "imageAlt": "Feishu app creation result showing where to find the App ID and App Secret",
           "title": "Add the app credentials"
         },
-        "defaultAgent": "Default agent",
-        "defaultAgentAria": "Default agent for {{appId}}",
         "developerConsole": "Feishu developer console",
         "dialogAdminRequired": "An organization admin must configure the app. You can connect your own account from the Feishu bot list after setup is complete.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Add a custom app to route Feishu messages to an agent.",
         "emptyMember": "Ask an organization admin to add a Feishu bot.",
         "emptyTitle": "No Feishu bots yet",
         "events": {
@@ -3636,8 +3578,6 @@
         "reviewGuide": "Review guide",
         "reviewGuideDescription": "Review the completed setup steps for this Feishu bot.",
         "reviewGuideTitle": "Feishu review guide",
-        "routeDescription": "Route Feishu messages to agents",
-        "selectAgent": "Select an agent",
         "setupIncomplete": "Setup incomplete",
         "steps": {
           "back": "Back",
@@ -3678,7 +3618,6 @@
         "addBot": "Add bot",
         "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Lark developer console.",
         "addDialogTitle": "Add a Lark bot",
-        "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
         "botFallback": "Lark bot",
         "botIconAlt": "{{bot}} bot icon",
@@ -3705,12 +3644,9 @@
           "imageAlt": "Feishu app creation result showing where to find the App ID and App Secret",
           "title": "Add the app credentials"
         },
-        "defaultAgent": "Default agent",
-        "defaultAgentAria": "Default agent for {{appId}}",
         "developerConsole": "Lark developer console",
         "dialogAdminRequired": "An organization admin must configure the app. You can connect your own account from the Lark bot list after setup is complete.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Add a custom app to route Lark messages to an agent.",
         "emptyMember": "Ask an organization admin to add a Lark bot.",
         "emptyTitle": "No Lark bots yet",
         "events": {
@@ -3773,8 +3709,6 @@
         "reviewGuide": "Review guide",
         "reviewGuideDescription": "Review the completed setup steps for this Lark bot.",
         "reviewGuideTitle": "Lark review guide",
-        "routeDescription": "Route Lark messages to agents",
-        "selectAgent": "Select an agent",
         "setupIncomplete": "Setup incomplete",
         "steps": {
           "back": "Back",
@@ -4004,6 +3938,364 @@
       "requestFailed": "Request failed"
     }
   },
+  "ideation": {
+    "all": "All",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimize and transform images in bulk",
+            "title": "Cloudinary media optimizer"
+          },
+          "fal-ai-image-generation": {
+            "description": "Generate product images from descriptions in Notion",
+            "title": "Fal AI image generation"
+          }
+        },
+        "title": "Creative"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Paste a list and {{assistantName}} opens the issues for you",
+            "title": "Batch-create issues"
+          },
+          "browserbase-web-testing": {
+            "description": "Automated browser tests for your web app",
+            "title": "Browserbase web testing"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Weekly Slack recap of traffic and security events",
+            "title": "Cloudflare traffic & security report"
+          },
+          "codebase-investigation": {
+            "description": "Give a URL and {{assistantName}} traces the bug through the repo",
+            "title": "Codebase investigation"
+          },
+          "daily-standup-report": {
+            "description": "Morning metrics become a slide deck posted to Slack",
+            "title": "Daily standup report"
+          },
+          "deep-research-code-analysis": {
+            "description": "Explains how a subsystem works in your codebase",
+            "title": "Deep-research code analysis"
+          },
+          "github-pr-summarizer": {
+            "description": "Merged pull request summaries in Notion with optional Slack posts",
+            "title": "GitHub PR summarizer"
+          },
+          "github-progress-weekly": {
+            "description": "Weekly repo activity summarized by feature",
+            "title": "GitHub progress weekly"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Mirrors GitLab issues and merge requests into GitHub",
+            "title": "GitLab to GitHub migration helper"
+          },
+          "jira-github-issue-sync": {
+            "description": "Keeps Jira tickets and GitHub issues in sync",
+            "title": "Jira ↔ GitHub issue sync"
+          },
+          "make-scenario-builder": {
+            "description": "Design multi-step Make scenarios from a description",
+            "title": "Make scenario builder"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Weekly security and dependency alerts from GitHub",
+            "title": "Security & dependency alert digest"
+          },
+          "sentry-issue-digest": {
+            "description": "Morning digest of issues grouped by severity",
+            "title": "Sentry issue digest"
+          },
+          "vercel-deploy-digest": {
+            "description": "It links each deployment to its commit and alerts Slack when a deploy fails",
+            "title": "Vercel deploy digest"
+          },
+          "zapier-okou-migration": {
+            "description": "Recreate your Zapier workflows in {{brandName}}",
+            "title": "Zapier → {{brandName}} migration"
+          }
+        },
+        "title": "Engineering"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Opens a page in the browser and returns a screenshot",
+            "title": "Browser screenshots"
+          },
+          "calendar-optimizer": {
+            "description": "Helps with conflicts, overload, and focus time",
+            "title": "Calendar optimizer"
+          },
+          "calendly-booking-sync": {
+            "description": "New bookings on your calendar with a Slack ping",
+            "title": "Calendly booking sync"
+          },
+          "email-assistant": {
+            "description": "Morning inbox summary with suggested next steps",
+            "title": "Email assistant"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola meeting notes synced to a Notion database",
+            "title": "Granola notes to Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Forwards messages between Lark and Slack both ways",
+            "title": "Lark ↔ Slack message relay"
+          },
+          "line-message-relay": {
+            "description": "Forward LINE messages to Slack and vice versa",
+            "title": "LINE message relay"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies notes to Notion with follow ups in Slack",
+            "title": "Meeting notes pipeline"
+          },
+          "morning-brief": {
+            "description": "Email, calendar, and notes turned into a short daily plan",
+            "title": "Morning brief"
+          },
+          "perplexity-deep-research": {
+            "description": "AI-powered research summaries saved to Notion",
+            "title": "Perplexity deep research"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull requests, email, and calendar in one Slack update",
+            "title": "Personal weekly digest"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Posts team announcements to Slack for you",
+            "title": "Send messages on your behalf"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Weekly team activity summary posted to Slack",
+            "title": "Strava team fitness digest"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Search the web and compile findings in Notion",
+            "title": "Tavily web research pipeline"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Meeting recordings summarized in Notion with action items",
+            "title": "tl;dv meeting recap"
+          }
+        },
+        "title": "Everyone"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify scrapes sites into structured Google Sheets rows",
+            "title": "Apify web scraper to Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Automated email sequences from CRM events",
+            "title": "Brevo email nurture sequence"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl watches competitor sites and logs changes in Notion",
+            "title": "Competitive intel scraper"
+          },
+          "competitor-research-to-notion": {
+            "description": "Research on X saved as structured notes in Notion",
+            "title": "Competitor research to Notion"
+          },
+          "content-planner": {
+            "description": "Brainstorm topics and outline an editorial calendar",
+            "title": "Content planner"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Publishes Notion posts to Dev.to and links them on X",
+            "title": "Dev.to auto-publisher"
+          },
+          "discord-community-insights": {
+            "description": "Discord feedback in Notion with a weekly Slack digest",
+            "title": "Discord community insights"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Engagement in Sheets with weekly Slack summaries",
+            "title": "Instagram engagement tracker"
+          },
+          "loops-email-campaign": {
+            "description": "Draft and send transactional emails via Loops",
+            "title": "Loops email campaign"
+          },
+          "marketing-content-planning": {
+            "description": "Plans launch stories from Slack, interviews, and competitors",
+            "title": "Marketing content planning"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Finds onboarding angles from Slack and interviews",
+            "title": "Onboarding email use cases"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Track keyword rankings weekly and log to Sheets",
+            "title": "SerpAPI keyword tracker"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Traffic benchmarks versus competitors saved in Notion",
+            "title": "SimilarWeb traffic comparison"
+          },
+          "social-media-content-calendar": {
+            "description": "Turns a Sheets calendar into posts for each network",
+            "title": "Social media content calendar"
+          },
+          "x-brand-monitor": {
+            "description": "Brand mentions on X saved in Notion with team alerts",
+            "title": "X brand monitor"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "When a new YouTube video is published, generate a Notion summary and an X thread to promote it",
+            "title": "YouTube to X thread repurposer"
+          }
+        },
+        "title": "Marketing"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Create and manage inboxes with the AgentMail API",
+            "title": "AgentMail inbox"
+          },
+          "clickup-slack-standups": {
+            "description": "Daily ClickUp tasks posted as a standup in Slack",
+            "title": "ClickUp → Slack standups"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google Docs batches into Notion with layout preserved",
+            "title": "Google Docs → Notion migrator"
+          },
+          "google-drive-file-organizer": {
+            "description": "New files sorted into folders automatically",
+            "title": "Google Drive file organizer"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Form answers land in Notion with Slack notifications",
+            "title": "Jotform intake to Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Weekly board progress from Monday.com in Slack",
+            "title": "Monday.com weekly digest"
+          },
+          "pdf-contract-processor": {
+            "description": "Contract fields in Notion with reminders before expiry",
+            "title": "PDF contract processor"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Subscription metrics in Sheets with churn alerts in Slack",
+            "title": "RevenueCat subscription digest"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Todoist tasks mirrored in Notion for the team",
+            "title": "Todoist → Notion task sync"
+          },
+          "wrike-project-reporter": {
+            "description": "Weekly Wrike progress summaries in Slack",
+            "title": "Wrike project reporter"
+          },
+          "xero-financial-summary": {
+            "description": "Weekly profit and cash flow from Xero in Slack",
+            "title": "Xero financial summary"
+          }
+        },
+        "title": "Ops"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana milestones and tasks mirrored in Notion",
+            "title": "Asana → Notion project sync"
+          },
+          "feedback-router": {
+            "description": "Slack feedback routed by your rules to the right place",
+            "title": "Feedback router"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion specs become Linear projects and issues",
+            "title": "Linear PRD implementer"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Dashboard snapshots posted to Slack automatically",
+            "title": "Metabase dashboard digest"
+          },
+          "pricing-analysis": {
+            "description": "Analyze competitor pricing strategies and compare with similar products",
+            "title": "Pricing analysis"
+          },
+          "product-copy-naming": {
+            "description": "Friendlier names for technical terms in the product",
+            "title": "Product copy & naming"
+          }
+        },
+        "title": "Product"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Deals sync to Sheets and Slack when they close",
+            "title": "Airtable deal tracker"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "New Bitrix leads get follow-up tasks and Slack pings",
+            "title": "Bitrix24 lead nurture"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Weekly HubSpot summaries saved as structured reports",
+            "title": "HubSpot sales reporter"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "New leads become HubSpot tasks with Slack alerts",
+            "title": "Lead follow-up pipeline"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Weekly Salesforce opportunity updates in Slack",
+            "title": "Salesforce pipeline digest"
+          },
+          "streak-pipeline-report": {
+            "description": "Weekly CRM pipeline stats from Gmail in Slack",
+            "title": "Streak pipeline report"
+          },
+          "win-loss-reporter": {
+            "description": "Win and loss trends from the pipeline in Slack",
+            "title": "Win/loss reporter"
+          }
+        },
+        "title": "Sales"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Customer conversations logged and categorized in Notion",
+            "title": "Chatwoot → Notion support log"
+          },
+          "customer-support-bot": {
+            "description": "Answers from the knowledge base and tasks for gaps",
+            "title": "Customer support bot"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom chats become prioritized Notion tasks",
+            "title": "Intercom conversation triager"
+          },
+          "support-ticket-router": {
+            "description": "Tickets go to Notion and urgent ones ping Slack",
+            "title": "Support ticket router"
+          }
+        },
+        "title": "Support"
+      }
+    },
+    "categoryFilter": "Filter by category",
+    "chat": "Chat",
+    "description": "Click any card to start a conversation. It could become an on-demand task, a recurring workflow, or a subagent.",
+    "search": {
+      "accessibilityLabel": "Search use cases",
+      "empty": "No use cases match your search.",
+      "placeholder": "Search"
+    },
+    "title": "Ideas & Use Cases"
+  },
   "invitationRedirect": {
     "accountMismatch": {
       "title": "Invitation accepted for another account"
@@ -4100,7 +4392,6 @@
     }
   },
   "myOkou": {
-    "access": "Your access in this workspace",
     "conflict": "Your saved instructions changed elsewhere. Your draft is kept here. Review or copy it before reloading the latest saved instructions.",
     "description": "Your instructions for Okou in this workspace",
     "discard": "Discard",
@@ -4109,6 +4400,19 @@
     "loadError": "Couldn’t load your instructions. Try again.",
     "markdown": "Write in plain text or use Markdown",
     "placeholder": "Tell Okou how you like to work…",
+    "proactiveSettings": {
+      "cardsOnly": "New cards are on. Hourly checks and daily profile updates are off. Choose one setting for both.",
+      "choose": "Choose…",
+      "description": "Personalize how Okou works in this workspace.",
+      "hourlyOnly": "Hourly checks and daily profile updates are on. New cards are off. Choose one setting for both.",
+      "offers": "Receive offer cards in For you.",
+      "sourcesHint": "Turning off a card source stops new cards and unread alerts from that source. Existing cards stay in For you.",
+      "suggestions": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
+      "systemUpdates": "Receive system announcements in For you.",
+      "turnOff": "Turn both off",
+      "turnOn": "Turn both on",
+      "whatsNew": "Get updates about new Okou features in For you."
+    },
     "reload": "Reload saved instructions",
     "retry": "Retry",
     "save": "Save",
@@ -4854,18 +5158,29 @@
     }
   },
   "projects": {
+    "back": "Back",
     "close": "Close",
     "collapse": "Collapse",
+    "confirmDeleteThreads": "Permanently delete",
     "create": "Create Project",
     "delete": "Delete",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
+    "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
+    "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectOnly": "Delete project only",
+    "deleteThreadsDescription_one": "Permanently delete this Project and {{count}} thread, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
+    "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
+    "deleteThreadsError": "Deletion stopped. Some threads may already be permanently deleted. Check the Project and remaining threads before continuing.",
+    "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deletingThreads": "Deleting…",
+    "description": "Keep related chats together.",
     "empty": "No chats here yet",
     "expand": "Expand",
     "fromChat": "Create a Project from this chat",
+    "loadingThreads": "Loading threads…",
+    "loadThreadsError": "Could not load all threads. Try again before deleting them.",
     "move": "Move to Project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
@@ -4881,12 +5196,15 @@
     "removeFromNewChat": "Remove {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
+    "threadsChanged": "The threads in this Project have changed. Review the updated list and confirm again.",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project unavailable"
+    "unavailable": "Project unavailable",
+    "untitledThread": "Untitled thread"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} concurrent run",
@@ -4918,15 +5236,14 @@
       "pro": "Pro",
       "team": "Team"
     },
-    "title": "Your agent is waiting in line",
+    "title": "Your request is queued",
     "upgrade": {
       "action": "Upgrade to {{plan}}",
       "features": {
         "creditsPerMonth": "{{credits}} credits / month",
         "emailSupport": "Email support",
         "payAsYouGo": "Pay as you go after that",
-        "prioritySupport": "Priority support",
-        "unlimitedAgents": "Unlimited total agents"
+        "prioritySupport": "Priority support"
       },
       "proDescription": "Run multiple tasks in parallel and skip the queue.",
       "recommended": "Recommended",
@@ -5381,7 +5698,6 @@
         "startFailed": "Failed to start export"
       },
       "scope": {
-        "agentInstructions": "Instructions for agents you can access",
         "chatMessages": "Your chat messages",
         "chatThreads": "Your chat threads",
         "filesExcluded": "Artifact, attachment, and workflow supporting files are not included.",
@@ -5731,25 +6047,14 @@
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent.",
         "description": "Daily priorities by 7:00 AM in your time zone.",
         "errorMessage": "Morning Brief settings could not be loaded or updated.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
         "preparationFailed": "Temporarily unavailable.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
         "title": "Morning brief"
       },
-      "proactiveLearning": {
-        "description": "Review your activity overnight and improve personal memory.",
-        "errorMessage": "Could not load or update this setting.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
-        "missingTimezone": "Set your time zone in Preferences.",
-        "preparationFailed": "This workflow is temporarily unavailable.",
-        "preparing": "Preparing this workflow.",
-        "title": "Learning"
-      },
       "proactiveSuggestions": {
-        "description": "Let Okou check your connected sources every hour and suggest useful next steps on your home page.",
+        "description": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
         "errorMessage": "Proactive Suggestions settings could not be loaded or updated.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "Temporarily unavailable.",
         "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
@@ -5764,7 +6069,7 @@
       },
       "timezone": {
         "description": "Times shown to you and used for automation runs.",
-        "rowDescription": "Your agents will use this time zone during runs",
+        "rowDescription": "Okou uses this time zone during runs.",
         "rowTitle": "Time zone",
         "sectionTitle": "Time zone",
         "zones": {
@@ -5818,7 +6123,7 @@
         "title": "Your cards in Link"
       },
       "connect": "Connect",
-      "description": "Let your agents request purchases and view Link transactions. You approve each purchase.",
+      "description": "Let Okou request purchases and view Link transactions. You approve each purchase.",
       "disconnect": "Disconnect",
       "loadError": "Couldn’t load your wallet.",
       "scope": "Let Okou make purchases and view your Link activity.",
@@ -6037,6 +6342,22 @@
     "signUp": "Sign up",
     "tryItYourself": "Try it yourself"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "All",
+    "markAllRead": "Mark all read",
+    "noResults": "No results found",
+    "resultCount_one": "{{count}} result",
+    "resultCount_other": "{{count}} results",
+    "searching": "Searching...",
+    "searchWorkspace": "Search workspace...",
+    "sections": {
+      "artifacts": "Artifacts",
+      "chats": "Chats",
+      "messages": "Messages",
+      "workflows": "Workflows"
+    }
+  },
   "ssh": {
     "add": "Add host",
     "cancel": "Cancel",
@@ -6082,8 +6403,8 @@
       "summary_other": "{{count}} credentials configured",
       "unused": "Not used by any hosts"
     },
-    "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
-    "description": "Let your agents run commands on remote machines.",
+    "deleteHelp": "Delete this host? Its credential will be kept. Okou will lose access to the host.",
+    "description": "Let Okou run commands on remote machines.",
     "edit": "Edit host",
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
     "errors": {
@@ -6129,7 +6450,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH authentication failed. Check the system username, enable Tailscale SSH on the tagged destination and allow this login in the tailnet's SSH accept policy.",
-      "deleteHelp": "Delete this host? Agents will no longer see this host in the live inventory.",
+      "deleteHelp": "Delete this host? Okou will lose access to it.",
       "sshDocs": "Tailscale SSH documentation",
       "sshHelp": "Uses your selected Tailscale network identity without an SSH password or private key. Enable Tailscale SSH on a tagged destination and allow this system username in an SSH accept policy.",
       "sshTitle": "Tailscale SSH",
@@ -6164,6 +6485,9 @@
     },
     "title": "SSH access",
     "unavailable": "This request is unavailable. Ask for a new request."
+  },
+  "status": {
+    "unread": "Unread"
   },
   "tailscale": {
     "changed": "This Tailscale network changed. Your changes were not saved; your draft is preserved.",
@@ -6328,7 +6652,7 @@
       "usernamePasswordMethod": "Username and password"
     },
     "deleteHelp": "Delete this saved host? Its reusable credential will be kept.",
-    "description": "Let your agents view and control remote desktops.",
+    "description": "Let Okou view and control remote desktops.",
     "edit": "Edit host",
     "editHelp": "Changes apply to this saved host and invalidate its current connection configuration.",
     "errors": {
@@ -6927,20 +7251,15 @@
       }
     },
     "common": {
-      "agents": "Agents",
       "cancel": "Cancel",
       "close": "Close",
-      "copyWorkflow": "Copy workflow",
       "delete": "Delete",
       "deleteWorkflow": "Delete workflow",
       "instructions": "Instructions",
       "manual": "Manual",
-      "others": "Others",
-      "pinned": "Pinned",
       "private": "Private",
       "public": "Public",
       "settings": "Settings",
-      "view": "View",
       "workflow": "Workflow",
       "workflows": "Workflows"
     },
@@ -6950,36 +7269,14 @@
     },
     "createDialog": {
       "addAutomation": "Add automation",
-      "chooseAgentAutomation": "Choose the agent for this automation",
-      "chooseAgentWorkflow": "Choose the agent for this workflow.",
       "chooseWorkflow": "Choose a workflow to automate, or create one in chat.",
       "createAutomation": "Create Automation",
       "createInChat": "Create in chat",
       "createInChatDescription": "Start from a chat when no workflow fits yet.",
       "createWorkflow": "Create workflow",
-      "noAgents": "No agents yet",
-      "noAgentsFound": "No agents found",
       "noWorkflows": "No workflows yet. Create one in chat to continue."
     },
     "detail": {
-      "copy": {
-        "agentFallback": "the agent",
-        "copied": "Copied to {{agent}}",
-        "copyAndRemove": "Copy and remove",
-        "description": "Copy this workflow to another agent as a new private workflow.",
-        "moved": "Moved to {{agent}}",
-        "moveDescription": "Original removed from {{agent}}.",
-        "noAgents": "No other agents yet",
-        "privateReady": "A private copy is ready.",
-        "removalAlert": "This deletes the original",
-        "removalNoAutomations": "This workflow is deleted from {{agent}}.",
-        "removalWithAutomations_one": "{{count}} automation is paused on {{agent}} and this workflow is deleted.",
-        "removalWithAutomations_other": "{{count}} automations are paused on {{agent}} and this workflow is deleted.",
-        "removeOriginal": "Remove the original from {{agent}} after copying",
-        "selectAgent": "Choose an agent",
-        "title": "Copy workflow",
-        "to": "Copy to"
-      },
       "delete": {
         "confirm": "{{title}} and all bound automations will be deleted.",
         "dangerDescription": "Delete this workflow and its automations. This action cannot be undone.",
@@ -7001,16 +7298,10 @@
         "upload": "Upload text files",
         "uploadAria": "Upload workflow files"
       },
-      "info": {
-        "copyDescription": "Copy this workflow to another agent.",
-        "copyTitle": "Copy workflow"
-      },
       "metadata": {
-        "agent": "Agent",
-        "agentDescription": "This workflow belongs to this agent.",
         "aria": "Workflow metadata",
         "description": "Description",
-        "descriptionHelp": "Tell the agent when to use this workflow.",
+        "descriptionHelp": "Describe when Okou should use this workflow.",
         "name": "Name",
         "nameHelp": "Shown in workflow lists and when choosing a workflow.",
         "namePlaceholder": "Workflow name",
@@ -7025,12 +7316,7 @@
       "notFound": "Workflow not found.",
       "refineWith": "Refine with {{agent}}",
       "sectionNavigation": "Workflow details section",
-      "shadow": {
-        "end": "for you. This workflow is shadowed by the same-slug priority rule.",
-        "resolvesTo": "currently resolves to"
-      },
       "visibility": {
-        "adminRequired": "Publishing a workflow under an agent you do not own requires org admin permissions.",
         "automationWarning": "Automations will stop",
         "confirmDescription": "This is a dangerous operation. While this workflow is private, automations other members built on it stop running.",
         "confirmTitle": "Make this workflow private?",
@@ -7041,8 +7327,8 @@
     },
     "editor": {
       "aria": "Instructions editor",
-      "footer": "Edit the instructions directly to customize your agent's behavior.",
-      "placeholder": "Write instructions for your agent...",
+      "footer": "Edit the instructions for this workflow.",
+      "placeholder": "Write instructions for this workflow…",
       "toolbar": {
         "blockquote": "Blockquote",
         "bold": "Bold",
@@ -7058,9 +7344,7 @@
     },
     "list": {
       "actionRequired": "Action required",
-      "agentEmpty": "No workflows run as this agent yet.",
       "all": "All",
-      "allAgents": "All agents",
       "automated": "Automated",
       "automations": "Automations",
       "createdBy": "Created by",
@@ -7078,8 +7362,6 @@
       "openRecovery": "Open {{title}} recovery",
       "ownerLoading": "Loading author…",
       "ownerUnavailable": "Author unavailable",
-      "runsAs": "Runs as",
-      "runsAsAria": "Runs as {{agent}}",
       "section": {
         "event": "On automation",
         "later": "Later",
@@ -7133,6 +7415,18 @@
       "uninstalling": "Uninstalling…",
       "updatePermissions": "Update Permissions"
     },
+    "channelExamples": {
+      "email": "Forward an email to Okou and ask for a summary or a draft reply.",
+      "feishu": "Send Okou a draft in Feishu and ask for a shorter version to share with your team.",
+      "github": "When a pull request opens, run a workflow to prepare a review checklist.",
+      "lark": "Send Okou a draft in Lark and ask for a shorter version to share with your team.",
+      "phone": "Text {{assistantName}} a rough idea from your iPhone and ask for a first draft.",
+      "slack": "Mention Okou in a Slack channel and ask for a second opinion on a draft.",
+      "teams": "Paste your meeting notes into Teams and ask Okou to pull out the action items.",
+      "telegram": "Send Okou two options in Telegram and ask for the pros and cons of each.",
+      "wechat": "Send Okou two options in WeChat and ask for the pros and cons of each.",
+      "whatsapp": "Send Okou two options in WhatsApp and ask for the pros and cons of each."
+    },
     "connected": "Connected",
     "connectedWithDetail": "Connected ({{detail}})",
     "discord": {
@@ -7141,7 +7435,7 @@
       "authorizationError": "Discord authorization could not be completed.",
       "cancelled": "Discord authorization was cancelled.",
       "chooseWorkspace": "Choose a workspace",
-      "connectDescription": "Connect your Discord account to chat with your agent.",
+      "connectDescription": "Connect your account to chat with Okou in Discord.",
       "connectedTitle": "Connected to Discord",
       "connectTitle": "Connect to Discord",
       "defaultWorkspace": "Default workspace for Discord",
@@ -7219,17 +7513,16 @@
       "uninstallTitle": "Uninstall Microsoft Teams integration?"
     },
     "telegram": {
-      "description": "Route Telegram messages to agents",
+      "description": "Connect Telegram to Okou.",
       "title": "Telegram"
     },
     "wechat": {
       "accountLabel": "Account",
-      "agentLabel": "Agent",
       "code": "Verification code",
       "connect": "Connect",
       "connected": "Connected",
       "creating": "Creating QR code…",
-      "description": "Chat with your agent in WeChat.",
+      "description": "Chat with Okou in WeChat.",
       "disconnect": "Disconnect",
       "expired": "This QR code expired. Create a new one.",
       "failed": "Could not connect to WeChat.",
@@ -7243,7 +7536,7 @@
       "restoreDescription": "Restore this WeChat connection to the account and workspace below.",
       "returnToWechat": "Return to WeChat and send a message to start chatting.",
       "scanned": "Scanned. Confirm on your phone.",
-      "scope": "Only your direct messages to this agent are connected. Text messages are supported.",
+      "scope": "Only direct messages to Okou are connected. Text messages are supported.",
       "title": "Connect WeChat",
       "unavailable": "Connection is not configured yet.",
       "verification_blocked": "Too many verification attempts. Create a new QR code.",
@@ -7255,7 +7548,7 @@
     "whatsapp": {
       "codeError": "Could not create a connection code. Try again.",
       "connect": "Connect WhatsApp",
-      "connectDescription": "Link your WhatsApp account to {{brandName}} to chat with your agent.",
+      "connectDescription": "Link your WhatsApp account to {{brandName}} to chat with Okou.",
       "connected": "WhatsApp connected",
       "description": "Chat with Okou directly from WhatsApp",
       "disconnected": "WhatsApp disconnected",

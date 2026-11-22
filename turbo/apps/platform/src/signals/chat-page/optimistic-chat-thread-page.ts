@@ -7,7 +7,6 @@ import type {
   UserMessageDocument,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
 import { phoneUseContract } from "@okouai/api-contracts/client/phone-use";
 import type { PhoneUseSelection } from "@okouai/api-contracts/contracts/phone-use";
@@ -29,7 +28,7 @@ import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { logger } from "../log.ts";
-import { clearAgentDraftById$ } from "../okou-page/agent-draft.ts";
+import { clearComposerDraft$ } from "../okou-page/workspace-draft.ts";
 import {
   talkDraft$,
   type DraftSignals,
@@ -53,7 +52,6 @@ import {
 } from "../okou-page/user-message-document-codec.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { sendChatEvent } from "./chat-event-api.ts";
-import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
 import { loadRightThread$ } from "./chat-thread-pane-navigation.ts";
@@ -72,7 +70,6 @@ import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
 export type NewChatThreadPane = "main" | "sidebar";
 
 interface NewChatThreadTarget {
-  readonly agentId: string;
   readonly projectId?: string;
 }
 
@@ -86,14 +83,13 @@ export const newChatThreadDisabled$ = computed(() => {
 });
 
 interface SendNewThreadMessageRequest {
-  agentId: string;
   /** A prepared title skips automatic title generation. */
   title?: string;
   /** The Project the new thread starts in. */
   projectId?: string;
   draft?: DraftSignals;
   /** Send from an isolated draft without clearing the Agent's saved composer. */
-  preserveAgentDraft?: boolean;
+  preserveWorkspaceDraft?: boolean;
   prompt: string;
   /** Undefined uses the composer selection; null resolves the member default. */
   modelSelection?: ModelProviderSelection | null;
@@ -108,7 +104,6 @@ interface SendNewThreadMessageRequest {
   forward?: ChatForwardContext;
   /** Runs once the new thread is published, before its send is confirmed. */
   onOptimisticSend?: (threadId: string) => void;
-  connectorSelections?: readonly ConnectorAccountSelection[];
   initialConnectorAccess?: PendingChatConnectorAccess;
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   initialPhoneUse?: PhoneUseSelection;
@@ -153,27 +148,6 @@ function userMessageForNewThread(
   return userMessage;
 }
 
-function annotatedMessagesForNewThread(
-  request: SendNewThreadMessageRequest,
-  userMessage: UserMessageInputDocument,
-  modelSelection: ModelProviderSelection,
-): {
-  readonly annotatedUserMessage: UserMessageDocument;
-  readonly optimisticUserMessage: UserMessageDocument;
-} {
-  const annotatedUserMessage = withSelectedModelAnnotation(
-    userMessage,
-    modelSelection.selectedModel,
-    apiServiceTierFromSelection(modelSelection) ?? undefined,
-  );
-  return {
-    annotatedUserMessage,
-    optimisticUserMessage: request.forward
-      ? withOptimisticAgentRunSource(annotatedUserMessage, request.forward)
-      : annotatedUserMessage,
-  };
-}
-
 function createNewThreadOptimisticEventEntry({
   threadId,
   clientEventId,
@@ -198,7 +172,6 @@ function createNewThreadOptimisticEventEntry({
 }
 
 function newThreadSendBody({
-  agentId,
   threadId,
   clientEventId,
   prepared,
@@ -209,7 +182,6 @@ function newThreadSendBody({
   cloudBrowserEnabled,
   sourceRunId,
 }: {
-  agentId: string;
   threadId: string;
   clientEventId: string;
   prepared: PreparedNewThreadPayload;
@@ -222,7 +194,6 @@ function newThreadSendBody({
 }) {
   const runOptions = runOptionsFromModelProviderSelection(modelSelection);
   return {
-    agentId,
     prompt: prepared.prompt,
     threadId,
     hasTextContent: prepared.hasTextContent,
@@ -311,8 +282,7 @@ const routeMainChatThread$ = command(
     if (next.get(SIDEBAR_PARAM) === args.threadId) {
       next.delete(SIDEBAR_PARAM);
     }
-    // The mobile composer request belongs to the agent chat URL, not to the
-    // thread it starts.
+    // The mobile compose parameter applies only on the start page.
     next.delete(PWA_COMPOSE_PARAM);
     set(detachedNavigateTo$, "/chats/:threadId", {
       pathParams: { threadId: args.threadId },
@@ -363,7 +333,6 @@ const mintOptimisticThreadWithEvent$ = command(
     args: {
       readonly threadId: string;
       readonly eventId: string;
-      readonly agentId: string;
       readonly projectId?: string;
       readonly title?: string;
       readonly selectedModel: string | null;
@@ -377,13 +346,11 @@ const mintOptimisticThreadWithEvent$ = command(
     signal.throwIfAborted();
     L.debug("optimistic thread minted", {
       threadId: args.threadId,
-      agentId: args.agentId,
     });
     set(registerOptimisticChatThreadEvent$, {
       id: args.eventId,
       kind: "created",
       chatThreadId: args.threadId,
-      agentId: args.agentId,
       projectId: args.projectId,
       title: args.title ?? null,
       selectedModel: args.selectedModel,
@@ -398,7 +365,6 @@ const mintOptimisticThreadWithEvent$ = command(
 async function createChatThread(
   args: {
     readonly createClient: ApiClientFactory;
-    readonly agentId: string;
     readonly projectId?: string;
     readonly title: string | undefined;
     readonly clientThreadId: string;
@@ -407,7 +373,6 @@ async function createChatThread(
     readonly models: AvailableRunModelsResponse;
     readonly catalog: ModelCatalog;
     readonly codexExecution: boolean;
-    readonly connectorSelections?: readonly ConnectorAccountSelection[];
     readonly initialConnectorAccess?: PendingChatConnectorAccess;
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
     readonly initialPhoneUse?: PhoneUseSelection;
@@ -427,7 +392,6 @@ async function createChatThread(
   await accept(
     client.create({
       body: {
-        agentId: args.agentId,
         projectId: args.projectId,
         clientThreadId: args.clientThreadId,
         eventId: args.eventId,
@@ -437,12 +401,6 @@ async function createChatThread(
           ? {}
           : { reasoningEffort: selectedEffort }),
         ...(args.title ? { title: args.title } : {}),
-        ...(args.connectorSelections?.length
-          ? {
-              connectorSelections: [...args.connectorSelections],
-              connectorSelectionPolicy: "required" as const,
-            }
-          : {}),
         ...(args.initialRemoteAccessOverrides?.length
           ? {
               initialRemoteAccessOverrides: [
@@ -455,7 +413,6 @@ async function createChatThread(
     }),
     [201],
     signal,
-    { expectedErrors: { 400: ["CONNECTOR_ACCOUNT_UNAVAILABLE"] } },
   );
   signal.throwIfAborted();
   // The Chat must exist before its scoped preferences can be saved, and all
@@ -513,7 +470,7 @@ const startNewChatThreadCreate$ = command(
     readonly threadId: string;
     readonly createResult: Promise<void>;
   }> => {
-    const { agentId, projectId } = target;
+    const { projectId } = target;
     const threadId = crypto.randomUUID();
     const eventId = crypto.randomUUID();
     const models = await get(availableRunModels$);
@@ -536,7 +493,6 @@ const startNewChatThreadCreate$ = command(
       {
         threadId,
         eventId,
-        agentId,
         projectId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
@@ -553,7 +509,6 @@ const startNewChatThreadCreate$ = command(
       await createChatThread(
         {
           createClient,
-          agentId,
           projectId,
           title: undefined,
           clientThreadId: threadId,
@@ -612,11 +567,7 @@ const mintNewThreadSubmission$ = command(
     { set },
     request: Pick<
       SendNewThreadMessageRequest,
-      | "agentId"
-      | "projectId"
-      | "title"
-      | "computerUseHostId"
-      | "cloudBrowserEnabled"
+      "projectId" | "title" | "computerUseHostId" | "cloudBrowserEnabled"
     >,
     identity: Omit<PendingThreadIdentity, "intent">,
     submission: {
@@ -642,7 +593,6 @@ const mintNewThreadSubmission$ = command(
       {
         threadId: identity.threadId,
         eventId: identity.chatThreadEventId,
-        agentId: request.agentId,
         projectId: request.projectId,
         title: request.title,
         selectedModel: modelSelection.selectedModel,
@@ -701,7 +651,6 @@ const reserveNewThreadSubmissionIdentity$ = command(
     const identity = customDirection
       ? await customDirectionIdentity(
           JSON.stringify({
-            agentId: request.agentId,
             userMessage: {
               ...userMessage,
               parts: userMessage.parts.filter((part) => {
@@ -713,14 +662,12 @@ const reserveNewThreadSubmissionIdentity$ = command(
       : set(
           draft.reserveThreadIdentity$,
           JSON.stringify({
-            agentId: request.agentId,
             projectId: request.projectId,
             title: request.title,
             userMessage,
             modelSelection,
             computerUseHostId: request.computerUseHostId,
             cloudBrowserEnabled: request.cloudBrowserEnabled,
-            connectorSelections: request.connectorSelections,
             initialConnectorAccess: request.initialConnectorAccess,
             initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
             initialPhoneUse: request.initialPhoneUse,
@@ -754,8 +701,8 @@ const clearSubmittedNewThreadDraft$ = command(
       return;
     }
     set(draft.clear$);
-    if (!request.forward && !request.preserveAgentDraft) {
-      await set(clearAgentDraftById$, request.agentId, signal);
+    if (!request.forward && !request.preserveWorkspaceDraft) {
+      await set(clearComposerDraft$, signal);
     }
   },
 );
@@ -777,7 +724,6 @@ function newThreadRecordOptions(args: {
   const { createClient, request, identity, resolved, codexExecution } = args;
   return {
     createClient,
-    agentId: request.agentId,
     projectId: request.projectId,
     title: request.title,
     clientThreadId: identity.threadId,
@@ -786,7 +732,6 @@ function newThreadRecordOptions(args: {
     models: resolved.models,
     catalog: resolved.catalog,
     codexExecution,
-    connectorSelections: request.connectorSelections,
     initialConnectorAccess: request.initialConnectorAccess,
     initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
     initialPhoneUse: request.initialPhoneUse,
@@ -798,7 +743,6 @@ function requiresThreadBeforeSend(
   customDirection: boolean,
 ): boolean {
   return Boolean(
-    request.connectorSelections?.length ||
     request.initialConnectorAccess ||
     request.initialPhoneUse ||
     customDirection,
@@ -814,7 +758,7 @@ const sendNewThreadMessage$ = command(
     readonly threadId: string;
     readonly sendResult: Promise<void>;
   } | null> => {
-    const { agentId, prompt } = request;
+    const { prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
     const draft = request.draft ?? get(talkDraft$);
     const submittedInput = get(draft.input$);
@@ -841,12 +785,11 @@ const sendNewThreadMessage$ = command(
     }
     const features = await get(featureSwitches$);
     signal.throwIfAborted();
-    const { annotatedUserMessage, optimisticUserMessage } =
-      annotatedMessagesForNewThread(
-        request,
-        userMessageForNewThread(request, prepared),
-        resolvedModelSelection,
-      );
+    const annotatedUserMessage = withSelectedModelAnnotation(
+      userMessageForNewThread(request, prepared),
+      resolvedModelSelection.selectedModel,
+      apiServiceTierFromSelection(resolvedModelSelection) ?? undefined,
+    );
     const { threadId, clientEventId, chatThreadEventId, customDirection } =
       await set(
         reserveNewThreadSubmissionIdentity$,
@@ -878,7 +821,6 @@ const sendNewThreadMessage$ = command(
       signal.throwIfAborted();
     }
     const sendBody = newThreadSendBody({
-      agentId,
       threadId,
       clientEventId,
       prepared,
@@ -902,7 +844,7 @@ const sendNewThreadMessage$ = command(
       { threadId, clientEventId, chatThreadEventId },
       {
         modelSelection: resolvedModelSelection,
-        userMessage: optimisticUserMessage,
+        userMessage: annotatedUserMessage,
       },
       signal,
     );

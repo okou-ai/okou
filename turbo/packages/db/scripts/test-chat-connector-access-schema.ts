@@ -9,18 +9,13 @@ export async function validateChatConnectorAccessSchema(
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   const accountId = randomUUID();
-  const agentId = randomUUID();
   const threadId = randomUUID();
   const grantId = randomUUID();
   const owner = `chat-access-${randomUUID()}`;
   try {
     await client.query(
-      "INSERT INTO agents (id,org_id,owner,name) VALUES ($1,$2,$2,$3)",
-      [agentId, owner, owner],
-    );
-    await client.query(
-      "INSERT INTO chat_threads (id,user_id,agent_id) VALUES ($1,$2,$3)",
-      [threadId, owner, agentId],
+      "INSERT INTO chat_threads (id,user_id,org_id) VALUES ($1,$2,$2)",
+      [threadId, owner],
     );
     // Frozen outgoing ORM INSERT/RETURNING: the new field is omitted entirely.
     const preceding = await client.query(
@@ -104,7 +99,6 @@ export async function validateChatConnectorAccessSchema(
       [{ permission: "read" }],
     );
   } finally {
-    await client.query("DELETE FROM agents WHERE id=$1", [agentId]);
     await client.query("DELETE FROM connectors WHERE id=$1", [accountId]);
     await client.query("DELETE FROM connector_permission_grants WHERE id=$1", [
       grantId,

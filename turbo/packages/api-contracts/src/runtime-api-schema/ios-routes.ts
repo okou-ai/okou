@@ -1,6 +1,8 @@
-import { agentConnectorAccessContract } from "../contracts/agent-connector-access";
-import { agentCustomConnectorsContract } from "../contracts/agent-custom-connectors";
-import { agentDraftContract } from "../contracts/agent-draft";
+import { array } from "zod";
+import {
+  agentDraftContract,
+  composerDraftContract,
+} from "../contracts/agent-draft";
 import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
@@ -15,13 +17,16 @@ import { chatRemoteAccessContract } from "../contracts/chat-remote-access";
 import { chatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import {
   chatThreadArchiveContract,
+  chatThreadArtifactFileSchema,
+  chatThreadArtifactRunSchema,
+  chatSearchContract,
   chatThreadArtifactsContract,
   chatThreadByIdContract,
   chatThreadComputerUseHostContract,
   chatThreadConnectorSelectionContract,
   chatThreadDraftContract,
   chatThreadEventsContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
   chatThreadMetadataContract,
@@ -65,7 +70,6 @@ import { hostContract } from "../contracts/host";
 import { iosNotificationsContract } from "../contracts/ios-notifications";
 import { instructionsContract } from "../contracts/instructions";
 import { iosPushRegistrationsContract } from "../contracts/ios-push-registrations";
-import { mcpChatSearchContract } from "../contracts/mcp-chat-search";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { orgContract } from "../contracts/org-routes";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
@@ -76,9 +80,7 @@ import { runModelsMainContract } from "../contracts/run-models";
 import { runConnectorAccountsContract } from "../contracts/run-connector-accounts";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { uploadsContract } from "../contracts/uploads";
-import { userBuiltinConnectorsContract } from "../contracts/user-connectors";
 import { userModelPreferenceContract } from "../contracts/user-model-preference";
-import { userPermissionGrantsContract } from "../contracts/user-permission-grants";
 import { userPreferencesContract } from "../contracts/user-preferences";
 import { vncConnectionsContract } from "../contracts/vnc-connections";
 import { webFilesContract } from "../contracts/web-files";
@@ -92,11 +94,26 @@ import {
 import { iosUpgradeRequiredSchema } from "../contracts/ios-client-compatibility";
 import type { RuntimeApiRouteBinding, RuntimeApiRouteLike } from "./routes";
 
+const chatThreadArtifactsList = chatThreadArtifactsContract.list;
+// The native route returns the file inventory without Drive enrichment.
+const iosChatThreadArtifactFileSchema = chatThreadArtifactFileSchema.omit({
+  googleDriveConnectionId: true,
+  googleDriveSync: true,
+});
+const iosChatThreadArtifactsResponseSchema =
+  chatThreadArtifactsList.responses[200].extend({
+    runs: array(
+      chatThreadArtifactRunSchema.extend({
+        files: array(iosChatThreadArtifactFileSchema),
+      }),
+    ),
+  });
+
 /** iOS API consumption inventory, including dynamic chat actions and connector auth.
  * Add route references when adding calls in ios/Packages/ChatData or the App.
  * Wire DTO generation is independent; this gate protects installed Codable readers.
  */
-const iosContracts: readonly {
+export const iosClientContracts: readonly {
   readonly id: string;
   readonly route: RuntimeApiRouteLike & {
     readonly responses: Readonly<Record<number, unknown>>;
@@ -104,22 +121,8 @@ const iosContracts: readonly {
 }[] = [
   { id: "ios.instructionsContract.get", route: instructionsContract.get },
   { id: "ios.instructionsContract.update", route: instructionsContract.update },
-  {
-    id: "ios.agentConnectorAccessContract.agent",
-    route: agentConnectorAccessContract.agent,
-  },
-  {
-    id: "ios.agentCustomConnectorsContract.get",
-    route: agentCustomConnectorsContract.get,
-  },
-  {
-    id: "ios.agentCustomConnectorsContract.update",
-    route: agentCustomConnectorsContract.update,
-  },
-  { id: "ios.agentDraftContract.get", route: agentDraftContract.get },
-  { id: "ios.agentDraftContract.patch", route: agentDraftContract.patch },
-  { id: "ios.agentsByIdContract.get", route: agentsByIdContract.get },
-  { id: "ios.agentsMainContract.list", route: agentsMainContract.list },
+  { id: "ios.composerDraftContract.get", route: composerDraftContract.get },
+  { id: "ios.composerDraftContract.patch", route: composerDraftContract.patch },
   {
     id: "ios.artifactCatalogContract.list",
     route: artifactCatalogContract.list,
@@ -196,12 +199,22 @@ const iosContracts: readonly {
   },
   {
     id: "ios.chatThreadArtifactsContract.list",
-    route: chatThreadArtifactsContract.list,
+    route: {
+      ...chatThreadArtifactsList,
+      responses: {
+        ...chatThreadArtifactsList.responses,
+        200: iosChatThreadArtifactsResponseSchema,
+      },
+    },
   },
   { id: "ios.chatThreadByIdContract.get", route: chatThreadByIdContract.get },
   {
     id: "ios.chatThreadByIdContract.patch",
     route: chatThreadByIdContract.patch,
+  },
+  {
+    id: "ios.chatThreadByIdContract.delete",
+    route: chatThreadByIdContract.delete,
   },
   {
     id: "ios.chatThreadComputerUseHostContract.update",
@@ -233,8 +246,8 @@ const iosContracts: readonly {
     route: chatThreadEventsContract.snapshot,
   },
   {
-    id: "ios.chatThreadMarkAgentReadContract.markAgentRead",
-    route: chatThreadMarkAgentReadContract.markAgentRead,
+    id: "ios.chatThreadMarkAllReadContract.markAllRead",
+    route: chatThreadMarkAllReadContract.markAllRead,
   },
   {
     id: "ios.chatThreadMarkReadContract.markRead",
@@ -420,8 +433,8 @@ const iosContracts: readonly {
     route: iosPushRegistrationsContract.unregister,
   },
   {
-    id: "ios.mcpChatSearchContract.search",
-    route: mcpChatSearchContract.search,
+    id: "ios.chatSearchContract.search",
+    route: chatSearchContract.search,
   },
   { id: "ios.modelCatalogContract.get", route: modelCatalogContract.get },
   { id: "ios.orgContract.get", route: orgContract.get },
@@ -469,32 +482,12 @@ const iosContracts: readonly {
   },
   { id: "ios.uploadsContract.prepare", route: uploadsContract.prepare },
   {
-    id: "ios.userBuiltinConnectorsContract.get",
-    route: userBuiltinConnectorsContract.get,
-  },
-  {
-    id: "ios.userBuiltinConnectorsContract.update",
-    route: userBuiltinConnectorsContract.update,
-  },
-  {
     id: "ios.userModelPreferenceContract.get",
     route: userModelPreferenceContract.get,
   },
   {
     id: "ios.userModelPreferenceContract.update",
     route: userModelPreferenceContract.update,
-  },
-  {
-    id: "ios.userPermissionGrantsContract.apply",
-    route: userPermissionGrantsContract.apply,
-  },
-  {
-    id: "ios.userPermissionGrantsContract.applyBatch",
-    route: userPermissionGrantsContract.applyBatch,
-  },
-  {
-    id: "ios.userPermissionGrantsContract.list",
-    route: userPermissionGrantsContract.list,
   },
   { id: "ios.userPreferencesContract.get", route: userPreferencesContract.get },
   { id: "ios.vncConnectionsContract.list", route: vncConnectionsContract.list },
@@ -562,15 +555,26 @@ const iosContracts: readonly {
   },
 ];
 
-export const iosRouteBindings: readonly RuntimeApiRouteBinding[] =
-  iosContracts.map(({ id, route }) => {
-    return {
-      id,
-      owner: "ios",
-      // The global compatibility middleware can answer 426 before route matching.
-      route: {
-        ...route,
-        responses: { ...route.responses, 426: iosUpgradeRequiredSchema },
-      },
-    };
-  });
+// Keep checking the server contracts used by installed builds until the mobile
+// version floor excludes them. New Swift calls use iosClientContracts only.
+const installedIosAgentContracts = [
+  { id: "ios.agentDraftContract.get", route: agentDraftContract.get },
+  { id: "ios.agentDraftContract.patch", route: agentDraftContract.patch },
+  { id: "ios.agentsByIdContract.get", route: agentsByIdContract.get },
+  { id: "ios.agentsMainContract.list", route: agentsMainContract.list },
+];
+
+export const iosRouteBindings: readonly RuntimeApiRouteBinding[] = [
+  ...iosClientContracts,
+  ...installedIosAgentContracts,
+].map(({ id, route }) => {
+  return {
+    id,
+    owner: "ios",
+    // The global compatibility middleware can answer 426 before route matching.
+    route: {
+      ...route,
+      responses: { ...route.responses, 426: iosUpgradeRequiredSchema },
+    },
+  };
+});

@@ -3,6 +3,7 @@ import {
   expandProject$,
   restoreProjectExpansion$,
 } from "./project-expansion.ts";
+import { closeProjectDialog$, type ProjectDialog } from "./project-ui.ts";
 import { now, nowDate } from "../../lib/time.ts";
 import { command, computed, state } from "ccstate";
 import { projectsContract } from "@okouai/api-contracts/client/projects";
@@ -17,10 +18,8 @@ import {
   lastProjectSortOrder,
   moveProjectSortOrder,
 } from "@okouai/core/project-sort-order";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { infer as zInfer } from "zod";
 import { installedSharedDatabaseBridge$ } from "../shared-database-bridge-state.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { rootVersion$ } from "../root-signal.ts";
@@ -33,9 +32,6 @@ import {
   registerOptimisticChatThreadEvent$,
 } from "../chat-page/chat-thread-event-sourcing.ts";
 
-export const projectsEnabled$ = computed(async (get) => {
-  return (await get(featureSwitches$))[FeatureSwitchKey.SingleAgent] ?? false;
-});
 type OptimisticProjectRename = Pick<
   ProjectEvent,
   "id" | "projectId" | "createdAt"
@@ -93,7 +89,7 @@ function unsettledMoves(
   }
   return moves.slice(settledThrough + 1);
 }
-export const projectedProjects$ = computed((get) => {
+export const projects$ = computed((get) => {
   const owner = get(projectState$);
   const value = get(owner.events$);
   const persistedIds = new Set(
@@ -139,9 +135,6 @@ export const projectedProjects$ = computed((get) => {
     .sort(compareProjectSortOrder);
 });
 
-export const projects$ = computed(async (get) => {
-  return (await get(projectsEnabled$)) ? get(projectedProjects$) : [];
-});
 /**
  * Projects created on this page that the server has not persisted yet. A chat
  * cannot start inside one until its creation lands.
@@ -166,10 +159,7 @@ export const unconfirmedProjectIds$ = computed((get) => {
 export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
-    if (!(await get(projectsEnabled$))) {
-      set(owner.events$, null);
-      return;
-    }
+
     const result = await get(installedSharedDatabaseBridge$).query(
       {
         dataKey: { kind: "project-event" },
@@ -198,13 +188,10 @@ export const syncProjects$ = command(
     });
   },
 );
-export const hydrateProjects$ = command(
+export const hydrateProjectCache$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
-    if (!(await get(projectsEnabled$))) {
-      set(owner.events$, null);
-      return;
-    }
+
     await set(restoreProjectExpansion$, signal);
     signal.throwIfAborted();
     // Cache hydration belongs to the session, not each route. Keep the current
@@ -223,21 +210,29 @@ export const hydrateProjects$ = command(
         set(owner.events$, cached);
       }
     }
-    await set(syncProjects$, signal);
-    // An open chat reveals its Project the first time; a Project page leaves
-    // the Project folded the way its member left it.
-    const threadId = get(pathParams$)?.threadId;
-    const projectId =
-      typeof threadId === "string"
-        ? get(eventDrivenChatThreads$).find((thread) => {
-            return thread.id === threadId;
-          })?.projectId
-        : null;
-    if (projectId) {
-      set(expandProject$, projectId, { ifUnset: true });
-    }
   },
 );
+export const hydrateProjects$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    await set(hydrateProjectCache$, signal);
+
+    await set(syncProjects$, signal);
+  },
+);
+export const revealCurrentThreadProject$ = command(({ get, set }) => {
+  // An open chat reveals its Project the first time; a Project page leaves
+  // the Project folded the way its member left it.
+  const threadId = get(pathParams$)?.threadId;
+  const projectId =
+    typeof threadId === "string"
+      ? get(eventDrivenChatThreads$).find((thread) => {
+          return thread.id === threadId;
+        })?.projectId
+      : null;
+  if (projectId) {
+    set(expandProject$, projectId, { ifUnset: true });
+  }
+});
 function operation() {
   return createProjectOperationId(now(), crypto.randomUUID());
 }
@@ -257,24 +252,18 @@ export const waitForProjectCreation$ = command(
 export const createProject$ = command(
   async (
     { get, set },
-    {
-      name,
-      fromThreadId,
-      open = false,
-    }: {
-      readonly name: string;
-      /** A chat that moves into the new Project as it is created. */
-      readonly fromThreadId?: string;
-      /** Open the new Project's page, where the next chat starts inside it. */
-      readonly open?: boolean;
-    },
+    dialog: Extract<ProjectDialog, { kind: "editor" }>,
+    name: string,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
+    const projects = get(projects$);
+    signal.throwIfAborted();
+    const { fromThreadId } = dialog;
     const owner = get(projectState$);
     const eventId = operation();
     const createdAt = nowDate().toISOString();
-    const sortOrder = lastProjectSortOrder(get(projectedProjects$));
+    const sortOrder = lastProjectSortOrder(projects);
     const confirmation = accept(
       get(apiClient$)(projectsContract).create({
         body: { id: eventId, eventId, name, fromThreadId },
@@ -300,7 +289,7 @@ export const createProject$ = command(
       ];
     });
     set(expandProject$, eventId);
-    if (open) {
+    if (dialog.fromComposer) {
       // The page opens on the optimistic Project; a chat sent from it waits
       // for the creation to be confirmed.
       set(detachedNavigateTo$, ROUTES.project, {
@@ -315,11 +304,11 @@ export const createProject$ = command(
         id: eventId,
         kind: "project_updated",
         chatThreadId: thread.id,
-        agentId: thread.agentId,
         projectId: eventId,
         createdAt: thread.sortAt,
       });
     }
+    set(closeProjectDialog$, dialog);
     const result = await confirmation;
     signal.throwIfAborted();
     await set(syncProjects$, signal);
@@ -374,7 +363,7 @@ export const reorderProject$ = command(
   ) => {
     signal.throwIfAborted();
     const updates = moveProjectSortOrder(
-      await get(projects$),
+      get(projects$),
       projectId,
       targetId,
       side,
@@ -428,18 +417,19 @@ export const renameProject$ = command(
     await set(syncProjects$, signal);
   },
 );
-export const deleteProject$ = command(
+export const deleteProjectWithEventId$ = command(
   async (
     { get, set },
-    id: string,
-    onDeleted: () => void,
+    dialog: Extract<ProjectDialog, { kind: "delete" }>,
+    eventId: string,
     signal: AbortSignal,
   ) => {
+    const id = dialog.projectId;
     await set(waitForProjectCreation$, id, signal);
     await accept(
       get(apiClient$)(projectsContract).delete({
         params: { id },
-        body: { eventId: operation() },
+        body: { eventId },
         fetchOptions: { signal },
       }),
       [204],
@@ -449,8 +439,17 @@ export const deleteProject$ = command(
     // The Project has left the list; chat synchronization must not keep its
     // confirmation dialog open.
     signal.throwIfAborted();
-    onDeleted();
+    set(closeProjectDialog$, dialog);
     await set(catchUpChatThreadEventSource$, signal);
+  },
+);
+export const deleteProject$ = command(
+  async (
+    { set },
+    dialog: Extract<ProjectDialog, { kind: "delete" }>,
+    signal: AbortSignal,
+  ) => {
+    await set(deleteProjectWithEventId$, dialog, operation(), signal);
   },
 );
 export const moveProjectThread$ = command(
@@ -470,7 +469,6 @@ export const moveProjectThread$ = command(
         id: eventId,
         kind: "project_updated",
         chatThreadId: threadId,
-        agentId: thread.agentId,
         projectId,
         createdAt: thread.sortAt,
       });
@@ -492,5 +490,24 @@ export const moveProjectThread$ = command(
       signal,
     );
     await set(catchUpChatThreadEventSource$, signal);
+  },
+);
+
+export const moveProjectThreadFromDialog$ = command(
+  async (
+    { set },
+    dialog: Extract<ProjectDialog, { kind: "membership" }>,
+    projectId: string | null,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const completion = set(
+      moveProjectThread$,
+      dialog.threadId,
+      projectId,
+      signal,
+    );
+    set(closeProjectDialog$, dialog);
+    await completion;
   },
 );

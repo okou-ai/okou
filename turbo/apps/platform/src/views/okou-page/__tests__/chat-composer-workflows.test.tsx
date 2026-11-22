@@ -32,7 +32,7 @@ import {
 } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
-const { mockActiveTemplateThread, mockAgent, mockThread } =
+const { mockActiveTemplateThread, mockThread } =
   createChatComposerHelpers(context);
 
 function installWorkflows(read: () => readonly ComposerWorkflow[]): void {
@@ -155,7 +155,6 @@ test("Multiple inline templates preserve every reference when you send", async (
     throw new Error("Expected at least two presentation templates");
   }
   let sentTemplateTitles: string[] = [];
-  mockAgent();
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "My thread",
@@ -215,7 +214,6 @@ test("Multiple inline templates preserve every reference when you send", async (
 });
 
 test("Insert an attached workflow with slash suggestions", async () => {
-  mockAgent();
   mockThread();
   installWorkflows(() => {
     return [
@@ -267,7 +265,6 @@ test("Insert an attached workflow with slash suggestions", async () => {
 });
 
 test("Reopen workflow suggestions after clearing a pending draft", async () => {
-  mockAgent();
   mockThread();
   const response = context.mocks.deferred<void>();
   const workflows = [workflow("pr-review")];
@@ -308,7 +305,6 @@ test("Reopen workflow suggestions after clearing a pending draft", async () => {
 });
 
 test("Find and insert a workflow with an abbreviated name", async () => {
-  mockAgent();
   mockThread();
   installWorkflows(() => {
     return [
@@ -347,7 +343,6 @@ test("Find and insert a workflow with an abbreviated name", async () => {
 });
 
 test("Keep exact workflow names at the top ahead of prefixes, substrings, and abbreviations", async () => {
-  mockAgent();
   mockThread();
   installWorkflows(() => {
     return [
@@ -387,7 +382,6 @@ test("Send a template while the current run is active", async () => {
   if (!template) {
     throw new Error("Expected a presentation template");
   }
-  mockAgent();
   mockActiveTemplateThread();
   installWorkflows(() => {
     return [];
@@ -423,7 +417,6 @@ test("Use the workflow template picker to send a workflow template", async () =>
     throw new Error("Expected the GitHub PR summarizer workflow template");
   }
   let sentTemplateTitle: string | undefined;
-  mockAgent();
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Workflow templates",
@@ -466,7 +459,6 @@ test("Use the workflow template picker to send a workflow template", async () =>
 });
 
 test("Workflow category filters narrow templates and preserve the search", async () => {
-  mockAgent();
   mockThread();
   installWorkflows(() => {
     return [];
@@ -514,7 +506,6 @@ test("Wait for a template attachment before sending", async () => {
   const publicUrl = `https://cdn.vm7.io/chat/${uploadId}/brief.txt`;
   const uploadGate = context.mocks.deferred<void>();
   let sends = 0;
-  mockAgent();
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Template upload",
@@ -568,7 +559,6 @@ test("Wait for a template attachment before sending", async () => {
 });
 
 test("Distinguish workflow tokens from text inside URLs", async () => {
-  mockAgent();
   mockThread();
   installWorkflows(() => {
     return [workflow("pr-review")];
@@ -594,7 +584,6 @@ test("Distinguish workflow tokens from text inside URLs", async () => {
 });
 
 test("Highlight a workflow in a restored draft", async () => {
-  mockAgent();
   mockThread();
   installWorkflows(() => {
     return [workflow("pr-review")];

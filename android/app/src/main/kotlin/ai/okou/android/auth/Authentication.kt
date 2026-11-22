@@ -1,6 +1,10 @@
 package ai.okou.android.auth
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
+
+data class NativeAccount(val userId: String, val email: String)
 
 data class NativeSession(
     val userId: String,
@@ -29,10 +33,12 @@ data class WorkspaceMembership(val id: String, val name: String, val role: Strin
 /** Credentials, authentication attempts and protocol callbacks remain owned by the SDK. */
 interface Authentication {
     val state: StateFlow<AuthenticationState>
+    val account: Flow<NativeAccount?>
+        get() = emptyFlow()
 
     fun initialize()
 
-    suspend fun refresh(expected: NativeSession)
+    suspend fun refresh(expected: NativeSession): MembershipAccess?
 
     suspend fun memberships(expected: NativeSession): List<WorkspaceMembership>
 

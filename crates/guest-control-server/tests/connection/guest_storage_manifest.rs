@@ -6,6 +6,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use guest_contracts::storage_files::{self, StorageFile};
 use guest_control_proto::{
     ExecCapturedOutput, ExecTermination, GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES,
     MSG_GUEST_STORAGE_MANIFEST, MSG_GUEST_STORAGE_MANIFEST_RESULT, MSG_OPERATIONS_QUIESCED,
@@ -23,6 +24,12 @@ fn create_program(body: &str) -> (tempfile::TempDir, PathBuf) {
     (directory, path)
 }
 
+fn create_program_comparing_stdin(checks: &str, input: &[u8]) -> (tempfile::TempDir, PathBuf) {
+    let (directory, path) = create_program(&format!("{checks}\ncmp - \"$0.expected\""));
+    std::fs::write(path.with_extension("expected"), input).unwrap();
+    (directory, path)
+}
+
 fn send_request(
     stream: &mut impl Write,
     seq: u32,
@@ -31,6 +38,24 @@ fn send_request(
     runtime_dir: &str,
     manifest_json: &[u8],
 ) {
+    stream
+        .write_all(&request_frame(
+            seq,
+            timeout_ms,
+            run_id,
+            runtime_dir,
+            manifest_json,
+        ))
+        .unwrap();
+}
+
+fn request_frame(
+    seq: u32,
+    timeout_ms: u32,
+    run_id: &str,
+    runtime_dir: &str,
+    manifest_json: &[u8],
+) -> Vec<u8> {
     let payload = guest_control_proto::encode_guest_storage_manifest_request(
         timeout_ms,
         run_id,
@@ -38,8 +63,22 @@ fn send_request(
         manifest_json,
     )
     .unwrap();
-    let frame = guest_control_proto::encode(MSG_GUEST_STORAGE_MANIFEST, seq, &payload).unwrap();
-    stream.write_all(&frame).unwrap();
+    guest_control_proto::encode(MSG_GUEST_STORAGE_MANIFEST, seq, &payload).unwrap()
+}
+
+fn storage_input_files(file_count: u8) -> Vec<StorageFile> {
+    (0..file_count)
+        .map(|index| StorageFile {
+            path: format!("file-{index}"),
+            mode: 0o644,
+            mtime: 1,
+            content: vec![index; storage_files::MAX_FILE_BYTES],
+        })
+        .collect()
+}
+
+fn storage_input(file_count: u8) -> Vec<u8> {
+    storage_files::encode_input(b"{}", &[("/mount", &storage_input_files(file_count))]).unwrap()
 }
 
 struct TestResult {
@@ -180,6 +219,132 @@ printf 'helper stderr\n' >&2
 }
 
 #[test]
+fn fragmented_large_storage_input_reaches_helper_and_preserves_next_frame() {
+    use guest_control_proto::{MSG_PING, MSG_PONG};
+
+    let input = storage_input(16);
+    #[cfg(target_os = "linux")]
+    let argument = storage_files::SEALED_STDIN_ARGUMENT;
+    #[cfg(not(target_os = "linux"))]
+    let argument = storage_files::STDIN_ARGUMENT;
+    let (_directory, program) = create_program_comparing_stdin(
+        &format!("[ \"$1\" = '{argument}' ]; [ \"$OKOU_RUN_ID\" = storage-run ]"),
+        &input,
+    );
+    let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
+
+    let mut frame = request_frame(420, 5_000, "storage-run", "/run/storage-run", &input);
+    frame.extend_from_slice(&guest_control_proto::encode(MSG_PING, 421, &[]).unwrap());
+    host.write_all(&frame).unwrap();
+    let first = read_message(&mut host);
+    let second = read_message(&mut host);
+    let (result, pong) = if first.msg_type == MSG_PONG {
+        (second, first)
+    } else {
+        (first, second)
+    };
+    assert_eq!((pong.msg_type, pong.seq), (MSG_PONG, 421));
+    assert!(pong.payload.is_empty());
+    assert_eq!(
+        (result.msg_type, result.seq),
+        (MSG_GUEST_STORAGE_MANIFEST_RESULT, 420)
+    );
+    let result =
+        guest_control_proto::decode_guest_storage_manifest_result(&result.payload).unwrap();
+    assert_eq!(
+        result.result.termination,
+        ExecTermination::Exited { exit_code: 0 }
+    );
+    finish_guest_connection(handle, host);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn decoded_storage_input_over_eight_mib_reaches_helper_through_sealed_stdin() {
+    let input = storage_input(32);
+    assert!(input.len() > 8 * 1024 * 1024);
+    assert_storage_input_transport(&input, storage_files::SEALED_STDIN_ARGUMENT, "-f");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn decoded_storage_input_with_rpc_context_above_map_limit_uses_pipe() {
+    let first = storage_input_files(30);
+    let mut second = storage_input_files(29);
+    second.push(StorageFile {
+        path: "remainder".into(),
+        mode: 0o644,
+        mtime: 1,
+        content: Vec::new(),
+    });
+    let payload_len =
+        storage_files::encoded_payload_len(&[("/first", &first), ("/second", &second)]).unwrap();
+    second
+        .last_mut()
+        .unwrap()
+        .content
+        .resize(storage_files::MAX_PAYLOAD_BYTES - payload_len, 255);
+    let mut manifest = br#"{
+        "storageMounts": [
+            {"mountPath":"/first","archiveUrl":"file:///tmp/unused-first"},
+            {"mountPath":"/second","archiveUrl":"file:///tmp/unused-second"}
+        ]
+    }"#
+    .to_vec();
+    manifest.resize(storage_files::MAX_MANIFEST_BYTES, b' ');
+    let input = storage_files::encode_input(&manifest, &[("/first", &first), ("/second", &second)])
+        .unwrap();
+    // The RPC context puts the whole received file beyond this helper-input limit.
+    assert_eq!(input.len(), storage_files::MAX_INPUT_BYTES);
+    assert_storage_input_transport(&input, storage_files::STDIN_ARGUMENT, "-p");
+}
+
+#[cfg(target_os = "linux")]
+fn assert_storage_input_transport(input: &[u8], argument: &str, file_test: &str) {
+    let (_directory, program) = create_program_comparing_stdin(
+        &format!("[ \"$1\" = '{argument}' ]; [ {file_test} /proc/self/fd/0 ]"),
+        input,
+    );
+    let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
+
+    send_request(
+        &mut host,
+        423,
+        5_000,
+        "storage-run",
+        "/run/storage-run",
+        input,
+    );
+    let result = read_result(&mut host, 423);
+    assert_eq!(
+        result.termination,
+        ExecTermination::Exited { exit_code: 0 },
+        "helper stderr: {}",
+        String::from_utf8_lossy(&result.stderr),
+    );
+    finish_guest_connection(handle, host);
+}
+
+#[test]
+fn truncated_large_storage_input_does_not_start_helper() {
+    let (_directory, program) = create_program(r#"touch "$0.started""#);
+    let sentinel = program.with_extension("started");
+    let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
+
+    let mut frame = request_frame(
+        422,
+        5_000,
+        "storage-run",
+        "/run/storage-run",
+        &storage_input(32),
+    );
+    frame.pop().unwrap();
+    host.write_all(&frame).unwrap();
+    finish_guest_connection(handle, host);
+    assert!(!sentinel.exists());
+}
+
+#[test]
 fn guest_storage_manifest_returns_nonzero_exit_and_captured_diagnostic_output() {
     let (_directory, program) = create_program(
         r#"
@@ -250,7 +415,6 @@ fn guest_storage_manifest_timeout_kills_and_reaps_process_group() {
 
 #[test]
 fn decoded_storage_timeout_reaps_helper_without_reading_blocked_bulk_stdin() {
-    use guest_contracts::storage_files::{self, StorageFile};
     let pid_path = unique_pid_path("storage-files-timeout");
     let mut process_guard = ProcessGroupFileGuard::new(pid_path.as_str());
     let (_directory, program) = create_program(&format!(
@@ -258,13 +422,7 @@ fn decoded_storage_timeout_reaps_helper_without_reading_blocked_bulk_stdin() {
         pid_path.as_str()
     ));
     let (handle, mut host, timeout_gate) = start_with_timeout_gate(program, None);
-    let files = vec![StorageFile {
-        path: "file".into(),
-        mode: 0o644,
-        mtime: 1,
-        content: vec![42; 256 * 1024],
-    }];
-    let input = storage_files::encode_input(b"{}", &[("/mount", &files)]).unwrap();
+    let input = storage_input(3);
     send_request(&mut host, 414, 20, "run", "/run", &input);
     let pid = process_guard.read_pid();
     assert_eq!(

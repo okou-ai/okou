@@ -55,9 +55,6 @@ import {
   ROUTES,
   type RouteKey,
 } from "../route-paths.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
-import { defaultAgentId$, currentAgentId$ } from "../agent.ts";
 import { ensureDraft$ } from "../chat-page/create-chat-thread.ts";
 import {
   reloadWorkflowData$,
@@ -66,19 +63,11 @@ import {
 import { onRef, settle } from "../utils.ts";
 import { recordRecentWorkflowUse$ } from "../okou-page/recent-workflows.ts";
 
-export const singleAgentWorkflows$ = computed(async (get) => {
-  return (await get(featureSwitches$))[FeatureSwitchKey.SingleAgent];
-});
-
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
 export type WorkflowFilter =
   "all" | "automated" | "without" | "private" | "public";
 export type WorkflowSortMode = "next-run" | "alphabetical" | "created";
-export interface WorkflowCopyFormState {
-  readonly selectedAgentId: string | null;
-  readonly removeOriginal: boolean;
-}
 
 type GmailTextField = "from" | "subject" | "body" | "to" | "cc";
 export type GmailTextOperator = "contains" | "containsAny" | "doesNotContain";
@@ -94,12 +83,6 @@ function defaultGmailMatchConditions(): readonly GmailMatchCondition[] {
   return [{ field: "from", operator: "contains", value: "" }];
 }
 
-function defaultWorkflowCopyForm(): WorkflowCopyFormState {
-  return {
-    selectedAgentId: null,
-    removeOriginal: false,
-  };
-}
 export type WorkflowAutomationCreateDialog =
   | "chat-run-finished"
   | "interval"
@@ -253,9 +236,6 @@ const internalWorkflowDetailActiveTab$ =
 const internalSelectedFilePath$ = state<string | null>(null);
 const internalWorkflowActionDialog$ = state<WorkflowDetailActionDialog>(null);
 const internalWorkflowDemoteConfirmOpen$ = state<boolean>(false);
-const internalWorkflowCopyForm$ = state<WorkflowCopyFormState>(
-  defaultWorkflowCopyForm(),
-);
 const internalWorkflowFileDraft$ = state<WorkflowDetailFileDraft | null>(null);
 const internalWorkflowFileEditorRevision$ = state(0);
 const internalWorkflowAutomationEditor$ = state<{
@@ -312,16 +292,8 @@ export const setWorkflowDemoteConfirmOpen$ = command(
   },
 );
 
-export const workflowCopyForm$ = computed((get) => {
-  return get(internalWorkflowCopyForm$);
-});
-
 const FILTER_PARAM = "filter";
 const SORT_MODE_PARAM = "sort";
-const AGENT_PARAM = "agent";
-
-/** The sentinel agent-filter value that clears the agent scope. */
-export const WORKFLOW_ALL_AGENTS = "all";
 
 function readSearchParam<T extends string>(
   params: URLSearchParams,
@@ -351,15 +323,6 @@ export const workflowSortMode$ = computed((get): WorkflowSortMode => {
     ["next-run", "alphabetical", "created"],
     "next-run",
   );
-});
-
-/**
- * The agent the list is scoped to, keyed by agent uuid, or `WORKFLOW_ALL_AGENTS`
- * when unscoped. The value is validated against the visible agents in the view,
- * so an unknown id simply yields an empty list.
- */
-export const workflowAgentFilter$ = computed((get): string => {
-  return get(searchParams$).get(AGENT_PARAM) ?? WORKFLOW_ALL_AGENTS;
 });
 
 function nextSearchParams(
@@ -395,32 +358,9 @@ export const setWorkflowSortMode$ = command(
   },
 );
 
-export const setWorkflowAgentFilter$ = command(
-  ({ get, set }, value: string) => {
-    set(
-      replaceSearchParams$,
-      nextSearchParams(
-        get(searchParams$),
-        AGENT_PARAM,
-        value,
-        WORKFLOW_ALL_AGENTS,
-      ),
-    );
-  },
-);
-
 export const setWorkflowActionDialog$ = command(
   ({ set }, dialog: WorkflowDetailActionDialog) => {
-    if (dialog === "copy") {
-      set(internalWorkflowCopyForm$, defaultWorkflowCopyForm());
-    }
     set(internalWorkflowActionDialog$, dialog);
-  },
-);
-
-export const setWorkflowCopyForm$ = command(
-  ({ set }, form: WorkflowCopyFormState) => {
-    set(internalWorkflowCopyForm$, form);
   },
 );
 
@@ -474,7 +414,7 @@ export const resetWorkflowDetailUiState$ = command(({ set }) => {
   set(internalWorkflowDetailActiveTab$, "automations");
   set(internalSelectedFilePath$, null);
   set(internalWorkflowActionDialog$, null);
-  set(internalWorkflowCopyForm$, defaultWorkflowCopyForm());
+
   set(internalWorkflowFileDraft$, null);
   set(internalWorkflowFileEditorRevision$, 0);
   set(internalWorkflowAutomationEditor$, null);
@@ -778,36 +718,13 @@ function isOfficialWorkflow(
   return workflow.official !== null;
 }
 
-/** The current agent detail route's visible workflows. */
-export const currentAgentVisibleWorkflows$ = computed(
-  async (get): Promise<readonly WorkflowSummary[]> => {
-    get(workflowReloadVersion$);
-    const agentId = get(currentAgentId$);
-    if (!agentId) {
-      return [];
-    }
-    const client = get(apiClient$)(workflowsCollectionContract);
-    const result = await accept(client.list({ query: { agentId } }), [200]);
-    return result.body.filter((workflow) => {
-      return !isOfficialWorkflow(workflow);
-    });
-  },
-);
-
 export const allVisibleWorkflows$ = computed(
   async (get): Promise<readonly WorkflowSummary[]> => {
     get(workflowReloadVersion$);
     const locale = get(locale$);
     const client = get(apiClient$)(workflowsCollectionContract);
-    const singleAgent = await get(singleAgentWorkflows$);
-    const agentId = singleAgent ? await get(defaultAgentId$) : null;
-    if (singleAgent && !agentId) {
-      throw new Error("Workspace default executor is unavailable");
-    }
-    const result = await accept(
-      client.list({ query: agentId ? { agentId } : {} }),
-      [200],
-    );
+
+    const result = await accept(client.list({ query: {} }), [200]);
     return result.body
       .filter((workflow) => {
         return !isOfficialWorkflow(workflow);
@@ -827,11 +744,7 @@ export const allWorkflowAutomationEntries$ = computed(
   async (get): Promise<readonly WorkflowAutomationEntry[]> => {
     get(workflowReloadVersion$);
     const locale = get(locale$);
-    const singleAgent = await get(singleAgentWorkflows$);
-    const agentId = singleAgent ? await get(defaultAgentId$) : null;
-    if (singleAgent && !agentId) {
-      throw new Error("Workspace default executor is unavailable");
-    }
+
     const automationClient = get(apiClient$)(workflowAutomationsContract);
     const automationResult = await accept(
       automationClient.listWorkspace(),
@@ -839,10 +752,7 @@ export const allWorkflowAutomationEntries$ = computed(
     );
     return automationResult.body
       .filter((entry) => {
-        return (
-          !isOfficialWorkflow(entry.workflow) &&
-          (!singleAgent || entry.workflow.agentId === agentId)
-        );
+        return !isOfficialWorkflow(entry.workflow);
       })
       .sort((a, b) => {
         if (a.automation.enabled !== b.automation.enabled) {
@@ -927,26 +837,6 @@ export const deleteWorkflow$ = command(
   },
 );
 
-export const copyWorkflow$ = command(
-  async (
-    { get, set },
-    input: { workflowId: string; toAgentId: string },
-    signal: AbortSignal,
-  ): Promise<WorkflowSummary> => {
-    const client = get(apiClient$)(workflowsDetailContract);
-    const result = await accept(
-      client.copy({
-        params: { workflowId: input.workflowId },
-        body: { toAgentId: input.toAgentId },
-        fetchOptions: { signal },
-      }),
-      [201],
-    );
-    signal.throwIfAborted();
-    set(reloadWorkflows$);
-    return result.body;
-  },
-);
 export const openWorkflowChat$ = command(
   async ({ get, set }, workflowId: string, signal: AbortSignal) => {
     const client = get(apiClient$)(workflowsDetailContract);
@@ -1650,34 +1540,6 @@ export const setWorkflowAutomationEnabled$ = command(
   },
 );
 
-export const pauseWorkflowAutomations$ = command(
-  async (
-    { get, set },
-    automationIds: readonly string[],
-    signal: AbortSignal,
-  ): Promise<{ readonly pausedCount: number }> => {
-    if (automationIds.length === 0) {
-      return { pausedCount: 0 };
-    }
-
-    const client = get(apiClient$)(workflowAutomationsContract);
-    await Promise.all(
-      automationIds.map((automationId) => {
-        return accept(
-          client.disable({
-            params: { id: automationId },
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-      }),
-    );
-    signal.throwIfAborted();
-    set(reloadWorkflows$);
-    return { pausedCount: automationIds.length };
-  },
-);
-
 export const runWorkflowAutomationNow$ = command(
   async (
     { get, set },
@@ -1728,16 +1590,12 @@ export const makePrivateWorkflowCopy$ = command(
     workflow: WorkflowDetailResponse,
     signal: AbortSignal,
   ) => {
-    const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
-    if (!agentId || !(await get(singleAgentWorkflows$))) {
-      throw new Error("Workspace Workflow copying is unavailable");
-    }
     const collection = get(apiClient$)(workflowsCollectionContract);
     const detail = get(apiClient$)(workflowsDetailContract);
     const findCopy = async () => {
       const result = await accept(
-        collection.list({ query: { agentId }, fetchOptions: { signal } }),
+        collection.list({ query: {}, fetchOptions: { signal } }),
         [200],
       );
       return result.body.find((item) => {
@@ -1754,7 +1612,7 @@ export const makePrivateWorkflowCopy$ = command(
       const result = await accept(
         detail.copy({
           params: { workflowId: workflow.id },
-          body: { toAgentId: agentId },
+          body: {},
           fetchOptions: { signal },
         }),
         [201, 409],

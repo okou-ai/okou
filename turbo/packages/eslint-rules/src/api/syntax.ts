@@ -4,27 +4,38 @@ import {
   type TSESTree,
 } from "@typescript-eslint/utils";
 
+import { isRuntimeTableExport } from "./runtime-table-exports.ts";
+
 // These helpers intentionally model conventional, type-correct repository
-// syntax. They use only the current file's imports, const bindings, and scope
-// graph; unusual metaprogramming and cross-file type inference are out of scope.
+// syntax. Expression analysis follows local imports, const bindings, and scope.
+// Individual rules can provide a stricter check for the imported table.
 
 const DRIZZLE_MODULE_PREFIX = "drizzle-orm";
 const SCHEMA_MODULE_PREFIX = "@okouai/db/schema/";
 
-function isSchemaModule(source: string | undefined): boolean {
+type TableImportCheck = (source: string, name: string) => boolean;
+
+const QUERY_BUILDER_RUNTIME_MODULES = new Set([
+  "@okouai/db/runtime/agent-run",
+  "@okouai/db/runtime/chat-thread",
+  "@okouai/db/runtime/connector-catalog",
+  "@okouai/db/runtime/email-outbox",
+  "@okouai/db/runtime/org-custom-connector",
+  "@okouai/db/runtime/org-members-metadata",
+  "@okouai/db/runtime/system-storage-presigned-url-cache",
+  "@okouai/db/runtime/usage-event",
+  "@okouai/db/runtime/usage-pricing",
+  "@okouai/db/runtime/workflow-automation",
+]);
+
+function isQueryTableImport(source: string, name: string): boolean {
   return (
-    source?.startsWith(SCHEMA_MODULE_PREFIX) === true ||
-    source === "@okouai/db/runtime/agent-run" ||
-    source === "@okouai/db/runtime/chat-thread" ||
-    source === "@okouai/db/runtime/connector-catalog" ||
-    source === "@okouai/db/runtime/email-outbox" ||
-    source === "@okouai/db/runtime/org-members-metadata" ||
-    source === "@okouai/db/runtime/system-storage-presigned-url-cache" ||
-    source === "@okouai/db/runtime/usage-event" ||
-    source === "@okouai/db/runtime/usage-pricing" ||
-    source === "@okouai/db/runtime/workflow-automation"
+    source.startsWith(SCHEMA_MODULE_PREFIX) ||
+    (QUERY_BUILDER_RUNTIME_MODULES.has(source) &&
+      isRuntimeTableExport(source, name))
   );
 }
+
 const DATABASE_NAMES = new Set([
   "database",
   "db",
@@ -541,6 +552,7 @@ export function drizzleCallName(
 export function isSchemaTableExpression(
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Expression,
+  isTableImport: TableImportCheck = isQueryTableImport,
 ): boolean {
   const direct = unwrapExpression(node);
   const resolved = resolveLocalExpression(sourceCode, direct);
@@ -548,7 +560,7 @@ export function isSchemaTableExpression(
     const imported = importReference(sourceCode, resolved);
     if (
       imported !== null &&
-      isSchemaModule(imported.source) &&
+      isTableImport(imported.source, imported.importedName) &&
       !imported.isTypeOnly
     ) {
       return true;
@@ -574,7 +586,8 @@ export function isSchemaTableExpression(
   const imported = importReference(sourceCode, object);
   return (
     imported?.importedName === "*" &&
-    (imported.source === "@okouai/db" || isSchemaModule(imported.source))
+    (imported.source === "@okouai/db" ||
+      isTableImport(imported.source, memberName(resolved) ?? ""))
   );
 }
 
@@ -629,6 +642,7 @@ function isQueryBuilderExpression(
 export function isColumnExpression(
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Expression,
+  isTableImport: TableImportCheck = isQueryTableImport,
 ): boolean {
   const resolved = resolveLocalExpression(sourceCode, node);
   if (resolved.type !== AST_NODE_TYPES.MemberExpression) {
@@ -636,7 +650,7 @@ export function isColumnExpression(
   }
   const object = unwrapExpression(resolved.object);
   return (
-    isSchemaTableExpression(sourceCode, object) ||
+    isSchemaTableExpression(sourceCode, object, isTableImport) ||
     (object.type === AST_NODE_TYPES.Identifier &&
       relationalParameterRole(sourceCode, object) === "fields")
   );

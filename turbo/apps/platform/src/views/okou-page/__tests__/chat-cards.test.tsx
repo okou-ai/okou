@@ -1,14 +1,14 @@
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { act, screen, waitFor, within } from "@testing-library/react";
-import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { agentConnectorAccessContract } from "@okouai/api-contracts/contracts/agent-connector-access";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { expect, test } from "vitest";
 
 import {
@@ -22,18 +22,19 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
-const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?agentId=${AGENT_ID}`;
-const PERMISSION_URL = `https://app.okou.ai/agents/${AGENT_ID}/permissions?connectorSlug=slack&permission=files:read`;
+const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?threadId=${THREAD_ID}`;
+const PERMISSION_URL = `https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read`;
 const EXACT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000911";
 const DEFAULT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000912";
+
+const MEMBER_PERMISSION_URL =
+  "https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read";
 
 function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
   const url = new URL(
     `https://app.okou.ai/connectors/github/reconnect/${connectionId}`,
   );
-  url.searchParams.set("agentId", AGENT_ID);
   url.searchParams.set("threadId", THREAD_ID);
   url.searchParams.set("callbackPrompt", "Continue the account-specific task");
   return url;
@@ -122,12 +123,6 @@ function mockExactReconnectAccount(
   });
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
     return respond(200, { connectors: [catalogItem] });
-  });
-  context.mocks.api(agentConnectorAccessContract.agent, ({ respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: [github],
-      customConnectorIds: [],
-    });
   });
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -244,6 +239,18 @@ function expectNodeBefore(before: Node, after: Node): void {
   ).toBeTruthy();
 }
 
+test("A member permission link is enhanced only for its callback Chat", async () => {
+  const other = new URL(MEMBER_PERMISSION_URL);
+  other.searchParams.set("threadId", "d0000000-0000-4000-8000-000000000099");
+  other.searchParams.set("callbackPrompt", "Continue the task");
+  await setupChat(
+    `[Review permissions](${MEMBER_PERMISSION_URL}) and [Continue elsewhere](${other}).`,
+  );
+  await screen.findByTestId("permission-action-card");
+  expect(screen.getAllByTestId("permission-action-card")).toHaveLength(1);
+  expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(1);
+});
+
 test("A connector link becomes an action without losing surrounding prose", async () => {
   await setupChat(
     [
@@ -344,9 +351,7 @@ test("Removing formatted bare actions leaves readable prose without empty marker
 test("Incomplete action links are shown as unavailable", async () => {
   const connectorWithoutAgent =
     "https://app.okou.ai/connectors/github/authorize";
-  const bankingWithoutReason = new URL(
-    `https://app.okou.ai/agents/${AGENT_ID}/banking`,
-  );
+  const bankingWithoutReason = new URL(`https://app.okou.ai/banking/access`);
   bankingWithoutReason.searchParams.set("threadId", THREAD_ID);
   bankingWithoutReason.searchParams.set(
     "callbackPrompt",
@@ -378,9 +383,9 @@ test("Incomplete action links are shown as unavailable", async () => {
 });
 
 test("Invalid actions remain unavailable beside valid and external links", async () => {
-  const wrongAgentUrl = CONNECTOR_URL.replace(
-    AGENT_ID,
-    "c0000000-0000-4000-a000-000000000099",
+  const mismatchedConnectorUrl = CONNECTOR_URL.replace(
+    THREAD_ID,
+    "b0000000-0000-4000-a000-000000000099",
   );
   const wrongThreadUrl = `${PERMISSION_URL}&threadId=b0000000-0000-4000-a000-000000000099&callbackPrompt=Continue`;
   const externalUrl = CONNECTOR_URL.replace(
@@ -388,7 +393,7 @@ test("Invalid actions remain unavailable beside valid and external links", async
     "app.okou.ai.evil.test",
   );
   await setupChat(
-    `Review [another agent (${wrongAgentUrl})](${wrongAgentUrl}), ${wrongThreadUrl}, [this agent](${CONNECTOR_URL}) and the [external reference](${externalUrl}).`,
+    `Review [another chat (${mismatchedConnectorUrl})](${mismatchedConnectorUrl}), ${wrongThreadUrl}, [this chat](${CONNECTOR_URL}) and the [external reference](${externalUrl}).`,
   );
 
   await screen.findByTestId("connector-action-card");
@@ -401,11 +406,11 @@ test("Invalid actions remain unavailable beside valid and external links", async
   });
   expect(external).toHaveAttribute("href", externalUrl);
   expect(external?.closest("p")).toHaveTextContent(
-    `Review another agent (${wrongAgentUrl}), , this agent and the external reference.`,
+    `Review another chat (${mismatchedConnectorUrl}), , this chat and the external reference.`,
   );
   expect(
     links.some((link) => {
-      return [wrongAgentUrl, wrongThreadUrl, CONNECTOR_URL].includes(
+      return [mismatchedConnectorUrl, wrongThreadUrl, CONNECTOR_URL].includes(
         link.getAttribute("href") ?? "",
       );
     }),
@@ -561,17 +566,17 @@ test("A bare action stops before adjacent Chinese punctuation and prose", async 
 });
 
 test("Action labels stay literal instead of becoming new Markdown links or headings", async () => {
-  const wrongAgentUrl = CONNECTOR_URL.replace(
-    AGENT_ID,
-    "c0000000-0000-4000-a000-000000000099",
+  const mismatchedConnectorUrl = CONNECTOR_URL.replace(
+    THREAD_ID,
+    "b0000000-0000-4000-a000-000000000099",
   );
   await setupChat(
     [
-      `[\\[reference\\]](${wrongAgentUrl}) remains literal.`,
+      `[\\[reference\\]](${mismatchedConnectorUrl}) remains literal.`,
       "",
       `[# Review](${CONNECTOR_URL}) before continuing.`,
       "",
-      `[www.example.com](${wrongAgentUrl}) stays unavailable.`,
+      `[www.example.com](${mismatchedConnectorUrl}) stays unavailable.`,
       "",
       "[reference]: https://example.com/reference",
     ].join("\n"),
@@ -1046,11 +1051,6 @@ test("Closing the exact reconnect dialog does not send the callback", async () =
 });
 
 test("Malformed or context-mismatched exact reconnect links are inert", async () => {
-  const wrongAgent = exactReconnectUrl();
-  wrongAgent.searchParams.set(
-    "agentId",
-    "c0000000-0000-4000-a000-000000000099",
-  );
   const wrongThread = exactReconnectUrl();
   wrongThread.searchParams.set(
     "threadId",
@@ -1058,7 +1058,7 @@ test("Malformed or context-mismatched exact reconnect links are inert", async ()
   );
   const malformedId = exactReconnectUrl("not-an-account-id");
   await setupChat(
-    [wrongAgent, wrongThread, malformedId]
+    [wrongThread, malformedId]
       .map((url) => {
         return url.toString();
       })
@@ -1066,12 +1066,12 @@ test("Malformed or context-mismatched exact reconnect links are inert", async ()
   );
 
   await waitFor(() => {
-    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(3);
+    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
   });
   expect(screen.queryByTestId("connector-action-card")).toBeNull();
   expect(
     queryAllByRoleFast("link").some((link) => {
-      return [wrongAgent, wrongThread, malformedId].some((url) => {
+      return [wrongThread, malformedId].some((url) => {
         return link.getAttribute("href") === url.toString();
       });
     }),
@@ -1088,269 +1088,284 @@ test("A missing exact reconnect account never falls back to the default", async 
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
 
-test.each([false, true])(
-  "Connector account switches A → B → A keep their icon and continue with fresh callback IDs (Chat access: %s)",
-  async (chatAccounts) => {
-    const github = connectorSlugSchema.parse("github");
-    const connectionId = "f0000000-0000-4000-a000-000000000901";
-    const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
-    const iconUrl = "https://icons.example.test/account-switch-github.svg";
-    const switchUrl = new URL(
-      `https://app.okou.ai/agents/${AGENT_ID}/connector-accounts/${connectionId}/select`,
-    );
-    switchUrl.searchParams.set("kind", "builtin");
-    switchUrl.searchParams.set("connectorSlug", github);
-    switchUrl.searchParams.set("threadId", THREAD_ID);
-    switchUrl.searchParams.set("callbackPrompt", "Continue");
-    context.mocks.api(
-      agentConnectorAccessContract.agent,
-      ({ params, respond }) => {
-        return respond(200, {
-          enabledConnectorSlugs:
-            !chatAccounts && params.id === AGENT_ID ? [github] : [],
-          customConnectorIds: [],
-        });
-      },
-    );
-    context.mocks.api(
-      connectorAccountsContract.connection,
-      ({ params, respond }) => {
-        return respond(200, {
-          missingRequiredFields: [],
-          configuredFieldKeys: [],
-          id: params.connectionId,
-          target: { kind: "builtin", connectorSlug: github },
-          authMethod: "oauth",
-          displayName:
-            params.connectionId === connectionId
-              ? "Work GitHub"
-              : "Personal GitHub",
-          isDefault: false,
-          externalId: null,
-          externalUsername: null,
-          externalEmail: null,
-          oauthScopes: [],
-          connectionStatus: "connected",
-          reconnectReason: null,
-          tokenExpiresAt: null,
-          createdAt: "2026-08-01T12:00:00.000Z",
-          updatedAt: "2026-08-01T12:00:00.000Z",
-        });
-      },
-    );
-    let selectionWrites = 0;
-    let selectedConnectionId: string | null = null;
-    const selection = {
-      target: { kind: "builtin" as const, connectorSlug: github },
-      connectionId,
-    };
-    context.mocks.api(
-      chatThreadConnectorSelectionContract.get,
-      ({ respond }) => {
-        return respond(200, {
-          selections: selectedConnectionId
-            ? [{ ...selection, connectionId: selectedConnectionId }]
-            : [],
-          selectedConnections: [],
-        });
-      },
-    );
-    context.mocks.api(
-      chatAccounts
-        ? runConnectorAccountsContract.approve
-        : chatThreadConnectorSelectionContract.update,
-      ({ body, respond }) => {
-        expect(body).toStrictEqual({
-          ...selection,
-          connectionId:
-            selectionWrites === 1 ? otherConnectionId : connectionId,
-        });
-        selectedConnectionId = body.connectionId;
-        selectionWrites += 1;
-        context.mocks.ably.trigger(`chatThreadDetailChanged:${THREAD_ID}`);
-        return respond(200, body);
-      },
-    );
-    // The slug route also matches the catalog's static paths, so the status
-    // route is registered after it to keep answering its own path.
-    const itemReads: string[] = [];
-    context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-      itemReads.push(params.connectorSlug);
-      return params.connectorSlug === github
-        ? respond(200, {
-            connector: catalogFixture({
-              slug: github,
-              label: "GitHub",
-              description: "GitHub connector",
-              icon: { url: iconUrl, invertInDarkMode: false },
-              category: "productivity",
-              generation: [],
-              tags: [],
-              authMethods: [],
-              permissionSummary: {
-                hasPermissions: false,
-                permissionCount: 0,
-                hasCategories: false,
-                hasDefaultPolicyOverrides: false,
-              },
-              singleAuthCodeAuthMethodId: null,
-              connectNotice: null,
-              account: {
-                connectionStatus: "connected",
-                scopeMismatch: false,
-                tokenExpiresAt: null,
-              },
-            }),
-          })
-        : respond(404, {
-            error: { code: "NOT_FOUND", message: "Connector not found" },
-          });
+function mockOwnedApprovalThread() {
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    expect(params.id).toBe(THREAD_ID);
+    return respond(200, {
+      id: THREAD_ID,
+      title: "Action requests",
+      selectedModel: null,
+      modelSettings: {},
+      serviceTier: null,
+      pinnedAt: null,
+      archived: false,
+      muted: false,
+      computerUseHostId: null,
+      cloudBrowserEnabled: false,
     });
-    let statusReads = 0;
-    context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-      statusReads += 1;
-      return respond(200, { connectors: [] });
-    });
+  });
+}
 
-    const callbackIds: {
-      clientEventId?: string;
-      chatThreadSortEventId?: string;
-    }[] = [];
-    const lifecycle = mockChatLifecycle(context, {
-      threadId: THREAD_ID,
-      threadTitle: "Action requests",
-      chatEvents: [
-        assistantMessage(
-          "action-request",
-          `Use the work account\n\n${switchUrl.toString()}`,
-        ),
-      ],
-      onSendRequest: (body) => {
-        expect(body.prompt).toBe("Continue");
-        expect(body.threadId).toBe(THREAD_ID);
-        callbackIds.push({
-          clientEventId: body.clientEventId,
-          chatThreadSortEventId: body.chatThreadSortEventId,
+async function exerciseAccountSwitch(entry: "chat" | "direct") {
+  const github = connectorSlugSchema.parse("github");
+  const connectionId = "f0000000-0000-4000-a000-000000000901";
+  const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
+  const iconUrl = "https://icons.example.test/account-switch-github.svg";
+  const switchUrl = new URL(
+    `https://app.okou.ai/connectors/accounts/${connectionId}/select`,
+  );
+  switchUrl.searchParams.set("kind", "builtin");
+  switchUrl.searchParams.set("connectorSlug", github);
+  switchUrl.searchParams.set("threadId", THREAD_ID);
+  switchUrl.searchParams.set("callbackPrompt", "Continue");
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      return respond(200, {
+        missingRequiredFields: [],
+        configuredFieldKeys: [],
+        id: params.connectionId,
+        target: { kind: "builtin", connectorSlug: github },
+        authMethod: "oauth",
+        displayName:
+          params.connectionId === connectionId
+            ? "Work GitHub"
+            : "Personal GitHub",
+        isDefault: false,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: [],
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-08-01T12:00:00.000Z",
+        updatedAt: "2026-08-01T12:00:00.000Z",
+      });
+    },
+  );
+  let selectionWrites = 0;
+  let selectedConnectionId: string | null = null;
+  const selection = {
+    target: { kind: "builtin" as const, connectorSlug: github },
+    connectionId,
+  };
+  context.mocks.api(
+    chatConnectorAccessContract.getThread,
+    ({ params, query, respond }) => {
+      expect(params.threadId).toBe(THREAD_ID);
+      expect(query).toMatchObject(selection.target);
+      return respond(200, {
+        target: selection.target,
+        accounts: [],
+        available: selectedConnectionId !== null,
+        currentConnectionId: selectedConnectionId,
+      });
+    },
+  );
+  context.mocks.api(
+    runConnectorAccountsContract.approve,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({
+        ...selection,
+        connectionId: selectionWrites === 1 ? otherConnectionId : connectionId,
+      });
+      selectedConnectionId = body.connectionId;
+      selectionWrites += 1;
+      context.mocks.ably.trigger(`chatThreadDetailChanged:${THREAD_ID}`);
+      return respond(200, body);
+    },
+  );
+  // The slug route also matches the catalog's static paths, so the status
+  // route is registered after it to keep answering its own path.
+  const itemReads: string[] = [];
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    itemReads.push(params.connectorSlug);
+    return params.connectorSlug === github
+      ? respond(200, {
+          connector: catalogFixture({
+            slug: github,
+            label: "GitHub",
+            description: "GitHub connector",
+            icon: { url: iconUrl, invertInDarkMode: false },
+            category: "productivity",
+            generation: [],
+            tags: [],
+            authMethods: [],
+            permissionSummary: {
+              hasPermissions: false,
+              permissionCount: 0,
+              hasCategories: false,
+              hasDefaultPolicyOverrides: false,
+            },
+            singleAuthCodeAuthMethodId: null,
+            connectNotice: null,
+            account: {
+              connectionStatus: "connected",
+              scopeMismatch: false,
+              tokenExpiresAt: null,
+            },
+          }),
+        })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
         });
-      },
-    });
-    await setupPage({
-      context,
-      path: `/chats/${THREAD_ID}`,
-      host: "app.okou.ai",
-      featureSwitches: {
-        [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
-      },
-    });
+  });
+  let statusReads = 0;
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    statusReads += 1;
+    return respond(200, { connectors: [] });
+  });
 
-    const chat = screen.getByRole("region", { name: "Chat thread" });
-    // These reply queries depend on text and children, not attribute changes.
-    const replyWaitOptions = {
-      container: chat,
-      mutationObserverOptions: {
-        subtree: true,
-        childList: true,
-        characterData: true,
-      },
-    };
-    const card = await within(chat).findByTestId(
-      "connector-account-action-card",
+  const callbackIds: {
+    clientEventId?: string;
+    chatThreadSortEventId?: string;
+  }[] = [];
+  const lifecycle = mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Action requests",
+    chatEvents: [
+      assistantMessage(
+        "action-request",
+        `Use the work account\n\n${switchUrl.toString()}`,
+      ),
+    ],
+    onSendRequest: (body) => {
+      expect(body.prompt).toBe("Continue");
+      expect(body.threadId).toBe(THREAD_ID);
+      callbackIds.push({
+        clientEventId: body.clientEventId,
+        chatThreadSortEventId: body.chatThreadSortEventId,
+      });
+    },
+  });
+  if (entry === "direct") {
+    mockOwnedApprovalThread();
+  }
+  await setupPage({
+    context,
+    path:
+      entry === "direct"
+        ? switchUrl.pathname + switchUrl.search
+        : `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: {},
+  });
+
+  const card = await screen.findByTestId("connector-account-action-card");
+  expect(card).toHaveTextContent("Switch to Work GitHub?");
+  await waitFor(() => {
+    expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
+  });
+  expect(itemReads).toStrictEqual([github]);
+  expect(statusReads).toBe(0);
+
+  expect(selectionWrites).toBe(0);
+  click(buttonIn(card, "Switch"));
+  await waitFor(() => {
+    expect(callbackIds).toHaveLength(1);
+  });
+  expect(callbackIds[0]).toStrictEqual({
+    clientEventId: expect.any(String),
+    chatThreadSortEventId: expect.any(String),
+  });
+  expect(selectionWrites).toBe(1);
+  await waitFor(() => {
+    expect(card).toHaveTextContent("Switched to Work GitHub");
+  });
+
+  const chat = screen.queryByRole("region", { name: "Chat thread" });
+  expect(Boolean(chat)).toBe(entry === "chat");
+  if (!chat) {
+    return;
+  }
+  // These reply queries depend on text and children, not attribute changes.
+  const replyWaitOptions = {
+    container: chat,
+    mutationObserverOptions: {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    },
+  };
+
+  const otherSwitchUrl = new URL(switchUrl);
+  otherSwitchUrl.pathname = otherSwitchUrl.pathname.replace(
+    connectionId,
+    otherConnectionId,
+  );
+  // Fixture-driven realtime inputs bypass Testing Library's DOM actions.
+  await act(() => {
+    lifecycle.completeRun(
+      `Use the personal account\n\n${otherSwitchUrl.toString()}`,
     );
-    expect(card).toHaveTextContent("Switch to Work GitHub?");
-    await waitFor(() => {
-      expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
-    });
-    expect(itemReads).toStrictEqual([github]);
-    expect(statusReads).toBe(0);
+    // Duplicate realtime delivery can overlap reads of an applied tail.
+    createChatEvent(THREAD_ID);
+  });
+  // Avoid serializing the entire chat for every missing-reply check.
+  await waitFor(() => {
+    expect(
+      within(chat).queryByText("Use the personal account"),
+    ).toBeInTheDocument();
+  }, replyWaitOptions);
+  await waitFor(() => {
+    expect(screen.getAllByTestId("connector-account-action-card")).toHaveLength(
+      2,
+    );
+  });
+  const otherCard = screen.getAllByTestId("connector-account-action-card")[1]!;
+  expect(otherCard).toHaveTextContent("Switch to Personal GitHub?");
+  click(buttonIn(otherCard, "Switch"));
+  await waitFor(() => {
+    expect(otherCard).toHaveTextContent("Switched to Personal GitHub");
+    expect(buttonIn(card, "Switch")).toBeEnabled();
+    expect(callbackIds).toHaveLength(2);
+  });
+  expect(selectionWrites).toBe(2);
+  await act(() => {
+    lifecycle.completeRun("Continued with Personal GitHub");
+    createChatEvent(THREAD_ID);
+  });
+  await waitFor(() => {
+    expect(
+      within(chat).queryByText("Continued with Personal GitHub"),
+    ).toBeInTheDocument();
+  }, replyWaitOptions);
 
-    click(buttonIn(card, "Switch"));
-    await waitFor(() => {
-      expect(callbackIds).toHaveLength(1);
-    });
-    expect(callbackIds[0]).toStrictEqual({
+  click(buttonIn(card, "Switch"));
+  await waitFor(() => {
+    expect(card).toHaveTextContent("Switched to Work GitHub");
+    expect(callbackIds).toHaveLength(3);
+  });
+  expect(selectionWrites).toBe(3);
+  for (const ids of callbackIds) {
+    expect(ids).toStrictEqual({
       clientEventId: expect.any(String),
       chatThreadSortEventId: expect.any(String),
     });
-    expect(selectionWrites).toBe(1);
-    await waitFor(() => {
-      expect(card).toHaveTextContent("Switched to Work GitHub");
-    });
+  }
+  const clientEventIds = callbackIds.map((ids) => {
+    return ids.clientEventId;
+  });
+  const chatThreadSortEventIds = callbackIds.map((ids) => {
+    return ids.chatThreadSortEventId;
+  });
+  expect(new Set(clientEventIds).size).toBe(3);
+  expect(new Set(chatThreadSortEventIds).size).toBe(3);
+  await act(() => {
+    lifecycle.completeRun("Continued with Work GitHub again");
+    createChatEvent(THREAD_ID);
+  });
+  await waitFor(() => {
+    expect(
+      within(chat).queryByText("Continued with Work GitHub again"),
+    ).toBeInTheDocument();
+  }, replyWaitOptions);
+}
 
-    const otherSwitchUrl = new URL(switchUrl);
-    otherSwitchUrl.pathname = otherSwitchUrl.pathname.replace(
-      connectionId,
-      otherConnectionId,
-    );
-    // Fixture-driven realtime inputs bypass Testing Library's DOM actions.
-    await act(() => {
-      lifecycle.completeRun(
-        `Use the personal account\n\n${otherSwitchUrl.toString()}`,
-      );
-      // Duplicate realtime delivery can overlap reads of an applied tail.
-      createChatEvent(THREAD_ID);
-    });
-    // Avoid serializing the entire chat for every missing-reply check.
-    await waitFor(() => {
-      expect(
-        within(chat).queryByText("Use the personal account"),
-      ).toBeInTheDocument();
-    }, replyWaitOptions);
-    await waitFor(() => {
-      expect(
-        screen.getAllByTestId("connector-account-action-card"),
-      ).toHaveLength(2);
-    });
-    const otherCard = screen.getAllByTestId(
-      "connector-account-action-card",
-    )[1]!;
-    expect(otherCard).toHaveTextContent("Switch to Personal GitHub?");
-    click(buttonIn(otherCard, "Switch"));
-    await waitFor(() => {
-      expect(otherCard).toHaveTextContent("Switched to Personal GitHub");
-      expect(buttonIn(card, "Switch")).toBeEnabled();
-      expect(callbackIds).toHaveLength(2);
-    });
-    expect(selectionWrites).toBe(2);
-    await act(() => {
-      lifecycle.completeRun("Continued with Personal GitHub");
-      createChatEvent(THREAD_ID);
-    });
-    await waitFor(() => {
-      expect(
-        within(chat).queryByText("Continued with Personal GitHub"),
-      ).toBeInTheDocument();
-    }, replyWaitOptions);
-
-    click(buttonIn(card, "Switch"));
-    await waitFor(() => {
-      expect(card).toHaveTextContent("Switched to Work GitHub");
-      expect(callbackIds).toHaveLength(3);
-    });
-    expect(selectionWrites).toBe(3);
-    for (const ids of callbackIds) {
-      expect(ids).toStrictEqual({
-        clientEventId: expect.any(String),
-        chatThreadSortEventId: expect.any(String),
-      });
-    }
-    const clientEventIds = callbackIds.map((ids) => {
-      return ids.clientEventId;
-    });
-    const chatThreadSortEventIds = callbackIds.map((ids) => {
-      return ids.chatThreadSortEventId;
-    });
-    expect(new Set(clientEventIds).size).toBe(3);
-    expect(new Set(chatThreadSortEventIds).size).toBe(3);
-    await act(() => {
-      lifecycle.completeRun("Continued with Work GitHub again");
-      createChatEvent(THREAD_ID);
-    });
-    await waitFor(() => {
-      expect(
-        within(chat).queryByText("Continued with Work GitHub again"),
-      ).toBeInTheDocument();
-    }, replyWaitOptions);
-  },
+test.each(["chat", "direct"] as const)(
+  "Connector account switching from %s",
+  exerciseAccountSwitch,
 );
 
 test("Ordinary or code links remain message content", async () => {
@@ -1377,9 +1392,9 @@ test("Ordinary or code links remain message content", async () => {
   expect(document.querySelector("[data-testid$='action-card']")).toBeNull();
 });
 
-test("A valid banking request becomes an action card", async () => {
+async function reviewBankingRequest(entry: "chat" | "direct") {
   const reason = "Review quarterly subscription expenses";
-  const bankingUrl = new URL(`https://app.okou.ai/agents/${AGENT_ID}/banking`);
+  const bankingUrl = new URL("https://app.okou.ai/banking/access");
   bankingUrl.searchParams.set("reason", reason);
   bankingUrl.searchParams.set("threadId", THREAD_ID);
   bankingUrl.searchParams.set(
@@ -1387,23 +1402,31 @@ test("A valid banking request becomes an action card", async () => {
     "Continue with the subscription review",
   );
   context.mocks.api(
-    bankingUserContract.accessRequestStatus,
-    ({ params, respond }) => {
-      expect(params.agentId).toBe(AGENT_ID);
+    bankingWorkspaceContract.accessRequestStatus,
+    ({ respond }) => {
       return respond(200, {
-        agent: { id: AGENT_ID, name: "Finance Assistant" },
         connection: null,
         session: null,
         grant: null,
       });
     },
   );
-  await setupChat(["Banking request", "", bankingUrl.toString()].join("\n"));
-
-  await screen.findByText("Banking request");
+  if (entry === "direct") {
+    mockOwnedApprovalThread();
+    await setupPage({
+      context,
+      path: bankingUrl.pathname + bankingUrl.search,
+      host: "app.okou.ai",
+    });
+  } else {
+    await setupChat(["Banking request", "", bankingUrl.toString()].join("\n"));
+    await screen.findByText("Banking request");
+  }
   const card = await screen.findByTestId("banking-action-card");
+  expect(Boolean(screen.queryByRole("region", { name: "Chat thread" }))).toBe(
+    entry === "chat",
+  );
   expect(card).toHaveTextContent("Banking access request");
-  expect(card).toHaveTextContent("Finance Assistant");
   expect(card).toHaveTextContent(reason);
   expect(card).toHaveTextContent(
     "Accounts, balances, and transactions · read only",
@@ -1413,4 +1436,29 @@ test("A valid banking request becomes an action card", async () => {
       return link.getAttribute("href") === bankingUrl.toString();
     }),
   ).toBeFalsy();
+}
+
+test.each(["chat", "direct"] as const)(
+  "Review banking request from %s",
+  reviewBankingRequest,
+);
+
+test.each([
+  "/banking/access?reason=Review+spend&",
+  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/select?kind=builtin&connectorSlug=github&",
+])("A direct approval requires access to its Chat (%s)", async (route) => {
+  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Chat thread not found" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `${route}threadId=${THREAD_ID}&callbackPrompt=Continue`,
+    host: "app.okou.ai",
+  });
+  const heading = await screen.findByRole("heading", { level: 1 });
+  expect(heading).toHaveTextContent("That page isn't here.");
+  expect(screen.queryByTestId("banking-action-card")).toBeNull();
+  expect(screen.queryByTestId("connector-account-action-card")).toBeNull();
 });

@@ -86,7 +86,6 @@ async function observeCustomSkill(
   connectorId: string,
 ) {
   const sent = await fixture.sendChatRun(fixture.actor, {
-    agentId: fixture.agentId,
     prompt: "Read the current custom connector skill",
     model: "claude-fable-5-1",
   });
@@ -107,15 +106,11 @@ async function createBuiltinCredentialConsumer(
   fixture: Awaited<ReturnType<typeof publicChatActor>>,
   connectorSlug: string,
 ) {
-  const { actor, agentId, run: own } = fixture;
+  const { actor, run: own } = fixture;
   const runs = createRunsApi(context);
   const firewall = createFirewallApi(context);
   const callbacks = createWebhookCallbackApi(context);
-  await own(() => {
-    return runs.enableAgentConnectors(actor, agentId, [connectorSlug]);
-  });
   const sent = await fixture.sendChatRun(actor, {
-    agentId,
     prompt: "Consume the connected account's current credential",
   });
   const { execution, sandboxHeaders } = await fixture.runExecution(sent.runId);
@@ -164,37 +159,6 @@ async function createBuiltinCredentialConsumer(
       });
     },
   };
-}
-
-function clearConnectorInvalidationMocks(): void {
-  context.mocks.ably.channelGet.mockClear();
-  context.mocks.ably.publish.mockClear();
-}
-
-function expectAgentConnectorInvalidation(agentChange: {
-  readonly userId: string;
-  readonly agentId: string;
-}): void {
-  expect(
-    context.mocks.ably.channelGet.mock.calls
-      .map(([channelName]) => {
-        return channelName;
-      })
-      .sort(),
-  ).toStrictEqual([`user:${agentChange.userId}`]);
-  expect(
-    context.mocks.ably.publish.mock.calls
-      .map((call) => {
-        return JSON.stringify(call);
-      })
-      .sort(),
-  ).toStrictEqual(
-    [["composerAgentConnectorsChanged", { agentId: agentChange.agentId }]]
-      .map((call) => {
-        return JSON.stringify(call);
-      })
-      .sort(),
-  );
 }
 
 function uniqueSlug(prefix: string): string {
@@ -319,7 +283,7 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
   it("keeps a manual-grant connection and authorization when realtime publishing fails", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
-    const agent = await authOrgApi.createAgent(actor, {
+    await authOrgApi.createAgent(actor, {
       displayName: "Manual Connector Agent",
     });
     const publishError = new Error("Ably channel rate limit exceeded");
@@ -332,7 +296,6 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
       "openai",
       "api-token",
       { apiKey: "manual-agent-token" },
-      agent.agentId,
     );
 
     await expect(
@@ -342,26 +305,6 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
       target: { kind: "builtin", connectorSlug: "openai" },
       connectionStatus: "connected",
     });
-    await expect(
-      authOrgApi.readEnabledConnectorSlugs(actor, agent.agentId),
-    ).resolves.toContain("openai");
-  });
-
-  it("authorizes a manual-grant connector for the current default agent when no agent is requested", async () => {
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    authOrgApi.acceptAgentStorageWrites();
-    const { body } = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "Default Connector Agent",
-    });
-
-    await connectorsApi.connectManualGrant(actor, "openai", "api-token", {
-      apiKey: "default-agent-token",
-    });
-
-    await expect(
-      authOrgApi.readEnabledConnectorSlugs(actor, body.agentId),
-    ).resolves.toContain("openai");
   });
 
   it("discovers, connects, reads, computes scope diff, and deletes a manual connector through APIs", async () => {
@@ -470,11 +413,7 @@ describe("CONN-02: OAuth start and callback", () => {
       actor,
       "github",
       "oauth",
-      {
-        statuses: [200],
-        authorizeAgent: true,
-        callbackTarget: "app",
-      },
+      { statuses: [200], callbackTarget: "app" },
     );
     if (startResponse.status !== 200) {
       throw new Error(`Unexpected OAuth start status ${startResponse.status}`);
@@ -513,11 +452,7 @@ describe("CONN-02: OAuth start and callback", () => {
       failedActor,
       "github",
       "oauth",
-      {
-        statuses: [200],
-        authorizeAgent: true,
-        callbackTarget: "app",
-      },
+      { statuses: [200], callbackTarget: "app" },
     );
     if (failedStartResponse.status !== 200) {
       throw new Error(
@@ -647,7 +582,6 @@ describe("CONN-02: OAuth start and callback", () => {
       actor,
       "github",
       "oauth",
-      undefined,
       {
         intent: "reconnect",
         connectionId: initialConnection.id,
@@ -669,7 +603,6 @@ describe("CONN-02: OAuth start and callback", () => {
       actor,
       "github",
       "oauth",
-      undefined,
       {
         intent: "reconnect",
         connectionId: initialConnection.id,
@@ -697,7 +630,6 @@ describe("CONN-02: OAuth start and callback", () => {
       actor,
       "github",
       "oauth",
-      undefined,
       { intent: "add", displayName: "Personal" },
     );
     await connectorsApi.completeOauthCallback("github", {
@@ -2431,19 +2363,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       ready: true,
       configuredFieldKeys: [],
     });
-    const agent = await own(() => {
+    await own(() => {
       return bdd.createAgent(admin, {
         displayName: "BDD No Auth Agent",
       });
     });
-    await expect(
-      own(() => {
-        return connectorsApi.updateAgentCustomConnectors(admin, agent.agentId, [
-          http.id,
-          mcp.id,
-        ]);
-      }),
-    ).resolves.toStrictEqual(expect.arrayContaining([http.id, mcp.id]));
 
     const observedConnector2392 = await own(() => {
       return connectorsApi.readCustomConnector(admin, http.id);
@@ -2518,9 +2442,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     await own(() => {
       return connectorsApi.deleteCustomConnector(admin, mcp.id);
-    });
-    await own(() => {
-      return bdd.deleteAgent(admin, agent.agentId);
     });
   });
 
@@ -2597,16 +2518,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     mockEnv("APP_URL", "https://app.okou.test");
     const provider = mockCustomConnectorOAuth2Provider(context);
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
     const { actor: admin, run: own } = createPublicConnectorActor(context);
     const member = bdd.user({
       orgId: admin.orgId,
       orgRole: "org:member",
-    });
-    const agent = await own(() => {
-      return bdd.createAgent(member, {
-        displayName: "BDD Custom OAuth Agent",
-      });
     });
     const clientId = "bdd-custom-oauth-client-id";
     const clientSecret = "bdd-custom-oauth-client-secret";
@@ -2668,25 +2583,12 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       ready: false,
     });
     expectNoVisibleSecret(created, clientSecret);
-    const expectedGrant = {
-      customConnectorId: created.id,
-      permissionNames: ["chat:write"],
-    };
-    await own(() => {
-      return connectorsApi.requestUpdateAgentCustomConnectorGrants(
-        member,
-        agent.agentId,
-        [expectedGrant],
-        [200],
-      );
-    });
 
     const unlabeledAdd = await own(() => {
       return connectorsApi.requestStartCustomConnectorOAuth2(
         member,
         created.id,
         [200],
-        agent.agentId,
         { intent: "add" },
       );
     });
@@ -2735,16 +2637,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     expect(runtimeUpdated).toMatchObject({ storageVersion: 1 });
 
-    clearConnectorInvalidationMocks();
     const callback = await own(() => {
       return connectorsApi.completeCustomConnectorOAuth2CallbackResult({
         code: "bdd-custom-oauth-code",
         state: oauthState,
       });
-    });
-    expectAgentConnectorInvalidation({
-      userId: member.userId,
-      agentId: agent.agentId,
     });
     expect(callback.body).toStrictEqual({
       status: "success",
@@ -2783,30 +2680,12 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expectNoVisibleSecret(oauthConnected, clientSecret);
     expectNoVisibleSecret(oauthConnected, "custom-oauth-initial-access-token");
     expectNoVisibleSecret(oauthConnected, "custom-oauth-refresh-token");
-    await expect(
-      own(() => {
-        return connectorsApi.readAgentCustomConnectors(member, agent.agentId);
-      }),
-    ).resolves.toContain(created.id);
-    await expect(
-      own(() => {
-        return connectorsApi.readAgentCustomConnectorGrants(
-          member,
-          agent.agentId,
-        );
-      }),
-    ).resolves.toContainEqual(expectedGrant);
 
     const replacementUrl = await own(() => {
-      return connectorsApi.startCustomConnectorOAuth2(
-        member,
-        created.id,
-        agent.agentId,
-        {
-          intent: "reconnect",
-          connectionId,
-        },
-      );
+      return connectorsApi.startCustomConnectorOAuth2(member, created.id, {
+        intent: "reconnect",
+        connectionId,
+      });
     });
     await own(() => {
       return connectorsApi.completeCustomConnectorOAuth2CallbackResult({
@@ -2825,25 +2704,12 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(provider.tokenBodies[1]?.get("code")).toBe(
       "bdd-custom-oauth-replacement-code",
     );
-    await expect(
-      own(() => {
-        return connectorsApi.readAgentCustomConnectorGrants(
-          member,
-          agent.agentId,
-        );
-      }),
-    ).resolves.toContainEqual(expectedGrant);
 
     const removedReconnectUrl = await own(() => {
-      return connectorsApi.startCustomConnectorOAuth2(
-        member,
-        created.id,
-        undefined,
-        {
-          intent: "reconnect",
-          connectionId,
-        },
-      );
+      return connectorsApi.startCustomConnectorOAuth2(member, created.id, {
+        intent: "reconnect",
+        connectionId,
+      });
     });
     await own(() => {
       return connectorsApi.deleteDefaultCustomConnectorAccount(
@@ -2882,18 +2748,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         missingRequiredFields: [],
       },
     );
-    await expect(
-      own(() => {
-        return connectorsApi.readAgentCustomConnectors(member, agent.agentId);
-      }),
-    ).resolves.toContain(created.id);
 
     const reconnectUrl = await own(() => {
-      return connectorsApi.startCustomConnectorOAuth2(
-        member,
-        created.id,
-        agent.agentId,
-      );
+      return connectorsApi.startCustomConnectorOAuth2(member, created.id);
     });
     await own(() => {
       return connectorsApi.completeCustomConnectorOAuth2CallbackResult({
@@ -2912,17 +2769,9 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       }),
       { ready: true },
     );
-    await expect(
-      own(() => {
-        return connectorsApi.readAgentCustomConnectors(member, agent.agentId);
-      }),
-    ).resolves.toContain(created.id);
 
     await own(() => {
       return connectorsApi.deleteCustomConnector(admin, created.id);
-    });
-    await own(() => {
-      return bdd.deleteAgent(member, agent.agentId);
     });
   });
 
@@ -3007,7 +2856,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       initialExpiresIn: 3600,
     });
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const runs = createRunsApi(context);
     const callbacks = createWebhookCallbackApi(context);
     const firewall = createFirewallApi(context);
@@ -3095,14 +2944,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         { intent: "reconnect", connectionId: oauthAccount.id },
       );
     });
-
-    await own(() => {
-      return connectorsApi.updateAgentCustomConnectors(admin, agentId, [
-        created.id,
-      ]);
-    });
     const sent = await fixture.sendChatRun(admin, {
-      agentId,
       prompt: "Use the replacement manual credential",
     });
     const { execution, sandboxHeaders } = await fixture.runExecution(
@@ -3190,12 +3032,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     );
 
     const reconnectUrl = await own(() => {
-      return connectorsApi.startCustomConnectorOAuth2(
-        admin,
-        created.id,
-        undefined,
-        { intent: "reconnect", connectionId: oauthAccount.id },
-      );
+      return connectorsApi.startCustomConnectorOAuth2(admin, created.id, {
+        intent: "reconnect",
+        connectionId: oauthAccount.id,
+      });
     });
     await own(() => {
       return connectorsApi.completeCustomConnectorOAuth2Callback({
@@ -3459,7 +3299,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       orgId: admin.orgId,
       orgRole: "org:member",
     });
-    const agent = await bdd.createAgent(member, {
+    await bdd.createAgent(member, {
       displayName: "BDD MCP OAuth Agent",
     });
     const clientSecret = "bdd-mcp-oauth-client-secret";
@@ -3521,7 +3361,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const authorizationUrl = await connectorsApi.startCustomConnectorOAuth2(
       member,
       created.id,
-      agent.agentId,
     );
     const oauthState = stateFromAuthorizationUrl(authorizationUrl);
     const moved = await connectorsApi.updateCustomConnector(admin, created.id, {
@@ -3546,9 +3385,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(callback.body).toStrictEqual({ status: "success", username: null });
     expect(provider.tokenBodies).toHaveLength(1);
     expect(provider.tokenBodies[0]?.get("client_secret")).toBe(clientSecret);
-    await expect(
-      connectorsApi.readAgentCustomConnectors(member, agent.agentId),
-    ).resolves.toContain(created.id);
     const connected = await connectorsApi.readCustomConnector(
       member,
       created.id,
@@ -3558,7 +3394,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
     await connectorsApi.deleteDefaultCustomConnectorAccount(member, created.id);
     await connectorsApi.deleteCustomConnector(admin, created.id);
-    await bdd.deleteAgent(member, agent.agentId);
   });
 
   it("connects an Automatic MCP OAuth account through Okou CIMD", async () => {
@@ -3577,7 +3412,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     const bdd = createBddApi(context);
     const admin = bdd.user({ orgRole: "org:admin" });
-    const agent = await bdd.createAgent(admin, {
+    await bdd.createAgent(admin, {
       displayName: "BDD Automatic OAuth Agent",
     });
     const connector = await connectorsApi.createCustomConnector(admin, {
@@ -3592,11 +3427,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
 
     const authorizationUrl = new URL(
-      await connectorsApi.startCustomConnectorOAuth2(
-        admin,
-        connector.id,
-        agent.agentId,
-      ),
+      await connectorsApi.startCustomConnectorOAuth2(admin, connector.id),
     );
     expect(authorizationUrl.origin + authorizationUrl.pathname).toBe(
       `${provider.issuer}/authorize`,
@@ -3639,9 +3470,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await expectCustomAccountReadiness(admin, observedConnector3545, {
       ready: true,
     });
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toContain(connector.id);
     const accounts = await connectorsApi.listCustomConnectorAccounts(
       admin,
       connector.id,
@@ -3655,7 +3483,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
 
     await connectorsApi.deleteCustomConnector(admin, connector.id);
-    await bdd.deleteAgent(admin, agent.agentId);
   });
 
   it("keeps an Automatic MCP OAuth account unnamed for an invalid ID token", async () => {
@@ -3716,7 +3543,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     const bdd = createBddApi(context);
     const { actor: admin, run: own } = createPublicConnectorActor(context);
-    const agent = await own(() => {
+    await own(() => {
       return bdd.createAgent(admin, {
         displayName: "BDD Automatic auth Agent",
       });
@@ -3739,7 +3566,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         admin,
         connector.id,
         [200],
-        agent.agentId,
       );
     });
     if ("error" in noAuth.body || noAuth.body.result !== "connected") {
@@ -3761,11 +3587,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).resolves.toMatchObject([
       { id: connectionId, authMethod: "none", connectionStatus: "connected" },
     ]);
-    await expect(
-      own(() => {
-        return connectorsApi.readAgentCustomConnectors(admin, agent.agentId);
-      }),
-    ).resolves.toContain(connector.id);
 
     const oauthProvider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
@@ -3775,7 +3596,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         admin,
         connector.id,
         [200],
-        undefined,
         { intent: "reconnect", connectionId },
       );
     });
@@ -3822,7 +3642,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         admin,
         connector.id,
         [200],
-        undefined,
         { intent: "reconnect", connectionId },
       );
     });
@@ -3846,7 +3665,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         admin,
         connector.id,
         [200],
-        undefined,
         { intent: "add", displayName: "No-auth sibling" },
       );
     });
@@ -3865,9 +3683,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
     await own(() => {
       return connectorsApi.deleteCustomConnector(admin, connector.id);
-    });
-    await own(() => {
-      return bdd.deleteAgent(admin, agent.agentId);
     });
   });
 
@@ -3977,7 +3792,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const secondAuthorization = await connectorsApi.startCustomConnectorOAuth2(
       admin,
       connector.id,
-      undefined,
       { intent: "add", displayName: "Second" },
     );
     await connectorsApi.completeCustomConnectorOAuth2Callback({
@@ -4061,7 +3875,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       const second = await connectorsApi.startCustomConnectorOAuth2(
         admin,
         connector.id,
-        undefined,
         { intent: "add", displayName: "Second" },
       );
       await connectorsApi.completeCustomConnectorOAuth2Callback({
@@ -4471,7 +4284,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       admin,
       connector.id,
       [400],
-      undefined,
       { intent: "add" },
     );
     expectApiError(conflict.body);
@@ -4544,12 +4356,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       connectionStatus: "connected",
     });
     const failureUrl = await own(() => {
-      return connectorsApi.startCustomConnectorOAuth2(
-        admin,
-        created.id,
-        undefined,
-        { intent: "reconnect", connectionId: dcrAccount.id },
-      );
+      return connectorsApi.startCustomConnectorOAuth2(admin, created.id, {
+        intent: "reconnect",
+        connectionId: dcrAccount.id,
+      });
     });
     const failure = await own(() => {
       return connectorsApi.completeCustomConnectorOAuth2CallbackResult({
@@ -4768,12 +4578,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     );
 
     const nextAuthorizationUrl = await own(() => {
-      return connectorsApi.startCustomConnectorOAuth2(
-        member,
-        created.id,
-        undefined,
-        { intent: "reconnect", connectionId },
-      );
+      return connectorsApi.startCustomConnectorOAuth2(member, created.id, {
+        intent: "reconnect",
+        connectionId,
+      });
     });
     const nextAuthorization = new URL(nextAuthorizationUrl);
     expect(nextAuthorization.searchParams.get("client_id")).toBe(clientId);
@@ -4979,7 +4787,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await connectorsApi.deleteCustomConnector(admin, created.id);
   });
 
-  it("creates, patches, secrets, enables for an agent, rejects cross-org ids, and deletes through APIs", async () => {
+  it("creates, patches, connects, and deletes a custom connector through APIs", async () => {
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
 
@@ -5053,50 +4861,21 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       ready: true,
     });
 
-    const agent = await bdd.createAgent(admin, {
+    await bdd.createAgent(admin, {
       displayName: "BDD Connector Agent",
     });
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toStrictEqual([]);
-
-    await connectorsApi.updateAgentCustomConnectors(admin, agent.agentId, [
-      created.id,
-    ]);
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toStrictEqual([created.id]);
 
     await connectorsApi.updateCustomConnector(admin, created.id, {
       ...definitionUpdateBody,
       displayName: "BDD Custom Connector Renamed",
       prefixTemplates: [`https://${slug.slice(1)}.example.test/v3/`],
     });
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toStrictEqual([created.id]);
 
     const otherAdmin = bdd.user({ orgRole: "org:admin" });
     const otherConnector = await connectorsApi.createCustomConnector(
       otherAdmin,
       customConnectorBody(uniqueSlug("other-custom")),
     );
-    const crossOrg = await connectorsApi.requestUpdateAgentCustomConnectors(
-      admin,
-      agent.agentId,
-      [otherConnector.id],
-      [400],
-    );
-    expectApiError(crossOrg.body);
-    expect(crossOrg.body.error.code).toBe("VALIDATION_ERROR");
-
-    await connectorsApi.updateAgentCustomConnectors(admin, agent.agentId, []);
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toStrictEqual([]);
-    await connectorsApi.updateAgentCustomConnectors(admin, agent.agentId, [
-      created.id,
-    ]);
 
     await connectorsApi.deleteDefaultCustomConnectorAccount(admin, created.id);
     const afterDisconnect = await connectorsApi.listCustomConnectors(admin);
@@ -5107,9 +4886,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       }),
       { ready: false, configuredFieldKeys: [] },
     );
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toStrictEqual([created.id]);
 
     await connectorsApi.setCustomConnectorSecret(
       admin,
@@ -5124,9 +4900,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       }),
       { ready: true },
     );
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toStrictEqual([created.id]);
 
     await connectorsApi.deleteCustomConnector(admin, created.id);
     const afterDelete = await connectorsApi.listCustomConnectors(admin);
@@ -5137,19 +4910,17 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).toBeUndefined();
 
     await connectorsApi.deleteCustomConnector(otherAdmin, otherConnector.id);
-    await bdd.deleteAgent(admin, agent.agentId);
   });
 
   it("lets an admin agent with an okou-scoped token create a manual definition that Connect can configure", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     await own(async () => {
       if (!admin.orgId) {
         throw new Error("Expected an org-scoped admin");
       }
       mockClerkMembership(context, admin, "org:admin");
       const sent = await fixture.sendChatRun(admin, {
-        agentId,
         prompt: "Create the requested connector definition",
       });
       const { execution } = await fixture.runExecution(sent.runId);
@@ -5225,7 +4996,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("sets all manual custom connector values through the values endpoint", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const firewall = createFirewallApi(context);
     const runs = createRunsApi(context);
     const callbacks = createWebhookCallbackApi(context);
@@ -5303,15 +5074,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       { ready: true, configuredFieldKeys: ["api_key", "subdomain"] },
     );
     expectNoVisibleSecret(listed, "configured-secret");
-
-    await own(() => {
-      return connectorsApi.updateAgentCustomConnectors(admin, agentId, [
-        created.id,
-      ]);
-    });
     async function expectUsableValues(secret: string, subdomain: string) {
       const sent = await fixture.sendChatRun(admin, {
-        agentId,
         prompt: "Use the configured custom connector values",
       });
       const { execution, sandboxHeaders } = await fixture.runExecution(
@@ -5419,7 +5183,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("revokes usable custom credentials when the member disconnects", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const firewall = createFirewallApi(context);
     await own(async () => {
       const created = await own(() => {
@@ -5475,13 +5239,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           missingRequiredFields: [],
         },
       );
-      await own(() => {
-        return connectorsApi.updateAgentCustomConnectors(admin, agentId, [
-          created.id,
-        ]);
-      });
       const sent = await fixture.sendChatRun(admin, {
-        agentId,
         prompt: "Use the configured custom credential",
       });
       const { execution } = await fixture.runExecution(sent.runId);
@@ -5632,7 +5390,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("isolates identical manual variable names by Custom connection", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const firewall = createFirewallApi(context);
     await own(async () => {
       const definition = {
@@ -5685,14 +5443,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         throw new Error("Expected both normal custom accounts");
       }
       expect(firstAccount.id).not.toBe(secondAccount.id);
-      await own(() => {
-        return connectorsApi.updateAgentCustomConnectors(admin, agentId, [
-          first.id,
-          second.id,
-        ]);
-      });
       const sent = await fixture.sendChatRun(admin, {
-        agentId,
         prompt: "Use both independent regions",
       });
       const { execution } = await fixture.runExecution(sent.runId);
@@ -5754,7 +5505,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("rolls back Custom values when a shared write fails", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const runs = createRunsApi(context);
     const firewall = createFirewallApi(context);
     await own(async () => {
@@ -5800,14 +5551,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       if (!account) {
         throw new Error("Expected the public custom account");
       }
-      await own(() => {
-        return connectorsApi.updateAgentCustomConnectors(admin, agentId, [
-          created.id,
-        ]);
-      });
       const sent = await own(() => {
         return fixture.sendChatRun(admin, {
-          agentId,
           prompt: "Use the authorized custom connector",
         });
       });
@@ -6072,15 +5817,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
   });
 
-  it("saves a connector proposal with values and authorizes the requested agent", async () => {
+  it("saves a connector proposal with values", async () => {
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
     const admin = bdd.user({ orgRole: "org:admin" });
-    const agent = await bdd.createAgent(admin, {
-      displayName: "BDD Proposal Agent",
-    });
     const rand = randomUUID().replace(/-/g, "").slice(0, 8);
-    clearConnectorInvalidationMocks();
 
     const saved = await connectorsApi.saveCustomConnectorProposal(admin, {
       proposal: {
@@ -6118,14 +5858,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         { key: "api_key", kind: "secret", value: "proposal-secret" },
         { key: "subdomain", kind: "variable", value: "acme" },
       ],
-      agentId: agent.agentId,
     });
 
-    expectAgentConnectorInvalidation({
-      userId: admin.userId,
-      agentId: agent.agentId,
-    });
-    expect(saved.authorizedAgentId).toBe(agent.agentId);
     expect(saved.connector).toMatchObject({
       displayName: "BDD Proposal API",
       prefixTemplates: [`https://{{variables.subdomain}}.${rand}.test/v1/`],
@@ -6141,9 +5875,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       missingRequiredFields: [],
       configuredFieldKeys: ["api_key", "subdomain"],
     });
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toStrictEqual([saved.connector.id]);
 
     const listed = await connectorsApi.listCustomConnectors(admin);
     await expectCustomAccountReadiness(
@@ -6156,92 +5887,20 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expectNoVisibleSecret(listed, "proposal-secret");
 
     await connectorsApi.deleteCustomConnector(admin, saved.connector.id);
-    await bdd.deleteAgent(admin, agent.agentId);
   });
 
-  it("preserves selected permissions when a proposal reauthorizes an existing connector", async () => {
+  it("saves a connector proposal before required values are configured", async () => {
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
-    const admin = bdd.user({ orgRole: "org:admin" });
-    const agent = await bdd.createAgent(admin, {
-      displayName: "BDD Permissioned Proposal Agent",
-    });
-    const rand = randomUUID().replace(/-/g, "").slice(0, 8);
-    const connector = await connectorsApi.createCustomConnector(admin, {
-      displayName: "BDD Permissioned Proposal API",
-      prefixTemplates: [`https://${rand}.permissioned-proposal.test/v1/`],
-      fields: [
-        {
-          key: "api_key",
-          label: "API key",
-          kind: "secret",
-          required: true,
-        },
-      ],
-      headerInjections: [
-        {
-          name: "Authorization",
-          valueTemplate: "Bearer {{secrets.api_key}}",
-        },
-      ],
-      queryInjections: [],
-      authMode: "manual",
-      permissionBundleRef: "builtin:slack@1",
-    });
-    const grant = {
-      customConnectorId: connector.id,
-      permissionNames: ["chat:write"],
-    };
-    await connectorsApi.requestUpdateAgentCustomConnectorGrants(
-      admin,
-      agent.agentId,
-      [grant],
-      [200],
-    );
-
-    const saved = await connectorsApi.saveCustomConnectorProposal(admin, {
-      proposal: {
-        operation: "update",
-        connectorId: connector.id,
-        displayName: connector.displayName,
-        prefixTemplates: connector.prefixTemplates,
-        fields: connector.fields,
-        headerInjections: connector.headerInjections,
-        queryInjections: connector.queryInjections,
-      },
-      values: [{ key: "api_key", kind: "secret", value: "proposal-secret" }],
-      agentId: agent.agentId,
-    });
-
-    expect(saved.authorizedAgentId).toBe(agent.agentId);
-    await expect(
-      connectorsApi.readAgentCustomConnectorGrants(admin, agent.agentId),
-    ).resolves.toStrictEqual([grant]);
-
-    await connectorsApi.deleteCustomConnector(admin, connector.id);
-    await bdd.deleteAgent(admin, agent.agentId);
-  });
-
-  it("authorizes a connector proposal before required values are configured", async () => {
-    const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
-    let createdAgentId: string | undefined;
-    const owner = createPublicConnectorActor(context, {
-      beforeWorkspaceCleanup: async (): Promise<void> => {
-        if (createdAgentId) {
-          await bdd.deleteAgent(admin, createdAgentId);
-        }
-      },
-    });
+    const owner = createPublicConnectorActor(context);
     const admin = owner.actor;
     const own = owner.run;
     await own(async () => {
-      const agent = await own(() => {
+      await own(() => {
         return bdd.createAgent(admin, {
           displayName: "BDD Missing Proposal Value Agent",
         });
       });
-      createdAgentId = agent.agentId;
       const rand = randomUUID().replace(/-/g, "").slice(0, 8);
 
       const saved = await own(() => {
@@ -6267,21 +5926,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
             queryInjections: [],
           },
           values: [],
-          agentId: agent.agentId,
         });
       });
 
-      expect(saved.authorizedAgentId).toBe(agent.agentId);
       await expectCustomAccountReadiness(admin, saved.connector, {
         ready: false,
         missingRequiredFields: ["api_key"],
         configuredFieldKeys: [],
       });
-      await expect(
-        own(() => {
-          return connectorsApi.readAgentCustomConnectors(admin, agent.agentId);
-        }),
-      ).resolves.toStrictEqual([saved.connector.id]);
 
       const emptyComplete = await own(() => {
         return connectorsApi.saveCustomConnectorProposal(admin, {
@@ -6306,7 +5958,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
             queryInjections: [],
           },
           values: [],
-          agentId: agent.agentId,
         });
       });
       await expectCustomAccountReadiness(admin, emptyComplete.connector, {
@@ -6791,7 +6442,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await connectorsApi.deleteCustomConnector(admin, created.id);
   });
 
-  it("manages MCP definitions, credentials, and agent access", async () => {
+  it("manages MCP definitions and credentials", async () => {
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
     const admin = bdd.user({ orgRole: "org:admin" });
@@ -6820,7 +6471,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       "Manual custom connector injections must reference a declared secret or variable field",
     );
 
-    const agent = await bdd.createAgent(admin, {
+    await bdd.createAgent(admin, {
       displayName: "BDD MCP Management Agent",
     });
     const created = await connectorsApi.createCustomConnector(
@@ -6847,11 +6498,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     );
     await expectCustomAccountReadiness(admin, connected, { ready: true });
     expectNoVisibleSecret(connected, "bdd-mcp-api-token");
-    await expect(
-      connectorsApi.updateAgentCustomConnectors(admin, agent.agentId, [
-        created.id,
-      ]),
-    ).resolves.toContain(created.id);
 
     const movedDefinition = manualMcpConnectorBody({
       displayName: "BDD MCP Management Moved",
@@ -6870,9 +6516,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await expectCustomAccountReadiness(admin, moved, {
       ready: true,
     });
-    await expect(
-      connectorsApi.readAgentCustomConnectors(admin, agent.agentId),
-    ).resolves.toContain(created.id);
 
     const protocolTransition = await connectorsApi.requestUpdateCustomConnector(
       admin,
@@ -6911,15 +6554,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       endpoint: movedDefinition.endpoint,
       storageVersion: 1,
     });
-
-    await expect(
-      connectorsApi.updateAgentCustomConnectors(
-        admin,
-        agent.agentId,
-        [created.id],
-        "remove",
-      ),
-    ).resolves.not.toContain(created.id);
     await connectorsApi.deleteDefaultCustomConnectorAccount(admin, created.id);
     await expectCustomAccountReadiness(
       admin,
@@ -6927,7 +6561,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       { ready: false },
     );
     await connectorsApi.deleteCustomConnector(admin, created.id);
-    await bdd.deleteAgent(admin, agent.agentId);
   });
 
   it("rejects unsafe MCP endpoints and protected transport headers", async () => {
@@ -7093,8 +6726,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         ...customConnectorBody(uniqueSlug("bdd-skill-update-failure")),
         skillMarkdown: "Keep these active instructions.",
       });
-      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
-        created.id,
+      await connectorsApi.setCustomConnectorValues(admin, created.id, [
+        { key: "secret", kind: "secret", value: "bdd-skill-api-token" },
       ]);
       const initialHead = await observeCustomSkill(fixture, created.id);
       if (!initialHead) {
@@ -7148,8 +6781,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         ...customConnectorBody(uniqueSlug("bdd-skill-update-race")),
         skillMarkdown: "Initial active instructions.",
       });
-      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
-        created.id,
+      await connectorsApi.setCustomConnectorValues(admin, created.id, [
+        { key: "secret", kind: "secret", value: "bdd-skill-api-token" },
       ]);
       const initialHead = await observeCustomSkill(fixture, created.id);
       if (!initialHead) {
@@ -7252,8 +6885,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         permissionBundleRef: "builtin:slack@1",
         skillMarkdown: "Use this connector to coordinate Slack conversations.",
       });
-      await connectorsApi.updateAgentCustomConnectors(admin, fixture.agentId, [
-        created.id,
+      await connectorsApi.setCustomConnectorValues(admin, created.id, [
+        { key: "secret", kind: "secret", value: "bdd-skill-api-token" },
       ]);
       const createdHead = await observeCustomSkill(fixture, created.id);
       if (!createdHead) {
@@ -7314,23 +6947,33 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         "Unknown custom connector permission bundle",
       );
 
+      const definition = {
+        displayName: permissionBundleCleared.displayName,
+        prefixTemplates: permissionBundleCleared.prefixTemplates,
+        fields: permissionBundleCleared.fields,
+        headerInjections: permissionBundleCleared.headerInjections,
+        queryInjections: permissionBundleCleared.queryInjections,
+        authMode: permissionBundleCleared.authMode,
+      };
       const skillCleared = await connectorsApi.updateCustomConnector(
         admin,
         created.id,
-        {
-          displayName: permissionBundleCleared.displayName,
-          prefixTemplates: permissionBundleCleared.prefixTemplates,
-          fields: permissionBundleCleared.fields,
-          headerInjections: permissionBundleCleared.headerInjections,
-          queryInjections: permissionBundleCleared.queryInjections,
-          authMode: permissionBundleCleared.authMode,
-          skillMarkdown: null,
-        },
+        { ...definition, skillMarkdown: null },
       );
       expect(skillCleared.skillMarkdown).toBeNull();
       await expect(
         observeCustomSkill(fixture, created.id),
       ).resolves.toBeUndefined();
+
+      await connectorsApi.updateCustomConnector(admin, created.id, {
+        ...definition,
+        skillMarkdown: skillUpdated.skillMarkdown,
+      });
+      await expect(
+        observeCustomSkill(fixture, created.id),
+      ).resolves.toMatchObject({
+        sha256: updatedHead.sha256,
+      });
 
       await connectorsApi.deleteCustomConnector(admin, created.id);
       await expect(
@@ -7926,13 +7569,10 @@ describe("CONN-02: test-oauth auth-code journey", () => {
         scope: null,
       });
       const omittedStart = await own(() => {
-        return connectorsApi.startOauth(
-          actor,
-          "test-oauth",
-          "oauth",
-          undefined,
-          { intent: "reconnect", connectionId: supplemental.id },
-        );
+        return connectorsApi.startOauth(actor, "test-oauth", "oauth", {
+          intent: "reconnect",
+          connectionId: supplemental.id,
+        });
       });
       expect(
         new URL(omittedStart.authorizationUrl).searchParams.get("scope"),
@@ -7977,7 +7617,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     await connectorsApi.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.TestOauthConnector]: true,
     });
-    const agent = await authOrgApi.createAgent(actor, {
+    await authOrgApi.createAgent(actor, {
       displayName: "OAuth Connector Agent",
     });
 
@@ -7997,13 +7637,10 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     );
     expect(manual.authMethod).toBe("api-token");
 
-    const start = await connectorsApi.startOauth(
-      actor,
-      "test-oauth",
-      "oauth",
-      agent.agentId,
-      { intent: "reconnect", connectionId: manualConnection.id },
-    );
+    const start = await connectorsApi.startOauth(actor, "test-oauth", "oauth", {
+      intent: "reconnect",
+      connectionId: manualConnection.id,
+    });
     const authorizationUrl = new URL(start.authorizationUrl);
     expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
       "http://localhost:3000/api/test/oauth-provider/authorize",
@@ -8046,9 +7683,6 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       connectionStatus: "connected",
     });
     expectNoVisibleSecret(oauthConnector, "bdd-test-oauth-access-token");
-    await expect(
-      authOrgApi.readEnabledConnectorSlugs(actor, agent.agentId),
-    ).resolves.toContain("test-oauth");
 
     const listed = await connectorsApi.listBuiltinConnectors(actor);
     expectNoVisibleSecret(listed, "bdd-manual-test-oauth-token");
@@ -8071,7 +7705,6 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       actor,
       "test-oauth",
       "api",
-      undefined,
       { intent: "reconnect", connectionId: oauthConnector.id },
     );
     const apiState = stateFromAuthorizationUrl(apiStart.authorizationUrl);
@@ -8123,7 +7756,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     });
 
     const oauthStart = await own(() => {
-      return connectorsApi.startOauth(actor, "test-oauth", "oauth", undefined, {
+      return connectorsApi.startOauth(actor, "test-oauth", "oauth", {
         intent: "reconnect",
         connectionId: initial.id,
       });
@@ -8189,7 +7822,6 @@ describe("CONN-02: test-oauth auth-code journey", () => {
           inputVariable: "bdd-successful-replacement-input",
           tenantId: "bdd-successful-replacement-tenant",
         },
-        undefined,
         { intent: "reconnect", connectionId: oauthConnector.id },
       );
     });
@@ -8304,7 +7936,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       omitExpiresIn: true,
     });
     const defaultStart = await own(() => {
-      return connectorsApi.startOauth(actor, "test-oauth", "oauth", undefined, {
+      return connectorsApi.startOauth(actor, "test-oauth", "oauth", {
         intent: "reconnect",
         connectionId: explicitExpiry.id,
       });
@@ -8363,7 +7995,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
 
     mockTestOAuthAuthCodeProvider({ tokenError: true });
     const tokenFailStart = await own(() => {
-      return connectorsApi.startOauth(actor, "test-oauth", "oauth", undefined, {
+      return connectorsApi.startOauth(actor, "test-oauth", "oauth", {
         intent: "reconnect",
         connectionId: defaultExpiry.id,
       });
@@ -8392,7 +8024,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
 
     mockTestOAuthAuthCodeProvider({ userinfoError: true });
     const userinfoFailStart = await own(() => {
-      return connectorsApi.startOauth(actor, "test-oauth", "oauth", undefined, {
+      return connectorsApi.startOauth(actor, "test-oauth", "oauth", {
         intent: "reconnect",
         connectionId: defaultExpiry.id,
       });
@@ -8527,7 +8159,6 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
 
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
-    let createdAgentId: string | undefined;
     const owner = createPublicConnectorActor(context, {
       optionalEnvironmentNames: [
         "GH_OAUTH_CLIENT_ID",
@@ -8538,11 +8169,6 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
         "GITHUB_APP_CLIENT_ID",
         "GITHUB_APP_CLIENT_SECRET",
       ],
-      beforeWorkspaceCleanup: async (): Promise<void> => {
-        if (createdAgentId) {
-          await bdd.deleteAgent(admin, createdAgentId);
-        }
-      },
     });
     const admin = owner.actor;
     const own = owner.run;
@@ -8553,7 +8179,6 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
         });
       });
 
-      createdAgentId = agent.agentId;
       await own(() => {
         return connectorsApi.installGithubAppViaApi(
           admin,

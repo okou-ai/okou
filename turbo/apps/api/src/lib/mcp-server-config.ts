@@ -8,6 +8,7 @@ export const MCP_DEFAULT_SCOPES = [
   "email",
   "profile",
   ...MCP_REQUIRED_SCOPES,
+  "okou:project:read",
   "okou:chat:send",
   "okou:chat:manage",
   "okou:run:cancel",
@@ -17,7 +18,6 @@ export const MCP_DEFAULT_SCOPES = [
 // Optional native-client grants are advertised, not added to MCP's default consent.
 export const MCP_SUPPORTED_SCOPES = [
   ...MCP_DEFAULT_SCOPES,
-  "okou:project:read",
   "okou:voice:transcribe",
 ] as const;
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   CLIENT_TYPE_APP,
   CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
@@ -10,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import iosClientCompatibility from "../../../lib/ios-client-compatibility.json";
 import webClientCompatibility from "../../../lib/web-client-compatibility.json";
 import { createRouteMocks } from "./helpers/route-test";
 import { featureSwitchesRoutes } from "../feature-switches";
@@ -23,46 +25,6 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
-  it("keeps Projects availability with My Okou for each workspace membership", async () => {
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    const userId = `user_${randomUUID()}`;
-    const retainedOrg = `org_${randomUUID()}`;
-    const newOrg = `org_${randomUUID()}`;
-    clerk.session(userId, retainedOrg, "org:member");
-    const retained = await accept(
-      client().update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.SingleAgent]: false } },
-      }),
-      [200],
-    );
-    expect(retained.body.effectiveSwitches).toMatchObject({
-      singleAgent: false,
-      projects: false,
-    });
-
-    clerk.session(userId, newOrg, "org:member");
-    const initialized = await accept(client().get({ headers }), [200]);
-    expect(initialized.body.effectiveSwitches).toMatchObject({
-      singleAgent: true,
-      projects: true,
-    });
-
-    clerk.session(userId, retainedOrg, "org:member");
-    const optedIn = await accept(
-      client().update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.SingleAgent]: true } },
-      }),
-      [200],
-    );
-    expect(optedIn.body.effectiveSwitches).toMatchObject({
-      singleAgent: true,
-      projects: true,
-    });
-  });
-
   it("enables presentation format for staff with personal opt-out overrides", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
@@ -296,56 +258,68 @@ describe("/api/feature-switches", () => {
     });
   });
 
-  it("returns registered switches while merging known overrides for a supported App", async () => {
-    createRouteMocks(context).clerk.session(
-      `user_${randomUUID()}`,
-      `org_${randomUUID()}`,
-      "org:member",
-    );
-    const headers = {
-      authorization: "Bearer clerk-session",
-      [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-      [CLIENT_VERSION_HEADER]: webClientCompatibility.minimumSupportedVersion,
-    };
-    await accept(
-      client().update({
-        headers,
-        body: {
-          switches: {
-            [FeatureSwitchKey.RealAgentInPreview]: true,
-            [FeatureSwitchKey.Dummy]: false,
+  it.each([
+    {
+      type: CLIENT_TYPE_APP,
+      version: webClientCompatibility.minimumSupportedVersion,
+    },
+    {
+      type: CLIENT_TYPE_IOS,
+      version: iosClientCompatibility.minimumSupportedVersion,
+    },
+  ])(
+    "returns registered switches while merging known overrides for $type $version",
+    async ({ type, version }) => {
+      createRouteMocks(context).clerk.session(
+        `user_${randomUUID()}`,
+        `org_${randomUUID()}`,
+        "org:member",
+      );
+      const headers = {
+        authorization: "Bearer clerk-session",
+        [CLIENT_TYPE_HEADER]: type,
+        [CLIENT_VERSION_HEADER]: version,
+      };
+      await accept(
+        client().update({
+          headers,
+          body: {
+            switches: {
+              [FeatureSwitchKey.RealAgentInPreview]: true,
+              [FeatureSwitchKey.Dummy]: false,
+            },
           },
-        },
-      }),
-      [200],
-    );
-    const updated = await accept(
-      client().update({
-        headers,
-        body: {
-          switches: {
-            [FeatureSwitchKey.RealAgentInPreview]: false,
-            unregisteredFeature: true,
+        }),
+        [200],
+      );
+      const updated = await accept(
+        client().update({
+          headers,
+          body: {
+            switches: {
+              [FeatureSwitchKey.RealAgentInPreview]: false,
+              unregisteredFeature: true,
+            },
           },
-        },
-      }),
-      [200],
-    );
-    const expected = {
-      [FeatureSwitchKey.RealAgentInPreview]: false,
-      [FeatureSwitchKey.Dummy]: false,
-    };
-    expect(updated.body.switches).toStrictEqual(expected);
-    expect(updated.body.effectiveSwitches).toMatchObject(expected);
-    expect(Object.keys(updated.body.effectiveSwitches).sort()).toStrictEqual(
-      [...Object.values(FeatureSwitchKey), "projects"].sort(),
-    );
-    const current = await accept(client().get({ headers }), [200]);
-    expect(current.body.switches).toStrictEqual(expected);
-    expect(current.body.effectiveSwitches).toStrictEqual(
-      updated.body.effectiveSwitches,
-    );
-  });
+        }),
+        [200],
+      );
+      const expected = {
+        [FeatureSwitchKey.RealAgentInPreview]: false,
+        [FeatureSwitchKey.Dummy]: false,
+      };
+      expect(updated.body.switches).toStrictEqual(expected);
+      expect(updated.body.effectiveSwitches).toMatchObject(expected);
+      expect(Object.keys(updated.body.effectiveSwitches).sort()).toStrictEqual(
+        Object.values(FeatureSwitchKey).sort(),
+      );
+      const current = await accept(client().get({ headers }), [200]);
+      expect(current.body.switches).toStrictEqual(expected);
+      expect(current.body.effectiveSwitches).toStrictEqual(
+        updated.body.effectiveSwitches,
+      );
+    },
+  );
 
   it("deletes the caller's overrides and organization keys without deleting a peer's personal override", async () => {
     const clerk = createRouteMocks(context).clerk;

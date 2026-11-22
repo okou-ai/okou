@@ -1,4 +1,9 @@
 /** Public App destinations; each provider owns its query and authorization state. */
+export const CONNECTOR_PERMISSION_PATHS = {
+  single: "/connectors/permissions",
+  batch: "/connectors/permissions/batch",
+} as const;
+
 export const INTEGRATION_SETTINGS_PATHS = {
   email: "/settings/email",
   agentphone: "/settings/agentphone",

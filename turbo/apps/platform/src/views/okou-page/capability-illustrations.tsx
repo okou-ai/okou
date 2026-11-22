@@ -1,444 +1,400 @@
 import type { ReactNode } from "react";
-import { useGet } from "ccstate-react";
 import { cn } from "@okouai/ui";
-import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
-import { theme$ } from "../../signals/theme.ts";
 
 /**
- * The capability cards' art: a few photographed objects, shot flat from
- * above, standing on a faint ground of the card's own hue with the brand's
- * Spiral texture pooled behind them. The ground is strongest behind the
- * objects and gone before the copy and the buttons, so nothing sits under a
- * label.
+ * The capability cards' art: a cut-paper collage per card. Each is a few
+ * large flat shapes in tones of the card's one hue with a brush texture laid
+ * into them, composed around an element that stays whole while the rest runs
+ * off the card's edge:
  *
- * Each object is its own layer, so it can move on its own: a layer is an
- * anchor at the object's centre carrying its resting pose, and the card's
- * `capability-active` state (hovered or holding focus) moves it into a
- * lifted pose -- the cards fan out, the magnifier slides onto the page, the
- * papers spread. Swapping a Create or Workflow choice plays the new
- * objects' entrance from a pose of their own. Positions are in card pixels, placed by where
- * the objects visibly sit, so every composition has the same room above and
- * below it at rest and lifted.
+ * - Find people: three figures, the one in front stepped forward.
+ * - Research: columns of data under a lens that really enlarges them.
+ * - Create: a written page with a picture laid over it.
+ * - Workflow: three steps strung on arrows.
+ *
+ * A card's two colours, `paper` and `ink`, are registered per theme in
+ * `views/css/index.css`; the art root selects its card's pair into
+ * `--capability-paper` and `--capability-ink`, and every tone below is one of
+ * those mixed toward the card's ground. The drawing is decoration: it is
+ * hidden from assistive technology and lets the pointer through to the card's
+ * cover.
+ *
+ * While its card is active (hovered or holding focus) one thing in a drawing
+ * moves: the figure in front steps up, the lens crosses to another column,
+ * the page slides out from behind the picture, a signal runs along the
+ * arrows. Every motion is behind `motion-safe:`.
  */
 type CapabilityCard = "people" | "research" | "create" | "workflow";
 
-type CapabilityArt =
-  | "people"
-  | "research"
-  | "presentation"
-  | "image"
-  | "document"
-  | "website"
-  | "chart"
-  | "scheduled"
-  | "triggers"
-  | "advanced";
+/* The tones: two of paper for the sheets, three of ink for brush and line. */
+const PAPER =
+  "bg-[color-mix(in_oklab,var(--capability-paper)_62.5%,var(--color-muted))]";
+const PAPER_DEEP = "bg-(--capability-paper)";
+const BRUSH =
+  "bg-[color-mix(in_oklab,var(--capability-ink)_57%,var(--color-muted))]";
+const BRUSH_DEEP =
+  "bg-[color-mix(in_oklab,var(--capability-ink)_80%,var(--color-muted))]";
+const INK = "bg-(--capability-ink)";
 
-function capabilityAsset(file: string): string {
-  return platformStaticAssetUrl(
-    `views/zero-page/assets/capability-home/${file}`,
-  );
-}
-
-const ASSETS = {
-  card: capabilityAsset("card-c7bc481949c3.webp"),
-  page: capabilityAsset("page-6ea66047359d.webp"),
-  magnifierRim: capabilityAsset("magnifier-rim-267c204e7508.webp"),
-  magnifierGlass: capabilityAsset("magnifier-glass-72c4e8be518a.webp"),
-  paper: capabilityAsset("paper-19aa052331ee.webp"),
-  photo: capabilityAsset("photo-b6f3659f9a28.webp"),
-  photoSmall: capabilityAsset("photo-small-16de9d09f7d4.webp"),
-  slide: capabilityAsset("slide-f5d83b4e2fa1.webp"),
-  tablet: capabilityAsset("tablet-e97e60dd292e.webp"),
-  gearWhite: capabilityAsset("gear-white-59cfc0d412fd.webp"),
-  gearOrange: capabilityAsset("gear-orange-49ed92612d51.webp"),
-  clock: capabilityAsset("clock-1b41fed4e5cb.webp"),
-  bell: capabilityAsset("bell-c27a2fc55087.webp"),
-  spiralWhite: capabilityAsset("spiral-white-470c2e64094e.svg"),
-  spiralBlack: capabilityAsset("spiral-black-38d06102f11e.svg"),
-  faceBlue: capabilityAsset("face-blue-17a2f83734d0.svg"),
-  faceYellow: capabilityAsset("face-yellow-0d44a0c32917.svg"),
-  facePink: capabilityAsset("face-pink-971f29c61abf.svg"),
-} as const;
+/** The texture inside a shape drifts a few pixels while the card is active. */
+const DRIFT =
+  "motion-safe:transition-[translate] motion-safe:duration-1300 motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-safe:capability-active:translate-x-[-5px] motion-safe:capability-active:translate-y-[3px]";
 
 /**
- * Where each card's ground pools: its hue, the centre and radii of the pool
- * behind its objects, and the Spiral, 1.5 times the card's height, bleeding
- * past its top and right edges.
+ * One cut-paper shape: a flat tone, and a brush texture laid into it as an
+ * alpha mask over a span of the stroke's tone. `brush` carries the mask's
+ * image, size and position; a shape without one is plain paper.
  */
-const TOP_POOL =
-  "[--capability-pool-x:71%] [--capability-pool-y:52%] [--capability-pool-rx:190px] [--capability-pool-ry:150px]";
-const TOP_SPIRAL = "-top-[74px] -right-[32px] size-[252px]";
-const BOTTOM_SPIRAL = "-top-[82px] -right-[34px] size-[276px]";
-
-const GROUNDS = {
-  people: {
-    pool: cn("[--capability-hue:var(--color-capability-people)]", TOP_POOL),
-    spiral: TOP_SPIRAL,
-  },
-  research: {
-    pool: cn("[--capability-hue:var(--color-capability-research)]", TOP_POOL),
-    spiral: TOP_SPIRAL,
-  },
-  create: {
-    pool: "[--capability-hue:var(--color-capability-create)] [--capability-pool-x:74%] [--capability-pool-y:34%] [--capability-pool-rx:180px] [--capability-pool-ry:118px]",
-    spiral: BOTTOM_SPIRAL,
-  },
-  workflow: {
-    pool: "[--capability-hue:var(--color-capability-workflow)] [--capability-pool-x:72%] [--capability-pool-y:34%] [--capability-pool-rx:170px] [--capability-pool-ry:118px]",
-    spiral: BOTTOM_SPIRAL,
-  },
-} as const satisfies Record<
-  CapabilityCard,
-  { readonly pool: string; readonly spiral: string }
->;
-
-const SPIRAL =
-  "absolute max-w-none transition-transform duration-1200 ease-[cubic-bezier(0.2,0.8,0.2,1)] capability-active:translate-x-[-7px] capability-active:translate-y-[5px] capability-active:-rotate-2 motion-reduce:transition-none";
-
-/**
- * A card's ground, under everything else in it. The hue wash paints over the
- * texture pool, so the white Spiral takes the card's tint instead of cutting
- * through it. The pool reaches a little further while the card is active, and
- * the Spiral drifts a few pixels the other way from the objects. Only the
- * current theme's Spiral is drawn, so the other one is never requested.
- */
-export function CapabilityGround({ card }: { readonly card: CapabilityCard }) {
-  const { pool, spiral } = GROUNDS[card];
-  const dark = useGet(theme$) === "dark";
-  return (
-    <span
-      aria-hidden
-      className={cn("pointer-events-none absolute inset-0", pool)}
-    >
-      <span className="absolute inset-0 [mask-image:radial-gradient(var(--capability-pool-rx)_var(--capability-pool-ry)_at_var(--capability-pool-x)_var(--capability-pool-y),black_calc(var(--capability-pool)_-_50%),transparent_var(--capability-pool))] transition-[--capability-pool] duration-900 ease-[cubic-bezier(0.2,0.8,0.2,1)] capability-active:[--capability-pool:100%] motion-reduce:transition-none">
-        <span className="absolute inset-0 bg-capability-pool opacity-35" />
-        <img
-          src={dark ? ASSETS.spiralBlack : ASSETS.spiralWhite}
-          alt=""
-          className={cn(SPIRAL, spiral, dark && "opacity-55")}
-        />
-      </span>
-      <span className="absolute inset-0 bg-capability-wash opacity-(--okou-capability-wash) transition-opacity duration-400 capability-active:opacity-(--okou-capability-wash-active) motion-reduce:transition-none" />
-      <span className="absolute inset-0 bg-capability-grain opacity-6 mix-blend-multiply [mask-image:radial-gradient(calc(var(--capability-pool-rx)*1.35)_calc(var(--capability-pool-ry)*1.5)_at_var(--capability-pool-x)_var(--capability-pool-y),black,transparent)] dark:mix-blend-screen dark:invert" />
-    </span>
-  );
-}
-
-/**
- * The box a card's objects are placed in, anchored to the card's right edge.
- * Find people and Research keep their single action in the left column, so
- * their objects take the right column's full height; Create and Workflow run
- * their choices across the card, so their objects stand above that row.
- */
-const STAGES = {
-  people: "right-3 h-[168px] w-[236px]",
-  research: "right-3 h-[168px] w-[236px]",
-  create: "right-[14px] h-[134px] w-[226px]",
-  workflow: "right-[10px] h-[134px] w-[206px]",
-} as const satisfies Record<CapabilityCard, string>;
-
-export function CapabilityStage({
-  card,
+function Shape({
   className,
+  fill = PAPER,
+  stroke = BRUSH,
+  brush,
+  still = false,
   children,
 }: {
-  readonly card: CapabilityCard;
-  readonly className?: string;
-  readonly children: ReactNode;
+  readonly className: string;
+  readonly fill?: string;
+  readonly stroke?: string;
+  readonly brush?: string;
+  readonly still?: boolean;
+  readonly children?: ReactNode;
 }) {
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "pointer-events-none absolute top-0 z-[1]",
-        STAGES[card],
-        className,
+    <span className={cn("absolute block overflow-hidden", fill, className)}>
+      {brush !== undefined && (
+        <i
+          className={cn(
+            "absolute -inset-[30%] [mask-repeat:no-repeat]",
+            stroke,
+            brush,
+            !still && DRIFT,
+          )}
+        />
       )}
-    >
       {children}
     </span>
   );
 }
 
-/**
- * One object. `pose` places the anchor at the object's centre in its resting
- * and lifted poses, sets its stacking depth, and names the pose it enters
- * from; `width` sizes the photograph, which is centred on the anchor.
- */
-interface CapabilityLayer {
-  readonly src: string;
-  readonly pose: string;
-  readonly width: string;
-  /** Motion of the photograph inside its pose: a gear's turn, the bell's ring. */
-  readonly turn?: string;
-  readonly detail?: ReactNode;
-}
+/* ───────────────────────────── Find people ───────────────────────────── */
 
-const LAYER =
-  "absolute size-0 transition-[translate,rotate,scale] duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none";
-const BODY =
-  "absolute block -translate-1/2 [filter:var(--okou-capability-object-shadow)] transition-[filter] duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] capability-active:[filter:var(--okou-capability-object-shadow-lifted)] motion-reduce:transition-none";
-const FACE =
-  "absolute top-[24.4%] left-[49.6%] aspect-square w-[39%] -translate-1/2 rounded-full";
+const FIGURE =
+  "absolute inset-0 block motion-safe:transition-[translate] motion-safe:duration-900 motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)]";
+const DASH = "[mask-image:var(--okou-capability-brush-dash)]";
 
-/**
- * The light under the bell: a soft pool of the brand orange, lit while its
- * card is active. It has no edge of its own, so nothing in the photograph has
- * to line up with it.
- */
-const BELL_GLOW = (
-  <span className="absolute top-1/2 left-1/2 -z-1 aspect-square w-[132%] -translate-1/2 rounded-full bg-capability-glow opacity-0 transition-opacity duration-500 capability-active:opacity-100 motion-reduce:transition-none" />
-);
-
-/**
- * The magnifier's lens, under its rim: the same page at 1.9 times its size,
- * placed so the glass shows the part of the page beneath it. The lens's
- * centre and radius are measured from the rim photograph, and both objects
- * only move between their resting and lifted poses on one 700ms curve, so the
- * magnified page moves between the placements computed for those two poses on
- * that curve too.
- */
-const MAGNIFIER_LENS = (
-  <>
-    <span className="absolute top-[6.36px] left-[6.23px] -z-2 size-[48.15px] overflow-hidden rounded-full">
-      <img
-        src={ASSETS.page}
-        alt=""
-        className="absolute top-0 left-0 w-[84px] max-w-none origin-top-left translate-x-[-100.01px] translate-y-[-79.2px] -rotate-8 scale-190 transition-[translate,rotate] duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] capability-active:translate-x-[-53.56px] capability-active:translate-y-[-29.8px] capability-active:rotate-2 motion-reduce:transition-none dark:brightness-93"
-      />
-    </span>
-    <img
-      src={ASSETS.magnifierGlass}
-      alt=""
-      className="absolute inset-0 -z-1 w-full opacity-35"
-    />
-  </>
-);
-
-/**
- * The clock's hands, drawn over the photographed face so they can move: they
- * sweep round to the time as the clock enters, then the second and minute
- * hands tick while the card is active. Each hand rests on its outer `rotate`
- * and ticks on its inner `transform`, so a tick composes with the rest.
- */
-const CLOCK_HANDS = (
-  <span className="absolute inset-0">
-    <span className="absolute bottom-1/2 left-1/2 -ml-[2%] h-[22%] w-[4%] origin-bottom -rotate-60 motion-safe:animate-capability-hour-sweep">
-      <span className="block size-full rounded-full bg-capability-clock-hand" />
-    </span>
-    <span className="absolute bottom-1/2 left-1/2 -ml-[1.5%] h-[32%] w-[3%] origin-bottom rotate-54 motion-safe:animate-capability-minute-sweep">
-      <span className="block size-full origin-bottom rounded-full bg-capability-clock-hand/80 motion-safe:capability-active:animate-capability-minute-tick" />
-    </span>
-    <span className="absolute bottom-1/2 left-1/2 -ml-[0.7%] h-[36%] w-[1.4%] origin-bottom rotate-150">
-      <span className="block size-full origin-bottom rounded-full bg-primary motion-safe:capability-active:animate-capability-second-tick" />
-    </span>
-  </span>
-);
-
-/**
- * Where a Create or Workflow choice's objects enter from: a group with several
- * objects gathers them into a small stack at its centre and fans them out; a
- * single object rises into place; the gears roll in; the bell rings. Find
- * people and Research never swap, so their objects only rest and lift.
- */
-const ARTS = {
-  people: [
-    {
-      src: ASSETS.card,
-      width: "w-[66px]",
-      pose: "top-[86px] left-[78px] z-5 -rotate-11 capability-active:translate-x-[-20px] capability-active:translate-y-[2px] capability-active:-rotate-17",
-      detail: <img src={ASSETS.faceBlue} alt="" className={FACE} />,
-    },
-    {
-      src: ASSETS.card,
-      width: "w-[66px]",
-      pose: "top-[86px] left-[158px] z-5 rotate-11 capability-active:translate-x-[20px] capability-active:translate-y-[2px] capability-active:rotate-17",
-      detail: <img src={ASSETS.facePink} alt="" className={FACE} />,
-    },
-    {
-      src: ASSETS.card,
-      width: "w-[68px]",
-      pose: "top-[80px] left-[118px] z-10 capability-active:translate-y-[-4px] capability-active:-rotate-2 capability-active:scale-105",
-      detail: <img src={ASSETS.faceYellow} alt="" className={FACE} />,
-    },
-  ],
-  research: [
-    {
-      src: ASSETS.page,
-      width: "w-[84px]",
-      pose: "top-[80px] left-[127px] z-4 -rotate-6 capability-active:translate-x-[-2px] capability-active:-rotate-4",
-    },
-    {
-      // Rests on the lines of text and glides up onto the chart; the lens
-      // stays inside the page in both poses.
-      src: ASSETS.magnifierRim,
-      width: "w-[84px]",
-      pose: "top-[101px] left-[154px] z-12 rotate-2 capability-active:translate-x-[-18px] capability-active:translate-y-[-36px] capability-active:-rotate-6",
-      detail: MAGNIFIER_LENS,
-    },
-  ],
-  presentation: [
-    {
-      src: ASSETS.paper,
-      width: "w-[62px]",
-      pose: "top-[70px] left-[62px] z-4 -rotate-12 [--capability-from-scale:0.86] [--capability-from-x:46px] [--capability-from-y:8px] capability-active:translate-x-[-18px] capability-active:translate-y-[2px] capability-active:-rotate-18",
-    },
-    {
-      src: ASSETS.photo,
-      width: "w-[92px]",
-      pose: "top-[60px] left-[112px] z-7 rotate-6 [--capability-delay:70ms] [--capability-from-scale:0.86] [--capability-from-x:-4px] [--capability-from-y:18px] capability-active:translate-x-[4px] capability-active:translate-y-[-6px] capability-active:rotate-9",
-    },
-    {
-      src: ASSETS.slide,
-      width: "w-[100px]",
-      pose: "top-[80px] left-[150px] z-11 -rotate-3 [--capability-delay:140ms] [--capability-from-scale:0.86] [--capability-from-x:-42px] [--capability-from-y:-2px] capability-active:translate-x-[18px] capability-active:translate-y-[2px] capability-active:rotate-3",
-    },
-  ],
-  image: [
-    {
-      src: ASSETS.photoSmall,
-      width: "w-[70px]",
-      pose: "top-[66px] left-[84px] z-5 -rotate-9 [--capability-from-scale:0.86] [--capability-from-x:32px] [--capability-from-y:11px] capability-active:translate-x-[-18px] capability-active:translate-y-[4px] capability-active:-rotate-15",
-    },
-    {
-      src: ASSETS.photo,
-      width: "w-[110px]",
-      pose: "top-[72px] left-[148px] z-10 rotate-5 [--capability-delay:70ms] [--capability-from-scale:0.86] [--capability-from-x:-32px] [--capability-from-y:5px] capability-active:translate-x-[12px] capability-active:translate-y-[-6px] capability-active:rotate-9",
-    },
-  ],
-  document: [
-    {
-      src: ASSETS.paper,
-      width: "w-[70px]",
-      pose: "top-[68px] left-[104px] z-3 -rotate-8 [--capability-from-scale:0.86] [--capability-from-x:8px] [--capability-from-y:6px] capability-active:translate-x-[-26px] capability-active:translate-y-[4px] capability-active:-rotate-15",
-    },
-    {
-      src: ASSETS.paper,
-      width: "w-[70px]",
-      pose: "top-[66px] left-[112px] z-6 -rotate-2 [--capability-delay:70ms] [--capability-from-scale:0.86] [--capability-from-y:8px] capability-active:translate-x-[2px] capability-active:translate-y-[-4px] capability-active:-rotate-1",
-    },
-    {
-      src: ASSETS.paper,
-      width: "w-[70px]",
-      pose: "top-[64px] left-[120px] z-9 rotate-5 [--capability-delay:140ms] [--capability-from-scale:0.86] [--capability-from-x:-8px] [--capability-from-y:10px] capability-active:translate-x-[30px] capability-active:translate-y-[6px] capability-active:rotate-12",
-    },
-  ],
-  website: [
-    {
-      src: ASSETS.tablet,
-      width: "w-[124px]",
-      pose: "top-[66px] left-[124px] z-8 -rotate-5 [--capability-from-rotate:-13deg] [--capability-from-scale:0.88] [--capability-from-y:14px] capability-active:translate-y-[-2px] capability-active:-rotate-1 capability-active:scale-103",
-    },
-  ],
-  chart: [
-    {
-      src: ASSETS.slide,
-      width: "w-[128px]",
-      pose: "top-[66px] left-[126px] z-8 -rotate-4 [--capability-from-rotate:-12deg] [--capability-from-scale:0.88] [--capability-from-y:14px] capability-active:translate-y-[-4px] capability-active:-rotate-1 capability-active:scale-104",
-    },
-  ],
-  scheduled: [
-    {
-      src: ASSETS.clock,
-      width: "w-[98px]",
-      pose: "top-[66px] left-[104px] z-8 [--capability-from-rotate:-8deg] [--capability-from-scale:0.88] [--capability-from-y:14px] capability-active:translate-y-[-2px] capability-active:scale-103",
-      detail: CLOCK_HANDS,
-    },
-  ],
-  triggers: [
-    {
-      src: ASSETS.bell,
-      width: "w-[104px]",
-      pose: "top-[65px] left-[104px] z-8 [--capability-from-scale:0.86] [--capability-from-y:10px] capability-active:translate-y-[-3px]",
-      turn: "origin-[50%_85%] motion-safe:capability-active:animate-capability-ding",
-      detail: BELL_GLOW,
-    },
-  ],
-  advanced: [
-    {
-      src: ASSETS.gearWhite,
-      width: "w-[86px]",
-      pose: "top-[62px] left-[62px] z-5 [--capability-from-rotate:-120deg] [--capability-from-scale:0.6] capability-active:translate-y-[-2px]",
-      turn: "motion-safe:animate-capability-gear",
-    },
-    {
-      src: ASSETS.gearWhite,
-      width: "w-[66px]",
-      pose: "top-[95px] left-[122px] z-8 rotate-14 [--capability-delay:70ms] [--capability-from-rotate:-106deg] [--capability-from-scale:0.6] capability-active:translate-y-[-2px]",
-      turn: "motion-safe:animate-capability-gear-reverse",
-    },
-    {
-      src: ASSETS.gearOrange,
-      width: "w-[46px]",
-      pose: "top-[76px] left-[156px] z-11 rotate-9 [--capability-delay:140ms] [--capability-from-rotate:-111deg] [--capability-from-scale:0.6] capability-active:translate-y-[-2px]",
-      turn: "motion-safe:animate-capability-gear-fast",
-    },
-  ],
-} as const satisfies Record<CapabilityArt, readonly CapabilityLayer[]>;
-
-/**
- * Find people and Research show one composition, which their stage fades in
- * as a whole; every other drawing is one of a card's choices and enters as it
- * is swapped in.
- */
-function entrance(art: CapabilityArt): string | undefined {
-  return art === "people" || art === "research"
-    ? undefined
-    : "motion-safe:animate-capability-layer-in";
-}
-
-/**
- * `loading` is `lazy` for a drawing that is hidden until its choice is hovered
- * or focused: the browser does not fetch a lazy image that is not rendered, so
- * the home requests only the drawings it shows at rest, and a hidden one loads
- * when its choice first brings it in.
- */
-export function CapabilityObjects({
-  art,
-  className,
-  loading,
-}: {
-  readonly art: CapabilityArt;
-  readonly className?: string;
-  readonly loading?: "eager" | "lazy";
-}) {
-  const layers: readonly CapabilityLayer[] = ARTS[art];
+function PeopleCollage() {
   return (
-    <span className={cn("absolute inset-0", className)}>
-      {layers.map(({ src, pose, width, turn, detail }) => {
-        const photo = (
-          <img
-            src={src}
-            alt=""
-            loading={loading}
-            className="block w-full dark:brightness-93"
+    <span className="absolute right-0 bottom-0 block h-[168px] w-[270px] origin-bottom-right scale-[0.86] @max-[428px]:scale-[0.66]">
+      <span
+        className={cn(
+          FIGURE,
+          "motion-safe:capability-active:translate-x-[-4px] motion-safe:capability-active:translate-y-[2px]",
+        )}
+      >
+        <Shape
+          className="top-[112px] left-[10px] h-[96px] w-[112px] rounded-t-full"
+          brush={cn(DASH, "[mask-size:250px_auto] [mask-position:30%_40%]")}
+        />
+        <Shape
+          className="top-[58px] left-[43px] size-[46px] rounded-full"
+          brush={cn(DASH, "[mask-size:150px_auto] [mask-position:70%_30%]")}
+        />
+      </span>
+      <span
+        className={cn(
+          FIGURE,
+          "motion-safe:capability-active:translate-x-[4px] motion-safe:capability-active:translate-y-[2px]",
+        )}
+      >
+        <Shape
+          className="top-[106px] left-[170px] h-[96px] w-[112px] rounded-t-full"
+          brush={cn(DASH, "[mask-size:250px_auto] [mask-position:80%_60%]")}
+        />
+        <Shape
+          className="top-[52px] left-[203px] size-[46px] rounded-full"
+          brush={cn(DASH, "[mask-size:150px_auto] [mask-position:20%_70%]")}
+        />
+      </span>
+      {/* The figure in front is a tone deeper, with a sliver of the ground
+          around it, as cut paper overlaps. */}
+      <span
+        className={cn(
+          FIGURE,
+          "motion-safe:capability-active:translate-y-[-7px]",
+        )}
+      >
+        <Shape
+          className="top-[98px] left-[72px] h-[110px] w-[150px] rounded-t-full [box-shadow:0_-3px_0_0_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted)),-3px_0_0_0_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted)),3px_0_0_0_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted))]"
+          fill={PAPER_DEEP}
+          stroke={BRUSH_DEEP}
+          brush={cn(DASH, "[mask-size:290px_auto] [mask-position:50%_30%]")}
+        />
+        <Shape
+          className="top-[30px] left-[117px] size-[60px] rounded-full [box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted))]"
+          fill={PAPER_DEEP}
+          stroke={BRUSH_DEEP}
+          brush={cn(DASH, "[mask-size:190px_auto] [mask-position:45%_55%]")}
+        />
+      </span>
+    </span>
+  );
+}
+
+/* ───────────────────────────── Research ───────────────────────────── */
+
+const DROP =
+  "[mask-image:var(--okou-capability-brush-drop)] [mask-size:200px_auto]";
+const BARS = [
+  {
+    box: "top-[124px] left-[34px] h-[60px]",
+    brush: "[mask-position:20%_30%]",
+  },
+  {
+    box: "top-[96px] left-[74px] h-[90px]",
+    brush: "[mask-position:35%_60%]",
+  },
+  {
+    box: "top-[112px] left-[114px] h-[70px]",
+    brush: "[mask-position:50%_20%]",
+  },
+  {
+    box: "top-[68px] left-[154px] h-[120px]",
+    brush: "[mask-position:62%_50%]",
+  },
+  {
+    box: "top-[88px] left-[194px] h-[100px]",
+    brush: "[mask-position:76%_35%]",
+  },
+  {
+    box: "top-[44px] left-[234px] h-[140px]",
+    brush: "[mask-position:90%_60%]",
+  },
+] as const;
+
+/** The columns; under the lens they are drawn again, deeper. */
+function Bars({ magnified = false }: { readonly magnified?: boolean }) {
+  return (
+    <>
+      {BARS.map(({ box, brush }) => {
+        return (
+          <Shape
+            key={box}
+            className={cn("w-[28px] rounded-t-[9px]", box)}
+            fill={magnified ? BRUSH : PAPER}
+            stroke={magnified ? INK : BRUSH}
+            brush={cn(DROP, brush)}
           />
         );
-        return (
-          // No two objects in a drawing share a place, so the pose is unique.
-          <span key={pose} className={cn(LAYER, entrance(art), pose)}>
-            <span className={cn(BODY, width)}>
-              {turn ? (
-                // The gears turn only while the card is active and keep the
-                // angle they reached when it lets go; the bell rocks once
-                // each time the card becomes active.
-                <span
-                  className={cn(
-                    "block capability-active:[animation-play-state:running]",
-                    turn,
-                  )}
-                >
-                  {photo}
-                </span>
-              ) : (
-                photo
-              )}
-              {detail}
-            </span>
-          </span>
-        );
       })}
+    </>
+  );
+}
+
+/**
+ * The lens holds a second copy of the columns, scaled 1.7 times about the
+ * lens's own centre, so what it shows is always what lies under it. The lens
+ * and that copy read one registered offset, `--okou-capability-lens-x`/`-y`,
+ * which glides to another column while the card is active.
+ */
+function ResearchCollage() {
+  return (
+    <span className="absolute right-0 bottom-0 block h-[168px] w-[256px] origin-bottom-right scale-[0.9] motion-safe:transition-[--okou-capability-lens-x,--okou-capability-lens-y] motion-safe:duration-1100 motion-safe:ease-[cubic-bezier(0.45,0,0.2,1)] motion-safe:capability-active:[--okou-capability-lens-x:-80px] motion-safe:capability-active:[--okou-capability-lens-y:24px] @max-[428px]:scale-[0.66]">
+      <Bars />
+      <span className="absolute inset-0 block [translate:var(--okou-capability-lens-x)_var(--okou-capability-lens-y)]">
+        <span className="absolute top-[93px] left-[131px] block h-[42px] w-[10px] origin-top rotate-45 rounded-[5px] bg-(--capability-ink)" />
+        <span className="absolute top-[20px] left-[124px] block size-[88px] overflow-hidden rounded-full bg-[color-mix(in_oklab,var(--capability-paper)_36%,var(--color-muted))]">
+          <span className="absolute top-0 left-0 block h-[168px] w-[256px] origin-top-left [transform:translate(calc(44px_-_1.7_*_(168px_+_var(--okou-capability-lens-x))),calc(44px_-_1.7_*_(64px_+_var(--okou-capability-lens-y))))_scale(1.7)]">
+            <Bars magnified />
+          </span>
+        </span>
+        <span className="absolute top-[20px] left-[124px] block size-[88px] rounded-full [box-shadow:inset_0_0_0_5px_var(--capability-ink)]" />
+      </span>
+    </span>
+  );
+}
+
+/* ────────────────────────────── Create ────────────────────────────── */
+
+const LOOP = "[mask-image:var(--okou-capability-brush-loop)]";
+const SHEET =
+  "h-[96px] w-[128px] rounded-[12px] [box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_13%,var(--color-muted))]";
+const PEAK = "[clip-path:polygon(50%_0,100%_100%,0_100%)]";
+
+/**
+ * Two sheets of one size, parallel. Behind, a written page: its brush is the
+ * dash turned on its side, whose rows read as lines of writing. In front, a
+ * picture: a sun and two peaks, each wearing the loop. Nothing is nested and
+ * nothing tilts against anything else, and only the page moves. Where the
+ * copy runs the card's full width, the collage moves to the bottom corner and
+ * rises from the edge, tops showing, as the top cards' do.
+ */
+function CreateCollage() {
+  return (
+    <span className="absolute top-0 right-0 block h-[184px] w-[250px] origin-top-right translate-y-[2px] scale-[0.88] @max-[428px]:scale-[0.66] @max-[398px]:top-auto @max-[398px]:bottom-[-34px] @max-[398px]:origin-bottom-right @max-[398px]:translate-y-0 @max-[398px]:scale-[0.62]">
+      <span className="absolute inset-0 block origin-[72%_46%] -rotate-6">
+        <Shape
+          className={cn(
+            SHEET,
+            "top-[10px] left-[62px] motion-safe:transition-[translate] motion-safe:duration-700 motion-safe:ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-safe:capability-active:translate-x-[-8px] motion-safe:capability-active:translate-y-[-7px]",
+          )}
+          brush="rotate-90 [mask-image:var(--okou-capability-brush-dash)] [mask-size:230px_auto] [mask-position:30%_22%]"
+          still
+        />
+        <Shape
+          className={cn(SHEET, "top-[38px] left-[98px]")}
+          fill={PAPER_DEEP}
+        >
+          <Shape
+            className="top-[12px] left-[94px] size-[22px] rounded-full"
+            fill={BRUSH_DEEP}
+            stroke={INK}
+            brush={cn(LOOP, "[mask-size:80px_auto] [mask-position:50%_50%]")}
+            still
+          />
+          <Shape
+            className={cn(PEAK, "top-[30px] left-[20px] h-[66px] w-[88px]")}
+            fill={BRUSH}
+            stroke={INK}
+            brush={cn(LOOP, "[mask-size:160px_auto] [mask-position:45%_55%]")}
+            still
+          />
+          <Shape
+            className={cn(PEAK, "top-[60px] left-[-8px] h-[36px] w-[60px]")}
+            fill={BRUSH_DEEP}
+            stroke={INK}
+            brush={cn(LOOP, "[mask-size:160px_auto] [mask-position:70%_30%]")}
+            still
+          />
+        </Shape>
+      </span>
+    </span>
+  );
+}
+
+/* ───────────────────────────── Workflow ───────────────────────────── */
+
+const STRIPE = "[mask-image:var(--okou-capability-brush-stripe)]";
+const STEP =
+  "[box-shadow:0_0_0_3px_color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted))]";
+
+/** The two links between the steps; each ends in an arrowhead at the step it feeds. */
+const FLOW = [
+  "M46 96 C48 126 66 118 82 106",
+  "M150 136 C172 148 204 132 210 100",
+] as const;
+
+/**
+ * Circle, square, circle on two arrows, the last step leaving by the card's
+ * edge. While the card is active a pale signal runs along both arrows.
+ */
+function WorkflowCollage() {
+  return (
+    <span className="absolute top-0 right-0 block h-[184px] w-[236px] origin-top-right translate-y-[4px] scale-[0.83] @max-[348px]:scale-[0.64]">
+      <svg
+        className="absolute inset-0 overflow-visible"
+        viewBox="0 0 236 184"
+        width="236"
+        height="184"
+      >
+        <defs>
+          <marker
+            id="capability-flow-head"
+            viewBox="0 0 10 10"
+            refX="4"
+            refY="5"
+            markerWidth="2.5"
+            markerHeight="2.5"
+            orient="auto"
+          >
+            <path
+              className="fill-(--capability-ink) stroke-(--capability-ink) stroke-[1.4] [stroke-linejoin:round]"
+              d="M1.5 1.2 L9 5 L1.5 8.8 Z"
+            />
+          </marker>
+        </defs>
+        {FLOW.map((d) => {
+          return (
+            <path
+              key={d}
+              className="fill-none stroke-(--capability-ink) stroke-[6] [stroke-linecap:round]"
+              d={d}
+              markerEnd="url(#capability-flow-head)"
+            />
+          );
+        })}
+        <path
+          className="fill-none stroke-(--capability-paper) stroke-[6] opacity-0 [stroke-dasharray:0.16_1] [stroke-dashoffset:0.16] [stroke-linecap:round] motion-safe:capability-active:animate-capability-flow-run"
+          d={FLOW.join(" ")}
+          pathLength={1}
+        />
+      </svg>
+      <Shape
+        className={cn(STEP, "top-[24px] left-[10px] size-[68px] rounded-full")}
+        brush={cn(STRIPE, "[mask-size:150px_auto] [mask-position:30%_40%]")}
+      />
+      <Shape
+        className={cn(STEP, "top-[18px] left-[180px] size-[68px] rounded-full")}
+        brush={cn(STRIPE, "[mask-size:150px_auto] [mask-position:75%_60%]")}
+      />
+      <Shape
+        className={cn(
+          STEP,
+          "top-[59px] left-[91px] size-[74px] rotate-[7deg] rounded-[16px]",
+        )}
+        fill={PAPER_DEEP}
+        stroke={BRUSH_DEEP}
+        brush={cn(STRIPE, "[mask-size:170px_auto] [mask-position:55%_50%]")}
+      />
+    </span>
+  );
+}
+
+/* ───────────────────────────── the art ───────────────────────────── */
+
+/**
+ * Each card's pair of colours, and its one patch of colour: a glow behind the
+ * drawing that is gone before the copy.
+ */
+const ART = {
+  people: {
+    Collage: PeopleCollage,
+    ground:
+      "[--capability-paper:var(--okou-capability-people-paper)] [--capability-ink:var(--okou-capability-people-ink)] bg-[radial-gradient(62%_120%_at_78%_86%,color-mix(in_oklab,var(--capability-paper)_30%,var(--color-muted)),transparent_72%)]",
+  },
+  research: {
+    Collage: ResearchCollage,
+    ground:
+      "[--capability-paper:var(--okou-capability-research-paper)] [--capability-ink:var(--okou-capability-research-ink)] bg-[radial-gradient(62%_120%_at_80%_70%,color-mix(in_oklab,var(--capability-paper)_30%,var(--color-muted)),transparent_72%)]",
+  },
+  create: {
+    Collage: CreateCollage,
+    ground:
+      "[--capability-paper:var(--okou-capability-create-paper)] [--capability-ink:var(--okou-capability-create-ink)] bg-[radial-gradient(56%_120%_at_82%_44%,color-mix(in_oklab,var(--capability-paper)_18%,var(--color-muted)),transparent_72%)]",
+  },
+  workflow: {
+    Collage: WorkflowCollage,
+    ground:
+      "[--capability-paper:var(--okou-capability-workflow-paper)] [--capability-ink:var(--okou-capability-workflow-ink)] bg-[radial-gradient(58%_120%_at_80%_40%,color-mix(in_oklab,var(--capability-paper)_30%,var(--color-muted)),transparent_72%)]",
+  },
+} as const satisfies Record<
+  CapabilityCard,
+  { readonly Collage: () => ReactNode; readonly ground: string }
+>;
+
+/**
+ * A card's drawing, under its copy, cover and choices. It fills the card and
+ * is the container its collage sizes against, so a narrow card gets a
+ * smaller collage that never meets the copy.
+ */
+export function CapabilityArt({ card }: { readonly card: CapabilityCard }) {
+  const { Collage, ground } = ART[card];
+  return (
+    <span
+      aria-hidden
+      className={cn("pointer-events-none absolute inset-0 @container", ground)}
+    >
+      <Collage />
     </span>
   );
 }

@@ -32,7 +32,7 @@ describe("markdown DOCX export", () => {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     );
     expect(documentXml).toContain("Quarterly report");
-    expect(documentXml).toContain('w:val="Heading1"');
+    expect(documentXml).toContain('w:val="Title"');
     expect(documentXml).toContain("Gross margin");
     expect(documentXml).toContain('w:orient="portrait"');
     expect(documentXml).toContain("Revenue");

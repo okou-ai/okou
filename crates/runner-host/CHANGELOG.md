@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.12.11](https://github.com/okou-ai/okou/compare/runner-host-v0.12.10...runner-host-v0.12.11) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** combine archive presence and shared lock probes ([#49723](https://github.com/okou-ai/okou/issues/49723)) ([669e883](https://github.com/okou-ai/okou/commit/669e883a2b415ba5bb3b5f545015575edd1e2fb5))
+
+## [0.12.10](https://github.com/okou-ai/okou/compare/runner-host-v0.12.9...runner-host-v0.12.10) (2026-11-20)
+
+
+### Refactoring
+
+* **runner:** retire optional execution package handling ([#49568](https://github.com/okou-ai/okou/issues/49568)) ([3ec3a12](https://github.com/okou-ai/okou/commit/3ec3a12f234394a2594d07852747fe45f1c08433))
+
+## [0.12.9](https://github.com/okou-ai/okou/compare/runner-host-v0.12.8...runner-host-v0.12.9) (2026-11-20)
+
+
+### Bug Fixes
+
+* **runner:** isolate optional package mount failures ([#49375](https://github.com/okou-ai/okou/issues/49375)) ([56468e0](https://github.com/okou-ai/okou/commit/56468e04dfb10c1adce08e41698106db41ec6bf3))
+
+## [0.12.8](https://github.com/okou-ai/okou/compare/runner-host-v0.12.7...runner-host-v0.12.8) (2026-11-20)
+
+
+### Performance Improvements
+
+* **runner-storage:** reuse lock directory validation during decoded lookup ([#49507](https://github.com/okou-ai/okou/issues/49507)) ([7bce2d6](https://github.com/okou-ai/okou/commit/7bce2d6ad365e3f9f37954859e09edbd0ef9c122))
+
+## [0.12.7](https://github.com/okou-ai/okou/compare/runner-host-v0.12.6...runner-host-v0.12.7) (2026-11-20)
+
+## [0.12.6](https://github.com/okou-ai/okou/compare/runner-host-v0.12.5...runner-host-v0.12.6) (2026-11-19)
+
+## [0.12.5](https://github.com/okou-ai/okou/compare/runner-host-v0.12.4...runner-host-v0.12.5) (2026-11-19)
+
+
+### Bug Fixes
+
+* **ci:** reuse preview runner readiness for health verification ([#49002](https://github.com/okou-ai/okou/issues/49002)) ([93573a8](https://github.com/okou-ai/okou/commit/93573a86b24a85e432192cbc8de4a26204202857))
+
 ## [0.12.4](https://github.com/okou-ai/okou/compare/runner-host-v0.12.3...runner-host-v0.12.4) (2026-11-19)
 
 ## [0.12.3](https://github.com/okou-ai/okou/compare/runner-host-v0.12.2...runner-host-v0.12.3) (2026-11-18)

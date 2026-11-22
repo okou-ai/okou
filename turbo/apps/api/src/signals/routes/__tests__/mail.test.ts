@@ -19,7 +19,7 @@ import {
   manualHttpCustomConnectorCreateBody,
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
@@ -30,8 +30,24 @@ const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const connectors = createConnectorBddApi(context);
-const runs = createRunsApi(context);
+const chatConnectorAccess = createChatConnectorAccessApi(context);
 const mocks = createRouteMocks(context);
+
+async function startMailAccountOAuth(
+  actor: Parameters<typeof connectors.requestOauthStart>[0],
+  slug: "gmail" | "outlook-mail",
+  account?: Parameters<typeof connectors.requestOauthStart>[3]["account"],
+) {
+  return (
+    await accept(
+      connectors.requestOauthStart(actor, slug, "oauth", {
+        statuses: [200],
+        account,
+      }),
+      [200],
+    )
+  ).body;
+}
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 const GMAIL_DRAFT_ID = "r-test-draft";
@@ -176,14 +192,9 @@ async function createOutlookMailFixture() {
       visibility: "private",
     });
     const thread = await chat.createThread(owner.actor, {
-      agentId: agent.agentId,
       title: "Outlook review",
     });
-    const start = await connectors.startOauth(
-      owner.actor,
-      "outlook-mail",
-      "oauth",
-    );
+    const start = await startMailAccountOAuth(owner.actor, "outlook-mail");
     const oauthState = new URL(start.authorizationUrl).searchParams.get(
       "state",
     );
@@ -194,9 +205,6 @@ async function createOutlookMailFixture() {
       state: oauthState,
       code: "outlook-code",
     });
-    await runs.enableAgentConnectors(owner.actor, agent.agentId, [
-      "outlook-mail",
-    ]);
     mocks.clerk.session(owner.actor.userId, owner.actor.orgId);
     const link = (outlookMessageId = messageId) => {
       return client().linkDraft({
@@ -963,18 +971,15 @@ async function seedGmailMailCardFixture(
   } as const;
   mocks.clerk.session(actor.userId, actorWithOrg.orgId, actor.orgRole);
   const agent = await bdd.createAgent(actor, agentBody);
-  registerCleanup?.(async () => {
-    await bdd.deleteAgent(actor, agent.agentId);
-  });
+
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: "Mail review",
   });
   mockGmailConnectorOAuth({
     accessToken: "gmail-mail-card-token",
     email: "sender@example.com",
   });
-  const start = await connectors.startOauth(actor, "gmail", "oauth");
+  const start = await startMailAccountOAuth(actor, "gmail");
   const state = new URL(start.authorizationUrl).searchParams.get("state");
   if (!state) {
     throw new Error("Expected Gmail OAuth state");
@@ -987,7 +992,6 @@ async function seedGmailMailCardFixture(
     await connectors.deleteDefaultBuiltinConnectorAccount(actor, "gmail");
   });
   const gmail = await connectors.readDefaultBuiltinAccount(actor, "gmail");
-  await runs.enableAgentConnectors(actor, agent.agentId, ["gmail"]);
   mocks.clerk.session(actor.userId, actorWithOrg.orgId);
   return { actor, agent, thread, gmail };
 }
@@ -1013,17 +1017,11 @@ async function createPublicGmailMailCardFixture(
       });
     }),
   );
-  let agentId: string | undefined;
   const owner = createPublicConnectorActor(context, {
     optionalEnvironmentNames: [
       "GOOGLE_OAUTH_CLIENT_ID",
       "GOOGLE_OAUTH_CLIENT_SECRET",
     ],
-    beforeWorkspaceCleanup: async () => {
-      if (agentId) {
-        await bdd.deleteAgent(owner.actor, agentId);
-      }
-    },
   });
   const { actor, run: own } = owner;
   return await own(async () => {
@@ -1033,15 +1031,13 @@ async function createPublicGmailMailCardFixture(
         visibility: "private",
       });
     });
-    agentId = agent.agentId;
     const thread = await own(() => {
       return chat.createThread(actor, {
-        agentId: agent.agentId,
         title: "Mail review",
       });
     });
     const start = await own(() => {
-      return connectors.startOauth(actor, "gmail", "oauth");
+      return startMailAccountOAuth(actor, "gmail");
     });
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
@@ -1055,9 +1051,6 @@ async function createPublicGmailMailCardFixture(
     });
     const gmail = await own(() => {
       return connectors.readDefaultBuiltinAccount(actor, "gmail");
-    });
-    await own(() => {
-      return runs.enableAgentConnectors(actor, agent.agentId, ["gmail"]);
     });
     mocks.clerk.session(actor.userId, actor.orgId);
     return {
@@ -1128,13 +1121,10 @@ async function addGmailAccount(
 ): Promise<string> {
   await connectors.updateFeatureSwitches(fixture.actor, {});
   mockGmailConnectorOAuth(args);
-  const start = await connectors.startOauth(
-    fixture.actor,
-    "gmail",
-    "oauth",
-    fixture.agent.agentId,
-    { intent: "add", displayName: "Selected Gmail" },
-  );
+  const start = await startMailAccountOAuth(fixture.actor, "gmail", {
+    intent: "add",
+    displayName: "Selected Gmail",
+  });
   const state = new URL(start.authorizationUrl).searchParams.get("state");
   if (!state) {
     throw new Error("Expected Gmail OAuth state");
@@ -1221,7 +1211,6 @@ describe("POST /api/mail/drafts/link", () => {
 
       const otherThread = await fixture.run(() => {
         return chat.createThread(fixture.actor, {
-          agentId: fixture.agent.agentId,
           title: "Concurrent mail conflict",
         });
       });
@@ -1333,8 +1322,43 @@ describe("POST /api/mail/drafts/link", () => {
       [409],
     );
     expect(response.body.error.message).toBe(
-      "Connect and authorize Gmail for this agent first",
+      "Connect and allow Gmail in this Chat first",
     );
+    expect(gmail.draftReadCount).toBe(1);
+  });
+
+  it("requires Chat allowance before linking a Gmail draft", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    const gmail = mockGmailDraftApi();
+    const selection = {
+      target: { kind: "builtin", connectorSlug: "gmail" } as const,
+      connectionId: fixture.gmail.id,
+    };
+    const request = () => {
+      return client().linkDraft({
+        headers: authHeaders(),
+        body: {
+          threadId: fixture.thread.id,
+          agentId: fixture.agent.agentId,
+          gmailDraftId: GMAIL_DRAFT_ID,
+        },
+      });
+    };
+    mocks.clerk.session(`user_${randomUUID()}`, fixture.actor.orgId);
+    await accept(request(), [404]);
+    mocks.clerk.session(fixture.actor.userId, `org_${randomUUID()}`);
+    await accept(request(), [404]);
+    await chatConnectorAccess.setDefault(fixture.actor, selection, false);
+    await accept(request(), [409]);
+    expect(gmail.draftReadCount).toBe(0);
+
+    await chatConnectorAccess.setThreadOverride(
+      fixture.actor,
+      fixture.thread.id,
+      selection,
+      true,
+    );
+    await linkDraft(fixture);
     expect(gmail.draftReadCount).toBe(1);
   });
 
@@ -1396,7 +1420,7 @@ describe("POST /api/mail/drafts/link", () => {
         );
       });
       expect(response.body.error.message).toBe(
-        "Connect and authorize Gmail for this agent first",
+        "Connect and allow Gmail in this Chat first",
       );
       expect(gmail.draftReadCount).toBe(0);
     });
@@ -1476,9 +1500,10 @@ describe("POST /api/mail/drafts/link", () => {
     };
   }
 
-  it("reads an existing draft pinned to a Gmail account that is no longer default", async () => {
-    const { fixture, linked, connectorId } =
+  it("reads an existing draft from its pinned Gmail account after changing the Chat selection", async () => {
+    const { fixture, linked, connectorId, defaultConnectorId } =
       await preparePinnedNonDefaultGmailDraft();
+    await selectGmailAccount(fixture, defaultConnectorId);
     await expect(
       connectors.listBuiltinConnectorAccounts(fixture.actor, "gmail"),
     ).resolves.toContainEqual(
@@ -1519,7 +1544,6 @@ describe("POST /api/mail/drafts/link", () => {
       });
       const newThread = await fixture.run(() => {
         return chat.createThread(fixture.actor, {
-          agentId: fixture.agent.agentId,
           title: "Default Gmail projection",
         });
       });
@@ -1537,13 +1561,13 @@ describe("POST /api/mail/drafts/link", () => {
         );
       });
       expect(newDraft.body.error.message).toBe(
-        "Connect and authorize Gmail for this agent first",
+        "Connect and allow Gmail in this Chat first",
       );
     });
   });
 
-  it("clears the exact thread selection when its pinned Gmail account is deleted", async () => {
-    const { fixture, connectorId, defaultAccessToken } =
+  it("selects the surviving default when its pinned Gmail account is deleted", async () => {
+    const { fixture, connectorId, defaultConnectorId, defaultAccessToken } =
       await preparePinnedNonDefaultGmailDraft();
     await expect(readThreadSelections(fixture)).resolves.toMatchObject({
       selections: [{ connectionId: connectorId }],
@@ -1553,9 +1577,14 @@ describe("POST /api/mail/drafts/link", () => {
       "gmail",
       connectorId,
     );
-    await expect(readThreadSelections(fixture)).resolves.toStrictEqual({
-      selections: [],
-      selectedConnections: [],
+    await expect(readThreadSelections(fixture)).resolves.toMatchObject({
+      selections: [
+        {
+          connectionId: defaultConnectorId,
+          target: { kind: "builtin", connectorSlug: "gmail" },
+        },
+      ],
+      selectedConnections: [{ id: defaultConnectorId }],
     });
 
     // With the pinned account gone, the thread links through the default
@@ -1582,11 +1611,6 @@ describe("POST /api/mail/drafts/link", () => {
         fixture.actor,
         customConnectorId,
         [{ key: "secret", kind: "secret", value: `${operation}-secret` }],
-      );
-      await connectors.updateAgentCustomConnectors(
-        fixture.actor,
-        fixture.agent.agentId,
-        [customConnectorId],
       );
       const connectorId = connection.connectionId;
       if (!connectorId) {
@@ -1646,7 +1670,7 @@ describe("POST /api/mail/drafts/link", () => {
         email: "sender@example.com",
       });
       const gmail = mockGmailDraftApi();
-      const start = await connectors.startOauth(owned.actor, "gmail", "oauth");
+      const start = await startMailAccountOAuth(owned.actor, "gmail");
       const state = new URL(start.authorizationUrl).searchParams.get("state");
       if (!state) {
         throw new Error("Expected Gmail OAuth state");
@@ -1655,25 +1679,39 @@ describe("POST /api/mail/drafts/link", () => {
         code: "okou-mail-code",
         state,
       });
-      await runs.enableAgentConnectors(owned.actor, owned.agentId, ["gmail"]);
+      const source = await owned.sendChatRun(owned.actor, {
+        prompt: "Link the existing Gmail draft",
+      });
       const fixture = {
         actor: owned.actor,
         agent: { agentId: owned.agentId },
-        thread: await chat.createThread(owned.actor, {
-          agentId: owned.agentId,
-          title: "Mail review",
-        }),
+        thread: { id: source.threadId },
         gmail: await connectors.readDefaultBuiltinAccount(owned.actor, "gmail"),
       };
-      const source = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
-        prompt: "Link the existing Gmail draft",
-      });
       const { execution } = await owned.runExecution(source.runId);
       const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the Runner-issued connector token");
       }
+      const otherThread = await chat.createThread(owned.actor, {
+        title: "Another mail review",
+      });
+      await accept(
+        client().linkDraft({
+          headers: { authorization: `Bearer ${okouToken}` },
+          body: {
+            threadId: otherThread.id,
+            agentId: owned.agentId,
+            gmailDraftId: GMAIL_DRAFT_ID,
+          },
+        }),
+        [404],
+      );
+      expect(gmail.draftReadCount).toBe(0);
+      const beforeLink = await chat.listThreadEvents(
+        owned.actor,
+        fixture.thread.id,
+      );
       const linked = await linkDraft(fixture, {
         authorization: `Bearer ${okouToken}`,
       });
@@ -1777,7 +1815,7 @@ describe("POST /api/mail/drafts/link", () => {
         fixture.actor,
         fixture.thread.id,
       );
-      expect(page.events).toHaveLength(0);
+      expect(page.events).toStrictEqual(beforeLink.events);
     });
   });
 
@@ -2240,16 +2278,10 @@ describe("POST /api/mail/drafts/link", () => {
         );
       }),
     );
-    const start = await connectors.startOauth(
-      fixture.actor,
-      "gmail",
-      "oauth",
-      undefined,
-      {
-        intent: "reconnect",
-        connectionId: fixture.gmail.id,
-      },
-    );
+    const start = await startMailAccountOAuth(fixture.actor, "gmail", {
+      intent: "reconnect",
+      connectionId: fixture.gmail.id,
+    });
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected reconnect state");
@@ -2288,7 +2320,7 @@ describe("POST /api/mail/drafts/link", () => {
       fixture.actor,
       "gmail",
     );
-    const start = await connectors.startOauth(fixture.actor, "gmail", "oauth");
+    const start = await startMailAccountOAuth(fixture.actor, "gmail");
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected Gmail OAuth state");
@@ -2325,7 +2357,7 @@ describe("POST /api/mail/drafts/link", () => {
       subject: "replacement-gmail-account",
       email: "replacement@example.com",
     });
-    const start = await connectors.startOauth(fixture.actor, "gmail", "oauth");
+    const start = await startMailAccountOAuth(fixture.actor, "gmail");
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected Gmail OAuth state");
@@ -2367,11 +2399,7 @@ describe("POST /api/mail/drafts/link", () => {
       subject: "replacement-gmail-account",
       email: "replacement@example.com",
     });
-    const replacement = await connectors.startOauth(
-      fixture.actor,
-      "gmail",
-      "oauth",
-    );
+    const replacement = await startMailAccountOAuth(fixture.actor, "gmail");
     const replacementState = new URL(
       replacement.authorizationUrl,
     ).searchParams.get("state");
@@ -2471,16 +2499,10 @@ describe("POST /api/mail/drafts/link", () => {
           : HttpResponse.error();
       }),
     );
-    const start = await connectors.startOauth(
-      fixture.actor,
-      "gmail",
-      "oauth",
-      undefined,
-      {
-        intent: "reconnect",
-        connectionId: fixture.gmail.id,
-      },
-    );
+    const start = await startMailAccountOAuth(fixture.actor, "gmail", {
+      intent: "reconnect",
+      connectionId: fixture.gmail.id,
+    });
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected reconnect state");
@@ -2555,7 +2577,6 @@ describe("POST /api/mail/drafts/link", () => {
     // The Gmail draft itself survives and is no longer claimed by the deleted
     // chat, so another chat can link it instead of hitting "already linked".
     const otherThread = await chat.createThread(fixture.actor, {
-      agentId: fixture.agent.agentId,
       title: "Relinked mail review",
     });
     const relinked = await accept(
@@ -2594,16 +2615,10 @@ describe("mail refresh publication", () => {
         });
       }),
     );
-    const start = await connectors.startOauth(
-      fixture.actor,
-      "gmail",
-      "oauth",
-      undefined,
-      {
-        intent: "reconnect",
-        connectionId: fixture.gmail.id,
-      },
-    );
+    const start = await startMailAccountOAuth(fixture.actor, "gmail", {
+      intent: "reconnect",
+      connectionId: fixture.gmail.id,
+    });
     const state = new URL(start.authorizationUrl).searchParams.get("state");
     if (!state) {
       throw new Error("Expected reconnect state");

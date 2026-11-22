@@ -16,7 +16,6 @@ describe("Pi failed native continuation", () => {
       mockSecretKmsHttp();
       const {
         actor,
-        agentId,
         run: own,
         sendChatRun,
         runExecution,
@@ -26,7 +25,6 @@ describe("Pi failed native continuation", () => {
         return configureSubscriptionPiModel(actor, {}, model);
       });
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "complete the first turn",
         model,
       });
@@ -48,7 +46,6 @@ describe("Pi failed native continuation", () => {
       });
       await own(flushWaitUntilForTest);
       const failed = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "continue the task",
         model,
@@ -123,7 +120,6 @@ describe("Pi failed native continuation", () => {
         ).result,
       ).toStrictEqual(retained.result);
       const next = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "continue with the retained native context",
         model,

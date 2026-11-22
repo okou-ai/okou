@@ -5,7 +5,6 @@ import { navigateToChat$ } from "../okou-page/nav.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { singleAgentEnabled$ } from "../single-agent.ts";
 import { onDomEventFn } from "../utils.ts";
 import { setChatThreadArchived$ } from "./chat-event.ts";
 import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
@@ -35,14 +34,14 @@ export const setChatThreadArchivedWithFeedback$ = command(
     {
       threadId,
       archived,
-      leaveToAgentId,
+      leaveThread,
     }: {
       readonly threadId: string;
       readonly archived: boolean;
       // The mobile header fills the screen with the thread, so archiving
-      // returns to the agent's list (My Okou's `/`) instead of staying on a
+      // returns to the workspace chat list instead of staying on a
       // hidden chat.
-      readonly leaveToAgentId?: string;
+      readonly leaveThread?: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -51,22 +50,13 @@ export const setChatThreadArchivedWithFeedback$ = command(
     if (meta?.archived === archived) {
       return;
     }
-    const leaving = archived && leaveToAgentId !== undefined;
+    const leaving = archived && leaveThread === true;
     // The archive is optimistic, so leave the thread without waiting for the
     // request. The caller passes a root-scoped signal because this navigation
     // aborts the current page signal.
     await Promise.all([
       set(setChatThreadArchived$, { threadId, archived }, signal),
-      leaving
-        ? (await get(singleAgentEnabled$))
-          ? set(navigateTo$, ROUTES.home, undefined, signal)
-          : set(
-              navigateTo$,
-              "/agents/:agentId/chat",
-              { pathParams: { agentId: leaveToAgentId } },
-              signal,
-            )
-        : undefined,
+      leaving ? set(navigateTo$, ROUTES.home, undefined, signal) : undefined,
     ]);
     signal.throwIfAborted();
 

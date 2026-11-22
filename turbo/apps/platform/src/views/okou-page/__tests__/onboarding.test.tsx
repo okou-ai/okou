@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -16,30 +15,24 @@ function mockOnboardingNeeded(): void {
   });
 }
 
-test.each([false, true])(
-  "A new user keeps prompt and connector context through onboarding (My Okou=%s)",
-  async (singleAgent) => {
-    mockOnboardingNeeded();
+test("A new user keeps prompt and connector context through onboarding", async () => {
+  mockOnboardingNeeded();
 
-    await setupPage({
-      context,
-      path: "/?prompt=hello%20world&connector=github&vm0_source=presentation",
-      featureSwitches: { [FeatureSwitchKey.SingleAgent]: singleAgent },
-    });
+  await setupPage({
+    context,
+    path: "/?prompt=hello%20world&connector=github&vm0_source=presentation",
+  });
 
-    await expect(
-      screen.findByRole("heading", { name: "Make this task your own" }),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/onboarding");
-    const onboardingContext = new URLSearchParams(search());
-    expect(onboardingContext.get("prompt")).toBe("hello world");
-    expect(onboardingContext.get("connector")).toBe("github");
-    expect(onboardingContext.get("vm0_source")).toBe("presentation");
-    expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-      "hello world",
-    );
-  },
-);
+  await expect(
+    screen.findByRole("heading", { name: "Make this task your own" }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/onboarding");
+  const onboardingContext = new URLSearchParams(search());
+  expect(onboardingContext.get("prompt")).toBe("hello world");
+  expect(onboardingContext.get("connector")).toBe("github");
+  expect(onboardingContext.get("vm0_source")).toBe("presentation");
+  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue("hello world");
+});
 
 test("A Slack success return remains visible before onboarding", async () => {
   mockOnboardingNeeded();

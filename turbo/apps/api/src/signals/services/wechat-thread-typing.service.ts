@@ -4,7 +4,6 @@ import { alias } from "drizzle-orm/pg-core";
 import { object } from "zod";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
@@ -109,7 +108,6 @@ const syncWechatThreadTyping$ = command(
         chatThreads,
         eq(chatThreads.id, wechatChatThreadRoutes.chatThreadId),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .innerJoin(
         chatWechatContext,
         and(
@@ -127,7 +125,7 @@ const syncWechatThreadTyping$ = command(
           eq(wechatConnections.status, "active"),
           eq(chatThreads.id, args.chatThreadId),
           eq(chatThreads.userId, wechatConnections.userId),
-          eq(agents.orgId, wechatConnections.orgId),
+          eq(chatThreads.orgId, wechatConnections.orgId),
           eq(chatWechatContext.id, args.target.contextId),
         ),
       )
@@ -204,7 +202,6 @@ export const hasWechatTypingTargetForRun$ = command(
   async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {
     const callbacks = await set(writeDb$)
       .select({
-        url: agentRunCallbacks.url,
         internalKind: agentRunCallbacks.internalKind,
         payload: agentRunCallbacks.payload,
       })

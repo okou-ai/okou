@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -10,7 +9,6 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   createChatCapabilityHelpers,
   FIRST_CAPABILITY_RUN_ID,
@@ -35,7 +33,7 @@ function installProjectConversation(projectId: string | null) {
   const source = {
     ...continuityThread(331, 1, "Launch planning"),
     id: RUN_THREAD_ID,
-    agentId: CAPABILITY_AGENT_ID,
+
     projectId,
   };
   const threads = [source];
@@ -86,29 +84,18 @@ test.each([
   {
     name: "Fork keeps the source project",
     sourceProjectId: PROJECT_ID,
-    fork: true,
     expectedProjectId: PROJECT_ID,
   },
   {
     name: "Fork keeps an unassigned source outside projects",
     sourceProjectId: null,
-    fork: true,
     expectedProjectId: null,
   },
-  {
-    name: "Forward in legacy mode creates a chat outside Projects",
-    sourceProjectId: PROJECT_ID,
-    fork: false,
-    expectedProjectId: null,
-  },
-])("$name", async ({ sourceProjectId, fork, expectedProjectId }) => {
+])("$name", async ({ sourceProjectId, expectedProjectId }) => {
   installProjectConversation(sourceProjectId);
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.SingleAgent]: fork,
-    },
   });
   const originalComposer = await screen.findByRole("textbox", {
     name: "Message",
@@ -117,7 +104,7 @@ test.each([
     name: /^Notifications\b/,
   });
   await fill(originalComposer, "Keep my unfinished notes");
-  if (fork && sourceProjectId) {
+  if (sourceProjectId) {
     const toggle = await findEnabledButton("Show or hide chats in Launch");
     if (toggle.getAttribute("aria-expanded") === "false") {
       click(toggle);
@@ -131,11 +118,7 @@ test.each([
     ).toBeInTheDocument();
   });
   await selectPassage(PASSAGE);
-  click(await findEnabledButton(fork ? "Fork" : "Forward"));
-  if (!fork) {
-    const picker = await screen.findByRole("dialog", { name: "Forward to" });
-    click(await within(picker).findByRole("option", { name: "Okou" }));
-  }
+  click(await findEnabledButton("Fork"));
   const dialog = await screen.findByRole("dialog", { name: "Okou" });
   await fill(
     await within(dialog).findByRole("textbox", { name: "Add a message" }),
@@ -143,9 +126,7 @@ test.each([
   );
   click(await findEnabledButton("Send", dialog));
 
-  await within(notifications).findByText(
-    fork ? "New chat created" : "Forwarded successfully",
-  );
+  await within(notifications).findByText("New chat created");
   const newThread = await waitFor(() => {
     const link = document.querySelector<HTMLElement>(
       `[data-sidebar-chat-thread-id]:not([data-sidebar-chat-thread-id="${RUN_THREAD_ID}"])`,
@@ -164,7 +145,7 @@ test.each([
   expect(
     sourceThread?.closest<HTMLElement>("[data-project-row-id]")?.dataset
       .projectRowId ?? null,
-  ).toBe(fork ? sourceProjectId : null);
+  ).toBe(sourceProjectId);
   expect(location.pathname).toBe(RUN_PATH);
   expect(originalComposer).toHaveTextContent("Keep my unfinished notes");
 });
@@ -176,7 +157,6 @@ test("F opens a Fork composer carrying the captured selection", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await screen.findByRole("textbox", { name: "Message" });
   await selectPassage(PASSAGE);
@@ -192,27 +172,6 @@ test("F opens a Fork composer carrying the captured selection", async () => {
   expect(editor).toHaveTextContent("Focus on the launch risks");
 });
 
-test("F keeps the Forward target picker when single-agent mode is disabled", async () => {
-  installCapabilityChat({
-    events: completedConversation(`The ${PASSAGE}.`),
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
-  });
-  await screen.findByRole("textbox", { name: "Message" });
-  await selectPassage(PASSAGE);
-  await findEnabledButton("Forward");
-
-  fireEvent.keyDown(document, { key: "f" });
-
-  const dialog = await screen.findByRole("dialog", { name: "Forward to" });
-  click(await within(dialog).findByRole("option", { name: "Okou" }));
-  await within(dialog).findByRole("textbox", { name: "Add a message" });
-  expect(within(dialog).getByText(PASSAGE)).toBeInTheDocument();
-});
-
 test("Fork sends the selected passage and its source to a new personal chat", async () => {
   const sends: CapturedChatSend[] = [];
   installCapabilityChat({
@@ -224,7 +183,6 @@ test("Fork sends the selected passage and its source to a new personal chat", as
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   const originalComposer = await screen.findByRole("textbox", {
     name: "Message",
@@ -257,39 +215,4 @@ test("Fork sends the selected passage and its source to a new personal chat", as
   expect(send.prompt).toContain("Explore the risks in a separate conversation");
   expect(send.prompt).not.toContain("An unrelated answer.");
   expect(originalComposer).toHaveTextContent("Keep my unfinished notes");
-});
-
-test("Forward sends the passage with its source thread to the chosen agent", async () => {
-  const sends: CapturedChatSend[] = [];
-  installCapabilityChat({
-    events: completedConversation(`The ${PASSAGE}.`),
-    onSend(send) {
-      sends.push(send);
-    },
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
-  });
-  await screen.findByRole("textbox", { name: "Message" });
-  await selectPassage(PASSAGE);
-  click(await findEnabledButton("Forward"));
-  const dialog = await screen.findByRole("dialog", { name: "Forward to" });
-  click(await within(dialog).findByRole("option", { name: "Okou" }));
-  const note = await within(dialog).findByRole("textbox", {
-    name: "Add a message",
-  });
-  const user = userEvent.setup({ delay: null });
-  await user.type(note, "Share this with the launch team");
-
-  click(await findEnabledButton("Send", dialog));
-
-  const send = await waitForSend(sends, 1);
-  expect(send.threadId).not.toBe(RUN_THREAD_ID);
-  expect(send.sourceRunId).toBe(FIRST_CAPABILITY_RUN_ID);
-  expect(send.userMessage?.parts).toStrictEqual([
-    expect.objectContaining({ type: "feedback", quote: PASSAGE }),
-  ]);
-  expect(send.prompt).toContain("Share this with the launch team");
 });

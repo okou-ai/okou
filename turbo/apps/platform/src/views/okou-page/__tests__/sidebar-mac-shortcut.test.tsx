@@ -14,7 +14,6 @@ import {
 
 const context = testContext();
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000001";
 const MAC_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
@@ -22,7 +21,7 @@ const MAC_USER_AGENT =
 interface SidebarThread {
   readonly id: string;
   readonly title: string | null;
-  readonly agent: { readonly id: string; readonly avatarUrl: string | null };
+
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly pinnedAt?: string | null;
@@ -33,25 +32,11 @@ beforeEach(() => {
   context.mocks.browser.userAgent(MAC_USER_AGENT);
 });
 
-function prepareDefaultAgent(): void {
-  context.mocks.data.agents([
-    {
-      agentId: AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Nova",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    },
-  ]);
-}
-
 function createThread(id: string, title: string): SidebarThread {
   return {
     id,
     title,
-    agent: { id: AGENT_ID, avatarUrl: null },
+
     createdAt: "2026-03-10T00:00:00Z",
     updatedAt: "2026-03-10T00:00:00Z",
     pinnedAt: null,
@@ -66,7 +51,7 @@ function mockSidebarThreadStory(threads: readonly SidebarThread[]): void {
         chatThreads: threads.map((thread, index) => {
           return {
             id: thread.id,
-            agentId: thread.agent.id,
+
             title: thread.title,
             sortAt: new Date(
               Date.parse("2026-03-10T00:00:00Z") +
@@ -91,7 +76,7 @@ function mockSidebarThreadStory(threads: readonly SidebarThread[]): void {
     return respond(200, { events: [], hasMore: false });
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {
@@ -102,7 +87,6 @@ function mockSidebarThreadStory(threads: readonly SidebarThread[]): void {
 }
 
 test("The Mac shortcut toggles the chat list while composing", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([createThread(THREAD_ID, "Release plan")]);
 
   await setupPage({
@@ -138,7 +122,6 @@ test("The Mac shortcut toggles the chat list while composing", async () => {
 test("The standalone Mac app copies the current URL with Command-L", async () => {
   context.mocks.browser.standaloneDisplayMode(true);
   const clipboard = context.mocks.browser.clipboardWriteText();
-  prepareDefaultAgent();
   mockSidebarThreadStory([createThread(THREAD_ID, "Release plan")]);
 
   await setupPage({

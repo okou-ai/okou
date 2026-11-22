@@ -1,4 +1,4 @@
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -24,7 +24,6 @@ import {
   chatListAuth,
   fastButton,
   installActiveChatBoundaries,
-  installChatListAgent,
   installChatListRunModels,
   installChatListStream,
 } from "./chat-list-test-helpers.ts";
@@ -128,14 +127,16 @@ test("Restore the first edited draft without leaking the other conversation's dr
 
 test("Protect local edits while a saved draft is loading", async () => {
   const auth = chatListAuth(302);
+  const draftRequested = context.mocks.deferred<void>();
   const delayedDraft = context.mocks.deferred<void>();
   const oldAttachment = continuityAttachment(2, 1, "older-notes.txt");
   let draftResponseCompleted = false;
-  installChatListAgent(context);
+
   installChatListRunModels(context);
   installChatListStream(context, { caseId: 2, snapshot: [] });
   installActiveChatBoundaries(context);
-  context.mocks.api(agentDraftContract.get, async ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, async ({ respond }) => {
+    draftRequested.resolve();
     await delayedDraft.promise;
     draftResponseCompleted = true;
     return respond(
@@ -143,17 +144,18 @@ test("Protect local edits while a saved draft is loading", async () => {
       textContinuityDraft("Older server draft", [oldAttachment]),
     );
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
 
   const page = await startPage({
     context,
-    path: "/agents/c7000000-0000-4000-a000-000000000001/chat",
+    path: "/",
     auth,
   });
 
   const composer = await messageComposer();
+  await draftRequested.promise;
   await userEvent.type(composer, "Fresh work typed locally");
   expect(composer).toHaveTextContent("Fresh work typed locally");
   delayedDraft.resolve();

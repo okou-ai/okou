@@ -21,7 +21,7 @@ async function createFixture(t) {
     join(root, "src/example.ts"),
     `
       i18n.t("greeting", { defaultValue: "Hello" });
-      i18n.t("agentName", { defaultValue: "Agent", ns: "agents" });
+      i18n.t("example", { defaultValue: "Example", ns: "sample" });
     `,
   );
 
@@ -33,8 +33,8 @@ async function createFixture(t) {
       `${JSON.stringify({ greeting: locale === "en-US" ? "Hello" : "Translated" }, null, 2)}\n`,
     );
     await writeFile(
-      join(localeDirectory, "agents.json"),
-      `${JSON.stringify({ agentName: locale === "en-US" ? "Agent" : "Translated" }, null, 2)}\n`,
+      join(localeDirectory, "sample.json"),
+      `${JSON.stringify({ example: locale === "en-US" ? "Example" : "Translated" }, null, 2)}\n`,
     );
   }
 
@@ -93,7 +93,7 @@ await test("fails before status when generated resources drift", async (t) => {
     `
       i18n.t("greeting", { defaultValue: "Hello" });
       i18n.t("newKey", { defaultValue: "New" });
-      i18n.t("agentName", { defaultValue: "Agent", ns: "agents" });
+      i18n.t("example", { defaultValue: "Example", ns: "sample" });
     `,
   );
 
@@ -112,8 +112,8 @@ await test("fails before status when generated resources drift", async (t) => {
 await test("fails for an empty required secondary translation", async (t) => {
   const root = await createFixture(t);
   await writeFile(
-    join(root, "src/i18n/locales/pt-BR/agents.json"),
-    `${JSON.stringify({ agentName: "" }, null, 2)}\n`,
+    join(root, "src/i18n/locales/pt-BR/sample.json"),
+    `${JSON.stringify({ example: "" }, null, 2)}\n`,
   );
 
   const result = await runCheck(root);

@@ -15,6 +15,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report_test as failure_test
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class BatchAbaReportTests(unittest.TestCase):
@@ -50,13 +51,7 @@ class BatchAbaReportTests(unittest.TestCase):
             empty = {k:v for k,v in current.items() if k != "idle_sandboxes"}
             empty["updated_at"] = "2026-10-19T02:00:03Z"
             def observer(start, end):
-                return {"started_ns":at(start),"completed_ns":at(end),"available_bytes":32*1024**3,
-                        "age_ns":2,"read_duration_ns":1,"joined":True}
-            def heartbeat(sequence, start, end):
-                return {"receipt":{"received_ns":at(start),"acknowledgement_status":204,
-                    "state":{"runnerId":runner,"snapshotGeneration":1,"snapshotSequence":sequence,
-                        "group":"native-foreground","mode":"running","allocatedVcpu":2,"allocatedMemoryMb":4096}},
-                    "send_joined":True,"completed_ns":at(end)}
+                return joined_observer(at(start), at(end))
             values = (
                 {"policy":self.policy,"status_path":str(self.root/f"case-{index}"/"status.json"),
                     "published_status":initial,"selected_revision":1,"source_read_blocked":True,
@@ -66,13 +61,14 @@ class BatchAbaReportTests(unittest.TestCase):
                     "revision":3,"original_sandbox_id":old,"original_backing_generation":backing,
                     "same_insertion":False,"restored_original":True,"heartbeat_pending_ns":at(8),
                     "heartbeat_polled_pending":True,"observer":observer(9,10),"accounting":queued,"allocated":[2,4096,1]},
-                {"pool_released_ns":at(13),"heartbeat":heartbeat(1,14,15),"receiver_polled_pending":True,
-                    "source_read_blocked":True,"accounting":queued,"allocated":[2,4096,1]},
+                {"pool_released_ns":at(13),"heartbeat":foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
+                    "receiver_polled_pending":True,"source_read_blocked":True,"accounting":queued,"allocated":[2,4096,1]},
                 {"source_resumed_ns":at(18),"status_wait_polled_ns":at(23),"status_waits_before":0,
                     "status_waits_after":1,"accounting":zero,"samples":[{"started_ns":at(begin),
                         "finished_ns":at(end),"read_start_offset_ns":at(begin),"available_bytes":32*1024**3,
                         "age_ns":2,"read_duration_ns":1} for begin,end in ((19,20),(21,22))],
-                    "heartbeat":heartbeat(2,24,25),"receiver_polled_pending":True,"original_full_lease_active":True,
+                    "heartbeat":foreground_heartbeat(runner, 2, at(24), at(25), (2, 4096)),
+                    "receiver_polled_pending":True,"original_full_lease_active":True,
                     "original_exit_polled_pending":True,"allocated":[2,4096,1]},
                 {"status_released_ns":at(29),"batch_joined_ns":at(30),"selected":1,"completed":0,"uncertain":0,
                     "not_started":1,"status_error":False,"is_complete":False,"refusal_sandbox_id":old,
@@ -81,7 +77,8 @@ class BatchAbaReportTests(unittest.TestCase):
                     "original_full_lease_active":True,"allocated":[2,4096,1]},
                 {"recovery_started_ns":at(35),"kernel_io_entered_ns":at(38),"kernel_io_entered":True,
                     "receiver_polled_pending":True,"original_exit_confirmed":True,"observer":observer(39,40),
-                    "heartbeat":heartbeat(3,41,42),"coverage":{"allocated":[2,4096,1],"accounting":active,
+                    "heartbeat":foreground_heartbeat(runner, 3, at(41), at(42), (2, 4096)),
+                    "coverage":{"allocated":[2,4096,1],"accounting":active,
                         "original_lease_active":True,"io_release_withheld":True}},
                 {"io_released_ns":at(45),"batch_joined_ns":at(50),"selected":1,"completed":1,"uncertain":0,
                     "not_started":0,"status_error":False,"is_complete":True,"original_exit_confirmed":True,
@@ -91,8 +88,14 @@ class BatchAbaReportTests(unittest.TestCase):
                     "remaining_finalizing_owners":0,"allocated":[0,0,0],"accounting":zero|{"closed":True}},
             )
             for phase, value, offset in zip(aba.PHASES, values, (3,12,17,28,34,44,52,57)):
-                self.witnesses.append({"version":1,"case":case,"phase":phase,"monotonic_ns":at(offset),
-                    "unix_ns":at(offset)+1000,"sandbox_id":old,"backing_generation":backing,"evidence":copy.deepcopy(value)})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(offset),
+                    unix_ns=at(offset)+1000,
+                    sandbox_id=old,
+                    backing_generation=backing,
+                    evidence=copy.deepcopy(value),
+                ))
 
     def event(self, phase):
         return next(e for e in self.witnesses if e["phase"] == phase)

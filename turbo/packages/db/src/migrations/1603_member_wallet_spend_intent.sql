@@ -1,0 +1,2 @@
+ALTER TABLE "link_wallet_spends" ALTER COLUMN "agent_id" DROP NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_link_wallet_spends_member_intent" ON "link_wallet_spends" USING btree ("org_id","user_id","intent_id");

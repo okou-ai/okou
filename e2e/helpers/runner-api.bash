@@ -59,9 +59,8 @@ runner_e2e_teardown_test() {
 runner_e2e_connect_manual_connector() {
     local connector_slug="$1"
     local auth_method="$2"
-    local agent_id="$3"
-    local values="$4"
-    local existing_connection_id="${5:-}"
+    local values="$3"
+    local existing_connection_id="${4:-}"
     local account payload response returned_connection_id
     if [[ -n "$existing_connection_id" ]]; then
         account=$(jq -nc \
@@ -72,10 +71,9 @@ runner_e2e_connect_manual_connector() {
     fi
     payload=$(jq -nc \
         --arg authMethod "$auth_method" \
-        --arg agentId "$agent_id" \
         --argjson account "$account" \
         --argjson values "$values" \
-        '{authMethod: $authMethod, agentId: $agentId, authorizeAgent: true, account: $account, values: $values}')
+        '{authMethod: $authMethod, account: $account, values: $values}')
     local grant_status=0
     response=$(runner_api_curl "/api/connectors/${connector_slug}/manual-grant" \
         -X POST \

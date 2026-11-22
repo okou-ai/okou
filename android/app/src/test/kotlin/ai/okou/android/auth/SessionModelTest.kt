@@ -17,12 +17,15 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.testAuthenticationState
-import ai.okou.android.testBootstrap
+import ai.okou.android.testOrganization
+import ai.okou.android.testPreferences
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -33,8 +36,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -62,18 +69,24 @@ class SessionModelTest {
         ChatListService by TestChatService(),
         ChatComposerService by TestChatComposerService() {
         var closed = false
+        private val canonical = CanonicalWorkspaceSession(identity, tokens)
+        override val artifacts = canonical.artifacts
+
+        override suspend fun usagePackCredits() = canonical.usagePackCredits()
+
+        override suspend fun activateModelAccount(accountId: String) =
+            canonical.activateModelAccount(accountId)
 
         override suspend fun sendControl(request: SendRequest): AcceptedInput =
             error("No control backend in this fixture")
 
-        var load: suspend () -> WorkspaceBootstrap = { testBootstrap(identity.workspaceId) }
+        var verifyOrganization = suspend { testOrganization(identity.workspaceId) }
+        var loadPreferences = suspend { testPreferences() }
         var update: suspend () -> Unit = {}
 
-        override suspend fun bootstrap() = load()
+        override suspend fun organization() = verifyOrganization()
 
-        override suspend fun preferences() = testBootstrap(identity.workspaceId).preferences
-
-        override suspend fun personalInstructionsEnabled() = false
+        override suspend fun preferences() = loadPreferences()
 
         override suspend fun personalInstructions(): PersonalInstructions =
             error("Instructions are not enabled in this fixture")
@@ -88,6 +101,7 @@ class SessionModelTest {
 
         override fun close() {
             closed = true
+            canonical.close()
         }
     }
 
@@ -95,6 +109,7 @@ class SessionModelTest {
         auth: TestAuthentication = TestAuthentication(),
         configure: (Resource) -> Unit = {},
         prepareAppearance: suspend MemberAppearanceCache.() -> Unit = {},
+        connectivity: Flow<Boolean> = emptyFlow(),
         block: suspend TestScope.(SessionModel, MutableList<Resource>) -> Unit,
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -127,6 +142,11 @@ class SessionModelTest {
             )
         val appearanceDirectory = temporary.newFolder()
         val appearance = MemberAppearanceCache({ appearanceDirectory }, dispatcher)
+        val expansionFile = temporary.newFolder().resolve("project-expansion.preferences_pb")
+        val expansion =
+            ProjectExpansionStore(
+                PreferenceDataStoreFactory.create(scope = backgroundScope) { expansionFile }
+            )
         try {
             appearance.prepareAppearance()
             val model =
@@ -148,7 +168,9 @@ class SessionModelTest {
                                 journal,
                                 controls,
                                 appearance,
+                                expansion,
                                 dispatcher,
+                                connectivity = connectivity,
                             )
                         }
                     },
@@ -180,20 +202,21 @@ class SessionModelTest {
     }
 
     @Test
-    fun bootstrapGatesAccessAndTokenRenewalKeepsThePresentationOwner() {
+    fun organizationGatesAccessAndTokenRenewalKeepsThePresentationOwner() {
         val auth = TestAuthentication()
         val gate = CompletableDeferred<Unit>()
         check(
             auth,
             configure = { resource ->
-                resource.load = {
+                resource.verifyOrganization = {
                     gate.await()
-                    testBootstrap()
+                    testOrganization()
                 }
             },
         ) { model, resources ->
             runCurrent()
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            assertTrue(model.uiState.value.opening is OpeningWorkspace.CheckingAccess)
             assertNull(model.uiState.value.ready)
             gate.complete(Unit)
             runCurrent()
@@ -215,21 +238,15 @@ class SessionModelTest {
         val confirmed =
             MemberAppearance(UserPreferencesTheme.LIGHT, UserPreferencesColorTheme.BERRY_BLUSH)
         val previousSession = WorkspaceIdentity("https://api.okou.ai", "user-a", "old", "org-a")
-        var bootstrap = CompletableDeferred<Unit>()
+        var preferences = CompletableDeferred<Unit>()
         lateinit var disk: MemberAppearanceCache
         check(
             auth,
             configure = { resource ->
-                resource.load = {
-                    bootstrap.await()
-                    val result = testBootstrap(resource.identity.workspaceId)
-                    result.copy(
-                        preferences =
-                            result.preferences.copy(
-                                theme = confirmed.theme,
-                                colorTheme = confirmed.colorTheme,
-                            )
-                    )
+                resource.loadPreferences = {
+                    preferences.await()
+                    testPreferences()
+                        .copy(theme = confirmed.theme, colorTheme = confirmed.colorTheme)
                 }
             },
             prepareAppearance = {
@@ -241,15 +258,17 @@ class SessionModelTest {
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
             assertEquals(cached, model.uiState.value.cachedAppearance)
             assertNull(model.uiState.value.ready)
+            val opened = model.uiState.value.opening as OpeningWorkspace.Authorized
 
-            bootstrap.complete(Unit)
+            preferences.complete(Unit)
             runCurrent()
             val ready = requireNotNull(model.uiState.value.ready)
+            assertSame(opened.composer, ready.composer)
             assertEquals(confirmed.theme, ready.preferences.uiState.value.theme)
             assertEquals(confirmed.colorTheme, ready.preferences.uiState.value.colorTheme)
             assertEquals(confirmed, disk.load(ready.identity))
 
-            bootstrap = CompletableDeferred()
+            preferences = CompletableDeferred()
             model.chooseWorkspace("org-b", model.uiState.value.generation)
             runCurrent()
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
@@ -263,20 +282,21 @@ class SessionModelTest {
     }
 
     @Test
-    fun accountReplacementRejectsEvenNonCooperativeLateBootstrap() {
+    fun accountReplacementRejectsEvenNonCooperativeLatePreferences() {
         val old = CompletableDeferred<Unit>()
         val auth = TestAuthentication()
         check(
             auth,
             configure = { resource ->
                 if (resource.identity.userId == "user-a")
-                    resource.load = {
+                    resource.loadPreferences = {
                         withContext(NonCancellable) { old.await() }
-                        testBootstrap()
+                        testPreferences()
                     }
             },
         ) { model, resources ->
             runCurrent()
+            assertTrue(model.uiState.value.opening is OpeningWorkspace.Authorized)
             auth.state.value = testAuthenticationState("user-b", "session-b", "org-b")
             runCurrent()
             assertTrue(resources.first().closed)
@@ -288,7 +308,7 @@ class SessionModelTest {
     }
 
     @Test
-    fun lateTokenCannotEscapeAReplacedWorkspaceAndOldListStateIsDiscarded() {
+    fun lateTokenCannotEscapeAReplacedWorkspaceAndItsFilterRestoresOnlyOnReturn() {
         val auth = TestAuthentication()
         val token = CompletableDeferred<String>()
         check(auth) { model, resources ->
@@ -305,13 +325,19 @@ class SessionModelTest {
             assertTrue(resources.first().closed)
             val next = requireNotNull(model.uiState.value.ready)
             assertNotSame(original.chats, next.chats)
-            assertEquals(
-                ai.okou.android.chat.ChatListFilter.Recent,
-                next.chats.uiState.value.filter,
-            )
+            assertEquals(ai.okou.android.chat.ChatListFilter.Inbox, next.chats.uiState.value.filter)
             token.complete("old-token")
             runCurrent()
             assertTrue(request.await().exceptionOrNull() is CancellationException)
+            model.chooseWorkspace("org-a", model.uiState.value.generation)
+            runCurrent()
+            val restored = requireNotNull(model.uiState.value.ready)
+            assertEquals("org-a", restored.identity.workspaceId)
+            assertNotSame(original.chats, restored.chats)
+            assertEquals(
+                ai.okou.android.chat.ChatListFilter.Muted,
+                restored.chats.uiState.value.filter,
+            )
         }
     }
 
@@ -331,6 +357,55 @@ class SessionModelTest {
             assertEquals(SessionStage.ChooseWorkspace, model.uiState.value.stage)
             assertTrue(model.uiState.value.memberships.isEmpty())
             assertEquals(1, resources.size)
+        }
+    }
+
+    @Test
+    fun selectedWorkspaceBecomesReadyWhileFullMembershipListIsPending() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList()))
+                    )
+            )
+        val memberships = CompletableDeferred<List<WorkspaceMembership>>()
+        auth.membershipsAction = { memberships.await() }
+        check(auth) { model, _ ->
+            runCurrent()
+            assertEquals(SessionStage.Ready, model.uiState.value.stage)
+            assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
+            memberships.complete(auth.available)
+            runCurrent()
+            assertEquals(listOf("org-a", "org-b"), model.uiState.value.memberships.map { it.id })
+        }
+    }
+
+    @Test
+    fun refreshedSelectedPermissionsOpenWorkspaceWhileThePickerReadIsHeld() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", listOf("old")))
+                    )
+            )
+        auth.refreshedMembership = { MembershipAccess("org-a", "org:member", emptyList()) }
+        val memberships = CompletableDeferred<List<WorkspaceMembership>>()
+        auth.membershipsAction = { memberships.await() }
+        check(auth) { model, resources ->
+            runCurrent()
+            assertEquals(SessionStage.Ready, model.uiState.value.stage)
+            assertEquals(
+                scopeHash(listOf("org:member", "org:member", "known")),
+                resources.single().identity.authorizationScope,
+            )
+            assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
+            memberships.complete(auth.available)
+            runCurrent()
+            assertEquals(auth.available, model.uiState.value.memberships)
         }
     }
 
@@ -403,16 +478,78 @@ class SessionModelTest {
     }
 
     @Test
-    fun failedBootstrapCanRetryButSignOutRetiresBeforeTheProviderResponds() {
+    fun temporaryPreparationFailuresRetryWithTheSameOwnerWhenActiveAndOnline() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList()))
+                    )
+            )
+        val connected = MutableStateFlow(true)
+        var organizations = 0
+        var preferences = 0
+        check(
+            auth,
+            connectivity = connected,
+            configure = { resource ->
+                resource.verifyOrganization = {
+                    if (++organizations == 1) throw ApiFailure.Http(503, null, null, null)
+                    testOrganization(resource.identity.workspaceId)
+                }
+                resource.loadPreferences = {
+                    if (++preferences == 1) throw ApiFailure.Http(503, null, null, null)
+                    testPreferences()
+                }
+            },
+        ) { model, resources ->
+            model.foregroundChanged(true)
+            runCurrent()
+            val opened = model.uiState.value.opening as OpeningWorkspace.Authorized
+            assertEquals(SessionStage.Unavailable, model.uiState.value.stage)
+            assertTrue(model.uiState.value.working)
+            assertEquals(1, organizations)
+            assertEquals(0, preferences)
+
+            advanceTimeBy(4_999)
+            runCurrent()
+            assertEquals(1, organizations)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, organizations)
+            assertEquals(1, preferences)
+
+            model.foregroundChanged(false)
+            connected.value = false
+            runCurrent()
+            advanceTimeBy(10_000)
+            runCurrent()
+            connected.value = true
+            runCurrent()
+            assertEquals(1, preferences)
+
+            model.foregroundChanged(true)
+            runCurrent()
+            val ready = requireNotNull(model.uiState.value.ready)
+            assertSame(opened.chats, ready.chats)
+            assertEquals(2, organizations)
+            assertEquals(2, preferences)
+            assertFalse(resources.single().closed)
+        }
+    }
+
+    @Test
+    fun failedOrganizationCheckCanRetryButSignOutRetiresBeforeTheProviderResponds() {
         val auth = TestAuthentication()
         val signOut = CompletableDeferred<Unit>()
         var fail = true
         check(
             auth,
             configure = { resource ->
-                resource.load = {
+                resource.verifyOrganization = {
                     if (fail) error("offline")
-                    testBootstrap(resource.identity.workspaceId)
+                    testOrganization(resource.identity.workspaceId)
                 }
             },
         ) { model, resources ->

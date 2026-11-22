@@ -4,25 +4,21 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
 import type { ConnectorRuntimeSyncResult } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+
 import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
 import { badRequestMessage, resourceUnavailable } from "../../lib/error";
 import type { FirewallAuth } from "../../types/auth";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { userFeatureSwitchContext } from "./feature-switches.service";
+
 import { resolveConnectorRuntimeTargets$ } from "./connector-runtime-sync.service";
 import { resolveCustomConnectorNetworkAdmission$ } from "./custom-connector-network-authority.service";
 import { CustomConnectorNetworkError } from "./custom-connector-network-error";
 
 interface NetworkRunAuthority {
-  readonly agentId: string | null;
   readonly status: string;
   readonly definitionUpdatedAt: Date;
-  readonly grantId: string | null;
 }
 
 interface NetworkRequest {
@@ -103,13 +99,9 @@ function validateNetworkRequestScope(args: {
 
 function activeNetworkRun(
   run: NetworkRunAuthority | undefined,
-  chatAccounts: boolean,
-): run is NetworkRunAuthority & { readonly agentId: string } {
+): run is NetworkRunAuthority {
   return (
-    run !== undefined &&
-    run.agentId !== null &&
-    (chatAccounts || run.grantId !== null) &&
-    (run.status === "running" || run.status === "pending")
+    run !== undefined && (run.status === "running" || run.status === "pending")
   );
 }
 
@@ -119,10 +111,8 @@ function networkAdmissionRunReadQuery(args: {
 }) {
   return new QueryBuilder()
     .select({
-      agentId: agentRuns.agentId,
       status: agentRuns.status,
       definitionUpdatedAt: orgCustomConnectors.updatedAt,
-      grantId: userCustomConnectors.id,
     })
     .from(agentRuns)
     .innerJoin(
@@ -131,15 +121,6 @@ function networkAdmissionRunReadQuery(args: {
         eq(orgCustomConnectors.id, args.matched.customConnectorId),
         eq(orgCustomConnectors.orgId, agentRuns.orgId),
         eq(orgCustomConnectors.enabled, true),
-      ),
-    )
-    .leftJoin(
-      userCustomConnectors,
-      and(
-        eq(userCustomConnectors.customConnectorId, orgCustomConnectors.id),
-        eq(userCustomConnectors.orgId, agentRuns.orgId),
-        eq(userCustomConnectors.userId, agentRuns.userId),
-        eq(userCustomConnectors.agentId, agentRuns.agentId),
       ),
     )
     .where(
@@ -154,7 +135,7 @@ function networkAdmissionRunReadQuery(args: {
 
 export const admitCustomConnectorNetworkRequest$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly auth: FirewallAuth;
       readonly request: NetworkRequest;
@@ -167,15 +148,8 @@ export const admitCustomConnectorNetworkRequest$ = command(
       networkAdmissionRunReadQuery(args).as("custom_network_run");
     const [run] = await db.select().from(ownedRun);
     signal.throwIfAborted();
-    const features = await get(
-      userFeatureSwitchContext(args.auth.orgId, args.auth.userId),
-    );
-    signal.throwIfAborted();
-    const chatAccounts = isFeatureEnabled(
-      FeatureSwitchKey.ConnectorChatAccountAccess,
-      features,
-    );
-    if (!activeNetworkRun(run, chatAccounts)) {
+
+    if (!activeNetworkRun(run)) {
       return resourceUnavailable(
         "Run cannot admit custom connector network credentials",
       );
@@ -184,7 +158,6 @@ export const admitCustomConnectorNetworkRequest$ = command(
       scope: {
         orgId: args.auth.orgId,
         userId: args.auth.userId,
-        agentId: run.agentId,
         runId: args.auth.runId,
       },
       targets: [
@@ -241,8 +214,7 @@ export const admitCustomConnectorNetworkRequest$ = command(
     const [current] = await db.select().from(ownedRun);
     signal.throwIfAborted();
     if (
-      !activeNetworkRun(current, chatAccounts) ||
-      current.agentId !== run.agentId ||
+      !activeNetworkRun(current) ||
       current.definitionUpdatedAt.getTime() !==
         run.definitionUpdatedAt.getTime()
     ) {

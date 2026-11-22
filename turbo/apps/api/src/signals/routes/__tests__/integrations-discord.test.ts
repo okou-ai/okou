@@ -21,7 +21,6 @@ import {
   type DiscordFixture,
 } from "./helpers/discord";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import { createBddApi } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { launchPublicDiscordTestRun } from "./helpers/discord-run";
@@ -327,8 +326,7 @@ describe("verified Discord integration settings", () => {
       guildId: installed.guildId,
       guildName: "Customer workspace",
       discordUserId: installed.discordUserId,
-      defaultAgentId: null,
-      defaultAgentName: null,
+
       contextMode: "mentions_only",
       onboarding: "oauth",
       dmSelectionConnectionId: null,
@@ -860,31 +858,5 @@ describe("verified Discord integration settings", () => {
       [200],
     );
     await expectDiscordChanges([owner.userId]);
-  });
-
-  it("always reports the organization default agent", async () => {
-    const { actor } = createActors();
-    const owner = actor();
-    const api = createBddApi(context);
-    api.acceptAgentStorageWrites();
-    const ownerProfile = api.user(owner);
-    const defaultAgentId = await api.bootstrapLimitedFreeOnboarding(
-      ownerProfile,
-      {
-        displayName: "Okou",
-      },
-    );
-    await fixture(owner);
-    const ownAgent = await api.createAgent(ownerProfile, {
-      visibility: "private",
-      displayName: "Personal Discord agent",
-    });
-
-    await expect(status(owner)).resolves.toMatchObject({
-      defaultAgentId,
-      defaultAgentName: "Okou",
-    });
-
-    await api.deleteAgent(ownerProfile, ownAgent.agentId);
   });
 });

@@ -11,6 +11,7 @@ import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-m
 import type { RouteEntry } from "./route-entry";
 import {
   agentDraftRoutes,
+  composerDraftRoutes,
   projectAgentDraftRoutes,
 } from "./routes/agent-draft";
 import { feedRoutes } from "./routes/feed";
@@ -66,10 +67,8 @@ import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { chatConnectorAccessRoutes } from "./routes/chat-connector-access";
 import { runConnectorAccountRoutes } from "./routes/run-connector-accounts";
 import { connectorPermissionsRoutes } from "./routes/connector-permissions";
-import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
-import { agentConnectorAccessRoutes } from "./routes/agent-connector-access";
 import { connectedConnectorsRoutes } from "./routes/connected-connectors";
 import { remotesRoutes } from "./routes/remotes";
 import { builtinConnectorsRoutes } from "./routes/connectors";
@@ -178,10 +177,7 @@ import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-provi
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
-import {
-  proactiveSuggestionsRoutes,
-  proactiveLearningRoutes,
-} from "./routes/proactive-preferences";
+import { proactiveSuggestionsRoutes } from "./routes/proactive-preferences";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingDraftRoutes } from "./routes/onboarding-draft";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
@@ -232,13 +228,13 @@ import { usageMembersRoutes } from "./routes/usage-members";
 import { usageRecordRoutes } from "./routes/usage-record";
 import { userExportRoutes } from "./routes/user-export";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
-import { userPermissionGrantsRoutes } from "./routes/user-permission-grants";
 import { userPreferencesRoutes } from "./routes/user-preferences";
 import { userTemplatesRoutes } from "./routes/user-templates";
 import { vncAccessRoutes } from "./routes/vnc-access";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
 import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
+import { transcribeRoutes } from "./routes/transcribe";
 import { voiceIoTranscribeRoutes } from "./routes/voice-io-transcribe";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 
@@ -334,11 +330,11 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
+  ...composerDraftRoutes,
   ...feedRoutes,
   ...agentInstructionsRoutes,
   ...instructionsRoutes,
   ...agentsRoutes,
-  ...connectorAgentAccessRoutes,
   ...artifactCatalogRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
@@ -373,7 +369,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...codexDeviceAuthRoutes,
   ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
-  ...agentConnectorAccessRoutes,
   ...connectedConnectorsRoutes,
   ...remotesRoutes,
   ...connectorCheckRoutes,
@@ -427,6 +422,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...voiceIoQuotaRoutes,
   ...voiceIoPolishRoutes,
   ...agentSetupPromptRoutes,
+  ...transcribeRoutes,
   ...voiceIoTranscribeRoutes,
   ...webFileUrlRoutes,
   ...realtimeTokenRoutes,
@@ -448,13 +444,11 @@ export const ROUTES: readonly RouteEntry[] = [
   ...pushSubscriptionsRoutes,
   ...iosPushRegistrationsRoutes,
   ...iosNotificationsRoutes,
-  ...userPermissionGrantsRoutes,
   ...userPreferencesRoutes,
   ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
-  ...proactiveLearningRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
   ...debugMorningBriefRoutes,

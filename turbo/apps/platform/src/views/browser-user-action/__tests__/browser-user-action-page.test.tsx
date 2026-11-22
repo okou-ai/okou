@@ -27,14 +27,13 @@ import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const REQUEST_TOKEN = `vm0_browser_user_action_${"b".repeat(43)}`;
-const AGENT_ID = "c0000000-0000-4000-a000-000000001201";
 const THREAD_ID = "b0000000-0000-4000-a000-000000001202";
 const CALLBACK_PROMPT = "Continue after standalone browser input";
 const SUCCESS_CLIENT_ID = "10000000-0000-4000-a000-000000001203";
 const SUCCESS_SORT_ID = "10000000-0000-4000-a000-000000001204";
 const CANCEL_CLIENT_ID = "10000000-0000-4000-a000-000000001205";
 const CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001206";
-const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000001207";
+const OTHER_THREAD_ID = "c0000000-0000-4000-a000-000000001207";
 
 function action(
   state: BrowserUserActionResponse["state"],
@@ -52,7 +51,6 @@ function action(
     state,
     callbackDelivered: context.store.get(callbackSent$),
     completedAt: state === "pending" ? null : "2026-09-22T05:00:00.000Z",
-    agentId: AGENT_ID,
     threadId: THREAD_ID,
     siteOrigin: "https://login.example.test",
     fields: [
@@ -390,7 +388,6 @@ function mockPendingPreflight(hasTaskContext = true) {
 
 function route(args: { readonly threadId?: string } = {}): string {
   const params = new URLSearchParams({
-    agentId: AGENT_ID,
     threadId: args.threadId ?? THREAD_ID,
     callbackPrompt: CALLBACK_PROMPT,
   });
@@ -529,7 +526,7 @@ test.each(["username", "password", "one_time_code", "text"] as const)(
     });
     const credentialRequest =
       fieldKind === "username" || fieldKind === "password";
-    expect(within(form).queryAllByText("How to fill")).toHaveLength(
+    expect(within(form).queryAllByText("Use a saved password")).toHaveLength(
       credentialRequest ? 1 : 0,
     );
     if (!credentialRequest) {
@@ -540,10 +537,10 @@ test.each(["username", "password", "one_time_code", "text"] as const)(
     await fill(input, "owner@example.test");
     const instructions = within(form).getByText(/^Chrome \(desktop\):/u);
     expect(instructions).not.toBeVisible();
-    click(within(form).getByText("How to fill"));
+    click(within(form).getByText("Use a saved password"));
     expect(instructions).toBeVisible();
     expect(input).toHaveValue("owner@example.test");
-    click(within(form).getByText("How to fill"));
+    click(within(form).getByText("Use a saved password"));
     expect(instructions).not.toBeVisible();
     expect(within(form).getByLabelText(label)).toHaveValue(
       "owner@example.test",
@@ -1358,7 +1355,7 @@ test.each([
     await waitFor(() => {
       expect(checkbox).toBeEnabled();
     });
-    expect(checkbox).toHaveProperty("checked", siteChecked);
+    expect(checkbox).toHaveAttribute("aria-checked", String(siteChecked));
     const user = userEvent.setup({ delay: null });
     await user.click(checkbox);
     click(button("Add to browser"));
@@ -2210,7 +2207,7 @@ test("Maps an expired API response to the inert expiry state", async () => {
 
 test("Fails closed for a mismatched response", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, { ...action("pending"), agentId: OTHER_AGENT_ID });
+    return respond(200, { ...action("pending"), threadId: OTHER_THREAD_ID });
   });
 
   await setupPage({

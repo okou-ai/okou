@@ -1,13 +1,12 @@
+import { db$ } from "../external/db";
 import { command, computed } from "ccstate";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { and, eq } from "drizzle-orm";
 
-import { db$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import {
   telegramDeliveryTargetSchema,
@@ -46,7 +45,6 @@ type TelegramLaunchContextRow = Pick<
   | "senderUsername"
   | "senderLanguage"
 > & {
-  readonly agentId: string;
   readonly officialUserLinkId: string | null;
 };
 
@@ -109,7 +107,6 @@ export function createTelegramLaunchContext(args: TelegramLaunchSource) {
         senderDisplayName: chatTelegramContext.senderDisplayName,
         senderUsername: chatTelegramContext.senderUsername,
         senderLanguage: chatTelegramContext.senderLanguage,
-        agentId: agents.id,
         officialUserLinkId: telegramOfficialUserLinks.id,
       })
       .from(chatEvents)
@@ -125,9 +122,9 @@ export function createTelegramLaunchContext(args: TelegramLaunchSource) {
         and(
           eq(chatThreads.id, chatEvents.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .leftJoin(
         telegramOfficialUserLinks,
         and(
@@ -171,6 +168,36 @@ function telegramUserInfoExtras(
   };
 }
 
+function telegramDeliveryFromContext(
+  context: NonNullable<TelegramThreadContext>,
+) {
+  return telegramDeliveryTargetSchema.parse({
+    installationId: OFFICIAL_TELEGRAM_BOT_ID,
+    chatId: context.chatId,
+    messageId: context.messageId,
+    rootMessageId: context.rootMessageId,
+    userLinkId: context.userLinkId,
+    userLinkKind: context.userLinkKind,
+    isDM: context.chatType === "private",
+    ...(context.messageThreadId !== null
+      ? { messageThreadId: context.messageThreadId }
+      : {}),
+    ...(context.thinkingMessageId !== null
+      ? { thinkingMessageId: context.thinkingMessageId }
+      : {}),
+  });
+}
+
+export function createTelegramQueuedDelivery(args: TelegramLaunchSource) {
+  const context$ = createTelegramLaunchContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context && getOfficialTelegramBotConfig().botId !== null
+      ? telegramDeliveryFromContext(context)
+      : null;
+  });
+}
+
 export const loadTelegramQueuedLaunchMaterial$ = command(
   async (
     { get },
@@ -189,40 +216,38 @@ export const loadTelegramQueuedLaunchMaterial$ = command(
     }
     const botUsername = officialBotConfig.botUsername;
     return {
-      prompt: context.messageText,
-      appendSystemPrompt: buildTelegramPrompt(
-        {
-          botId: providerBotId,
-          botUsername,
-          chatId: context.chatId,
-          chatType: context.chatType,
-          messageId: context.messageId,
-          rootMessageId: context.rootMessageId,
-          messageThreadId: context.messageThreadId,
-        },
-        resolveIntegrationNotePrompt({
-          triggerSource: "telegram",
-          featureSwitchContext: args.featureSwitchContext,
-        }),
-        context.threadContext,
+      ...telegramPromptFromContext(
+        context,
+        { botId: providerBotId, botUsername },
+        args.featureSwitchContext,
       ),
-      telegramDelivery: telegramDeliveryTargetSchema.parse({
-        installationId: OFFICIAL_TELEGRAM_BOT_ID,
-        chatId: context.chatId,
-        messageId: context.messageId,
-        rootMessageId: context.rootMessageId,
-        userLinkId: context.userLinkId,
-        userLinkKind: context.userLinkKind,
-        agentId: context.agentId,
-        isDM: context.chatType === "private",
-        ...(context.messageThreadId !== null
-          ? { messageThreadId: context.messageThreadId }
-          : {}),
-        ...(context.thinkingMessageId !== null
-          ? { thinkingMessageId: context.thinkingMessageId }
-          : {}),
-      }),
+      telegramDelivery: telegramDeliveryFromContext(context),
       userInfoExtras: telegramUserInfoExtras(context),
     };
   },
 );
+
+export function telegramPromptFromContext(
+  context: NonNullable<TelegramThreadContext>,
+  bot: { readonly botId: string; readonly botUsername: string | null },
+  featureSwitchContext: FeatureSwitchContext,
+) {
+  return {
+    prompt: context.messageText,
+    appendSystemPrompt: buildTelegramPrompt(
+      {
+        ...bot,
+        chatId: context.chatId,
+        chatType: context.chatType,
+        messageId: context.messageId,
+        rootMessageId: context.rootMessageId,
+        messageThreadId: context.messageThreadId,
+      },
+      resolveIntegrationNotePrompt({
+        triggerSource: "telegram",
+        featureSwitchContext,
+      }),
+      context.threadContext,
+    ),
+  };
+}

@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.12.92](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.91...codex-mock-v0.12.92) (2026-11-22)
+
+
+### Refactoring
+
+* **codex-mock:** share terminal turn notification construction ([#49903](https://github.com/okou-ai/okou/issues/49903)) ([e14aa4d](https://github.com/okou-ai/okou/commit/e14aa4d6b51ad8b3548e073ee9ee0e0cfb326a7e))
+
+## [0.12.91](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.90...codex-mock-v0.12.91) (2026-11-21)
+
+
+### Refactoring
+
+* **codex-mock:** bind item notifications to their timestamp fields ([#49873](https://github.com/okou-ai/okou/issues/49873)) ([3ca3ade](https://github.com/okou-ai/okou/commit/3ca3adef7bcf246ab1e5e0576a81c36fc533bb31))
+
+## [0.12.90](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.89...codex-mock-v0.12.90) (2026-11-21)
+
+
+### Refactoring
+
+* **codex-mock:** centralize turn input persistence metadata ([#49640](https://github.com/okou-ai/okou/issues/49640)) ([6f537e3](https://github.com/okou-ai/okou/commit/6f537e3b922a3821a0db007a829e428bdf148f07))
+
+## [0.12.89](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.88...codex-mock-v0.12.89) (2026-11-20)
+
+## [0.12.88](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.87...codex-mock-v0.12.88) (2026-11-20)
+
+## [0.12.87](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.86...codex-mock-v0.12.87) (2026-11-20)
+
+## [0.12.86](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.85...codex-mock-v0.12.86) (2026-11-19)
+
+## [0.12.85](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.84...codex-mock-v0.12.85) (2026-11-19)
+
 ## [0.12.84](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.83...codex-mock-v0.12.84) (2026-11-19)
 
 ## [0.12.83](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.82...codex-mock-v0.12.83) (2026-11-18)

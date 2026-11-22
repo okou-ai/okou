@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for `okou search --source chat`.
  *
@@ -41,7 +42,7 @@ describe("okou search --source chat", () => {
     // see calls made by the current case.
     vi.clearAllMocks();
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["chat-thread:read"]));
     // Commander retains collector state across parseAsync calls on the
     // same command instance. Reset before each case.
     searchCommand.setOptionValue("source", []);
@@ -70,7 +71,6 @@ describe("okou search --source chat", () => {
           results: [
             {
               chatThreadId: "thread-abc",
-              agentName: "my-agent",
               matchedMessage: makeMessage({
                 content: "OOM killed the build",
               }),
@@ -84,9 +84,9 @@ describe("okou search --source chat", () => {
 
     const logs = mockConsoleLog.mock.calls.flat().join("\n");
     expect(logs).toContain("thread-abc");
-    expect(logs).toContain("my-agent");
+    expect(logs).not.toContain("my-agent");
     expect(logs).toContain("OOM killed the build");
-    expect(capturedUrl?.searchParams.has("limit")).toBeFalsy();
+    expect(capturedUrl?.searchParams.toString()).toBe("keyword=OOM");
   });
 
   it("tolerates invalid chat message timestamps", async () => {
@@ -96,7 +96,6 @@ describe("okou search --source chat", () => {
           results: [
             {
               chatThreadId: "thread-abc",
-              agentName: "my-agent",
               matchedMessage: makeMessage({
                 content: "OOM killed the build",
                 createdAt: "not-a-timestamp",
@@ -131,64 +130,6 @@ describe("okou search --source chat", () => {
 
     const logs = mockConsoleLog.mock.calls.flat().join("\n");
     expect(logs).toContain("No matches found");
-  });
-
-  it("passes --agent as agentId filter to API", async () => {
-    let capturedUrl: URL | undefined;
-    const agentId = "550e8400-e29b-41d4-a716-446655440001";
-    server.use(
-      http.get("http://localhost:3000/api/chat/search", ({ request }) => {
-        capturedUrl = new URL(request.url);
-        return HttpResponse.json({ results: [] });
-      }),
-    );
-
-    await searchCommand.parseAsync([
-      "node",
-      "cli",
-      "hello",
-      "--source",
-      "chat",
-      "--agent",
-      agentId,
-    ]);
-
-    expect(capturedUrl?.searchParams.get("agentId")).toBe(agentId);
-  });
-
-  it("rejects non-UUID --agent values", async () => {
-    await expect(
-      searchCommand.parseAsync([
-        "node",
-        "cli",
-        "hello",
-        "--source",
-        "chat",
-        "--agent",
-        "agent-123",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    let errors = mockConsoleError.mock.calls.flat().join("\n");
-    expect(errors).toContain("Invalid agent ID");
-
-    mockConsoleError.mockClear();
-    searchCommand.setOptionValue("source", []);
-
-    await expect(
-      searchCommand.parseAsync([
-        "node",
-        "cli",
-        "hello",
-        "--source",
-        "chat",
-        "--agent",
-        "",
-      ]),
-    ).rejects.toThrow("process.exit called");
-
-    errors = mockConsoleError.mock.calls.flat().join("\n");
-    expect(errors).toContain("Invalid agent ID");
   });
 
   it("surfaces API authentication errors", async () => {

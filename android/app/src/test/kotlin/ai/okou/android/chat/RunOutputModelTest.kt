@@ -31,7 +31,7 @@ class RunOutputModelTest {
             ConversationUiState(
                 thread =
                     Json.decodeFromString<ChatArchive>(
-                            """{"chatThreads":[{"id":"$CHAT_PERSONAL","agentId":"agent","projectId":null,"title":"Thread","sortAt":"2026-11-16T00:00:00Z","createdAt":"2026-11-16T00:00:00Z","updatedAt":"2026-11-16T00:00:00Z","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                            """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"2026-11-16T00:00:00Z","createdAt":"2026-11-16T00:00:00Z","updatedAt":"2026-11-16T00:00:00Z","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
                         )
                         .chatThreads
                         .single(),

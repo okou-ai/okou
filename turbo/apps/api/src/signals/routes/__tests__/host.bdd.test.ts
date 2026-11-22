@@ -319,7 +319,6 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(createdOnOkou.url).toBe(`https://${browserOkouSite}.okou.app`);
 
     const run = await fixture.sendChatRun(actor, {
-      agentId: entitled.agentId,
       prompt: "Publish a hosted site from the Runner",
     });
     const { execution } = await fixture.runExecution(run.runId);
@@ -635,12 +634,11 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     const api = createHostBddApi(context);
     const runs = createRunsApi(context);
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     await owned.run(() => {
       return runs.updateUserModelPreference(actor, "claude-fable-5-1");
     });
     const created = await owned.sendChatRun(actor, {
-      agentId,
       prompt: "attribute hosted-site artifacts",
     });
     const { execution } = await owned.runExecution(created.runId);

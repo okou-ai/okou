@@ -16,12 +16,41 @@ const MAX_BATCH_PAYLOAD_BYTES: usize =
     guest_control_proto::MAX_MESSAGE_SIZE - guest_control_proto::MIN_BODY_SIZE;
 
 #[derive(Debug, Eq, PartialEq)]
-struct Args {
-    append: bool,
-    batch: bool,
-    create_parents: bool,
-    private: bool,
-    path: Option<PathBuf>,
+enum Args {
+    Single { path: PathBuf, output: OutputMode },
+    Batch { output: OutputMode },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OutputMode {
+    Ordinary { append: bool },
+    CreateParents,
+    Private { append: bool },
+}
+
+impl OutputMode {
+    fn open(self, path: &Path) -> io::Result<File> {
+        let append = match self {
+            Self::Private { append: true } => {
+                return guest_contracts::runtime_paths::open_private_append(path);
+            }
+            Self::Private { append: false } => {
+                return guest_contracts::runtime_paths::create_private(path);
+            }
+            Self::Ordinary { append } => append,
+            Self::CreateParents => {
+                if let Some(parent) = path.parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    fs::create_dir_all(parent)?;
+                }
+                false
+            }
+        };
+        let file = output_options(append).open(path)?;
+        prepare_output_file(&file)?;
+        Ok(file)
+    }
 }
 
 const USAGE: &str = concat!(
@@ -84,13 +113,12 @@ where
         if path.is_some() {
             return Err("--batch does not accept a path".to_string());
         }
-        return Ok(Args {
-            append: false,
-            batch: true,
-            create_parents: false,
-            private,
-            path: None,
-        });
+        let output = if private {
+            OutputMode::Private { append: false }
+        } else {
+            OutputMode::CreateParents
+        };
+        return Ok(Args::Batch { output });
     }
 
     let path = path.ok_or_else(|| "missing path".to_string())?;
@@ -101,40 +129,28 @@ where
         return Err("--private and --create-parents cannot be used together".to_string());
     }
 
-    Ok(Args {
-        append,
-        batch: false,
-        create_parents,
-        private,
-        path: Some(path),
-    })
+    let output = if private {
+        OutputMode::Private { append }
+    } else if create_parents {
+        OutputMode::CreateParents
+    } else {
+        OutputMode::Ordinary { append }
+    };
+    Ok(Args::Single { path, output })
 }
 
 fn run(args: Args, mut stdin: impl Read) -> io::Result<()> {
-    if args.batch {
-        return run_batch(stdin, args.private);
-    }
-    let Some(path) = args.path else {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "missing path"));
-    };
-
-    let mut file = if args.private {
-        open_private_output_file(&path, args.append)?
-    } else {
-        if args.create_parents
-            && let Some(parent) = path.parent()
-            && !parent.as_os_str().is_empty()
-        {
-            fs::create_dir_all(parent)?;
+    match args {
+        Args::Single { path, output } => {
+            let mut file = output.open(&path)?;
+            io::copy(&mut stdin, &mut file)?;
+            file.flush()
         }
-        open_output_file(&path, args.append)?
-    };
-
-    io::copy(&mut stdin, &mut file)?;
-    file.flush()
+        Args::Batch { output } => run_batch(stdin, output),
+    }
 }
 
-fn run_batch(mut stdin: impl Read, private: bool) -> io::Result<()> {
+fn run_batch(mut stdin: impl Read, output: OutputMode) -> io::Result<()> {
     let mut payload = Vec::new();
     let mut limited = stdin.by_ref().take(MAX_BATCH_PAYLOAD_BYTES as u64 + 1);
     limited.read_to_end(&mut payload)?;
@@ -144,43 +160,27 @@ fn run_batch(mut stdin: impl Read, private: bool) -> io::Result<()> {
             "write_files payload exceeds maximum protocol message size",
         ));
     }
-    write_batch(&payload, private)
+    write_batch(&payload, output)
 }
 
-fn write_batch(payload: &[u8], private: bool) -> io::Result<()> {
+fn write_batch(payload: &[u8], mode: OutputMode) -> io::Result<()> {
+    write_batch_with(payload, mode, |output, content| output.write_all(content))
+}
+
+fn write_batch_with(
+    payload: &[u8],
+    mode: OutputMode,
+    mut write_content: impl FnMut(&mut File, &[u8]) -> io::Result<()>,
+) -> io::Result<()> {
     let files = guest_control_proto::decode_write_files(payload)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
 
     for file in files {
-        let path = Path::new(file.path);
-        let mut output = if private {
-            open_private_output_file(path, false)?
-        } else {
-            if let Some(parent) = path.parent()
-                && !parent.as_os_str().is_empty()
-            {
-                fs::create_dir_all(parent)?;
-            }
-            open_output_file(path, false)?
-        };
-        output.write_all(file.content)?;
+        let mut output = mode.open(Path::new(file.path))?;
+        write_content(&mut output, file.content)?;
         output.flush()?;
     }
     Ok(())
-}
-
-fn open_private_output_file(path: &Path, append: bool) -> io::Result<File> {
-    if append {
-        guest_contracts::runtime_paths::open_private_append(path)
-    } else {
-        guest_contracts::runtime_paths::create_private(path)
-    }
-}
-
-fn open_output_file(path: &Path, append: bool) -> io::Result<File> {
-    let file = output_options(append).open(path)?;
-    prepare_output_file(&file)?;
-    Ok(file)
 }
 
 fn output_options(append: bool) -> OpenOptions {

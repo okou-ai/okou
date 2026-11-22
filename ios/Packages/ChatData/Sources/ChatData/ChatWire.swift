@@ -35,7 +35,7 @@ struct ThreadSnapshotArchive: Codable, Sendable {
 
 struct ThreadProjection: Codable, Sendable {
   let id: String
-  let agentId: String
+  let agentId: String?
   let projectId: String?
   let title: String?
   let selectedModel: String?
@@ -76,7 +76,7 @@ struct ThreadEvent: Codable, Sendable {
   let seqId: Int
   let kind: ChatThreadChange.Kind
   let chatThreadId: String
-  let agentId: String
+  let agentId: String?
   let reassignedAgentId: String?
   let projectId: String?
   let title: String?
@@ -106,7 +106,7 @@ struct ThreadEvent: Codable, Sendable {
 
 struct ThreadMetadata: Decodable, Sendable {
   let id: String
-  let agentId: String
+  let agentId: String?
   let title: String?
   let selectedModel: String?
   let computerUseHostId: String?
@@ -120,9 +120,16 @@ struct ThreadDetail: Decodable, Sendable {
 }
 
 public struct Indicators: Decodable, Sendable {
-  public let agents: [String: ChatIndicator]
+  let agents: [String: ChatIndicator]?
   public let threads: [String: ChatIndicator]
   public let unreadAt: [String: Date]
+
+  public func unreadAgentIDs(in chatThreads: [ChatThread]) -> Set<String> {
+    if let agents {
+      return Set(agents.filter { $0.value == .unread }.map(\.key))
+    }
+    return Set(chatThreads.filter { threads[$0.id] == .unread }.compactMap(\.agentID))
+  }
 }
 
 struct ThreadReadState: Decodable, Sendable {

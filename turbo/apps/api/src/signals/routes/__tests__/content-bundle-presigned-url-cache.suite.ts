@@ -15,7 +15,6 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 describe("content bundle presigned URL cache", () => {
   const context = testContext();
@@ -50,20 +49,15 @@ describe("content bundle presigned URL cache", () => {
   }> {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    createMiscRoutesApi(context);
     const actor = bdd.user();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = await api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
+    const { defaultAgentId } = await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Content bundle cache agent",
-      visibility: "private",
-    });
-    return { actor, agentId: agent.agentId, runnerGroup };
+    return { actor, agentId: defaultAgentId, runnerGroup };
   }
 
   beforeEach(() => {
@@ -77,21 +71,11 @@ describe("content bundle presigned URL cache", () => {
 
   async function workflowCacheFixture() {
     const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
-    if (!actor.orgId) {
-      throw new Error("Expected a retained Agent workspace");
-    }
-    // Named-Agent Workflow mounts exercise a retained multi-Agent membership.
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { singleAgent: false },
-    );
     const misc = createMiscRoutesApi(context);
     const chats = createChatEventsFixture(context);
     installWorkflowVolumeS3Fixture(context);
     const workflow = await misc.createWorkflow(
       actor,
-      agentId,
       `cache-${randomUUID().slice(0, 8)}`,
       {
         content: "# Workflow URL test",
@@ -106,7 +90,6 @@ describe("content bundle presigned URL cache", () => {
     const readWorkflowExecution = async () => {
       await createRunsApi(context).registerDirectRunner(runnerGroup);
       const run = await chats.sendChatRun(actor, {
-        agentId,
         prompt: "Read the immutable Workflow attachment",
       });
       const { execution, sandboxHeaders } = await chats.runExecution(run.runId);
@@ -131,7 +114,6 @@ describe("content bundle presigned URL cache", () => {
     }
     const api = createRunsApi(context);
     context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
-    // Skill availability is independent of a connected runtime account.
     const connectors = createConnectorBddApi(context);
 
     const custom = await connectors.createCustomConnector(actor, {
@@ -152,7 +134,11 @@ describe("content bundle presigned URL cache", () => {
     onTestFinished(async () => {
       await connectors.deleteCustomConnector(actor, custom.id);
     });
-    await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
+    const account = await connectors.setCustomConnectorValues(
+      actor,
+      custom.id,
+      [{ key: "secret", kind: "secret", value: "readonly-cache-test-token" }],
+    );
     const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(custom.slug, custom.id)}`;
     mockUniquePresignedUrls();
     const createExecution = async (prompt: string) => {
@@ -171,10 +157,11 @@ describe("content bundle presigned URL cache", () => {
       expect(mount.mountPath).toBe(
         `/home/user/.claude/skills/custom-${custom.slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
       );
-      expect(execution.connectorRuntimeTargets).not.toContainEqual(
+      expect(execution.connectorRuntimeTargets).toContainEqual(
         expect.objectContaining({
           kind: "custom",
           customConnectorId: custom.id,
+          sourceId: account.connectionId,
         }),
       );
       return { runId: run.runId, archiveUrl: mount.downloadUrl };
@@ -261,11 +248,10 @@ describe("content bundle presigned URL cache", () => {
   });
 
   it("pins dispatched Workflow URLs and selects later edits for the following Run", async () => {
-    const { actor, agentId, workflow, misc, chats, readWorkflowExecution } =
+    const { actor, workflow, misc, chats, readWorkflowExecution } =
       await workflowCacheFixture();
     const cached = await readWorkflowExecution();
     const queued = await chats.sendChatRun(actor, {
-      agentId,
       prompt: "use the latest Workflow",
     });
     await misc.updateWorkflow(
@@ -296,8 +282,7 @@ describe("content bundle presigned URL cache", () => {
   });
 
   it("settles a preparation signing failure and caches URLs for a later fresh Run", async () => {
-    const { actor, agentId, readWorkflowExecution } =
-      await workflowCacheFixture();
+    const { actor, readWorkflowExecution } = await workflowCacheFixture();
     const api = createRunsApi(context);
     context.mocks.s3.getSignedUrl.mockRejectedValueOnce(
       new Error("Fixture signer unavailable"),
@@ -307,7 +292,6 @@ describe("content bundle presigned URL cache", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         clientEventId,
         prompt: "A cold signing failure",
       },

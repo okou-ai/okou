@@ -1,9 +1,13 @@
+import type { ChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
+import {
+  ChatShareHeaderControls,
+  useChatShareRefresh,
+} from "./chat-share-selection-controls.tsx";
 import {
   ChatComposerFooter,
   ChatPageHeader,
   ChatPageLayout,
 } from "./chat-page-layout.tsx";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { ProjectReference } from "../projects/project-reference.tsx";
 import {
   MessageShareMenu,
@@ -11,6 +15,7 @@ import {
   SharedThreadShareMenu,
 } from "./shared-thread-share-menu.tsx";
 import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/shared-thread-visibility";
+import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
@@ -20,7 +25,6 @@ import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import { VisualizationPreferencesChip } from "./visualization-preferences-chip.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { Field } from "@base-ui/react/field";
@@ -38,7 +42,6 @@ import {
   useLastResolved,
 } from "ccstate-react";
 import type { TFunction } from "i18next";
-import { equalArrays } from "../../lib/equality.ts";
 import type { ChatDateDivider } from "../../lib/chat-thread-date-dividers.ts";
 import { useTranslation } from "react-i18next";
 import {
@@ -125,6 +128,7 @@ import {
   ThinkingMessages,
   useMediaQuery,
   buttonVariants,
+  surfaceVariants,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -209,7 +213,6 @@ import {
 import {
   asInputChatEvent,
   chatEventDisplayError,
-  isInputChatEvent,
   isRenderableAssistantEvent,
   isWorkflowUserMessage,
   rendersUserBubble,
@@ -225,11 +228,14 @@ import {
 import {
   idleRunFinished$,
   idleThinkingIndicatorsShown$,
-  splitQueuedEventsForThinkingIndicator,
   type ChatThreadRowSignals,
 } from "../../signals/chat-page/chat-thread-rows.ts";
 import { chatEventRenderKey } from "../../signals/chat-page/chat-event-group-keys.ts";
-import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
+import {
+  chatGroupForSharing,
+  shareableEventFromChatEvent,
+  type SharedThreadSelectionPhase,
+} from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
@@ -295,7 +301,6 @@ import {
   sameSelectedModel,
 } from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
-import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
@@ -337,7 +342,7 @@ import {
 } from "./components/model-provider-picker.tsx";
 import { ChatFeedbackSelection } from "./chat-feedback-selection.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
-import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
+import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { setBillingSubPage$ } from "../../signals/okou-page/settings/workspace-settings-state.ts";
@@ -366,14 +371,10 @@ import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import {
   ChatAssistantMessageBody,
   ChatUserMessageBubble,
-  CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS,
-  CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS,
   CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS,
-  CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS,
-  CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS,
   CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS,
   CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
@@ -394,26 +395,14 @@ import {
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "./chat-message-surface.tsx";
 import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
-import { agents$, defaultAgentId$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
-
-type UserMessageNonContentPart = Extract<
-  UserMessagePart,
-  { readonly type: "source" | "automation" }
->;
 
 type UserMessageAnnotationRenderPart = Extract<
   UserMessageRenderPart,
   { readonly type: "source" | "automation" }
 >;
-
-function isUserMessageNonContentPart(
-  part: UserMessagePart,
-): part is UserMessageNonContentPart {
-  return part.type === "source" || part.type === "automation";
-}
 
 type UserMessageHiddenPart = Extract<
   UserMessageRenderPart["part"],
@@ -457,12 +446,6 @@ function runModelDisplayName(
     : model;
 }
 
-function userMessageNonContentPart(
-  document: UserMessageDocument | undefined,
-): UserMessageNonContentPart | undefined {
-  return document?.parts.find(isUserMessageNonContentPart);
-}
-
 function userMessageAnnotationRenderPart(
   document: UserMessageRenderDocument | undefined,
 ): UserMessageAnnotationRenderPart | undefined {
@@ -470,14 +453,6 @@ function userMessageAnnotationRenderPart(
     (renderPart): renderPart is UserMessageAnnotationRenderPart => {
       return renderPart.type === "source" || renderPart.type === "automation";
     },
-  );
-}
-
-function eventNonContentPart(
-  event: EnrichedChatEvent,
-): UserMessageNonContentPart | undefined {
-  return userMessageNonContentPart(
-    isInputChatEvent(event) ? event.userMessage : undefined,
   );
 }
 
@@ -584,35 +559,15 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const selectedCount = useGet(thread.sharing.selectedCount$);
   const startSharing = useSet(thread.sharing.start$);
-  const closeSharing = useSet(thread.sharing.close$);
+  const shareRefresh = useChatShareRefresh();
   if (sharingPhase !== "idle") {
     return (
       <ChatPageHeader>
-        <span className="text-sm font-medium text-foreground">
-          {t(
-            ($) => {
-              return $.chat.sharing.selectedCount;
-            },
-            { count: selectedCount },
-          )}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            detach(
-              closeSharing(pageSignal),
-              Reason.DomCallback,
-              "close shared thread selection",
-            );
-          }}
-        >
-          {t(($) => {
-            return $.chat.sharing.cancel;
-          })}
-        </Button>
+        <ChatShareHeaderControls
+          sharing={thread.sharing}
+          refreshed={shareRefresh}
+        />
       </ChatPageHeader>
     );
   }
@@ -2827,95 +2782,11 @@ export function ChatThreadSidebarPane() {
 export function ChatThreadPage() {
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
-  return withChatScrollLayout(
+  return (
     <>
       <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />
       <ChatConnectorActionConnectModal />
-    </>,
-  );
-}
-
-function renderedChatEventKeys(
-  groups: readonly ChatEventGroup[],
-): readonly string[] {
-  return groups.flatMap((group) => {
-    return group.events.map((event) => {
-      return `${event.id}:${event.isQueued ? "queued" : "active"}`;
-    });
-  });
-}
-
-function chatGroupsContainEvent(
-  groups: readonly ChatEventGroup[],
-  eventId: string | undefined,
-): boolean {
-  return groups.some((group) => {
-    return group.events.some((event) => {
-      return event.id === eventId;
-    });
-  });
-}
-
-function ChatThreadScrollCommitMarker({
-  thread,
-}: {
-  thread: ChatPanelSignals;
-}) {
-  const renderedGroups = useLastResolved(thread.visibleRenderedChatGroups$);
-  const readyScrollRequestLoadable = useLoadable(
-    thread.readyScrollAfterRenderRequest$,
-  );
-  const commitScroll = useSet(thread.scrollCommitOnRef$);
-  if (
-    renderedGroups === undefined ||
-    readyScrollRequestLoadable.state !== "hasData" ||
-    readyScrollRequestLoadable.data === null
-  ) {
-    return null;
-  }
-
-  const readyScrollRequest = readyScrollRequestLoadable.data;
-  if (
-    !equalArrays(
-      readyScrollRequest.renderedEventKeys,
-      renderedChatEventKeys(renderedGroups),
-    )
-  ) {
-    return null;
-  }
-
-  const { activeGroups, queuedGroups } =
-    splitQueuedEventsForThinkingIndicator(renderedGroups);
-  const { request } = readyScrollRequest;
-  const targetEventId = request.position?.targetEventId;
-  const activeTargetRendered = chatGroupsContainEvent(
-    activeGroups,
-    targetEventId,
-  );
-  const targetMovedToQueue = chatGroupsContainEvent(
-    queuedGroups,
-    targetEventId,
-  );
-  const activeEventsRendered = activeGroups.some((group) => {
-    return group.events.length > 0;
-  });
-  if (
-    !activeEventsRendered ||
-    (request.position !== null && !activeTargetRendered && !targetMovedToQueue)
-  ) {
-    return null;
-  }
-
-  const commitToTail = request.position === null || targetMovedToQueue;
-  return (
-    <span
-      key={request.revision}
-      ref={commitScroll}
-      data-chat-scroll-commit-revision={request.revision}
-      data-chat-scroll-commit-to-tail={commitToTail ? "" : undefined}
-      aria-hidden
-      className="hidden"
-    />
+    </>
   );
 }
 
@@ -2945,7 +2816,7 @@ function ChatThreadRenderedEventGroups({
   thread: ChatPanelSignals;
 }) {
   const rows = useGet(thread.visibleRows$);
-  return withChatScrollLayout(
+  return (
     <>
       {rows.map((row) => {
         return (
@@ -2956,8 +2827,7 @@ function ChatThreadRenderedEventGroups({
           />
         );
       })}
-      <ChatThreadScrollCommitMarker thread={thread} />
-    </>,
+    </>
   );
 }
 
@@ -2990,7 +2860,7 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
   const showTranscript = useGet(thread.initialEventsReady$);
   const scrollContentOnRef = useSet(thread.scrollContentOnRef$);
 
-  return withChatScrollLayout(
+  return (
     <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
       <div
         ref={scrollContentOnRef}
@@ -3005,7 +2875,7 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
         <ChatThreadRenderedEventGroups thread={thread} />
         <ChatThreadNextRunModelNotice thread={thread} />
       </div>
-    </main>,
+    </main>
   );
 }
 
@@ -3028,7 +2898,7 @@ function ChatThreadNextRunModelNotice({
     runningSelection === undefined ||
     runningSelection === null
   ) {
-    return withChatScrollLayout(null);
+    return null;
   }
 
   // Selected identity is separate from a Run's immutable captured runtime.
@@ -3075,9 +2945,9 @@ function ChatThreadNextRunModelNotice({
           return $.chat.run.fastModeWillBeOff;
         });
   } else {
-    return withChatScrollLayout(null);
+    return null;
   }
-  return withChatScrollLayout(<RunSectionDividerRow label={label} announce />);
+  return <RunSectionDividerRow label={label} announce />;
 }
 
 function createRunWorkSectionControl(
@@ -3559,8 +3429,7 @@ function ChatThreadNotFound() {
 
 function ChatThreadFeedbackSlot({ thread }: { thread: ChatPanelSignals }) {
   const sharingPhase = useGet(thread.sharing.phase$);
-  const agentId = useGet(thread.threadAgentId$);
-  if (sharingPhase !== "idle" || agentId === null) {
+  if (sharingPhase !== "idle") {
     return null;
   }
   return <ChatFeedbackSelection feedback={thread.feedback} />;
@@ -3613,6 +3482,153 @@ function SharedThreadCreatedLink({
 }) {
   const { t } = useTranslation();
   const visibility = useGet(thread.sharing.visibility$);
+  return (
+    <div className="flex flex-col gap-2 composer-wide:flex-row composer-wide:items-center">
+      <Input
+        readOnly
+        value={shareUrl}
+        aria-label={t(($) => {
+          return $.chat.sharing.shareLink;
+        })}
+        className="min-w-0 flex-1"
+      />
+      {visibility ? (
+        <div className="grid gap-2 composer-wide:flex composer-wide:shrink-0 composer-wide:items-center">
+          <SharedThreadShareMenu session={visibility} showLabel refreshed />
+          <SharedThreadCopyLinkButton session={visibility} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SharedThreadCopyLinkButton({
+  session,
+}: {
+  readonly session: SharedThreadVisibilitySignals;
+}) {
+  const { t } = useTranslation();
+  const copied = useGet(session.copied$);
+  const copy = useSet(session.copy$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <Button
+      onClick={() => {
+        detach(copy(pageSignal), Reason.DomCallback, "copy shared thread link");
+      }}
+    >
+      {copied ? <Check size={16} /> : <Copy size={16} />}
+      {t(($) => {
+        return copied
+          ? $.artifacts.sharing.copied
+          : $.artifacts.sharing.copyLink;
+      })}
+    </Button>
+  );
+}
+
+/** Sharing sits where the composer was, on the shared page surface. Its
+ * standard 20px radius is concentric with the controls it holds: their 8px
+ * plus the card's 12px padding. */
+function ChatShareCard({ children }: { readonly children: ReactNode }) {
+  return (
+    <ChatComposerFooter>
+      <div className="@container/composer">
+        <div
+          data-slot="chat-share-card"
+          className={surfaceVariants({ className: "p-3 composer-wide:pl-4" })}
+        >
+          {children}
+        </div>
+      </div>
+    </ChatComposerFooter>
+  );
+}
+
+function ChatShareFooter({ thread }: { readonly thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
+  const selectedCount = useGet(thread.sharing.selectedCount$);
+  const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
+  const audience = useGet(thread.sharing.audience$);
+  const changeAudience = useSet(thread.sharing.changeAudience$);
+  const pageSignal = useGet(pageSignal$);
+  const [createLoadable, createSharedThread] = useLoadableSet(
+    thread.sharing.create$,
+  );
+  const creating = createLoadable.state === "loading";
+  const shareUrl = sharedThreadId
+    ? `${window.location.origin}/share/threads/${sharedThreadId}`
+    : null;
+  return (
+    <ChatShareCard>
+      {shareUrl ? (
+        <SharedThreadCreatedLink
+          key={shareUrl}
+          thread={thread}
+          shareUrl={shareUrl}
+        />
+      ) : (
+        <div className="flex flex-col gap-3 composer-wide:flex-row composer-wide:items-center">
+          <div className="min-w-0 flex-1">
+            {/* The header carries the count. Until something is chosen this
+                says what to do; after that, who can change access. */}
+            <p className="text-sm text-muted-foreground">
+              {t(($) => {
+                return selectedCount === 0
+                  ? $.chat.sharing.selectPrompt
+                  : $.chat.sharing.accessNote;
+              })}
+            </p>
+            {createLoadable.state === "hasError" ? (
+              <p className="mt-0.5 text-xs text-destructive">
+                {t(($) => {
+                  return $.chat.sharing.createFailed;
+                })}
+              </p>
+            ) : null}
+          </div>
+          <div className="grid gap-2 composer-wide:flex composer-wide:shrink-0 composer-wide:items-center">
+            <SharedThreadAudiencePicker
+              audience={audience}
+              disabled={creating}
+              refreshed
+              onChange={changeAudience}
+            />
+            <Button
+              disabled={selectedCount === 0 || creating}
+              onClick={() => {
+                detach(
+                  createSharedThread(pageSignal),
+                  Reason.DomCallback,
+                  "create shared thread",
+                );
+              }}
+            >
+              {creating ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <LinkIcon size={16} />
+              )}
+              {t(($) => {
+                return $.chat.sharing.createLink;
+              })}
+            </Button>
+          </div>
+        </div>
+      )}
+    </ChatShareCard>
+  );
+}
+
+function LegacySharedThreadCreatedLink({
+  thread,
+  shareUrl,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly shareUrl: string;
+}) {
+  const { t } = useTranslation();
+  const visibility = useGet(thread.sharing.visibility$);
   const close = useSet(thread.sharing.close$);
   const pageSignal = useGet(pageSignal$);
   return (
@@ -3646,15 +3662,12 @@ function SharedThreadCreatedLink({
   );
 }
 
-function ChatThreadBottomBar({
+function LegacyChatShareFooter({
   thread,
-  discoveryInContent,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly discoveryInContent: boolean;
 }) {
   const { t } = useTranslation();
-  const phase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const sharedThreadId = useGet(thread.sharing.createdSharedThreadId$);
   const audience = useGet(thread.sharing.audience$);
@@ -3663,24 +3676,15 @@ function ChatThreadBottomBar({
   const [createLoadable, createSharedThread] = useLoadableSet(
     thread.sharing.create$,
   );
-  if (phase === "idle") {
-    return withChatScrollLayout(
-      <ChatThreadComposer
-        thread={thread}
-        discoveryInContent={discoveryInContent}
-      />,
-    );
-  }
-
   const creating = createLoadable.state === "loading";
   const shareUrl = sharedThreadId
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
     : null;
-  return withChatScrollLayout(
+  return (
     <footer className="relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
         {shareUrl ? (
-          <SharedThreadCreatedLink
+          <LegacySharedThreadCreatedLink
             key={shareUrl}
             thread={thread}
             shareUrl={shareUrl}
@@ -3738,7 +3742,31 @@ function ChatThreadBottomBar({
           </div>
         )}
       </div>
-    </footer>,
+    </footer>
+  );
+}
+
+function ChatThreadBottomBar({
+  thread,
+  discoveryInContent,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly discoveryInContent: boolean;
+}) {
+  const phase = useGet(thread.sharing.phase$);
+  const refreshed = useChatShareRefresh();
+  if (phase === "idle") {
+    return (
+      <ChatThreadComposer
+        thread={thread}
+        discoveryInContent={discoveryInContent}
+      />
+    );
+  }
+  return refreshed ? (
+    <ChatShareFooter thread={thread} />
+  ) : (
+    <LegacyChatShareFooter thread={thread} />
   );
 }
 
@@ -4330,7 +4358,6 @@ function ActiveChatConnectorActionConnectModal() {
     return connector && accountOptions ? (
       <CustomConnectorConnectDialog
         connector={connector}
-        agentId={active.agentId}
         accountOptions={accountOptions}
         origin={{ kind: "chat-action" }}
       />
@@ -4341,7 +4368,6 @@ function ActiveChatConnectorActionConnectModal() {
     return (
       <ConnectModal
         item={active.catalogItem}
-        agentId={active.agentId}
         accountLabel={accountLabelOf(active.account)}
         accountMode={{
           kind: "reconnect",
@@ -4371,7 +4397,6 @@ function ActiveChatConnectorActionConnectModal() {
   return (
     <ConnectModal
       item={active.catalogItem}
-      agentId={active.agentId}
       accountOptions={accountOptions}
       reconnectAuthMethod={reconnectAuthMethod}
       onClose={close}
@@ -5875,90 +5900,17 @@ function AssistantErrorState({
   );
 }
 
-function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  const defaultId = useLastResolved(defaultAgentId$);
-  return singleAgent && thread.agentId === defaultId ? (
-    // One per reply; only the replies on screen draw frames, so a long
-    // transcript stays cheap.
-    <MyOkouAvatarButton size={36} className="size-7 @[900px]:size-9" />
-  ) : (
-    <LegacyAssistantBubbleAvatar thread={thread} />
-  );
+function AssistantBubbleAvatar() {
+  return <MyOkouAvatarButton size={36} className="size-7 @[900px]:size-9" />;
 }
 
-function LegacyAssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
-  const agentId = thread.agentId;
-  return (
-    <Link
-      pathname="/agents/:agentId"
-      options={{ pathParams: { agentId } }}
-      className={`${CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS} transition-colors duration-150 hover:bg-state-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
-      aria-label={t(($) => {
-        return $.chat.agentPage.viewAgentProfile;
-      })}
-    >
-      <AgentAvatarImg
-        name={agentId}
-        alt=""
-        className={CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS}
-      />
-    </Link>
-  );
-}
-
-// The visible agent name is the link's accessible name, so voice control and
-// screen readers address the line by what it shows.
-function AssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
+function AssistantNameLine() {
   const name = useGet(assistantName$);
-  const singleAgent = useLastResolved(singleAgentEnabled$) ?? false;
-  const defaultId = useLastResolved(defaultAgentId$);
-  return singleAgent && thread.agentId === defaultId ? (
-    <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>{name}</span>
-  ) : (
-    <LegacyAssistantNameLine thread={thread} />
-  );
-}
-
-function LegacyAssistantNameLine({ thread }: { thread: ChatPanelSignals }) {
-  const agentId = thread.agentId;
-  const agents = useLastResolved(agents$);
-  const assistantName = useGet(assistantName$);
-  // Hold the name until the agent list resolves rather than flashing the
-  // product name in front of a named agent.
-  const name =
-    agents === undefined
-      ? null
-      : (agents.find((agent) => {
-          return agent.agentId === agentId;
-        })?.displayName ?? assistantName);
-  return (
-    <Link
-      pathname="/agents/:agentId"
-      options={{ pathParams: { agentId } }}
-      data-chat-assistant-name-line
-      className={cn(
-        CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS,
-        // The hover surface overhangs the column by its own inset, so the
-        // avatar still starts on the response edge.
-        "-ml-1 rounded-lg pr-2 pl-1 transition-colors duration-150 hover:bg-state-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      )}
-    >
-      <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS}>
-        <AgentAvatarImg
-          name={agentId}
-          alt=""
-          className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_IMAGE_CLASS}
-        />
-      </span>
-      <span className="min-w-0 truncate">{name}</span>
-    </Link>
-  );
+  return <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}>{name}</span>;
 }
 
 // ---------------------------------------------------------------------------
-// Paged event rendering — renders from visibleRenderedChatGroups$ (flat data,
+// Paged event rendering — renders from prepared row signals (flat data,
 // no signal-based run loops).
 // ---------------------------------------------------------------------------
 
@@ -6004,39 +5956,193 @@ function PagedGroupRow({
   );
 }
 
-function shareableEventFromChatEvent(
-  event: EnrichedChatEvent,
-): { readonly id: string; readonly text: string } | null {
-  if (event.seqId === undefined) {
-    return null;
-  }
-  if (event.eventType === "output.message") {
-    return event.content && event.content.length > 0
-      ? { id: event.id, text: event.content }
-      : null;
-  }
-  if (
-    event.eventType !== "input.prompt" &&
-    event.eventType !== "input.automation"
-  ) {
-    return null;
-  }
-  const displayText = messageDocumentToDisplayText(event.userMessage)?.trim();
-  if (displayText) {
-    return { id: event.id, text: displayText };
-  }
-  const automation = eventNonContentPart(event);
-  if (automation?.type !== "automation") {
-    return null;
-  }
-  const automationText =
-    automation.automationBrief?.trim() || automation.workflowName.trim();
-  return automationText.length > 0
-    ? { id: event.id, text: automationText }
-    : null;
+function shareGroupDates(
+  group: ChatEventGroup,
+  dateDividers: ReadonlyMap<string, ChatDateDivider>,
+  sharing: boolean,
+) {
+  const firstEventId = group.events[0]?.id;
+  const leadingDate =
+    sharing && group.role === "user" && firstEventId
+      ? dateDividers.get(firstEventId)
+      : undefined;
+  const contentDates = leadingDate
+    ? new Map(
+        [...dateDividers].filter(([id]) => {
+          return id !== firstEventId;
+        }),
+      )
+    : dateDividers;
+  return { leadingDate, contentDates };
 }
 
-function SelectablePagedGroupRow({
+function RefreshedSelectablePagedGroupRow({
+  group,
+  thread,
+  modelChanges,
+  stackFirstOnPrevious,
+  dateDividers,
+  runWorkSection,
+  statusRow,
+  statusTailEvents,
+}: Parameters<typeof PagedGroupRow>[0]) {
+  const { t } = useTranslation();
+  const phase = useGet(thread.sharing.phase$);
+  const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
+  const toggle = useSet(thread.sharing.toggle$);
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
+  const sharing = phase !== "idle";
+  const displayGroup = sharing ? chatGroupForSharing(group) : group;
+  const events = displayGroup.events.flatMap((event) => {
+    const shareable = shareableEventFromChatEvent(event);
+    return shareable ? [shareable] : [];
+  });
+  const { leadingDate, contentDates } = shareGroupDates(
+    displayGroup,
+    dateDividers,
+    sharing && events.length > 0,
+  );
+  const content = (
+    <PagedGroupRow
+      group={displayGroup}
+      thread={thread}
+      modelChanges={modelChanges}
+      stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
+      dateDividers={contentDates}
+      runWorkSection={sharing ? undefined : runWorkSection}
+      statusRow={sharing ? undefined : statusRow}
+      statusTailEvents={sharing ? undefined : statusTailEvents}
+    />
+  );
+  if (phase === "idle" || events.length === 0) {
+    return content;
+  }
+  const selectedCount = events.filter((event) => {
+    return selectedEventIds.has(event.id);
+  }).length;
+  const hasSelection = selectedCount > 0;
+  const allSelected = selectedCount === events.length;
+  const indeterminate = hasSelection && !allSelected;
+
+  const toggleGroup = () => {
+    if (phase !== "selecting") {
+      return;
+    }
+    const result = toggle(group.beginEventId, events);
+    if (result === "too-large") {
+      toast.error(
+        t(($) => {
+          return $.chat.sharing.tooLarge;
+        }),
+      );
+    }
+  };
+
+  const aliasEventIds =
+    group.role === "assistant"
+      ? [
+          ...group.events,
+          ...(runWorkSection
+            ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
+                return hiddenGroup.events;
+              })
+            : []),
+        ]
+          .map((event) => {
+            return event.id;
+          })
+          .join(" ")
+      : undefined;
+  const selection = {
+    allSelected,
+    indeterminate,
+    selecting: phase === "selecting",
+    onToggle: toggleGroup,
+  };
+  // Preserve the message list's rhythm inside this group, including the gaps
+  // that back-to-back user bubbles stack into.
+  const messages = (
+    <div
+      className={cn("flex min-w-0 flex-col", CHAT_THREAD_MESSAGE_ROW_GAP_CLASS)}
+    >
+      {content}
+    </div>
+  );
+
+  return (
+    <>
+      {leadingDate ? <ChatThreadDateDivider divider={leadingDate} /> : null}
+      <div
+        data-chat-share-selectable-group
+        data-chat-scroll-anchor-alias-event-ids={aliasEventIds}
+        data-selected={hasSelection || undefined}
+        className={shareGroupClassName({
+          nameLine,
+          role: group.role,
+          phase,
+          hasSelection,
+        })}
+      >
+        <ShareGroupSelectionColumn role={group.role} {...selection} />
+        <div
+          className={cn(
+            "min-w-0",
+            !nameLine && "@[900px]:pl-[46px]",
+            // Once anything is chosen, what is left out steps back, and
+            // pointing at its checkbox brings it forward again.
+            selectedEventIds.size > 0 && !hasSelection && "opacity-40",
+            phase === "selecting" &&
+              "[@media(hover:hover)]:group-has-[[data-chat-share-selection]:hover]/share-group:opacity-100",
+          )}
+        >
+          {messages}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function shareGroupClassName({
+  nameLine,
+  role,
+  phase,
+  hasSelection,
+}: {
+  readonly nameLine: boolean;
+  readonly role: ChatEventGroup["role"];
+  readonly phase: SharedThreadSelectionPhase;
+  readonly hasSelection: boolean;
+}): string {
+  return cn(
+    "group/share-group relative -mx-2 -my-1 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2 rounded-xl px-2 py-1.5 transition-colors",
+    // Keep the checkbox outside the reading column only once the pane
+    // has enough gutter for it and, in the avatar layout, the avatar.
+    nameLine
+      ? "@[960px]:-mr-3 @[960px]:-ml-[54px] @[960px]:grid-cols-[2.25rem_minmax(0,1fr)] @[960px]:gap-2.5 @[960px]:pr-3"
+      : "@[1060px]:-mr-3 @[1060px]:-ml-[100px] @[1060px]:grid-cols-[2.25rem_minmax(0,1fr)] @[1060px]:gap-2.5 @[1060px]:pr-3",
+    // Sharing offers no per-message action, so a user message drops the
+    // action row under its bubble. Every group then sits the same 16px
+    // from the next, and the tint hugs the bubble.
+    role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
+    "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
+    phase === "selecting" &&
+      (hasSelection
+        ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover-overlay"
+        : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
+  );
+}
+
+function SelectablePagedGroupRow(props: Parameters<typeof PagedGroupRow>[0]) {
+  return useChatShareRefresh() ? (
+    <RefreshedSelectablePagedGroupRow {...props} />
+  ) : (
+    <LegacySelectablePagedGroupRow {...props} />
+  );
+}
+
+function LegacySelectablePagedGroupRow({
   group,
   thread,
   modelChanges,
@@ -6150,7 +6256,7 @@ function SelectablePagedGroupRow({
         {/* The selection column owns selection. Message content stays
             outside it so text selection, links, and message actions keep
             their owners. */}
-        <ShareGroupSelectionColumn role={group.role} {...selection} />
+        <LegacyShareGroupSelectionColumn role={group.role} {...selection} />
         {messages}
       </div>
     );
@@ -6201,6 +6307,49 @@ function shareGroupCheckboxHoverClass({
   );
 }
 
+function ShareGroupSelectionColumn({
+  role,
+  ...props
+}: ShareGroupSelectionProps & { role: ChatEventGroup["role"] }) {
+  const { t } = useTranslation();
+  const { allSelected, indeterminate, selecting, onToggle } = props;
+  return (
+    <Field.Root
+      data-chat-share-selection
+      className="group/share-selection relative flex justify-center"
+    >
+      {/* The label covers the whole column, including the row's padding,
+          and keeps its text for assistive technology only. */}
+      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-default data-disabled:pointer-events-none @[960px]:-right-2.5">
+        <span className="sr-only">
+          {shareGroupSelectionLabel(t, allSelected)}
+        </span>
+      </Field.Label>
+      {/* Centred on the group's first line: the name line of a reply, or the
+          first text line of a bubble. Sticky, so a long reply keeps its
+          checkbox in view. */}
+      <span
+        className={cn(
+          "sticky top-2 flex items-center",
+          role === "assistant"
+            ? "h-8"
+            : "h-[calc(1lh+1.5rem)] text-[0.9375rem] leading-[1.7]",
+        )}
+      >
+        <Checkbox
+          checked={allSelected}
+          indeterminate={indeterminate}
+          // Once the link exists the selection is the record of what was
+          // shared: read-only, at full strength rather than faded as disabled.
+          readOnly={!selecting}
+          className={cn(shareGroupCheckboxHoverClass(props))}
+          onCheckedChange={onToggle}
+        />
+      </span>
+    </Field.Root>
+  );
+}
+
 function ShareGroupLabelRow(props: ShareGroupSelectionProps) {
   const { t } = useTranslation();
   const { allSelected, indeterminate, selecting, onToggle } = props;
@@ -6231,7 +6380,7 @@ function ShareGroupLabelRow(props: ShareGroupSelectionProps) {
   );
 }
 
-function ShareGroupSelectionColumn({
+function LegacyShareGroupSelectionColumn({
   role,
   ...props
 }: ShareGroupSelectionProps & { role: ChatEventGroup["role"] }) {
@@ -6799,16 +6948,15 @@ function SourceMessageAnnotation({
 }: {
   renderPart: Extract<
     UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "agent" | "external" }
+    { type: "source"; kind: "chat" | "external" }
   >;
   className: string;
 }) {
-  if (renderPart.kind === "agent") {
+  if (renderPart.kind === "chat") {
     return (
-      <AgentRunSourceMessageAnnotation
+      <ChatRunSourceMessageAnnotation
         part={renderPart.part}
         className={className}
-        signals={renderPart.signals}
       />
     );
   }
@@ -6820,20 +6968,14 @@ function SourceMessageAnnotation({
   );
 }
 
-function AgentRunSourceMessageAnnotation({
+function ChatRunSourceMessageAnnotation({
   part,
   className,
-  signals,
 }: {
-  part: Extract<
-    Extract<UserMessageNonContentPart, { type: "source" }>,
-    { kind: "agent" }
-  >;
+  part: ChatRunReference;
   className: string;
-  signals: AgentReferenceSignals;
 }) {
   const { t } = useTranslation();
-  const agent = useLastResolved(signals.agent$);
   return (
     <Link
       pathname={ROUTES.chat}
@@ -6850,7 +6992,7 @@ function AgentRunSourceMessageAnnotation({
       className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
     >
       <AvatarFromUrl
-        avatarUrl={agent?.avatarUrl}
+        avatarUrl={undefined}
         alt=""
         className="size-4 shrink-0 overflow-hidden rounded-full object-cover object-top"
         size={16}
@@ -6985,42 +7127,6 @@ function UserMessageFileReference({
   );
 }
 
-function UserMessageAgentReference({
-  agentId,
-  name,
-  signals,
-}: {
-  agentId: string;
-  name: string;
-  signals: AgentReferenceSignals;
-}) {
-  const { t } = useTranslation();
-  const agent = useLastResolved(signals.agent$);
-  return (
-    <span className={STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS}>
-      <Link
-        pathname={ROUTES.agentChat}
-        options={{ pathParams: { agentId } }}
-        aria-label={t(
-          ($) => {
-            return $.chat.thread.openNamedAgent;
-          },
-          { name },
-        )}
-        className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      >
-        <AvatarFromUrl
-          avatarUrl={agent?.avatarUrl}
-          alt=""
-          className="size-4 shrink-0 overflow-hidden rounded-full object-cover object-top"
-          size={16}
-        />
-        <span className="min-w-0 truncate">{name}</span>
-      </Link>
-    </span>
-  );
-}
-
 function UserMessageFeedbackNote({
   note,
 }: {
@@ -7049,16 +7155,6 @@ function UserMessageFeedbackNote({
               key={key}
               part={renderPart.part}
               className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-            />
-          );
-        }
-        if (renderPart.type === "agent") {
-          return (
-            <UserMessageAgentReference
-              key={key}
-              agentId={renderPart.part.agentId}
-              name={renderPart.part.nameSnapshot}
-              signals={renderPart.signals}
             />
           );
         }
@@ -7101,21 +7197,21 @@ function equalFeedbackSources(
 
 function userMessageFeedbackHeading(
   parts: readonly UserMessageFeedbackRenderPart[],
-  agentRunSourceTitle: string | undefined,
+  chatRunSourceTitle: string | undefined,
 ): string {
-  if (agentRunSourceTitle) {
+  if (chatRunSourceTitle) {
     return parts.length === 1
       ? i18n.t(
           ($) => {
             return $.chat.feedback.forwardPartHeading;
           },
-          { title: agentRunSourceTitle },
+          { title: chatRunSourceTitle },
         )
       : i18n.t(
           ($) => {
             return $.chat.feedback.forwardPartsHeading;
           },
-          { count: parts.length, title: agentRunSourceTitle },
+          { count: parts.length, title: chatRunSourceTitle },
         );
   }
   const source = parts[0]?.part.source;
@@ -7161,10 +7257,10 @@ function userMessageFeedbackHeading(
 
 function UserMessageFeedbackGroup({
   parts,
-  agentRunSourceTitle,
+  chatRunSourceTitle,
 }: {
   parts: readonly UserMessageFeedbackRenderPart[];
-  agentRunSourceTitle: string | undefined;
+  chatRunSourceTitle: string | undefined;
 }) {
   const partOccurrences = new Map<string, number>();
   let firstPart = true;
@@ -7175,7 +7271,7 @@ function UserMessageFeedbackGroup({
           ? i18n.t(($) => {
               return $.chat.agentSuggestions.label;
             })
-          : userMessageFeedbackHeading(parts, agentRunSourceTitle)}
+          : userMessageFeedbackHeading(parts, chatRunSourceTitle)}
       </div>
       {parts.map((renderPart) => {
         const identity = JSON.stringify(renderPart.part);
@@ -7244,15 +7340,6 @@ function UserMessagePartView({
       />
     );
   }
-  if (renderPart.type === "agent") {
-    return (
-      <UserMessageAgentReference
-        agentId={renderPart.part.agentId}
-        name={renderPart.part.nameSnapshot}
-        signals={renderPart.signals}
-      />
-    );
-  }
   if (renderPart.type === "template") {
     return <UserMessageTemplateReference part={renderPart.part} />;
   }
@@ -7279,8 +7366,8 @@ function UserMessageView({
   elevatedFileIds: ReadonlySet<string>;
 }) {
   const partOccurrences = new Map<string, number>();
-  const agentRunSourceTitle = document.parts.find((renderPart) => {
-    return renderPart.type === "source" && renderPart.kind === "agent";
+  const chatRunSourceTitle = document.parts.find((renderPart) => {
+    return renderPart.type === "source" && renderPart.kind === "chat";
   })?.part.titleSnapshot;
   const bodyParts = document.parts.filter(
     (renderPart): renderPart is UserMessageContentRenderPart => {
@@ -7318,7 +7405,7 @@ function UserMessageView({
         <UserMessageFeedbackGroup
           key={`feedback:${String(index)}`}
           parts={feedbackParts}
-          agentRunSourceTitle={agentRunSourceTitle}
+          chatRunSourceTitle={chatRunSourceTitle}
         />,
       );
       index = nextIndex;
@@ -7920,7 +8007,7 @@ function PagedRunWorkAssistantContent({
       />
     ) : undefined;
 
-  return withChatScrollLayout(
+  return (
     <>
       <PagedAssistantTimeline
         items={timelineItems}
@@ -7947,7 +8034,7 @@ function PagedRunWorkAssistantContent({
           ) : null}
         </div>
       ) : null}
-    </>,
+    </>
   );
 }
 
@@ -8006,11 +8093,7 @@ function PagedAssistantGroup({
             : CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS
         }
       >
-        {nameLine ? (
-          <AssistantNameLine thread={thread} />
-        ) : (
-          <AssistantBubbleAvatar thread={thread} />
-        )}
+        {nameLine ? <AssistantNameLine /> : <AssistantBubbleAvatar />}
         <div
           className={cn(
             "relative",

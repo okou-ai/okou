@@ -49,12 +49,13 @@ export interface SidebarChatThreadWindow {
 }
 
 export interface SidebarChatThreadListSignals {
-  readonly count$: Computed<number>;
-  readonly rowCount$: Computed<number>;
-  readonly rows$: Computed<readonly SidebarChatThreadRow[]>;
-  readonly currentThreadListed$: Computed<boolean>;
-  readonly hasHiddenArchivedThreads$: Computed<boolean>;
-  readonly window$: Computed<SidebarChatThreadWindow>;
+  readonly count$: Computed<Promise<number>>;
+  readonly rows$: Computed<Promise<readonly SidebarChatThreadRow[]>>;
+  readonly currentThreadListed$: Computed<Promise<boolean>>;
+  readonly hasHiddenArchivedThreads$: Computed<Promise<boolean>>;
+  readonly scrollMetrics$: Computed<SidebarChatThreadScrollMetrics>;
+  readonly motion$: Computed<ProjectFoldMotion | null>;
+  readonly showAllChatsRow: boolean;
   readonly motionHostRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -269,117 +270,116 @@ function attachItemSignals(
 // virtual window and keeps its own loading state.
 export const unreadSidebarChatThreadRows$ = computed(async (get) => {
   const list = await get(unreadChatThreadListSignals$);
+  const rows = await get(list.rows$);
   return attachItemSignals(
-    get(list.rows$),
-    get(sidebarChatThreadItemSignalsRegistry$).reconcile(
-      listedThreadIds(get(list.rows$)),
-    ),
+    rows,
+    get(sidebarChatThreadItemSignalsRegistry$).reconcile(listedThreadIds(rows)),
   );
 });
+
+export function getSidebarChatThreadWindow(
+  rows: readonly SidebarChatThreadRow[],
+  {
+    scrollTop,
+    clientHeight: measuredViewportHeight,
+  }: SidebarChatThreadScrollMetrics,
+  motion: ProjectFoldMotion | null,
+  showAllChatsRow: boolean,
+  rowHeight: number,
+): SidebarChatThreadWindow {
+  const rowCount = rows.length + (showAllChatsRow ? 1 : 0);
+  const viewportHeight =
+    measuredViewportHeight || CHAT_THREAD_VIRTUAL_FALLBACK_VIEWPORT_HEIGHT;
+  if (motion?.logicalRows === rows) {
+    const { geometry, range, expandedRows } = motion;
+    const { blockStartIndex, childCount } = geometry;
+    const indexes = [
+      ...Array.from(
+        { length: blockStartIndex - range.startIndex },
+        (_, index) => {
+          return range.startIndex + index;
+        },
+      ),
+      ...Array.from(
+        { length: range.childEnd - range.childStart },
+        (_, index) => {
+          return blockStartIndex + range.childStart + index;
+        },
+      ),
+      ...Array.from(
+        { length: range.suffixEnd - range.suffixStart },
+        (_, index) => {
+          return blockStartIndex + childCount + range.suffixStart + index;
+        },
+      ),
+    ];
+    const logicalHeader = rows.find((row) => {
+      return row.kind === "project" && row.project.id === motion.projectId;
+    });
+    const visibleIndexes = indexes.filter((index) => {
+      return index < expandedRows.length;
+    });
+    return {
+      startIndex: range.startIndex,
+      rows: visibleIndexes.map((index) => {
+        const row = expandedRows[index];
+        if (!row) {
+          throw new Error("Project fold range exceeds expanded rows");
+        }
+        return row.kind === "project" &&
+          row.project.id === motion.projectId &&
+          logicalHeader
+          ? logicalHeader
+          : row;
+      }),
+      indexes: visibleIndexes,
+      showAllChatsRow: showAllChatsRow && indexes.includes(expandedRows.length),
+      motion,
+    };
+  }
+  const { startIndex, endIndex } = getFixedVirtualRange({
+    itemCount: rowCount,
+    scrollTop,
+    viewportHeight,
+    rowHeight,
+  });
+  const resolvedEndIndex = measuredViewportHeight
+    ? endIndex
+    : Math.min(
+        rowCount,
+        Math.max(
+          endIndex,
+          startIndex + CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE,
+        ),
+      );
+
+  return {
+    startIndex,
+    rows: rows.slice(startIndex, Math.min(resolvedEndIndex, rows.length)),
+    showAllChatsRow:
+      showAllChatsRow &&
+      startIndex <= rows.length &&
+      resolvedEndIndex > rows.length,
+  };
+}
 
 function createSidebarChatThreadViewportSignals(
   domSignals: SidebarChatThreadDomSignals,
   list: ChatThreadListSignals,
   showAllChatsRow: boolean,
-  rowHeight: number,
   foldMotion: ReturnType<typeof createProjectFoldMotionSignals>,
 ): SidebarChatThreadListSignals {
-  const rows$ = computed((get): readonly SidebarChatThreadRow[] => {
-    return attachItemSignals(
-      get(list.rows$),
-      get(sidebarChatThreadItemSignalsRegistry$).reconcile(
-        listedThreadIds(get(list.rows$)),
-      ),
-    );
-  });
-  const rowCount$ = computed((get) => {
-    return get(list.count$) + (showAllChatsRow ? 1 : 0);
-  });
-  const window$ = computed((get): SidebarChatThreadWindow => {
-    const rows = get(rows$);
-    const rowCount = get(rowCount$);
-    // The window follows the recorded metrics only; every change to them is
-    // written by a scroll, a resize or a layout refresh.
-    const { scrollTop, clientHeight: measuredViewportHeight } = get(
-      domSignals.scrollMetrics$,
-    );
-    const viewportHeight =
-      measuredViewportHeight || CHAT_THREAD_VIRTUAL_FALLBACK_VIEWPORT_HEIGHT;
-    const motion = get(foldMotion.motion$);
-    if (motion?.logicalRows === rows) {
-      const { geometry, range, expandedRows } = motion;
-      const { blockStartIndex, childCount } = geometry;
-      const indexes = [
-        ...Array.from(
-          { length: blockStartIndex - range.startIndex },
-          (_, index) => {
-            return range.startIndex + index;
-          },
+  const rows$ = computed(
+    async (get): Promise<readonly SidebarChatThreadRow[]> => {
+      const rows = await get(list.rows$);
+      return attachItemSignals(
+        rows,
+        get(sidebarChatThreadItemSignalsRegistry$).reconcile(
+          listedThreadIds(rows),
         ),
-        ...Array.from(
-          { length: range.childEnd - range.childStart },
-          (_, index) => {
-            return blockStartIndex + range.childStart + index;
-          },
-        ),
-        ...Array.from(
-          { length: range.suffixEnd - range.suffixStart },
-          (_, index) => {
-            return blockStartIndex + childCount + range.suffixStart + index;
-          },
-        ),
-      ];
-      const logicalHeader = rows.find((row) => {
-        return row.kind === "project" && row.project.id === motion.projectId;
-      });
-      const visibleIndexes = indexes.filter((index) => {
-        return index < expandedRows.length;
-      });
-      return {
-        startIndex: range.startIndex,
-        rows: visibleIndexes.map((index) => {
-          const row = expandedRows[index];
-          if (!row) {
-            throw new Error("Project fold range exceeds expanded rows");
-          }
-          return row.kind === "project" &&
-            row.project.id === motion.projectId &&
-            logicalHeader
-            ? logicalHeader
-            : row;
-        }),
-        indexes: visibleIndexes,
-        showAllChatsRow:
-          showAllChatsRow && indexes.includes(expandedRows.length),
-        motion,
-      };
-    }
-    const { startIndex, endIndex } = getFixedVirtualRange({
-      itemCount: rowCount,
-      scrollTop,
-      viewportHeight,
-      rowHeight,
-    });
-    const resolvedEndIndex = measuredViewportHeight
-      ? endIndex
-      : Math.min(
-          rowCount,
-          Math.max(
-            endIndex,
-            startIndex + CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE,
-          ),
-        );
-
-    return {
-      startIndex,
-      rows: rows.slice(startIndex, Math.min(resolvedEndIndex, rows.length)),
-      showAllChatsRow:
-        showAllChatsRow &&
-        startIndex <= rows.length &&
-        resolvedEndIndex > rows.length,
-    };
-  });
-
+      );
+    },
+  );
   const motionHostRef$ = command(({ set }, host: HTMLElement | null) => {
     if (!host) {
       return;
@@ -389,11 +389,12 @@ function createSidebarChatThreadViewportSignals(
   });
   return {
     count$: list.count$,
-    rowCount$,
     rows$,
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
-    window$,
+    scrollMetrics$: domSignals.scrollMetrics$,
+    motion$: foldMotion.motion$,
+    showAllChatsRow,
     motionHostRef$,
   };
 }
@@ -457,8 +458,7 @@ export function createSidebarChatThreadScrollSignals({
 } = {}): SidebarChatThreadScrollSignals {
   const domSignals = createSidebarChatThreadDomSignals(restoreScrollPosition);
   const foldMotion = createProjectFoldMotionSignals(domSignals, rowHeight);
-  // The async boundary selects the shared list context. Each viewport only
-  // adds its own synchronous virtual window over that list.
+  // Share the list projection while each viewport owns its scroll and fold state.
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
     const showAllChatsRow =
       get(chatThreadOnlyUnread$) ||
@@ -469,7 +469,6 @@ export function createSidebarChatThreadScrollSignals({
       domSignals,
       list,
       showAllChatsRow,
-      rowHeight,
       foldMotion,
     );
   });
@@ -488,14 +487,12 @@ export function createSidebarChatThreadScrollSignals({
         });
       }
 
-      const index = get(list.rows$).findIndex((row) => {
+      const rows = await get(list.rows$);
+      signal.throwIfAborted();
+      const index = rows.findIndex((row) => {
         return row.key === key;
       });
-      if (index === -1) {
-        return false;
-      }
-
-      return set(scrollListToIndex$, index, align);
+      return index !== -1 && set(scrollListToIndex$, index, align);
     },
   );
   const scrollCurrentChatThreadOnRef$ = onRef(
@@ -510,7 +507,7 @@ export function createSidebarChatThreadScrollSignals({
         if (
           motion &&
           mountedList &&
-          get(mountedList.rows$) === motion.logicalRows
+          get(mountedList.rows$) === motion.rowSource
         ) {
           const index = motion.logicalRows.findIndex((row) => {
             return row.kind === "thread" && row.threadId === threadId;

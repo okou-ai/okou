@@ -17,11 +17,6 @@ import {
   startPiCliObservation,
 } from "./lib/pi-startup-timing.js";
 
-import {
-  AGENT_UNAVAILABLE,
-  configureCommandMode,
-  resolveCommandMode,
-} from "./lib/command/single-agent.js";
 import { withErrorHandler } from "./lib/command/with-error-handler.js";
 
 import { isPiSession } from "./lib/pi-session-env.js";
@@ -49,9 +44,8 @@ const COMMAND_CAPABILITY_MAP: Record<
   "__browser-proxy": null,
   __subagent_loop__: null,
   subagent: null,
-  agent: "agent:read",
   instructions: ["instructions:read", "instructions:write"],
-  workflow: "agent:read",
+  workflow: null,
   connector: ["connector:read", "connector:write"],
   "remote-control": ["connector:read", "connector:write"],
   mcp: "connector:read",
@@ -103,12 +97,22 @@ const COMMAND_CAPABILITY_MAP: Record<
   data: "data-search:read",
   banking: "banking:read",
   feed: ["suggestion:read", "suggestion:write"],
+  proactive: ["suggestion:read", "suggestion:write"],
   wallet: ["wallet:read", "wallet:write"],
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "feed"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "feed", "proactive"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "proactive",
+    description: "Read, enable or disable your Proactive settings",
+    load: async () => {
+      return (
+        await import("./commands/proactive/index")
+      ).createProactiveCommand();
+    },
+  },
   {
     name: "whatsapp",
     description: "Send messages and files to your connected WhatsApp account",
@@ -212,13 +216,6 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
-    name: "agent",
-    description: "View or manage agents",
-    load: async () => {
-      return (await import("./commands/agent")).agentCommand;
-    },
-  },
-  {
     name: "connector",
     description: "Check third-party service connections (GitHub, Slack, etc.)",
     load: async () => {
@@ -235,7 +232,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "mcp",
-    description: "Use MCP connectors authorized for this Agent",
+    description: "Use this Chat's current MCP connector accounts",
     load: async () => {
       return (await import("./commands/mcp")).mcpCommand;
     },
@@ -252,6 +249,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Manage the Email workspace binding and attach files",
     load: async () => {
       return (await import("./commands/email")).createEmailCommand();
+    },
+  },
+  {
+    name: "transcribe",
+    description:
+      "Transcribe ordered private audio clips with a multimodal model",
+    load: async () => {
+      return (await import("./commands/transcribe")).transcribeCommand;
     },
   },
   {
@@ -367,7 +372,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "project",
-    description: "Manage private cross-agent Projects",
+    description: "Manage your private Projects",
     load: async () => {
       return (await import("./commands/project")).projectCommand;
     },
@@ -388,7 +393,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "whoami",
-    description: "Show agent identity, run ID, and capabilities",
+    description: "Show user, workspace, Run ID, and capabilities",
     load: async () => {
       return (await import("./commands/whoami")).whoamiCommand;
     },
@@ -519,10 +524,7 @@ function buildDefaultCommands(): Command[] {
 function shouldHideCommand(
   name: string,
   payload: SandboxTokenPayload | undefined,
-  singleAgent = payload?.singleAgent === true,
 ): boolean {
-  if (name === "agent" && singleAgent) return true;
-  if (name === "instructions" && !singleAgent) return true;
   if (name.startsWith("__")) return true;
   if (name === "subagent") return !isPiSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
@@ -541,10 +543,8 @@ function addCommandWithVisibility(
   prog: Command,
   cmd: Command,
   payload: SandboxTokenPayload | undefined,
-  singleAgent: boolean,
 ): void {
-  configureCommandMode(cmd, singleAgent);
-  const hidden = shouldHideCommand(cmd.name(), payload, singleAgent);
+  const hidden = shouldHideCommand(cmd.name(), payload);
   prog.addCommand(cmd, hidden ? { hidden: true } : {});
 }
 
@@ -593,34 +593,18 @@ export async function registerRequestedCommand(
   argv: string[] = process.argv,
 ): Promise<void> {
   const requestedCommandName = getRequestedCommandName(argv);
-  const singleAgent = await resolveCommandMode();
   const finishImport = startPiCliObservation("cli_command_import");
   let importOutcome: "success" | "error" = "error";
   let requestedCommand: Command | undefined;
   try {
-    requestedCommand =
-      singleAgent && requestedCommandName === "agent"
-        ? new Command("agent")
-            .description(AGENT_UNAVAILABLE)
-            .allowUnknownOption()
-            .allowExcessArguments()
-            .action(
-              withErrorHandler(async () => {
-                throw new Error(AGENT_UNAVAILABLE);
-              }),
-            )
-        : await loadRequestedCommand(requestedCommandName);
+    requestedCommand = await loadRequestedCommand(requestedCommandName);
     importOutcome = "success";
   } finally {
     finishImport(importOutcome);
   }
-  registerCommands(
-    prog,
-    requestedCommand ? [requestedCommand] : undefined,
-    singleAgent,
-  );
+  registerCommands(prog, requestedCommand ? [requestedCommand] : undefined);
   prog.addHelpText("after", () => {
-    return buildHelpText(decodeSandboxTokenPayload(), singleAgent);
+    return buildHelpText(decodeSandboxTokenPayload());
   });
 
   if (
@@ -648,7 +632,6 @@ function commandExampleIfVisible(
 
 export function buildHelpText(
   payload: SandboxTokenPayload | undefined = decodeSandboxTokenPayload(),
-  singleAgent = payload?.singleAgent === true,
 ): string {
   const canReadHost = !payload || payload.capabilities.includes("host:read");
   const canWriteHost = !payload || payload.capabilities.includes("host:write");
@@ -707,12 +690,17 @@ export function buildHelpText(
     "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
     "  Subscriptions?        okou subscription list",
-    ...(singleAgent
-      ? shouldHideCommand("instructions", payload, true)
-        ? []
-        : ["  Personal Instructions? okou instructions view"]
-      : ["  Update yourself?       okou agent --help"]),
+    ...commandExampleIfVisible(
+      "instructions",
+      "  Personal Instructions? okou instructions view",
+      payload,
+    ),
     "  Manage workflows?     okou workflow --help",
+    ...commandExampleIfVisible(
+      "proactive",
+      "  Proactive settings?    okou proactive --help",
+      payload,
+    ),
     ...commandExampleIfVisible(
       "chat",
       '  Rename this chat?     okou chat rename "New title"',
@@ -780,17 +768,13 @@ export function buildHelpText(
  *
  * @param commands - override default commands (used in tests)
  */
-export function registerCommands(
-  prog: Command,
-  commands?: Command[],
-  singleAgent = decodeSandboxTokenPayload()?.singleAgent === true,
-): void {
+export function registerCommands(prog: Command, commands?: Command[]): void {
   instrumentCommand(prog);
   const token = getOkouToken();
   const payload = token ? decodeSandboxTokenPayload(token) : undefined;
 
   for (const cmd of commands ?? buildDefaultCommands()) {
-    addCommandWithVisibility(prog, cmd, payload, singleAgent);
+    addCommandWithVisibility(prog, cmd, payload);
   }
 }
 

@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { mcpChatSearchContract } from "../mcp-chat-search";
+import { mcpProjectChatSearchContract } from "../mcp-chat-search";
 
 describe("MCP chat search response", () => {
-  it.each(["Okou", null])(
-    "carries a stable Agent ID with display name %s",
-    (displayName) => {
+  it.each(["Research", null])(
+    "carries current Project membership with name %s",
+    (projectName) => {
       const hit = {
         threadId: "22222222-2222-4222-8222-222222222222",
-        agentId: "11111111-1111-4111-8111-111111111111",
-        displayName,
+        projectId:
+          projectName === null ? null : "11111111-1111-4111-8111-111111111111",
+        projectName,
         matchedMessage: {
           threadId: "22222222-2222-4222-8222-222222222222",
           role: "user" as const,
@@ -21,11 +22,13 @@ describe("MCP chat search response", () => {
       };
 
       expect(
-        mcpChatSearchContract.search.responses[200].parse({ results: [hit] }),
+        mcpProjectChatSearchContract.search.responses[200].parse({
+          results: [hit],
+        }),
       ).toStrictEqual({ results: [hit] });
-      const { agentId: _agentId, ...missingId } = hit;
+      const { projectId: _projectId, ...missingId } = hit;
       expect(
-        mcpChatSearchContract.search.responses[200].safeParse({
+        mcpProjectChatSearchContract.search.responses[200].safeParse({
           results: [missingId],
         }).success,
       ).toBeFalsy();

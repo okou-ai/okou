@@ -4,7 +4,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { integrationsWechatContract as contract } from "@okouai/api-contracts/contracts/integrations-wechat";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -23,14 +22,20 @@ const setup = () => {
   return setupPage({
     context,
     path: "/works",
-    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: true,
+      [FeatureSwitchKey.WechatIntegration]: true,
+    },
   });
 };
 test("WeChat is hidden with its feature disabled", async () => {
   await setupPage({
     context,
     path: "/works",
-    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: false },
+    featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: true,
+      [FeatureSwitchKey.WechatIntegration]: false,
+    },
   });
   expect(screen.queryByText("WeChat")).not.toBeInTheDocument();
 });
@@ -245,7 +250,7 @@ test("the connected card identifies its workspace and WeChat account", async () 
   });
   await setup();
   await expect(
-    screen.findByText("Operations workspace · scanner-owner"),
+    screen.findByText("Connected (Operations workspace · scanner-owner)"),
   ).resolves.toBeInTheDocument();
 });
 
@@ -277,22 +282,13 @@ test.each([
       restored = true;
       return respond(204);
     });
-    context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-      return respond(200, {
-        agentId: params.id,
-        isDefaultAgent: true,
-        ownerId: "user_wechat_confirm",
-        displayName: "Workspace Assistant",
-        description: null,
-        sound: null,
-        avatarUrl: null,
-        visibility: "private",
-      });
-    });
     await setupPage({
       context,
       path: "/settings/wechat?token=signed-link",
-      featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
+      featureSwitches: {
+        [FeatureSwitchKey.WorksChannelCards]: true,
+        [FeatureSwitchKey.WechatIntegration]: true,
+      },
       auth: {
         user: { id: "user_wechat_confirm", fullName: "WeChat Owner", email },
         organization: {
@@ -309,9 +305,6 @@ test.each([
     expect(screen.getByText(account, { selector: "dd" })).toBeInTheDocument();
     expect(
       screen.getByText("WeChat Workspace", { selector: "dd" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Workspace Assistant", { selector: "dd" }),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("wechat-connect-qr")).not.toBeInTheDocument();
     const confirm = getAction("button", "Reconnect");
@@ -356,7 +349,10 @@ test("an unavailable reconnect link offers the same QR connection flow on the se
   await setupPage({
     context,
     path: "/settings/wechat?token=expired",
-    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: true,
+      [FeatureSwitchKey.WechatIntegration]: true,
+    },
   });
   await expect(
     screen.findByText(/This link is unavailable/),
@@ -399,7 +395,10 @@ test("a rejected reconnect remains unconnected and shows recovery guidance", asy
   await setupPage({
     context,
     path: "/settings/wechat?token=expired-after-load",
-    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: true,
+      [FeatureSwitchKey.WechatIntegration]: true,
+    },
   });
   await expect(
     screen.findByText(
@@ -422,7 +421,10 @@ test("the WeChat settings page cannot connect with the feature disabled", async 
   await setupPage({
     context,
     path: "/settings/wechat?token=signed-link",
-    featureSwitches: { [FeatureSwitchKey.WechatIntegration]: false },
+    featureSwitches: {
+      [FeatureSwitchKey.WorksChannelCards]: true,
+      [FeatureSwitchKey.WechatIntegration]: false,
+    },
   });
   await expect(
     screen.findByText("Connection is not configured yet."),

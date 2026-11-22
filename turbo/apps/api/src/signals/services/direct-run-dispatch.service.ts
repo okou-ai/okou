@@ -1,126 +1,46 @@
 import {
-  DEFAULT_RUNNER_PROFILE,
-  DEFAULT_RUNNER_PROFILE_VCPU,
-  DEFAULT_RUNNER_PROFILE_MEMORY_MB,
   RUNNER_DISPATCH_MAX_BODY_BYTES,
-  isCanonicalRunnerHostname,
+  type runnerDispatchEnvelopeSchema,
 } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
-import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
-import { runnerState } from "@okouai/db/runtime/runner-state";
-import { command, computed, type Command, type Computed } from "ccstate";
-import { and, arrayContains, eq, gt } from "drizzle-orm";
+import type {
+  ExecutionContext,
+  RunnerPreference,
+} from "@okouai/api-contracts/contracts/runners";
+import { command, type Command } from "ccstate";
 import { delay } from "signal-timers";
+import type { output } from "zod";
 import { env } from "../../lib/env";
 import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget";
-import { now, nowDate } from "../../lib/time";
-import { db$ } from "../external/db";
+import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
-import { postRunnerDispatch } from "../external/runner-ingress";
+import {
+  postRunnerDispatch,
+  reserveRunnerDispatch,
+} from "../external/runner-ingress";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
-  createDirectRunPreparation,
   prepareDirectRun$,
   type AdmittedRunLaunch,
   type DirectRunCachePublication,
+  type ExecutionBundleCacheRead,
 } from "./direct-run-preparation.service";
 import {
   selectDirectRunOwner$,
   readDirectRunState$,
   type DirectRunTarget,
 } from "./direct-run-ownership.service";
-import { preparedRunnerReusePreference } from "./runner-reuse-preference";
-import { joinAll, settleIncludingAbort } from "../utils";
+import { readDirectRunCandidates$ } from "./runner-reuse-preference";
+import { joinAll, safeSync, settleIncludingAbort } from "../utils";
 import { recordRunContextSnapshot } from "./run-context-snapshot.service";
 
-function createDirectRunFleet(input$: Computed<Promise<AdmittedRunLaunch>>) {
-  const fleet$ = computed(async (get) => {
-    const input = await get(input$);
-    if (input.profile !== DEFAULT_RUNNER_PROFILE) {
-      throw new Error("Unsupported direct Run profile");
-    }
-    const rows = await get(db$)
-      .select()
-      .from(runnerState)
-      .where(
-        and(
-          eq(runnerState.runnerGroup, input.runnerGroup),
-          eq(runnerState.mode, "running"),
-          eq(runnerState.ingressServiceActive, true),
-          gt(runnerState.heartbeatGeneration, 0),
-          gt(runnerState.lastSeenAt, new Date(now() - 180_000)),
-          arrayContains(runnerState.admittableProfiles, [input.profile]),
-        ),
-      );
-    const candidates = rows.flatMap((row) => {
-      if (
-        row.runnerHostname === null ||
-        !isCanonicalRunnerHostname(row.runnerHostname) ||
-        row.totalVcpu < DEFAULT_RUNNER_PROFILE_VCPU ||
-        row.totalMemoryMb < DEFAULT_RUNNER_PROFILE_MEMORY_MB
-      ) {
-        return [];
-      }
-      return [
-        {
-          runnerId: row.runnerId,
-          heartbeatGeneration: row.heartbeatGeneration,
-          hostname: row.runnerHostname,
-          score: Math.max(
-            0,
-            Math.min(
-              (row.totalVcpu - row.allocatedVcpu) / DEFAULT_RUNNER_PROFILE_VCPU,
-              (row.totalMemoryMb - row.allocatedMemoryMb) /
-                DEFAULT_RUNNER_PROFILE_MEMORY_MB,
-              row.maxConcurrent === 0
-                ? Infinity
-                : row.maxConcurrent - row.runningCount,
-            ),
-          ),
-        },
-      ];
-    });
-    // Shuffle first; stable sorting randomizes only candidates with equal headroom.
-    for (let i = candidates.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const a = candidates[i],
-        b = candidates[j];
-      if (a && b) {
-        candidates[i] = b;
-        candidates[j] = a;
-      }
-    }
-    candidates.sort((a, b) => {
-      return b.score - a.score;
-    });
-    const preference = preparedRunnerReusePreference(
-      input.reusePreparation,
-      input.createdAt,
-    );
-    if (preference.kind === "preference") {
-      const index = candidates.findIndex((c) => {
-        return (
-          c.runnerId === preference.runnerIdentity.runnerId &&
-          c.heartbeatGeneration ===
-            preference.runnerIdentity.heartbeatGeneration
-        );
-      });
-      if (index > 0) {
-        const [preferred] = candidates.splice(index, 1);
-        if (preferred) {
-          candidates.unshift(preferred);
-        }
-      }
-    }
-    return { candidates, preference };
-  });
-  return fleet$;
-}
+type PlacementPreference = Extract<RunnerPreference, { kind: "preference" }>;
 
-type DirectRunFleet =
-  ReturnType<typeof createDirectRunFleet> extends Computed<Promise<infer Fleet>>
-    ? Fleet
-    : never;
+type DirectRunCandidates = Awaited<
+  ReturnType<(typeof readDirectRunCandidates$)["write"]>
+>;
+const MAX_HOME_DEFERRAL_MS = 1000;
+const FINAL_HOME_DELIVERY_MARGIN_MS = 1000;
 type UnacceptedRunResult =
   typeof failUnacceptedRun$ extends Command<Promise<infer Result>, infer _Args>
     ? Result
@@ -141,60 +61,142 @@ type DirectRunDispatchPreparation =
   | { readonly kind: "failed"; readonly result: DirectRunDispatchResult };
 
 /** Return prepared facts so the pick entry can own publication and delivery. */
-export function createDirectRunDispatchPreparation(
-  input$: Computed<Promise<AdmittedRunLaunch>>,
-) {
-  const preparation$ = createDirectRunPreparation(input$);
-  const fleet$ = createDirectRunFleet(input$);
-  return command(
-    async (
-      { get, set },
-      signal: AbortSignal,
-    ): Promise<DirectRunDispatchPreparation> => {
-      const input = await get(input$);
+export const prepareDirectRunDispatch$ = command(
+  async (
+    { set },
+    input: AdmittedRunLaunch,
+    bundleCache: ExecutionBundleCacheRead,
+    signal: AbortSignal,
+  ): Promise<DirectRunDispatchPreparation> => {
+    signal.throwIfAborted();
+    const prepared = await settleIncludingAbort(async () => {
+      const [publication, placement] = await joinAll([
+        set(prepareDirectRun$, input, bundleCache, signal),
+        (async () => {
+          const candidates = await set(readDirectRunCandidates$, input, signal);
+          const candidatesReadyAt = monotonicNow();
+          const target = candidates[0];
+          if (target) {
+            safeSync(() => {
+              reserveRunnerDispatch(target, input.run.id, signal);
+            });
+          }
+          return { candidates, candidatesReadyAt };
+        })(),
+      ]);
       signal.throwIfAborted();
-      const prepared = await settleIncludingAbort(async () => {
-        const [publication, fleet] = await joinAll([
-          (async () => {
-            const preparation = await get(preparation$);
-            signal.throwIfAborted();
-            return await set(prepareDirectRun$, preparation, signal);
-          })(),
-          get(fleet$),
-        ]);
-        signal.throwIfAborted();
-        return { input, ...publication, fleet };
-      });
-      signal.throwIfAborted();
-      if (!prepared.ok) {
-        const terminal = await set(
-          failUnacceptedRun$,
-          failureInput(input, null),
-          signal,
-        );
-        return {
+      return { input, ...publication, ...placement };
+    });
+    signal.throwIfAborted();
+    if (!prepared.ok) {
+      const terminal = await set(
+        failUnacceptedRun$,
+        failureInput(input, null),
+        signal,
+      );
+      return {
+        kind: "failed",
+        result: {
           kind: "failed",
-          result: {
-            kind: "failed",
-            terminal,
-            failure: new Error("Run execution preparation failed"),
-          },
-        };
-      }
-      const { cachePublication, ...delivery } = prepared.value;
-      return { kind: "prepared", delivery, cachePublication };
-    },
-  );
-}
+          terminal,
+          failure: new Error("Run execution preparation failed"),
+        },
+      };
+    }
+    const { cachePublication, ...delivery } = prepared.value;
+    return { kind: "prepared", delivery, cachePublication };
+  },
+);
 
 interface DeliveryWindow {
   readonly notAfter: number;
   readonly monotonicDeadline: number;
 }
+type DispatchEnvelope = output<typeof runnerDispatchEnvelopeSchema>;
+
+interface SerializedDispatch {
+  readonly body: string;
+  readonly bodyBytes: number;
+}
+
+interface DispatchOffer extends SerializedDispatch {
+  readonly busyRetry?: {
+    readonly until: number;
+    readonly retryAtExpiry: boolean;
+  };
+}
+
+const mayHaveTakenCustody = {
+  busy: false,
+  "not-delivered": false,
+  unknown: true,
+} as const;
+
 function remainingDelivery(window: DeliveryWindow): number {
   return Math.min(
     window.notAfter - now(),
     window.monotonicDeadline - performance.now(),
+  );
+}
+
+function serializeDispatch(envelope: DispatchEnvelope): SerializedDispatch {
+  const body = JSON.stringify(envelope);
+  return { body, bodyBytes: Buffer.byteLength(body, "utf8") };
+}
+
+function createDispatchOffer(
+  envelope: DispatchEnvelope,
+  ordinaryBody: SerializedDispatch,
+  preference: PlacementPreference | undefined,
+  window: DeliveryWindow,
+): DispatchOffer {
+  if (!preference) {
+    return ordinaryBody;
+  }
+  const expiresAt = Date.parse(preference.expiresAt);
+  const ordinaryOffer = {
+    ...ordinaryBody,
+    busyRetry: { until: expiresAt, retryAtExpiry: false },
+  };
+  if (
+    preference.tier !== "predecessorHome" ||
+    !("homeWaitUntil" in preference.home) ||
+    preference.home.homeWaitUntil === undefined
+  ) {
+    return ordinaryOffer;
+  }
+  const sentAt = now();
+  const waitUntil = Math.floor(
+    Math.min(
+      sentAt + MAX_HOME_DEFERRAL_MS,
+      sentAt + remainingDelivery(window) - FINAL_HOME_DELIVERY_MARGIN_MS,
+      expiresAt,
+      Date.parse(preference.home.homeWaitUntil),
+    ),
+  );
+  if (waitUntil <= sentAt) {
+    return ordinaryOffer;
+  }
+  const preferredBody = serializeDispatch({
+    ...envelope,
+    preferredHomeCheckout: {
+      predecessorRunId: preference.predecessorRunId,
+      waitUntil,
+    },
+  });
+  return preferredBody.bodyBytes <= RUNNER_DISPATCH_MAX_BODY_BYTES
+    ? { ...preferredBody, busyRetry: { until: waitUntil, retryAtExpiry: true } }
+    : ordinaryOffer;
+}
+
+function isCurrentOwner(
+  state: Awaited<ReturnType<(typeof readDirectRunState$)["write"]>>,
+  target: DirectRunTarget,
+): boolean {
+  return (
+    state?.status === "running" &&
+    state.runnerId === target.runnerId &&
+    state.heartbeatGeneration === target.heartbeatGeneration
   );
 }
 function failureInput(input: AdmittedRunLaunch, owner: DirectRunTarget | null) {
@@ -212,60 +214,79 @@ const offerToProcess$ = command(
   async (
     { set },
     args: {
-      readonly target: DirectRunTarget;
+      readonly target: DirectRunCandidates[number];
       readonly runId: string;
-      readonly body: string;
+      readonly body: SerializedDispatch;
+      readonly envelope: DispatchEnvelope;
       readonly token: string;
       readonly window: DeliveryWindow;
-      readonly preferredUntil: number;
+      readonly firstCandidateReadyAt: number | undefined;
     },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
     let uncertain = false;
     let retry = 0;
+    let firstCandidateReadyAt = args.firstCandidateReadyAt;
+    let offer: DispatchOffer | undefined;
     for (;;) {
+      // Runner reconciles cancellation asynchronously after binding the supplied
+      // input. Check ownership immediately before the first offer and after waits.
       const state = await set(readDirectRunState$, args.runId, signal);
-      if (
-        !state ||
-        state.status !== "running" ||
-        state.runnerId !== args.target.runnerId ||
-        state.heartbeatGeneration !== args.target.heartbeatGeneration
-      ) {
+      if (!isCurrentOwner(state, args.target)) {
         return uncertain ? ("uncertain" as const) : ("stopped" as const);
       }
+      offer ??= createDispatchOffer(
+        args.envelope,
+        args.body,
+        args.target.preference,
+        args.window,
+      );
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
         return uncertain ? ("uncertain" as const) : ("not-accepted" as const);
       }
-      const earlierUncertainty: boolean = uncertain;
-      uncertain = true;
+      const { busyRetry } = offer;
+      const finalAttempt =
+        busyRetry?.retryAtExpiry === true && now() >= busyRetry.until;
       const observation = await postRunnerDispatch(
         {
           target: args.target,
           runId: args.runId,
-          body: args.body,
+          body: offer.body,
+          bodyBytes: offer.bodyBytes,
           serviceToken: args.token,
           timeoutMs: Math.min(15_000, remaining),
+          firstRankedTarget: args.firstCandidateReadyAt !== undefined,
+          firstCandidateReadyAt,
         },
         signal,
       );
+      firstCandidateReadyAt = undefined;
       if (observation === "accepted") {
         return "accepted" as const;
       }
       if (observation === "rejected") {
         return "not-accepted" as const;
       }
-      if (observation === "busy" || observation === "not-delivered") {
-        uncertain = earlierUncertainty;
-      }
-      const preferredRemaining = args.preferredUntil - now();
-      if (!uncertain && (observation !== "busy" || preferredRemaining <= 0)) {
-        return "not-accepted" as const;
+      uncertain ||= mayHaveTakenCustody[observation];
+      let busyRemaining = Infinity;
+      if (!uncertain) {
+        if (observation !== "busy" || !busyRetry || finalAttempt) {
+          return "not-accepted" as const;
+        }
+        busyRemaining = busyRetry.until - now();
+        if (busyRemaining <= 0) {
+          if (!busyRetry.retryAtExpiry) {
+            return "not-accepted" as const;
+          }
+          // A busy response sent during deferral can arrive after it expires.
+          continue;
+        }
       }
       const wait = Math.min(
         remainingDelivery(args.window),
-        uncertain ? Infinity : preferredRemaining,
+        busyRemaining,
         Math.min(2000, 100 * 2 ** Math.min(retry++, 5)) * (1 + Math.random()),
       );
       if (wait <= 0) {
@@ -279,7 +300,8 @@ const offerToProcess$ = command(
 interface PreparedRunDelivery {
   readonly input: AdmittedRunLaunch;
   readonly executionContext: ExecutionContext;
-  readonly fleet: DirectRunFleet;
+  readonly candidates: DirectRunCandidates;
+  readonly candidatesReadyAt: number;
   readonly contextSnapshot: Omit<
     Parameters<typeof recordRunContextSnapshot>[0],
     "recordedAt"
@@ -293,7 +315,7 @@ export const dispatchPreparedRun$ = command(
     let owner: DirectRunTarget | null = null;
     let uncertain = false;
     const outcome = await settleIncludingAbort(async () => {
-      const { executionContext, fleet } = args;
+      const { executionContext, candidates } = args;
       // A queued input's latency marker can originate in an earlier invocation.
       const notAfter = Math.min(
         now() + 30_000,
@@ -306,18 +328,19 @@ export const dispatchPreparedRun$ = command(
         monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
       };
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
-      for (const target of fleet.candidates) {
+      for (const target of candidates) {
         if (remainingDelivery(window) <= 0) {
           break;
         }
-        const body = JSON.stringify({
+        const envelope = {
           runnerId: target.runnerId,
           heartbeatGeneration: target.heartbeatGeneration,
           profile: input.profile,
           notAfter,
           executionContext,
-        });
-        if (Buffer.byteLength(body, "utf8") > RUNNER_DISPATCH_MAX_BODY_BYTES) {
+        };
+        const body = serializeDispatch(envelope);
+        if (body.bodyBytes > RUNNER_DISPATCH_MAX_BODY_BYTES) {
           break;
         }
         const selected = await set(
@@ -342,19 +365,21 @@ export const dispatchPreparedRun$ = command(
             recordedAt: nowDate(),
           });
         }
-        const preference = fleet.preference;
-        const preferredUntil =
-          preference.kind === "preference" &&
-          preference.runnerIdentity.runnerId === target.runnerId &&
-          preference.runnerIdentity.heartbeatGeneration ===
-            target.heartbeatGeneration
-            ? Date.parse(preference.expiresAt)
-            : 0;
         // An exception after entering this command cannot prove non-acceptance.
         uncertain = true;
         const delivery = await set(
           offerToProcess$,
-          { target, runId: input.run.id, body, token, window, preferredUntil },
+          {
+            target,
+            runId: input.run.id,
+            body,
+            envelope,
+            token,
+            window,
+            firstCandidateReadyAt: firstOwner
+              ? args.candidatesReadyAt
+              : undefined,
+          },
           signal,
         );
         uncertain = delivery === "uncertain";

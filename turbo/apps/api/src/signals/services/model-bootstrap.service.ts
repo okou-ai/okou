@@ -9,7 +9,6 @@ export type MemberModelBootstrap = ReturnType<
 >;
 export interface RunOrgMetadata {
   readonly credits: number;
-  readonly defaultAgentId: string | null;
   readonly openrouterPreset: string | null;
 }
 

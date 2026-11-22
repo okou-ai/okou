@@ -193,20 +193,17 @@ pub(super) fn reasoning_item_started_notification(
     item_id: &str,
     started_at_ms: u64,
 ) -> Value {
-    json!({
-        "method": "item/started",
-        "params": {
-            "threadId": thread_id,
-            "turnId": turn_id,
-            "startedAtMs": started_at_ms,
-            "item": {
-                "id": item_id,
-                "type": "reasoning",
-                "summary": ["mock reasoning content must not enter timing telemetry"],
-                "content": []
-            }
-        }
-    })
+    item_notification(
+        thread_id,
+        turn_id,
+        ItemLifecycle::Started(started_at_ms),
+        json!({
+            "id": item_id,
+            "type": "reasoning",
+            "summary": ["mock reasoning content must not enter timing telemetry"],
+            "content": []
+        }),
+    )
 }
 
 pub(super) fn agent_message_item_started_notification(
@@ -215,19 +212,16 @@ pub(super) fn agent_message_item_started_notification(
     item_id: &str,
     started_at_ms: u64,
 ) -> Value {
-    json!({
-        "method": "item/started",
-        "params": {
-            "threadId": thread_id,
-            "turnId": turn_id,
-            "startedAtMs": started_at_ms,
-            "item": {
-                "id": item_id,
-                "type": "agentMessage",
-                "text": ""
-            }
-        }
-    })
+    item_notification(
+        thread_id,
+        turn_id,
+        ItemLifecycle::Started(started_at_ms),
+        json!({
+            "id": item_id,
+            "type": "agentMessage",
+            "text": ""
+        }),
+    )
 }
 
 pub(super) fn assistant_item_completed_notification(
@@ -235,33 +229,37 @@ pub(super) fn assistant_item_completed_notification(
     turn_id: &str,
     text: &str,
 ) -> Value {
-    json!({
-        "method": "item/completed",
-        "params": {
-            "threadId": thread_id,
-            "turnId": turn_id,
-            "completedAtMs": 2,
-            "item": {
-                "id": Uuid::now_v7().to_string(),
-                "type": "agentMessage",
-                "text": text
-            }
-        }
-    })
+    item_notification(
+        thread_id,
+        turn_id,
+        ItemLifecycle::Completed(2),
+        json!({
+            "id": Uuid::now_v7().to_string(),
+            "type": "agentMessage",
+            "text": text
+        }),
+    )
+}
+
+enum ItemLifecycle {
+    Started(u64),
+    Completed(i64),
 }
 
 fn item_notification(
-    method: &str,
     thread_id: &str,
     turn_id: &str,
-    timestamp_key: &str,
-    timestamp: i64,
+    lifecycle: ItemLifecycle,
     item: Value,
 ) -> Value {
+    let (method, timestamp_key, timestamp) = match lifecycle {
+        ItemLifecycle::Started(ms) => ("item/started", "startedAtMs", Value::from(ms)),
+        ItemLifecycle::Completed(ms) => ("item/completed", "completedAtMs", Value::from(ms)),
+    };
     let params = Value::Object(serde_json::Map::from_iter([
         ("threadId".into(), thread_id.into()),
         ("turnId".into(), turn_id.into()),
-        (timestamp_key.into(), timestamp.into()),
+        (timestamp_key.into(), timestamp),
         ("item".into(), item),
     ]));
     Value::Object(serde_json::Map::from_iter([
@@ -280,11 +278,9 @@ pub(super) fn write_thread_item_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/started",
             thread_id,
             turn_id,
-            "startedAtMs",
-            1,
+            ItemLifecycle::Started(1),
             json!({
                 "id": collab_id,
                 "type": "collabAgentToolCall",
@@ -307,11 +303,9 @@ pub(super) fn write_thread_item_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            2,
+            ItemLifecycle::Completed(2),
             json!({
                 "id": collab_id,
                 "type": "collabAgentToolCall",
@@ -338,11 +332,9 @@ pub(super) fn write_thread_item_notifications<W: Write>(
         write_json_line(
             output,
             &item_notification(
-                "item/completed",
                 thread_id,
                 turn_id,
-                "completedAtMs",
-                i64::try_from(index).map_err(io::Error::other)? + 3,
+                ItemLifecycle::Completed(i64::try_from(index).map_err(io::Error::other)? + 3),
                 json!({
                     "id": format!("mock-subagent-activity-{kind}"),
                     "type": "subAgentActivity",
@@ -357,33 +349,27 @@ pub(super) fn write_thread_item_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/started",
             thread_id,
             turn_id,
-            "startedAtMs",
-            7,
+            ItemLifecycle::Started(7),
             json!({ "id": compaction_id, "type": "contextCompaction" }),
         ),
     )?;
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            8,
+            ItemLifecycle::Completed(8),
             json!({ "id": compaction_id, "type": "contextCompaction" }),
         ),
     )?;
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            9,
+            ItemLifecycle::Completed(9),
             json!({
                 "id": "mock-future-item",
                 "type": "futureOperation",
@@ -404,11 +390,9 @@ pub(super) fn write_malformed_thread_item_notification<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            1,
+            ItemLifecycle::Completed(1),
             json!({
                 "id": "mock-malformed-collab-item",
                 "type": "collabAgentToolCall",
@@ -440,11 +424,9 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            completed_at_ms,
+            ItemLifecycle::Completed(completed_at_ms),
             Value::Object(serde_json::Map::from_iter([
                 ("id".into(), "oversized-agent-message".into()),
                 ("type".into(), "agentMessage".into()),
@@ -458,11 +440,9 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            completed_at_ms + 1,
+            ItemLifecycle::Completed(completed_at_ms + 1),
             Value::Object(serde_json::Map::from_iter([
                 ("id".into(), "oversized-reasoning".into()),
                 ("type".into(), "reasoning".into()),
@@ -480,11 +460,9 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            completed_at_ms + 2,
+            ItemLifecycle::Completed(completed_at_ms + 2),
             Value::Object(serde_json::Map::from_iter([
                 ("id".into(), "oversized-plan".into()),
                 ("type".into(), "plan".into()),
@@ -498,11 +476,9 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            completed_at_ms + 3,
+            ItemLifecycle::Completed(completed_at_ms + 3),
             Value::Object(serde_json::Map::from_iter([
                 ("id".into(), "oversized-command".into()),
                 ("type".into(), "commandExecution".into()),
@@ -521,11 +497,9 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            completed_at_ms + 4,
+            ItemLifecycle::Completed(completed_at_ms + 4),
             Value::Object(serde_json::Map::from_iter([
                 ("id".into(), "oversized-file-change".into()),
                 ("type".into(), "fileChange".into()),
@@ -548,11 +522,9 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     write_json_line(
         output,
         &item_notification(
-            "item/completed",
             thread_id,
             turn_id,
-            "completedAtMs",
-            completed_at_ms + 6,
+            ItemLifecycle::Completed(completed_at_ms + 6),
             Value::Object(serde_json::Map::from_iter([
                 ("id".into(), "oversized-multi-change".into()),
                 ("type".into(), "fileChange".into()),
@@ -588,14 +560,7 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
         for item in items {
             write_json_line(
                 output,
-                &item_notification(
-                    "item/completed",
-                    thread_id,
-                    turn_id,
-                    "completedAtMs",
-                    9,
-                    item,
-                ),
+                &item_notification(thread_id, turn_id, ItemLifecycle::Completed(9), item),
             )?;
         }
     }
@@ -603,32 +568,11 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
 }
 
 pub(super) fn turn_completed_notification(thread_id: &str, turn_id: &str) -> Value {
-    json!({
-        "method": "turn/completed",
-        "params": {
-            "threadId": thread_id,
-            "turn": completed_turn(turn_id)
-        }
-    })
+    terminal_turn_notification(thread_id, turn_id, TerminalTurn::Completed)
 }
 
 pub(super) fn turn_interrupted_notification(thread_id: &str, turn_id: &str) -> Value {
-    json!({
-        "method": "turn/completed",
-        "params": {
-            "threadId": thread_id,
-            "turn": {
-                "id": turn_id,
-                "items": [],
-                "itemsView": "notLoaded",
-                "status": "interrupted",
-                "error": null,
-                "startedAt": 1,
-                "completedAt": 3,
-                "durationMs": 2
-            }
-        }
-    })
+    terminal_turn_notification(thread_id, turn_id, TerminalTurn::Interrupted)
 }
 
 pub(super) fn turn_failed_notification(
@@ -636,6 +580,21 @@ pub(super) fn turn_failed_notification(
     turn_id: &str,
     failure: TurnFailure,
 ) -> Value {
+    terminal_turn_notification(thread_id, turn_id, TerminalTurn::Failed(failure))
+}
+
+enum TerminalTurn {
+    Completed,
+    Interrupted,
+    Failed(TurnFailure),
+}
+
+fn terminal_turn_notification(thread_id: &str, turn_id: &str, outcome: TerminalTurn) -> Value {
+    let (status, error) = match outcome {
+        TerminalTurn::Completed => ("completed", Value::Null),
+        TerminalTurn::Interrupted => ("interrupted", Value::Null),
+        TerminalTurn::Failed(failure) => ("failed", turn_failure_error(failure)),
+    };
     json!({
         "method": "turn/completed",
         "params": {
@@ -644,8 +603,8 @@ pub(super) fn turn_failed_notification(
                 "id": turn_id,
                 "items": [],
                 "itemsView": "notLoaded",
-                "status": "failed",
-                "error": turn_failure_error(failure),
+                "status": status,
+                "error": error,
                 "startedAt": 1,
                 "completedAt": 3,
                 "durationMs": 2
@@ -865,13 +824,7 @@ pub(super) fn secondary_token_usage_notification(thread_id: &str, turn_id: &str)
 }
 
 pub(super) fn warning_notification(thread_id: &str, index: usize) -> Value {
-    json!({
-        "method": "warning",
-        "params": {
-            "threadId": thread_id,
-            "message": format!("codex-mock warning {index}")
-        }
-    })
+    warning_with_message(thread_id, format!("codex-mock warning {index}"))
 }
 
 pub(super) fn large_warning_notification(
@@ -879,12 +832,13 @@ pub(super) fn large_warning_notification(
     index: usize,
     message_bytes: usize,
 ) -> Value {
+    warning_with_message(thread_id, format!("{index}:{}", "x".repeat(message_bytes)))
+}
+
+fn warning_with_message(thread_id: &str, message: String) -> Value {
     let params = Value::Object(serde_json::Map::from_iter([
         ("threadId".into(), thread_id.into()),
-        (
-            "message".into(),
-            format!("{index}:{}", "x".repeat(message_bytes)).into(),
-        ),
+        ("message".into(), message.into()),
     ]));
     Value::Object(serde_json::Map::from_iter([
         ("method".into(), "warning".into()),
@@ -1093,19 +1047,6 @@ pub(super) fn turn(turn_id: &str) -> Value {
         "startedAt": null,
         "completedAt": null,
         "durationMs": null
-    })
-}
-
-fn completed_turn(turn_id: &str) -> Value {
-    json!({
-        "id": turn_id,
-        "items": [],
-        "itemsView": "notLoaded",
-        "status": "completed",
-        "error": null,
-        "startedAt": 1,
-        "completedAt": 3,
-        "durationMs": 2
     })
 }
 

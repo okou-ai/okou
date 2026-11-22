@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_search_workspace">Buscar en el espacio de trabajo</string>
+    <string name="chat_search_clear">Borrar búsqueda</string>
+    <string name="chat_search_recent">Chats recientes</string>
+    <string name="chat_search_empty">No hay chats que coincidan</string>
+</resources>

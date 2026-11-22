@@ -1,5 +1,6 @@
 use super::support::*;
 use crate::support::*;
+use guest_agent::paths::CANONICAL_GUEST_HOME_DIR;
 use httpmock::prelude::*;
 use serde_json::json;
 
@@ -8,9 +9,10 @@ async fn success_finalization_uses_captured_startup_environment() {
     let api = SharedApiMock::new().await;
     let server = api.server();
     let tmp = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir_in(CANONICAL_GUEST_HOME_DIR).unwrap();
     let runtime_dir = tmp.path().join("runtime");
     let paths = guest_agent::paths::GuestPaths::from_runtime_dir(&runtime_dir);
-    let history_dir = tmp.path().join("claude");
+    let history_dir = home.path().join("claude");
     let history_path = claude_history_path(&history_dir, "startup-session");
     let history = "{\"type\":\"system\"}\n";
     std::fs::create_dir_all(history_path.parent().unwrap()).unwrap();
@@ -59,7 +61,7 @@ async fn success_finalization_uses_captured_startup_environment() {
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
             &runtime_dir,
         )
-        .env("HOME", tmp.path().join("home"))
+        .env("HOME", home.path())
         .env("OKOU_TEST_CLAUDE_CONFIG_DIR", &history_dir);
     run_finalization_child(&mut command).await.unwrap();
 

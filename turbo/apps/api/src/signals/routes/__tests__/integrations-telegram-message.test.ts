@@ -70,7 +70,7 @@ async function linkTelegramTestSender(
 ) {
   const bdd = createBddApi(context);
   bdd.acceptAgentStorageWrites();
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   await bdd.completeOnboarding(actor);
   await createBddIntegrationApi(context).requestLinkTelegram(
     actor,
@@ -219,7 +219,6 @@ function sendExecutionModelMessage(model: FooterModel) {
       });
       expect(agent.displayName).toBe("Model footer sender");
       const thread = await chat.createThread(actor, {
-        agentId: agent.agentId,
         model,
       });
       await chat.updateThreadModelSelection(actor, thread.id, model, {
@@ -337,7 +336,7 @@ describe("POST /api/integrations/telegram/message", () => {
       await sendExecutionModelMessage("claude-fable-5-1");
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: `Hello from this Run\n\n<i>Sent via Model footer sender · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
+      text: `Hello from this Run\n\n<i>Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });
@@ -348,7 +347,7 @@ describe("POST /api/integrations/telegram/message", () => {
       await sendExecutionModelMessage("gpt-6.1-sol");
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: `Hello from this Run\n\n<i>Sent via Model footer sender · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
+      text: `Hello from this Run\n\n<i>Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });
@@ -414,7 +413,7 @@ describe("POST /api/integrations/telegram/message", () => {
     );
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: `Hello from this Run\n\n<i>Sent via API caller credential · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
+      text: `Hello from this Run\n\n<i>Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(response.body).toStrictEqual({ ok: true, messageId: 325, chatId });

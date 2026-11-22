@@ -8,9 +8,9 @@ import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
 import android.os.Build
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -27,7 +27,11 @@ import org.robolectric.annotation.Config
 class UpdateRecoveryApplication : TestOkouApplication() {
     internal val selected = updateRelease("99.0.0")
     internal val latest = updateRelease("99.1.0")
-    internal val fixture = ControlledUpdates().apply { heldRecovery = CompletableDeferred() }
+    internal val fixture =
+        ControlledUpdates().apply {
+            heldRecovery = CompletableDeferred()
+            response = AndroidUpdates(null, latest)
+        }
     internal val cachedFile by lazy {
         File(filesDir, "updates/recovered.apk").apply {
             parentFile!!.mkdirs()
@@ -73,36 +77,37 @@ class UpdateRecoveryRootTest {
 
     @Test
     fun recoveryKeepsPackageIdentityAndControlsUnavailableAcrossRecreation() {
-        compose.onNodeWithText("Preparing update…").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         compose.onNodeWithText("New version: 99.0.0").assertExists()
         compose.onNodeWithText("Download update").assertDoesNotExist()
         compose.onNodeWithText("Allow update installation").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Preparing update…").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         app.fixture.heldRecovery!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.canInstall }
         compose.onNodeWithText("New version: 99.0.0").assertExists()
-        compose.onNodeWithText("Allow update installation").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Continue installation").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Allow update installation").assertDoesNotExist()
         assertTrue(app.fixture.downloadedReleases.isEmpty())
         assertTrue(app.updates.state.value.required)
     }
 
     @Test
     fun missingRecoveredPackageOffersTheLatestDownloadAfterPreparation() {
-        compose.onNodeWithText("Preparing update…").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         app.cachedFile.delete()
         app.fixture.downloaded = null
         app.fixture.heldRecovery!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.canDownload }
         compose.onNodeWithText("New version: 99.1.0").assertExists()
         compose
-            .onNodeWithText("Download update")
+            .onNodeWithText("Retry download")
             .assertIsDisplayed()
             .assertIsEnabled()
             .performClick()
         compose.waitUntil(10_000) { app.fixture.downloadedReleases.isNotEmpty() }
         assertEquals(listOf(app.latest), app.fixture.downloadedReleases)
-        compose.onNodeWithText("Cancel download").assertIsDisplayed()
+        compose.onNodeWithText("Preparing…").assertIsDisplayed().assertHasNoClickAction()
         assertTrue(app.updates.state.value.required)
     }
 }

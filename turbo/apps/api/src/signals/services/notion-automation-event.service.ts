@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   notionChildPageCreatedEventConfigSchema,
   notionDatabaseItemCreatedEventConfigSchema,
@@ -57,10 +58,7 @@ import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import {
-  loadWorkflowAutomationAccountMode$,
-  workflowAutomationConnectorSelectionSql,
-} from "./workflow-automation-account.service";
+import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
 import type {
   AutomationRow,
   RunWorkflowAutomationResult,
@@ -231,7 +229,6 @@ type ExecuteDueNotionEventsResult = {
 
 type DueNotionAutomationRow = {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly chatThreadId: string | null;
 };
@@ -512,11 +509,6 @@ const repairNotionAutomationProjection$ = command(
       userId: args.userId,
       workflowId: sql`${automation.workflowId}`,
       connectorSlug: "notion",
-      chatAccountAccess: await set(
-        loadWorkflowAutomationAccountMode$,
-        args,
-        signal,
-      ),
     });
     const [selection] = parseRawRows(
       object({ connectorId: string().nullable() }),
@@ -1516,12 +1508,11 @@ const loadDueNotionAutomationRow$ = command(
     const [row] = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -1879,11 +1870,8 @@ const startNotionWorkflowRun$ = command(
       set(
         runWorkflowAutomationNow$,
         {
-          due: {
-            automation: args.row.automation,
-            agentId: args.row.agentId,
-            chatThreadId: args.chatThreadId,
-          },
+          automation: args.row.automation,
+          chatThreadId: args.chatThreadId,
           automationContext: args.context,
           connectorSourceId: args.connectorSourceId,
           apiStartTime: now(),

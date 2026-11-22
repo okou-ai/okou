@@ -22,10 +22,7 @@ import {
   tabByText,
 } from "./chat-composer-test-helpers.ts";
 import { buildRunModel } from "./chat-model-builders.ts";
-import {
-  AGENT_ID,
-  createTemplateGalleryHelpers,
-} from "./chat-composer-template-gallery-test-helpers.ts";
+import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
@@ -102,7 +99,7 @@ async function openShelf(
 ) {
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   const editor = await findComposerEditor();
   if (draft) {

@@ -31,7 +31,6 @@ export const kotlinCommandFixtureTypes: readonly KotlinTypeBinding[] =
     ];
   });
 
-const agentId = "22222222-2222-4222-8222-222222222222";
 const threadId = "11111111-1111-4111-8111-111111111111";
 const projectId = "33333333-3333-4333-8333-333333333333";
 const eventId = "44444444-4444-4444-8444-444444444444";
@@ -49,7 +48,6 @@ function wire(schema: ZodType, value: unknown): unknown {
 
 export function kotlinCommandFixtureJson(): string {
   const normal = {
-    agentId,
     prompt: text,
     clientEventId: eventId,
     chatThreadSortEventId: sortId,
@@ -60,12 +58,10 @@ export function kotlinCommandFixtureJson(): string {
     JSON.stringify(
       {
         createDefaults: wire(chatThreadsContract.create.body, {
-          agentId,
           clientThreadId: threadId,
           eventId: lifecycleId,
         }),
         createAuto: wire(chatThreadsContract.create.body, {
-          agentId,
           clientThreadId: threadId,
           eventId: lifecycleId,
           projectId,
@@ -74,7 +70,6 @@ export function kotlinCommandFixtureJson(): string {
           title: "项目 🧪",
         }),
         createPinned: wire(chatThreadsContract.create.body, {
-          agentId,
           clientThreadId: threadId,
           model: "gpt-6.1-sol",
           serviceTier: "priority",
@@ -149,25 +144,20 @@ export function kotlinCommandFixtureJson(): string {
             parts: [
               { type: "text", text },
               {
-                type: "source",
-                kind: "agent",
+                type: "chat_thread",
                 runId,
                 threadId,
-                agentId,
                 titleSnapshot: "Source conversation",
-                href: "https://app.example/chat",
               },
             ],
           },
         }),
         revoke: wire(chatEventsContract.send.body, {
-          agentId,
           threadId,
           revokesEventId: eventId,
           clientEventId: lifecycleId,
         }),
         interrupt: wire(chatEventsContract.send.body, {
-          agentId,
           threadId,
           interruptsRunId: runId,
           clientEventId: lifecycleId,

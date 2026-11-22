@@ -23,6 +23,7 @@ use crate::activation::{
 use crate::executor::{
     BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
+use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::job_acceptance::{
     AcceptanceResources, SandboxAcceptedResource, rollback_sandbox_accepted_resource,
@@ -38,7 +39,6 @@ use crate::status::StatusTracker;
 use crate::telemetry::JobTelemetry;
 use runner_provider::{ExecutionJob, JobCandidate};
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
-#[cfg(test)]
 use runner_types::ids::RunId;
 use runner_types::types::CompleteRequest;
 
@@ -63,6 +63,7 @@ pub(super) struct PreparedLocalJob {
 
 /// Ordinary job custody, excluding the specialized finalizing successor.
 pub(super) struct SandboxAcceptedJob {
+    pub(super) preferred_home_source: Option<RunId>,
     pub(super) job: ExecutionJob,
     pub(super) resource: SandboxAcceptedResource,
     pub(super) cancellation: RunCancellationRegistration,
@@ -121,9 +122,13 @@ impl JobActivationResult {
         jobs: &mut JoinSet<JobResult>,
     ) -> ReactorResult<Self> {
         if let Some(mut activation) = self.prepared.take() {
-            let request = finish_spawn_job_request(&mut activation, ctx)
+            let setup = activation
+                .setup()
                 .map_err(|error| ReactorError::Internal(error.to_string()))?;
-            spawn_job(request, ctx, jobs);
+            let home_policy = home_prepare_policy_for_job(setup, ctx);
+            let request = finish_spawn_job_request(&mut activation)
+                .map_err(|error| ReactorError::Internal(error.to_string()))?;
+            spawn_job(request, home_policy, ctx, jobs);
         }
         Ok(self)
     }
@@ -226,6 +231,7 @@ pub(super) async fn prepare_accepted_job(
     let factory = &factory;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
     let SandboxAcceptedJob {
+        preferred_home_source,
         job,
         resource,
         cancellation,
@@ -404,7 +410,7 @@ pub(super) async fn prepare_accepted_job(
 
     let mut activation = JobActivationGuard::new(
         JobActivationSetup {
-            required_home_source_run_id: None,
+            required_home_source_run_id: preferred_home_source,
             job,
             rootfs_hash: job_rootfs_hash,
             cancellation,
@@ -470,7 +476,7 @@ pub(super) fn job_activation_resources(ctx: &SpawnContext) -> JobActivationResou
     }
 }
 
-async fn prepare_spawn_job_request(
+pub(super) async fn prepare_spawn_job_request(
     activation: &mut JobActivationGuard,
     ctx: &SpawnContext,
 ) -> Result<(), JobActivationError> {
@@ -489,9 +495,30 @@ async fn prepare_spawn_job_request(
     Ok(())
 }
 
-fn finish_spawn_job_request(
-    activation: &mut JobActivationGuard,
+pub(super) fn home_prepare_policy_for_job(
+    setup: &JobActivationSetup,
     ctx: &SpawnContext,
+) -> HomeImagePreparePolicy {
+    if setup.required_home_source_run_id.is_some() {
+        HomeImagePreparePolicy::TryCacheWithoutLockWait
+    } else if ctx.exec_config.home_cache.is_some()
+        && setup.job.context().reuse_key().is_some_and(|key| {
+            ctx.home_cache_snapshot
+                .has_compatible_home_hint(key, &setup.profile_name)
+        })
+    {
+        HomeImagePreparePolicy::TryCacheWithLockWait
+    } else if setup.job.is_supplied() {
+        // Assigned direct work can check a ready home without waiting for an
+        // unknown owner; advisory inventory need not observe every publication.
+        HomeImagePreparePolicy::TryCacheWithoutLockWait
+    } else {
+        HomeImagePreparePolicy::SkipCache
+    }
+}
+
+pub(super) fn finish_spawn_job_request(
+    activation: &mut JobActivationGuard,
 ) -> Result<SpawnJobRequest, JobActivationError> {
     let sandbox_id = activation.sandbox_id();
     let JobActivationSetup {
@@ -518,20 +545,6 @@ fn finish_spawn_job_request(
     } = resource;
     drop(idle_snapshot);
 
-    let home_image_prepare_policy = if ctx.exec_config.home_cache.is_some()
-        && job.context().reuse_key().is_some_and(|key| {
-            ctx.home_cache_snapshot
-                .has_compatible_home_hint(key, &profile_name)
-        }) {
-        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithLockWait
-    } else if job.is_supplied() {
-        // Assigned direct work can check a ready home without waiting for an
-        // unknown owner; advisory inventory need not observe every publication.
-        crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithoutLockWait
-    } else {
-        crate::home_image_cache::HomeImagePreparePolicy::SkipCache
-    };
-
     Ok(SpawnJobRequest {
         job,
         sandbox_id,
@@ -545,7 +558,6 @@ fn finish_spawn_job_request(
             budget_lease: active_lease,
             restore_guest_state,
             device_rate_limits,
-            home_image_prepare_policy,
             factory,
             cancellation,
         },
@@ -624,14 +636,6 @@ async fn complete_execution_failure(
         .await;
     cancellation.unregister().await;
     ActivationFailureCompletion { telemetry }
-}
-
-pub(super) async fn build_spawn_job_request(
-    activation: &mut JobActivationGuard,
-    ctx: &SpawnContext,
-) -> Result<SpawnJobRequest, JobActivationError> {
-    prepare_spawn_job_request(activation, ctx).await?;
-    finish_spawn_job_request(activation, ctx)
 }
 
 pub(super) async fn recover_unconsumed_finalizing_activation(

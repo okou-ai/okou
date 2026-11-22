@@ -4,7 +4,6 @@ import {
   onboardingStatusContract,
   type OnboardingStatusResponse,
 } from "@okouai/api-contracts/contracts/onboarding";
-import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
 import { mockApi } from "../msw-contract.ts";
 
 const DEFAULT_ONBOARDING_STATUS: OnboardingStatusResponse = {
@@ -12,9 +11,6 @@ const DEFAULT_ONBOARDING_STATUS: OnboardingStatusResponse = {
   onboardingComplete: true,
   isAdmin: true,
   hasOrg: true,
-  hasDefaultAgent: true,
-  defaultAgentId: "c0000000-0000-4000-a000-000000000001",
-  defaultAgentMetadata: { displayName: DEFAULT_AGENT_DISPLAY_NAME },
 };
 
 let mockOnboardingStatus: OnboardingStatusResponse = {
@@ -32,9 +28,14 @@ export function resetMockOnboardingStatus(): void {
 }
 
 export const apiOnboardingHandlers = [
-  // The legacy suites exercise the browser draft flow against a pre-draft API.
+  // Suites without a server draft exercise the browser draft flow.
   mockApi(onboardingDraftContract.get, ({ respond }) => {
-    return respond(404, { error: "Not found" });
+    return respond(404, {
+      error: {
+        message: "Onboarding draft is unavailable",
+        code: "NOT_FOUND",
+      },
+    });
   }),
   // GET /api/onboarding/status
   mockApi(onboardingStatusContract.getStatus, ({ respond }) => {

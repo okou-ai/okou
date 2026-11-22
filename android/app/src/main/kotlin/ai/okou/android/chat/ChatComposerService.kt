@@ -13,7 +13,7 @@ data class InputObservation(
 )
 
 interface ChatComposerService {
-    suspend fun newChatAgent(): String?
+    suspend fun newChatReady(): Boolean
 
     suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft
 

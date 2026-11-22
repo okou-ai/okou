@@ -27,7 +27,7 @@ teardown() {
         --arg accountSid "$account_sid" \
         --arg authToken "$auth_token" \
         '{accountSid: $accountSid, authToken: $authToken}')
-    run runner_e2e_connect_manual_connector twilio api-token "$AGENT_ID" "$values"
+    run runner_e2e_connect_manual_connector twilio api-token "$values"
     echo "$output"
     assert_success
     CONNECTOR_ACCOUNT_ID=$(jq -er \

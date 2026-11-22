@@ -37,7 +37,6 @@ type AnnotatedPersistedAttachment = PersistedAttachment & {
   readonly annotations?: ImageAnnotation;
 };
 
-const ATTACHMENT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 export const ATTACHMENT_THREAD_ID = "b0000000-0000-4000-a000-000000000081";
 export const SECOND_ATTACHMENT_THREAD_ID =
   "b0000000-0000-4000-a000-000000000082";
@@ -66,7 +65,7 @@ export function artifactFile(
     size: 1024,
     url: publicArtifactUrl(filename),
     createdAt: "2026-03-10T00:00:01Z",
-    googleDriveSync: { status: "not_synced", accountReady: true },
+    googleDriveSync: { status: "not_synced" },
     ...overrides,
   };
 }
@@ -278,7 +277,7 @@ export function mockSplitAttachmentChats(
             return {
               id: chat.threadId,
               title: chat.title,
-              agent: { id: ATTACHMENT_AGENT_ID, avatarUrl: null },
+
               createdAt: "2026-03-10T00:00:00Z",
               updatedAt: "2026-03-10T00:00:00Z",
             };

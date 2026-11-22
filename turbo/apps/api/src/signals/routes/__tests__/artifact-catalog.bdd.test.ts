@@ -118,7 +118,6 @@ async function catalogActor(
 async function sendChatRun(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
     readonly prompt: string;
     readonly threadId?: string;
   },
@@ -302,48 +301,59 @@ async function completeChatRunWithMessage(
   await completeChatRunOk(runId, sandboxHeaders, 0);
 }
 
-async function uploadFile(args: {
-  readonly owner: CatalogActor;
-  readonly prompt: string;
+interface CatalogFileUpload {
   readonly filename: string;
   readonly contentType: string;
   readonly sizeBytes?: number;
   readonly fileId?: string;
-  readonly threadId?: string;
-  readonly objectStorage?: ReturnType<
-    typeof chatCallbacks.acceptChatObjectStorage
-  >;
-}): Promise<{
-  readonly fileId: string;
-  readonly url: string;
-  readonly threadId: string;
-}> {
-  const run = await sendChatRun(args.owner.actor, {
-    agentId: args.owner.agentId,
-    prompt: args.prompt,
-    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
-  });
-  const { execution: receivedExecution, sandboxHeaders } = await runExecution(
-    args.owner.runnerGroup,
-    run.runId,
-  );
-  const bearer = `Bearer ${okouTokenFromExecution(receivedExecution)}`;
-  const fileId = args.fileId ?? randomUUID();
+  readonly objectStorage?: CatalogActor["storage"];
+}
+
+async function stageAndCompleteFileUpload(
+  owner: CatalogActor,
+  bearer: string,
+  file: CatalogFileUpload,
+): Promise<{ readonly fileId: string; readonly url: string }> {
+  const fileId = file.fileId ?? randomUUID();
   stageUploadObject(
-    `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
-    args.sizeBytes ?? 1024,
-    args.objectStorage,
+    `artifacts/${owner.actor.userId}/${fileId}/${file.filename}`,
+    file.sizeBytes ?? 1024,
+    file.objectStorage,
   );
   const completed = await chat.completeUploadWithBearer(
     bearer,
-    { id: fileId, contentType: args.contentType },
+    { id: fileId, contentType: file.contentType },
     [200],
   );
   if (completed.status !== 200) {
     throw new Error("Expected run upload completion to succeed");
   }
+  return { fileId, url: completed.body.url };
+}
+
+async function uploadFile(
+  args: CatalogFileUpload & {
+    readonly owner: CatalogActor;
+    readonly prompt: string;
+    readonly threadId?: string;
+  },
+): Promise<{
+  readonly fileId: string;
+  readonly url: string;
+  readonly threadId: string;
+}> {
+  const run = await sendChatRun(args.owner.actor, {
+    prompt: args.prompt,
+    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
+  });
+  const { execution, sandboxHeaders } = await runExecution(
+    args.owner.runnerGroup,
+    run.runId,
+  );
+  const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
+  const uploaded = await stageAndCompleteFileUpload(args.owner, bearer, args);
   await completeChatRunOk(run.runId, sandboxHeaders);
-  return { fileId, url: completed.body.url, threadId: run.threadId };
+  return { ...uploaded, threadId: run.threadId };
 }
 
 async function publishHostedSite(args: {
@@ -362,7 +372,6 @@ async function publishHostedSite(args: {
   readonly threadId: string;
 }> {
   const run = await sendChatRun(args.owner.actor, {
-    agentId: args.owner.agentId,
     prompt: `publish ${args.site}`,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
@@ -400,7 +409,6 @@ describe("GET /api/artifacts/catalog", () => {
   it("publishes a readable private video catalog and preserves its original chat on reuse", async () => {
     const owner = await catalogActor("Private video catalog owner");
     const first = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Produce a private video",
     });
     const execution = await runExecution(owner.runnerGroup, first.runId);
@@ -467,9 +475,12 @@ describe("GET /api/artifacts/catalog", () => {
     }
     // The publish-time API response already supplies the original identity.
     const originalCatalog = publications[0]!.catalog;
+    const artifactId = originalCatalog.artifacts[0]!.id;
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.toMatchObject({ sourceChatThreadId: first.threadId });
     await completeChatRunOk(first.runId, execution.sandboxHeaders);
     const second = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Reuse the private video",
     });
     const secondExecution = await runExecution(owner.runnerGroup, second.runId);
@@ -499,6 +510,9 @@ describe("GET /api/artifacts/catalog", () => {
     await expect(chat.listArtifactCatalog(owner.actor)).resolves.toMatchObject({
       artifacts: [{ id: originalCatalog.artifacts[0]!.id }],
     });
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.not.toHaveProperty("sourceChatThreadId");
     await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
   });
 
@@ -825,21 +839,26 @@ describe("GET /api/artifacts/catalog", () => {
 
   it("lists native PPTX files as presentations while retaining file-backed detail and deletion", async () => {
     const owner = await catalogActor("Native PowerPoint catalog owner");
+    const { runId } = await sendChatRun(owner.actor, {
+      prompt: "Publish the presentations and supporting notes",
+    });
+    const { execution, sandboxHeaders } = await runExecution(
+      owner.runnerGroup,
+      runId,
+    );
+    const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
     const filenames = ["quarterly-review.pptx", "BOARD-UPDATE.PPTX"];
     for (const filename of filenames) {
-      await uploadFile({
-        owner,
-        prompt: `Publish ${filename}`,
+      await stageAndCompleteFileUpload(owner, bearer, {
         filename,
         contentType: "application/octet-stream",
       });
     }
-    await uploadFile({
-      owner,
-      prompt: "Publish supporting notes",
+    await stageAndCompleteFileUpload(owner, bearer, {
       filename: "supporting-notes.pdf",
       contentType: "application/pdf",
     });
+    await completeChatRunOk(runId, sandboxHeaders);
 
     const presentations = await chat.listArtifactCatalog(owner.actor, {
       kind: "presentation",
@@ -946,7 +965,6 @@ describe("GET /api/artifacts/catalog", () => {
     async (mode) => {
       const owner = await catalogActor("Prepared video owner");
       const first = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Record the sharing demo",
       });
       const firstExecution = await runExecution(owner.runnerGroup, first.runId);
@@ -1026,7 +1044,6 @@ describe("GET /api/artifacts/catalog", () => {
       await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
 
       const second = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Review the same demo in another conversation",
       });
       const secondExecution = await runExecution(
@@ -1110,7 +1127,6 @@ describe("GET /api/artifacts/catalog", () => {
     await chat.requestSendEvent(
       owner.actor,
       {
-        agentId: owner.agentId,
         prompt: "Review these notes",
         userMessage: {
           version: 1,
@@ -1171,7 +1187,6 @@ describe("GET /api/artifacts/catalog", () => {
     async (container) => {
       const owner = await catalogActor("Artifact catalog video source owner");
       const run = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         prompt: "Upload an artifact through the Runner protocol",
       });
       const { execution: receivedExecution } = await runExecution(
@@ -1206,7 +1221,7 @@ describe("GET /api/artifacts/catalog", () => {
     180_000,
   );
 
-  it("keeps owned files and catalog identity after deleting the backing agent", async () => {
+  it("keeps owned files and catalog identity after a rejected attempt to delete the backing Agent", async () => {
     const owner = await catalogActor("Artifact catalog deletion owner");
     const uploaded = await uploadFile({
       owner,
@@ -1223,7 +1238,7 @@ describe("GET /api/artifacts/catalog", () => {
     const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
 
     await flushWaitUntilForTest();
-    await bdd.deleteAgent(owner.actor, owner.agentId);
+    await bdd.expectAgentDeleteUnavailable(owner.actor, owner.agentId);
 
     await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
       catalog,
@@ -1258,7 +1273,7 @@ describe("GET /api/artifacts/catalog", () => {
         contentType: "text/plain",
         objectStorage,
       });
-      await bdd.deleteAgent(owner.actor, owner.agentId);
+      await bdd.expectAgentDeleteUnavailable(owner.actor, owner.agentId);
       const catalog = await chat.listArtifactCatalog(owner.actor);
       const artifactId = catalog.artifacts[0]?.id;
       if (!artifactId) {
@@ -1345,6 +1360,8 @@ describe("GET /api/artifacts/catalog", () => {
     if (detail.kind !== "hosted-site") {
       throw new Error("Expected a hosted site to be catalogued as hosted-site");
     }
+    const { sourceChatThreadId, ...detailWithoutSource } = detail;
+    expect(sourceChatThreadId).toBe(hosted.threadId);
     expect(entry.id).toBe(initialArtifact.id);
     // The entry follows the site's newest publication.
     expect(detail.site).toMatchObject({
@@ -1376,7 +1393,7 @@ describe("GET /api/artifacts/catalog", () => {
     );
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, entry.id),
-    ).resolves.toStrictEqual(detail);
+    ).resolves.toStrictEqual(detailWithoutSource);
 
     // A real later publication must not reattach the artifact after deletion
     // cleared its original thread, even when the projection stays in B.
@@ -1455,7 +1472,6 @@ describe("GET /api/artifacts/catalog", () => {
     });
 
     const firstChat = await sendChatRun(actor, {
-      agentId: owner.agentId,
       prompt: "update the existing website",
     });
     activeRuns.add(firstChat.runId);
@@ -1486,7 +1502,6 @@ describe("GET /api/artifacts/catalog", () => {
     activeRuns.delete(firstChat.runId);
 
     const secondChat = await sendChatRun(actor, {
-      agentId: owner.agentId,
       prompt: "publish and inspect the same website from another chat",
     });
     activeRuns.add(secondChat.runId);
@@ -1755,7 +1770,6 @@ describe("GET /api/artifacts/catalog", () => {
   it("keeps a Runner output associated with its owning prompt when the run is interrupted", async () => {
     const owner = await catalogActor("Artifact catalog workflow owner");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Upload an artifact through the Runner protocol",
     });
     const { execution: receivedExecution, sandboxHeaders } = await runExecution(
@@ -1777,7 +1791,6 @@ describe("GET /api/artifacts/catalog", () => {
     await chat.requestSendEvent(
       owner.actor,
       {
-        agentId: owner.agentId,
         threadId: run.threadId,
         interruptsRunId: run.runId,
         clientEventId: interruptId,
@@ -1884,7 +1897,6 @@ describe("shared thread routes", () => {
     const owner = await catalogActor("Saved conversation deletion");
     mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Save this conversation",
     });
     await completeChatRunWithMessage(owner, run.runId, "A shared conversation");
@@ -1947,7 +1959,6 @@ describe("shared thread routes", () => {
   it("creates immutable, redacted snapshots from selected visible messages", async () => {
     const owner = await catalogActor("Shared thread test agent");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Prepare the private launch plan",
     });
     const assistantText = "Here is the **public** launch plan.";
@@ -1978,7 +1989,6 @@ describe("shared thread routes", () => {
       return event.eventType === "run.completed";
     });
     const otherRun = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "This other thread must stay private",
     });
     const otherEvents = await listSharedThreadEventRefs(
@@ -2085,6 +2095,8 @@ describe("shared thread routes", () => {
     }
     const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
     expect(detail.kind).toBe("shared-thread");
+    const { sourceChatThreadId, ...detailWithoutSource } = detail;
+    expect(sourceChatThreadId).toBe(run.threadId);
     // Neither selected message contains a file. The source-thread association
     // must exist independently of uploaded-file projections.
     const firstPage = await chat.listArtifactCatalog(owner.actor, {
@@ -2160,7 +2172,7 @@ describe("shared thread routes", () => {
     ).resolves.toStrictEqual(catalog);
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, artifactId),
-    ).resolves.toStrictEqual(detail);
+    ).resolves.toStrictEqual(detailWithoutSource);
 
     webhooks.configureClerkWebhookSecret();
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
@@ -2187,7 +2199,6 @@ describe("shared thread routes", () => {
     const owner = await catalogActor("Shared thread feature-switch test agent");
     mockOptionalEnv("OPENROUTER_API_KEY", "shared-title-key");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Prepare the private launch plan",
     });
     const events = await listSharedThreadEventRefs(owner.actor, run.threadId);
@@ -2217,7 +2228,6 @@ describe("artifact catalog source identity", () => {
   it("resolves an owned shared conversation without exposing it to other viewers", async () => {
     const owner = await catalogActor("Shared page artifact owner");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Share this conversation",
     });
     await completeChatRunWithMessage(owner, run.runId, "A shared plan");

@@ -93,6 +93,28 @@ describe("chat event snapshot read endpoints", () => {
       }),
       [200],
     );
+    const otherWorkspace = bdd.user({
+      userId: owner.userId,
+      orgId: `org_${randomUUID()}`,
+    });
+    const deniedRows = await accept(
+      eventsClient().rows({
+        headers: authenticate(otherWorkspace),
+        params: { threadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [404],
+    );
+    const deniedSnapshot = await accept(
+      eventsClient().snapshot({
+        headers: authenticate(otherWorkspace),
+        params: { threadId },
+      }),
+      [404],
+    );
+    expect(deniedRows.body.error.code).toBe("NOT_FOUND");
+    expect(deniedSnapshot.body.error.code).toBe("NOT_FOUND");
+
     const firstRow = fromStart.body.rows[0];
     if (firstRow === undefined) {
       throw new Error("Expected seeded chat events");

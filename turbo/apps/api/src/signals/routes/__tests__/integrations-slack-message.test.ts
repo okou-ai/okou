@@ -721,7 +721,7 @@ describe("POST /api/integrations/slack/message", () => {
     expect(response.body.error.message).toContain("No Slack connection found");
   });
 
-  it("appends 'Sent via' footer when agent is resolvable from run", async () => {
+  it("appends the triggering member to the run footer", async () => {
     const { orgId, userId } = await seedWithInstallation();
     const { token } = await seedAgentRun({ orgId, userId });
 
@@ -754,9 +754,7 @@ describe("POST /api/integrations/slack/message", () => {
     expect(blocks[blocks.length - 2]!.type).toBe("divider");
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
-    expect(footerCtx.elements![0]!.text).toMatch(
-      /^Sent via My &lt;Assistant&gt; &amp; Reports · Triggered by <@U_.+>$/u,
-    );
+    expect(footerCtx.elements![0]!.text).toMatch(/^Triggered by <@U_.+>$/u);
   });
 
   it("appends user attribution footer when run is user-triggered (not scheduled)", async () => {
@@ -796,8 +794,6 @@ describe("POST /api/integrations/slack/message", () => {
 
     const footerCtx = blocks[blocks.length - 1]!;
     expect(footerCtx.type).toBe("context");
-    expect(footerCtx.elements![0]!.text).toBe(
-      `Sent via My &lt;Assistant&gt; &amp; Reports · Triggered by <@${slackUserId}>`,
-    );
+    expect(footerCtx.elements![0]!.text).toBe(`Triggered by <@${slackUserId}>`);
   });
 });

@@ -296,29 +296,18 @@ impl NormalOperationTransitionHandle {
     pub(crate) fn mark_possible_guest_write_started(
         &self,
     ) -> Result<(), NormalOperationTransitionError> {
-        let mut inner = lock_inner(&self.inner);
-        let Some(phase) = inner.operations.get_mut(&self.id) else {
-            return Err(NormalOperationTransitionError::UnknownOperation {
-                operation_id: self.id,
-            });
-        };
-        match *phase {
-            OperationPhase::ReservedBeforeWrite | OperationPhase::GuestWriteCompleted => {
-                *phase = OperationPhase::PossibleGuestWrite;
-                Ok(())
-            }
-            OperationPhase::PossibleGuestWrite => {
-                Err(NormalOperationTransitionError::InvalidTransition {
-                    operation_id: self.id,
-                    from: OperationPhase::PossibleGuestWrite,
-                    to: OperationPhase::PossibleGuestWrite,
-                })
-            }
-        }
+        self.transition_write_phase(OperationPhase::PossibleGuestWrite)
     }
 
     pub(crate) fn mark_possible_guest_write_completed(
         &self,
+    ) -> Result<(), NormalOperationTransitionError> {
+        self.transition_write_phase(OperationPhase::GuestWriteCompleted)
+    }
+
+    fn transition_write_phase(
+        &self,
+        to: OperationPhase,
     ) -> Result<(), NormalOperationTransitionError> {
         let mut inner = lock_inner(&self.inner);
         let Some(phase) = inner.operations.get_mut(&self.id) else {
@@ -326,18 +315,46 @@ impl NormalOperationTransitionHandle {
                 operation_id: self.id,
             });
         };
-        match *phase {
-            OperationPhase::PossibleGuestWrite => {
-                *phase = OperationPhase::GuestWriteCompleted;
-                Ok(())
-            }
+        let from = *phase;
+        let next = match from {
             OperationPhase::ReservedBeforeWrite | OperationPhase::GuestWriteCompleted => {
-                Err(NormalOperationTransitionError::InvalidTransition {
-                    operation_id: self.id,
-                    from: *phase,
-                    to: OperationPhase::GuestWriteCompleted,
-                })
+                OperationPhase::PossibleGuestWrite
             }
+            OperationPhase::PossibleGuestWrite => OperationPhase::GuestWriteCompleted,
+        };
+        if to != next {
+            return Err(NormalOperationTransitionError::InvalidTransition {
+                operation_id: self.id,
+                from,
+                to,
+            });
+        }
+        *phase = to;
+        Ok(())
+    }
+}
+
+/// Normal-operation ownership retained by a pending request or exec route.
+pub(crate) enum PendingNormalOperation {
+    Owned(NormalOperationToken),
+    Composite(NormalOperationTransitionHandle),
+}
+
+impl PendingNormalOperation {
+    pub(crate) fn mark_possible_guest_write_started(
+        &mut self,
+    ) -> Result<(), NormalOperationTransitionError> {
+        match self {
+            Self::Owned(token) => token.mark_possible_guest_write_started(),
+            Self::Composite(handle) => handle.mark_possible_guest_write_started(),
+        }
+    }
+
+    /// A composite route completes its write and leaves release to its outer owner.
+    pub(crate) fn complete(self) -> Result<(), NormalOperationTransitionError> {
+        match self {
+            Self::Owned(token) => token.complete(),
+            Self::Composite(handle) => handle.mark_possible_guest_write_completed(),
         }
     }
 }

@@ -3,16 +3,8 @@
 
 export const clientDescriptorManifest = [
   {
-    module: "agent-connector-access",
-    contracts: ["agentConnectorAccessContract"],
-  },
-  {
-    module: "agent-custom-connectors",
-    contracts: ["agentCustomConnectorsContract"],
-  },
-  {
     module: "agent-draft",
-    contracts: ["agentDraftContract"],
+    contracts: ["agentDraftContract", "composerDraftContract"],
   },
   {
     module: "agent-setup-prompts",
@@ -68,6 +60,7 @@ export const clientDescriptorManifest = [
       "bankingContract",
       "bankingPublicContract",
       "bankingUserContract",
+      "bankingWorkspaceContract",
     ],
   },
   {
@@ -148,7 +141,7 @@ export const clientDescriptorManifest = [
       "chatThreadConnectorSelectionContract",
       "chatThreadDraftContract",
       "chatThreadEventsContract",
-      "chatThreadMarkAgentReadContract",
+      "chatThreadMarkAllReadContract",
       "chatThreadMarkReadContract",
       "chatThreadMarkUnreadContract",
       "chatThreadMetadataContract",
@@ -200,10 +193,6 @@ export const clientDescriptorManifest = [
   {
     module: "connector-accounts",
     contracts: ["connectorAccountsContract"],
-  },
-  {
-    module: "connector-agent-access",
-    contracts: ["connectorAgentAccessContract"],
   },
   {
     module: "connector-catalog",
@@ -531,7 +520,15 @@ export const clientDescriptorManifest = [
   },
   {
     module: "mcp-chat-search",
-    contracts: ["mcpChatSearchContract"],
+    contracts: ["mcpProjectChatSearchContract"],
+  },
+  {
+    module: "mcp-chat-snapshots",
+    contracts: ["mcpThreadSnapshotContract"],
+  },
+  {
+    module: "mcp-chat-tools",
+    contracts: ["mcpChatCommandContract"],
   },
   {
     module: "mcp-connectors",
@@ -607,10 +604,6 @@ export const clientDescriptorManifest = [
   {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
-  },
-  {
-    module: "proactive-nightly",
-    contracts: ["proactiveLearningContract"],
   },
   {
     module: "proactive-suggestions",
@@ -771,6 +764,10 @@ export const clientDescriptorManifest = [
     contracts: ["thirdPartySubscriptionsMainContract"],
   },
   {
+    module: "transcribe",
+    contracts: ["transcribeContract"],
+  },
+  {
     module: "uploads",
     contracts: ["uploadsContract"],
   },
@@ -783,20 +780,12 @@ export const clientDescriptorManifest = [
     contracts: ["usageMembersContract"],
   },
   {
-    module: "user-connectors",
-    contracts: ["userBuiltinConnectorsContract"],
-  },
-  {
     module: "user-export",
     contracts: ["userExportContract"],
   },
   {
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
-  },
-  {
-    module: "user-permission-grants",
-    contracts: ["userPermissionGrantsContract"],
   },
   {
     module: "user-preferences",

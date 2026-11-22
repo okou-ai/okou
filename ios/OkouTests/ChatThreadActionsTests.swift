@@ -209,7 +209,7 @@ final class ChatThreadActionsTests: XCTestCase {
     let fixture = ThreadActionsFixture(muted: true)
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
     fixture.state.value.withLock { $0.failNext["mark-read"] = 503 }
@@ -237,7 +237,7 @@ final class ChatThreadActionsTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     fixture.state.value.withLock { $0.failNext["mute"] = 404 }
     await store.setMuted(ThreadActionsFixture.thread, muted: true)
@@ -264,7 +264,7 @@ final class ChatThreadActionsTests: XCTestCase {
       let fixture = ThreadActionsFixture()
       let store = fixture.workspace()
       defer { store.close() }
-      await store.refreshNavigation()
+      await store.prepareWorkspaceComposer()
       await store.refresh()
       store.selectChat(ThreadActionsFixture.thread)
       let gate = ThreadActionGate()
@@ -311,7 +311,7 @@ final class ChatThreadActionsTests: XCTestCase {
   func testUpgradeFromMenuMutationClosesWorkspaceWithoutRetryOrEditor() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     fixture.state.value.withLock { $0.failNext["mute"] = 426 }
     await store.setMuted(ThreadActionsFixture.thread, muted: true)
@@ -330,7 +330,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     let before = try XCTUnwrap(store.list.threads.first)
     XCTAssertTrue(before.isUnread)
@@ -360,7 +360,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     fixture.state.value.withLock { $0.failNext["events"] = 503 }
 
@@ -381,7 +381,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
     try XCTUnwrap(store.selectedConversation).draft = "Keep the conversation draft"
@@ -409,7 +409,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
     let menu = ChatThreadMenu(
@@ -466,7 +466,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
     store.sidebar.select(.unread)
@@ -529,7 +529,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     let fixture = ThreadActionsFixture(muted: true)
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
     fixture.state.value.withLock { $0.failNext["archive"] = 503 }
@@ -564,7 +564,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.newChatDraft, "A separate task")
-    XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
+    XCTAssertNil(store.selectedAgentID)
     XCTAssertEqual(
       fixture.writes.filter { $0.action == "archive" }.map(\.eventID),
       Array(repeating: try XCTUnwrap(fixture.writes.first?.eventID), count: 2))
@@ -594,7 +594,7 @@ final class ChatThreadArchiveTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
     await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)

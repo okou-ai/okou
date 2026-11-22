@@ -1,7 +1,7 @@
 import { computed, type Computed } from "ccstate";
 import { getInstructionsFilename } from "@okouai/core/frameworks";
 import { stripMetadataFrontmatter } from "@okouai/core/instructions-frontmatter";
-import { agents } from "@okouai/db/schema/agent";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 import { and, eq } from "drizzle-orm";
 
 import { db$ } from "../external/db";
@@ -24,12 +24,12 @@ export function agentInstructions(args: {
 > {
   return computed(async (get) => {
     const [agent] = await get(db$)
-      .select({ instructions: agents.instructions })
-      .from(agents)
+      .select({ instructions: legacyAgentApiProfiles.instructions })
+      .from(legacyAgentApiProfiles)
       .where(
         and(
-          eq(agents.orgId, args.orgId),
-          eq(agents.id, args.agentId),
+          eq(legacyAgentApiProfiles.orgId, args.orgId),
+          eq(legacyAgentApiProfiles.id, args.agentId),
           visibleJoinedAgentCondition(args.userId),
         ),
       )

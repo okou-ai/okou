@@ -27,6 +27,9 @@ public struct ChatHTTPResponse: Sendable {
 
 /// HTTP boundary fixture. Production decoding, pagination, and commands remain real.
 public final class ChatHTTPFixture: Sendable {
+  public static let userID = "user_fixture"
+  public static let workspaceID = "org_fixture"
+
   public typealias Handler = @Sendable (URLRequest) async throws -> ChatHTTPResponse
   public let baseURL: URL
   public let clientVersion: String

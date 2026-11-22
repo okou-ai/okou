@@ -84,7 +84,6 @@ describe("Browser user-action contracts", () => {
       requestToken: "vm0_browser_user_action_public-token",
       state: "pending",
       completedAt: null,
-      agentId: uuid("1"),
       threadId: uuid("2"),
       siteOrigin: "https://example.com",
       callbackIds: {
@@ -371,7 +370,6 @@ describe("Browser user-action contracts", () => {
       state: "pending",
       siteOrigin: "https://example.com",
       completedAt: null,
-      agentId: uuid("1"),
       threadId: uuid("2"),
       callbackIds: {
         success: { clientEventId: uuid("3"), chatThreadSortEventId: uuid("4") },
@@ -465,7 +463,6 @@ describe("Browser user-action contracts", () => {
         state: "pending",
         siteOrigin: "https://example.com",
         completedAt: null,
-        agentId: uuid("1"),
         threadId: uuid("2"),
         callbackIds: {
           success: {
@@ -489,7 +486,6 @@ describe("Browser user-action contracts", () => {
         state: "pending",
         siteOrigin: "https://example.com",
         completedAt: null,
-        agentId: uuid("1"),
         threadId: uuid("2"),
         callbackIds: {
           success: {
@@ -585,7 +581,6 @@ describe("Browser user-action contracts", () => {
       state: "pending" as const,
       siteOrigin: "https://example.com",
       completedAt: null,
-      agentId: uuid("1"),
       threadId: uuid("2"),
       callbackIds: {
         success: {

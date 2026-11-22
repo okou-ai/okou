@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
@@ -17,6 +18,7 @@ import {
   customConnector,
   stubCustomConnectors,
 } from "../../__tests__/helpers/custom-connectors";
+import { stubRunConnectorAccountInventory } from "../../__tests__/helpers/run-connector-accounts";
 import { customConnectorCommand } from "../custom/index";
 import { statusCommand } from "../status";
 
@@ -84,11 +86,9 @@ describe("current-member connector status", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     for (const command of [statusCommand, ...customConnectorCommand.commands]) {
       command.setOptionValue("json", false);
-      command.setOptionValue("agent", undefined);
     }
     installDefinitions();
   });
@@ -376,32 +376,31 @@ describe("current-member connector status", () => {
   )(
     "$name keeps the member account view inside a Run",
     async ({ command, args, name, target, id }) => {
-      const agentId = "550e8400-e29b-41d4-a716-446655440000";
-      vi.stubEnv("OKOU_AGENT_ID", agentId);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       server.use(
         stubConnectorAccounts([connectorAccount(target, { id })]),
-        http.get(`http://localhost:3000/api/agents/${agentId}`, () => {
-          return HttpResponse.json({
-            agentId,
-            ownerId: "owner",
-            displayName: "Research",
-            description: null,
-            sound: null,
-            avatarUrl: null,
-          });
+        stubRunConnectorAccountInventory({
+          accounts: [
+            {
+              target,
+              connectionId: id,
+              displayName: "Saved account",
+              enabled: false,
+              isCurrent: false,
+              isDefault: true,
+            },
+          ],
         }),
-        http.get(
-          `http://localhost:3000/api/agents/${agentId}/custom-connectors`,
-          () => {
-            return HttpResponse.json({ grants: [] });
-          },
-        ),
       );
       await command.parseAsync(["node", "okou", ...args, "--json"]);
-      expect(output(name)).toMatchObject({
+      const account = output(name);
+      expect(account).toMatchObject({
         memberStatus: "connected",
         connectionId: id,
       });
+      if (name === "custom status") {
+        expect(account).toMatchObject({ allowedInChat: false });
+      }
     },
   );
 

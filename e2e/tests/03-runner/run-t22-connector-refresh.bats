@@ -28,6 +28,18 @@ assert_no_connector_refresh_raw_secrets() {
     done
 }
 
+collect_connector_refresh_firewall_logs() {
+    local run_id="$1"
+    local expected_host="$2"
+    if runner_e2e_wait_for_firewall_log \
+        "$run_id" bentoml "$expected_host" '["BENTO_CLOUD_API_KEY"]'; then
+        return 0
+    fi
+
+    runner_api_curl "/api/runs/${run_id}/context" >&2 || true
+    return 1
+}
+
 @test "continued runner session refreshes replaced connector credentials" {
     run create_runner_agent "runner-connector-refresh-${TEST_ID}"
     echo "$output"
@@ -36,8 +48,11 @@ assert_no_connector_refresh_raw_secrets() {
 
     local initial_secret="e2e-bentoml-initial-$(_runner_uuid)"
     local updated_secret="e2e-bentoml-updated-$(_runner_uuid)"
-    local initial_endpoint="https://bentoml.com"
-    local updated_endpoint="https://cloud.bentoml.com"
+    # Scope the synthetic connector rule to a read-only path on each Okou host.
+    local initial_host="www.okou.ai"
+    local updated_host="static.vm0.io"
+    local initial_endpoint="https://${initial_host}/robots.txt"
+    local updated_endpoint="https://${updated_host}/robots.txt"
     local initial_endpoint_digest updated_endpoint_digest
     initial_endpoint_digest=$(printf '%s' "$initial_endpoint" | sha256sum | cut -d' ' -f1)
     updated_endpoint_digest=$(printf '%s' "$updated_endpoint" | sha256sum | cut -d' ' -f1)
@@ -50,7 +65,6 @@ assert_no_connector_refresh_raw_secrets() {
     run runner_e2e_connect_manual_connector \
         bentoml \
         api-token \
-        "$AGENT_ID" \
         "$values"
     echo "$output"
     assert_success
@@ -68,16 +82,13 @@ printf '%s' "$BENTO_CLOUD_API_ENDPOINT" | sha256sum | cut -d' ' -f1
 # Raw DNS has dedicated runner coverage. Keep this connector-refresh probe on
 # IPv4 so an unavailable AAAA response cannot block an otherwise valid request.
 # Leave room for connection setup around the proxy's 10-second auth deadline.
-if curl --ipv4 --silent --show-error --max-time 15 \
+# The firewall log is the assertion. Keep curl's outcome for diagnosis.
+curl_status=0
+curl --ipv4 --silent --show-error --max-time 15 \
     --write-out '__OUTPUT_PREFIX__CURL http_code=%{http_code} namelookup=%{time_namelookup} connect=%{time_connect} appconnect=%{time_appconnect} starttransfer=%{time_starttransfer} total=%{time_total}\n' \
     --output /dev/null \
-    "${BENTO_CLOUD_API_ENDPOINT}/"; then
-    printf '__OUTPUT_PREFIX__SENT\n'
-else
-    curl_status=$?
-    printf '__OUTPUT_PREFIX__FAILED=%s\n' "$curl_status"
-    exit "$curl_status"
-fi
+    "$BENTO_CLOUD_API_ENDPOINT" || curl_status=$?
+printf '__OUTPUT_PREFIX__CURL_EXIT=%s\n' "$curl_status"
 EOF
 )
 
@@ -105,58 +116,29 @@ EOF
         '.result.frameworkSessionId | select(type == "string" and length > 0)' \
         <<<"$first_run_response")
 
-    # Both outcomes share a prefix so transport failures surface before the
-    # firewall-log wait rather than timing out on a success-only marker.
     run runner_e2e_wait_for_chat_text \
         "$THREAD_ID" \
         "$first_run_id" \
-        "$first_output_prefix"
+        "${first_output_prefix}CURL_EXIT="
     echo "$output"
     assert_success
-    local first_agent_text="$output"
-    public_surfaces+="$first_agent_text"$'\n'
-    if [[ "$first_agent_text" != *"${first_output_prefix}SENT"* ]]; then
-        # Network telemetry is uploaded after completion. Collect both public
-        # diagnostic surfaces before preserving the original probe assertion.
-        run runner_api_curl "/api/runs/${first_run_id}/context"
-        local first_context_diagnostics="$output"
-        public_surfaces+="$first_context_diagnostics"$'\n'
-        run runner_e2e_wait_for_firewall_log \
-            "$first_run_id" \
-            bentoml \
-            bentoml.com \
-            '["BENTO_CLOUD_API_KEY"]'
-        local first_network_diagnostics="$output"
-        public_surfaces+="$first_network_diagnostics"$'\n'
-        assert_no_connector_refresh_raw_secrets \
-            "$public_surfaces" \
-            "$initial_secret" \
-            "$updated_secret"
-        echo "$first_context_diagnostics"
-        echo "$first_network_diagnostics"
-        output="$first_agent_text"
-    fi
-    assert_output --partial "${first_output_prefix}SENT"
+    public_surfaces+="$output"$'\n'
     assert_output --partial \
         "BENTOML_API_KEY=cur7hCoffeeSafeLocalCoffeeSafeLocalCoffeeSafe"
     assert_output --partial "BENTOML_ENDPOINT_SHA256=${initial_endpoint_digest}"
     refute_output --partial "BENTOML_ENDPOINT_SHA256=${updated_endpoint_digest}"
 
-    run runner_e2e_wait_for_firewall_log \
-        "$first_run_id" \
-        bentoml \
-        bentoml.com \
-        '["BENTO_CLOUD_API_KEY"]'
+    run collect_connector_refresh_firewall_logs "$first_run_id" "$initial_host"
+    public_surfaces+="$output"$'\n'
+    assert_no_connector_refresh_raw_secrets "$public_surfaces" "$initial_secret" "$updated_secret"
     echo "$output"
     assert_success
-    local first_network_logs="$output"
-    public_surfaces+="$first_network_logs"$'\n'
-    run jq -e --arg unexpectedHost cloud.bentoml.com '
+    run jq -e --arg unexpectedHost "$updated_host" '
         all(.[];
             .firewall_name != "bentoml" or
             .host != $unexpectedHost
         )
-    ' <<<"$first_network_logs"
+    ' <<<"$output"
     echo "$output"
     assert_success
 
@@ -167,7 +149,6 @@ EOF
     run runner_e2e_connect_manual_connector \
         bentoml \
         api-token \
-        "$AGENT_ID" \
         "$values" \
         "$CONNECTOR_ACCOUNT_ID"
     echo "$output"
@@ -207,53 +188,26 @@ EOF
     run runner_e2e_wait_for_chat_text \
         "$THREAD_ID" \
         "$RUN_ID" \
-        "$updated_output_prefix"
+        "${updated_output_prefix}CURL_EXIT="
     echo "$output"
     assert_success
-    local updated_agent_text="$output"
-    public_surfaces+="$updated_agent_text"$'\n'
-    if [[ "$updated_agent_text" != *"${updated_output_prefix}SENT"* ]]; then
-        # Preserve the continued Run's completed public diagnostics before the
-        # phase-specific probe assertion reports its original failure.
-        run runner_api_curl "/api/runs/${RUN_ID}/context"
-        local updated_context_diagnostics="$output"
-        public_surfaces+="$updated_context_diagnostics"$'\n'
-        run runner_e2e_wait_for_firewall_log \
-            "$RUN_ID" \
-            bentoml \
-            cloud.bentoml.com \
-            '["BENTO_CLOUD_API_KEY"]'
-        local updated_network_diagnostics="$output"
-        public_surfaces+="$updated_network_diagnostics"$'\n'
-        assert_no_connector_refresh_raw_secrets \
-            "$public_surfaces" \
-            "$initial_secret" \
-            "$updated_secret"
-        echo "$updated_context_diagnostics"
-        echo "$updated_network_diagnostics"
-        output="$updated_agent_text"
-    fi
-    assert_output --partial "${updated_output_prefix}SENT"
+    public_surfaces+="$output"$'\n'
     assert_output --partial \
         "BENTOML_API_KEY=cur7hCoffeeSafeLocalCoffeeSafeLocalCoffeeSafe"
     assert_output --partial "BENTOML_ENDPOINT_SHA256=${updated_endpoint_digest}"
     refute_output --partial "BENTOML_ENDPOINT_SHA256=${initial_endpoint_digest}"
 
-    run runner_e2e_wait_for_firewall_log \
-        "$RUN_ID" \
-        bentoml \
-        cloud.bentoml.com \
-        '["BENTO_CLOUD_API_KEY"]'
+    run collect_connector_refresh_firewall_logs "$RUN_ID" "$updated_host"
+    public_surfaces+="$output"$'\n'
+    assert_no_connector_refresh_raw_secrets "$public_surfaces" "$initial_secret" "$updated_secret"
     echo "$output"
     assert_success
-    local updated_network_logs="$output"
-    public_surfaces+="$updated_network_logs"$'\n'
-    run jq -e --arg unexpectedHost bentoml.com '
+    run jq -e --arg unexpectedHost "$initial_host" '
         all(.[];
             .firewall_name != "bentoml" or
             .host != $unexpectedHost
         )
-    ' <<<"$updated_network_logs"
+    ' <<<"$output"
     echo "$output"
     assert_success
 

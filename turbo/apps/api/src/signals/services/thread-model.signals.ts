@@ -9,7 +9,11 @@ import {
   AUTO_RUN_KEY_VENDOR,
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import { computed, type Computed } from "ccstate";
@@ -59,6 +63,19 @@ import {
   shouldUsePiExecution,
 } from "./pi-sandbox-config";
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
+
+export function checkRunServiceTier(
+  tier: "fast" | "ultrafast" | undefined,
+  featureSwitchContext: FeatureSwitchContext,
+) {
+  return tier === "ultrafast" &&
+    !isFeatureEnabled(
+      FeatureSwitchKey.CodexSubscriptionUltrafast,
+      featureSwitchContext,
+    )
+    ? badRequestMessage("Ultrafast is unavailable in this workspace")
+    : undefined;
+}
 
 export type ThreadModelError =
   | ReturnType<typeof badRequestMessage>

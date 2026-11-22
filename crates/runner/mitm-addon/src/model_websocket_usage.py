@@ -11,10 +11,10 @@ import openai_responses_events
 import run_usage
 import usage
 from logging_utils import log_proxy_entry
+from usage.parse_error_diagnostics import ParseErrorWarningBudget
 
 _MODEL_WEBSOCKET_PREWARM_STATE = "_model_websocket_prewarm_state"
 _MAX_IGNORED_RESPONSE_IDS = 100
-_MODEL_WEBSOCKET_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +32,7 @@ class _OpenAIResponsesPrewarmState:
     ignored_response_diagnostics: dict[str, bool] = field(default_factory=dict)
     ambiguous: bool = False
     ambiguity_diagnostic_emitted: bool = False
-    usage_error_diagnostics_remaining: int = _MODEL_WEBSOCKET_PARSE_ERROR_DIAGNOSTIC_LIMIT
+    parse_error_warnings: ParseErrorWarningBudget = field(default_factory=ParseErrorWarningBudget)
 
 
 _WebSocketCorrelationReason = Literal[
@@ -306,11 +306,8 @@ def feed_usage(
             _mark_correlation_ambiguous(flow, prewarm_state, "correlation_cap")
         if (
             isinstance(prewarm_state, _OpenAIResponsesPrewarmState)
-            and prewarm_state.usage_error_diagnostics_remaining > 0
+            and prewarm_state.parse_error_warnings.take()
         ):
-            # Limit lifetime diagnostics before serialization, independently of
-            # the writer backlog and correlation/accounting state transitions.
-            prewarm_state.usage_error_diagnostics_remaining -= 1
             log_proxy_entry(
                 flow_metadata.proxy_log_path(flow.metadata),
                 "warn",

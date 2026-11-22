@@ -22,7 +22,7 @@ teardown() {
 
     local values
     values=$(jq -nc --arg apiKey "e2e-serpapi-token-${TEST_ID}" '{apiKey: $apiKey}')
-    run runner_e2e_connect_manual_connector serpapi api-token "$AGENT_ID" "$values"
+    run runner_e2e_connect_manual_connector serpapi api-token "$values"
     echo "$output"
     assert_success
     CONNECTOR_ACCOUNT_ID=$(jq -er \

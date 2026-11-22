@@ -10,23 +10,15 @@ import { createElement } from "react";
 import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
-import {
-  searchParams$,
-  updateSearchParams$,
-  detachedNavigateTo$,
-} from "../route.ts";
-import { ROUTES } from "../route-paths.ts";
-import { currentAgentId$, defaultAgentId$, agents$ } from "../agent.ts";
-import { singleAgentEnabled$ } from "../single-agent.ts";
-import { setChatAgentId$ } from "../agent-chat.ts";
+import { searchParams$, updateSearchParams$ } from "../route.ts";
+
 import { setTalkDraft$, talkDraft$ } from "./chat-draft.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import {
-  releaseChatGreetingVisit$,
   resetChatPageModelSelection$,
   startChatGreetingVisit$,
 } from "./chat-page.ts";
-import { ensureAgentDraft$, type EnsuredAgentDraft } from "./agent-draft.ts";
+import { ensureDraft$, type WorkspaceDraftEntry } from "./workspace-draft.ts";
 import {
   agentChatComposerSignals$,
   setAgentComposerContext$,
@@ -46,12 +38,16 @@ import {
   watchAgentPhoneConnection$,
 } from "./agentphone.ts";
 
-const restoreMarketingAgentDraft$ = command(
-  async ({ get, set }, agentDraft: EnsuredAgentDraft, signal: AbortSignal) => {
+const restoreMarketingWorkspaceDraft$ = command(
+  async (
+    { get, set },
+    workspaceDraft: WorkspaceDraftEntry,
+    signal: AbortSignal,
+  ) => {
     const params = get(searchParams$);
     const handoff = await set(loadMarketingHandoff$, signal);
     if (!handoff) {
-      await set(agentDraft.load$, signal);
+      await set(workspaceDraft.load$, signal);
       return;
     }
     const imported = await set(
@@ -60,10 +56,10 @@ const restoreMarketingAgentDraft$ = command(
       signal,
     );
     if (!imported) {
-      await set(agentDraft.load$, signal);
+      await set(workspaceDraft.load$, signal);
       return;
     }
-    const targetDraft = agentDraft.draft;
+    const targetDraft = workspaceDraft.draft;
     await set(
       targetDraft.seed$,
       {
@@ -75,7 +71,7 @@ const restoreMarketingAgentDraft$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await set(agentDraft.queueDraftSync$, signal);
+    await set(workspaceDraft.queueDraftSync$, signal);
     signal.throwIfAborted();
     set(finishMarketingHandoff$, handoff);
     const next = new URLSearchParams(params);
@@ -84,19 +80,18 @@ const restoreMarketingAgentDraft$ = command(
   },
 );
 
-const setupChatPageForAgent$ = command(
-  async ({ get, set }, agentId: string, signal: AbortSignal) => {
+export const setupHomeChatPage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const workspaceDraft: WorkspaceDraftEntry = await set(ensureDraft$, signal);
     set(resetProjectUi$);
-    set(setChatAgentId$, agentId);
     set(
       setPwaAgentComposeRequested$,
       isPwaAgentComposeRequested(get(searchParams$)),
     );
-    const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
-    set(setAgentComposerContext$, { agentId, agentDraft });
+    set(setAgentComposerContext$, { workspaceDraft });
     set(get(agentChatComposerSignals$).setup$, signal);
-    set(setTalkDraft$, agentDraft.draft);
-    const firstGreetingVisit = set(startChatGreetingVisit$);
+    set(setTalkDraft$, workspaceDraft.draft);
+    set(startChatGreetingVisit$);
     set(resetChatPageModelSelection$);
     set(setAgentPhoneConnectDialogOpen$, false);
     set(updatePage$, createElement(AgentChatPage), "sidebar");
@@ -112,86 +107,30 @@ const setupChatPageForAgent$ = command(
 
     await set(hideAppSkeleton$, signal);
 
-    const agents = await get(agents$);
-    signal.throwIfAborted();
-    const agent = agents.find((candidate) => {
-      return candidate.agentId === agentId;
-    });
-    if (!agent) {
-      if (firstGreetingVisit) {
-        set(releaseChatGreetingVisit$);
-      }
-      // My Okou's only chat page is this one, so another agent's chat would
-      // route straight back here; its settings page is the usable surface.
-      if (await get(singleAgentEnabled$)) {
-        set(detachedNavigateTo$, ROUTES.connectors, {
-          searchParams: new URLSearchParams({ settings: "my-okou" }),
-          replace: true,
-        });
-        return;
-      }
-      // The URL names an agent this user cannot reach: it was deleted, it
-      // belongs to another organization, or it is private to someone else.
-      // Recover onto a usable surface the way the home route already does,
-      // instead of leaving the user behind the bootstrap skeleton.
-      const defaultAgentId = await get(defaultAgentId$);
-      signal.throwIfAborted();
-
-      // The stored default is never validated against the visible agents, so
-      // trust it only when this already-loaded list contains it. A default
-      // equal to `agentId` fails the same check, because `agentId` is absent
-      // from the list. Otherwise fall back to any visible agent.
-      const defaultAgentIsVisible = agents.some((candidate) => {
-        return candidate.agentId === defaultAgentId;
-      });
-      const fallbackAgentId = defaultAgentIsVisible
-        ? defaultAgentId
-        : agents[0]?.agentId;
-
-      if (fallbackAgentId) {
-        set(detachedNavigateTo$, ROUTES.agentChat, {
-          pathParams: { agentId: fallbackAgentId },
-          searchParams: get(searchParams$),
-          replace: true,
-        });
-        return;
-      }
-
-      // No visible agent at all. Home degrades to the agents surface only when
-      // no default is recorded; while an unreachable default is still recorded
-      // it would navigate straight back here, so go to that surface directly.
-      set(detachedNavigateTo$, defaultAgentId ? ROUTES.agents : ROUTES.home, {
-        searchParams: get(searchParams$),
-        replace: true,
-      });
-      return;
-    }
-
     set(
       updateDocumentTitle$,
-      agent.displayName ??
-        i18n.t(($) => {
-          return $.chat.documentTitle;
-        }),
+      i18n.t(($) => {
+        return $.chat.documentTitle;
+      }),
     );
-    await set(setupAgentChatKeyboardShortcuts$, signal);
+    set(setupAgentChatKeyboardShortcuts$, signal);
     await set(hydrateProjects$, signal);
     await set(checkUnifiedSettingsParam$, signal);
 
     const params = get(searchParams$);
     const prompt = params.get("handoff") ? null : params.get("prompt");
     if (params.get("handoff")) {
-      await set(restoreMarketingAgentDraft$, agentDraft, signal);
+      await set(restoreMarketingWorkspaceDraft$, workspaceDraft, signal);
     }
     const queue = params.get("queue");
     const templatePicker = parseTemplatePickerEntryCategory(
       params.get("templatePicker"),
     );
-    if (agentDraft && !prompt && !params.get("handoff")) {
-      await set(agentDraft.load$, signal);
+    if (workspaceDraft && !prompt && !params.get("handoff")) {
+      await set(workspaceDraft.load$, signal);
     }
     if (prompt) {
-      const targetDraft = agentDraft?.draft ?? get(talkDraft$);
+      const targetDraft = workspaceDraft?.draft ?? get(talkDraft$);
       set(targetDraft.clear$);
       set(targetDraft.setInput$, prompt);
       set(get(agentChatComposerSignals$).editor.focus$);
@@ -213,42 +152,5 @@ const setupChatPageForAgent$ = command(
     if (queue === "1") {
       set(openQueueDrawer$);
     }
-  },
-);
-
-export const setupAgentChatPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (await get(singleAgentEnabled$)) {
-      // My Okou has one chat page at `/`. Keep deep-link params such as
-      // `prompt` and `handoff` so the page there still applies them.
-      set(detachedNavigateTo$, ROUTES.home, {
-        searchParams: get(searchParams$),
-        replace: true,
-      });
-      return;
-    }
-    const agentId = get(currentAgentId$);
-
-    if (!agentId) {
-      throw new Error("Chat page requires an active agent, but none found");
-    }
-
-    await set(setupChatPageForAgent$, agentId, signal);
-  },
-);
-
-/** My Okou's chat page lives at `/` and always chats with the default agent. */
-export const setupHomeChatPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const defaultAgentId = await get(defaultAgentId$);
-    signal.throwIfAborted();
-    if (!defaultAgentId) {
-      set(detachedNavigateTo$, ROUTES.connectors, {
-        searchParams: new URLSearchParams({ settings: "my-okou" }),
-        replace: true,
-      });
-      return;
-    }
-    await set(setupChatPageForAgent$, defaultAgentId, signal);
   },
 );

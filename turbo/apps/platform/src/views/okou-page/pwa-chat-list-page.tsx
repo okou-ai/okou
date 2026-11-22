@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { MessageSquare, Search, SquarePen } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
-import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
+
 import { mainStylesheetLoaded$ } from "../../signals/app-skeleton.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
@@ -26,7 +26,7 @@ import { openThreeColumnSearchDialog$ } from "../../signals/okou-page/sidebar-st
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
-import { PwaAgentSwitcher } from "./pwa-agent-switcher.tsx";
+import { PwaChatTitle } from "./pwa-chat-title.tsx";
 import { ForYouChatListRow } from "./sidebar-okou-row.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ChatThreadListRows, ChatThreadsListMenu } from "./sidebar-threads.tsx";
@@ -40,11 +40,9 @@ function useSelectFilter() {
 }
 
 function useOpenNewChat() {
-  const currentAgentId = useLastResolved(currentChatAgentId$);
   const openNewChat = useSet(navigateToNewChat$);
   const pageSignal = useGet(pageSignal$);
   return {
-    disabled: !currentAgentId,
     open: () => {
       detach(openNewChat(pageSignal), Reason.DomCallback);
     },
@@ -60,7 +58,7 @@ function PwaChatListHeader() {
     <header className="shrink-0 px-3 pt-2">
       <div className="flex min-w-0 items-center gap-1">
         <div className="min-w-0 flex-1">
-          <PwaAgentSwitcher />
+          <PwaChatTitle />
         </div>
         <Button
           type="button"
@@ -81,7 +79,6 @@ function PwaChatListHeader() {
           size="icon"
           iconSize="lg"
           className="min-h-11 min-w-11 shrink-0"
-          disabled={newChat.disabled}
           aria-label={t(($) => {
             return $.chat.newChat;
           })}
@@ -119,12 +116,7 @@ function StartChatButton() {
   const { t } = useTranslation();
   const newChat = useOpenNewChat();
   return (
-    <Button
-      variant="neutral"
-      className="min-h-11 gap-2"
-      disabled={newChat.disabled}
-      onClick={newChat.open}
-    >
+    <Button variant="neutral" className="min-h-11 gap-2" onClick={newChat.open}>
       <SquarePen aria-hidden="true" />
       {t(($) => {
         return $.chat.newChat;
@@ -196,13 +188,13 @@ function PwaChatThreads({
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const { t } = useTranslation();
-  const count = useGet(listSignals.count$);
-  const rowCount = useGet(listSignals.rowCount$);
-  const window = useGet(listSignals.window$);
-  const hasHiddenArchivedThreads = useGet(
-    listSignals.hasHiddenArchivedThreads$,
-  );
+  const count = useLastResolved(listSignals.count$);
+  const hasHiddenArchivedThreads =
+    useLastResolved(listSignals.hasHiddenArchivedThreads$) ?? false;
 
+  if (count === undefined) {
+    return null;
+  }
   if (count === 0) {
     return (
       <PwaChatListEmpty hasHiddenArchivedThreads={hasHiddenArchivedThreads} />
@@ -224,13 +216,14 @@ function PwaChatThreads({
         touch
         layout="list"
         shortcuts={false}
-        height={rowCount * PWA_CHAT_THREAD_ROW_HEIGHT}
       >
-        {window.showAllChatsRow ? (
-          <div className="flex h-15 w-full items-center pb-1">
-            <ShowAllChatsButton />
-          </div>
-        ) : null}
+        {(showAllChatsRow) => {
+          return showAllChatsRow ? (
+            <div className="flex h-15 w-full items-center pb-1">
+              <ShowAllChatsButton />
+            </div>
+          ) : null;
+        }}
       </ChatThreadListRows>
     </OverlayScrollArea>
   );

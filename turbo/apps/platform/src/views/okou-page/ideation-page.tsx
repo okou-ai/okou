@@ -16,7 +16,6 @@ import { Link } from "../router/link.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { getCategories } from "./ideation-data.ts";
 import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
-import { agents$, currentAgentId$ } from "../../signals/agent.ts";
 import {
   ideationActiveTab$,
   setIdeationActiveTab$,
@@ -29,14 +28,7 @@ import {
 } from "./ideation-localization.ts";
 
 export function IdeationPage() {
-  const { t } = useTranslation("agents");
-  const agentId = useGet(currentAgentId$);
-  const agentsLoadable = useLoadable(agents$);
-  const isCustomAgent =
-    agentsLoadable.state === "hasData" &&
-    agentsLoadable.data.some((agent) => {
-      return agent.agentId === agentId && agent.isDefaultAgent === false;
-    });
+  const { t } = useTranslation("common");
   const connectorStatusLoadable = useLoadable(connectorCatalogStatusBySlug$);
   const lastConnectorStatusBySlug = useLastResolved(
     connectorCatalogStatusBySlug$,
@@ -60,7 +52,7 @@ export function IdeationPage() {
     { returnObjects: true },
   );
   const categories = localizeIdeationCategories(
-    getCategories({ visibleConnectorSlugs, isCustomAgent }).slice(0, 8),
+    getCategories({ visibleConnectorSlugs }).slice(0, 8),
     catalogCopy,
   );
   const activeTab = useGet(ideationActiveTab$);
@@ -105,8 +97,7 @@ export function IdeationPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <nav className="flex shrink-0 items-center gap-1 px-4 pt-4 text-sm text-muted-foreground">
         <Link
-          pathname={agentId ? "/agents/:agentId/chat" : "/"}
-          options={{ pathParams: agentId ? { agentId } : undefined }}
+          pathname="/"
           className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-state-hover hover:text-foreground transition-colors"
         >
           <MessageCircle size={14} className="shrink-0" />
@@ -225,9 +216,8 @@ export function IdeationPage() {
                           return (
                             <Link
                               key={useCase.title}
-                              pathname={agentId ? "/agents/:agentId/chat" : "/"}
+                              pathname="/"
                               options={{
-                                pathParams: agentId ? { agentId } : undefined,
                                 searchParams: new URLSearchParams({
                                   prompt: useCase.prompt,
                                 }),

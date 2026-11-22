@@ -3,6 +3,212 @@ use super::*;
 use std::sync::atomic::AtomicBool;
 
 #[tokio::test]
+async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
+    for cache_state in ["missing", "warm", "lock", "abort"] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let cache = decoded::DecodedCache::new(home.clone());
+        let archive = tarball_with_contents(b"fresh archive bytes\n");
+        let ready = tarball_with_contents(b"ready decoded bytes\n");
+        write_cached_archive(&home, "ready-decoded", "v1", &ready);
+        write_storage_lock(&home, "ready-decoded", "v1");
+        cache
+            .warm_from_archive("ready-decoded", "v1")
+            .await
+            .unwrap();
+
+        let ordinary_url = "https://example.test/ordinary";
+        if cache_state == "warm" {
+            write_cached_archive(&home, "ordinary", "v1", &archive);
+        }
+        if cache_state == "lock" {
+            write_storage_lock(&home, "ordinary", "v1");
+        }
+        let mut storages = Vec::new();
+        let mut requests = Vec::new();
+        for index in 0..FRESH_DELIVERY_PER_RUN_LIMIT {
+            let server = GatedResponse::start(archive.clone()).await;
+            storages.push(storage_entry_with_archive_size(
+                format!("/mnt/fresh-{index}"),
+                server.url.clone(),
+                &format!("fresh-{index}"),
+                "v1",
+                Some(archive.len() as u64),
+            ));
+            requests.push(server);
+        }
+        storages.push(storage_entry(
+            "/mnt/ordinary".into(),
+            ordinary_url.into(),
+            "ordinary",
+            "v1",
+        ));
+        storages.push(storage_entry(
+            "/mnt/ready-decoded".into(),
+            "https://example.test/decoded".into(),
+            "ready-decoded",
+            "v1",
+        ));
+        let mut plan = plan_from_entries(storages, Vec::new(), None);
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let mut telemetry = new_telemetry();
+        let delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &CancellationToken::new(),
+            &mut telemetry,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        assert_eq!(plan.decoded_mount_count(), 1);
+        let cancel = delivery.cancellation_token();
+        let mut held_bodies = Vec::new();
+        let mut servers = Vec::new();
+        for response in requests {
+            tokio::time::timeout(Duration::from_secs(5), response.requested)
+                .await
+                .unwrap()
+                .unwrap();
+            response.headers.send(()).unwrap();
+            held_bodies.push(response.body);
+            servers.push(response.task);
+        }
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT - FRESH_DELIVERY_PER_RUN_LIMIT
+        );
+
+        let runtime = temp.path().join("runtime");
+        let sandbox = Arc::new(MockSandbox::new("saturated-archive-delivery"));
+        let (send, receive) = oneshot::channel();
+        let application = GuestApplication::new(
+            send,
+            runtime.clone(),
+            "saturated-archive-delivery".into(),
+            Duration::from_secs(300),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        let task = tokio::spawn({
+            let sandbox = sandbox.clone();
+            let home = home.clone();
+            async move {
+                let mut prepared = PreparedStorage { plan, delivery };
+                let result = populate_cache_for_guest(
+                    &mut prepared,
+                    sandbox.as_ref(),
+                    &home,
+                    &mut telemetry,
+                    &cache,
+                    application,
+                )
+                .await;
+                cache.shutdown().await;
+                result
+            }
+        });
+
+        let early = matches!(cache_state, "missing" | "abort");
+        if early {
+            held_bodies.remove(0).send(()).unwrap();
+        } else {
+            for body in held_bodies.drain(..) {
+                body.send(()).unwrap();
+            }
+        }
+        let input = tokio::time::timeout(Duration::from_secs(5), receive)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(input.decoded_tail.is_none());
+        assert_eq!(input.initial.files.len(), 1);
+        let ordinary = input
+            .initial
+            .manifest
+            .storages
+            .iter()
+            .find(|entry| entry.mount_path == "/mnt/ordinary")
+            .unwrap();
+        let expected_url = if cache_state == "warm" {
+            format!("file://{}", guest_archive_path("ordinary", "v1"))
+        } else {
+            ordinary_url.into()
+        };
+        assert_eq!(ordinary.archive_url.as_deref(), Some(expected_url.as_str()));
+        let readiness = input.initial.manifest.archive_readiness;
+        assert_eq!(readiness.is_some(), early);
+        if let Some(readiness) = &readiness {
+            assert_eq!(readiness.sources.len(), FRESH_DELIVERY_PER_RUN_LIMIT);
+            assert!(sandbox.write_files_calls().len() <= 1);
+            assert!(sandbox.private_write_files_calls().len() <= 1);
+            assert!(!task.is_finished());
+        }
+        if cache_state == "abort" {
+            cancel.cancel();
+        } else {
+            for body in held_bodies.drain(..) {
+                body.send(()).unwrap();
+            }
+        }
+
+        let result = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap();
+        if cache_state == "abort" {
+            assert!(matches!(result, Err(RunnerError::Cancelled)));
+            let abort = sandbox.private_write_file_calls();
+            assert_eq!(abort.len(), 1);
+            assert_eq!(
+                Path::new(&abort[0].path),
+                readiness.as_ref().unwrap().failed_path(&runtime)
+            );
+            assert!(sandbox.private_write_files_calls().len() <= 1);
+        } else {
+            drop(result.unwrap());
+            let staged = sandbox.write_files_calls();
+            let files = staged
+                .iter()
+                .flat_map(|batch| &batch.files)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                files.len(),
+                FRESH_DELIVERY_PER_RUN_LIMIT + usize::from(cache_state == "warm"),
+            );
+            assert!(files.iter().all(|file| file.content == archive));
+            if let Some(readiness) = readiness {
+                let mut published = sandbox
+                    .private_write_files_calls()
+                    .into_iter()
+                    .flat_map(|batch| batch.files)
+                    .map(|file| {
+                        assert!(file.content.is_empty());
+                        PathBuf::from(file.path)
+                    })
+                    .collect::<Vec<_>>();
+                published.sort();
+                let expected = (0..FRESH_DELIVERY_PER_RUN_LIMIT)
+                    .map(|index| readiness.ready_path(&runtime, index))
+                    .collect::<Vec<_>>();
+                assert_eq!(published, expected);
+            } else {
+                assert!(sandbox.storage_manifest_calls().is_empty());
+            }
+        }
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
+        );
+        for server in servers {
+            server.finish().await;
+        }
+        admission.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_failures() {
     assert_ready_input_lifecycle(false).await;
 }

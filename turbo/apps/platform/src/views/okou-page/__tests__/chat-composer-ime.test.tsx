@@ -12,10 +12,9 @@ import {
 } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockThread } = createChatComposerHelpers(context);
+const { mockThread } = createChatComposerHelpers(context);
 
 async function openComposer(): Promise<HTMLElement> {
-  mockAgent();
   mockThread();
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, [

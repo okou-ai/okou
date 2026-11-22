@@ -36,11 +36,6 @@ describe("new chat event member defaults", () => {
       type: "claude-code-oauth-token",
       secret: "bdd-member-defaults-claude-token",
     });
-    const { agentId } = await bdd.createAgent(actor, {
-      displayName: "Member without saved preferences",
-      description: "Uses absent preference defaults",
-      visibility: "private",
-    });
     // The membership entry initializes memory without creating Web preferences.
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
@@ -62,7 +57,6 @@ describe("new chat event member defaults", () => {
     expect(preference.body.updatedAt).toBeNull();
 
     const run = await sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "use missing member defaults",
     });
@@ -78,7 +72,7 @@ describe("new chat event member defaults", () => {
   it.each([true, false])(
     "captures saved model settings and cloud browser (%s), retaining them on continuation",
     async (enabled) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
       await misc.updatePreferences(
         actor,
         { cloudBrowserEnabledByDefault: enabled },
@@ -96,7 +90,6 @@ describe("new chat event member defaults", () => {
         [200],
       );
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "capture saved member defaults",
       });
       await expect(
@@ -126,7 +119,6 @@ describe("new chat event member defaults", () => {
         [200],
       );
       const continued = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "keep the thread snapshot",
       });
@@ -141,7 +133,6 @@ describe("new chat event member defaults", () => {
       });
 
       const next = await sendChatRun(actor, {
-        agentId,
         prompt: "observe the next member snapshot",
       });
       await expect(

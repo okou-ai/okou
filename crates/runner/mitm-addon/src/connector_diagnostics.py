@@ -430,8 +430,7 @@ def release_flow_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_OWNERSHIP_CANDIDATES, None)
     stream = flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_RESPONSE_STREAM, None)
     flow.metadata.pop(_CONNECTOR_DIAGNOSTIC_PROXY_ENTRY_LOGGED, None)
-    if stream is not None and flow.response and flow.response.stream is stream:
-        flow.response.stream = False
+    stream_capture.replace_owned_stream(flow.response, stream)
 
 
 def _active_firewall_names(sandbox_info: dict) -> set[str]:

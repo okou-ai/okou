@@ -6211,7 +6211,6 @@ describe("Browser user-action route", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         threadId: current.threadId,
         prompt: "Another message with a different event ID",
         clientEventId: randomUUID(),
@@ -6232,7 +6231,6 @@ describe("Browser user-action route", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         threadId: current.threadId,
         prompt: "Continue after password entry",
         clientEventId: created.body.action.callbackIds.success.clientEventId,
@@ -7343,7 +7341,6 @@ async function setupOwnedNativeFileBrowserScenario() {
   const actor = { ...owned.actor, orgId };
   return await owned.run(async () => {
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: owned.agentId,
       prompt: "Choose a local file for the website",
       cloudBrowserEnabled: true,
     });
@@ -7413,7 +7410,6 @@ async function createDispatchedChatRun(
   prompt: string,
 ) {
   const sent = await chat.sendAndLaunch(actor, {
-    agentId,
     prompt,
     cloudBrowserEnabled: true,
   });
@@ -7532,14 +7528,13 @@ describe("okou browser route", () => {
   it.each([true, false])(
     "applies the saved cloud browser preference (%s) to a new chat and its run permissions",
     async (enabled) => {
-      const { runs, chat, actor, agent } = await setupBrowserScenario();
+      const { runs, chat, actor } = await setupBrowserScenario();
       await createMiscRoutesApi(context).updatePreferences(
         actor,
         { cloudBrowserEnabledByDefault: enabled },
         [200],
       );
       const sent = await chat.sendAndLaunch(actor, {
-        agentId: agent.agentId,
         prompt: "Use my saved browser preference",
       });
       await expect(
@@ -7574,7 +7569,7 @@ describe("okou browser route", () => {
     "honors an explicit %s selection over saved Chat preferences",
     async (selection) => {
       const owned = await setupOwnedComputerBrowserScenario();
-      const { runs, chat, actor, agentId } = owned;
+      const { runs, chat, actor } = owned;
       await owned.run(() => {
         return createMiscRoutesApi(context).updatePreferences(
           actor,
@@ -7586,7 +7581,6 @@ describe("okou browser route", () => {
         selection === "computer use" ? await owned.startHost() : null;
       const sent = await owned.run(() => {
         return chat.sendAndLaunch(actor, {
-          agentId,
           prompt: "Use this chat's explicit computer selection",
           ...(selection === "disabled" || selection === "cloud browser"
             ? { cloudBrowserEnabled: selection === "cloud browser" }
@@ -7608,9 +7602,8 @@ describe("okou browser route", () => {
   );
 
   it("keeps managed browser access off when the user explicitly disables it", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
+    const { runs, chat, actor } = await setupBrowserScenario();
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "Try to open a managed browser without enabling it",
       cloudBrowserEnabled: false,
     });
@@ -7645,9 +7638,8 @@ describe("okou browser route", () => {
   });
 
   it("describes shared Browser tabs, login state and native input", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
+    const { runs, chat, actor } = await setupBrowserScenario();
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "Use this chat's shared Browser",
       cloudBrowserEnabled: true,
     });
@@ -7682,9 +7674,8 @@ describe("okou browser route", () => {
   });
 
   it("prioritizes native input when Browser access is enabled", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
+    const { runs, chat, actor } = await setupBrowserScenario();
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "Sign in to a website",
       cloudBrowserEnabled: true,
     });
@@ -7728,10 +7719,9 @@ describe("okou browser route", () => {
 
   it("disables cloud browser when a computer host is selected", async () => {
     const owned = await setupOwnedComputerBrowserScenario();
-    const { actor, agentId, chat } = owned;
+    const { actor, chat } = owned;
     const sent = await owned.run(() => {
       return chat.sendAndLaunch(actor, {
-        agentId,
         prompt: "Open a managed browser before selecting this computer",
         cloudBrowserEnabled: true,
       });
@@ -7767,11 +7757,10 @@ describe("okou browser route", () => {
 
   it("uses the configured app URL for browser authorization from run tokens", async () => {
     const owned = await setupOwnedComputerBrowserScenario();
-    const { chat, actor, agentId } = owned;
+    const { chat, actor } = owned;
     const routeMocks = createRouteMocks(context);
     const sent = await owned.run(() => {
       return chat.sendAndLaunch(actor, {
-        agentId,
         prompt: "Ask the user to enable a cloud browser",
         cloudBrowserEnabled: false,
       });
@@ -7870,11 +7859,10 @@ describe("okou browser route", () => {
     "does not disclose or apply browser authorization for %s",
     async (foreignScope) => {
       const owned = await setupOwnedComputerBrowserScenario();
-      const { chat, actor, agentId } = owned;
+      const { chat, actor } = owned;
       const routeMocks = createRouteMocks(context);
       const sent = await owned.run(() => {
         return chat.sendAndLaunch(actor, {
-          agentId,
           prompt: "Keep browser authorization within its owner scope",
           cloudBrowserEnabled: false,
         });
@@ -7961,11 +7949,10 @@ describe("okou browser route", () => {
 
   it("expires pending browser authorization at the inclusive one-hour boundary", async () => {
     const owned = await setupOwnedComputerBrowserScenario();
-    const { chat, actor, agentId } = owned;
+    const { chat, actor } = owned;
     const routeMocks = createRouteMocks(context);
     const sent = await owned.run(() => {
       return chat.sendAndLaunch(actor, {
-        agentId,
         prompt: "Let this browser authorization expire",
         cloudBrowserEnabled: false,
       });
@@ -8044,11 +8031,10 @@ describe("okou browser route", () => {
 
   it("preserves completion and ordered events when browser authorization is applied again", async () => {
     const owned = await setupOwnedComputerBrowserScenario();
-    const { chat, actor, agentId } = owned;
+    const { chat, actor } = owned;
     const routeMocks = createRouteMocks(context);
     const sent = await owned.run(() => {
       return chat.sendAndLaunch(actor, {
-        agentId,
         prompt: "Apply this browser authorization twice",
         cloudBrowserEnabled: false,
       });

@@ -1,7 +1,9 @@
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
+import {
+  ChatShareHeaderControls,
+  useChatShareRefresh,
+} from "./chat-share-selection-controls.tsx";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
@@ -9,12 +11,7 @@ import {
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
 import type { ReactNode } from "react";
-import {
-  useGet,
-  useSet,
-  useLastLoadable,
-  useLastResolved,
-} from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Share2, UserPlus } from "lucide-react";
 import type { RouteKey } from "../../signals/route-paths.ts";
@@ -30,13 +27,13 @@ import {
   ChatThreadSidebarPane,
   SettledChatThreadActions,
 } from "./chat-thread-page.tsx";
-import { currentChatAgent$ } from "../../signals/agent-chat.ts";
+
 import {
   currentLeftThread$,
   currentRightThread$,
 } from "../../signals/chat-page/chat-thread-panes.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import { AvatarFromUrl } from "./sidebar-shared.tsx";
+
 import { QueueDrawer } from "../queue-page/queue-drawer.tsx";
 import { sidebarOff$, isChatRoute } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
@@ -58,9 +55,9 @@ import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subsc
 import { CheckoutAbandonedSurveyDialog } from "./components/billing-survey.tsx";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
+import { MarkdownTableConnectionDialog } from "../components/markdown-table.tsx";
 import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
-import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
 import { paletteColorTheme$ } from "../../signals/theme.ts";
 import {
   SHEET_PANE_LEADING_CORNERS,
@@ -107,23 +104,6 @@ function ThreadComposerDialogsMount() {
         <ThreadComposerDialogs key={right.threadId} thread={right} />
       )}
     </>
-  );
-}
-
-function AgentAvatarInTopBar() {
-  const agent = useLastResolved(currentChatAgent$);
-  if (!agent) {
-    return (
-      <div className="h-6 w-6 shrink-0 rounded-full bg-muted" aria-hidden />
-    );
-  }
-  return (
-    <AvatarFromUrl
-      avatarUrl={agent.avatarUrl}
-      alt=""
-      className="h-6 w-6 shrink-0 rounded-full object-cover object-top"
-      data-testid="agent-avatar"
-    />
   );
 }
 
@@ -230,39 +210,14 @@ function MobileShareButtonLeaf() {
 }
 
 function MobileSharingOverlayInner({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
   const phase = useGet(thread.sharing.phase$);
-  const selectedCount = useGet(thread.sharing.selectedCount$);
-  const close = useSet(thread.sharing.close$);
-  const pageSignal = useGet(pageSignal$);
+  const refreshed = useChatShareRefresh();
   if (phase === "idle") {
     return null;
   }
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-between bg-background px-4">
-      <span className="text-sm font-medium text-foreground">
-        {t(
-          ($) => {
-            return $.chat.sharing.selectedCount;
-          },
-          { count: selectedCount },
-        )}
-      </span>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          detach(
-            close(pageSignal),
-            Reason.DomCallback,
-            "close shared thread selection",
-          );
-        }}
-      >
-        {t(($) => {
-          return $.chat.sharing.cancel;
-        })}
-      </Button>
+    <div className="absolute inset-0 z-20 flex items-center justify-between gap-2 bg-background px-4">
+      <ChatShareHeaderControls sharing={thread.sharing} refreshed={refreshed} />
     </div>
   );
 }
@@ -330,7 +285,6 @@ function MobileTopBar() {
         </div>
       ) : breadcrumb ? (
         <div className="flex-1 min-w-0 flex items-center gap-2 min-w-0">
-          {breadcrumb.avatarAgentId && <AgentAvatarInTopBar />}
           <div className="flex items-center gap-2 min-w-0">
             <div className="text-sm font-medium text-foreground flex items-center gap-1 min-w-0">
               {breadcrumb.sectionPath ? (
@@ -454,13 +408,8 @@ function SidebarWorkspace({
 }) {
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
-  const singleAgent = useLastResolved(singleAgentEnabled$);
-  const agentChatPage =
-    activeRoute === "agentChat" || (activeRoute === "home" && singleAgent);
 
-  if (activeRoute === "home" && singleAgent === undefined) {
-    return null;
-  }
+  const agentChatPage = activeRoute === "home";
 
   const workspaceHeader = (
     <>
@@ -538,7 +487,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const shellRef = useSet(threadSidebarLayoutRootRef$);
   const pwaNavigation = useGet(mobileChatViewport$);
 
-  return withChatScrollLayout(
+  return (
     <div
       ref={shellRef}
       data-slot="app-shell"
@@ -562,8 +511,9 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SubscriptionPurchaseConfirmDialog />
       <CheckoutAbandonedSurveyDialog />
       <AttachmentLightboxMount />
+      <MarkdownTableConnectionDialog />
       <SkillImportDialogMount />
-      <CreateAgentDialogContainer />
+
       <QueueDrawer />
       {/* Keep in-flight remote permission actions with the workspace owner. */}
       <ThreadComposerDialogsMount />
@@ -580,7 +530,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
           {children}
         </SidebarWorkspace>
       </WorkspaceSheet>
-    </div>,
+    </div>
   );
 }
 

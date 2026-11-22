@@ -13,10 +13,9 @@ import { findWebsiteTemplateItem } from "@okouai/core/website-template-items";
 import { i18n } from "../../i18n/index.ts";
 import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { defaultAgentId$ } from "../agent.ts";
+
 import { rootSignal$ } from "../root-signal.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import { redirectToConfiguredOnboarding$ } from "../okou-page/onboard-guard.ts";
 
 interface ResolvedGenerationTemplate {
   readonly template: GenerationTemplateRequest;
@@ -155,7 +154,7 @@ function promptRequestContent(
  * Lightweight prompt deep-link endpoint.
  *
  * This replaces the use-case-only `/onboarding?prompt=...` path once the
- * workspace/default agent already exists: consume the prompt exactly like the
+ * workspace already exists: consume the prompt exactly like the
  * onboarding "Try It" action and route into the new optimistic chat thread.
  */
 export const setupPromptPage$ = command(
@@ -195,13 +194,6 @@ export const setupPromptPage$ = command(
       return;
     }
 
-    const agentId = await get(defaultAgentId$);
-    signal.throwIfAborted();
-    if (!agentId) {
-      await set(redirectToConfiguredOnboarding$, params, signal);
-      return;
-    }
-
     const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const resolvedRequestedModel = catalog.resolve(requestedModel);
@@ -227,9 +219,8 @@ export const setupPromptPage$ = command(
     await set(
       sendNewThread$,
       {
-        agentId,
         prompt: prompt ?? "",
-        ...(draft ? { draft, preserveAgentDraft: true } : {}),
+        ...(draft ? { draft, preserveWorkspaceDraft: true } : {}),
         ...(handoff
           ? {
               onOptimisticSend: () => {

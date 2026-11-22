@@ -82,13 +82,11 @@ function missingIntent() {
 async function completedWorkflow(
   consumer: ReturnType<typeof marketingRewardConsumer>,
 ) {
-  const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
-  const { agentId } = await workflows.createAgent(actor, {
-    visibility: "public",
+  const { actor } = await workflows.setupWorkflowOrg({
+    tier: "team",
   });
   installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(actor, {
-    agentId,
     name: `settlement-${randomUUID().slice(0, 8)}`,
   });
   const executor = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });

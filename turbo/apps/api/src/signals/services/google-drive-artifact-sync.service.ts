@@ -22,11 +22,6 @@ import {
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  GOOGLE_SLIDES_MIME_TYPE,
-  convertsToGoogleSlides,
-} from "@okouai/core/google-slides-conversion";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
@@ -34,13 +29,9 @@ import {
   hostedDeployments,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
-import { agents } from "@okouai/db/schema/agent";
-import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { connectors } from "@okouai/db/schema/connector";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { ZipArchive } from "archiver";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   array,
   boolean,
@@ -96,7 +87,8 @@ import { resolveArtifactFileReference$ } from "./private-artifact-storage.servic
 import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import {
   ownedGoogleDriveArtifact$,
-  artifactGoogleDriveAccount$,
+  chatGoogleDriveAccount$,
+  type DriveConnectorAccountResolution,
 } from "./artifact-google-drive-authorization.service";
 
 const log = logger("api:google-drive-artifact-sync");
@@ -132,6 +124,13 @@ const workspaceImportErrorResponseSchema = zObject({
     details: array(driveErrorDetailSchema).optional(),
   }),
 });
+const conversionErrorResponseSchema = zObject({
+  error: zObject({
+    errors: array(zObject({ reason: string().optional() })).optional(),
+  }),
+});
+const UNSUPPORTED_CONVERSION_REASON = "conversionUnsupportedConversionPath";
+
 const driveErrorReasonSchema = zEnum([
   "authError",
   "badRequest",
@@ -144,6 +143,7 @@ const driveErrorReasonSchema = zEnum([
   "userRateLimitExceeded",
   "backendError",
   "notFound",
+  UNSUPPORTED_CONVERSION_REASON,
   "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
 ]);
 
@@ -166,25 +166,19 @@ interface DriveSyncStatusResult extends DriveSyncResult {
 type DriveStatusLookup =
   | {
       readonly type: "ready";
-      readonly connectionId?: string;
+      readonly connectionId: string;
       readonly syncedByKey: ReadonlyMap<string, DriveSyncStatusResult>;
     }
   | {
       readonly type: "disconnected";
-      readonly connectionId?: string;
       readonly recovery: ChatThreadArtifactGoogleDriveRecovery;
     }
-  | { readonly type: "unknown"; readonly connectionId?: string };
+  | { readonly type: "unknown"; readonly connectionId: string };
 
 interface ConnectorTokens {
   readonly accessToken: string;
   readonly connection: BuiltinConnectorCredentialConnection;
 }
-
-type DriveConnectorAccountResolution =
-  | { readonly type: "resolved"; readonly connectorId: string }
-  | { readonly type: "connect" }
-  | { readonly type: "unavailable" };
 
 type DriveConnectionLoadResult =
   | { readonly type: "ready"; readonly tokens: ConnectorTokens }
@@ -206,95 +200,6 @@ function escapeQuery(value: string): string {
   return value.replace(/\\/g, String.raw`\\`).replace(/'/g, String.raw`\'`);
 }
 
-const threadAllowsGoogleDriveArtifactSync$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly threadId: string;
-    },
-  ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const [authorization] = await db
-      .select({ id: userBuiltinConnectors.id })
-      .from(chatThreads)
-      .innerJoin(
-        userBuiltinConnectors,
-        and(
-          eq(userBuiltinConnectors.orgId, args.orgId),
-          eq(userBuiltinConnectors.userId, args.userId),
-          eq(userBuiltinConnectors.agentId, chatThreads.agentId),
-          eq(userBuiltinConnectors.connectorSlug, "google-drive"),
-        ),
-      )
-      .where(
-        and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    return authorization !== undefined;
-  },
-);
-
-const resolveDriveConnectorAccount$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly threadId: string;
-    },
-  ): Promise<DriveConnectorAccountResolution> => {
-    const db = set(writeDb$);
-    const [selection] = await db
-      .select({ connectorId: chatThreadConnectorSelections.connectorId })
-      .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-      )
-      .innerJoin(
-        chatThreadConnectorSelections,
-        and(
-          eq(chatThreadConnectorSelections.chatThreadId, chatThreads.id),
-          eq(chatThreadConnectorSelections.connectorSlug, "google-drive"),
-        ),
-      )
-      .where(
-        and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    const rows = await db
-      .select({ connectorId: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          eq(connectors.connectorSlug, "google-drive"),
-          isNull(connectors.customConnectorId),
-          selection
-            ? eq(connectors.id, selection.connectorId)
-            : eq(connectors.isDefault, true),
-        ),
-      )
-      .limit(2);
-    const [row] = rows;
-    if (rows.length === 1 && row) {
-      return { type: "resolved", connectorId: row.connectorId };
-    }
-    return !selection && rows.length === 0
-      ? { type: "connect" }
-      : { type: "unavailable" };
-  },
-);
-
 const loadDriveConnection$ = command(
   async (
     { set },
@@ -309,11 +214,7 @@ const loadDriveConnection$ = command(
     const resolution: DriveConnectorAccountResolution =
       "connectorId" in args
         ? { type: "resolved", connectorId: args.connectorId }
-        : await set(resolveDriveConnectorAccount$, {
-            orgId: args.orgId,
-            userId: args.userId,
-            threadId: args.threadId,
-          });
+        : await set(chatGoogleDriveAccount$, args, signal);
     signal.throwIfAborted();
     if (resolution.type !== "resolved") {
       return {
@@ -599,12 +500,10 @@ function resolveGoogleDriveArtifactSyncStatus(
     return { status: "disconnected", recovery: lookup.recovery };
   }
   if (lookup.type === "unknown") {
-    return { status: "unknown", accountReady: true };
+    return { status: "unknown" };
   }
   const synced = lookup.syncedByKey.get(artifactKey(runId, fileId));
-  return synced
-    ? { status: "synced", accountReady: true, ...synced }
-    : { status: "not_synced", accountReady: true };
+  return synced ? { status: "synced", ...synced } : { status: "not_synced" };
 }
 
 function googleDriveArtifactStatusFields(
@@ -612,10 +511,11 @@ function googleDriveArtifactStatusFields(
   source: DriveArtifactStatusSource,
 ) {
   const connectionId =
-    lookup.connectionId ??
-    (lookup.type === "disconnected" && "connectionId" in lookup.recovery
-      ? lookup.recovery.connectionId
-      : undefined);
+    lookup.type === "disconnected"
+      ? lookup.recovery.action === "reconnect"
+        ? lookup.recovery.connectionId
+        : undefined
+      : lookup.connectionId;
   return {
     ...(connectionId ? { googleDriveConnectionId: connectionId } : {}),
     googleDriveSync: resolveGoogleDriveArtifactSyncStatus(
@@ -738,19 +638,6 @@ export const googleDriveArtifactStatusLookup$ = command(
     signal.throwIfAborted();
     if (connection.type === "disconnected") {
       return connection;
-    }
-    const authorized = await set(threadAllowsGoogleDriveArtifactSync$, {
-      orgId: args.orgId,
-      userId: args.userId,
-      threadId: args.threadId,
-    });
-    signal.throwIfAborted();
-    if (!authorized) {
-      return {
-        type: "disconnected",
-        connectionId: connection.tokens.connection.connectorId,
-        recovery: { action: "authorize" },
-      };
     }
     const { tokens } = connection;
     // Schema-parse failure or transient network error is an unknown provider
@@ -1150,6 +1037,18 @@ type DriveUploadResult<T> =
   | { readonly type: "scope-required" }
   | BadRequestResponse;
 
+interface DriveUploadResponse {
+  readonly response: Response;
+  readonly phase: "upload_session" | "upload_content";
+  readonly attempt: "initial" | "after_refresh";
+}
+
+type DriveArtifactUploadResult =
+  | { readonly type: "ok"; readonly value: DriveUploadResponse }
+  | { readonly type: "unauthorized"; readonly failure?: DriveUploadResponse }
+  | { readonly type: "scope-required" }
+  | BadRequestResponse;
+
 async function findDriveFolder(
   args: {
     readonly accessToken: string;
@@ -1346,7 +1245,8 @@ async function uploadDriveFile(args: {
   readonly contentType: string;
   readonly targetMimeType?: string | undefined;
   readonly file: Buffer;
-}): Promise<Response | BadRequestResponse> {
+  readonly attempt: "initial" | "after_refresh";
+}): Promise<DriveUploadResponse | BadRequestResponse> {
   const metadata = JSON.stringify({
     name: args.filename,
     // Naming a Google editor type here is what asks Drive to convert; the
@@ -1399,7 +1299,11 @@ async function uploadDriveFile(args: {
     throw acceptedResponse4.error;
   }
   if (!session.ok) {
-    return session;
+    return {
+      response: session,
+      phase: "upload_session",
+      attempt: args.attempt,
+    };
   }
   const location = session.headers.get("location");
   if (!location) {
@@ -1408,7 +1312,7 @@ async function uploadDriveFile(args: {
 
   const body = new Uint8Array(args.file.byteLength);
   body.set(args.file);
-  return await (async () => {
+  const response = await (async () => {
     const acceptedResponse5 = await settle(
       accept(
         fetch(location, {
@@ -1437,13 +1341,18 @@ async function uploadDriveFile(args: {
     }
     return acceptedResponse5.value;
   })();
+  return {
+    response,
+    phase: "upload_content",
+    attempt: args.attempt,
+  };
 }
 
 // The Node adapter replaces global Response, but fetch keeps its native one.
 function isDriveUploadResponse(
-  response: Response | BadRequestResponse,
-): response is Response {
-  return "ok" in response && typeof response.ok === "boolean";
+  response: DriveUploadResponse | BadRequestResponse,
+): response is DriveUploadResponse {
+  return "response" in response && "phase" in response;
 }
 
 async function uploadArtifactWithToken(
@@ -1461,7 +1370,7 @@ async function uploadArtifactWithToken(
     readonly attempt: "initial" | "after_refresh";
   },
   signal: AbortSignal,
-): Promise<DriveUploadResult<Response>> {
+): Promise<DriveArtifactUploadResult> {
   const folder = await ensureArtifactFolder(
     {
       accessToken: args.accessToken,
@@ -1485,37 +1394,15 @@ async function uploadArtifactWithToken(
     contentType: args.contentType,
     targetMimeType: args.targetMimeType,
     file: args.file,
+    attempt: args.attempt,
   });
   if (!isDriveUploadResponse(response)) {
     return response;
   }
-  if (response.status === 401) {
-    return { type: "unauthorized" };
+  if (response.response.status === 401) {
+    return { type: "unauthorized", failure: response };
   }
   return { type: "ok", value: response };
-}
-
-const driveErrorResponseSchema = zObject({
-  error: zObject({
-    errors: array(zObject({ reason: string().optional() })).optional(),
-  }),
-});
-
-/** Drive's reason code when it cannot read the uploaded bytes at all. */
-const UNSUPPORTED_CONVERSION_REASON = "conversionUnsupportedConversionPath";
-
-async function isUnsupportedConversion(response: Response): Promise<boolean> {
-  const payload = await settle(response.clone().json());
-  if (!payload.ok) {
-    return false;
-  }
-  const parsed = driveErrorResponseSchema.safeParse(payload.value);
-  return (
-    parsed.success &&
-    (parsed.data.error.errors ?? []).some((entry) => {
-      return entry.reason === UNSUPPORTED_CONVERSION_REASON;
-    })
-  );
 }
 
 async function parseUploadResponse(
@@ -1651,10 +1538,6 @@ async function rejectEmptyConvertedDeck(
       : "Google Slides converted this presentation to an empty deck that could not be removed from Drive",
   );
 }
-
-type SlidesTargetResolution =
-  | { readonly kind: "target"; readonly mimeType: string | undefined }
-  | { readonly kind: "rejected"; readonly response: BadRequestResponse };
 
 async function readDriveErrorReasons(
   response: Response,
@@ -1826,39 +1709,15 @@ async function verifyWorkspaceImport(
   };
 }
 
-/** Decide whether this sync asks Drive for a Slides deck, and whether it can. */
-function resolveSlidesTarget(
-  content: ResolvedArtifactContent,
-  featureSwitchContext: FeatureSwitchContext,
-): SlidesTargetResolution {
-  const converts =
-    isFeatureEnabled(
-      FeatureSwitchKey.GoogleSlidesConversion,
-      featureSwitchContext,
-    ) && convertsToGoogleSlides(content.filename);
-  if (!converts) {
-    return { kind: "target", mimeType: undefined };
-  }
-  if (content.file.byteLength > GOOGLE_SLIDES_MAX_SOURCE_BYTES) {
-    return {
-      kind: "rejected",
-      response: badRequestMessage(
-        "This presentation is too large to convert to Google Slides",
-      ),
-    };
-  }
-  return { kind: "target", mimeType: GOOGLE_SLIDES_MIME_TYPE };
-}
-
-interface SyncArtifactArgs {
+type SyncArtifactArgs = {
   readonly orgId: string;
   readonly userId: string;
   readonly artifactId: string;
-  readonly agentId: string;
   readonly connectionId?: string;
-  readonly authorizedRunId?: string;
-  readonly mode?: GoogleDriveUploadMode;
-}
+  readonly mode: GoogleDriveUploadMode;
+  readonly chatThreadId: string;
+  readonly runId?: string;
+};
 
 interface ArtifactUploadSource {
   readonly threadId: string | null;
@@ -1869,7 +1728,7 @@ interface ArtifactUploadSource {
 
 interface DriveUploadAttempt {
   readonly accessToken: string;
-  readonly result: DriveUploadResult<Response>;
+  readonly result: DriveArtifactUploadResult;
 }
 
 /** Upload once, then retry under a refreshed token when Drive rejects it. */
@@ -1881,11 +1740,14 @@ const uploadArtifactRefreshingToken$ = command(
       readonly source: ArtifactUploadSource;
       readonly content: ResolvedArtifactContent;
       readonly featureSwitchContext: FeatureSwitchContext;
-      readonly targetMimeType: string | undefined;
+      readonly conversionTarget: GoogleWorkspaceTarget | undefined;
       readonly tokens: ConnectorTokens;
     },
     signal: AbortSignal,
   ): Promise<DriveUploadAttempt> => {
+    const targetMimeType = params.conversionTarget
+      ? GOOGLE_WORKSPACE_MIME_TYPES[params.conversionTarget]
+      : undefined;
     const upload = async (
       accessToken: string,
       attempt: "initial" | "after_refresh",
@@ -1896,7 +1758,7 @@ const uploadArtifactRefreshingToken$ = command(
           ...params.source,
           filename: params.content.filename,
           contentType: params.content.contentType,
-          targetMimeType: params.targetMimeType,
+          targetMimeType,
           pendingTextStyles: !!params.content.textStyles?.length,
           file: params.content.file,
           attempt,
@@ -1956,14 +1818,15 @@ type DriveScopeRequiredResponse = ReturnType<typeof driveScopeRequired>;
  *
  * Error mapping:
  *  - 404 "Artifact file not found" — no owned, ready artifact for the id.
- *  - 400 "Connect and authorize Google Drive for this agent before uploading
- *    artifacts" — no Agent grant or no matching connected account.
+ *  - 400 "Google Drive account is unavailable in this Chat" — no eligible
+ *    account for the Chat or the requested account is no longer selected.
  *  - 400 "Connect Google Drive before syncing artifacts" — the account
  *    needs reconnection or has no usable credentials.
  *  - 400 "This artifact file cannot be synced to Google Drive" — file
  *    location is missing or doesn't match a caller-owned artifact prefix.
  *  - 400 "Google Drive upload failed with HTTP <status>" — upload error
  *    after refresh-token retry exhausted.
+ *  - 403 `GOOGLE_DRIVE_SCOPE_REQUIRED` — exact-account consent is needed.
  *  - 200 with `{ id, name, webViewLink }`.
  */
 export const syncArtifactToGoogleDrive$ = command(
@@ -2000,11 +1863,15 @@ export const syncArtifactToGoogleDrive$ = command(
         return target;
       }
     }
-    const connectorId = await set(artifactGoogleDriveAccount$, args, signal);
+    const resolution = await set(
+      chatGoogleDriveAccount$,
+      { ...args, threadId: args.chatThreadId },
+      signal,
+    );
     signal.throwIfAborted();
-    if (!connectorId) {
+    if (resolution.type !== "resolved") {
       return badRequestMessage(
-        "Connect and authorize Google Drive for this agent before uploading artifacts",
+        "Google Drive account is unavailable in this Chat",
       );
     }
     const catalogDb = set(writeDb$);
@@ -2026,7 +1893,7 @@ export const syncArtifactToGoogleDrive$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        connectorId,
+        connectorId: resolution.connectorId,
         featureSwitchContext,
         snapshot,
       },
@@ -2071,23 +1938,15 @@ function resolveGoogleConversionTarget(
 function prepareDriveUpload(
   content: ResolvedArtifactContent,
   featureSwitchContext: FeatureSwitchContext,
-  mode: GoogleDriveUploadMode | undefined,
+  mode: GoogleDriveUploadMode,
 ):
   | BadRequestResponse
   | {
       readonly content: ResolvedArtifactContent;
-      readonly targetMimeType: string | undefined;
       readonly conversionTarget?: GoogleWorkspaceTarget;
     } {
   if (mode === "original") {
-    return { content, targetMimeType: undefined };
-  }
-  // Requests from cached clients keep the pre-existing Slides behavior.
-  if (mode === undefined) {
-    const slides = resolveSlidesTarget(content, featureSwitchContext);
-    return slides.kind === "rejected"
-      ? slides.response
-      : { content, targetMimeType: slides.mimeType };
+    return { content };
   }
   const target = resolveGoogleConversionTarget(
     content.filename,
@@ -2097,18 +1956,16 @@ function prepareDriveUpload(
     return target;
   }
   if (target === "presentation") {
-    const slides = resolveSlidesTarget(content, featureSwitchContext);
-    return slides.kind === "rejected"
-      ? slides.response
-      : { content, targetMimeType: slides.mimeType, conversionTarget: target };
+    if (content.file.byteLength > GOOGLE_SLIDES_MAX_SOURCE_BYTES) {
+      return badRequestMessage(
+        "This presentation is too large to convert to Google Slides",
+      );
+    }
+    return { content, conversionTarget: target };
   }
   const prepared = prepareGoogleWorkspaceImport(content, target);
   return prepared.ok
-    ? {
-        content: prepared,
-        targetMimeType: GOOGLE_WORKSPACE_MIME_TYPES[target],
-        conversionTarget: target,
-      }
+    ? { content: prepared, conversionTarget: target }
     : badRequestMessage(prepared.message);
 }
 
@@ -2231,11 +2088,48 @@ const reuseWorkspaceImport$ = command(
   },
 );
 
+async function logTerminalDriveUploadFailure(
+  upload: DriveUploadResponse,
+  signal: AbortSignal,
+): Promise<void> {
+  const providerReasons = await readDriveErrorReasons(upload.response, signal);
+  signal.throwIfAborted();
+  log.warn("Google Drive artifact upload failed", {
+    operation: "artifact_upload",
+    phase: upload.phase,
+    providerStatus: upload.response.status,
+    providerReasons,
+    attempt: upload.attempt,
+  });
+}
+
+async function isUnsupportedConversion(
+  response: Response,
+  signal: AbortSignal,
+): Promise<boolean> {
+  // The conversion decision retains its original full-body parser and uses the request lifetime.
+  const body = await settle(
+    readBoundedResponseText(response, Infinity, signal),
+    signal,
+  );
+  if (!body.ok || body.value.kind !== "text") {
+    return false;
+  }
+  const parsed = conversionErrorResponseSchema.safeParse(
+    safeJsonParse(body.value.text),
+  );
+  return (
+    parsed.success &&
+    (parsed.data.error.errors ?? []).some((entry) => {
+      return entry.reason === UNSUPPORTED_CONVERSION_REASON;
+    })
+  );
+}
+
 async function finishDriveUpload(
   args: {
-    readonly response: Response;
+    readonly upload: DriveUploadResponse;
     readonly accessToken: string;
-    readonly targetMimeType: string | undefined;
     readonly conversionTarget: GoogleWorkspaceTarget | undefined;
     readonly textStyles?: readonly SlidesTextStyle[];
   },
@@ -2243,17 +2137,28 @@ async function finishDriveUpload(
 ): Promise<
   BadRequestResponse | { readonly status: 200; readonly body: DriveSyncResult }
 > {
-  const { response, accessToken, targetMimeType, conversionTarget } = args;
-  if (
-    targetMimeType !== undefined &&
-    !response.ok &&
-    (await isUnsupportedConversion(response))
-  ) {
-    return badRequestMessage(
-      conversionTarget && conversionTarget !== "presentation"
-        ? "Google could not convert this document or spreadsheet"
-        : "Google Slides could not read this presentation",
-    );
+  const { upload, accessToken, conversionTarget } = args;
+  const { response } = upload;
+  if (!response.ok) {
+    // Conversion owns the original body when it needs the full provider error.
+    // Other failures give their only stream to the bounded diagnostics reader.
+    const diagnostics = conversionTarget ? response.clone() : response;
+    const [unsupportedConversion] = await Promise.all([
+      conversionTarget !== undefined &&
+        isUnsupportedConversion(response, signal),
+      logTerminalDriveUploadFailure(
+        { ...upload, response: diagnostics },
+        signal,
+      ),
+    ]);
+    signal.throwIfAborted();
+    if (unsupportedConversion) {
+      return badRequestMessage(
+        conversionTarget === "presentation"
+          ? "Google Slides could not read this presentation"
+          : "Google could not convert this document or spreadsheet",
+      );
+    }
   }
   let body = await parseUploadResponse(response);
   signal.throwIfAborted();
@@ -2276,7 +2181,7 @@ async function finishDriveUpload(
     }
     body = verified;
   }
-  if (targetMimeType === GOOGLE_SLIDES_MIME_TYPE) {
+  if (conversionTarget === "presentation") {
     const rejected = await rejectEmptyConvertedDeck(
       { accessToken, presentationId: body.id, discardInvalid: true },
       signal,
@@ -2379,7 +2284,7 @@ const uploadResolvedArtifact$ = command(
     if (isBadRequestResponse(plan)) {
       return plan;
     }
-    const { targetMimeType, conversionTarget } = plan;
+    const { conversionTarget } = plan;
     const previous = conversionTarget
       ? await set(
           reuseWorkspaceImport$,
@@ -2403,7 +2308,7 @@ const uploadResolvedArtifact$ = command(
     }
 
     let uploadContent = plan.content;
-    if (targetMimeType === GOOGLE_SLIDES_MIME_TYPE) {
+    if (conversionTarget === "presentation") {
       const prepared = await prepareGoogleSlidesImport(uploadContent, signal);
       signal.throwIfAborted();
       if (!prepared.ok) {
@@ -2428,7 +2333,7 @@ const uploadResolvedArtifact$ = command(
         },
         content: uploadContent,
         featureSwitchContext,
-        targetMimeType,
+        conversionTarget,
         tokens: previous?.tokens ?? tokens,
       },
       signal,
@@ -2440,6 +2345,10 @@ const uploadResolvedArtifact$ = command(
       return result;
     }
     if (result.type === "unauthorized") {
+      if (result.failure) {
+        await logTerminalDriveUploadFailure(result.failure, signal);
+      }
+      signal.throwIfAborted();
       return badRequestMessage("Google Drive upload failed with HTTP 401");
     }
     if (result.type === "scope-required") {
@@ -2448,9 +2357,8 @@ const uploadResolvedArtifact$ = command(
 
     return await finishDriveUpload(
       {
-        response: result.value,
+        upload: result.value,
         accessToken,
-        targetMimeType,
         conversionTarget,
         textStyles: uploadContent.textStyles,
       },

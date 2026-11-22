@@ -1,5 +1,4 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { compile } from "tailwindcss";
 import { expect, vi } from "vitest";
 
 import {
@@ -14,10 +13,6 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
-import {
   click,
   setupPage,
   queryAllByRoleFast,
@@ -30,21 +25,6 @@ import {
 
 export function createSidebarHelpers(context: TestContext) {
   return {
-    prepareDefaultAgent: (
-      targetContext = context,
-      avatarUrl: string | null = null,
-    ) => {
-      return prepareDefaultAgent(targetContext, avatarUrl);
-    },
-    prepareAgents: (targetContext = context) => {
-      return prepareAgents(targetContext);
-    },
-    prepareOverflowingPinnedAgents: (
-      targetContext = context,
-      supportAvatarUrl: string | null = null,
-    ) => {
-      return prepareOverflowingPinnedAgents(targetContext, supportAvatarUrl);
-    },
     mockChatThreadSnapshot: (
       threads: () => readonly SidebarThread[],
       activeThreadIds?: () => readonly string[],
@@ -57,12 +37,6 @@ export function createSidebarHelpers(context: TestContext) {
         activeThreadIds,
         remoteGate,
       );
-    },
-    mockUnreadAgents: (
-      unreadAgentIds: () => readonly string[],
-      onRequest?: () => void,
-    ) => {
-      return mockUnreadAgents(context, unreadAgentIds, onRequest);
     },
     mockSidebarThreadStory: (
       firstPageThreads: SidebarThread[],
@@ -85,9 +59,6 @@ export function createSidebarHelpers(context: TestContext) {
   };
 }
 
-export const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-export const RESEARCH_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
-export const SUPPORT_AGENT_ID = "c0000000-0000-4000-a000-000000000003";
 export const EXISTING_THREAD_ID = "b0000000-0000-4000-a000-000000000001";
 export const INCIDENT_THREAD_ID = "b0000000-0000-4000-a000-000000000002";
 export const AUTOMATION_THREAD_ID = "b0000000-0000-4000-a000-000000000003";
@@ -97,7 +68,7 @@ export const RESEARCH_THREAD_ID = "b0000000-0000-4000-a000-000000000005";
 export interface SidebarThread {
   readonly id: string;
   readonly title: string | null;
-  readonly agent: { readonly id: string; readonly avatarUrl: string | null };
+
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly pinnedAt?: string | null;
@@ -108,129 +79,6 @@ export interface SidebarThread {
   readonly sortAt?: string;
 }
 
-export function prepareDefaultAgent(
-  targetContext: TestContext,
-  avatarUrl: string | null = null,
-): void {
-  targetContext.mocks.data.agents([
-    {
-      agentId: AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Nova",
-      description: null,
-      sound: null,
-      avatarUrl,
-      visibility: "public",
-    },
-  ]);
-}
-
-export function prepareAgents(targetContext: TestContext): AgentResponse[] {
-  const agents: AgentResponse[] = [
-    {
-      isDefaultAgent: false,
-      agentId: AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Nova",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    },
-    {
-      isDefaultAgent: false,
-      agentId: RESEARCH_AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Research Agent",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    },
-    {
-      isDefaultAgent: false,
-      agentId: SUPPORT_AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Support Agent",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    },
-  ];
-  targetContext.mocks.data.agents(agents);
-  targetContext.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const displayNameById: Record<string, string> = {
-      [AGENT_ID]: "Nova",
-      [RESEARCH_AGENT_ID]: "Research Agent",
-      [SUPPORT_AGENT_ID]: "Support Agent",
-    };
-    return respond(200, {
-      isDefaultAgent: false,
-      agentId: params.id,
-      ownerId: "test-user-123",
-      description: null,
-      displayName: displayNameById[params.id] ?? null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    });
-  });
-  return agents;
-}
-
-const OVERFLOW_PINNED_AGENTS = [
-  {
-    agentId: "c0000000-0000-4000-a000-000000000004",
-    displayName: "Operations Agent",
-  },
-  {
-    agentId: "c0000000-0000-4000-a000-000000000005",
-    displayName: "Analytics Agent",
-  },
-  {
-    agentId: "c0000000-0000-4000-a000-000000000006",
-    displayName: "Billing Agent",
-  },
-] as const;
-
-/**
- * Pins five agents so the grid holds six cards plus Pin, which overflows the
- * five-column row and puts cards on both sides of the Pin button.
- */
-export function prepareOverflowingPinnedAgents(
-  targetContext: TestContext,
-  supportAvatarUrl: string | null = null,
-): string[] {
-  const agents = prepareAgents(targetContext);
-  const agentsWithAvatar = agents.map((agent) => {
-    return agent.agentId === SUPPORT_AGENT_ID
-      ? { ...agent, avatarUrl: supportAvatarUrl }
-      : agent;
-  });
-  const templateAgent = agents[1];
-  if (!templateAgent) {
-    throw new Error("Pinned-agent template is unavailable");
-  }
-  targetContext.mocks.data.agents([
-    ...agentsWithAvatar,
-    ...OVERFLOW_PINNED_AGENTS.map((agent) => {
-      return {
-        ...templateAgent,
-        agentId: agent.agentId,
-        displayName: agent.displayName,
-      };
-    }),
-  ]);
-  return [
-    RESEARCH_AGENT_ID,
-    SUPPORT_AGENT_ID,
-    ...OVERFLOW_PINNED_AGENTS.map((agent) => {
-      return agent.agentId;
-    }),
-  ];
-}
-
 export function createThread(
   id: string,
   title: string,
@@ -239,7 +87,7 @@ export function createThread(
   return {
     id,
     title,
-    agent: { id: AGENT_ID, avatarUrl: null },
+
     createdAt: "2026-03-10T00:00:00Z",
     updatedAt: "2026-03-10T00:00:00Z",
     pinnedAt: null,
@@ -254,7 +102,7 @@ function sidebarThreadSnapshot(
     chatThreads: threads.map((thread, index) => {
       return {
         id: thread.id,
-        agentId: thread.agent.id,
+
         title: thread.title,
         sortAt:
           thread.sortAt ??
@@ -301,7 +149,6 @@ export function mockChatThreadSnapshot(
   });
   targetContext.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: Object.fromEntries(
         activeThreadIds().map((threadId) => {
           return [threadId, "active" as const];
@@ -320,25 +167,6 @@ export function mockChatThreadSnapshot(
   });
   targetContext.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [] });
-  });
-}
-
-export function mockUnreadAgents(
-  context: TestContext,
-  unreadAgentIds: () => readonly string[],
-  onRequest: () => void = () => {},
-): void {
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    onRequest();
-    return respond(200, {
-      agents: Object.fromEntries(
-        unreadAgentIds().map((agentId) => {
-          return [agentId, "unread" as const];
-        }),
-      ),
-      threads: {},
-      unreadAt: {},
-    });
   });
 }
 
@@ -387,66 +215,10 @@ export function sidebar(): HTMLElement {
   return screen.getByTestId("chat-list-column");
 }
 
-export function pinnedAgentLink(
-  container: HTMLElement,
-  name: string,
-): HTMLAnchorElement {
-  const link = queryAllByRoleFast("link", container).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!(link instanceof HTMLAnchorElement)) {
-    throw new Error(`${name} pinned agent link not found`);
-  }
-  return link;
-}
-
 export function setupSidebarPage(
   options: Parameters<typeof setupPage>[0],
 ): Promise<void> {
   return setupPage(options);
-}
-
-export function pinnedAgentNames(container: HTMLElement): string[] {
-  return within(container)
-    .getAllByTestId("pinned-agent-card")
-    .map((card) => {
-      return card.textContent?.trim() ?? "";
-    });
-}
-
-/** Names of the given agents as the dialog lists them, in rendered order. */
-export function dialogAgentOrder(
-  dialog: HTMLElement,
-  names: readonly string[],
-): string[] {
-  return within(dialog)
-    .getAllByRole("option")
-    .map((option) => {
-      return names.find((name) => {
-        return option.textContent?.replace(/\s+/g, " ").trim().startsWith(name);
-      });
-    })
-    .filter((name): name is string => {
-      return name !== undefined;
-    });
-}
-
-export function commandItemByText(
-  container: HTMLElement,
-  text: string,
-): HTMLElement {
-  const item = within(container)
-    .getAllByRole("option")
-    .find((candidate) => {
-      return candidate.textContent
-        ?.replace(/\s+/g, " ")
-        .trim()
-        .startsWith(text);
-    });
-  if (!item) {
-    throw new Error(`${text} command item not found`);
-  }
-  return item;
 }
 
 /**
@@ -512,42 +284,6 @@ export function createDataTransferStub(
       };
     },
   } as unknown as DataTransferStub;
-}
-
-export async function renderTailwindUtilities(
-  signal: AbortSignal,
-  ...elements: readonly HTMLElement[]
-): Promise<void> {
-  const compiler = await compile(`
-    @theme {
-      --spacing: 0.25rem;
-    }
-    @tailwind utilities;
-  `);
-  const classNames = new Set<string>();
-  for (const element of elements) {
-    for (const candidate of [
-      element,
-      ...element.querySelectorAll<HTMLElement>("[class]"),
-    ]) {
-      for (const className of candidate.classList) {
-        classNames.add(className);
-      }
-    }
-  }
-  const styleElement = document.createElement("style");
-  styleElement.textContent = compiler
-    .build([...classNames])
-    .replaceAll("calc(var(--spacing) * 9)", "36px")
-    .replaceAll("calc(infinity * 1px)", "9999px");
-  document.head.append(styleElement);
-  signal.addEventListener(
-    "abort",
-    () => {
-      styleElement.remove();
-    },
-    { once: true },
-  );
 }
 
 /** Supplies explicit pixel geometry for title intent in layout-free happy-dom. */
@@ -626,18 +362,6 @@ export function visibleThreadTitles(
       .trim();
     return title && expected.has(title) ? [title] : [];
   });
-}
-
-export function agentRowByName(
-  container: HTMLElement,
-  name: string,
-): HTMLElement {
-  const text = within(container).getByText(name);
-  const row = text.closest(".group");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error(`${name} agent row not found`);
-  }
-  return row;
 }
 
 export function openThreadMenu(title: string): void {
@@ -782,7 +506,6 @@ export function mockLongSidebarHistory(
   context: TestContext,
   remoteGate?: Promise<void>,
 ): ChatThreadEventQueryResult {
-  prepareDefaultAgent(context);
   const overflowThreads = Array.from({ length: 23 }, (_, index) => {
     return createThread(
       `b3000000-0000-4000-a000-${String(index).padStart(12, "0")}`,

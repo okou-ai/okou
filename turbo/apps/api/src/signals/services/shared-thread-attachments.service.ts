@@ -12,11 +12,12 @@ import {
   buildFileUrlFromKey,
   sanitizeArtifactFilename,
 } from "../../lib/file-url";
-import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
+import type { PrivateArtifactRecord } from "./private-artifact-storage.service";
+import { resolveUploadedArtifact$ } from "./uploaded-artifact.service";
 import { copyPublicArtifactObject$ } from "../external/s3";
 
 export interface SharedThreadAttachmentCopy {
-  readonly isPrivate: boolean;
+  readonly privateRecord: PrivateArtifactRecord | null;
   readonly bucket: string;
   readonly sourceKey: string;
   readonly key: string;
@@ -35,8 +36,8 @@ const prepareSharedThreadAttachment$ = command(
     signal: AbortSignal,
   ): Promise<SharedThreadAttachmentCopy> => {
     const fileId = args.part.annotatedFileId ?? args.part.fileId;
-    const object = await set(
-      uploadedArtifactObject$,
+    const resolved = await set(
+      resolveUploadedArtifact$,
       {
         id: fileId,
         userId: args.userId,
@@ -45,17 +46,18 @@ const prepareSharedThreadAttachment$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!object) {
+    if (!resolved) {
       throw new Error(
         `Attachment is unavailable: ${args.part.filenameSnapshot}`,
       );
     }
+    const { object, privateRecord } = resolved;
     const filename = args.part.annotatedFileId
       ? annotatedImageFilename(args.part.filenameSnapshot)
       : args.part.filenameSnapshot;
     const key = `artifacts/shared-threads/${args.shareId}/${randomUUID()}-${sanitizeArtifactFilename(filename)}`;
     return {
-      isPrivate: object.isPrivate,
+      privateRecord,
       bucket: object.bucket,
       sourceKey: object.key,
       key,
@@ -114,7 +116,7 @@ export const publishSharedThreadAttachments$ = command(
     signal: AbortSignal,
   ) => {
     for (const copy of copies) {
-      if (copy.isPrivate) {
+      if (copy.privateRecord) {
         // The shared-thread policy snapshots these bytes in private storage.
         continue;
       }

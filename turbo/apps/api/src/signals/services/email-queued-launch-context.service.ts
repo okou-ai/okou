@@ -7,7 +7,6 @@ import {
 } from "@okouai/db/schema/email-integration";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -19,17 +18,16 @@ import type { EmailDeliveryTarget } from "./email-chat-callback-payload";
 import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
-export const loadEmailQueuedLaunchMaterial$ = command(
-  async (
-    { get },
-    args: {
-      readonly eventId: string;
-      readonly chatThreadId: string;
-      readonly orgId: string;
-      readonly userId: string;
-      readonly featureSwitchContext: FeatureSwitchContext;
-    },
-  ) => {
+interface EmailQueuedSource {
+  readonly eventId: string;
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly featureSwitchContext: FeatureSwitchContext;
+}
+
+function createEmailQueuedContext(args: EmailQueuedSource) {
+  return computed(async (get) => {
     if (
       !isFeatureEnabled(
         FeatureSwitchKey.EmailIntegration,
@@ -43,7 +41,6 @@ export const loadEmailQueuedLaunchMaterial$ = command(
         messageText: chatEmailContext.messageText,
         emailMessageId: chatEmailContext.emailMessageId,
         userLinkId: emailUserLinks.id,
-        agentId: agents.id,
         emailAddress: emailUserLinks.emailAddress,
         subject: emailChannelMessages.subject,
         messageId: emailChannelMessages.messageId,
@@ -68,11 +65,8 @@ export const loadEmailQueuedLaunchMaterial$ = command(
         and(
           eq(chatThreads.id, chatEvents.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
       )
       .innerJoin(
         emailUserLinks,
@@ -91,6 +85,30 @@ export const loadEmailQueuedLaunchMaterial$ = command(
         ),
       )
       .limit(1);
+    return row ?? null;
+  });
+}
+
+function emailDeliveryFromContext(
+  row: EmailDeliveryTarget,
+): EmailDeliveryTarget {
+  return {
+    emailMessageId: row.emailMessageId,
+    userLinkId: row.userLinkId,
+  };
+}
+
+export function createEmailQueuedDelivery(args: EmailQueuedSource) {
+  const context$ = createEmailQueuedContext(args);
+  return computed(async (get) => {
+    const context = await get(context$);
+    return context ? emailDeliveryFromContext(context) : null;
+  });
+}
+
+export const loadEmailQueuedLaunchMaterial$ = command(
+  async ({ get }, args: EmailQueuedSource) => {
+    const row = await get(createEmailQueuedContext(args));
     if (!row) {
       return null;
     }
@@ -112,11 +130,7 @@ export const loadEmailQueuedLaunchMaterial$ = command(
           featureSwitchContext: args.featureSwitchContext,
         }),
       ),
-      emailDelivery: {
-        emailMessageId: row.emailMessageId,
-        userLinkId: row.userLinkId,
-        agentId: row.agentId,
-      } satisfies EmailDeliveryTarget,
+      emailDelivery: emailDeliveryFromContext(row),
       userInfoExtras: {},
     };
   },
@@ -140,7 +154,6 @@ export function createEmailThreadContext(
         messageText: chatEmailContext.messageText,
         emailMessageId: chatEmailContext.emailMessageId,
         userLinkId: emailUserLinks.id,
-        agentId: agents.id,
         emailAddress: emailUserLinks.emailAddress,
         subject: emailChannelMessages.subject,
         messageId: emailChannelMessages.messageId,
@@ -167,11 +180,8 @@ export function createEmailThreadContext(
         and(
           eq(chatThreads.id, chatEmailContext.chatThreadId),
           eq(chatThreads.userId, event.userId),
+          eq(chatThreads.orgId, orgId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, orgId)),
       )
       .where(
         and(

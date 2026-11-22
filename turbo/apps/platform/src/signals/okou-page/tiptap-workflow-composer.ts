@@ -48,8 +48,6 @@ import { VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS } from "@okouai/api-contra
 import type { VoiceIoEditorContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
-import { agents$ } from "../agent.ts";
-import { currentChatAgentRecordId$ } from "../agent-chat.ts";
 import {
   createRecentWorkflowIds,
   createWorkflowQuerySnapshot,
@@ -71,16 +69,6 @@ import {
   type ComposerChatThreadSuggestion,
 } from "./chat-thread-suggestion-domain.ts";
 import {
-  splitAgentMentionSegments,
-  type ComposerAgentSuggestion,
-} from "./composer-agent-suggestion-domain.ts";
-import {
-  agentMentionText,
-  createAgentMentionAvatarRuntime,
-  createAgentMentionNode,
-  type AgentMentionAvatarRuntime,
-} from "./composer-agent-mention-node.ts";
-import {
   createComposerChatThreadSuggestions,
   type ComposerChatThreadSuggestionResult,
 } from "./composer-chat-thread-suggestions.ts";
@@ -93,7 +81,6 @@ import {
 import { createWorkflowTokenMatcher } from "@okouai/core/workflow-slash-token";
 import {
   PROJECT_MENTION_NODE_NAME,
-  AGENT_MENTION_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
   draftToEditorDoc,
@@ -106,12 +93,10 @@ import type { OpenTemplatePickerDialogCommand } from "./chat-composer.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import { i18n } from "../../i18n/index.ts";
 
-type AgentIdValue = string | null | Promise<string | null>;
 type WorkflowNamesSyncCommand = Command<
   Promise<void>,
   [AbortSignal, AbortSignal]
 >;
-type AgentMentionAvatarsSyncCommand = Command<Promise<void>, [AbortSignal]>;
 
 interface ComposerWorkflowNames {
   readonly sync$: WorkflowNamesSyncCommand;
@@ -250,7 +235,6 @@ export interface WorkflowComposerSignals {
   readonly chatThreadSuggestions$: Computed<
     Promise<ComposerChatThreadSuggestionResult>
   >;
-  readonly agentId$: Computed<Promise<string | null>>;
   readonly loadWorkflows$: Command<
     Promise<readonly ComposerWorkflow[]>,
     [AbortSignal]
@@ -285,7 +269,6 @@ export interface WorkflowComposerSignals {
   /** Drops the typed `/token` for a row that does not insert one itself. */
   readonly clearSlashRange$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
-  readonly insertAgent$: Command<void, [ComposerAgentSuggestion]>;
   readonly insertChatThread$: Command<void, [ComposerChatThreadSuggestion]>;
   readonly insertPromptMarkdown$: Command<void, [string]>;
   readonly insertUserMessage$: Command<void, [UserMessageDocument]>;
@@ -340,20 +323,12 @@ export interface ComposerTemplateAttachment {
   readonly previewImageUrl?: string;
 }
 
-function createComposerAgentResources<T extends AgentIdValue>(
+function createComposerWorkflowResources(
   editor: Editor,
-  agentIdSource$: Computed<T>,
   hasInput$: Computed<boolean>,
 ) {
-  const agentId$ = computed(async (get): Promise<string | null> => {
-    return await get(agentIdSource$);
-  });
-  const resources = createComposerWorkflows(agentId$);
-  const sync$ = createSyncWorkflowNamesCommand(
-    editor,
-    agentId$,
-    resources.load$,
-  );
+  const resources = createComposerWorkflows();
+  const sync$ = createSyncWorkflowNamesCommand(editor, resources.load$);
   const syncForInput$ = command(
     ({ get, set }, mountSignal: AbortSignal): void => {
       if (!get(hasInput$) || get(resources.needsLoad$)) {
@@ -367,7 +342,6 @@ function createComposerAgentResources<T extends AgentIdValue>(
   );
   const workflowNames: ComposerWorkflowNames = { sync$, syncForInput$ };
   return {
-    agentId$,
     workflowNames,
     mountWorkflows$: resources.mount$,
     loadWorkflows$: resources.load$,
@@ -651,21 +625,19 @@ function createComposerIcon(
   return icon;
 }
 
-interface FeedbackQuoteChip {
-  readonly quoteDom: HTMLDivElement;
-  readonly quoteText: HTMLSpanElement;
-  readonly removeButton: HTMLButtonElement;
-}
-
-function createFeedbackQuoteChip(): FeedbackQuoteChip {
+function buildFeedbackItemChrome(
+  quote: string,
+  onRemove?: () => void,
+): HTMLElement {
   const quoteDom = document.createElement("div");
   quoteDom.className = "flex";
   quoteDom.contentEditable = "false";
   const quoteChip = document.createElement("div");
   quoteChip.className =
     "inline-flex h-8 max-w-full items-center gap-2 rounded-lg border " +
-    "border-border/80 bg-background/90 pl-1.5 pr-1 text-foreground " +
-    "shadow-[0_1px_2px_rgba(15,23,42,0.05)]";
+    "border-border/80 bg-background/90 pl-1.5 text-foreground " +
+    "shadow-[0_1px_2px_rgba(15,23,42,0.05)] " +
+    (onRemove ? "pr-1" : "pr-2");
   const quoteIconContainer = document.createElement("span");
   quoteIconContainer.className =
     "flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted";
@@ -677,19 +649,30 @@ function createFeedbackQuoteChip(): FeedbackQuoteChip {
   quoteIconContainer.append(quoteIcon);
   const quoteText = document.createElement("span");
   quoteText.className = "min-w-0 truncate text-xs font-medium";
-  const removeButton = document.createElement("button");
-  removeButton.type = "button";
-  removeButton.className =
-    "flex h-6 w-6 shrink-0 items-center justify-center rounded-md " +
-    "text-muted-foreground/70 transition-colors hover:bg-muted " +
-    "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 " +
-    "focus-visible:ring-ring";
-  removeButton.append(
-    createComposerIcon(14, 1.8, ["M18 6l-12 12", "M6 6l12 12"]),
-  );
-  quoteChip.append(quoteIconContainer, quoteText, removeButton);
+  quoteText.textContent = quote;
+  quoteChip.append(quoteIconContainer, quoteText);
+  if (onRemove) {
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className =
+      "flex h-6 w-6 shrink-0 items-center justify-center rounded-md " +
+      "text-muted-foreground/70 transition-colors hover:bg-muted " +
+      "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 " +
+      "focus-visible:ring-ring";
+    removeButton.append(
+      createComposerIcon(14, 1.8, ["M18 6l-12 12", "M6 6l12 12"]),
+    );
+    removeButton.setAttribute(
+      "aria-label",
+      i18n.t(($) => {
+        return $.chat.feedback.remove;
+      }),
+    );
+    removeButton.addEventListener("click", onRemove);
+    quoteChip.append(removeButton);
+  }
   quoteDom.append(quoteChip);
-  return { quoteDom, quoteText, removeButton };
+  return quoteDom;
 }
 
 /**
@@ -756,20 +739,6 @@ function createFeedbackItemNodeView(
   };
 }
 
-function buildFeedbackItemChrome(
-  quote: string,
-  onRemove: () => void,
-): HTMLElement {
-  const { quoteDom, quoteText, removeButton } = createFeedbackQuoteChip();
-  quoteText.textContent = quote;
-  const removeLabel = i18n.t(($) => {
-    return $.chat.feedback.remove;
-  });
-  removeButton.setAttribute("aria-label", removeLabel);
-  removeButton.addEventListener("click", onRemove);
-  return quoteDom;
-}
-
 // Rendered through ::before so an empty note never gains or loses real DOM
 // nodes: the placeholder text lives in an attribute and appears via CSS.
 const FEEDBACK_PLACEHOLDER_PARAGRAPH_CLASS =
@@ -798,9 +767,11 @@ function buildFeedbackChromeDecorations(
         () => {
           return buildFeedbackItemChrome(
             suggestionContext?.titleSnapshot ?? quote,
-            () => {
-              runtime.removeFeedback(feedbackId);
-            },
+            suggestionContext
+              ? undefined
+              : () => {
+                  runtime.removeFeedback(feedbackId);
+                },
           );
         },
         {
@@ -1441,26 +1412,14 @@ function removeTemplateAttachmentNode(editor: Editor): void {
   editor.view.dispatch(transaction.scrollIntoView());
 }
 
-function agentMentionInlineContent(value: string): JSONContent[] {
-  return splitAgentMentionSegments(value).map((segment): JSONContent => {
-    return segment.type === "text"
-      ? { type: "text", text: segment.text }
-      : {
-          type: AGENT_MENTION_NODE_NAME,
-          attrs: {
-            agentId: segment.agentId,
-            name: segment.name,
-            avatarUrl: null,
-          },
-        };
-  });
-}
-
 function composerInlineReferenceContent(line: string): JSONContent[] {
   const content: JSONContent[] = [];
   for (const segment of splitChatThreadMentionSegments(line)) {
     if (segment.type === "text") {
-      content.push(...agentMentionInlineContent(segment.text));
+      content.push({
+        type: "text",
+        text: segment.text,
+      });
       continue;
     }
     content.push({
@@ -1483,9 +1442,6 @@ function valueToWorkflowComposerDoc(value: string): JSONContent {
 function composerLeafText(node: ProseMirrorNode): string {
   if (node.type.name === PROJECT_MENTION_NODE_NAME) {
     return projectMentionText(node);
-  }
-  if (node.type.name === AGENT_MENTION_NODE_NAME) {
-    return agentMentionText(node);
   }
   if (node.type.name === CHAT_THREAD_MENTION_NODE_NAME) {
     return chatThreadMentionText(node);
@@ -1851,10 +1807,7 @@ function createFeedbackItemNode(
   });
 }
 
-function createWorkflowEditor(
-  runtime: WorkflowComposerRuntime,
-  agentMentionAvatarRuntime: AgentMentionAvatarRuntime,
-): Editor {
+function createWorkflowEditor(runtime: WorkflowComposerRuntime): Editor {
   const editor = new Editor({
     element: null,
     extensions: [
@@ -1863,10 +1816,6 @@ function createWorkflowEditor(
       createInlineTemplateNode(runtime),
       createFeedbackItemNode(runtime),
       createProjectMentionNode(),
-      createAgentMentionNode(
-        COMPOSER_INLINE_REFERENCE_CLASS,
-        agentMentionAvatarRuntime,
-      ),
       ChatThreadMentionNode,
       WorkflowHighlight,
       UrlHighlight,
@@ -2053,13 +2002,12 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
 
 function createSyncWorkflowNamesCommand(
   editor: Editor,
-  agentId$: Computed<Promise<string | null>>,
   loadWorkflows$: Command<Promise<readonly ComposerWorkflow[]>, [AbortSignal]>,
 ): WorkflowNamesSyncCommand {
   const resetWorkflowNamesSyncSignal$ = resetSignal();
   return command(
     async (
-      { get, set },
+      { set },
       mountSignal: AbortSignal,
       signal: AbortSignal,
     ): Promise<void> => {
@@ -2077,33 +2025,19 @@ function createSyncWorkflowNamesCommand(
         mountSignal,
         signal,
       );
-      const [agentId, workflows] = await Promise.all([
-        get(agentId$),
-        set(loadWorkflows$, mountSignal),
-      ]);
+      const workflows = await set(loadWorkflows$, mountSignal);
       signal.throwIfAborted();
       if (syncSignal.aborted) {
         return;
       }
-      const workflowNames = buildComposerSlashWorkflows({
-        agentId,
-        workflows,
-      }).map((workflow) => {
-        return workflow.name;
-      });
+      const workflowNames = buildComposerSlashWorkflows(workflows).map(
+        (workflow) => {
+          return workflow.name;
+        },
+      );
       applyWorkflowNames(editor, workflowNames);
     },
   );
-}
-
-function createSyncAgentMentionAvatarsCommand(
-  avatarRuntime: AgentMentionAvatarRuntime,
-): AgentMentionAvatarsSyncCommand {
-  return command(async ({ get }, signal: AbortSignal): Promise<void> => {
-    const agents = await get(agents$);
-    signal.throwIfAborted();
-    avatarRuntime.replaceAgents(agents);
-  });
 }
 
 interface ComposerCompositionQuery {
@@ -2387,7 +2321,6 @@ interface MountEditorOptions {
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
   workflowNames: ComposerWorkflowNames;
-  syncAgentMentionAvatars$: AgentMentionAvatarsSyncCommand;
   autoFocus: boolean;
 }
 
@@ -2543,7 +2476,6 @@ function createMountEditorCommand({
   feedback,
   compositionGate,
   workflowNames,
-  syncAgentMentionAvatars$,
   autoFocus,
 }: MountEditorOptions) {
   const removeFeedback$ = createRemoveFeedbackCommand(editor, draft, feedback);
@@ -2654,7 +2586,6 @@ function createMountEditorCommand({
       await Promise.all([
         mountingWorkflows,
         set(workflowNames.sync$, signal, signal),
-        set(syncAgentMentionAvatars$, signal),
       ]);
     }),
   );
@@ -2715,43 +2646,6 @@ function createClearSlashRangeCommand(
   });
 }
 
-function createInsertAgentCommand(
-  editor: Editor,
-  activeRange$: Computed<ChatThreadSuggestionRange | null>,
-) {
-  return command(({ get }, agent: ComposerAgentSuggestion) => {
-    const range = get(activeRange$);
-    if (!range) {
-      return;
-    }
-    const textblock = activeTextblock(editor);
-    if (!textblock) {
-      return;
-    }
-    const head = editor.state.selection.head;
-    const from = head - (range.end - range.start);
-    const content: JSONContent[] = [
-      {
-        type: AGENT_MENTION_NODE_NAME,
-        attrs: {
-          agentId: agent.id,
-          name: agent.name,
-          avatarUrl: agent.avatarUrl,
-        },
-      },
-    ];
-    if (!textblock.value.slice(range.end).startsWith(" ")) {
-      content.push({ type: "text", text: " " });
-    }
-    editor
-      .chain()
-      .focus()
-      .insertContentAt({ from, to: head }, content)
-      .setTextSelection(from + 2)
-      .run();
-  });
-}
-
 function createInsertChatThreadCommand(
   editor: Editor,
   activeRange$: Computed<ChatThreadSuggestionRange | null>,
@@ -2799,7 +2693,6 @@ function createSuggestionInsertionCommands(
   return {
     clearSlashRange$: createClearSlashRangeCommand(editor, activeSlashRange$),
     insertWorkflow$: createInsertWorkflowCommand(editor, activeSlashRange$),
-    insertAgent$: createInsertAgentCommand(editor, activeMentionRange$),
     insertChatThread$: createInsertChatThreadCommand(
       editor,
       activeMentionRange$,
@@ -2813,13 +2706,6 @@ function createInsertTextCommands(editor: Editor) {
     const { from, to } = selection;
     const limit = VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS;
     const leafText = (node: ProseMirrorNode): string => {
-      if (node.type.name === AGENT_MENTION_NODE_NAME) {
-        const name: unknown = node.attrs.name;
-        if (typeof name !== "string") {
-          throw new Error("Agent mention name is invalid");
-        }
-        return `@${name}`;
-      }
       if (node.type.name === CHAT_THREAD_MENTION_NODE_NAME) {
         return `@${chatThreadMentionAttributes(node).title}`;
       }
@@ -3149,7 +3035,6 @@ function createInsertUserMessageCommand(editor: Editor) {
       return (
         part.type === "text" ||
         part.type === "chat_thread" ||
-        part.type === "agent" ||
         part.type === "feedback" ||
         part.type === "template"
       );
@@ -3497,12 +3382,9 @@ function createSlashExpansionSignals(
   };
 }
 
-export function createWorkflowComposerSignals<
-  T extends AgentIdValue = Promise<string | null>,
->(
+export function createWorkflowComposerSignals(
   draft: DraftSignals,
   openDialog$: OpenTemplatePickerDialogCommand,
-  agentIdSource$: Computed<T> = currentChatAgentRecordId$ as Computed<T>,
   options: WorkflowComposerOptions = {},
   feedback: ComposerFeedbackModel = createComposerFeedbackModel(),
 ): WorkflowComposerSignals {
@@ -3517,12 +3399,11 @@ export function createWorkflowComposerSignals<
   const runtime = createWorkflowComposerRuntime(
     composerFeedbackPlaceholder(options.feedbackPlaceholder),
   );
-  const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const compositionGate = createCompositionGate();
-  const editor = createWorkflowEditor(runtime, agentMentionAvatarRuntime);
+  const editor = createWorkflowEditor(runtime);
   connectComposerFeedback(feedback, editor);
-  const { agentId$, workflowNames, mountWorkflows$, loadWorkflows$ } =
-    createComposerAgentResources(editor, agentIdSource$, draft.hasInput$);
+  const { workflowNames, mountWorkflows$, loadWorkflows$ } =
+    createComposerWorkflowResources(editor, draft.hasInput$);
   const templates = createTemplateSignals(editor, draft, openDialog$);
   const activeSlashRange$ = createActiveSlashRange(
     editor,
@@ -3570,9 +3451,6 @@ export function createWorkflowComposerSignals<
     feedback,
     compositionGate,
     workflowNames,
-    syncAgentMentionAvatars$: createSyncAgentMentionAvatarsCommand(
-      agentMentionAvatarRuntime,
-    ),
     autoFocus: options.autoFocus ?? false,
   });
   return {
@@ -3590,9 +3468,7 @@ export function createWorkflowComposerSignals<
     activeChatThreadSuggestionRange$,
     chatThreadSuggestions$: createComposerChatThreadSuggestions(
       activeChatThreadSuggestionRange$,
-      agentId$,
     ),
-    agentId$,
     loadWorkflows$,
     queryWorkflows$: querySnapshot.workflows$,
     recentWorkflowIds$: createRecentWorkflowIds(querySnapshot.range$),

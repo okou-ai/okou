@@ -2,12 +2,18 @@ import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { FolderInput, FolderOutput } from "lucide-react";
 import { Tooltip, TooltipContent } from "@okouai/ui";
-import { projectThreadDragHint$ } from "../../signals/projects/project-thread-drag.ts";
+import {
+  draggingProjectThread$,
+  projectThreadDragHint$,
+  projectThreadDropTargetId$,
+} from "../../signals/projects/project-thread-drag.ts";
 
 export function ProjectThreadDragHint() {
   const { t } = useTranslation();
+  const dragging = useGet(draggingProjectThread$);
+  const targetId = useGet(projectThreadDropTargetId$);
   const hint = useGet(projectThreadDragHint$);
-  if (!hint) {
+  if (!dragging || !hint || hint.projectId !== targetId) {
     return null;
   }
   return (

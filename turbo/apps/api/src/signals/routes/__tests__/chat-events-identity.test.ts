@@ -90,18 +90,17 @@ async function readThreadComputerUseHostId(
 }
 
 describe("CHAT-02: default assistant identity", () => {
-  it("keeps the default name as Okou through queued runs without renaming custom agents", async () => {
+  it("uses the fixed Okou identity on immediate, queued and historical threads", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const { actor } = await entitledNativeChatActor();
     bdd.acceptAgentStorageWrites();
-    const onboarding = await bdd.readOnboardingStatus(actor);
-    const defaultAgentId = onboarding.defaultAgentId;
+    const onboardingAgentId = await bdd.readDefaultAgentId(actor);
+    const defaultAgentId = onboardingAgentId;
     if (!defaultAgentId) {
       throw new Error("Expected the system default agent to exist");
     }
 
     const anchor = await sendChatRun(actor, {
-      agentId: defaultAgentId,
       prompt: "start an Okou run",
     });
     const anchorRun = await api.executionInput(anchor.runId);
@@ -118,7 +117,6 @@ describe("CHAT-02: default assistant identity", () => {
     const queued = await chat.requestSendEvent(
       actor,
       {
-        agentId: defaultAgentId,
         threadId: anchor.threadId,
         prompt: "continue the Okou run",
         clientEventId: queuedEventId,
@@ -175,18 +173,19 @@ describe("CHAT-02: default assistant identity", () => {
     await cancelChatRun(actor, promoted.runId);
 
     mockEnv("APP_URL", "https://preview.example.test");
-    const customAgent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Nova",
       visibility: "private",
     });
+    const legacyThread = await chat.createThread(actor, {});
     const customRun = await sendChatRun(actor, {
-      agentId: customAgent.agentId,
+      threadId: legacyThread.id,
       prompt: "keep my custom name",
     });
     const customPrompt = (await api.executionInput(customRun.runId))
       .appendSystemPrompt;
-    expect(customPrompt).toContain("Your name is Nova.");
-    expect(customPrompt).not.toContain("Your name is Okou.");
+    expect(customPrompt).not.toContain("Your name is Nova.");
+    expect(customPrompt).toContain("Your name is Okou.");
     const customExecution = await runExecution(customRun.runId);
     await expectRunAppContext({
       actor,
@@ -202,7 +201,7 @@ describe("CHAT-02: default assistant identity", () => {
 describe("CHAT-02: run-scoped agent-token chat launches", () => {
   it("preserves the caller's run annotation on immediate and queued handoffs", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     await owned.run(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       if (!actor.orgId) {
@@ -210,7 +209,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       }
 
       const caller = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "launch chat work from this run",
       });
       const callerExecution = await owned.runExecution(caller.runId);
@@ -223,7 +221,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const createdThread = await accept(
         chatThreadsClient().create({
           headers: { authorization: `Bearer ${okouToken}` },
-          body: { agentId, title: "Run-scoped handoff" },
+          body: { title: "Run-scoped handoff" },
         }),
         [201],
       );
@@ -231,7 +229,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const immediateSend = await requestSendEventWithBearer(
         okouToken,
         {
-          agentId,
           clientEventId: immediateEventId,
           threadId: createdThread.body.id,
           prompt: "immediate run-scoped handoff",
@@ -274,8 +271,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
           userMessage: expect.objectContaining({
             parts: expect.arrayContaining([
               expect.objectContaining({
-                type: "source",
-                kind: "agent",
+                type: "chat_thread",
                 runId: caller.runId,
               }),
             ]),
@@ -287,7 +283,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const queued = await requestSendEventWithBearer(
         okouToken,
         {
-          agentId,
           clientEventId: queuedEventId,
           threadId: createdThread.body.id,
           prompt: "queued run-scoped handoff",
@@ -332,8 +327,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       });
       expect(promoted.userMessage.parts).toContainEqual(
         expect.objectContaining({
-          type: "source",
-          kind: "agent",
+          type: "chat_thread",
           runId: caller.runId,
         }),
       );
@@ -354,7 +348,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         clockTime: now,
         beforeWorkspaceCleanup: hosts.cleanup,
       });
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       await owned.run(() => {
         return api.updateUserModelPreference(actor, "claude-fable-5-1");
       });
@@ -367,7 +361,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       // granted token can create write commands on the host, while an
       // ungranted token cannot. Chat messaging remains available independently.
       const plain = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "no computer use selected",
       });
       const plainExecution = await owned.runExecution(plain.runId);
@@ -383,7 +376,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       const nestedSend = await owned.requestSendEventWithBearer(
         plainToken,
         {
-          agentId,
           clientEventId: nestedEventId,
           threadId: plain.threadId,
           prompt: "run tokens can send chat messages",
@@ -396,7 +388,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
           chatEventsClient().send({
             headers: { authorization: `Bearer ${plainToken}` },
             body: {
-              agentId,
               threadId: plain.threadId,
               revokesEventId: nestedEventId,
               clientEventId: randomUUID(),
@@ -412,7 +403,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       // Selecting an online host pins it to the thread and grants the run
       // token computer-use write access on that host.
       const granted = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "open the remote browser",
         computerUseHostId: hostId,
       });
@@ -444,7 +434,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
 
       // Follow-up sends without the field stay granted via the sticky host.
       const sticky = await owned.sendChatRun(actor, {
-        agentId,
         threadId: granted.threadId,
         prompt: "keep using the same host",
       });
@@ -469,7 +458,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       // An explicit null clears the sticky host: the next run on the same
       // thread is no longer granted.
       const cleared = await owned.sendChatRun(actor, {
-        agentId,
         threadId: granted.threadId,
         prompt: "drop the host",
         computerUseHostId: null,
@@ -494,7 +482,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
 
       mockNow(now() + 91_000);
       const staleGranted = await owned.sendChatRun(actor, {
-        agentId,
         threadId: granted.threadId,
         prompt: "use the computer after it went offline",
         computerUseHostId: hostId,
@@ -606,19 +593,14 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       await run(() => {
         return api.ensurePersonalSubscriptionModel(actor);
       });
-      bdd.acceptAgentStorageWrites();
-      const agent = await run(() => {
-        return bdd.createAgent(actor, {
-          displayName: "Computer-use guard agent",
-        });
+      await run(() => {
+        return api.grantProEntitlement(actor);
       });
-      const agentId = agent.agentId;
 
       const unknownHost = await run(() => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "use an unknown host",
             computerUseHostId: randomUUID(),
           },
@@ -638,7 +620,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "pin the durable host before stopping it",
             computerUseHostId: installed.hostId,
           },
@@ -661,7 +642,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             threadId: installedPinned.body.threadId,
             prompt: "use a stopped durable host",
             computerUseHostId: installed.hostId,
@@ -681,7 +661,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "pin a host for a later sticky send",
             computerUseHostId: survivor.hostId,
           },
@@ -700,7 +679,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "use a stale host",
             computerUseHostId: survivor.hostId,
           },
@@ -714,7 +692,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             threadId: survivorThread.body.threadId,
             prompt: "send while the sticky host is stale",
           },

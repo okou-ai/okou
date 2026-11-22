@@ -220,7 +220,9 @@ mod read;
 mod wire;
 
 pub use error::ProtocolError;
-pub use frame::{BorrowedRawMessage, DecodeWithError, Decoder, RawMessage, encode};
+pub use frame::{
+    BorrowedRawMessage, DecodeWithError, Decoder, IncompleteFrame, RawMessage, encode,
+};
 pub use payloads::empty::decode_empty_payload;
 pub use payloads::error::{decode_error, encode_error};
 pub use payloads::exec_operation::{
@@ -228,10 +230,10 @@ pub use payloads::exec_operation::{
     DecodedExecStart, DecodedExecStarted, EXEC_CONTROL_MAX_PAYLOAD_BYTES, EXEC_CONTROL_NONCE_LEN,
     ExecAgentReadyTiming, ExecCapturedOutput, ExecControlNonce, ExecControlPolicy,
     ExecControlStatus, ExecLifecyclePolicy, ExecOutputPolicy, ExecOutputStream, ExecProcessRole,
-    ExecStartEncodeRequest, ExecTermination, ExecTimeoutPolicy, MAX_EXEC_STDIN_BYTES,
-    decode_exec_agent_ready, decode_exec_cancel, decode_exec_control, decode_exec_control_result,
-    decode_exec_output, decode_exec_result, decode_exec_start, decode_exec_started,
-    encode_exec_agent_ready, encode_exec_cancel, encode_exec_control,
+    ExecStartEncodeRequest, ExecStreamLimits, ExecTermination, ExecTimeoutPolicy,
+    MAX_EXEC_STDIN_BYTES, decode_exec_agent_ready, decode_exec_cancel, decode_exec_control,
+    decode_exec_control_result, decode_exec_output, decode_exec_result, decode_exec_start,
+    decode_exec_started, encode_exec_agent_ready, encode_exec_cancel, encode_exec_control,
     encode_exec_control_frame_into, encode_exec_control_result, encode_exec_output,
     encode_exec_output_frame_into, encode_exec_result, encode_exec_result_frame_into,
     encode_exec_start, encode_exec_start_with_expected_exit_codes, encode_exec_started,
@@ -279,12 +281,12 @@ pub use payloads::memory_snapshot::{
     MEMORY_SNAPSHOT_PAYLOAD_SIZE, MemorySnapshot, decode_memory_snapshot,
 };
 pub use payloads::write_file::{
-    WriteFileBatchEntry, decode_write_file, decode_write_file_result, decode_write_files,
-    decode_write_files_result, encode_private_write_file, encode_private_write_file_frame_into,
-    encode_private_write_files_frame_into, encode_write_file, encode_write_file_frame_into,
-    encode_write_file_result, encode_write_files, encode_write_files_frame_into,
-    encode_write_files_result, validate_private_write_file, validate_write_file,
-    validate_write_files,
+    WriteFileBatchEntry, WriteFilesFrame, decode_write_file, decode_write_file_result,
+    decode_write_files, decode_write_files_result, encode_private_write_file,
+    encode_private_write_file_frame_into, encode_private_write_files_frame_into, encode_write_file,
+    encode_write_file_frame_into, encode_write_file_result, encode_write_files,
+    encode_write_files_frame_into, encode_write_files_frame_parts, encode_write_files_result,
+    validate_private_write_file, validate_write_file, validate_write_files,
 };
 pub use wire::{
     EXEC_CAPTURED_OUTPUT_FLAG_TRUNCATED, EXEC_FLAG_SUDO, EXEC_OUTPUT_FLAG_TRUNCATED, HEADER_SIZE,

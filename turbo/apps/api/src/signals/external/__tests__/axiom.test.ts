@@ -25,10 +25,7 @@ import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { completePublicClaudeRun } from "../../routes/__tests__/helpers/public-native-run";
 import { createDeferredPromise } from "../../utils";
-import {
-  recordBillingOperationTimings,
-  recordMcpClientNameLookup,
-} from "../sandbox-op-log";
+import { recordBillingOperationTimings } from "../sandbox-op-log";
 
 const context = testContext();
 const timingOwnerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
@@ -55,7 +52,6 @@ describe("shared SDK ingestion", () => {
     // the run through public endpoints and keep route tests on HTTP outcomes.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "measure rootfs and home independently",
     });
     const { execution } = await owned.runExecution(runId);
@@ -157,43 +153,6 @@ describe("shared SDK ingestion", () => {
     });
   });
 
-  it("records ID-free MCP name-lookup timings through the API operation interface", async () => {
-    // Telemetry-client suite exception: this event has no API read endpoint.
-    await recordMcpClientNameLookup({
-      outcome: "validated",
-      fetchInvoked: true,
-      startedAt: performance.now(),
-    });
-    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-      "vm0-sandbox-op-log-dev",
-      [
-        {
-          _time: expect.any(String),
-          source: "api",
-          op_type: "mcp_client_display_name_lookup",
-          operation_domain: "api",
-          duration_ms: expect.any(Number),
-          success: true,
-          lookup_outcome: "validated",
-          fetch_invoked: true,
-        },
-      ],
-    );
-  });
-
-  it("contains even an abort-shaped MCP timing sink error", async () => {
-    context.mocks.axiom.sdkIngest.mockImplementation(() => {
-      throw new DOMException("Telemetry rejected", "AbortError");
-    });
-    await expect(
-      recordMcpClientNameLookup({
-        outcome: "caller_cancelled",
-        fetchInvoked: true,
-        startedAt: performance.now(),
-      }),
-    ).resolves.toBeUndefined();
-  });
-
   it("emits ID-free billing timings through the existing operation dataset", () => {
     // Telemetry-client suite exception: no API read endpoint exposes this event.
     recordBillingOperationTimings([
@@ -280,7 +239,6 @@ describe("shared SDK ingestion", () => {
     // exposes it. Use the real webhook to cover validation and projection.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "check archive startup",
     });
     const { execution } = await owned.runExecution(runId);
@@ -383,7 +341,6 @@ describe("shared SDK ingestion", () => {
     // its validated, allowlisted SDK ingest payload is this suite's boundary.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "observe archive staging",
     });
     const { execution } = await owned.runExecution(runId);
@@ -503,7 +460,6 @@ describe("shared SDK ingestion", () => {
     // validation and field projection remain part of this transport contract.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "measure storage batch application",
     });
     const { execution } = await owned.runExecution(runId);

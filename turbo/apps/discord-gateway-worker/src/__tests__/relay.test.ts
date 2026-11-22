@@ -15,35 +15,80 @@ import {
 import { createRelayPhases } from "./relay-phases";
 
 describe("Discord Gateway relay", () => {
-  it("authenticates management and keeps a disabled relay stopped", async () => {
-    const relay = await createRelay({ DISCORD_GATEWAY_ENABLED: "false" });
-
-    expect((await relay.request("/health", null)).status).toBe(401);
-    expect((await relay.request("/start", GATEWAY_SECRET)).status).toBe(401);
-    expect((await relay.request("/start")).status).toBe(409);
-    const health = await relay.request("/health");
-    expect(health.headers.get("Cache-Control")).toBe("no-store");
-    expect(await health.json()).toEqual({
-      enabled: false,
-      running: false,
-      connected: false,
-      resumable: false,
-      connection: {
-        stage: "stopped",
-        stageStartedAt: expect.any(Number),
-        httpStatus: null,
-        lastFailure: null,
-        failures: 0,
-        reconnectAt: null,
+  describe("disabled at startup", () => {
+    const managementTest = it.extend(
+      "disabledRelay",
+      async ({ onTestFailed, signal }) => {
+        const { elapsedMs, phases, wait } = createRelayPhases(signal);
+        onTestFailed(() => {
+          console.error("Discord relay management failure", {
+            elapsedMs: elapsedMs(),
+            phases,
+          });
+        });
+        const relay = await wait("create disabled relay fixture", () => {
+          return createRelay({ DISCORD_GATEWAY_ENABLED: "false" });
+        });
+        return { relay, wait };
       },
-      pending: 0,
-      deadLettered: 0,
-      deliveryFailures: 0,
-      oldestPendingAgeMs: null,
-      fatal: null,
+    );
+
+    managementTest.beforeEach(async ({ disabledRelay: { relay, wait } }) => {
+      // The first dispatchFetch would otherwise await the cold workerd start
+      // inside the management requests' test deadline.
+      await wait("wait for workerd readiness", () => {
+        return relay.ready();
+      });
     });
-    expect(relay.opened).toEqual([]);
-    expect(relay.forwarded).toEqual([]);
+
+    managementTest(
+      "authenticates management and keeps a disabled relay stopped",
+      async ({ disabledRelay: { relay, wait } }) => {
+        const unauthenticatedHealth = await wait(
+          "unauthenticated health",
+          () => {
+            return relay.request("/health", null);
+          },
+        );
+        expect(unauthenticatedHealth.status).toBe(401);
+        const wrongTokenStart = await wait("start with delivery secret", () => {
+          return relay.request("/start", GATEWAY_SECRET);
+        });
+        expect(wrongTokenStart.status).toBe(401);
+        const start = await wait("authenticated disabled start", () => {
+          return relay.request("/start");
+        });
+        expect(start.status).toBe(409);
+        const health = await wait("authenticated health", () => {
+          return relay.request("/health");
+        });
+        expect(health.headers.get("Cache-Control")).toBe("no-store");
+        const state = await wait("decode health response", () => {
+          return health.json();
+        });
+        expect(state).toEqual({
+          enabled: false,
+          running: false,
+          connected: false,
+          resumable: false,
+          connection: {
+            stage: "stopped",
+            stageStartedAt: expect.any(Number),
+            httpStatus: null,
+            lastFailure: null,
+            failures: 0,
+            reconnectAt: null,
+          },
+          pending: 0,
+          deadLettered: 0,
+          deliveryFailures: 0,
+          oldestPendingAgeMs: null,
+          fatal: null,
+        });
+        expect(relay.opened).toEqual([]);
+        expect(relay.forwarded).toEqual([]);
+      },
+    );
   });
 
   it("identifies with least-privileged intents and signs the unchanged event", async () => {

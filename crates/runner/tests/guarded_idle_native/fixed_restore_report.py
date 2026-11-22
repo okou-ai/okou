@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Validate original fixed-restore uncertainty; never convert it to saving proof."""
-import argparse
-import json
-import pathlib
 
 import guest_preparation_report as preparation
+import report
 
 PHASES = preparation.PHASES
 LEASE = preparation.LEASE
@@ -20,6 +18,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    print(json.dumps(validate(parser.parse_args().directory), indent=2, sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)

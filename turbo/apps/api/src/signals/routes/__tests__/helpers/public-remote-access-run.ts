@@ -90,7 +90,6 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
-    await bdd.readOnboardingStatus(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Remote access lifecycle Agent",
       visibility: "public",
@@ -111,8 +110,8 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     } else {
       const workflows = createWorkflowsBddApi(context);
       const workflowId = await workflows.createWorkflow(actor, {
-        agentId: agent.agentId,
         name: `remote-access-${randomUUID().slice(0, 8)}`,
+        visibility: "private",
         instruction: "Use the owner's currently authorized remote hosts.",
       });
       const automationApi = setupApp({
@@ -298,9 +297,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
         }
       }
       await flushWaitUntilForTest();
-      if (state.agentId) {
-        await createBddApi(context).deleteAgent(state.actor, state.agentId);
-      }
+
       await flushWaitUntilForTest();
     }
   }

@@ -1,6 +1,5 @@
 import {
   bigint,
-  boolean,
   check,
   foreignKey,
   index,
@@ -13,8 +12,8 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { StoredConnectorAccountMutation } from "@okouai/db/jsonb-contracts/connector-account-mutation";
 
+import type { StoredConnectorAccountMutation } from "@okouai/db/jsonb-contracts/connector-account-mutation";
 import { orgCustomConnectors } from "./org-custom-connector";
 import { connectors } from "./connector";
 
@@ -52,8 +51,6 @@ export const connectorOauthStates = pgTable(
     authMethod: varchar("auth_method", { length: 50 }).notNull(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    agentId: uuid("agent_id"),
-    authorizeAgent: boolean("authorize_agent").default(false).notNull(),
     redirectUri: text("redirect_uri").notNull(),
     authorizationUrl: text("authorization_url"),
     oauthRequestedScopes: text("oauth_requested_scopes"),

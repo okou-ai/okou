@@ -26,10 +26,9 @@ const {
 
 describe("CHAT-02: queueing and recalling messages", () => {
   it("steers rich inputs one at a time and settles concurrent declarations once", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "anchor durable active input delivery",
     });
     const execution = await runExecution(active.runId);
@@ -40,7 +39,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "first durable steer",
         clientEventId: firstEventId,
@@ -50,7 +48,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "second durable steer",
         clientEventId: secondEventId,
@@ -189,10 +186,9 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("steers a message into the running sandbox run by its source event id", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "run that receives a steer",
     });
     const execution = await runExecution(active.runId);
@@ -200,7 +196,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "steer into the running run",
         clientEventId: steerEventId,
@@ -255,10 +250,9 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("releases unconfirmed prompts before draining in FIFO order", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "finalize an unconfirmed delivery",
     });
     const execution = await runExecution(active.runId);
@@ -266,7 +260,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "released queue head",
         clientEventId: releasedEventId,
@@ -283,7 +276,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     const later = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "later queue input",
         clientEventId: laterEventId,
@@ -326,7 +318,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         revokesEventId: laterEventId,
       },
@@ -340,10 +331,9 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("applies the control payload limit without consuming an oversized prompt", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "validate durable delivery payload limit",
     });
     const execution = await runExecution(active.runId);
@@ -359,7 +349,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "x".repeat(
           ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES - emptyDeliveryPayloadBytes,
@@ -396,7 +385,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         prompt: "x".repeat(
           ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES -
@@ -421,7 +409,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: active.threadId,
         revokesEventId: oversizedEventId,
       },
@@ -431,10 +418,9 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("queues, retries, and recalls messages behind an active run", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "anchor active run",
     });
 
@@ -442,7 +428,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     const queued = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         prompt: "queued behind the active run",
         clientEventId: queuedId,
@@ -456,7 +441,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     const queuedRetry = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         prompt: "queued behind the active run",
         clientEventId: queuedId,
@@ -475,16 +459,13 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
     // Another user's send cannot claim the queued message's client id: the
     // conflicting insert is accepted as a duplicate and appends nothing.
-    const { actor: stranger, agentId: strangerAgentId } =
-      await entitledNativeChatActor();
+    const { actor: stranger } = await entitledNativeChatActor();
     const strangerThread = await chat.createThread(stranger, {
-      agentId: strangerAgentId,
       title: "Cross-user conflict thread",
     });
     const crossUser = await chat.requestSendEvent(
       stranger,
       {
-        agentId: strangerAgentId,
         threadId: strangerThread.id,
         prompt: "cross-user retry",
         clientEventId: queuedId,
@@ -502,7 +483,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     expect(strangerMessages.events).toStrictEqual([]);
 
     const strangerRun = await sendChatRun(stranger, {
-      agentId: strangerAgentId,
       threadId: strangerThread.id,
       prompt: "first accepted event after the rejected id",
     });
@@ -518,7 +498,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     const recalled = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         revokesEventId: queuedId,
         clientEventId: randomUUID(),
@@ -532,7 +511,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     const repeatedRecall = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         revokesEventId: queuedId,
         clientEventId: randomUUID(),
@@ -554,7 +532,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     const rejectedRecall = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         revokesEventId: associated.id,
         clientEventId: randomUUID(),
@@ -571,17 +548,15 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("keeps a queued message when recall targets another owned thread", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "cross-thread recall anchor",
     });
     const queuedMessageId = randomUUID();
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "must remain queued in the original thread",
         clientEventId: queuedMessageId,
@@ -590,13 +565,11 @@ describe("CHAT-02: queueing and recalling messages", () => {
     );
 
     const otherThread = await chat.createThread(actor, {
-      agentId,
       title: "Cross-thread recall target",
     });
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: otherThread.id,
         revokesEventId: queuedMessageId,
         clientEventId: randomUUID(),

@@ -11,7 +11,6 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { memberMemories } from "@okouai/db/schema/member-memory";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -20,8 +19,7 @@ import { clerk$, createClerkReadContext } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { visibleWorkflowCondition } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 
 function identifiers(
   rows: readonly { readonly metadata: Record<string, unknown> }[],
@@ -55,12 +53,6 @@ function requireAll(
 }
 
 function exportPageResourceIds(rows: Parameters<typeof identifiers>[0]) {
-  const agentIds = identifiers(
-    rows.filter((row) => {
-      return row.metadata.sourceKind === "agent";
-    }),
-    "agentId",
-  );
   const workflowIds = identifiers(rows, "workflowId");
   const threadIds = identifiers(rows, "threadId");
   const memoryIds = identifiers(
@@ -76,7 +68,6 @@ function exportPageResourceIds(rows: Parameters<typeof identifiers>[0]) {
     "orgId",
   );
   return {
-    agentIds,
     workflowIds,
     threadIds,
     memoryIds,
@@ -121,13 +112,9 @@ export const authorizeUserExportPage$ = command(
     ) {
       throw new Error("Only Memory export entries may reference a storage ID");
     }
-    const { agentIds, workflowIds, threadIds, memoryIds, instructionOrgIds } =
+    const { workflowIds, threadIds, memoryIds, instructionOrgIds } =
       exportPageResourceIds(rows);
-    if (
-      agentIds.length > 0 ||
-      workflowIds.length > 0 ||
-      instructionOrgIds.length > 0
-    ) {
+    if (workflowIds.length > 0 || instructionOrgIds.length > 0) {
       const memberships = await listAllUserOrganizationMemberships(
         get(clerk$).users,
         userId,
@@ -152,30 +139,15 @@ export const authorizeUserExportPage$ = command(
         signal.throwIfAborted();
         requireAll(owned, instructionOrgIds);
       }
-      if (agentIds.length > 0) {
-        const visible = await db
-          .select({ id: agents.id })
-          .from(agents)
-          .where(
-            and(
-              inArray(agents.id, agentIds),
-              inArray(agents.orgId, orgIds),
-              visibleJoinedAgentCondition(userId),
-            ),
-          );
-        signal.throwIfAborted();
-        requireAll(visible, agentIds);
-      }
       if (workflowIds.length > 0) {
         const visible = await db
           .select({ id: workflows.id })
           .from(workflows)
-          .innerJoin(agents, eq(agents.id, workflows.agentId))
           .where(
             and(
               inArray(workflows.id, workflowIds),
               inArray(workflows.orgId, orgIds),
-              visibleWorkflowCondition({ userId, role: "member" }),
+              visibleWorkflowCondition(userId),
             ),
           );
         signal.throwIfAborted();
@@ -282,39 +254,21 @@ function userExportPublicationChecks(
       )
       .getSQL(),
   });
-  const agentIds = authorityIds(args, ["agent"], "agentId");
-  checks.push({
-    expected: agentIds.getSQL(),
-    readable: db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          inArray(agents.id, agentIds),
-          inArray(agents.orgId, args.orgIds),
-          visibleJoinedAgentCondition(args.userId),
-        ),
-      )
-      .orderBy(asc(agents.id))
-      .for("share")
-      .getSQL(),
-  });
   const workflowIds = authorityIds(args, ["workflow"], "workflowId");
   checks.push({
     expected: workflowIds.getSQL(),
     readable: db
       .select({ id: workflows.id })
       .from(workflows)
-      .innerJoin(agents, eq(agents.id, workflows.agentId))
       .where(
         and(
           inArray(workflows.id, workflowIds),
           inArray(workflows.orgId, args.orgIds),
-          visibleWorkflowCondition({ userId: args.userId, role: "member" }),
+          visibleWorkflowCondition(args.userId),
         ),
       )
       .orderBy(asc(workflows.id))
-      .for("share", { of: [workflows, agents] })
+      .for("share", { of: workflows })
       .getSQL(),
   });
   const threadIds = authorityIds(
@@ -354,7 +308,12 @@ function userExportPublicationChecks(
 export function userExportPublicationAuthoritySql(
   args: PublicationAuthority,
 ): SQL {
-  let authority = sql`select true as authorized`;
+  let authority = sql`select not exists (
+    select 1 from ${userExportEntries}
+    where ${userExportEntries.jobId} = ${args.jobId}
+      and ${userExportEntries.metadata}->>'sourceKind' not in
+        ('instructions', 'workflow', 'memory', 'chat-thread', 'chat-snapshot', 'chat-tail', 'discord')
+  ) as authorized`;
   for (const check of userExportPublicationChecks(args)) {
     // CASE retains the resource-lock order and stops at the first rejection.
     authority = sql`select case when previous.authorized then

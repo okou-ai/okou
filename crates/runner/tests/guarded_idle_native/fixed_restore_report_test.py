@@ -15,22 +15,13 @@ import cleanup_report as cleanup
 import fixed_restore_report as fixed
 import report
 import report_test
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class FixedRestoreReportTests(unittest.TestCase):
     def setUp(self):
         report_test.NativeReportTests.setUp(self, cases={"FixedRestore-capture-drop-fresh"})
-        gib = 1024**3
-        self.policy = {
-            "host_total_bytes": 64*gib, "operating_floor_bytes": gib,
-            "cleanup_reserve_bytes": 256*1024**2, "critical_available_bytes": 12*gib,
-            "recovery_available_bytes": 20*gib, "live_growth_bytes": 4*1024**2,
-            "tail_growth_bytes": 65*1024**2, "replacement_preparation_bytes": 32*1024**2,
-            "max_sample_age_millis": 1000, "max_operations": 8, "max_cleanup_inflight": 2,
-            "pressure_sample_period_millis": 50, "pressure_recovery_sustain_millis": 100,
-            "pressure_wave_cooldown_millis": 100, "pressure_optional_start_interval_millis": 100,
-            "pressure_max_wave_entries": 1,
-        }
+        self.policy = report_test.pressure_policy_fixture()
         raw=json.dumps(self.policy)
         self.artifacts["policy_sha256"]=hashlib.sha256(raw.encode()).hexdigest()
         self.collector["metadata"]["native_fixed_restore_policy_json"]=raw
@@ -68,11 +59,8 @@ class FixedRestoreReportTests(unittest.TestCase):
         self.request=wire(0x1a,struct.pack(">IQIBH",300000,10,5500000,2,3)+b"UTC"+bytes(range(256)))
         self.response=wire(0x1b,bytes(5)+struct.pack(">I",3)+b"\x01\0"+bytes(4)+b"\x01\0"+bytes(4)+bytes(2))
         physical={"path":self.session_path,"bytes":len(self.original),"sha256":hashlib.sha256(self.original).hexdigest(),"raw_hex":self.original.hex()}
-        heartbeat={"receipt":{"received_ns":at(16),"acknowledgement_status":204,
-            "state":{"runnerId":self.runner,"snapshotGeneration":1,"snapshotSequence":1,
-                "group":"native-foreground","mode":"running","allocatedVcpu":2,
-                "allocatedMemoryMb":4096,"heldSandboxStates":[]}},
-            "send_joined":True,"completed_ns":at(17)}
+        heartbeat = foreground_heartbeat(self.runner, 1, at(16), at(17), (2, 4096))
+        heartbeat["receipt"]["state"]["heldSandboxStates"] = []
         self.values=[
             {"history_run_id":self.history,"thread_id":self.thread,"history_hex":self.original.hex(),
              "history_sha256":hashlib.sha256(self.original).hexdigest(),"history_bytes":len(self.original),
@@ -85,7 +73,7 @@ class FixedRestoreReportTests(unittest.TestCase):
             {"lost_ns":at(8),"observer_unwound":False,"state":"Uncertain","commit_refused":True,"repark_refused":True,
              "incoming_refused":True,"original_metadata_preserved":True,"pool_empty":True,"original_exit_polled_pending":True}|fixed.LEASE,
             {"pool_held_ns":at(10),"status_held_ns":at(11),"heartbeat_pending_ns":at(12),
-             "observer":{"started_ns":at(13),"completed_ns":at(14),"available_bytes":32*1024**3,"age_ns":2,"read_duration_ns":1,"joined":True},
+             "observer":joined_observer(at(13), at(14)),
              "pool_released_ns":at(15),"heartbeat":heartbeat,"status_released_ns":at(18),"sample_after_ns":at(18)+2,"p1_sample_ns":at(19),
              "status_wait_polled_ns":at(11)+1,"status_waits_before":0,"status_waits_after":1,"status_published_ns":at(18)+1,
              "selected_delivery_withheld":True,"additional_full_profile_refused":True}|fixed.LEASE,

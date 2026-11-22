@@ -51,8 +51,8 @@ describe("Okou CLI program", () => {
   it("should register all expected Okou commands", () => {
     const expectedCommands = [
       "feed",
+      "proactive",
       "model",
-      "agent",
       "connector",
       "remote-control",
       "mcp",
@@ -135,12 +135,18 @@ describe("Okou CLI lazy command loading", () => {
   });
 
   it.each([[], ["suggestion:read"], ["suggestion:write"]])(
-    "advertises Feed only with an authorized suggestion capability: %j",
+    "advertises Feed and Proactive only with an authorized suggestion capability: %j",
     (...capabilities) => {
       vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
       const cli = new Command("okou");
       registerCommands(cli);
       expect(cli.helpInformation().includes("feed")).toBe(
+        capabilities.length > 0,
+      );
+      expect(cli.helpInformation().includes("proactive")).toBe(
+        capabilities.length > 0,
+      );
+      expect(buildHelpText().includes("okou proactive --help")).toBe(
         capabilities.length > 0,
       );
     },
@@ -228,6 +234,12 @@ describe("Okou CLI lazy command loading", () => {
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
+      label: "proactive help invocation",
+      argv: ["node", "okou", "proactive", "enable", "--help"],
+      expectedName: "proactive",
+      expectedHelpCode: "commander.helpDisplayed",
+    },
+    {
       label: "artifact sharing help invocation",
       argv: ["node", "okou", "artifact", "--help"],
       expectedName: "artifact",
@@ -263,7 +275,7 @@ describe("Okou CLI lazy command loading", () => {
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken([
-          expectedName === "feed"
+          expectedName === "feed" || expectedName === "proactive"
             ? "suggestion:read"
             : expectedName === "lark"
               ? "lark:write"

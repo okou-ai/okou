@@ -10,10 +10,6 @@ import {
 } from "../connector-schemas";
 import { builtinConnectorsSlugCallbackContract } from "../connectors-slug-callback";
 import { connectorChangedPayloadSchema } from "../realtime";
-import {
-  userBuiltinConnectorEnabledSlugsSchema,
-  userBuiltinConnectorUpdateSchema,
-} from "../user-connectors";
 import { connectorCatalogContract } from "../connector-catalog";
 import { connectorAccountsContract } from "../connector-accounts";
 import {
@@ -36,10 +32,7 @@ import {
   startCustomConnectorOAuth2ResponseSchema,
   saveCustomConnectorProposalResponseSchema,
 } from "../custom-connectors";
-import {
-  applyUserPermissionGrantsRequestSchema,
-  userPermissionGrantResponseSchema,
-} from "../user-permission-grants";
+import { connectorPermissionsContract } from "../connector-permissions";
 import { initClient } from "../trpc-contract";
 
 const AGENT_ID = "00000000-0000-4000-a000-000000000001";
@@ -250,22 +243,6 @@ describe("connector client response contracts", () => {
         },
       }),
     ).toMatchObject({ connector: connectorIdentity });
-    expect(
-      userBuiltinConnectorEnabledSlugsSchema.parse({
-        enabledConnectorSlugs: ["github"],
-      }),
-    ).toStrictEqual({ enabledConnectorSlugs: ["github"] });
-    expect(
-      userPermissionGrantResponseSchema.parse({
-        agentId: AGENT_ID,
-        connectorSlug: "github",
-        permission: "contents:read",
-        action: "allow",
-        expiresAt: null,
-        createdAt: "2026-07-29T00:00:00.000Z",
-        updatedAt: "2026-07-29T00:00:00.000Z",
-      }),
-    ).toMatchObject({ connectorSlug: "github" });
     expect(
       connectorChangedPayloadSchema.parse({ connectorSlug: "github" }),
     ).toStrictEqual({ connectorSlug: "github" });
@@ -590,31 +567,15 @@ describe("connector client request contracts", () => {
     });
   });
 
-  it("accepts canonical user connector updates", () => {
-    expect(
-      userBuiltinConnectorUpdateSchema.parse({
-        enabledConnectorSlugs: ["github"],
-        operation: "add",
-      }),
-    ).toStrictEqual({
-      enabledConnectorSlugs: ["github"],
-      operation: "add",
-    });
-  });
-
   it("accepts canonical permission grants", () => {
-    const base = {
-      agentId: AGENT_ID,
-      mode: "patch" as const,
-      grants: [{ permission: "contents:read", action: "allow" as const }],
+    const body = {
+      target: { kind: "builtin", connectorSlug: "github" },
+      mode: "patch",
+      grants: [{ permission: "contents:read", action: "allow" }],
     };
-
-    expect(
-      applyUserPermissionGrantsRequestSchema.parse({
-        ...base,
-        connectorSlug: "github",
-      }),
-    ).toStrictEqual({ ...base, connectorSlug: "github" });
+    expect(connectorPermissionsContract.apply.body.parse(body)).toStrictEqual(
+      body,
+    );
   });
 });
 

@@ -1,3 +1,13 @@
+import { worksChannelCards$ } from "../../signals/works-page/works-channel-cards.ts";
+import { ConnectedIndicator } from "./components/connected-indicator.tsx";
+import { worksFeishuConnections } from "../../signals/works-page/feishu-channel-status.ts";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@okouai/ui/components/ui/tooltip";
+import { WorksChannelCardContent } from "./components/works-channel-card-content.tsx";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -18,6 +28,7 @@ import {
   Copy,
   EllipsisVertical,
   Loader2,
+  Link2,
   Plus,
   Settings,
   Eye,
@@ -1129,7 +1140,7 @@ function FeishuSetupWizard({
   );
 }
 
-export function FeishuCard({
+function ClassicFeishuCard({
   platform = "feishu",
 }: {
   platform?: FeishuPlatform;
@@ -1154,11 +1165,6 @@ export function FeishuCard({
               return $.connectors.providerSettings[platform].documentTitle;
             })}
           </div>
-          <div className="truncate text-sm text-muted-foreground">
-            {t(($) => {
-              return $.connectors.providerSettings[platform].routeDescription;
-            })}
-          </div>
         </div>
         <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-secondary-foreground">
           <Settings size={14} />
@@ -1168,6 +1174,98 @@ export function FeishuCard({
         </span>
       </div>
     </Link>
+  );
+}
+
+export function FeishuCard({
+  platform = "feishu",
+}: {
+  platform?: FeishuPlatform;
+}) {
+  const compact = useLastResolved(worksChannelCards$);
+  return compact ? (
+    <CompactFeishuCard platform={platform} />
+  ) : (
+    <ClassicFeishuCard platform={platform} />
+  );
+}
+
+function CompactFeishuCard({
+  platform = "feishu",
+}: {
+  platform?: FeishuPlatform;
+}) {
+  const { t } = useTranslation();
+  const connection = useLastLoadable(worksFeishuConnections[platform]);
+  const connected = connection.state === "hasData" && connection.data;
+  const title = t(($) => {
+    return $.connectors.providerSettings[platform].documentTitle;
+  });
+  const actionLabel = connected
+    ? t(($) => {
+        return $.connectors.providerSettings[platform].manage;
+      })
+    : t(($) => {
+        return $.connectors.actions.connect;
+      });
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              pathname={
+                platform === "lark"
+                  ? ROUTES.settingsLark
+                  : ROUTES.settingsFeishu
+              }
+              aria-label={`${title}: ${actionLabel}`}
+              data-slot="integration-card"
+              data-testid={`${platform}-setup-button`}
+              className={surfaceVariants({
+                interactive: true,
+                className: "flex min-w-0 flex-col",
+              })}
+            >
+              <WorksChannelCardContent
+                actionsPlacement={connected ? "footer" : "header"}
+                icon={<img src={feishuIconImg} alt="" className="size-5" />}
+                title={title}
+                description={
+                  platform === "lark"
+                    ? t(($) => {
+                        return $.works.channelExamples.lark;
+                      })
+                    : t(($) => {
+                        return $.works.channelExamples.feishu;
+                      })
+                }
+                actions={
+                  <>
+                    {connected ? (
+                      <ConnectedIndicator variant="text" wrap />
+                    ) : null}
+                    <span
+                      className={buttonVariants({
+                        variant: "quiet",
+                        size: "icon-xs",
+                        className: connected
+                          ? "shrink-0"
+                          : "shrink-0 rounded-md border border-border/60",
+                      })}
+                      aria-hidden="true"
+                    >
+                      {connected ? <Settings size={16} /> : <Link2 size={16} />}
+                    </span>
+                  </>
+                }
+              />
+            </Link>
+          }
+        />
+        <TooltipContent>{actionLabel}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -1408,15 +1506,13 @@ function FeishuBotList({
             return $.connectors.providerSettings[platform].emptyTitle;
           })}
         </div>
-        <div className="mt-1 text-sm text-muted-foreground">
-          {isAdmin
-            ? t(($) => {
-                return $.connectors.providerSettings[platform].emptyAdmin;
-              })
-            : t(($) => {
-                return $.connectors.providerSettings[platform].emptyMember;
-              })}
-        </div>
+        {!isAdmin && (
+          <div className="mt-1 text-sm text-muted-foreground">
+            {t(($) => {
+              return $.connectors.providerSettings[platform].emptyMember;
+            })}
+          </div>
+        )}
       </div>
     );
   }

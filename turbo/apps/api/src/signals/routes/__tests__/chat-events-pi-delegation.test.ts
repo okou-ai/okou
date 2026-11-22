@@ -33,13 +33,12 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
 }): Promise<void> {
   const crossUser = bdd.user({ orgId: args.orgId });
   const crossUserThread = await args.own(() => {
-    return chat.createThread(crossUser, { agentId: args.agentId });
+    return chat.createThread(crossUser, {});
   });
   const crossUserSend = await args.own(() => {
     return requestSendEventWithBearer(
       args.sourceToken,
       {
-        agentId: args.agentId,
         threadId: crossUserThread.id,
         prompt: "reject cross-user delegated chat admission",
       },
@@ -50,13 +49,12 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
 
   const crossOrg = await publicChatActor(context);
   const crossOrgThread = await crossOrg.run(() => {
-    return chat.createThread(crossOrg.actor, { agentId: crossOrg.agentId });
+    return chat.createThread(crossOrg.actor, {});
   });
   const crossOrgSend = await crossOrg.run(() => {
     return requestSendEventWithBearer(
       args.sourceToken,
       {
-        agentId: crossOrg.agentId,
         threadId: crossOrgThread.id,
         prompt: "reject cross-org delegated chat admission",
       },
@@ -69,7 +67,6 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
     return requestSendEventWithBearer(
       args.sourceToken,
       {
-        agentId: args.agentId,
         threadId: randomUUID(),
         prompt: "reject unowned-thread delegated chat admission",
       },
@@ -81,7 +78,6 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
 
 async function expectAgentChatProvenance(args: {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly delegatedEventId: string;
   readonly delegatedRunId: string;
   readonly orgId: string;
@@ -105,13 +101,10 @@ async function expectAgentChatProvenance(args: {
     },
   );
   expect(delegatedInput?.userMessage.parts).toContainEqual({
-    type: "source",
-    kind: "agent",
+    type: "chat_thread",
     runId: args.source.runId,
     threadId: args.source.threadId,
-    agentId: args.agentId,
     titleSnapshot: "New thread",
-    href: `/chats/${args.source.threadId}#run-${args.source.runId}`,
   });
 }
 
@@ -134,15 +127,18 @@ describe("CHAT-02: model-first routing", () => {
         visibility: "public",
       });
     });
+    const sourceThread = await own(() => {
+      return chat.createThread(actor, {});
+    });
     const source = await sendChatRun(actor, {
-      agentId,
+      threadId: sourceThread.id,
       prompt: "delegate a non-interactive Pi turn",
       model: "claude-fable-5-1",
     });
     const sourceExecution = await runExecution(source.runId);
     const sourceToken = okouTokenFromExecution(sourceExecution.execution);
     const targetThread = await own(async () => {
-      return await chat.createThread(actor, { agentId });
+      return await chat.createThread(actor, {});
     });
 
     await own(async () => {
@@ -156,7 +152,6 @@ describe("CHAT-02: model-first routing", () => {
     const delegated = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: delegatedEventId,
         threadId: targetThread.id,
         prompt: delegatedPrompt,
@@ -206,7 +201,6 @@ describe("CHAT-02: model-first routing", () => {
     });
     await expectAgentChatProvenance({
       actor,
-      agentId,
       delegatedEventId,
       delegatedRunId,
       orgId,

@@ -43,7 +43,6 @@ data class ChatCheckpoint(
         val threads = HashSet<String>()
         archive.chatThreads.forEach { row ->
             requireChatId(row.id)
-            requireChatId(row.agentId)
             row.projectId?.let(::requireChatId)
             requireChatWire(threads.add(row.id))
             chatTime(row.createdAt)
@@ -59,13 +58,10 @@ data class ChatCheckpoint(
             requireChatId(event.threadId())
             when (event) {
                 is ChatEventsEventsItemVariant1 -> {
-                    requireChatId(event.agentId)
-                    event.reassignedAgentId?.let(::requireChatId)
                     event.projectId?.let(::requireChatId)
                     chatTime(event.createdAt)
                 }
                 is ChatEventsEventsItemVariant2 -> {
-                    requireChatId(event.agentId)
                     event.projectId?.let(::requireChatId)
                     chatTime(event.createdAt)
                 }
@@ -127,8 +123,16 @@ internal fun chatTimestamp(value: String): ChatTimestamp {
     return ChatTimestamp(checkNotNull(date).time, match.groupValues[3].drop(3).trimEnd('0'))
 }
 
+internal data class ReplayedChats(
+    val threads: List<ConfirmedChat>,
+    val byRecency: List<ConfirmedChat>,
+)
+
+fun replayChats(checkpoint: ChatCheckpoint): List<ConfirmedChat> =
+    replayChatList(checkpoint).threads
+
 /** Full-tail replay preserves metadata updates that precede a thread's creation. */
-fun replayChats(checkpoint: ChatCheckpoint): List<ConfirmedChat> {
+internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
     checkpoint.validate()
     val rows = checkpoint.archive.chatThreads.associateByTo(linkedMapOf()) { it.id }
     rows.replaceAll { _, row ->
@@ -154,7 +158,6 @@ fun replayChats(checkpoint: ChatCheckpoint): List<ConfirmedChat> {
             rows[id] =
                 ConfirmedChat(
                     id = id,
-                    agentId = event.agentId,
                     projectId = event.projectId,
                     title = event.title,
                     createdAt = event.createdAt,
@@ -216,16 +219,14 @@ fun replayChats(checkpoint: ChatCheckpoint): List<ConfirmedChat> {
                     event.muted != null -> row.copy(muted = event.muted)
                     event.pinOrder != null ->
                         row.copy(
-                            agentId = event.reassignedAgentId ?: row.agentId,
-                            pinOrder = if (row.pinnedAt != null) event.pinOrder else row.pinOrder,
+                            pinOrder = if (row.pinnedAt != null) event.pinOrder else row.pinOrder
                         )
                     else ->
                         row.copy(
-                            agentId = event.reassignedAgentId ?: row.agentId,
                             sortAt =
                                 if (chatTimestamp(event.createdAt) > chatTimestamp(row.sortAt))
                                     event.createdAt
-                                else row.sortAt,
+                                else row.sortAt
                         )
                 }
             return
@@ -271,18 +272,21 @@ fun replayChats(checkpoint: ChatCheckpoint): List<ConfirmedChat> {
         rows[id] = updated.copy(updatedAt = event.createdAt)
     }
     checkpoint.events.forEach(::apply)
-    val ranks =
-        rows.values.filter { it.pinnedAt != null }.associate { it.id to it.effectivePinOrder() }
     val times = rows.values.associate { it.id to chatTimestamp(it.sortAt) }
-    return rows.values.sortedWith { left, right ->
-        when {
-            (left.pinnedAt != null) != (right.pinnedAt != null) ->
-                if (left.pinnedAt != null) -1 else 1
-            left.pinnedAt != null && ranks[left.id] != ranks[right.id] ->
-                checkNotNull(ranks[left.id]).compareTo(checkNotNull(ranks[right.id]))
-            left.pinnedAt == null && times[left.id] != times[right.id] ->
-                checkNotNull(times[right.id]).compareTo(checkNotNull(times[left.id]))
-            else -> right.id.compareTo(left.id)
-        }
-    }
+    val byRecency =
+        rows.values.sortedWith(
+            compareByDescending<ConfirmedChat> { times.getValue(it.id) }.thenByDescending { it.id }
+        )
+    return ReplayedChats(orderChatPins(byRecency), byRecency)
+}
+
+internal fun orderChatPins(byRecency: List<ConfirmedChat>): List<ConfirmedChat> {
+    val pinned = byRecency.filter { it.pinnedAt != null }
+    if (pinned.isEmpty()) return byRecency
+    val ranks = pinned.associate { it.id to it.effectivePinOrder() }
+    val orderedPins =
+        pinned.sortedWith(
+            compareBy<ConfirmedChat> { ranks.getValue(it.id) }.thenByDescending { it.id }
+        )
+    return orderedPins + byRecency.filter { it.pinnedAt == null }
 }

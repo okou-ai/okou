@@ -1,3 +1,5 @@
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
 import {
   workflowsCollectionContract,
@@ -9,24 +11,16 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const mocks = createRouteMocks(context);
-async function headers(actor: ApiTestUser) {
-  if (!actor.orgId) {
-    throw new Error("Expected a retained Agent workspace");
-  }
-  // Owners and collaborators exercise retained Agent publication permissions.
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { singleAgent: false },
+function headers(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
   );
-  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
 }
 function collection(signal = context.signal, rethrowErrors = false) {
@@ -42,18 +36,16 @@ function detail() {
 async function fixture() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Atomic attachment owner",
-    visibility: "public",
+  await bdd.bootstrapLimitedFreeOnboarding(actor, {
+    displayName: "Workflow member",
   });
   const s3 = installWorkflowVolumeS3Fixture(context);
   const body = {
-    agentId: agent.agentId,
     name: `atomic-${randomUUID().slice(0, 8)}`,
     instruction: "Read the attached reference",
     files: [{ path: "reference.md", content: "附件" }],
   };
-  return { actor, agent, s3, body };
+  return { actor, s3, body };
 }
 
 test("keeps a Workflow unlisted until its attachment is ready and publishes readable contents", async () => {
@@ -64,7 +56,7 @@ test("keeps a Workflow unlisted until its attachment is ready and publishes read
     entered.resolve();
     await released.promise;
   });
-  const pending = collection().create({ headers: await headers(actor), body });
+  const pending = collection().create({ headers: headers(actor), body });
   onTestFinished(async () => {
     if (!released.settled()) {
       released.resolve();
@@ -73,7 +65,7 @@ test("keeps a Workflow unlisted until its attachment is ready and publishes read
   });
   await entered.promise;
   const before = await accept(
-    collection().list({ headers: await headers(actor) }),
+    collection().list({ headers: headers(actor) }),
     [200],
   );
   expect(
@@ -85,7 +77,7 @@ test("keeps a Workflow unlisted until its attachment is ready and publishes read
   const created = await accept(pending, [201]);
   const read = await accept(
     detail().get({
-      headers: await headers(actor),
+      headers: headers(actor),
       params: { workflowId: created.body.id },
     }),
     [200],
@@ -104,7 +96,7 @@ test("publishes one readable Workflow for duplicate creates", async () => {
     entered.resolve();
     await released.promise;
   });
-  const first = collection().create({ headers: await headers(actor), body });
+  const first = collection().create({ headers: headers(actor), body });
   onTestFinished(async () => {
     if (!released.settled()) {
       released.resolve();
@@ -113,14 +105,14 @@ test("publishes one readable Workflow for duplicate creates", async () => {
   });
   await entered.promise;
   const winner = await accept(
-    collection().create({ headers: await headers(actor), body }),
+    collection().create({ headers: headers(actor), body }),
     [201],
   );
   released.resolve();
   await accept(first, [409]);
   const read = await accept(
     detail().get({
-      headers: await headers(actor),
+      headers: headers(actor),
       params: { workflowId: winner.body.id },
     }),
     [200],
@@ -139,17 +131,17 @@ test("keeps the name available after an aborted attachment upload", async () => 
   });
   await expect(
     collection(controller.signal, true).create({
-      headers: await headers(actor),
+      headers: headers(actor),
       body,
     }),
   ).rejects.toMatchObject({ name: "AbortError" });
   const created = await accept(
-    collection().create({ headers: await headers(actor), body }),
+    collection().create({ headers: headers(actor), body }),
     [201],
   );
   const read = await accept(
     detail().get({
-      headers: await headers(actor),
+      headers: headers(actor),
       params: { workflowId: created.body.id },
     }),
     [200],
@@ -160,7 +152,7 @@ test("keeps the name available after an aborted attachment upload", async () => 
 test("preserves the original upload error and another Workflow's files", async () => {
   const { actor, s3, body } = await fixture();
   const existing = await accept(
-    collection().create({ headers: await headers(actor), body }),
+    collection().create({ headers: headers(actor), body }),
     [201],
   );
   s3.beforeNextArchiveWrite(() => {
@@ -168,13 +160,13 @@ test("preserves the original upload error and another Workflow's files", async (
   });
   await expect(
     collection(context.signal, true).create({
-      headers: await headers(actor),
+      headers: headers(actor),
       body: { ...body, name: `failed-${randomUUID().slice(0, 8)}` },
     }),
   ).rejects.toThrow("Original provider upload failure");
   const read = await accept(
     detail().get({
-      headers: await headers(actor),
+      headers: headers(actor),
       params: { workflowId: existing.body.id },
     }),
     [200],
@@ -186,7 +178,7 @@ test("does not reserve a Workflow name when its files conflict with a directory"
   const { actor, s3, body } = await fixture();
   await expect(
     collection(context.signal, true).create({
-      headers: await headers(actor),
+      headers: headers(actor),
       body: {
         ...body,
         files: [
@@ -197,15 +189,15 @@ test("does not reserve a Workflow name when its files conflict with a directory"
     }),
   ).rejects.toThrow("Workflow attachment file conflicts with a directory");
   expect(s3.writes).toHaveLength(0);
-  await accept(
-    collection().create({ headers: await headers(actor), body }),
-    [201],
-  );
+  await accept(collection().create({ headers: headers(actor), body }), [201]);
 });
 
-test("rejects publication when Agent access is revoked during attachment upload", async () => {
-  const { actor, agent, s3, body } = await fixture();
-  const creator = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+test("publishes without linking a chat deleted while the attachment upload is in flight", async () => {
+  const { actor, s3, body } = await fixture();
+  const chat = createChatFilesBddApi(context);
+  const thread = await chat.createThread(actor, {
+    title: "Workflow discussion",
+  });
   const entered = createDeferredPromise<void>(context.signal);
   const released = createDeferredPromise<void>(context.signal);
   s3.beforeNextArchiveWrite(async () => {
@@ -213,8 +205,8 @@ test("rejects publication when Agent access is revoked during attachment upload"
     await released.promise;
   });
   const pending = collection().create({
-    headers: await headers(creator),
-    body,
+    headers: headers(actor),
+    body: { ...body, chatThreadId: thread.id },
   });
   onTestFinished(async () => {
     if (!released.settled()) {
@@ -223,54 +215,9 @@ test("rejects publication when Agent access is revoked during attachment upload"
     await pending;
   });
   await entered.promise;
-  await bdd.updateAgentMetadata(actor, agent.agentId, {
-    visibility: "private",
-  });
+  await chat.deleteThread(actor, thread.id);
   released.resolve();
-  await accept(pending, [403]);
-
-  await bdd.updateAgentMetadata(actor, agent.agentId, { visibility: "public" });
-  const listed = await accept(
-    collection().list({ headers: await headers(creator) }),
-    [200],
-  );
-  expect(
-    listed.body.map((workflow) => {
-      return workflow.name;
-    }),
-  ).not.toContain(body.name);
-  const created = await accept(
-    collection().create({ headers: await headers(creator), body }),
-    [201],
-  );
-  const read = await accept(
-    detail().get({
-      headers: await headers(creator),
-      params: { workflowId: created.body.id },
-    }),
-    [200],
-  );
-  expect(read.body.fileContents).toStrictEqual(body.files);
-});
-
-test("cannot resurrect a parent deleted while its attachment upload is in flight", async () => {
-  const { actor, agent, s3, body } = await fixture();
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  s3.beforeNextArchiveWrite(async () => {
-    entered.resolve();
-    await released.promise;
-  });
-  const pending = collection().create({ headers: await headers(actor), body });
-  onTestFinished(async () => {
-    if (!released.settled()) {
-      released.resolve();
-    }
-    await pending;
-  });
-  await entered.promise;
-  await bdd.deleteAgent(actor, agent.agentId);
-  released.resolve();
-  const rejected = await accept(pending, [404]);
-  expect(rejected.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+  const created = await accept(pending, [201]);
+  await chat.requestReadThread(actor, thread.id, [404]);
+  expect(created.body.name).toBe(body.name);
 });

@@ -25,7 +25,6 @@ type MorningBriefStatusKey =
   | "errorMessage"
   | "conflict"
   | "missingTimezone"
-  | "missingDefaultAgent"
   | "preparing"
   | "preparationFailed";
 
@@ -43,9 +42,6 @@ function morningBriefStatusKey({
   const { preference } = state;
   if (preference.unavailableReason === "missing-timezone") {
     return "missingTimezone";
-  }
-  if (preference.unavailableReason === "missing-default-agent") {
-    return "missingDefaultAgent";
   }
   if (preference.status === "preparing") {
     return "preparing";
@@ -94,7 +90,11 @@ function isToggleDisabled(
   );
 }
 
-export function MorningBriefSettings() {
+export function MorningBriefSettings({
+  inline = false,
+}: {
+  readonly inline?: boolean;
+}) {
   const { t } = useTranslation();
   const preferenceLoadable = useLastLoadable(morningBriefPreference$);
   const [mutationLoadable, updatePreference] = useLoadableSet(
@@ -133,6 +133,7 @@ export function MorningBriefSettings() {
       <PreferenceCardRow
         icon={Sunrise}
         grouped
+        inline={inline}
         iconContainerClassName="h-10 w-10 rounded-xl bg-primary/10 text-brand-text"
         title={t(($) => {
           return $.settings.preferences.morningBrief.title;

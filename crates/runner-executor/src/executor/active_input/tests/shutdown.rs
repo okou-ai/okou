@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use super::super::{
     ACTIVE_INPUT_SHUTDOWN_GRACE, ActiveInputForwarder, DeliveryMode, ForwardDisposition, forward,
 };
-use super::TEST_TIMEOUT;
+use super::{ADVANCE_SHUTDOWN_GRACE, TEST_TIMEOUT};
 use crate::test_fixtures::guest_control::GuestControlFixture;
 use runner_provider::ActiveInputSource;
 use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
@@ -238,13 +238,16 @@ async fn stop_reaps_control_queued_behind_a_real_partial_write_without_poisoning
             })
         }
     });
-    let forwarder = ActiveInputForwarder::start(
-        run_id,
-        Some(queued_source(dir.path(), run_id)),
-        Some(queued_control),
-        CancellationToken::new(),
-    )
-    .unwrap();
+    let forwarder = ADVANCE_SHUTDOWN_GRACE
+        .sync_scope(true, || {
+            ActiveInputForwarder::start(
+                run_id,
+                Some(queued_source(dir.path(), run_id)),
+                Some(queued_control),
+                CancellationToken::new(),
+            )
+        })
+        .unwrap();
     let abort = forwarder.task.abort_handle();
     let mut completion = Box::pin(forwarder.stop());
     let mut completed = false;
@@ -301,13 +304,16 @@ async fn job_cancellation_reaps_a_real_response_wait_without_replay_or_reuse() {
         }
     });
     let job_cancel = CancellationToken::new();
-    let forwarder = ActiveInputForwarder::start(
-        run_id,
-        Some(queued_source(dir.path(), run_id)),
-        Some(control),
-        job_cancel.clone(),
-    )
-    .unwrap();
+    let forwarder = ADVANCE_SHUTDOWN_GRACE
+        .sync_scope(true, || {
+            ActiveInputForwarder::start(
+                run_id,
+                Some(queued_source(dir.path(), run_id)),
+                Some(control),
+                job_cancel.clone(),
+            )
+        })
+        .unwrap();
     let mut task = forwarder.task;
     let mut completed = false;
     let assertions = std::panic::AssertUnwindSafe(async {

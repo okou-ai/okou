@@ -1,13 +1,59 @@
 import { artifacts } from "@okouai/db/schema/artifact";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { connectors } from "@okouai/db/schema/connector";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
+import {
+  chatConnectorExecutionFromRows,
+  chatConnectorExecutionReadPlan,
+} from "./chat-connector-execution";
+
+export type DriveConnectorAccountResolution =
+  | { readonly type: "resolved"; readonly connectorId: string }
+  | { readonly type: "connect" }
+  | { readonly type: "unavailable" };
+
+export const chatGoogleDriveAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string;
+      readonly connectionId?: string;
+      readonly runId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<DriveConnectorAccountResolution> => {
+    const { orgId, userId, threadId, runId } = args;
+    const rows = await set(writeDb$)
+      .select()
+      .from(
+        chatConnectorExecutionReadPlan(
+          runId
+            ? { kind: "run", runId, orgId, userId }
+            : { kind: "chat", chatThreadId: threadId, orgId, userId },
+          "google-drive",
+        ).as("drive_chat_accounts"),
+      );
+    signal.throwIfAborted();
+    if (!rows.length) {
+      return !runId && (await set(ownedGoogleDriveThreadContext$, args, signal))
+        ? { type: "connect" }
+        : { type: "unavailable" };
+    }
+    const [current] = chatConnectorExecutionFromRows(rows).selections;
+    if (
+      rows[0]?.chatThreadId !== threadId ||
+      !current ||
+      (args.connectionId && args.connectionId !== current.connectionId)
+    ) {
+      return { type: "unavailable" };
+    }
+    return { type: "resolved", connectorId: current.connectionId };
+  },
+);
 
 /** Validate the current view before using its account or agent context. */
 export const ownedGoogleDriveThreadContext$ = command(
@@ -23,13 +69,10 @@ export const ownedGoogleDriveThreadContext$ = command(
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-      )
       .where(
         and(
           eq(chatThreads.id, args.threadId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.userId, args.userId),
         ),
       )
@@ -92,76 +135,5 @@ export const ownedGoogleDriveArtifact$ = command(
       .limit(1);
     signal.throwIfAborted();
     return file ?? null;
-  },
-);
-
-/** Account ownership and Agent grants remain independent authorization checks. */
-export const artifactGoogleDriveAccount$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly agentId: string;
-      readonly connectionId?: string;
-      readonly authorizedRunId?: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    if (args.authorizedRunId) {
-      const [run] = await db
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-
-        .where(
-          and(
-            eq(agentRuns.id, args.authorizedRunId),
-            eq(agentRuns.orgId, args.orgId),
-            eq(agentRuns.userId, args.userId),
-            eq(agentRuns.agentId, args.agentId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!run) {
-        return null;
-      }
-    }
-    const [grant] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .innerJoin(
-        userBuiltinConnectors,
-        and(
-          eq(userBuiltinConnectors.agentId, agents.id),
-          eq(userBuiltinConnectors.orgId, args.orgId),
-          eq(userBuiltinConnectors.userId, args.userId),
-          eq(userBuiltinConnectors.connectorSlug, "google-drive"),
-        ),
-      )
-      .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!grant) {
-      return null;
-    }
-    const rows = await db
-      .select({ connectorId: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          eq(connectors.connectorSlug, "google-drive"),
-          isNull(connectors.customConnectorId),
-          args.connectionId
-            ? eq(connectors.id, args.connectionId)
-            : eq(connectors.isDefault, true),
-        ),
-      )
-      .limit(2);
-    signal.throwIfAborted();
-    return rows.length === 1 ? (rows[0]?.connectorId ?? null) : null;
   },
 );

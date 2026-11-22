@@ -1,6 +1,7 @@
 use super::*;
 use crate::api::test_support::{MockFirecrackerApi, MockRequest, MockResponse};
 use crate::config::{RateLimiterConfig, TokenBucketConfig};
+use guest_control_client::ExecOwnedCapturedOutput;
 use guest_control_proto::{
     Decoder, ExecControlStatus, HEADER_SIZE, MAX_MESSAGE_SIZE, MIN_BODY_SIZE, MSG_EXEC_CONTROL,
     MSG_EXEC_CONTROL_RESULT, MSG_MEMORY_SNAPSHOT, MSG_MEMORY_SNAPSHOT_RESULT, MSG_PING, MSG_PONG,

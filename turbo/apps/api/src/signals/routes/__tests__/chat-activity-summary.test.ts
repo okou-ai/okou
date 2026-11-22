@@ -88,7 +88,6 @@ async function fixture(prompt = "Prepare a launch checklist") {
   // The activity suite needs a live Runner execution, not a Pi API-first turn.
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   const sent = await chat.sendAndLaunch(actor, {
-    agentId: agent.agentId,
     model: "claude-fable-5-1",
     prompt,
     clientEventId: randomUUID(),
@@ -315,7 +314,6 @@ describe("thread activity summary", () => {
     );
     await flushWaitUntilForTest();
     const next = await chat.sendAndLaunch(f.actor, {
-      agentId: f.agentId,
       threadId: f.run.threadId,
       prompt: "Prepare the next checklist",
     });

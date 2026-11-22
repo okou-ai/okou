@@ -4,9 +4,10 @@ use super::*;
 use nix::fcntl::{OFlag, openat};
 use nix::sys::stat::Mode;
 use nix::unistd::{UnlinkatFlags, unlinkat};
+use runner_host::error::HostResult;
 use runner_host::host_file::{self, DirMode};
 use runner_host::lock::{self, ExistingTryLock, TryLock};
-use runner_host::paths::{HomePaths, short_digest, touch_mtime};
+use runner_host::paths::{HomePaths, short_digest};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -127,16 +128,22 @@ fn entry_paths(home: &HomePaths, name: &str, version: &str, kind: EntryKind) -> 
     (key.directory(home), key.lock(home))
 }
 
-struct EntryKey {
+struct EntryKey<'a> {
+    name: &'a str,
+    version: &'a str,
+    kind: EntryKind,
     name_hash: String,
     version_key: String,
 }
 
-impl EntryKey {
-    fn new(name: &str, version: &str, kind: EntryKind) -> Self {
+impl<'a> EntryKey<'a> {
+    fn new(name: &'a str, version: &'a str, kind: EntryKind) -> Self {
         // GC uses the same name/key lock and recursively accounts the entry's
         // files, including .tmp staging.
         Self {
+            name,
+            version,
+            kind,
             name_hash: short_digest(name),
             version_key: version_key(version, kind),
         }
@@ -153,6 +160,20 @@ impl EntryKey {
     fn lock(&self, home: &HomePaths) -> PathBuf {
         home.storage_lock_for_cache_key(&self.name_hash, &self.version_key)
     }
+
+    fn open(&self, home: &HomePaths) -> io::Result<File> {
+        open_version(home, &self.name_hash, &self.version_key)
+    }
+
+    fn touch(&self, home: &HomePaths, directory: &File) {
+        // Refresh the entry that was validated under its lock.
+        if let Err(error) = directory.set_modified(std::time::SystemTime::now()) {
+            tracing::warn!(
+                "touch_mtime: set_times failed for {}: {error}",
+                self.directory(home).display()
+            );
+        }
+    }
 }
 
 fn open_directory(path: &Path) -> io::Result<File> {
@@ -162,17 +183,13 @@ fn open_directory(path: &Path) -> io::Result<File> {
         .open(path)
 }
 
-fn open_entry(home: &HomePaths, name: &str, version: &str, kind: EntryKind) -> io::Result<File> {
-    open_version(home, name, &version_key(version, kind))
-}
-
-fn open_version(home: &HomePaths, name: &str, version_key: &str) -> io::Result<File> {
+fn open_version(home: &HomePaths, name_hash: &str, version_key: &str) -> io::Result<File> {
     let mut directory = open_directory(&home.storages_dir())?;
-    for component in [short_digest(name), version_key.to_owned()] {
+    for component in [name_hash, version_key] {
         directory = File::from(
             openat(
                 &directory,
-                component.as_str(),
+                component,
                 OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
                 Mode::empty(),
             )
@@ -212,34 +229,51 @@ pub(super) fn read(
     version: &str,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Vec<StorageFile>>> {
-    read_with_budget(
-        home,
-        name,
-        version,
-        storage_files::MAX_STORAGE_BYTES,
-        storage_files::MAX_FILES,
-        cancel,
-    )
-}
-
-pub(super) fn read_with_budget(
-    home: &HomePaths,
-    name: &str,
-    version: &str,
-    content_budget: usize,
-    file_budget: usize,
-    cancel: &CancellationToken,
-) -> io::Result<Option<Vec<StorageFile>>> {
     read_entry(
         home,
         name,
         version,
         EntryKind::Positive,
-        content_budget,
-        file_budget,
+        (storage_files::MAX_STORAGE_BYTES, storage_files::MAX_FILES),
         cancel,
+        lock::try_acquire_existing_shared_or_missing_blocking,
     )?
     .into_ready_files()
+}
+
+pub(super) struct BatchReader<'a> {
+    home: &'a HomePaths,
+    cancel: &'a CancellationToken,
+    locks: lock::ExistingSharedLockBatch,
+}
+
+impl<'a> BatchReader<'a> {
+    pub(super) fn new(home: &'a HomePaths, cancel: &'a CancellationToken) -> Self {
+        Self {
+            home,
+            cancel,
+            locks: lock::ExistingSharedLockBatch::default(),
+        }
+    }
+
+    pub(super) fn read(
+        &mut self,
+        name: &str,
+        version: &str,
+        content_budget: usize,
+        file_budget: usize,
+    ) -> io::Result<Option<Vec<StorageFile>>> {
+        read_entry(
+            self.home,
+            name,
+            version,
+            EntryKind::Positive,
+            (content_budget, file_budget),
+            self.cancel,
+            |path| self.locks.try_acquire_or_missing(path),
+        )?
+        .into_ready_files()
+    }
 }
 
 enum LookupOutcome {
@@ -264,7 +298,15 @@ pub(super) fn is_rejected(
     version: &str,
     cancel: &CancellationToken,
 ) -> io::Result<bool> {
-    match read_entry(home, name, version, EntryKind::Rejection, 0, 0, cancel)? {
+    match read_entry(
+        home,
+        name,
+        version,
+        EntryKind::Rejection,
+        (0, 0),
+        cancel,
+        lock::try_acquire_existing_shared_or_missing_blocking,
+    )? {
         LookupOutcome::Miss => Ok(false),
         LookupOutcome::Rejected => Ok(true),
         LookupOutcome::Ready(_) => Err(invalid("decoded cache identity or admission mismatch")),
@@ -288,20 +330,21 @@ pub(super) fn rejected_archive(
         ExistingTryLock::Acquired(lock) => lock,
         ExistingTryLock::Busy | ExistingTryLock::Missing => return Ok(false),
     };
-    let source = match open_version(home, name, &short_digest(version)).and_then(|root| {
-        openat(
-            &root,
-            "archive.tar.gz",
-            OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
-            Mode::empty(),
-        )
-        .map(File::from)
-        .map_err(io::Error::from)
-    }) {
-        Ok(source) => source,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error),
-    };
+    let source =
+        match open_version(home, &short_digest(name), &short_digest(version)).and_then(|root| {
+            openat(
+                &root,
+                "archive.tar.gz",
+                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )
+            .map(File::from)
+            .map_err(io::Error::from)
+        }) {
+            Ok(source) => source,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
     let metadata = source.metadata()?;
     if !metadata.is_file()
         || metadata.nlink() != 1
@@ -318,9 +361,9 @@ fn read_entry(
     name: &str,
     version: &str,
     kind: EntryKind,
-    content_budget: usize,
-    file_budget: usize,
+    budget: (usize, usize),
     cancel: &CancellationToken,
+    acquire_lock: impl FnOnce(&Path) -> HostResult<ExistingTryLock>,
 ) -> io::Result<LookupOutcome> {
     check_cancel(cancel)?;
     let key = EntryKey::new(name, version, kind);
@@ -335,9 +378,7 @@ fn read_entry(
         Err(error) => return Err(error),
     }
     let lock_path = key.lock(home);
-    let _lock = match lock::try_acquire_existing_shared_or_missing_blocking(&lock_path)
-        .map_err(io::Error::other)?
-    {
+    let _lock = match acquire_lock(&lock_path).map_err(io::Error::other)? {
         ExistingTryLock::Acquired(lock) => lock,
         ExistingTryLock::Busy => return Ok(LookupOutcome::Miss),
         ExistingTryLock::Missing => {
@@ -350,28 +391,17 @@ fn read_entry(
             }
         }
     };
-    read_locked_entry(
-        home,
-        name,
-        version,
-        kind,
-        content_budget,
-        file_budget,
-        cancel,
-    )
+    read_locked_entry(home, &key, budget, cancel)
 }
 
 /// Caller holds the entry lock throughout validation and any dependent action.
 fn read_locked_entry(
     home: &HomePaths,
-    name: &str,
-    version: &str,
-    kind: EntryKind,
-    content_budget: usize,
-    file_budget: usize,
+    key: &EntryKey<'_>,
+    (content_budget, file_budget): (usize, usize),
     cancel: &CancellationToken,
 ) -> io::Result<LookupOutcome> {
-    let root = match open_entry(home, name, version, kind) {
+    let root = match key.open(home) {
         Ok(root) => root,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LookupOutcome::Miss),
         Err(error) => return Err(error),
@@ -379,15 +409,15 @@ fn read_locked_entry(
     let encoded_index = read_index(&root)?;
     let index: Index = serde_json::from_slice(&encoded_index).map_err(io::Error::other)?;
     drop(encoded_index);
-    if index.name != name
-        || index.version != version
+    if index.name != key.name
+        || index.version != key.version
         || index.compressed_bytes > MAX_COMPRESSED_BYTES
-        || index.files.is_none() != (kind == EntryKind::Rejection)
+        || index.files.is_none() != (key.kind == EntryKind::Rejection)
     {
         return Err(invalid("decoded cache identity or admission mismatch"));
     }
     let Some(metadata) = index.files else {
-        touch_mtime(&EntryKey::new(name, version, kind).directory(home));
+        key.touch(home, &root);
         return Ok(LookupOutcome::Rejected);
     };
     if index.compressed_bytes == 0
@@ -449,9 +479,10 @@ fn read_locked_entry(
         check_cancel(cancel)?;
         file.content = vec![0; entry.size];
         data.read_exact(&mut file.content)?;
-        if file.content.len() != entry.size
-            || hex::encode(Sha256::digest(&file.content)) != entry.sha256
-        {
+        let mut digest = [0; 64];
+        hex::encode_to_slice(Sha256::digest(&file.content), &mut digest)
+            .map_err(io::Error::other)?;
+        if digest != entry.sha256.as_bytes() {
             return Err(invalid("decoded cache content mismatch"));
         }
     }
@@ -459,7 +490,7 @@ fn read_locked_entry(
         return Err(invalid("decoded cache payload grew during read"));
     }
     check_cancel(cancel)?;
-    touch_mtime(&EntryKey::new(name, version, kind).directory(home));
+    key.touch(home, &root);
     Ok(LookupOutcome::Ready(files))
 }
 
@@ -497,7 +528,7 @@ pub(super) fn retire_archive(
                 }
             }
         };
-    let archive_root = match open_version(home, name, &short_digest(version)) {
+    let archive_root = match open_version(home, &short_digest(name), &short_digest(version)) {
         Ok(root) => root,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
@@ -518,7 +549,8 @@ pub(super) fn retire_archive(
             "retired storage archive is not a regular private file",
         ));
     }
-    let replacement_lock = EntryKey::new(name, version, EntryKind::Positive).lock(home);
+    let replacement_key = EntryKey::new(name, version, EntryKind::Positive);
+    let replacement_lock = replacement_key.lock(home);
     let _replacement =
         match lock::try_acquire_existing_shared_or_missing_blocking(&replacement_lock)
             .map_err(io::Error::other)?
@@ -528,11 +560,8 @@ pub(super) fn retire_archive(
         };
     if read_locked_entry(
         home,
-        name,
-        version,
-        EntryKind::Positive,
-        storage_files::MAX_STORAGE_BYTES,
-        storage_files::MAX_FILES,
+        &replacement_key,
+        (storage_files::MAX_STORAGE_BYTES, storage_files::MAX_FILES),
         cancel,
     )?
     .into_ready_files()?

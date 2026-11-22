@@ -1,11 +1,14 @@
 import { computed, type Computed } from "ccstate";
+import { logger } from "../../lib/log";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { SeedSkillVolume } from "./run-prompt-and-skills";
 
-export function createSystemSkillsContext(
+const log = logger("api:system-skills");
+
+export function createSystemSkillVolumes(
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
   seedSkills$: AgentRunContextSignals["seedSkills$"],
 ) {
@@ -24,29 +27,23 @@ export function createSystemSkillsContext(
         return [skill.url, skill];
       }),
     );
-    const skillVolumes = skills.flatMap(
-      (skillName): readonly SeedSkillVolume[] => {
-        // Only a usable bundle matters; the run keeps this pointer whatever the
-        // catalog's source version is when the Runner starts.
-        const contentBundle = byUrl.get(
-          resolveSkillRef(skillName),
-        )?.contentBundle;
-        if (!contentBundle) {
-          throw new Error(`Seed Skill bundle is not prepared: ${skillName}`);
-        }
-        return [
-          {
-            skillName,
-            source: "system_skill",
-            contentBundle: contentBundleSchema.parse(contentBundle),
-          },
-        ];
-      },
-    );
-    return {
-      systemPromptVariables: {},
-      userPromptVariables: {},
-      skillVolumes,
-    };
+    return skills.flatMap((skillName): readonly SeedSkillVolume[] => {
+      // Only a usable bundle matters; the run keeps this pointer whatever the
+      // catalog's source version is when the Runner starts.
+      const bundle = contentBundleSchema.safeParse(
+        byUrl.get(resolveSkillRef(skillName))?.contentBundle,
+      );
+      if (!bundle.success) {
+        log.warn("Seed Skill bundle is unavailable", { skillName });
+        return [];
+      }
+      return [
+        {
+          skillName,
+          source: "system_skill",
+          contentBundle: bundle.data,
+        },
+      ];
+    });
   });
 }

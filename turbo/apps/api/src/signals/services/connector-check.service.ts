@@ -29,7 +29,6 @@ import type {
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
@@ -563,7 +562,6 @@ function configFromCustomRuntime(
 
 interface RunDiagnosticRegistration {
   readonly runId: string;
-  readonly agentId: string;
   readonly targets: readonly ConnectorRuntimeTargetRegistration[];
 }
 
@@ -587,13 +585,10 @@ const readRunDiagnosticRegistration$ = command(
     const db = get(db$);
     const [row] = await db
       .select({
-        agentId: agents.id,
         registrationRunId: agentRunConnectorDiagnosticRegistrations.runId,
         payload: agentRunConnectorDiagnosticRegistrations.payload,
       })
       .from(agentRuns)
-
-      .innerJoin(agents, eq(agents.id, agentRuns.agentId))
       .leftJoin(
         agentRunConnectorDiagnosticRegistrations,
         eq(agentRunConnectorDiagnosticRegistrations.runId, agentRuns.id),
@@ -620,7 +615,6 @@ const readRunDiagnosticRegistration$ = command(
       kind: "available",
       registration: {
         runId: args.runId,
-        agentId: row.agentId,
         targets: payload.targets,
       },
     };
@@ -1591,7 +1585,6 @@ function runDiagnosticRuntimeArgs(
     scope: {
       orgId: args.orgId,
       userId: args.userId,
-      agentId: registration.agentId,
       runId: registration.runId,
     },
     targets: runtimeTargetsForRequest(registration, args.request),
