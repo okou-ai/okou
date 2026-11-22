@@ -4,6 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
+import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -205,19 +206,16 @@ internal fun ChatListScreen(
                 provisionalChats.filterNot { it.threadId in confirmedIds }.groupBy { it.projectId }
             }
         }
+    val indicators = state.indicators?.threads.orEmpty()
+    val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
     val groups =
-        remember(
+        rememberChatListGroups(
             state.threads,
             state.projects,
             state.filter,
-            unreadAt,
-            state.readIntents,
+            unreadChatIds,
             pendingByProject.keys,
-        ) {
-            chatListGroups(state, provisionalProjectIds = pendingByProject.keys)
-        }
-    val indicators = state.indicators?.threads.orEmpty()
-    val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
+        )
     val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val renameRejection = state.projectRenameRejection
     val projectNoticeIds =
@@ -245,14 +243,22 @@ internal fun ChatListScreen(
         }
     SideEffect { previousExpansion.ids = savedExpansion }
     val sections =
-        remember(groups, expandedProjectIds, indicators, unreadChatIds, pendingByProject) {
-            chatListSections(
-                groups,
-                expandedProjectIds,
-                indicators,
-                unreadChatIds,
-                pendingByProject,
-            )
+        remember(groups, expandedProjectIds, pendingByProject) {
+            chatListSections(groups, expandedProjectIds, pendingByProject)
+        }
+    val collapsedActivity =
+        remember(sections, indicators, unreadChatIds) {
+            buildMap {
+                for (section in sections) {
+                    if (section.collapsed) {
+                        val group = section.group
+                        put(
+                            checkNotNull(group.project).id,
+                            collapsedProjectActivity(group.threads, indicators, unreadChatIds),
+                        )
+                    }
+                }
+            }
         }
     val moveFocusSection =
         moveFocus?.let { request ->
@@ -262,25 +268,23 @@ internal fun ChatListScreen(
             }
         }
     val runningKeys =
-        remember(indicators, sections) {
+        remember(indicators, sections, collapsedActivity) {
             buildSet {
-                sections.forEach { section ->
-                    when (section.foldedStatus) {
-                        ChatRowStatus.Running ->
-                            add(projectRowKey(checkNotNull(section.group.project).id))
-                        null ->
-                            section.group.threads.forEach { thread ->
-                                if (
-                                    chatRowStatus(
-                                        indicators[thread.id],
-                                        thread.muted == true,
-                                        thread.id in unreadChatIds,
-                                    ) == ChatRowStatus.Running
-                                ) {
-                                    add(thread.id)
-                                }
+                for (section in sections) {
+                    if (section.collapsed) {
+                        val projectId = checkNotNull(section.group.project).id
+                        if (collapsedActivity[projectId]?.status == ChatRowStatus.Running) {
+                            add(projectRowKey(projectId))
+                        }
+                    } else {
+                        for (thread in section.group.threads) {
+                            if (
+                                thread.muted != true &&
+                                    indicators[thread.id] == IndicatorsThreadsValue.ACTIVE
+                            ) {
+                                add(thread.id)
                             }
-                        else -> Unit
+                        }
                     }
                 }
             }
@@ -430,7 +434,7 @@ internal fun ChatListScreen(
         if (moveFocus != null) {
             val pending = state.pendingRowActions[moveFocus.threadId] == ChatRowAction.MoveProject
             LaunchedEffect(moveFocus, moveFocusSection, pending, leadingItems.size) {
-                if (moveFocusSection?.foldedActivity != null) {
+                if (moveFocusSection?.collapsed == true) {
                     val key = projectRowKey(moveFocus.projectId)
                     if (listState.layoutInfo.visibleItemsInfo.none { it.key == key }) {
                         sections
@@ -463,17 +467,16 @@ internal fun ChatListScreen(
                     val group = section.group
                     val project = group.project
                     val pending = section.provisionalChats
-                    val foldedStatus = section.foldedStatus
                     if (project != null) {
                         item(key = projectRowKey(project.id)) {
                             ProjectRow(
                                 project.name,
                                 modifier = Modifier.animateItem(null, placement, null),
-                                activity = section.foldedActivity,
+                                activity = collapsedActivity[project.id],
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
                                 toggle = {
-                                    projectExpansion?.setExpanded(project.id, foldedStatus != null)
+                                    projectExpansion?.setExpanded(project.id, section.collapsed)
                                 },
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
                                 rename = { renamingProjectId = project.id },
@@ -484,7 +487,7 @@ internal fun ChatListScreen(
                                 deleteDialogOpen = confirmingProjectDelete == project.id,
                                 focusAfterMove =
                                     moveFocus?.takeIf {
-                                        section === moveFocusSection && foldedStatus != null
+                                        section === moveFocusSection && section.collapsed
                                     },
                                 onMoveFocusFinished = onMoveFocusFinished,
                             )
@@ -553,7 +556,7 @@ internal fun ChatListScreen(
                             }
                         }
                     }
-                    if (foldedStatus == null) {
+                    if (!section.collapsed) {
                         val pinTail = section.pinTail
                         val firstPending = pinTail + 1
                         fun confirmedIndex(index: Int) =
@@ -676,6 +679,20 @@ private data class ChatListScrollAnchor(val index: Int, val offset: Int)
 private class ChatListProjectIds(var ids: Set<String>?)
 
 @Composable
+internal fun rememberChatListGroups(
+    threads: List<ConfirmedChat>,
+    projects: List<ConfirmedProject>,
+    filter: ChatListFilter,
+    unreadChatIds: Set<String>,
+    provisionalProjectIds: Set<String?>,
+): List<ChatListGroup> {
+    val unreadMembership = if (filter == ChatListFilter.Unread) unreadChatIds else emptySet()
+    return remember(threads, projects, filter, unreadMembership, provisionalProjectIds) {
+        chatListGroups(threads, projects, filter, unreadMembership, provisionalProjectIds)
+    }
+}
+
+@Composable
 private fun KeepChatListProjectAnchor(
     listState: LazyListState,
     projectIds: Set<String>,
@@ -721,7 +738,7 @@ private fun List<ChatListSection>.findScrollAnchor(
         val threadIndex = threads.indexOfFirst { it.id == key }
         val pendingIndex = pending.indexOfFirst { it.threadId == key }
         if (threadIndex >= 0 || pendingIndex >= 0) {
-            if (section.foldedActivity != null) return ChatListScrollAnchor(header, 0)
+            if (section.collapsed) return ChatListScrollAnchor(header, 0)
             val firstPending = section.pinTail + 1
             val chatIndex =
                 when {
@@ -731,7 +748,7 @@ private fun List<ChatListSection>.findScrollAnchor(
                 }
             return ChatListScrollAnchor(row + chatIndex, offset)
         }
-        if (section.foldedActivity == null) {
+        if (!section.collapsed) {
             row += if (section.showsEmptyProjectAction) 1 else threads.size + pending.size
         }
     }

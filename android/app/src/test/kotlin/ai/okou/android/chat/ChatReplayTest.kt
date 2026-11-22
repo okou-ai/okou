@@ -336,21 +336,19 @@ class ChatReplayTest {
                     projectList = ProjectListUiState(rows = listOf(project)),
                 )
             )
-        val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
         val provisional =
             mapOf<String?, List<ProvisionalChat>>(
                 project.id to listOf(ProvisionalChat("pending", project.id))
             )
 
-        val (open, afterOpen) =
-            chatListSections(groups, setOf(project.id), indicators, emptySet(), provisional)
+        val (open, afterOpen) = chatListSections(groups, setOf(project.id), provisional)
+        assertFalse(open.collapsed)
         assertEquals(0, open.firstRow)
         assertEquals(1, open.firstChatRow)
         assertEquals(4, afterOpen.firstChatRow)
 
-        val (folded, afterFolded) =
-            chatListSections(groups, emptySet(), indicators, emptySet(), provisional)
-        assertEquals(ChatRowStatus.Running, folded.foldedStatus)
+        val (folded, afterFolded) = chatListSections(groups, emptySet(), provisional)
+        assertTrue(folded.collapsed)
         assertEquals(1, afterFolded.firstChatRow)
     }
 
