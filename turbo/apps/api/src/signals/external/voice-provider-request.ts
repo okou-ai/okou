@@ -10,6 +10,7 @@ const MAX_ATTEMPTS = 3;
 const INITIAL_BACKOFF_MS = 1000;
 
 interface VoiceProviderContext {
+  readonly singleAttempt?: boolean;
   readonly model: string;
   readonly responseSchema?: string;
 }
@@ -95,7 +96,7 @@ export async function requestVoiceProvider<T>(
     if (!response.bodyUsed && response.body) {
       startUntrackedBestEffortCleanup(response.body.cancel());
     }
-    if (attempts >= MAX_ATTEMPTS) {
+    if (context.singleAttempt || attempts >= MAX_ATTEMPTS) {
       throw exhausted(context, response.status, attempts);
     }
     await delay(wait, { signal });

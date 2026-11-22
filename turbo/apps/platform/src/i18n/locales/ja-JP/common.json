@@ -2275,7 +2275,9 @@
       "agent": "[エージェント: {{name}}]",
       "chatThread": "[チャット スレッド: {{title}}]",
       "file": "[ファイル: {{filename}}]",
-      "template": "[テンプレート: {{title}}]"
+      "template": "[テンプレート: {{title}}]",
+      "voice": "音声メッセージ",
+      "voiceClip": "音声クリップ {{index}}"
     },
     "newChat": "新しいチャット",
     "origins": {

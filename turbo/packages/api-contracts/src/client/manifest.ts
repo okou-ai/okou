@@ -764,6 +764,10 @@ export const clientDescriptorManifest = [
     contracts: ["thirdPartySubscriptionsMainContract"],
   },
   {
+    module: "transcribe",
+    contracts: ["transcribeContract"],
+  },
+  {
     module: "uploads",
     contracts: ["uploadsContract"],
   },
