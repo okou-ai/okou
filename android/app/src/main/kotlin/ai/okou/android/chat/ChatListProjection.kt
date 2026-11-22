@@ -46,6 +46,20 @@ internal class ChatListProjection {
         return true
     }
 
+    fun discardUnconfirmedMovesToMissingProjects(projects: List<ConfirmedProject>): Boolean {
+        if (unconfirmedRowEvents.isEmpty()) return false
+        // An authoritative Project deletion supersedes a local move into that destination,
+        // regardless of whether the original request reached the server.
+        val discarded =
+            rowEdits.filter { edit ->
+                edit.action == ChatRowAction.MoveProject &&
+                    edit.value != null &&
+                    edit.eventId in unconfirmedRowEvents &&
+                    projects.none { it.id == edit.value }
+            }
+        return discardEdits(discarded)
+    }
+
     fun hasConfirmedThread(threadId: String) = confirmedRows.byRecency.any { it.id == threadId }
 
     fun retryEvents(): Set<String> = unconfirmedRowEvents.toSet()

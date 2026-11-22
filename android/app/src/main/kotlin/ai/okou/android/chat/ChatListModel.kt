@@ -350,12 +350,13 @@ class ChatListModel(
             readState = { mutable.value.projectList },
             publish = { projectList ->
                 val state = mutable.value
-                mutable.value =
+                reconcileProjectMoves(
                     state.copy(
                         projectList = projectList,
                         chatMoveNotice =
                             state.chatMoveNotice.takeUnless { projectList.deletingId != null },
                     )
+                )
             },
         )
     private var cacheRead = false
@@ -938,9 +939,11 @@ class ChatListModel(
                     if (submission == null) return@coroutineScope false
                     val failure = rowMutations.confirm(submission, rollback)
                     if (undoRequest == null) {
-                        if (failure != null)
-                            mutable.value = mutable.value.copy(failedRowAction = failure)
-                        else if (!rolledBack) {
+                        if (failure != null) {
+                            val state = mutable.value.copy(failedRowAction = failure)
+                            if (action == ChatRowAction.MoveProject) reconcileProjectMoves(state)
+                            else mutable.value = state
+                        } else if (!rolledBack) {
                             recordConfirmedUndo(threadId, undo)
                             if (destination != null) {
                                 val notice =
@@ -988,6 +991,18 @@ class ChatListModel(
                 acceptedNewChats = projection.acceptedNewChats,
             )
     }
+
+    private fun reconcileProjectMoves(state: ChatListUiState) {
+        if (
+            state.projectsSource == ChatListSource.Network &&
+                projection.discardUnconfirmedMovesToMissingProjects(state.projects)
+        ) {
+            publishRows(state.copy(failedRowAction = unresolvedRowAction(state.failedRowAction)))
+        } else mutable.value = state
+    }
+
+    private fun unresolvedRowAction(failure: ChatRowActionFailure?): ChatRowActionFailure? =
+        failure?.takeUnless { it.edits.isNotEmpty() && !projection.hasUnsettledEdits(it.edits) }
 
     internal fun retainAcceptedNewChats(chats: List<ProvisionalChat>, restored: Boolean = false) {
         if (!current() || chats.isEmpty()) return
@@ -1463,10 +1478,7 @@ class ChatListModel(
                 listPhase = ChatReadPhase.Ready,
                 listReadFailure = null,
                 sustainedRefreshFailure = false,
-                failedRowAction =
-                    previousState.failedRowAction?.takeUnless {
-                        it.edits.isNotEmpty() && !projection.hasUnsettledEdits(it.edits)
-                    },
+                failedRowAction = unresolvedRowAction(previousState.failedRowAction),
             )
         resetListReadFailures()
         if (projectionChanged) publishRows(state) else mutable.value = state

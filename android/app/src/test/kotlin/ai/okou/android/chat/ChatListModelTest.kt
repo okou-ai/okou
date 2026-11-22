@@ -3106,6 +3106,70 @@ class ChatListModelTest {
             }
         }
 
+    @Test
+    fun confirmedProjectDeletionReleasesAnUnconfirmedMoveIntoThatProject() = runTest {
+        val source = ProjectOrganizationService()
+        source.moveResponse = { _, _, _ ->
+            throw ApiFailure.Network(IOException("Move response unavailable"))
+        }
+        source.deleteResponse = source::publishDeletion
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            val original = model.uiState.value.threads.single { it.id == CHAT_PERSONAL }
+
+            assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+            runCurrent()
+            val moving = model.uiState.value
+            assertEquals(CHAT_PROJECT, moving.threads.single { it.id == CHAT_PERSONAL }.projectId)
+            assertEquals(ChatRowAction.MoveProject, moving.failedRowAction?.action)
+
+            model.deleteProject(CHAT_PROJECT)
+            runCurrent()
+
+            val deleted = model.uiState.value
+            assertEquals(ProjectDeleteStatus.Confirmed, deleted.projectList.deleteFeedback?.status)
+            assertEquals(original, deleted.threads.single { it.id == CHAT_PERSONAL })
+            assertEquals(
+                listOf(CHAT_PERSONAL, CHAT_IN_PROJECT),
+                chatListGroups(deleted).single().threads.map { it.id },
+            )
+            assertNull(deleted.failedRowAction)
+        }
+    }
+
+    @Test
+    fun moveToProjectDeletedDuringTheRequestKeepsTheConfirmedMembership() = runTest {
+        val source = ProjectOrganizationService()
+        val response = CompletableDeferred<Unit>()
+        source.moveResponse = { _, _, _ ->
+            response.await()
+            throw ApiFailure.Network(IOException("Move response unavailable"))
+        }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            val original = model.uiState.value.threads.single { it.id == CHAT_PERSONAL }
+
+            assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+            runCurrent()
+            source.publishDeletion("00000022-0000-4000-8000-000000000000")
+            model.refreshMetadata()
+            runCurrent()
+            val pending = model.uiState.value
+            assertTrue(pending.projects.isEmpty())
+            assertEquals(ChatRowAction.MoveProject, pending.pendingRowActions[CHAT_PERSONAL])
+
+            response.complete(Unit)
+            runCurrent()
+
+            val settled = model.uiState.value
+            assertEquals(original, settled.threads.single { it.id == CHAT_PERSONAL })
+            assertNull(settled.pendingRowActions[CHAT_PERSONAL])
+            assertNull(settled.failedRowAction)
+        }
+    }
+
     private inner class ProjectOrganizationService : Service() {
         private val events =
             mutableListOf(
