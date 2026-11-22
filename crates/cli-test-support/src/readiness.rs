@@ -1,8 +1,9 @@
 //! Unique temporary paths and bounded inotify-backed file readiness.
 
 use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
-use std::io;
+use std::io::{self, Seek, SeekFrom};
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -38,9 +39,28 @@ pub async fn wait_for_file_contains(
     needle: &str,
     timeout: Duration,
 ) -> io::Result<()> {
+    wait_for_file_marker(path, needle, timeout, false).await
+}
+
+/// Wait for a marker in a file whose existing bytes are never rewritten.
+/// A replacement file or an observed shrink starts a fresh scan.
+pub async fn wait_for_appended_file_contains(
+    path: &Path,
+    needle: &str,
+    timeout: Duration,
+) -> io::Result<()> {
+    wait_for_file_marker(path, needle, timeout, true).await
+}
+
+async fn wait_for_file_marker(
+    path: &Path,
+    needle: &str,
+    timeout: Duration,
+    append_only: bool,
+) -> io::Result<()> {
     tokio::time::timeout(
         timeout,
-        wait_for_file_contains_event(path, needle.as_bytes()),
+        wait_for_file_contains_event(path, needle.as_bytes(), append_only),
     )
     .await
     .map_err(|_| {
@@ -54,7 +74,11 @@ pub async fn wait_for_file_contains(
     })?
 }
 
-async fn wait_for_file_contains_event(path: &Path, needle: &[u8]) -> io::Result<()> {
+async fn wait_for_file_contains_event(
+    path: &Path,
+    needle: &[u8],
+    append_only: bool,
+) -> io::Result<()> {
     if needle.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -83,10 +107,12 @@ async fn wait_for_file_contains_event(path: &Path, needle: &[u8]) -> io::Result<
         .map_err(|error| io::Error::other(format!("inotify watch: {error}")))?;
     let async_fd = async_inotify_fd(inotify)?;
 
+    let overlap = append_only.then_some((needle.len() - 1) as u64);
+    let mut previous = None;
     loop {
-        match file_contains(path, &matcher).await {
-            Ok(true) => return Ok(()),
-            Ok(false) => {}
+        match file_contains(path, &matcher, overlap, previous.take()).await {
+            Ok((true, _)) => return Ok(()),
+            Ok((false, cursor)) => previous = cursor,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
@@ -97,11 +123,38 @@ async fn wait_for_file_contains_event(path: &Path, needle: &[u8]) -> io::Result<
     }
 }
 
-async fn file_contains(path: &Path, matcher: &aho_corasick::AhoCorasick) -> io::Result<bool> {
+struct ScannedFile {
+    // Keep the inode alive until the next open, so reuse cannot look like an append.
+    _file: std::fs::File,
+    device: u64,
+    inode: u64,
+    end: u64,
+}
+
+async fn file_contains(
+    path: &Path,
+    matcher: &aho_corasick::AhoCorasick,
+    overlap: Option<u64>,
+    previous: Option<ScannedFile>,
+) -> io::Result<(bool, Option<ScannedFile>)> {
     let path = path.to_owned();
     let matcher = matcher.clone();
     tokio::task::spawn_blocking(move || {
-        let mut file = ReadinessReader(std::fs::File::open(path)?);
+        let mut opened = std::fs::File::open(path)?;
+        let identity = if let Some(overlap) = overlap {
+            let metadata = opened.metadata()?;
+            if let Some(previous) = previous
+                && metadata.dev() == previous.device
+                && metadata.ino() == previous.inode
+                && metadata.len() >= previous.end
+            {
+                opened.seek(SeekFrom::Start(previous.end.saturating_sub(overlap)))?;
+            }
+            Some((metadata.dev(), metadata.ino()))
+        } else {
+            None
+        };
+        let mut file = ReadinessReader(opened);
         let found = matcher
             .try_stream_find_iter(&mut file)
             .map_err(io::Error::other)?
@@ -112,8 +165,19 @@ async fn file_contains(path: &Path, matcher: &aho_corasick::AhoCorasick) -> io::
             // Preserve the former read-to-EOF error boundary without retaining
             // the unread tail. Stream matching already consumed any lookahead.
             io::copy(&mut file, &mut io::sink())?;
+            return Ok((true, None));
         }
-        Ok(found)
+        let cursor = if let Some((device, inode)) = identity {
+            Some(ScannedFile {
+                end: file.0.stream_position()?,
+                _file: file.0,
+                device,
+                inode,
+            })
+        } else {
+            None
+        };
+        Ok((false, cursor))
     })
     .await
     .map_err(io::Error::other)?
@@ -188,3 +252,6 @@ fn drain_inotify_fd(fd: std::os::fd::BorrowedFd<'_>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
