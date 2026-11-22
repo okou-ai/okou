@@ -247,16 +247,10 @@ const unchangedTables = [
 async function snapshot() {
   const values: string[] = [];
   for (const table of unchangedTables) {
-    // Include the additive default before it exists; real row values win so
-    // unintended recency writes still fail the unchanged-data assertion.
-    const value =
-      table === "org_members_metadata"
-        ? "(jsonb_build_object('recent_workflows', '[]'::jsonb) || to_jsonb(t))"
-        : "to_jsonb(t)";
     values.push(
       JSON.stringify(
         await sql.unsafe(
-          `SELECT ${value} AS value FROM ${table} t ORDER BY ${value}::text`,
+          `SELECT to_jsonb(t) AS value FROM ${table} t ORDER BY to_jsonb(t)::text`,
         ),
       ),
     );
