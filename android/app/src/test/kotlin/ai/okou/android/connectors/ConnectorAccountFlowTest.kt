@@ -253,19 +253,31 @@ class ConnectorAccountFlowTest {
         }
 
     @Test
-    fun changingTheDefaultSwitchUpdatesTheAccountRow() = withCalendar { _, _ ->
-        compose.onNodeWithText("工作日历").performClick()
-        val toggleLabel = "Enable by default"
-        compose.onNodeWithText(toggleLabel).assertHeightIsAtLeast(56.dp).assertIsOn().performClick()
-        compose.waitUntilAtLeastOneExists(hasText(toggleLabel) and isOff(), 10_000)
-        compose
-            .onNode(
-                hasText("Connected") and
-                    hasAnyAncestor(hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY")),
-                useUnmergedTree = true,
-            )
-            .assertExists()
-    }
+    fun theDefaultSwitchAndAccountRowKeepTheirConfirmedStateUntilTheReply() =
+        withCalendar { fixture, _ ->
+            compose.onNodeWithText("工作日历").performClick()
+            val toggleLabel = "Enable by default"
+            val toggle = compose.onNodeWithText(toggleLabel)
+            val account =
+                hasAnyAncestor(hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY"))
+            val release = CountDownLatch(1)
+            fixture.defaultReplyGate = release
+            try {
+                toggle.assertHeightIsAtLeast(56.dp).assertIsOn().performClick()
+                compose.waitUntil(10_000) { fixture.defaultReplyStarted.count == 0L }
+                toggle.assertIsOn().assertIsNotEnabled()
+                compose
+                    .onNode(
+                        hasText("Connected · Enabled by default") and account,
+                        useUnmergedTree = true,
+                    )
+                    .assertExists()
+            } finally {
+                release.countDown()
+            }
+            compose.waitUntilAtLeastOneExists(hasText(toggleLabel) and isOff(), 10_000)
+            compose.onNode(hasText("Connected") and account, useUnmergedTree = true).assertExists()
+        }
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")

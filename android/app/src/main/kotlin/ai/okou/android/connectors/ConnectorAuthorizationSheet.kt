@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -330,20 +331,23 @@ private fun ConnectorMethodForm(
         if (!method.description.isNullOrBlank())
             Text(method.description, style = connectorFeedbackType())
         when (method.grantKind) {
-            ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL -> {
-                for (field in method.manualFields) {
-                    ConnectorInput(
-                        field.label,
-                        fields.getValue(field.id),
-                        readOnly = !enabled,
-                        secret =
-                            field.inputType ==
-                                ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
-                                    .PASSWORD,
-                        placeholder = field.placeholder,
-                    )
+            ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL ->
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    for (field in method.manualFields) {
+                        key(field.id) {
+                            ConnectorInput(
+                                field.label,
+                                fields.getValue(field.id),
+                                readOnly = !enabled,
+                                secret =
+                                    field.inputType ==
+                                        ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
+                                            .PASSWORD,
+                                placeholder = field.placeholder,
+                            )
+                        }
+                    }
                 }
-            }
             ConnectorDetailConnectorAuthMethodsItemGrantKind.NONE ->
                 Text(
                     stringResource(R.string.connector_authorize_no_auth),

@@ -44,6 +44,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
     @Volatile var renameReplyGate: CountDownLatch? = null
+    val defaultReplyStarted = CountDownLatch(1)
+    @Volatile var defaultReplyGate: CountDownLatch? = null
     @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
     @Volatile var rejectConnection = false
@@ -66,7 +68,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     CONNECTOR_DEVICE_EXAMPLE,
                     "Device authorization sample",
                     "Connect using a code supplied by the service.",
-                    "developer-tools",
+                    "engineering-team-execution",
                     null,
                     grantKind = "device-auth",
                 )
@@ -76,7 +78,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     CONNECTOR_MANUAL_EXAMPLE,
                     "Manual setup sample",
                     "Set up a sample workspace account.",
-                    "developer-tools",
+                    "engineering-team-execution",
                     null,
                     grantKind = "manual",
                 )
@@ -171,6 +173,14 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                             url.pathSegments.getOrNull(1) == "connector-accounts"
                     )
                         renameReplyGate?.await()
+                    if (
+                        request.method == "PUT" &&
+                            url.pathSegments.getOrNull(1) == "connector-account-access" &&
+                            url.pathSegments.last() == "default-enabled"
+                    ) {
+                        defaultReplyStarted.countDown()
+                        defaultReplyGate?.await()
+                    }
                     return response
                 }
             }
@@ -438,6 +448,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     override fun close() {
         discoveryGate?.countDown()
         renameReplyGate?.countDown()
+        defaultReplyGate?.countDown()
         https.use { api.close() }
     }
 
