@@ -1835,7 +1835,7 @@ class ChatListRootTest {
         assertEquals(left, row.getUnclippedBoundsInRoot().left)
         row.performTouchInput {
             down(center)
-            moveTo(center + Offset(-32.dp.toPx(), 0f))
+            moveTo(center + Offset(-104.dp.toPx(), 0f))
             moveTo(center + Offset(-96.dp.toPx(), 72.dp.toPx()))
             up()
         }
