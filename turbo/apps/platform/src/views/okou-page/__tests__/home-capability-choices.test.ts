@@ -24,8 +24,8 @@ async function closeTray() {
   click(await findFastControl("button", "All capabilities"));
   await screen.findByRole("region", { name: "Find people" });
 }
-async function choose(name: string) {
-  click(await findFastControl("button", new RegExp(name, "i")));
+async function choose(name: RegExp) {
+  click(await findFastControl("button", name));
 }
 async function append(editor: HTMLElement, text: string) {
   editor.focus();
@@ -72,8 +72,8 @@ test("capability-home-page-004 Hiding compliance restores composer focus and per
 test("capability-home-page-018 Each card cover opens its own capability content", async () => {
   await home();
   for (const [name, content] of [
-    ["Research", "Compare website traffic"],
-    ["Find people", "Potential customers"],
+    ["Research", /Compare website traffic/i],
+    ["Find people", /Potential customers/i],
     ["Create", "Presentation"],
     ["Workflow", "Schedule a task"],
   ] as const) {
@@ -89,7 +89,7 @@ test("capability-home-page-018 Each card cover opens its own capability content"
 test("capability-home-page-020 Closing an unchanged recommendation clears it and focuses the composer", async () => {
   const editor = await home();
   await cover("Find people");
-  await choose("Potential customers");
+  await choose(/Potential customers/i);
   await waitFor(() => {
     expect(editor).toHaveTextContent(/customers/i);
   });
@@ -99,8 +99,8 @@ test("capability-home-page-020 Closing an unchanged recommendation clears it and
   expect(screen.getByRole("region", { name: "Workflow" })).toBeVisible();
 });
 test.each([
-  ["capability-home-page-025", "Find people", "Potential customers"],
-  ["capability-home-page-026", "Research", "Compare website traffic"],
+  ["capability-home-page-025", "Find people", /Potential customers/i],
+  ["capability-home-page-026", "Research", /Compare website traffic/i],
 ] as const)(
   "%s Closing %s preserves a suggestion that the user edited",
   async (_id, group, suggestion) => {
@@ -120,11 +120,11 @@ test("capability-home-page-030 Closing Find people restores the original draft a
   const editor = await home();
   await fill(editor, "Keep my own brief.");
   await cover("Find people");
-  await choose("Potential customers");
+  await choose(/Potential customers/i);
   await waitFor(() => {
     expect(editor).toHaveTextContent(/customers/i);
   });
-  await choose("Event speakers");
+  await choose(/Event speakers/i);
   await waitFor(() => {
     expect(editor).toHaveTextContent(/speakers/i);
   });
@@ -250,8 +250,8 @@ test("capability-home-page-005 Moving between capability tabs retains the draft,
   ).resolves.toBeVisible();
   expect(queryFastControl("button", "Tools")).toBeNull();
   for (const [tab, sample] of [
-    ["Find people", "Potential customers"],
-    ["Research", "Compare website traffic"],
+    ["Find people", /Potential customers/i],
+    ["Research", /Compare website traffic/i],
   ] as const) {
     click(await findFastControl("tab", tab));
     await expect(screen.findByText(sample)).resolves.toBeVisible();
