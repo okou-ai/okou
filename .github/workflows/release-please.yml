@@ -1625,7 +1625,7 @@ jobs:
           neon-project-id: ${{ vars.NEON_PROJECT_ID }}
           branch-name: release-smoke/migrate-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Check workspace storage maintenance window
+      - name: Check Workflow and feed maintenance window
         id: workflow-maintenance
         if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
         working-directory: turbo/packages/db
@@ -1643,8 +1643,7 @@ jobs:
               SELECT EXISTS (
                 SELECT 1 FROM information_schema.columns
                 WHERE table_schema = 'public' AND (table_name, column_name) IN (
-                  ('workflows', 'agent_id'), ('feed_items', 'source_type'),
-                  ('chat_thread_events', 'event_executor_id'), ('agents', 'id')
+                  ('workflows', 'agent_id'), ('feed_items', 'source_type')
                 )
               ) AS pending
             `;
