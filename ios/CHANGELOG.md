@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.10](https://github.com/okou-ai/okou/compare/ios-v0.51.9...ios-v0.51.10) (2026-11-22)
+
+
+### Bug Fixes
+
+* **mobile:** prepare native clients for workspace apis without agent ids ([#49889](https://github.com/okou-ai/okou/issues/49889)) ([acc1180](https://github.com/okou-ai/okou/commit/acc1180b74cc5401511eb40984f43c64db058604))
+
 ## [0.51.9](https://github.com/okou-ai/okou/compare/ios-v0.51.8...ios-v0.51.9) (2026-11-21)
 
 
