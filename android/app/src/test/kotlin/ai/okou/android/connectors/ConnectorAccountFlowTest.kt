@@ -1,6 +1,7 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.CONNECTOR_CALENDAR
+import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
 import ai.okou.android.CONNECTOR_CALENDAR_SECONDARY
 import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.OkouTheme
@@ -9,8 +10,12 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isOff
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -33,6 +38,21 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w412dp-h892dp", application = TestOkouApplication::class)
 class ConnectorAccountFlowTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun changingTheDefaultSwitchUpdatesTheAccountRow() = withCalendar { _, _ ->
+        compose.onNodeWithText("工作日历").performClick()
+        val toggleLabel = "Enable by default"
+        compose.onNodeWithText(toggleLabel).assertIsOn().performClick()
+        compose.waitUntilAtLeastOneExists(hasText(toggleLabel) and isOff(), 10_000)
+        compose
+            .onNode(
+                hasText("Connected") and
+                    hasAnyAncestor(hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY")),
+                useUnmergedTree = true,
+            )
+            .assertExists()
+    }
 
     @Test
     fun removingTheTargetAccountDoesNotTurnReauthorizationIntoAdd() = withCalendar { fixture, _ ->

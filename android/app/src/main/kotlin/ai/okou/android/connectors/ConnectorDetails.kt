@@ -563,7 +563,9 @@ private fun ConnectorAccountSheet(
     ) {
         Text(account.identity, color = color.onSurfaceVariant, style = connectorSmallType())
     }
-    ConnectorAccountStatusText(account)
+    val defaultEnabled =
+        account.defaultEnabled.takeIf { account.status == ConnectorAccountStatus.Connected }
+    if (defaultEnabled == null) ConnectorAccountStatusText(account)
     if (offline) ConnectorStatusBanner(R.string.connector_offline_action)
     Spacer(Modifier.height(8.dp))
     if (account.status.needsAttention) {
@@ -577,15 +579,13 @@ private fun ConnectorAccountSheet(
             modifier = Modifier.focusRequester(reauthorizeFocus),
             onClick = reauthorize,
         )
-    } else if (
-        account.status == ConnectorAccountStatus.Connected && account.defaultEnabled != null
-    ) {
+    } else if (defaultEnabled != null) {
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = 52.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .toggleable(
-                    account.defaultEnabled,
+                    defaultEnabled,
                     enabled = canModify,
                     role = Role.Switch,
                     onValueChange = onDefault,
@@ -600,16 +600,16 @@ private fun ConnectorAccountSheet(
                 style = connectorBodyType(),
             )
             Switch(
-                checked = account.defaultEnabled,
+                checked = defaultEnabled,
                 enabled = canModify,
                 onCheckedChange = null,
                 colors =
                     SwitchDefaults.colors(
                         checkedTrackColor = color.primary,
                         checkedThumbColor = color.onPrimary,
-                        uncheckedTrackColor = color.surfaceVariant,
+                        uncheckedTrackColor = color.surfaceContainerHighest,
                         uncheckedThumbColor = color.onSurfaceVariant,
-                        uncheckedBorderColor = color.outline,
+                        uncheckedBorderColor = color.onSurfaceVariant,
                     ),
             )
         }
