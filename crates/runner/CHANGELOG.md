@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.95](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.94...runner-rs-v0.249.95) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** share streamed byte count metadata handling ([#49928](https://github.com/okou-ai/okou/issues/49928)) ([ce43044](https://github.com/okou-ai/okou/commit/ce43044934a1dbece6f0c12ed7bab6f90f8b6beb))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.94](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.93...runner-rs-v0.249.94) (2026-11-22)
 
 ### Release Dependencies

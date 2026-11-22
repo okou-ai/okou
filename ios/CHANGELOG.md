@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.0](https://github.com/okou-ai/okou/compare/ios-v0.51.12...ios-v0.52.0) (2026-11-22)
+
+
+### Features
+
+* **ios:** show working and muted chats in the sidebar's trailing slot ([#49929](https://github.com/okou-ai/okou/issues/49929)) ([221b5e7](https://github.com/okou-ai/okou/commit/221b5e78a062f443a9eefd034d834b47ea92f5d8))
+
 ## [0.51.12](https://github.com/okou-ai/okou/compare/ios-v0.51.11...ios-v0.51.12) (2026-11-22)
 
 
