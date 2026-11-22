@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.7...runner-provider-v0.21.8) (2026-11-22)
+
+
+### Refactoring
+
+* move rust run callbacks to run webhook paths ([#50022](https://github.com/okou-ai/okou/issues/50022)) ([ea009d1](https://github.com/okou-ai/okou/commit/ea009d1a44ab6b2a7164f03033a47a043ed09355))
+
 ## [0.21.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.6...runner-provider-v0.21.7) (2026-11-22)
 
 ## [0.21.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.5...runner-provider-v0.21.6) (2026-11-21)
