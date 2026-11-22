@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
@@ -426,6 +427,104 @@ class ChatListRootTest {
         compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertDoesNotExist()
         setResearchExpanded(true)
         compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun findInConversationRestoresQueryAndFocusAfterOpeningAFoldedReply() {
+        val app = compose.activity.application as ChatListApplication
+        val folded = "Folded staging instructions. Keep the folded staging checklist."
+        app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        app.fixture.historyRows = { request ->
+            val thread = checkNotNull(request.requestUrl).pathSegments[2]
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0
+            val rows =
+                listOf(
+                        17L to
+                            historyEventWire(
+                                "input",
+                                17,
+                                thread,
+                                "input.prompt",
+                                """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
+                            ),
+                        22L to
+                            historyEventWire(
+                                "earlier",
+                                22,
+                                thread,
+                                payload =
+                                    """{"content":"## Earlier draft\n\n$folded\n\nReview this after launch."}""",
+                            ),
+                        23L to historyEventWire("output", 23, thread),
+                        37L to
+                            historyEventWire(
+                                HISTORY_LAST_EVENT,
+                                37,
+                                thread,
+                                "run.completed",
+                                "null",
+                            ),
+                    )
+                    .filter { (seq, _) -> seq > after }
+                    .joinToString(",") { it.second }
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Native history", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithText(folded).assertDoesNotExist()
+
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.assertIsFocused()
+        val fieldBounds = query.getUnclippedBoundsInRoot()
+        val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
+        assertTrue(fieldBounds.bottom - fieldBounds.top >= 48.dp)
+        assertTrue(fieldBounds.left > listBounds.right)
+        val draftQuery = "  FOLDED   STAGING  "
+        query.performTextInput(draftQuery)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("1 matching message").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(folded, substring = true).performClick()
+        val hit = compose.onNodeWithTag("conversation_find_hit")
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(hasTestTag("conversation_find_hit"))
+                .fetchSemanticsNodes()
+                .firstOrNull()
+                ?.config
+                ?.getOrElse(SemanticsProperties.Focused) { false } == true
+        }
+        hit.assertIsDisplayed().assertIsFocused().assertTextContains(folded)
+        compose.onNodeWithText("Earlier draft").assertExists()
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        query.assertTextContains(draftQuery)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(folded, substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(folded, substring = true).assertIsFocused()
+        compose.onNodeWithContentDescription("Clear search").performClick()
+        query.assertIsFocused()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Browse turns").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Hello history").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        hit.assertDoesNotExist()
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
     }
 
     @Test

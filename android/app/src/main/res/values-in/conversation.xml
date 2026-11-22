@@ -14,4 +14,14 @@
     <string name="conversation_reply_copied">Balasan disalin</string>
     <string name="conversation_revoke">Tarik</string>
     <string name="conversation_stop">Hentikan</string>
+    <string name="conversation_find">Cari pesan</string>
+    <string name="conversation_find_turns">Jelajahi giliran percakapan</string>
+    <string name="conversation_find_empty">Tidak ada pesan untuk dicari</string>
+    <string name="conversation_find_no_match">Tidak ada pesan yang cocok</string>
+    <string name="conversation_find_you">Pesan Anda</string>
+    <string name="conversation_find_unavailable">Pesan ini tidak tersedia.</string>
+    <string name="conversation_find_attachment">Lampiran</string>
+    <plurals name="conversation_find_matches">
+        <item quantity="other">%d pesan yang cocok</item>
+    </plurals>
 </resources>

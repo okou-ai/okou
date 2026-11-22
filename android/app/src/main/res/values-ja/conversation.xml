@@ -14,4 +14,14 @@
     <string name="conversation_reply_copied">返信をコピーしました</string>
     <string name="conversation_revoke">取り消す</string>
     <string name="conversation_stop">停止</string>
+    <string name="conversation_find">メッセージを検索</string>
+    <string name="conversation_find_turns">やり取りを表示</string>
+    <string name="conversation_find_empty">検索できるメッセージがありません</string>
+    <string name="conversation_find_no_match">一致するメッセージがありません</string>
+    <string name="conversation_find_you">あなたのメッセージ</string>
+    <string name="conversation_find_unavailable">このメッセージは利用できません。</string>
+    <string name="conversation_find_attachment">添付ファイル</string>
+    <plurals name="conversation_find_matches">
+        <item quantity="other">%d 件のメッセージが一致</item>
+    </plurals>
 </resources>
