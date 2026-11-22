@@ -249,14 +249,15 @@ internal fun WorkspaceChatFeedback(
         ?.takeIf { list.rowUndo == null }
         ?.let { result ->
             val message =
-                if (result.confirmed == result.requested) {
-                    pluralStringResource(
-                        R.plurals.chat_mark_all_read_success,
-                        result.confirmed,
-                        result.confirmed,
-                    )
-                } else {
-                    stringResource(R.string.chat_mark_all_read_unconfirmed)
+                when {
+                    result.connectionFailed -> stringResource(R.string.chat_action_connection_failed)
+                    result.confirmed == result.requested ->
+                        pluralStringResource(
+                            R.plurals.chat_mark_all_read_success,
+                            result.confirmed,
+                            result.confirmed,
+                        )
+                    else -> stringResource(R.string.chat_mark_all_read_unconfirmed)
                 }
             LaunchedEffect(chats, result, message, showChatList) {
                 if (showChatList)

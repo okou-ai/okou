@@ -1333,30 +1333,33 @@ class ChatListModelTest {
     }
 
     @Test
-    fun missingIndicatorDoesNotConfirmAnAmbiguousBulkWrite() = runTest {
-        val source =
-            object : Service() {
-                    override suspend fun markRead(threadId: String): ReadState {
-                        statusRead = { Indicators(emptyMap(), emptyMap()) }
-                        throw IOException("response lost")
+    fun bulkReadDistinguishesFailedConnectionFromMissingReadbackEvidence() = runTest {
+        for (connectionFailed in listOf(false, true)) {
+            val source =
+                object : Service() {
+                        override suspend fun markRead(threadId: String): ReadState {
+                            if (connectionFailed) throw ApiFailure.Network(ConnectException())
+                            statusRead = { Indicators(emptyMap(), emptyMap()) }
+                            throw IOException("response lost")
+                        }
                     }
-                }
-                .apply {
-                    statusRead = {
-                        Indicators(
-                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
-                            mapOf(CHAT_PERSONAL to CHAT_DATE),
-                        )
+                    .apply {
+                        statusRead = {
+                            Indicators(
+                                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                                mapOf(CHAT_PERSONAL to CHAT_DATE),
+                            )
+                        }
                     }
-                }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            advanceUntilIdle()
-            model.markAllRead()
-            advanceUntilIdle()
-            val state = model.uiState.value
-            assertFalse(state.isUnread(CHAT_PERSONAL))
-            assertEquals(ChatMarkAllReadResult(0, 1), state.markAllReadResult)
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                advanceUntilIdle()
+                model.markAllRead()
+                advanceUntilIdle()
+                val state = model.uiState.value
+                assertEquals(connectionFailed, state.isUnread(CHAT_PERSONAL))
+                assertEquals(ChatMarkAllReadResult(0, 1, connectionFailed), state.markAllReadResult)
+            }
         }
     }
 

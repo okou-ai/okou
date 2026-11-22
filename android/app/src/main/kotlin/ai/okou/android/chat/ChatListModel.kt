@@ -84,7 +84,11 @@ enum class ChatListSource {
     Network,
 }
 
-data class ChatMarkAllReadResult(val confirmed: Int, val requested: Int)
+data class ChatMarkAllReadResult(
+    val confirmed: Int,
+    val requested: Int,
+    internal val connectionFailed: Boolean = false,
+)
 
 class ChatReadIntent
 internal constructor(internal val action: ChatRowAction, internal val through: String?) {
@@ -638,12 +642,14 @@ class ChatListModel(
                                 )
                         }
                     }
-                readIndicatorsAfterWrite()
+                val connectionFailed = confirmations.all { it.connectionFailed }
+                if (!connectionFailed) readIndicatorsAfterWrite()
                 requireCurrent()
                 result =
                     ChatMarkAllReadResult(
                         confirmations.count { it.receiptCoversIntent },
                         targets.size,
+                        connectionFailed,
                     )
             } finally {
                 if (current()) {

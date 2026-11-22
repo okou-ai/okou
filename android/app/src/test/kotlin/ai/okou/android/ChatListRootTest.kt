@@ -1662,12 +1662,14 @@ class ChatListRootTest {
         compose.activityRule.scenario.recreate()
         val app = compose.activity.application as ChatListApplication
         val deletes = AtomicInteger()
+        val releaseDelete = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
             if (
                 request.method == "DELETE" &&
                     request.requestUrl?.encodedPath == "/api/projects/$CHAT_PROJECT"
             ) {
                 deletes.incrementAndGet()
+                releaseDelete.await()
                 MockResponse().setResponseCode(409)
             } else null
         }
@@ -1682,7 +1684,16 @@ class ChatListRootTest {
         compose.runOnIdle { app.connectivity.value = false }
         compose.waitUntil(10_000) { currentList()?.offline == true }
         assertEquals(0, deletes.get())
-        compose.onNodeWithText("Delete Project").assertIsEnabled().performClick()
+        val confirm = compose.onNodeWithText("Delete Project")
+        try {
+            confirm.assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { deletes.get() == 1 }
+            confirm.assertIsNotEnabled()
+            compose.onNodeWithText("Deleting Project…").assertIsDisplayed()
+            compose.onNodeWithText("Cancel").assertIsEnabled()
+        } finally {
+            releaseDelete.countDown()
+        }
         compose.waitUntil(10_000) {
             compose
                 .onAllNodesWithText("Could not delete the Project.")

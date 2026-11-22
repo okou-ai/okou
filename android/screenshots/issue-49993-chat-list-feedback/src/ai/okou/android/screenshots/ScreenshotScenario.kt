@@ -212,7 +212,12 @@ class ScreenshotScenario {
             assertEquals(0, deletes.get())
             confirm.click()
             text(R.string.chat_project_delete_pending)
-            assertFalse(text(R.string.chat_project_delete).isEnabled)
+            // The label can be a separate accessibility node from the disabled button.
+            val pendingConfirm = text(R.string.chat_project_delete).visibleCenter
+            assertTrue(device.click(pendingConfirm.x, pendingConfirm.y))
+            device.waitForIdle()
+            text(R.string.chat_project_delete_pending)
+            assertEquals(1, deletes.get())
             assertTrue(text(R.string.settings_cancel).isEnabled)
             ScreenshotCapture.capture("project-delete-pending.png")
             releaseDelete.complete(Unit)
@@ -250,7 +255,9 @@ class ScreenshotScenario {
             if (!device.hasObject(selector(project))) list.swipe(Direction.UP, 0.45f)
             openDelete()
             text(project)
-            val compactAction = text(R.string.chat_project_delete)
+            val compactAction =
+                generateSequence(text(R.string.chat_project_delete)) { it.parent }
+                    .first { it.isClickable }
             assertTrue(compactAction.isEnabled)
             assertTrue(compactAction.visibleBounds.height() >= 48)
             ScreenshotCapture.capture("compact-project-delete.png")
