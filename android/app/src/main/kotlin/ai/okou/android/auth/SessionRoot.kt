@@ -13,7 +13,6 @@ import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
-import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
@@ -27,6 +26,7 @@ import ai.okou.android.state.rememberWorkspaceSwitchTarget
 import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchControlHeight
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -99,6 +99,9 @@ internal fun SessionRoot(
         val opened = state.opening as? OpeningWorkspace.Authorized
         val identity = ready?.identity ?: state.opening?.identity
         val organization = ready?.organization ?: opened?.organization
+        val workspaceName =
+            organization?.name
+                ?: state.memberships.firstOrNull { it.id == identity?.workspaceId }?.name
         val switchWorkspace: (String) -> Unit = { id ->
             switchTarget = id
             chooseWorkspace(id)
@@ -112,6 +115,10 @@ internal fun SessionRoot(
                 state.generation,
             ) {
                 if (ready != null) WorkspaceRealtimeLifecycle(ready.chats.updates)
+                val startupRecovery: (@Composable () -> Unit)? =
+                    if (state.stage == SessionStage.Unavailable && !state.working) {
+                        { WorkspaceStartupRecovery(retry, signOut) }
+                    } else null
                 OkouApp(
                     ready?.chats ?: opened?.chats,
                     ready?.composer ?: opened?.composer,
@@ -127,58 +134,37 @@ internal fun SessionRoot(
                             ?.timezone ?: java.util.TimeZone.getDefault().id,
                     projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
                     settingsContent = { destination, open, close ->
-                        if (ready != null) {
-                            WorkspaceSettingsContent(
-                                destination,
-                                state,
-                                ready,
-                                open,
-                                close,
-                                switchWorkspace,
-                                account?.takeIf { it.userId == ready.identity.userId },
-                                signOut,
-                                appUpdates,
-                            )
-                        }
+                        WorkspaceSettingsContent(
+                            destination,
+                            state,
+                            identity.workspaceId,
+                            workspaceName,
+                            open,
+                            close,
+                            switchWorkspace,
+                            account?.takeIf { it.userId == identity.userId },
+                            signOut,
+                            appUpdates,
+                            retry,
+                        )
                     },
                     recovery = ready?.recovery,
                     artifacts = ready?.artifacts,
-                    workspaceName = organization?.name,
-                    workspaceAvatar =
-                        organization?.let { workspace ->
-                            {
-                                WorkspaceAvatar(
-                                    workspace,
-                                    state,
-                                    switchWorkspace,
-                                    restoreFocus = switchTarget == workspace.id,
-                                    onRestored = { switchTarget = null },
-                                )
-                            }
-                        },
+                    workspaceName = workspaceName,
+                    workspaceAvatar = {
+                        WorkspaceAvatar(
+                            identity.workspaceId,
+                            workspaceName,
+                            state,
+                            switchWorkspace,
+                            restoreFocus = switchTarget == identity.workspaceId,
+                            onRestored = { switchTarget = null },
+                        )
+                    },
                     updateToolbarAction = updateToolbarAction,
                     onUpdateEditingChanged = onUpdateEditingChanged,
                     workspaceReady = ready != null,
-                    startupRecovery =
-                        if (state.stage == SessionStage.Unavailable) {
-                            {
-                                Column {
-                                    Text(
-                                        stringResource(R.string.auth_unavailable),
-                                        modifier =
-                                            Modifier.semantics {
-                                                liveRegion = LiveRegionMode.Polite
-                                            },
-                                    )
-                                    TextButton(onClick = retry, colors = textButtonColors) {
-                                        Text(stringResource(R.string.retry))
-                                    }
-                                    TextButton(onClick = signOut, colors = textButtonColors) {
-                                        Text(stringResource(R.string.auth_sign_out))
-                                    }
-                                }
-                            }
-                        } else null,
+                    startupRecovery = startupRecovery,
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {
@@ -316,14 +302,17 @@ private fun OkouAuthLogo() {
 private fun WorkspaceSettingsContent(
     destination: SettingsDestination,
     state: SessionUiState,
-    ready: ReadyWorkspace,
+    workspaceId: String,
+    workspaceName: String?,
     open: (SettingsDestination) -> Unit,
     close: () -> Unit,
     switchWorkspace: (String) -> Unit,
     account: NativeAccount?,
     signOut: () -> Unit,
     appUpdates: @Composable (() -> Unit)?,
+    retry: () -> Unit,
 ) {
+    val ready = state.ready
     val rowFocus = remember { SettingsDestination.entries.associateWith { FocusRequester() } }
     var focused by remember { mutableStateOf<SettingsDestination?>(null) }
     var restore by rememberSettingsReturnFocus()
@@ -343,23 +332,32 @@ private fun WorkspaceSettingsContent(
     }
     when (destination) {
         SettingsDestination.ModelAccounts,
-        SettingsDestination.CreditBalance ->
-            WorkspaceSettingsDataPage(destination, ready.organization.name, ready.settings)
+        SettingsDestination.CreditBalance -> {
+            if (ready == null) WorkspaceSettingsPreparation(state, retry)
+            else WorkspaceSettingsDataPage(destination, ready.organization.name, ready.settings)
+        }
         SettingsDestination.Account -> AccountSettings(account, signOut)
         SettingsDestination.Overview,
         SettingsDestination.Instructions -> {
             val instructionsOpen = destination == SettingsDestination.Instructions
-            val preferences by ready.preferences.uiState.collectAsStateWithLifecycle()
+            val preferenceModel = ready?.preferences
+            val preferences = preferenceModel?.uiState?.collectAsStateWithLifecycle()?.value
             SettingsScreen(
                 appUpdates = appUpdates,
-                workspacePreferences = { MemberPreferencesSettings(ready.preferences) },
+                workspacePreferences = {
+                    MemberPreferencesSettings(preferenceModel, state.cachedAppearance)
+                    if (state.stage == SessionStage.Unavailable && !state.working) {
+                        WorkspaceStartupRecovery(retry)
+                    }
+                },
                 workspace = {
-                    WorkspaceSettings(state, switchWorkspace) {
+                    WorkspaceSettings(workspaceId, workspaceName, state, switchWorkspace) {
                         SettingsRow(
                             stringResource(R.string.settings_credit_balance),
                             leading = { SettingsIcon(R.drawable.ic_paid) },
                             modifier = focusFor(SettingsDestination.CreditBalance),
                             onClick = { openPage(SettingsDestination.CreditBalance) },
+                            enabled = ready != null,
                         )
                     }
                 },
@@ -369,6 +367,7 @@ private fun WorkspaceSettingsContent(
                         leading = { SettingsIcon(R.drawable.ic_account_circle) },
                         modifier = focusFor(SettingsDestination.ModelAccounts),
                         onClick = { openPage(SettingsDestination.ModelAccounts) },
+                        enabled = ready != null,
                     )
                 },
                 tools = {
@@ -376,17 +375,19 @@ private fun WorkspaceSettingsContent(
                         SettingsSwitchRow(
                             stringResource(R.string.settings_cloud_browser),
                             leading = { SettingsIcon(R.drawable.ic_language) },
-                            checked = preferences.cloudBrowser,
+                            checked = preferences?.cloudBrowser,
                             supportingText = stringResource(R.string.settings_cloud_browser_detail),
-                            onCheckedChange = ready.preferences::setCloudBrowser,
+                            onCheckedChange = preferenceModel?.let { it::setCloudBrowser },
                         )
                     }
-                    if (preferences.pending?.cloudBrowser != null) {
-                        PreferenceFeedback(preferences, ready.preferences::retry)
+                    if (preferenceModel != null && preferences?.pending?.cloudBrowser != null) {
+                        PreferenceFeedback(preferences, preferenceModel::retry)
                     }
                 },
                 myOkou = {
-                    InstructionsSetting(instructionsOpen) { open(SettingsDestination.Instructions) }
+                    InstructionsSetting(instructionsOpen, ready != null) {
+                        open(SettingsDestination.Instructions)
+                    }
                 },
                 account = {
                     SettingsSection(stringResource(R.string.settings_account)) {
@@ -401,7 +402,7 @@ private fun WorkspaceSettingsContent(
                     }
                 },
             )
-            if (instructionsOpen) {
+            if (instructionsOpen && ready != null) {
                 val chatState by ready.chats.uiState.collectAsStateWithLifecycle()
                 PersonalInstructionsSettings(ready.instructions, close, chatState.offline)
             }
@@ -409,25 +410,78 @@ private fun WorkspaceSettingsContent(
     }
 }
 
+@StringRes
+private fun workspacePreparationMessage(state: SessionUiState): Int? =
+    when {
+        !state.working -> null
+        state.stage == SessionStage.Unavailable -> R.string.chat_list_first_load_failed
+        else -> R.string.auth_preparing_workspace
+    }
+
+@Composable
+private fun WorkspaceSettingsPreparation(state: SessionUiState, retry: () -> Unit) {
+    val message = workspacePreparationMessage(state)
+    if (message != null) {
+        Text(
+            stringResource(message),
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    } else if (state.stage == SessionStage.Unavailable) {
+        WorkspaceStartupRecovery(retry)
+    }
+}
+
+@Composable
+private fun WorkspaceStartupRecovery(retry: () -> Unit, signOut: (() -> Unit)? = null) {
+    val textButtonColors =
+        ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+    Column {
+        Text(
+            stringResource(R.string.auth_unavailable),
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        TextButton(onClick = retry, colors = textButtonColors) {
+            Text(stringResource(R.string.retry))
+        }
+        if (signOut != null) {
+            TextButton(onClick = signOut, colors = textButtonColors) {
+                Text(stringResource(R.string.auth_sign_out))
+            }
+        }
+    }
+}
+
 @Composable
 private fun WorkspaceSettings(
+    workspaceId: String,
+    workspaceName: String?,
     state: SessionUiState,
     chooseWorkspace: (String) -> Unit,
     creditRow: @Composable () -> Unit,
 ) {
-    val organization = checkNotNull(state.ready).organization
+    val enabled = state.ready != null
+    val label = stringResource(R.string.auth_workspace)
+    val message = workspacePreparationMessage(state)
+    val subtitle =
+        if (message == null) label.takeIf { workspaceName != null } else stringResource(message)
     SettingsGroup {
         SettingsTrigger(
+            enabled = enabled,
             content = { dismiss ->
-                WorkspaceChooser(organization.id, state.memberships, chooseWorkspace, dismiss)
-            }
+                WorkspaceChooser(workspaceId, state.memberships, chooseWorkspace, dismiss)
+            },
         ) { modifier, open ->
             SettingsRow(
-                organization.name,
-                leading = { WorkspaceLogo(organization.id, Modifier.size(40.dp)) },
-                modifier = modifier,
-                supportingText = stringResource(R.string.auth_workspace),
+                workspaceName ?: label,
+                leading = { WorkspaceLogo(workspaceId, Modifier.size(40.dp)) },
+                modifier =
+                    if (message == null) modifier
+                    else modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                supportingText = subtitle,
                 onClick = open,
+                enabled = enabled,
             )
         }
         HorizontalDivider()
@@ -436,12 +490,16 @@ private fun WorkspaceSettings(
 }
 
 @Composable
-private fun InstructionsSetting(instructionsOpen: Boolean, openInstructions: () -> Unit) {
+private fun InstructionsSetting(
+    instructionsOpen: Boolean,
+    enabled: Boolean,
+    openInstructions: () -> Unit,
+) {
     val instructionsFocus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     var restoreFocus by rememberSettingsFlag()
-    LaunchedEffect(instructionsOpen) {
-        if (!instructionsOpen && restoreFocus) {
+    LaunchedEffect(instructionsOpen, enabled) {
+        if (!instructionsOpen && restoreFocus && enabled) {
             restoreFocus = false
             instructionsFocus.requestFocus()
         }
@@ -451,6 +509,7 @@ private fun InstructionsSetting(instructionsOpen: Boolean, openInstructions: () 
         leading = { SettingsIcon(R.drawable.ic_edit) },
         modifier =
             Modifier.focusRequester(instructionsFocus).onFocusChanged { focused = it.isFocused },
+        enabled = enabled,
         onClick = {
             restoreFocus = focused
             openInstructions()
@@ -503,48 +562,50 @@ private fun AccountSettings(account: NativeAccount?, signOut: () -> Unit) {
 
 @Composable
 private fun WorkspaceAvatar(
-    workspace: Organization,
+    workspaceId: String,
+    workspaceName: String?,
     state: SessionUiState,
     chooseWorkspace: (String) -> Unit,
     restoreFocus: Boolean,
     onRestored: () -> Unit,
 ) {
     val size = workspaceSearchControlHeight()
-    if (state.ready != null) {
-        val label = stringResource(R.string.auth_switch_workspace)
-        val destinationFocus = remember { FocusRequester() }
-        SettingsTrigger(
-            content = { dismiss ->
-                WorkspaceChooser(workspace.id, state.memberships, chooseWorkspace, dismiss)
-            }
-        ) { modifier, open ->
-            IconButton(
-                onClick = open,
-                modifier =
-                    Modifier.focusRequester(destinationFocus)
-                        .then(modifier)
-                        .size(size)
-                        .updateFocusOutline(CircleShape, LocalActivityStatusColor.current)
-                        .semantics { contentDescription = "$label, ${workspace.name}" },
-            ) {
-                WorkspaceLogo(workspace.id, Modifier.size(size))
-            }
+    val enabled = state.ready != null
+    val label = stringResource(R.string.auth_switch_workspace)
+    val destinationFocus = remember { FocusRequester() }
+    SettingsTrigger(
+        enabled = enabled,
+        content = { dismiss ->
+            WorkspaceChooser(workspaceId, state.memberships, chooseWorkspace, dismiss)
+        },
+    ) { modifier, open ->
+        IconButton(
+            onClick = open,
+            enabled = enabled,
+            modifier =
+                Modifier.focusRequester(destinationFocus)
+                    .then(modifier)
+                    .size(size)
+                    .updateFocusOutline(CircleShape, LocalActivityStatusColor.current)
+                    .semantics {
+                        contentDescription = workspaceName?.let { "$label, $it" } ?: label
+                    },
+        ) {
+            WorkspaceLogo(workspaceId, Modifier.size(size))
         }
-        LaunchedEffect(restoreFocus) {
-            if (restoreFocus) {
-                destinationFocus.requestFocus()
-                onRestored()
-            }
+    }
+    LaunchedEffect(restoreFocus, enabled) {
+        if (restoreFocus && enabled) {
+            destinationFocus.requestFocus()
+            onRestored()
         }
-    } else {
-        WorkspaceLogo(workspace.id, Modifier.size(size), workspace.name)
     }
 }
 
 @Composable
-private fun WorkspaceLogo(id: String, modifier: Modifier, label: String? = null) {
+private fun WorkspaceLogo(id: String, modifier: Modifier) {
     val logo = remember(id) { workspaceLogo(id) }
-    Image(painterResource(logo), contentDescription = label, modifier = modifier.clip(CircleShape))
+    Image(painterResource(logo), contentDescription = null, modifier = modifier.clip(CircleShape))
 }
 
 // The Web and iOS clients use FNV-1a over UTF-16 to select the same bundled brand tile.

@@ -410,8 +410,11 @@ async function openConversation(
 }
 
 function scrollFromUser(container: HTMLElement, top: number): void {
+  fireEvent.scroll(container); // Deliver the previous layout offset before the gesture.
+  fireEvent.wheel(container, { deltaY: top - container.scrollTop });
   container.scrollTop = top;
   fireEvent.scroll(container);
+  fireEvent(container, new Event("scrollend"));
 }
 
 function anchorId(anchor: HTMLElement): string {
@@ -816,6 +819,7 @@ test("Hand the retained primary transcript restore to the new Router page when t
     { container },
   );
   await frames.paint();
+  await frames.paint();
   await waitFor(() => {
     expect(
       anchorById(chatScrollContainer(), nextReadingId).getBoundingClientRect()
@@ -1096,7 +1100,7 @@ test("Reopening automations cancels the first reveal and restores only the final
   });
 });
 
-test.each(["wheel", "touchmove", "pointerdown", "keydown"] as const)(
+test.each(["wheel", "touchmove", "keydown"] as const)(
   "Reader %s input takes over before the narrow sidebar reveal finishes",
   async (input) => {
     const { container, geometry } = await setupUtilitySidebarScroll();
@@ -1111,12 +1115,16 @@ test.each(["wheel", "touchmove", "pointerdown", "keydown"] as const)(
       fireEvent.keyDown(container, { key: "PageDown" });
     } else if (input === "wheel") {
       fireEvent.wheel(container, { deltaY: 125 });
-    } else if (input === "pointerdown") {
-      fireEvent.pointerDown(container);
     } else {
-      fireEvent.touchMove(container);
+      fireEvent.touchStart(container, {
+        touches: [{ clientX: 40, clientY: 200 }],
+      });
+      fireEvent.touchMove(container, {
+        touches: [{ clientX: 40, clientY: 75 }],
+      });
     }
-    scrollFromUser(container, 125);
+    container.scrollTop = 125;
+    fireEvent.scroll(container);
     geometry.writes.length = 0;
     await frames.paint();
     expect(container.scrollTop).toBe(125);
@@ -1428,26 +1436,79 @@ test("Keep expanded work history and its duration visible after the run complete
   ).toBe(readingTop);
 });
 
-test("Follow new messages while reading the latest reply", async () => {
-  const conversation = mockMutableConversation(
-    THREAD_IDS.incomingLatest,
-    completedHistoryEvents(5),
-  );
-  const container = await openConversation(
-    THREAD_IDS.incomingLatest,
-    "History answer 5",
-  );
+test.each(["layout", "tap"])(
+  "Follow new messages after a %s changes the viewport without a reading gesture",
+  async (cause) => {
+    const conversation = mockMutableConversation(
+      THREAD_IDS.incomingLatest,
+      completedHistoryEvents(5),
+    );
+    const container = await openConversation(
+      THREAD_IDS.incomingLatest,
+      "History answer 5",
+    );
+    const geometry = installChatScrollGeometry(container);
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+
+    if (cause === "tap") {
+      fireEvent.pointerDown(container);
+      fireEvent.pointerUp(container);
+    }
+    // The browser can clamp the offset when the preceding follow-up panel disappears.
+    container.scrollTop -= 80;
+    fireEvent.scroll(container);
+    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+
+    await conversation.publish(completedTurn(6));
+
+    const incomingAnswer = await screen.findByText("History answer 6");
+    expect(incomingAnswer).toBeVisible();
+    await waitFor(() => {
+      expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+    });
+    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+  },
+);
+
+test("Follow the tail before and during both render frames as the layout changes", async () => {
+  const id = THREAD_IDS.incomingLatest;
+  const conversation = mockMutableConversation(id, completedHistoryEvents(7));
+  const container = await openConversation(id, "History answer 7");
   const geometry = installChatScrollGeometry(container);
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-
-  await conversation.publish(completedTurn(6));
-
-  const incomingAnswer = await screen.findByText("History answer 6");
-  expect(incomingAnswer).toBeVisible();
+  const frames = controlRevealFrames();
+  geometry.growBeforeMessages(40);
+  await conversation.publish(completedTurn(8));
+  await screen.findByText("History answer 8");
   await waitFor(() => {
     expect(container.scrollTop).toBe(geometry.bottomScrollTop());
   });
-  expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+  for (const growth of [55, 70]) {
+    geometry.growBeforeMessages(growth);
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop() - growth);
+    await frames.paint();
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  }
+});
+
+test("A reader who scrolls between paints keeps their new position", async () => {
+  const id = THREAD_IDS.incomingLatest;
+  const conversation = mockMutableConversation(id, completedHistoryEvents(7));
+  const container = await openConversation(id, "History answer 7");
+  const geometry = installChatScrollGeometry(container);
+  scrollFromUser(container, geometry.bottomScrollTop());
+  const frames = controlRevealFrames();
+  await conversation.publish(completedTurn(8));
+  await screen.findByText("History answer 8");
+  // The browser has not painted yet, but incoming batches must keep flowing.
+  await conversation.publish(completedTurn(9));
+  await screen.findByText("History answer 9");
+  await frames.paint();
+  scrollFromUser(container, 275);
+  const anchor = geometry.firstVisibleAnchor();
+  const offset = anchor.getBoundingClientRect().top;
+  await frames.paint();
+  await expectHistoryPositionHeld();
+  expect(anchor.getBoundingClientRect().top).toBe(offset);
 });
 
 test("Preserve the reading position when new messages are added", async () => {
@@ -1498,12 +1559,10 @@ test("Loading older messages preserves the reading position", async () => {
   );
   const geometry = installChatScrollGeometry(container);
   expect(screen.queryByText("History question 6")).toBeNull();
-  container.scrollTop = 40;
+  scrollFromUser(container, 40);
   const readingAnchor = geometry.firstVisibleAnchor();
   const readingAnchorId = anchorId(readingAnchor);
   const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  fireEvent.scroll(container);
 
   const olderMessage = await screen.findByText("History question 6");
   expect(olderMessage).toBeVisible();

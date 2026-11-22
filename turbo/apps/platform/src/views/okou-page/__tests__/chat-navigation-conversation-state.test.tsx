@@ -268,6 +268,8 @@ test("Keep the work being read expanded as a later run arrives", async () => {
     clientHeight: { configurable: true, value: 400 },
   });
   installReadingPositionGeometry(container, scroller, responseBeingRead.id);
+  fireEvent.scroll(scroller);
+  fireEvent.wheel(scroller, { deltaY: 500 - scroller.scrollTop });
   scroller.scrollTop = 500;
   fireEvent.scroll(scroller);
   await waitFor(() => {
@@ -295,10 +297,12 @@ test("Keep the work being read expanded as a later run arrives", async () => {
   const workHistory = fastButton("Collapse work history", container);
   expect(workHistory).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByText("Response the reader is reviewing")).toBeVisible();
-  expect(
-    eventAnchor(container, responseBeingRead.id).getBoundingClientRect().top,
-  ).toBe(initialResponseTop);
-  expect(scroller.scrollTop).toBe(540);
+  await waitFor(() => {
+    expect(
+      eventAnchor(container, responseBeingRead.id).getBoundingClientRect().top,
+    ).toBe(initialResponseTop);
+    expect(scroller.scrollTop).toBe(540);
+  });
 
   rows = [...rows, completedRow(33, 6, thread.id, laterRunId)];
   workspace.setChatEventRows(rows);
@@ -314,8 +318,10 @@ test("Keep the work being read expanded as a later run arrives", async () => {
   const completedWork = fastButton("Collapse work history", container);
   expect(completedWork).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByText("Response the reader is reviewing")).toBeVisible();
-  expect(
-    eventAnchor(container, responseBeingRead.id).getBoundingClientRect().top,
-  ).toBe(initialResponseTop);
-  expect(scroller.scrollTop).toBe(540);
+  await waitFor(() => {
+    expect(
+      eventAnchor(container, responseBeingRead.id).getBoundingClientRect().top,
+    ).toBe(initialResponseTop);
+    expect(scroller.scrollTop).toBe(540);
+  });
 });

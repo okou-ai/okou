@@ -119,42 +119,9 @@ function truncateIncomplete(value: string): string {
 
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
 
-function completedPredecessor(event: IncompletePromptEvent) {
-  const predecessorId = event.thread.frameworkSessionRunId;
-  if (predecessorId === null) {
-    return undefined;
-  }
-  const query = new QueryBuilder();
-  return query
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, predecessorId),
-        eq(agentRuns.chatThreadId, event.chatThreadId),
-        eq(agentRuns.userId, event.thread.userId),
-        eq(agentRuns.status, "completed"),
-        exists(
-          query
-            .select({ id: chatEvents.id })
-            .from(chatEvents)
-            .where(
-              and(
-                eq(chatEvents.chatThreadId, event.chatThreadId),
-                eq(chatEvents.runId, predecessorId),
-                runOwnedChatEventCondition(),
-                visibleChatEventCondition(),
-              ),
-            ),
-        ),
-      ),
-    );
-}
-
 function recentRoundAnchors(event: IncompletePromptEvent) {
   const query = new QueryBuilder();
   const anchor = alias(chatEvents, "incomplete_anchor");
-  const predecessor = completedPredecessor(event);
   const sameRunEvents = and(
     eq(chatEvents.chatThreadId, event.chatThreadId),
     eq(chatEvents.runId, anchor.runId),
@@ -180,7 +147,6 @@ function recentRoundAnchors(event: IncompletePromptEvent) {
             "failed",
             "timeout",
           ]),
-          predecessor && notExists(predecessor),
           // Even a revoked first event anchors its Run's chronological position.
           notExists(
             query
@@ -219,6 +185,39 @@ export function createIncompletePrompt(
     if (!event?.contextType || !isWebChatContextType(event.contextType)) {
       return "";
     }
+    const db = get(db$);
+    const predecessorId = event.thread.frameworkSessionRunId;
+    if (predecessorId !== null) {
+      const [completed] = await db
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, predecessorId),
+            eq(agentRuns.chatThreadId, event.chatThreadId),
+            eq(agentRuns.userId, event.thread.userId),
+            eq(agentRuns.status, "completed"),
+            exists(
+              db
+                .select({ id: chatEvents.id })
+                .from(chatEvents)
+                .where(
+                  and(
+                    eq(chatEvents.chatThreadId, event.chatThreadId),
+                    eq(chatEvents.runId, predecessorId),
+                    runOwnedChatEventCondition(),
+                    visibleChatEventCondition(),
+                  ),
+                ),
+            ),
+          ),
+        );
+      // A visible, completed predecessor already supplies native session history.
+      if (completed) {
+        return "";
+      }
+    }
+
     const anchors = recentRoundAnchors(event);
     const completedBoundary = new QueryBuilder()
       .select({ firstSeq: anchors.firstSeq })
@@ -227,7 +226,7 @@ export function createIncompletePrompt(
       .orderBy(desc(anchors.firstSeq))
       .limit(1)
       .as("incomplete_completed_boundary");
-    const rows = await get(db$)
+    const rows = await db
       .with(anchors)
       .select({
         runId: anchors.runId,
