@@ -1972,12 +1972,12 @@ All 30 files were assessed using probes written from the frozen GWT, any recorde
 
 #### chat-capability-phone-use
 
-- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L150). Kitchen appeared alone, closing produced no list read during the close, and reopening after disconnection showed No phones online.
-- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L88). Switched off the checked offline Travel phone. Its row disappeared and No phones online appeared.
-- [006](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L99). All three Phone setup instructions appeared; Escape dismissed the dialog and restored focus to Connectors.
+- [002](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L152). Kitchen appeared alone, closing produced no list read during the close, and reopening after disconnection showed No phones online.
+- [004](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L90). Switched off the checked offline Travel phone. Its row disappeared and No phones online appeared.
+- [006](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L101). All three Phone setup instructions appeared; Escape dismissed the dialog and restored focus to Connectors.
 - [007](src/views/okou-page/__tests__/chat-capability-phone-use.bdd.md#chat-capability-phone-use-007). Open. With both named phones online and the first grant visible in a fresh chat-grant read, clicking the second did not establish the complete replacement/deselection sequence. A switch was still checked at the negative assertion.
-- [009](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L118). Held consent at the grant boundary, observed no start, then released it and received Use my phone as the Run prompt.
-- [011](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L133). Rejected consent produced its error on /, preserved Use my phone without starting a Run, and reopened with Kitchen checked.
+- [009](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L120). Held consent at the grant boundary, observed no start, then released it and received Use my phone as the Run prompt.
+- [011](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L135). Rejected consent produced its error on /, preserved Use my phone without starting a Run, and reopened with Kitchen checked.
 
 #### chat-capability-voice-forwarding
 
@@ -2019,12 +2019,12 @@ All 30 files were assessed using probes written from the frozen GWT, any recorde
 
 #### chat-composer-create
 
-- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L49). The rendered user bubble omitted Create and slide settings. Its copied text/plain was exactly Our launch brief.
+- [001](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L50). The rendered user bubble omitted Create and slide settings. Its copied text/plain was exactly Our launch brief.
 - [002](src/views/okou-page/__tests__/chat-composer-create.bdd.md#chat-composer-create-002). Open. On an active run the Create action and a Presentation choice could be reached. The probe could not reach the Remove Presentation chip and slide options, so it did not prove the two distinct queued message parts.
-- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L113). Starting with Our launch, the first selected template closed the picker, left one matching chip, kept Image and displayed Claude Fable 5.1.
-- [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L129). The sent document carried Image intent, replacement style, Our launch, second style and final text in order. The old style was absent.
-- [008](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L107). Add style opened the catalog with the Image tab selected.
-- [009](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L185). Removing Presentation kept the text and template. The captured ordinary send carried both and no additional_info part.
+- [003](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L114). Starting with Our launch, the first selected template closed the picker, left one matching chip, kept Image and displayed Claude Fable 5.1.
+- [005](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L130). The sent document carried Image intent, replacement style, Our launch, second style and final text in order. The old style was absent.
+- [008](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L108). Add style opened the catalog with the Image tab selected.
+- [009](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L186). Removing Presentation kept the text and template. The captured ordinary send carried both and no additional_info part.
 
 #### chat-composer-ime
 
@@ -2118,8 +2118,8 @@ All 30 files were assessed using probes written from the frozen GWT, any recorde
 
 #### chat-engagement-telemetry
 
-- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx#L14). Expanding the completed 20-second work history revealed the hidden activity and emitted its completed-status event.
-- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx#L58). The analytics fixture recorded the three ordered impression kinds and every selected index/kind/generation type across four clicks.
+- [002](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx#L14). Expanding the completed 20-second work history revealed the hidden activity and emitted its completed-status event.
+- [003](https://github.com/okou-ai/okou/blob/6c8b84946ade43564c69803c4901326691ca632d/turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx#L58). The analytics fixture recorded the three ordered impression kinds and every selected index/kind/generation type across four clicks.
 
 #### chat-expected-failures
 
@@ -2189,3 +2189,9 @@ The write-first audit compared frozen b0a10287, both pre-withdrawal revisions 53
 Historical first acceptances total 1,576/2,681 (+81). Current complete coverage totals 1,552/2,681 (+81). The withdrawal cohort is 422 historical / 413 current of 506. The outside group is 1,154 / 1,139 of 2,175. The original 86 withdrawals, earlier 17 invalidated historical IDs, seven batch 75 invalidations and independent upstream backlog of 68 keep their prior ownership.
 
 262 closed files contain 1,656 frozen rows and 895 retained selections including four historical retirements. The 223 open files contain 3,455 frozen rows and 1,786 retained selections, with 661 currently covered. Fork-007 is documented within an open file. [Batch 77 file and ID register](https://app.okou.ai/artifacts/2q73q2h9br.md).
+
+### Security check and final main sync
+
+The [first Semgrep check](https://github.com/okou-ai/okou/actions/runs/45005356662/job/137155680773) reported three non-literal regular-expression findings. [The selector correction](https://github.com/okou-ai/okou/commit/6c8b84946ade43564c69803c4901326691ca632d) removed dynamic regular expressions in three files. Phone controls match their displayed device name and offline status. Create uses its two fixed choices. Recommendation buttons match the exact prompt. The 12 affected stable IDs kept their original expanded titles. The ordinary and shuffled runs each passed all 12 and one existing home-route row. This extra home-route regression is outside the earlier 44.
+
+[Synchronized main](https://github.com/okou-ai/okou/commit/c56a8e9ee73ebfcea289fb6a0039d613338f4ed4) included a For You illustration URL, Android chat resources and a runner refactor. [Final checks for this PR](https://github.com/okou-ai/okou/pull/48906/checks) report the App shards and required checks on the published head.
