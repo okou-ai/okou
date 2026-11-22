@@ -74,12 +74,9 @@ internal fun ChatListGroup.rankScope(state: ChatListUiState): List<ConfirmedChat
 internal data class ChatListSection(
     val group: ChatListGroup,
     val firstRow: Int,
-    val foldedActivity: ProjectActivity?,
+    val collapsed: Boolean,
     val provisionalChats: List<ProvisionalChat>,
 ) {
-    val foldedStatus: ChatRowStatus?
-        get() = foldedActivity?.status
-
     val firstChatRow: Int
         get() = if (group.project == null) firstRow else firstRow + 1
 
@@ -89,7 +86,7 @@ internal data class ChatListSection(
     val showsEmptyProjectAction: Boolean
         get() =
             group.project != null &&
-                foldedActivity == null &&
+                !collapsed &&
                 group.threads.isEmpty() &&
                 provisionalChats.isEmpty()
 }
@@ -97,43 +94,49 @@ internal data class ChatListSection(
 internal fun chatListSections(
     groups: List<ChatListGroup>,
     expandedProjectIds: Set<String>,
-    indicators: Map<String, IndicatorsThreadsValue>,
-    unreadChatIds: Set<String>,
     provisionalByProject: Map<String?, List<ProvisionalChat>> = emptyMap(),
 ): List<ChatListSection> {
     var row = 0
     return groups.map { group ->
-        val foldedActivity =
-            if (group.project != null && group.project.id !in expandedProjectIds) {
-                collapsedProjectActivity(group.threads, indicators, unreadChatIds)
-            } else null
+        val collapsed = group.project != null && group.project.id !in expandedProjectIds
         val provisional = provisionalByProject[group.projectId].orEmpty()
-        val section = ChatListSection(group, row, foldedActivity, provisional)
-        row =
-            section.firstChatRow +
-                if (foldedActivity == null) group.threads.size + provisional.size else 0
+        val section = ChatListSection(group, row, collapsed, provisional)
+        row = section.firstChatRow + if (collapsed) 0 else group.threads.size + provisional.size
         section
     }
 }
 
-/** The chat stream owns membership. Project metadata supplies the header when available. */
 fun chatListGroups(
     state: ChatListUiState,
     filter: ChatListFilter = state.filter,
     provisionalProjectIds: Set<String?> = emptySet(),
+): List<ChatListGroup> =
+    chatListGroups(
+        state.threads,
+        state.projects,
+        filter,
+        if (filter == ChatListFilter.Unread) state.unreadChatIds() else emptySet(),
+        provisionalProjectIds,
+    )
+
+/** The chat stream owns membership. Project metadata supplies the header when available. */
+internal fun chatListGroups(
+    threads: List<ConfirmedChat>,
+    projects: List<ConfirmedProject>,
+    filter: ChatListFilter,
+    unreadChatIds: Set<String>,
+    provisionalProjectIds: Set<String?>,
 ): List<ChatListGroup> {
     val matches: (ConfirmedChat) -> Boolean = { row ->
         when (filter) {
             ChatListFilter.Inbox -> !row.archived
             ChatListFilter.Archived -> row.archived
             ChatListFilter.Muted -> row.muted == true
-            ChatListFilter.Unread -> row.muted != true && state.isUnread(row.id)
+            ChatListFilter.Unread -> row.muted != true && row.id in unreadChatIds
         }
     }
-    val projects = state.projects
     val known = projects.mapTo(hashSetOf()) { it.id }
-    val byProject =
-        state.threads.filter { it.hidden != true && matches(it) }.groupBy { it.projectId }
+    val byProject = threads.filter { it.hidden != true && matches(it) }.groupBy { it.projectId }
     return buildList {
         for (project in projects) {
             val rows = byProject[project.id].orEmpty()
