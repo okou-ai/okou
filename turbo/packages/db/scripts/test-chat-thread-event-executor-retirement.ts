@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import postgres from "postgres";
+import { applyPendingMigrations } from "./migration-runner";
+
+export async function validateChatThreadEventExecutorRetirement(
+  databaseUrl: string,
+  migrationMillis: number,
+): Promise<void> {
+  const sql = postgres(databaseUrl, { max: 1 });
+  const org = randomUUID();
+  const otherOrg = randomUUID();
+  const shared = { sha256: "a".repeat(64), archiveBytes: 123 };
+  const personal = { sha256: "b".repeat(64), archiveBytes: 234 };
+  const savedVersion = randomUUID();
+  const executor = randomUUID();
+  const eventId = randomUUID();
+  try {
+    await applyPendingMigrations(sql, { beforeMillis: migrationMillis });
+    await sql`INSERT INTO agents (id, org_id, owner, name, visibility, instructions, instructions_bundle)
+      VALUES (${executor}, ${org}, 'owner', 'default-agent', 'public', 'workspace text', ${sql.json(shared)}),
+        (gen_random_uuid(), ${otherOrg}, 'owner', 'private-agent', 'private', 'private text', ${sql.json(personal)})`;
+    await sql`INSERT INTO org_members_cache (org_id, user_id)
+      VALUES (${org}, 'owner'), (${org}, 'peer'), (${otherOrg}, 'owner'), (${otherOrg}, 'peer')`;
+    await sql`INSERT INTO instructions (org_id, user_id, content, bundle, version)
+      VALUES (${org}, 'owner', '', ${sql.json(personal)}, ${savedVersion})`;
+    await sql`INSERT INTO chat_thread_events
+      (id, user_id, org_id, seq_id, chat_thread_id, kind, event_executor_id, pin_order)
+      VALUES (${eventId}, 'owner', ${org}, 7, gen_random_uuid(), 'agent_reassigned', ${executor}, 'a1')`;
+    const [before] =
+      await sql`SELECT to_jsonb(e) - 'event_executor_id' AS payload
+      FROM chat_thread_events e WHERE id = ${eventId}`;
+
+    await applyPendingMigrations(sql, { beforeMillis: migrationMillis + 1 });
+    const [after] =
+      await sql`SELECT to_jsonb(e) AS payload FROM chat_thread_events e WHERE id = ${eventId}`;
+    assert.deepEqual(after, before);
+    const saved = await sql`SELECT content, bundle, version FROM instructions
+      WHERE org_id = ${org} AND user_id = 'owner'`;
+    assert.deepEqual(
+      [...saved],
+      [{ content: "", bundle: personal, version: savedVersion }],
+    );
+    const copied = await sql`SELECT user_id, content, bundle FROM instructions
+      WHERE org_id = ${org} AND user_id <> 'owner'`;
+    assert.deepEqual(
+      [...copied],
+      [{ user_id: "peer", content: "workspace text", bundle: shared }],
+    );
+    const privateRows =
+      await sql`SELECT user_id, content, bundle FROM instructions
+      WHERE org_id = ${otherOrg}`;
+    assert.deepEqual(
+      [...privateRows],
+      [{ user_id: "owner", content: "private text", bundle: personal }],
+    );
+  } finally {
+    await sql.end();
+  }
+}

@@ -52,6 +52,7 @@ import postgres from "postgres";
 import { array, literal, object, string } from "zod";
 import { migrationTimestamp } from "./migration-timestamp";
 import { applyPendingMigrations } from "./migration-runner";
+import { validateChatThreadEventExecutorRetirement } from "./test-chat-thread-event-executor-retirement";
 import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
@@ -2887,6 +2888,10 @@ async function main(): Promise<void> {
     await validateCustomConnectorSkillCutover(
       dbUrl1,
       await migrationTimestamp("1608_prepare_custom_connector_skill_cutover"),
+    );
+    await validateChatThreadEventExecutorRetirement(
+      dbUrl1,
+      await migrationTimestamp("1613_drop_chat_thread_event_executor"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
