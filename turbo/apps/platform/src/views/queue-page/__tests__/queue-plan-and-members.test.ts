@@ -48,9 +48,14 @@ async function open(
   const drawer = await screen.findByRole("dialog", {
     name: "Your request is queued",
   });
-  await within(drawer).findByText(
-    new RegExp(queue.active + " of " + queue.limit + " slots? in use"),
-  );
+  await within(drawer).findByText((text) => {
+    return [
+      queue.active + " of " + queue.limit + " slot in use",
+      queue.active + " of " + queue.limit + " slots in use",
+    ].some((label) => {
+      return text.includes(label);
+    });
+  });
   return { drawer, api };
 }
 test("queue-001 Closing the full Team queue dismisses its deep-linked drawer", async () => {

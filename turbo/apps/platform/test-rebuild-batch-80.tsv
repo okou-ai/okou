@@ -139,28 +139,28 @@ Original test `tailscale settings allow optional credential replacement without 
 - **Given** The user edits Tailscale network settings and has not enabled credential replacement.
 - **When** They enable replacement, enter a new client secret, reveal it, go Back, reopen settings, and enable replacement again.
 - **Then** The saved secret is never prefilled; replacement requires a blank password-type secret field, which can be revealed as text. Reopening settings starts with replacement disabled and no secret field; enabling it again shows a blank password field."
-remote-control-guided-setup-039	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1055	pending					"## remote-control-guided-setup-039
+remote-control-guided-setup-039	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1055	first-verified	remote-control-guided-setup-039 A direct SSH device keeps its name, password and username through help and saves on the default port	turbo/apps/platform/src/views/okou-page/__tests__/adding-an-ssh-device.test.ts	stage5-new.json	ssh-form-outcomes-red.json	"## remote-control-guided-setup-039
 
 Original test `Direct SSH accepts an optional name, retains input through username help and saves through the contract`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1055).
 
 - **Given** The user is adding a direct SSH connection, with an optional blank name and password login selected.
 - **When** They enter a device address, username, password, and connection name, reveal and hide the password, and open then dismiss username help.
 - **Then** The entered values are retained, the optional name is not required, and the connection saves with the entered name, address, and default port 22. A success view offers a link to the saved connection and no Open chat link."
-remote-control-guided-setup-041	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1170	pending					"## remote-control-guided-setup-041
+remote-control-guided-setup-041	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1170	first-verified	remote-control-guided-setup-041 A held empty inventory adds private-network guidance only inside the open selector	turbo/apps/platform/src/views/okou-page/__tests__/adding-an-ssh-device.test.ts	stage5-new.json	ssh-form-outcomes-red.json	"## remote-control-guided-setup-041
 
 Original test `Empty private networks show disabled options and guidance only inside the network menu`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1170).
 
 - **Given** The user is adding an SSH connection while no private networks are saved and the network list is still loading.
 - **When** They open the connection-method menu, wait for loading to finish, and return to direct connection.
 - **Then** Private networks is unavailable while loading and becomes disabled with guidance only inside the open menu once loading completes. Direct connection remains selected with its address field enabled, and the guidance disappears when the menu is closed."
-remote-control-guided-setup-042	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1202	pending					"## remote-control-guided-setup-042
+remote-control-guided-setup-042	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1202	first-verified	remote-control-guided-setup-042 A failed network-list read preserves usable direct SSH without an empty private-network choice	turbo/apps/platform/src/views/okou-page/__tests__/adding-an-ssh-device.test.ts	stage5-new.json	ssh-form-outcomes-red.json	"## remote-control-guided-setup-042
 
 Original test `Saved network loading failures leave direct access available`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1202).
 
 - **Given** The user is adding an SSH connection and the saved Tailscale network list fails to load.
 - **When** They open the connection-method menu after the loading failure.
 - **Then** A load-failure notice says form entries are saved. Direct connection remains selected and usable, with no private-network option or empty-state guidance."
-remote-control-guided-setup-043	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1223	pending					"## remote-control-guided-setup-043
+remote-control-guided-setup-043	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1223	first-verified	remote-control-guided-setup-043 Direct is selected until the user chooses the Home Tailscale network from all saved providers	turbo/apps/platform/src/views/okou-page/__tests__/adding-an-ssh-device.test.ts	stage5-new.json	ssh-form-outcomes-red.json,ssh-saved-network-red.json	"## remote-control-guided-setup-043
 
 Original test `The remote selector lists all saved networks without auto-selecting a single provider`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1223).
 
@@ -195,21 +195,21 @@ Original test `Changing category abandons setup and returns to management`. [Reg
 - **Given** The user has entered a username in the SSH setup flow.
 - **When** They change the connector category to Private networks and then return to Remote control management.
 - **Then** Setup is abandoned, the Remote control management page appears, and the SSH username field is no longer present."
-remote-control-guided-setup-051	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1502	pending					"## remote-control-guided-setup-051
+remote-control-guided-setup-051	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1502	first-verified	remote-control-guided-setup-051 Keyboard switching SSH login methods retains the username and swaps the required secret	turbo/apps/platform/src/views/okou-page/__tests__/adding-an-ssh-device.test.ts	stage5-new.json	ssh-form-outcomes-red.json	"## remote-control-guided-setup-051
 
 Original test `SSH login methods are explicit keyboard choices that show only the matching secret fields`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1502).
 
 - **Given** The user is adding direct SSH with password login selected and a username entered.
 - **When** They use the keyboard to switch to SSH key login and then back to password login.
 - **Then** Each choice shows only its matching required secret field: a required private key with file-import access and optional passphrase, or a required password. The username remains unchanged."
-remote-control-guided-setup-052	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1535	pending					"## remote-control-guided-setup-052
+remote-control-guided-setup-052	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1535	first-verified	remote-control-guided-setup-052 SSH key help names local and cloud key locations without filling the private key	turbo/apps/platform/src/views/okou-page/__tests__/adding-an-ssh-device.test.ts	stage5-new.json	ssh-form-outcomes-red.json	"## remote-control-guided-setup-052
 
 Original test `SSH private-key help explains key locations and what to do without a key`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1535).
 
 - **Given** The user is adding direct SSH and has selected SSH key login.
 - **When** They open private-key help and dismiss it.
 - **Then** Help lists three items covering key locations, including Windows user-profile paths and .pem files, and explains the target account; the private-key field remains blank."
-remote-control-guided-setup-054	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1592	pending					"## remote-control-guided-setup-054
+remote-control-guided-setup-054	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1592	first-verified	remote-control-guided-setup-054 An invalid SSH host keeps the name editable for a retry	turbo/apps/platform/src/views/okou-page/__tests__/adding-an-ssh-device.test.ts	stage5-new.json	ssh-form-outcomes-red.json	"## remote-control-guided-setup-054
 
 Original test `A rejected SSH save retains the entered name and does not show a success state`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1592).
 
@@ -258,7 +258,7 @@ Original test `Leaving setup cancels pending credential loading`. [Registration]
 - **Given** The user is in SSH setup while credential loading is pending.
 - **When** They leave setup for Private networks, allow credential loading to finish, and return to Remote control management.
 - **Then** No credential dialog remains after leaving setup, and the management page appears without the SSH username field."
-remote-control-guided-setup-068	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2069	pending					"## remote-control-guided-setup-068
+remote-control-guided-setup-068	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2069	first-verified	remote-control-guided-setup-068 An unknown SSH save outcome locks the name and both login methods	turbo/apps/platform/src/views/okou-page/__tests__/adding-an-ssh-device.test.ts	stage5-new.json	ssh-form-outcomes-red.json	"## remote-control-guided-setup-068
 
 Original test `An unknown SSH save outcome locks the connection draft`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L2069).
 
@@ -571,14 +571,14 @@ Original test `Browse a long sidebar chat history`. [Registration](https://githu
 - **Given** A chat history contains more conversations than fit in the sidebar, including archived context below the initial visible entries.
 - **When** The user scrolls down to the archived context.
 - **Then** Archived context becomes visible, Release plan is no longer visible, and no Load more control is shown."
-sidebar-chat-history-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	94	pending					"## sidebar-chat-history-002
+sidebar-chat-history-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	94	first-verified	sidebar-chat-history-002 Cancelling deletion preserves Release plan and confirming removes only that chat	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-002
 
 Original test `Delete a chat after reviewing the impact`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L94).
 
 - **Given** The user is viewing Release plan and the sidebar also lists Incident notes.
 - **When** The user chooses Delete chat for Release plan, reviews the permanent-deletion warning, cancels, then confirms deletion.
 - **Then** The warning says the chat will be permanently deleted, running tasks stopped immediately, linked automations paused, and the action cannot be undone. Cancel preserves Release plan; confirming shows Chat deleted, opens a new chat at /, and removes Release plan while Incident notes remains."
-sidebar-chat-history-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	154	pending					"## sidebar-chat-history-003
+sidebar-chat-history-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	154	first-verified	sidebar-chat-history-003 Deleting Release plan leaves the correct composer and conversation open	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-003
 
 Original test `Deleting the last chat opens a new chat (My Okou: true)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L154).
 
@@ -586,14 +586,14 @@ Original test `Deleting the last chat opens a new chat (My Okou: true)`. [Regist
 - **When** The user confirms deleting Release plan.
 - **Then** Chat deleted appears and a new chat opens at / with a message box; no missing-chat error appears.
 - **Upstream change** `4e5707de` (#49556) makes My Okou permanent and drops the My Okou parameter; the upstream test is now `Deleting the last chat opens a new chat` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L152)). Rebuild this scenario without any feature switch; Chat deleted, the new chat at /, and the absent missing-chat error are unchanged."
-sidebar-chat-history-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	190	pending					"## sidebar-chat-history-005
+sidebar-chat-history-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	190	first-verified	sidebar-chat-history-005 Deleting Incident notes leaves the correct composer and conversation open	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-005
 
 Original test `Deleting another chat keeps the current chat open`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L190).
 
 - **Given** Release plan is open and Incident notes is another listed chat.
 - **When** The user deletes Incident notes.
 - **Then** Chat deleted appears, Release plan remains open with its message box, and Incident notes disappears from the sidebar."
-sidebar-chat-history-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	383	pending					"## sidebar-chat-history-008
+sidebar-chat-history-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	383	first-verified	sidebar-chat-history-008 Unread and Archived filters navigate among genuinely archived and unread conversations	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-008
 
 Original test `Filter chats by Inbox, Unread, or Archived`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L383).
 
@@ -607,28 +607,28 @@ Original test `Selecting a filter skips the chat open in the right pane`. [Regis
 - **Given** Release plan is open, with two archived chats and a sidebar selection pointing to one of them.
 - **When** The user selects Archived from the chat-list menu.
 - **Then** The sidebar skips the chat already open in the right pane and navigates to the other archived chat, Waiting for review."
-sidebar-chat-history-012	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	611	pending					"## sidebar-chat-history-012
+sidebar-chat-history-012	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	611	first-verified	sidebar-chat-history-012 Undoing a mute restores the unread marker after explaining notification behavior	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-012
 
 Original test `Mute an unread chat with feedback and undo it from the toast`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L611).
 
 - **Given** Quiet task is unread in the sidebar.
 - **When** The user mutes it and then chooses Undo from the confirmation toast.
 - **Then** The toast says new replies will not show as unread or send push notifications, and the chat is marked Muted. Undo restores its Unread indicator."
-sidebar-chat-history-018	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	773	pending					"## sidebar-chat-history-018
+sidebar-chat-history-018	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	773	first-verified	sidebar-chat-history-018 Unmuting the only filtered chat empties Muted and Show all chats restores the inbox	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-018
 
 Original test `Show an empty muted filter after unmuting its last chat`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L773).
 
 - **Given** The sidebar contains Release plan and the only muted chat, Quiet task.
 - **When** The user filters to Muted and then unmutes Quiet task.
 - **Then** The sidebar reports No muted chats and has no chat titles. Choosing Show all chats restores Release plan and Quiet task."
-sidebar-chat-history-021	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	882	pending					"## sidebar-chat-history-021
+sidebar-chat-history-021	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	882	first-verified	sidebar-chat-history-021 The advertised archive shortcut toggles the current conversation out of and back into Inbox	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-021
 
 Original test `Archive and unarchive the current chat with the keyboard shortcut`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L882).
 
 - **Given** Release plan is the current chat and its archive menu item advertises Ctrl+Shift+X and the Meta and Control shortcut variants.
 - **When** The user presses Ctrl+Shift+X twice, first to archive and then to unarchive.
 - **Then** The first press removes Release plan from the inbox, shows Your inbox is empty, and displays Chat archived. The second restores Release plan, removes the empty-inbox message, and displays Chat moved to Inbox."
-sidebar-chat-history-022	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	930	pending					"## sidebar-chat-history-022
+sidebar-chat-history-022	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	930	first-verified	sidebar-chat-history-022 Undo restores an archived muted chat after its distinct toast explains that new replies will not return it	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-022
 
 Original test `Undo an archive from its toast and explain the muted exception`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L930).
 
@@ -642,7 +642,7 @@ Original test `Find conversations by title in workspace search`. [Registration](
 - **Given** The workspace has conversations titled Incident notes, Research kickoff, and Support escalation; Support escalation is running.
 - **When** The user opens workspace search with Ctrl+Shift+F, searches “research,” then searches “support” and selects Support escalation.
 - **Then** Research kickoff appears without Support escalation for the first query. The second query shows Support escalation as a running result; selecting it closes search and sets the page title to Support escalation | Okou."
-sidebar-chat-history-025	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	1062	pending					"## sidebar-chat-history-025
+sidebar-chat-history-025	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	1062	first-verified	sidebar-chat-history-025 Starting a new My Okou chat from a retained research conversation uses the root chat destination	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-025
 
 Original test `Route New chat to the current agent and Chat to the default agent`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L1062).
 
@@ -657,14 +657,14 @@ Original test `My Okou's header holds the toggle, search, New Project and list m
 - **Given** My Okou is enabled and Release plan is listed.
 - **When** The user inspects the chat-list header, hovers Create Project, opens and cancels project creation, then selects Archived from the list menu.
 - **Then** The header contains Hide chat list, Search workspace, Create Project, and Open chat list menu, with no agent heading. New chat leads the list and is the current page with the Meta+Shift+O and Control+Shift+O shortcuts. Hover reveals Create Project; selecting it opens a project-name field and Escape closes it. The menu can switch to Archived."
-sidebar-chat-history-027	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	1186	pending					"## sidebar-chat-history-027
+sidebar-chat-history-027	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	1186	first-verified	sidebar-chat-history-027 The new-chat shortcut and Chat navigation both return to the root composer	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-outcomes-red.json	"## sidebar-chat-history-027
 
 Original test `My Okou's Chat link and new chat shortcut open its chat page at /`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L1186).
 
 - **Given** My Okou is enabled and an existing conversation is available; the user is viewing that conversation.
 - **When** The user presses Ctrl+Shift+O, opens the existing conversation, then selects Chat in the navigation rail.
 - **Then** The Chat link points to /. The shortcut opens / with the chat composer; selecting the existing conversation opens its chat route, and Chat returns to /."
-sidebar-chat-history-028	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	1226	pending					"## sidebar-chat-history-028
+sidebar-chat-history-028	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	1226	first-verified	sidebar-chat-history-028 The Chat rail action leaves the archived list and restores Release plan at the root	turbo/apps/platform/src/views/okou-page/__tests__/managing-conversations-from-the-sidebar.test.ts	stage5-new.json	sidebar-leave-archive-red.json	"## sidebar-chat-history-028
 
 Original test `My Okou's Chat link returns a filtered chat list to the inbox`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L1226).
 
@@ -1588,21 +1588,21 @@ Original test `Sign-in and sign-up retain the complete supported continuation fo
 - **Given** A signed-out visitor opens a signed Telegram settings link with mixed-case routing and a trailing slash with a public URL fragment.
 - **When** The visitor is directed to sign in and then follows the sign-up link.
 - **Then** Both forms retain the original destination, all supported parameters in repeated-value order, and the public fragment."
-integration-continuation-034	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	188	pending					"## integration-continuation-034
+integration-continuation-034	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	188	first-verified	integration-continuation-034 Discord preserves only public callback context when routing to /sign-in	turbo/apps/platform/src/views/auth-v1/__tests__/discord-return-after-account-changes.test.ts	stage5-new.json	discord-return-context-red.json	"## integration-continuation-034
 
 Original test `Discord proof is consumed before auth from /settings/discord?status=pending (signed in: false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx#L188).
 
 - **Given** A signed-out visitor opens a current Discord settings callback carrying a one-time approval proof.
 - **When** The app consumes the approval during entry and directs the visitor to sign in.
 - **Then** The return destination retains supported public callback context. The proof is absent from the redirect URL, browser storage, and logs."
-integration-continuation-036	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	188	pending					"## integration-continuation-036
+integration-continuation-036	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	188	first-verified	integration-continuation-036 Discord preserves only public callback context when routing to /sign-in/tasks/choose-organization	turbo/apps/platform/src/views/auth-v1/__tests__/discord-return-after-account-changes.test.ts	stage5-new.json	discord-return-context-red.json	"## integration-continuation-036
 
 Original test `Discord proof is consumed before auth from /settings/discord?status=pending (signed in: true)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx#L188).
 
 - **Given** The user is signed in and opens `/settings/discord?status=pending` with Discord approval data in the URL fragment.
 - **When** The page processes the return before completing authentication routing.
 - **Then** The user is routed to organization selection with the original settings path and guild ID as the continuation; the approval proof is absent from the URL, logs, and browser storage."
-integration-continuation-038	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	225	pending					"## integration-continuation-038
+integration-continuation-038	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	225	first-verified	integration-continuation-038 A replacement user opening the sanitized callback sees the interrupted result and can return to Works	turbo/apps/platform/src/views/auth-v1/__tests__/discord-return-after-account-changes.test.ts	stage5-new.json	discord-return-context-red.json	"## integration-continuation-038
 
 Original test `A sanitized Discord return after login or actor change reports interrupted approval`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx#L225).
 
@@ -1777,7 +1777,7 @@ Original test `Control loss during shared image retry continues the same recover
 - **Given** The browser is ready in shared connection mode and an image retry is in progress when control is lost.
 - **When** Automatic recovery continues for the shared connection.
 - **Then** The same recovery budget continues, the browser becomes ready, and subsequent text reaches the remote browser."
-browser-discovery-startup-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	171	pending					"## browser-discovery-startup-003
+browser-discovery-startup-003	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	171	probe-insufficient	A targetInfoChanged plus native update did not trigger the required selected-tab readmission. Moving it away and back did reach both independent Chromium membership gates. After its proof was released with the background proof still held, Remote browser input remained disabled. The run never proved typed text reached that tab under the frozen conditions.	probes/discovery-independence.ts.txt; browser-window1.json; surface2.json; surface3.json and .log			"## browser-discovery-startup-003
 
 Original test `A background creation readmits the selected page before the remaining tab proof`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L171).
 
@@ -1798,14 +1798,14 @@ Original test `Changing selection cancels a revalidated initial document read`. 
 - **Given** Initial document setup is pending while the first owned tab’s membership is revalidated after a same-document change.
 - **When** The user selects the later owned tab before the revalidated document read completes.
 - **Then** The first tab’s late read does not take over: the later tab remains ready, and new input is sent to it."
-browser-discovery-startup-040	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	1066	pending					"## browser-discovery-startup-040
+browser-discovery-startup-040	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	1066	first-verified	browser-discovery-startup-040 Discovery keeps the viewer connecting after both known tabs are destroyed	turbo/apps/platform/src/views/browser-session/__tests__/viewing-a-changing-browser-window.test.ts	stage5-new.json	withheld-browser-admission-red.json	"## browser-discovery-startup-040
 
 Original test `A newly observed page prevents an empty conclusion until its proof settles (owned: true)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L1066).
 
 - **Given** The two initially known assigned-window tabs are present, and a newly observed page belongs to the assigned window with its membership proof pending.
 - **When** Both initially known tabs are destroyed before that proof settles.
 - **Then** The viewer remains in a connecting state with browser input and tab creation disabled until the proof settles. It then selects the newly observed page."
-browser-discovery-startup-054	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	1338	pending					"## browser-discovery-startup-054
+browser-discovery-startup-054	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	1338	first-verified	browser-discovery-startup-054 Returning from a hidden discovery reports the removed assigned window	turbo/apps/platform/src/views/browser-session/__tests__/viewing-a-changing-browser-window.test.ts	stage5-new.json	browser-window-red.json	"## browser-discovery-startup-054
 
 Original test `Window loss while paused cannot resume a viewer with pending discovery`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L1338).
 
@@ -1833,7 +1833,7 @@ Original test `A window resize keeps the accepted picture while capture is pendi
 - **Given** The viewer displays an accepted live picture at 900 by 600 and input is enabled.
 - **When** The panel is resized to 720 by 480 while the next target frame is held.
 - **Then** Input is temporarily disabled, but the accepted live picture remains visible and no unavailable-view message or observed failure appears. After the frame arrives, the viewport is 720 by 480 and input is enabled; no window-bounds request is made."
-browser-display-regression-016	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.bdd.md	530	pending					"## browser-display-regression-016
+browser-display-regression-016	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.bdd.md	530	first-verified	browser-display-regression-016 Returning to the visible browser resumes the measured live picture without an unavailable notice	turbo/apps/platform/src/views/browser-session/__tests__/viewing-a-changing-browser-window.test.ts	stage5-new.json	browser-window-red.json	"## browser-display-regression-016
 
 Original test `Returning to a visible viewer does not flash a failure during display setup`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx#L530).
 

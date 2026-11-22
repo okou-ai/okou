@@ -56,10 +56,14 @@ async function openDesk(
     path: route(options.active ?? release.id),
   });
   await findFastControl("link", "Release plan");
-  await findFastControl(
-    "link",
-    new RegExp(options.otherTitle ?? "Incident notes"),
-  );
+  await waitFor(() => {
+    const title = options.otherTitle ?? "Incident notes";
+    expect(
+      queryAllByRoleFast("link").some((link) => {
+        return link.textContent?.includes(title);
+      }),
+    ).toBeTruthy();
+  });
 }
 function unreadKey() {
   const key = new KeyboardEvent("keydown", {
