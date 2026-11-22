@@ -1,6 +1,12 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 import { expect, test, vi } from "vitest";
 
@@ -40,22 +46,14 @@ const CONTENT_BOTTOM_PADDING_PX = 100;
 const INITIAL_VIEWPORT_HEIGHT_PX = 300;
 
 const THREAD_IDS = {
-  growingHistory: "b0000000-0000-4000-a000-000000000921",
   incomingLatest: "b0000000-0000-4000-a000-000000000922",
   incomingHistory: "b0000000-0000-4000-a000-000000000923",
-  prependedHistory: "b0000000-0000-4000-a000-000000000929",
-  expandedWork: "b0000000-0000-4000-a000-000000000932",
   unfilledViewport: "b0000000-0000-4000-a000-000000000941",
-  runWindowStart: "b0000000-0000-4000-a000-000000000942",
-  settledHistory: "b0000000-0000-4000-a000-000000000944",
-  capabilityTail: "b0000000-0000-4000-a000-000000000945",
-  capabilityHistory: "b0000000-0000-4000-a000-000000000946",
 } as const;
 
 interface ChatScrollGeometry {
   readonly bottomScrollTop: () => number;
   readonly firstVisibleAnchor: () => HTMLElement;
-  readonly growBeforeMessages: (height: number) => void;
 }
 
 type PublishedChatEvent = MockChatEventInput & { readonly seqId: number };
@@ -102,7 +100,6 @@ function installChatScrollGeometry(
     "getBoundingClientRect",
   );
   let scrollTop = 0;
-  let heightBeforeMessages = 0;
 
   const spacerHeight = (side: "before" | "after") => {
     const spacer = container.querySelector<HTMLElement>(
@@ -112,7 +109,6 @@ function installChatScrollGeometry(
   };
   const scrollHeight = (): number => {
     return (
-      heightBeforeMessages +
       spacerHeight("before") +
       spacerHeight("after") +
       renderedAnchors(container).length * ROW_HEIGHT_PX +
@@ -151,15 +147,11 @@ function installChatScrollGeometry(
         return rect(viewportTop(), viewportHeight());
       }
       if (this.dataset.transcriptSpacer === "before") {
-        return rect(
-          viewportTop() + heightBeforeMessages - scrollTop,
-          spacerHeight("before"),
-        );
+        return rect(viewportTop() - scrollTop, spacerHeight("before"));
       }
       if (this.dataset.transcriptSpacer === "after") {
         return rect(
           viewportTop() +
-            heightBeforeMessages +
             spacerHeight("before") +
             renderedAnchors(container).length * ROW_HEIGHT_PX -
             scrollTop,
@@ -174,7 +166,6 @@ function installChatScrollGeometry(
         if (index !== -1) {
           return rect(
             viewportTop() +
-              heightBeforeMessages +
               spacerHeight("before") +
               index * ROW_HEIGHT_PX -
               scrollTop,
@@ -218,9 +209,6 @@ function installChatScrollGeometry(
         throw new Error("No chat message is visible in the mocked viewport");
       }
       return anchor;
-    },
-    growBeforeMessages: (height) => {
-      heightBeforeMessages += height;
     },
   };
 }
@@ -462,12 +450,13 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
   const geometry = installChatScrollGeometry(container, () => {
     return 6000;
   });
+  scrollFromUser(container, geometry.bottomScrollTop());
   await conversation.publish(completedTurn(27));
-  await screen.findByText("History answer 27");
+  await within(container).findByText("History answer 27");
   // The 6000px viewport spans fifteen turns. Its middle and oldest visible
   // answers arrive in successive renders before the final tail alignment.
-  await screen.findByText("History answer 20");
-  await screen.findByText("History answer 13");
+  await within(container).findByText("History answer 20");
+  await within(container).findByText("History answer 13");
   await waitFor(() => {
     const before = container.querySelector<HTMLElement>(
       '[data-transcript-spacer="before"]',

@@ -13,7 +13,7 @@ import {
 
 import { waitForBrowserPaint } from "../../../signals/utils.ts";
 
-import { type MockChatEventInput } from "./chat-event-test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 
 const context = testContext();
 
