@@ -63,18 +63,24 @@ class NativeChatListTest {
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             device.awaitChatList(app)
-            val projectAction =
-                By.pkg(app.packageName)
-                    .text(app.getString(R.string.composer_new_project))
-                    .clickable(true)
-                    .enabled(true)
+            val projectName = "Research"
+            val projectAction = app.getString(R.string.composer_new_project)
+            val projectUnavailable =
+                By.pkg(app.packageName).text(app.getString(R.string.chat_project_empty))
             val filterMenu = By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
-            text("Research").click()
-            await(projectAction)
+            text(projectName).click()
+            text(projectAction)
+            assertTrue(device.wait(Until.gone(projectUnavailable), 10_000))
             assertFalse(
                 device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.chat_empty)))
             )
             takeScreenshot().writeToTestStorage("android-list-empty-project")
+            text(projectAction).click()
+            assertTrue(device.wait(Until.gone(chatListRegion(app)), 10_000))
+            text(projectName)
+            await(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
+            device.awaitChatList(app)
+
             for ((filter, title) in
                 listOf(
                     R.string.chat_unread to R.string.chat_empty_unread,
@@ -84,12 +90,12 @@ class NativeChatListTest {
                 await(filterMenu).click()
                 text(app.getString(filter)).click()
                 text(app.getString(title))
-                assertFalse(device.hasObject(By.pkg(app.packageName).text("Research")))
+                assertFalse(device.hasObject(By.pkg(app.packageName).text(projectName)))
                 if (filter == R.string.chat_archived) {
                     takeScreenshot().writeToTestStorage("android-list-empty-archived")
                 }
                 text(app.getString(R.string.chat_back_to_inbox)).click()
-                await(projectAction)
+                text(projectAction)
             }
         } catch (error: Throwable) {
             failures.add(error)

@@ -383,7 +383,7 @@ On a Linux x64 host with read/write access to `/dev/kvm`, run from `android/`:
 
 Gradle configures the Pixel 2 API 35 device and owns its lifecycle. Use
 `:app:assembleDebugAndroidTest` to compile without starting the device. CI
-requires all eleven cases and retains JUnit, Test Storage and logcat diagnostics
+requires every case to pass and retains JUnit, Test Storage and logcat diagnostics
 in the `android-instrumentation-api35-<revision>` artifact.
 
 ### Release Smoke Tests
