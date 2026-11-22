@@ -93,7 +93,6 @@ open class TestOkouApplication : OkouApplication() {
     }
     var chatService: ChatListService = TestChatService()
     var workspaceRole = OrganizationRole.MEMBER
-    var beforeOrganizationRead: suspend () -> Unit = {}
     var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null
@@ -157,10 +156,8 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun updatePersonalInstructions(content: String, ifVersion: String) =
                 checkNotNull(instructionsService).updatePersonalInstructions(content, ifVersion)
 
-            override suspend fun organization(): Organization {
-                beforeOrganizationRead()
-                return testOrganization(identity.workspaceId).copy(role = workspaceRole)
-            }
+            override suspend fun organization() =
+                testOrganization(identity.workspaceId).copy(role = workspaceRole)
 
             override suspend fun preferences() = stored()
 
