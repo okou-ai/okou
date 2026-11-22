@@ -24,7 +24,6 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -113,13 +112,16 @@ class NativeUpdateTest {
             val search = By.pkg(app.packageName).desc(searchLabel)
             val searchBounds = button(search).visibleBounds
             val density = app.resources.displayMetrics.density
-            val searchGap = (8 * density).roundToInt()
+            fun assertGap(expectedDp: Int, actualPx: Int) {
+                // UI Automator reports integer bounds and rounds the two edges independently.
+                assertEquals(expectedDp * density, actualPx.toFloat(), 1f)
+            }
             val avatar =
                 By.pkg(app.packageName)
                     .descStartsWith(app.getString(R.string.auth_switch_workspace))
             val filterAction = By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
-            assertEquals(searchGap, searchBounds.left - button(avatar).visibleBounds.right)
-            assertEquals(searchGap, button(filterAction).visibleBounds.left - searchBounds.right)
+            assertGap(8, searchBounds.left - button(avatar).visibleBounds.right)
+            assertGap(8, button(filterAction).visibleBounds.left - searchBounds.right)
             captureState("toolbar-current")
             val updateTarget = app.getString(R.string.updates_version, "99.0.0")
             fun closeDetails() {
@@ -155,14 +157,14 @@ class NativeUpdateTest {
             val updateAction = app.getString(R.string.updates_toolbar)
             val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds
             assertEquals(searchBounds, button(search).visibleBounds)
-            assertEquals(searchGap, updateBounds.left - searchBounds.right)
+            assertGap(8, updateBounds.left - searchBounds.right)
             captureState("toolbar-available")
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
             )
             val more =
                 button(By.pkg(app.packageName).desc(app.getString(R.string.chat_more_actions)))
-            assertEquals((4 * density).roundToInt(), more.visibleBounds.left - updateBounds.right)
+            assertGap(4, more.visibleBounds.left - updateBounds.right)
             assertEquals(1, device.findObjects(By.pkg(app.packageName).desc(updateAction)).size)
             assertFalse(
                 device.hasObject(By.pkg(app.packageName).desc(app.getString(R.string.settings)))
