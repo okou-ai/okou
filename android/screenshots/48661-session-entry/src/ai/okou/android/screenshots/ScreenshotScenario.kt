@@ -11,7 +11,10 @@ import ai.okou.android.auth.ClerkAuthentication
 import ai.okou.android.awaitChatList
 import ai.okou.android.testAuthenticationState
 import android.app.UiModeManager
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.annotation.StringRes
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -23,6 +26,7 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -68,14 +72,14 @@ class ScreenshotScenario {
             device.executeShellCommand("settings put global animator_duration_scale 1.0")
             auth.state.value = AuthenticationState()
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                capture(R.string.auth_restoring, "restoring.png")
+                captureWaiting(R.string.auth_restoring, "restoring.png")
 
                 auth.membershipsAction = {
                     membershipGate.await()
                     auth.available
                 }
                 auth.state.value = testAuthenticationState(workspace = null)
-                capture(R.string.auth_preparing_workspace, "preparing.png")
+                captureWaiting(R.string.auth_preparing_workspace, "preparing.png")
                 find(R.string.auth_sign_out)
                 membershipGate.complete(Unit)
 
@@ -111,7 +115,7 @@ class ScreenshotScenario {
 
                 auth.signOutAction = { exitGate.await() }
                 find(R.string.auth_sign_out).click()
-                capture(R.string.auth_signing_out, "signing-out.png")
+                captureWaiting(R.string.auth_signing_out, "signing-out.png")
             }
         } finally {
             membershipGate.complete(Unit)
@@ -136,13 +140,24 @@ class ScreenshotScenario {
         val originalSize = overrideValue("wm size")
         val originalDensity = overrideValue("wm density")
         val originalFont = device.executeShellCommand("settings get system font_scale").trim()
+        var originalOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        var originalNightMask = Configuration.UI_MODE_NIGHT_UNDEFINED
+        scenario.onActivity {
+            originalOrientation = it.requestedOrientation
+            originalNightMask =
+                it.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        }
         try {
             mode.nightMode = UiModeManager.MODE_NIGHT_YES
-            device.executeShellCommand("wm size 700x440")
+            device.executeShellCommand("wm size 440x700")
             device.executeShellCommand("wm density 160")
             device.executeShellCommand("settings put system font_scale 2.0")
-            awaitConfiguration(scenario) {
-                it.screenHeightDp < 480 &&
+            scenario.onActivity {
+                it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
+            awaitConfiguration(scenario, "short landscape window, dark mode, and 200% text") {
+                it.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+                    it.screenHeightDp < 480 &&
                     it.fontScale == 2f &&
                     it.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
                         Configuration.UI_MODE_NIGHT_YES
@@ -160,29 +175,40 @@ class ScreenshotScenario {
             else device.executeShellCommand("settings put system font_scale $originalFont")
             device.executeShellCommand("wm size $originalSize")
             device.executeShellCommand("wm density $originalDensity")
+            scenario.onActivity { it.requestedOrientation = originalOrientation }
             mode.nightMode = originalNight
         }
-        awaitConfiguration(scenario) { it.screenHeightDp >= 480 && it.fontScale < 2f }
+        awaitConfiguration(scenario, "original window and text size") {
+            it.screenHeightDp >= 480 &&
+                it.fontScale < 2f &&
+                it.uiMode and Configuration.UI_MODE_NIGHT_MASK == originalNightMask
+        }
         find(R.string.auth_no_workspace)
     }
 
     private fun awaitConfiguration(
         scenario: ActivityScenario<MainActivity>,
+        expected: String,
         predicate: (Configuration) -> Boolean,
     ) {
+        var observed = ""
         check(
             device.wait(
                 object : Condition<UiDevice, Boolean> {
                     override fun apply(device: UiDevice): Boolean {
                         var match = false
-                        scenario.onActivity { match = predicate(it.resources.configuration) }
+                        scenario.onActivity {
+                            val configuration = it.resources.configuration
+                            observed = configuration.toString()
+                            match = predicate(configuration)
+                        }
                         return match
                     }
                 },
                 10_000,
             ) == true
         ) {
-            "Expected Android window configuration did not apply"
+            "Expected $expected, observed $observed"
         }
     }
 
@@ -202,6 +228,44 @@ class ScreenshotScenario {
 
     private fun capture(@StringRes title: Int, name: String) {
         find(title)
+        ScreenshotCapture.capture(name)
+    }
+
+    private fun captureWaiting(@StringRes title: Int, name: String) {
+        val heading = find(title).visibleBounds
+        val density = app.resources.displayMetrics.density
+        val left = heading.right + (12 * density).roundToInt()
+        val size = (20 * density).roundToInt()
+        val top = heading.centerY() - size / 2
+        check(
+            device.wait(
+                object : Condition<UiDevice, Boolean> {
+                    override fun apply(device: UiDevice): Boolean {
+                        val screen = instrumentation.uiAutomation.takeScreenshot() ?: return false
+                        try {
+                            val frame = screen.copy(Bitmap.Config.ARGB_8888, false) ?: return false
+                            try {
+                                for (x in left until minOf(left + size, frame.width)) {
+                                    for (y in top until minOf(top + size, frame.height)) {
+                                        // The reserved area is white until the indicator renders.
+                                        if (Color.red(frame.getPixel(x, y)) < 160) return true
+                                    }
+                                }
+                                return false
+                            } finally {
+                                frame.recycle()
+                            }
+                        } finally {
+                            screen.recycle()
+                        }
+                    }
+                },
+                5_000,
+            ) == true
+        ) {
+            runCatching { ScreenshotCapture.capture("failure-$name") }
+            "Progress did not appear beside ${app.getString(title)}"
+        }
         ScreenshotCapture.capture(name)
     }
 }

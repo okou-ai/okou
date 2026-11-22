@@ -2,9 +2,9 @@ package ai.okou.android.auth
 
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
-import ai.okou.android.SettingsRow
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,8 +38,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -111,12 +114,7 @@ internal fun SessionEntryScreen(
                             if (index != 0) {
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
-                            SettingsRow(
-                                title = workspace.name,
-                                leading = { WorkspaceLogo(workspace.id, Modifier.size(36.dp)) },
-                                modifier = Modifier.heightIn(min = 64.dp),
-                                onClick = { chooseWorkspace(workspace.id) },
-                            )
+                            SessionWorkspaceRow(workspace) { chooseWorkspace(workspace.id) }
                         }
                     }
                 }
@@ -151,6 +149,31 @@ internal fun SessionEntryScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SessionWorkspaceRow(workspace: WorkspaceMembership, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        WorkspaceLogo(workspace.id, Modifier.size(36.dp))
+        Text(
+            workspace.name,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Icon(
+            painterResource(R.drawable.ic_chevron_right),
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

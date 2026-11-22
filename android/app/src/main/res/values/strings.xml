@@ -33,10 +33,10 @@
     <string name="auth_restoring">Restoring your session…</string>
     <string name="auth_preparing_workspace">Preparing your workspace…</string>
     <string name="auth_choose_workspace">Choose your workspace</string>
-    <string name="auth_no_workspace">No accessible workspaces yet</string>
+    <string name="auth_no_workspace">No workspace access yet</string>
     <string name="auth_no_workspace_detail">Create a workspace or accept an invitation in your browser, then return to Okou.</string>
     <string name="auth_workspace_setup">Set up a workspace on the web</string>
-    <string name="auth_access_removed">This workspace is no longer accessible</string>
+    <string name="auth_access_removed">Workspace access lost</string>
     <string name="auth_access_removed_detail">Check which workspaces this account can still access.</string>
     <string name="auth_update_required">Update Okou to continue.</string>
     <string name="auth_unavailable">Couldn’t load your session or workspace</string>
