@@ -24,4 +24,6 @@
     <plurals name="conversation_find_matches">
         <item quantity="other">%d 件のメッセージが一致</item>
     </plurals>
+    <string name="conversation_link_unavailable">この会話リンクは利用できません</string>
+    <string name="conversation_link_no_browser">このリンクを開けるブラウザがありません</string>
 </resources>

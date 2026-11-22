@@ -22,7 +22,11 @@ import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConfirmedProject
 import ai.okou.android.chat.ConversationFind
+import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationFindVisit
+import ai.okou.android.chat.ConversationLink
+import ai.okou.android.chat.ConversationLinkPosition
+import ai.okou.android.chat.ConversationLinkSource
 import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.ConversationStatus
 import ai.okou.android.chat.ConversationToolbarActions
@@ -35,17 +39,20 @@ import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.conversationRunControls
+import ai.okou.android.chat.openConversationWebLink
 import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rowActions
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
 import ai.okou.android.state.ArtifactsDestination
+import ai.okou.android.state.ConversationLinkReturn
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberArtifactPageHolder
 import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConnectorsOpen
+import ai.okou.android.state.rememberConversationLinkReturns
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
@@ -96,6 +103,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -142,6 +150,9 @@ internal fun OkouApp(
             )
     val list by rememberWorkspaceChatNavigation(listState)
     var navigation by rememberWorkspaceNavigation()
+    var linkReturns by rememberConversationLinkReturns()
+    var linkPosition by remember(chats) { mutableStateOf<ConversationLinkPosition?>(null) }
+    var linkFocusKey by remember(chats) { mutableStateOf<String?>(null) }
     val artifactPageState = rememberArtifactPageHolder()
     val resourcesPageState = rememberArtifactPageHolder()
     val inlineArtifactPageState = rememberArtifactPageHolder()
@@ -233,7 +244,8 @@ internal fun OkouApp(
     val showChatList =
         settings == null && showList && !searchActive && !showArtifacts && !showingConnectors
     val showWorkspaceBack =
-        artifactSource != null ||
+        linkReturns.isNotEmpty() ||
+            artifactSource != null ||
             listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPositions =
         ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
@@ -248,7 +260,18 @@ internal fun OkouApp(
         else settingsPosition
     val conversations = rememberConversationUiState()
     val snackbar = remember { SnackbarHostState() }
+    val linkSnackbar = remember(chats) { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val linkUnavailable = stringResource(R.string.conversation_link_unavailable)
+    val browserUnavailable = stringResource(R.string.conversation_link_no_browser)
+
+    fun clearConversationLinks() {
+        linkSnackbar.currentSnackbarData?.dismiss()
+        linkReturns = emptyList()
+        linkPosition = null
+        linkFocusKey = null
+    }
     val missingChat = stringResource(R.string.history_missing)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -342,6 +365,7 @@ internal fun OkouApp(
     }
 
     fun returnToList() {
+        clearConversationLinks()
         closeResources()
         val search =
             when (navigation.search) {
@@ -372,9 +396,15 @@ internal fun OkouApp(
         )
     }
 
-    fun openConversation(threadId: String, destination: WorkspaceTarget, fromSearch: Boolean) {
+    fun openConversation(
+        threadId: String,
+        destination: WorkspaceTarget,
+        fromSearch: Boolean,
+        fromLink: Boolean = false,
+    ) {
+        if (!fromLink) clearConversationLinks()
         closeResources()
-        if (artifactSource != null) closeArtifacts(restoreFocus = false)
+        if (artifactSource != null && !fromLink) closeArtifacts(restoreFocus = false)
         val search =
             when {
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
@@ -389,18 +419,75 @@ internal fun OkouApp(
             SearchRoute.Open -> Unit
         }
         conversations.open(threadId)
-        navigation = navigation.copy(target = destination, settings = null, search = search)
+        navigation =
+            navigation.copy(
+                target = destination,
+                settings = null,
+                search = search,
+                artifacts = navigation.artifacts.takeUnless { fromLink },
+            )
     }
 
-    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
+    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false, fromLink: Boolean = false) {
         val activeChats = chats ?: return
         val pending = composer?.uiState?.value?.pendingNewChat(chat.id)
         val destination =
             if (pending == null) WorkspaceTarget.Chat(chat.id)
             else WorkspaceTarget.NewChat(pending.projectId)
-        openConversation(chat.id, destination, fromSearch)
+        openConversation(chat.id, destination, fromSearch, fromLink)
         if (pending == null) composer?.acknowledge(chat.id)
         activeChats.history.open(chat)
+    }
+
+    fun returnFromLink() {
+        linkSnackbar.currentSnackbarData?.dismiss()
+        val source = linkReturns.last()
+        linkReturns = linkReturns.dropLast(1)
+        closeFind()
+        closeResources()
+        linkPosition = ConversationLinkPosition(source = source.source)
+        linkFocusKey = source.source.key
+        navigation = source.navigation
+        list.threads
+            .firstOrNull { it.id == source.threadId && it.hidden != true }
+            ?.let { chats?.history?.open(it) }
+    }
+
+    fun showLinkFailure(message: String) {
+        linkSnackbar.currentSnackbarData?.dismiss()
+        scope.launch { linkSnackbar.showSnackbar(message) }
+    }
+
+    fun openMessageLink(link: ConversationLink, source: ConversationLinkSource) {
+        when (link) {
+            is ConversationLink.Web -> {
+                if (!openConversationWebLink(context, link)) showLinkFailure(browserUnavailable)
+            }
+            is ConversationLink.Chat -> {
+                val current = thread ?: return
+                val destination =
+                    list.threads.firstOrNull { it.id == link.threadId && it.hidden != true }
+                if (destination == null) {
+                    showLinkFailure(linkUnavailable)
+                    return
+                }
+                if (destination.id == current.id && link.anchor == null) return
+                linkSnackbar.currentSnackbarData?.dismiss()
+                linkReturns =
+                    (linkReturns + ConversationLinkReturn(navigation, current.id, source)).takeLast(
+                        16
+                    )
+                linkPosition =
+                    ConversationLinkPosition(
+                        destination =
+                            link.anchor?.let { ConversationFindTarget(it.id, null, it.isRun) }
+                    )
+                linkFocusKey = null
+                focus.clearFocus()
+                keyboard?.hide()
+                openChat(destination, fromLink = true)
+            }
+        }
     }
 
     fun openProvisionalChat(chat: ProvisionalChat) {
@@ -416,6 +503,7 @@ internal fun OkouApp(
 
     fun startNewChat(projectId: String?) {
         val activeComposer = composer?.takeIf { workspaceReady } ?: return
+        clearConversationLinks()
         closeResources()
         if (artifactSource != null) closeArtifacts(restoreFocus = false)
         activeComposer.beginNew(projectId)
@@ -555,6 +643,7 @@ internal fun OkouApp(
             SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
             null ->
                 when {
+                    linkReturns.isNotEmpty() -> returnFromLink()
                     artifactSource != null ->
                         navigation = navigation.copy(artifacts = ArtifactsDestination())
                     navigation.search == SearchRoute.Open -> closeSearch()
@@ -583,6 +672,7 @@ internal fun OkouApp(
                 listWidth,
                 onClose = { closeArtifacts(restoreFocus = true) },
                 onSource = { source ->
+                    clearConversationLinks()
                     closeFind()
                     conversations.open(source.id)
                     navigation = navigation.copy(artifacts = ArtifactsDestination(source.id))
@@ -1130,6 +1220,18 @@ internal fun OkouApp(
                                                             },
                                                         ),
                                                 findTarget = find?.target,
+                                                linkPosition = linkPosition,
+                                                onLink = ::openMessageLink,
+                                                linkFocusKey = linkFocusKey,
+                                                onLinkFocusRestored = { linkFocusKey = null },
+                                                onLinkUnavailable =
+                                                    if (linkReturns.isEmpty()) null
+                                                    else {
+                                                        {
+                                                            returnFromLink()
+                                                            showLinkFailure(linkUnavailable)
+                                                        }
+                                                    },
                                             ) { failureId ->
                                                 if (
                                                     recovery != null &&
@@ -1149,6 +1251,11 @@ internal fun OkouApp(
                                                     snackbar,
                                                     Modifier.padding(horizontal = 16.dp)
                                                         .testTag("conversation_feedback"),
+                                                )
+                                            if (linkSnackbar.currentSnackbarData != null)
+                                                WorkspaceFeedbackHost(
+                                                    linkSnackbar,
+                                                    Modifier.padding(horizontal = 16.dp),
                                                 )
                                             if (
                                                 composerTarget != null &&

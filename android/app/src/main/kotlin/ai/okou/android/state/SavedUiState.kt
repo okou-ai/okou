@@ -1,6 +1,8 @@
 package ai.okou.android.state
 
 import ai.okou.android.artifacts.ArtifactFilter
+import ai.okou.android.chat.ConversationAnchor
+import ai.okou.android.chat.ConversationLinkSource
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
@@ -221,60 +223,106 @@ internal data class WorkspaceNavigation(
 
 internal data class ArtifactsDestination(val sourceId: String? = null)
 
+internal data class ConversationLinkReturn(
+    val navigation: WorkspaceNavigation,
+    val threadId: String,
+    val source: ConversationLinkSource,
+)
+
 @Composable
 internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
     rememberSaveable(
         stateSaver =
             listSaver<WorkspaceNavigation, Any>(
-                save = { navigation ->
-                    val (kind, id) =
-                        when (val target = navigation.target) {
-                            WorkspaceTarget.List -> "list" to ""
-                            is WorkspaceTarget.Chat -> "chat" to target.id
-                            is WorkspaceTarget.NewChat -> "new" to target.projectId.orEmpty()
-                        }
-                    listOf(
-                        kind,
-                        id,
-                        navigation.settings?.name.orEmpty(),
-                        navigation.search.name,
-                        navigation.artifacts != null,
-                        navigation.artifacts?.sourceId.orEmpty(),
-                        navigation.chatResourcesId.orEmpty(),
-                        navigation.chatArtifactLink.orEmpty(),
-                        navigation.chatArtifactFocusKey.orEmpty(),
-                    )
-                },
-                restore = { fields ->
-                    val (kind, id, settings) = fields
-                    val target =
-                        when (kind) {
-                            "chat" -> WorkspaceTarget.Chat(id as String)
-                            "new" -> WorkspaceTarget.NewChat((id as String).ifEmpty { null })
-                            else -> WorkspaceTarget.List
-                        }
-                    // Earlier versions saved only whether Settings was open.
-                    val destination =
-                        if (settings == true) SettingsDestination.Overview
-                        else SettingsDestination.entries.firstOrNull { it.name == settings }
-                    val search = SearchRoute.entries.firstOrNull { it.name == fields.getOrNull(3) }
-                    val artifacts =
-                        if (fields.getOrNull(4) == true) {
-                            ArtifactsDestination((fields.getOrNull(5) as? String)?.ifEmpty { null })
-                        } else null
-                    WorkspaceNavigation(
-                        target,
-                        destination,
-                        search ?: SearchRoute.Closed,
-                        artifacts,
-                        (fields.getOrNull(6) as? String)?.ifEmpty { null },
-                        (fields.getOrNull(7) as? String)?.ifEmpty { null },
-                        (fields.getOrNull(8) as? String)?.ifEmpty { null },
-                    )
-                },
+                save = { it.savedFields() },
+                restore = ::restoreWorkspaceNavigation,
             )
     ) {
         mutableStateOf(WorkspaceNavigation())
+    }
+
+private fun WorkspaceNavigation.savedFields(): List<Any> {
+    val (kind, id) =
+        when (val destination = target) {
+            WorkspaceTarget.List -> "list" to ""
+            is WorkspaceTarget.Chat -> "chat" to destination.id
+            is WorkspaceTarget.NewChat -> "new" to destination.projectId.orEmpty()
+        }
+    return listOf(
+        kind,
+        id,
+        settings?.name.orEmpty(),
+        search.name,
+        artifacts != null,
+        artifacts?.sourceId.orEmpty(),
+        chatResourcesId.orEmpty(),
+        chatArtifactLink.orEmpty(),
+        chatArtifactFocusKey.orEmpty(),
+    )
+}
+
+private fun restoreWorkspaceNavigation(fields: List<Any?>): WorkspaceNavigation {
+    val (kind, id, settings) = fields
+    val target =
+        when (kind) {
+            "chat" -> WorkspaceTarget.Chat(id as String)
+            "new" -> WorkspaceTarget.NewChat((id as String).ifEmpty { null })
+            else -> WorkspaceTarget.List
+        }
+    // Earlier versions saved only whether Settings was open.
+    val destination =
+        if (settings == true) SettingsDestination.Overview
+        else SettingsDestination.entries.firstOrNull { it.name == settings }
+    val search = SearchRoute.entries.firstOrNull { it.name == fields.getOrNull(3) }
+    val artifacts =
+        if (fields.getOrNull(4) == true) {
+            ArtifactsDestination((fields.getOrNull(5) as? String)?.ifEmpty { null })
+        } else null
+    return WorkspaceNavigation(
+        target,
+        destination,
+        search ?: SearchRoute.Closed,
+        artifacts,
+        (fields.getOrNull(6) as? String)?.ifEmpty { null },
+        (fields.getOrNull(7) as? String)?.ifEmpty { null },
+        (fields.getOrNull(8) as? String)?.ifEmpty { null },
+    )
+}
+
+@Composable
+internal fun rememberConversationLinkReturns(): MutableState<List<ConversationLinkReturn>> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<List<ConversationLinkReturn>, Any>(
+                save = { returns ->
+                    returns.map { entry ->
+                        arrayListOf(
+                            ArrayList(entry.navigation.savedFields()),
+                            entry.threadId,
+                            entry.source.key,
+                            entry.source.anchor?.eventId.orEmpty(),
+                            entry.source.anchor?.offsetDp ?: 0f,
+                        )
+                    }
+                },
+                restore = { returns ->
+                    returns.map { saved ->
+                        val (navigation, threadId, key, anchorId, offset) = saved as List<*>
+                        ConversationLinkReturn(
+                            restoreWorkspaceNavigation(navigation as List<*>),
+                            threadId as String,
+                            ConversationLinkSource(
+                                key as String,
+                                (anchorId as String).takeIf(String::isNotEmpty)?.let {
+                                    ConversationAnchor(it, offset as Float)
+                                },
+                            ),
+                        )
+                    }
+                },
+            )
+    ) {
+        mutableStateOf(emptyList())
     }
 
 internal class ArtifactPageState(

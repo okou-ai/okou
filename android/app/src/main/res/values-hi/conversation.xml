@@ -25,4 +25,6 @@
         <item quantity="one">%d मेल खाता मैसेज</item>
         <item quantity="other">%d मेल खाते मैसेज</item>
     </plurals>
+    <string name="conversation_link_unavailable">यह बातचीत लिंक उपलब्ध नहीं है</string>
+    <string name="conversation_link_no_browser">कोई ब्राउज़र यह लिंक नहीं खोल सकता</string>
 </resources>

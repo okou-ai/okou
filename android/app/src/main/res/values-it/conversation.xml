@@ -26,4 +26,6 @@
         <item quantity="many">%d messaggi corrispondenti</item>
         <item quantity="other">%d messaggi corrispondenti</item>
     </plurals>
+    <string name="conversation_link_unavailable">Questo link alla conversazione non è disponibile</string>
+    <string name="conversation_link_no_browser">Nessun browser può aprire questo link</string>
 </resources>

@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -92,6 +93,11 @@ internal fun ConversationRoute(
     controls: ConversationRunControls? = null,
     artifactActions: ChatArtifactActions? = null,
     findTarget: ConversationFindTarget? = null,
+    linkPosition: ConversationLinkPosition? = null,
+    onLink: ((ConversationLink, ConversationLinkSource) -> Unit)? = null,
+    onLinkFocusRestored: () -> Unit = {},
+    linkFocusKey: String? = null,
+    onLinkUnavailable: (() -> Unit)? = null,
     recovery: @Composable (failureId: String) -> Unit = {},
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
@@ -229,6 +235,20 @@ internal fun ConversationRoute(
         }
     val window = currentWindowSizeDp()
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
+    val readingTarget = findTarget ?: linkPosition?.destination
+    val targetMessageId =
+        remember(readingTarget, content) {
+            when {
+                readingTarget == null -> null
+                !readingTarget.isRun -> readingTarget.id
+                else ->
+                    content
+                        .asSequence()
+                        .flatMap { (it.earlier + it.message).asSequence() }
+                        .firstOrNull { it.runId == readingTarget.id }
+                        ?.id
+            }
+        }
     key(model, threadId) {
         val position = rememberLazyListState()
         val holdTimeline by
@@ -249,9 +269,9 @@ internal fun ConversationRoute(
             else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
-        var restored by remember { mutableStateOf(false) }
-        var restoredAnchor by remember { mutableStateOf<ConversationAnchor?>(null) }
-        var positioned by remember { mutableStateOf(false) }
+        var restored by remember(linkPosition) { mutableStateOf(false) }
+        var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
+        var positioned by remember(linkPosition) { mutableStateOf(false) }
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
@@ -284,20 +304,22 @@ internal fun ConversationRoute(
                 derivedStateOf { position.pastEnd(jumpDistance, recentKeys, recentSizes) }
             }
         SideEffect { recentSizes.keys.retainAll(recentKeys.toSet()) }
-        LaunchedEffect(model, threadId) {
-            restoredAnchor = model.restoreReadingAnchor(threadId)
+        LaunchedEffect(model, threadId, linkPosition) {
+            val source = linkPosition?.source
+            restoredAnchor =
+                if (source != null) source.anchor else model.restoreReadingAnchor(threadId)
             restored = true
         }
         val foundIndex =
-            remember(findTarget, timeline) {
-                if (findTarget == null) -1
+            remember(targetMessageId, timeline) {
+                if (targetMessageId == null) -1
                 else
                     timeline.indexOfFirst {
-                        it is ConversationMessage && it.includes(findTarget.id)
+                        it is ConversationMessage && it.includes(targetMessageId)
                     }
             }
-        val pendingFind = findTarget?.takeUnless { it.positioned }
-        LaunchedEffect(restored, positioned, timeline, state.phase, list.offline, findTarget) {
+        val pendingFind = readingTarget?.takeUnless { it.positioned }
+        LaunchedEffect(restored, positioned, timeline, state.phase, list.offline, readingTarget) {
             if (!restored || positioned || (!hasContent && !missing)) return@LaunchedEffect
             val anchor = restoredAnchor
             val index =
@@ -323,6 +345,16 @@ internal fun ConversationRoute(
                 if (jumpIndex < 0) pendingFind.finishPositioning()
             }
             positioned = true
+        }
+        if (onLinkUnavailable != null) {
+            LaunchedEffect(missing, firstReadFailed, positioned, foundIndex, linkPosition) {
+                if (
+                    missing ||
+                        firstReadFailed ||
+                        (positioned && linkPosition?.destination != null && foundIndex < 0)
+                )
+                    onLinkUnavailable()
+            }
         }
         val awaitingFindPosition = foundIndex >= 0 && pendingFind != null
         val revealTarget = pendingFind?.takeIf { positioned && foundIndex >= 0 }
@@ -355,8 +387,8 @@ internal fun ConversationRoute(
                     }
                 }
             } else null
-        LaunchedEffect(findTarget, pendingFind) {
-            if (pendingFind == null) findTarget?.expireHighlight()
+        LaunchedEffect(readingTarget, pendingFind) {
+            if (pendingFind == null) readingTarget?.expireHighlight()
         }
         val readingReady = positioned && !awaitingFindPosition
         LaunchedEffect(positioned, previewId) {
@@ -406,12 +438,7 @@ internal fun ConversationRoute(
                         !position.canScrollBackward -> ReadingPosition(null)
                         else ->
                             position.firstVisibleMessage()?.let {
-                                ReadingPosition(
-                                    ConversationAnchor(
-                                        it.key as String,
-                                        with(density) { (-it.offset).toDp().value },
-                                    )
-                                )
+                                ReadingPosition(it.readingAnchor(density))
                             }
                     }
                 }
@@ -426,6 +453,21 @@ internal fun ConversationRoute(
                 !pastJumpThreshold -> null
                 activity != null -> R.string.conversation_view_progress
                 else -> R.string.conversation_jump_latest
+            }
+        val links =
+            onLink?.let { open ->
+                ConversationLinkActions(
+                    { link, key ->
+                        val anchor =
+                            position
+                                .firstVisibleMessage()
+                                ?.takeIf { position.canScrollBackward }
+                                ?.readingAnchor(density)
+                        open(link, ConversationLinkSource(key, anchor))
+                    },
+                    linkFocusKey.takeIf { readingReady },
+                    onLinkFocusRestored,
+                )
             }
         Box(modifier.fillMaxSize()) {
             LazyColumn(
@@ -481,9 +523,15 @@ internal fun ConversationRoute(
                             }
                         is ConversationMessage -> {
                             val highlight =
-                                findTarget
-                                    ?.takeIf { positioned && entry.includes(it.id) }
-                                    ?.let { ConversationFindHighlight(it, revealFindHit) }
+                                readingTarget
+                                    ?.takeIf { positioned && entry.includes(targetMessageId) }
+                                    ?.let {
+                                        ConversationFindHighlight(
+                                            it,
+                                            revealFindHit,
+                                            checkNotNull(targetMessageId),
+                                        )
+                                    }
                             // Keep a message's lower edge independent of a new reply below it.
                             Column(
                                 trackSize.padding(
@@ -495,6 +543,7 @@ internal fun ConversationRoute(
                                     revoke = controls?.revoke(entry.message.id),
                                     artifactActions = artifactActions,
                                     findHighlight = highlight,
+                                    links = links,
                                 )
                                 if (entry.message.status == "run.failed") recovery(entry.message.id)
                             }
@@ -562,6 +611,9 @@ internal fun ConversationRoute(
 private val TimelineFixedKeys = setOf(TimelineEnd, TimelineInitial, TimelineActivity)
 
 private data class ReadingPosition(val anchor: ConversationAnchor?)
+
+private fun LazyListItemInfo.readingAnchor(density: Density): ConversationAnchor =
+    ConversationAnchor(key as String, with(density) { (-offset).toDp().value })
 
 private fun LazyListState.firstVisibleMessage(): LazyListItemInfo? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.key !in TimelineFixedKeys }
