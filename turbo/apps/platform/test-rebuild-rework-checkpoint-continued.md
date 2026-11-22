@@ -2843,3 +2843,22 @@ The accepted revised entries are lab-page-001, capability-home-page-004, chat-co
 Historical 1,870/2,681 (+99), current complete 1,846/2,681 (+99). Withdrawal cohort 422 historical / 413 current, with 1,448 / 1,433 outside it. The 291 complete owners account for 1,899 frozen rows and 1,025 retain selections, including four previous retirements. The 194 open owners account for 3,212 frozen rows and 1,656 retain selections, of which 825 are complete.
 
 The [separate list of 30 future candidates](https://app.okou.ai/artifacts/f52pxh6o8q.md) is for selection after batch 79. The next run resumes the 193 open IDs above.
+
+## Batch 79 checkpoint 2
+
+The conversation-reading-position owner has six selections. Four are verified by individual Vitest rows. The original GWT and runnable diagnostic for the two open links are preserved. The case reads user-visible message offsets against the scrolling viewport and performs the actual sidebar, keyboard, send and scroll actions. The geometry fixture supplies browser layout measurements.
+
+| Frozen ID suffix | Observed outcome                                                                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 001              | Keyboard navigation restored the same thread and the 64 px reading offset. A 128 px input offset failed the original expectation.                                                                       |
+| 002              | Sidebar navigation restored the 96 px reading offset. A 144 px input offset failed that expectation.                                                                                                    |
+| 003              | Scroll to bottom moved the viewport to its real maximum and removed the button. Withholding the click left the viewport above the bottom.                                                               |
+| 004              | Open. An event fragment landed its intended message 168 px below the top of a 600 px viewport. The frozen result requires 0 px.                                                                         |
+| 007              | Open. The Resources link navigated to the intended parent conversation and run. Its target also landed at 168 px. The original result requires 0 px.                                                    |
+| 010              | Sending from an earlier position showed the sent message, cleared the composer and returned to the bottom. Disabling the production optimistic-send tail request left the viewport at its old position. |
+
+**103 unique first acceptances, 103 expanded rows, 17 implementation files.** The 30 frozen owners now comprise 3 complete, 16 partially accepted, 5 fully blocked and 6 awaiting implementation. Of 189 open IDs, 18 have inconclusive probes, 5 have changed prerequisites and 166 await implementation. Local targeted, full-file and seed 7979 shuffled runs use the same registrations. [All 292 GWT and ID-level results](https://app.okou.ai/artifacts/7awr5yzdfq.tsv). [All 30 file-level results and 189 remaining IDs](https://app.okou.ai/artifacts/op9mfd6njv.md).
+
+Historical **1874/2,681**, current **1850/2,681**. The withdrawn cohort is 422 historical / 413 current. Outside it, 1452 / 1437. The 194 open owners contain 829 complete selections. The file closures, preserved BDD and four upstream-amended acceptances recorded in checkpoint 1 still apply.
+
+The next run continues batch 79 on the same PR and original 292-ID intake. [30 prospective files for a later batch](https://app.okou.ai/artifacts/f52pxh6o8q.md).
