@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import android.util.Log
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
@@ -111,6 +112,7 @@ internal fun ChatRowSwipe(
                 val maximum = if (readAction == null) 0f else limit
                 fun updateReveal(delta: Offset) {
                     val offset = (delta.x * directionSign).coerceIn(minimum, maximum)
+                    Log.i("OkouSwipeTrace", "row reveal delta=$delta offset=$offset minimum=$minimum maximum=$maximum")
                     val next =
                         SwipeReveal(offset, offset != 0f && delta.reachesSwipeThreshold(threshold))
                     if (next.ready && (!reveal.ready || reveal.fromStart != next.fromStart)) {
@@ -123,6 +125,7 @@ internal fun ChatRowSwipe(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val x = windowX + down.position.x
+                    Log.i("OkouSwipeTrace", "row down time=${down.uptimeMillis} local=${down.position} windowX=$windowX x=$x viewWidth=${view.width} edge=$leftEdge/$rightEdge returning=$returning type=${down.type}")
                     if (
                         returning ||
                             down.type != PointerType.Touch ||
@@ -137,10 +140,15 @@ internal fun ChatRowSwipe(
                             val logical = delta.x * directionSign
                             val available =
                                 if (logical > 0) readAction != null else archiveAction != null
+                            Log.i("OkouSwipeTrace", "row slop time=${change.uptimeMillis} delta=$delta available=$available consumed=${change.isConsumed}")
                             if (available && abs(delta.x) >= SwipeHorizontalRatio * abs(delta.y)) {
                                 change.consume()
                             }
-                        } ?: return@awaitEachGesture
+                        }
+                    if (start == null) {
+                        Log.i("OkouSwipeTrace", "row slop cancelled")
+                        return@awaitEachGesture
+                    }
                     try {
                         updateReveal(start.position - down.position)
                         while (true) {

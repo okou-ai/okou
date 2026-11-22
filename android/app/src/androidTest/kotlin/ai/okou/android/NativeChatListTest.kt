@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
 import android.graphics.Point
+import android.graphics.Rect
 import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
@@ -563,6 +564,7 @@ class NativeChatListTest {
             val row = text("Personal chat").visibleBounds
             val swipeDensity = app.resources.displayMetrics.density
             val start = Point(row.centerX(), row.centerY())
+            Log.i("OkouSwipeTrace", "test initial bounds=$row start=$start density=$swipeDensity display=${device.displayWidth}x${device.displayHeight}")
             fun swipePoint(horizontal: Int, vertical: Int) =
                 Point(
                     start.x + (horizontal * swipeDensity).toInt(),
@@ -616,14 +618,20 @@ class NativeChatListTest {
                 val point = swipePoint(displacement, 0)
                 assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
                 val targetRight = row.right + point.x - start.x
+                Log.i("OkouSwipeTrace", "test move target=$point expectedRight=$targetRight")
+                var lastBounds: Rect? = null
                 assertTrue(
                     "Chat row failed to follow the $displacement dp swipe",
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean =
-                                device.findObject(personalChat)?.visibleBounds?.right?.let {
-                                    abs(it - targetRight) <= 2
-                                } == true
+                            override fun apply(device: UiDevice): Boolean {
+                                val bounds = device.findObject(personalChat)?.visibleBounds
+                                if (bounds != lastBounds) {
+                                    Log.i("OkouSwipeTrace", "test observed bounds=$bounds targetRight=$targetRight")
+                                    lastBounds = bounds
+                                }
+                                return bounds?.right?.let { abs(it - targetRight) <= 2 } == true
+                            }
                         },
                         10_000,
                     ),
@@ -678,6 +686,7 @@ class NativeChatListTest {
             }
             awaitUndoLayout(stacked = false)
             takeScreenshot().writeToTestStorage("android-chat-list-undo")
+            ScreenshotCapture.capture("chat-list-swipe-verified.png")
             val fontScale = device.executeShellCommand("settings get system font_scale").trim()
             try {
                 device.executeShellCommand("wm size 320x800")
