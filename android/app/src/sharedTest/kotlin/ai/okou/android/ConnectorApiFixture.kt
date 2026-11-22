@@ -32,6 +32,7 @@ internal class ConnectorApiFixture : Closeable {
     val service: ConnectorService
     @Volatile var discoveryRequested = CountDownLatch(1)
     @Volatile var discoveryGate: CountDownLatch? = null
+    @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
     @Volatile var failDiscovery = false
     @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
@@ -107,7 +108,10 @@ internal class ConnectorApiFixture : Closeable {
                                 (category == null || it.category == category) &&
                                     (keyword == null ||
                                         it.name.contains(keyword, true) ||
-                                        it.slug.contains(keyword, true))
+                                        it.slug.contains(keyword, true)) &&
+                                    (keyword != null ||
+                                        category != null ||
+                                        it.slug !in omittedFromDefaultBrowse)
                             }
                         return json(
                             buildJsonObject {
@@ -200,8 +204,10 @@ internal class ConnectorApiFixture : Closeable {
                 val slug = parts.getOrNull(2)
                 val entry = entries.find { it.slug == slug } ?: return rejected(404)
                 if (parts.getOrNull(3) == "permissions") {
+                    val (read, write) =
+                        if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
                     jsonResponse(
-                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":$icon,"permissionCount":2,"permissions":[{"name":"读取日历与日程"},{"name":"创建和更新日程"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}"""
+                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":$icon,"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}"""
                     )
                 } else json(buildJsonObject { put("connector", entry.body()) })
             }

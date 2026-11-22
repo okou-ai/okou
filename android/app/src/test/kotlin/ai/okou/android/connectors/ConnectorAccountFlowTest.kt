@@ -41,6 +41,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.platform.app.InstrumentationRegistry
+import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -182,9 +183,34 @@ class ConnectorAccountFlowTest {
             compose.onNode(hasText("Offline") and inSheet).assertDoesNotExist()
 
             compose.runOnIdle { connectivity.value = true }
-            awaitText("读取日历与日程")
+            awaitText("读取邮件")
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
             offlineAction.assertDoesNotExist()
+        }
+
+    @Test
+    fun connectedCategoryFindsAccountsOutsideTheDefaultBrowseSnapshot() =
+        withDirectory(initiallyOnline = false) { fixture, connectivity ->
+            fixture.omittedFromDefaultBrowse = setOf("gmail")
+            fixture.authorizeGmail()
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("Google Calendar")
+            compose.onNodeWithText("Connected").performClick()
+            awaitText("Gmail")
+
+            val releaseCategory = CountDownLatch(1)
+            fixture.discoveryGate = releaseCategory
+            try {
+                compose.onNodeWithContentDescription("Filter by service category").performClick()
+                compose.onNodeWithText("Email").performClick()
+                compose.onNodeWithText("No connectors in this category").assertDoesNotExist()
+            } finally {
+                releaseCategory.countDown()
+            }
+            awaitText("Gmail")
+            compose.onNodeWithTag("connector-search").performTextReplacement("gmail@example.com")
+            compose.onNodeWithTag("connector-gmail").assertIsDisplayed()
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").assertDoesNotExist()
         }
 
     @Test

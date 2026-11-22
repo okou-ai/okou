@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 
 internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
+private const val RECENT_READ_LIMIT = 8
 
 internal data class ConnectorBrowseFilter(val keyword: String?, val category: String?) {
     companion object {
@@ -68,14 +69,24 @@ internal data class ConnectorUiState(
     val slug: String? = null,
     val detail: ConnectorRead<ConnectorServiceDetail> = ConnectorRead(),
     val accounts: ConnectorRead<List<ConnectorSavedAccount>> = ConnectorRead(),
+    val cachedAccounts: List<ConnectorSavedAccount>? = null,
     val permissions: ConnectorRead<List<ConnectorPermission>> = ConnectorRead(),
     val impact: ConnectorImpact? = null,
     val action: ConnectorAction? = null,
 ) {
-    fun accountsFor(slug: String): List<ConnectorSavedAccount> =
-        if (this.slug == slug && accounts.data != null) accounts.data
-        else connected.data?.get(slug)?.accounts.orEmpty()
+    fun accountsFor(slug: String): List<ConnectorSavedAccount> {
+        if (this.slug == slug && accounts.data != null) return accounts.data
+        val overview = connected.data
+        if (overview != null) return overview[slug]?.accounts.orEmpty()
+        return cachedAccounts.takeIf { this.slug == slug }.orEmpty()
+    }
 }
+
+private data class ServiceReadSnapshot(
+    val detail: ConnectorServiceDetail?,
+    val accounts: List<ConnectorSavedAccount>?,
+    val permissions: List<ConnectorPermission>?,
+)
 
 class ConnectorModel(
     private val service: ConnectorService,
@@ -85,6 +96,10 @@ class ConnectorModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectorUiState())
     internal val uiState = mutableState.asStateFlow()
+    private val recentMatches =
+        LinkedHashMap<ConnectorBrowseFilter, ConnectorBrowse>(RECENT_READ_LIMIT, 0.75f, true)
+    private val recentServices =
+        LinkedHashMap<String, ServiceReadSnapshot>(RECENT_READ_LIMIT, 0.75f, true)
     private var browseJob: Job? = null
     private var connectedJob: Job? = null
     private var inspectionJob: Job? = null
@@ -219,10 +234,11 @@ class ConnectorModel(
         filter = next
         matchesJob?.cancel()
         matchesJob = null
-        if (next != null && mutableState.value.matches?.filter != next) {
-            mutableState.update { it.copy(matches = ConnectorMatches(next)) }
+        if (next != null) {
+            val cached = recentMatches[next]
+            mutableState.update { it.copy(matches = ConnectorMatches(next, ConnectorRead(cached))) }
+            refreshMatches()
         }
-        if (next != null) refreshMatches()
     }
 
     private fun refreshMatches() {
@@ -232,6 +248,8 @@ class ConnectorModel(
             viewModelScope.launch {
                 if (selected.keyword != null) delay(250)
                 load({ service.discover(selected.keyword, selected.category) }) { read ->
+                    if (filter != selected) return@load
+                    read.data?.let { recentMatches.rememberRead(selected, it) }
                     mutableState.update { state ->
                         val previous = state.matches?.takeIf { it.filter == selected }
                         state.copy(
@@ -243,19 +261,34 @@ class ConnectorModel(
     }
 
     internal fun select(slug: String?) {
-        if (mutableState.value.slug == slug) return
+        val previous = mutableState.value
+        if (previous.slug == slug) return
+        previous.slug?.let { previousSlug ->
+            val snapshot =
+                ServiceReadSnapshot(
+                    previous.detail.data,
+                    previous.accounts.data ?: previous.cachedAccounts,
+                    previous.permissions.data,
+                )
+            if (
+                snapshot.detail != null || snapshot.accounts != null || snapshot.permissions != null
+            )
+                recentServices.rememberRead(previousSlug, snapshot)
+        }
         cancelDetailReads()
         permissionJob?.cancel()
         permissionJob = null
         impactJob?.cancel()
         impactJob = null
         permissionsRequested = false
+        val cached = slug?.let(recentServices::get)
         mutableState.update {
             it.copy(
                 slug = slug,
-                detail = ConnectorRead(),
+                detail = ConnectorRead(cached?.detail),
                 accounts = ConnectorRead(),
-                permissions = ConnectorRead(),
+                cachedAccounts = cached?.accounts,
+                permissions = ConnectorRead(cached?.permissions),
                 impact = null,
             )
         }
@@ -422,6 +455,7 @@ class ConnectorModel(
 
     internal fun startAuthorization(id: String?, methodId: String, values: Map<String, String>) {
         val state = mutableState.value
+        if (state.accounts.data == null) return
         val detail = state.detail.data ?: return
         val target =
             if (id == null) ConnectorAccountTarget(detail.entry.slug, null)
@@ -653,18 +687,24 @@ class ConnectorModel(
         replace: (ConnectorSavedAccount) -> ConnectorSavedAccount?,
     ) {
         val state = mutableState.value
-        val accounts =
-            state.accountsFor(target.slug).mapNotNull { if (it.id == id) replace(it) else it }
+        val baseline =
+            if (state.slug != target.slug && state.connected.data == null)
+                recentServices[target.slug]?.accounts.orEmpty()
+            else state.accountsFor(target.slug)
+        val accounts = baseline.mapNotNull { if (it.id == id) replace(it) else it }
         invalidateConnectionReads()
         publishAccounts(target.slug, accounts)
     }
 
     private fun publishAccounts(slug: String, accounts: List<ConnectorSavedAccount>) {
+        val cached = recentServices[slug]
+        if (cached != null) recentServices[slug] = cached.copy(accounts = accounts)
         mutableState.update { state ->
             val knownServices = state.connected.data
             val label =
                 state.detail.data?.entry?.takeIf { it.slug == slug }?.name
                     ?: knownServices?.get(slug)?.label
+                    ?: cached?.detail?.entry?.name
             val services =
                 when {
                     knownServices == null -> null
@@ -787,6 +827,11 @@ class ConnectorModel(
         val result: ConnectorResult?,
         val matches: (ConnectorSavedAccount?) -> Boolean,
     )
+}
+
+private fun <K, V> LinkedHashMap<K, V>.rememberRead(key: K, value: V) {
+    this[key] = value
+    if (size > RECENT_READ_LIMIT) remove(keys.first())
 }
 
 private val ConnectorAction.awaitingBrowserReceipt: Boolean

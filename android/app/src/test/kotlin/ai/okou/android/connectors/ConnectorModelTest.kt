@@ -38,6 +38,64 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectorModelTest {
     @Test
+    fun returningToDirectoryScopesOfflineRestoresResultsIncludingConfirmedEmpty() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online) { _, model ->
+            val email = ConnectorBrowseFilter(null, "email")
+            val missing = ConnectorBrowseFilter("no matching service", null)
+            model.setFilter(email)
+            val emailResult = model.await { it.matches?.entries?.data != null }.matches
+            model.setFilter(missing)
+            model.await { it.matches?.filter == missing && it.matches.entries.data != null }
+
+            online.value = false
+            model.await { it.offline }
+            model.setFilter(email)
+            assertEquals(emailResult, model.uiState.value.matches)
+            model.setFilter(missing)
+            assertEquals(
+                emptyList<ConnectorEntry>(),
+                model.uiState.value.matches?.entries?.data?.entries,
+            )
+        }
+    }
+
+    @Test
+    fun returningToServiceOfflineKeepsPermissionsAndUsesTheLatestAccountOverview() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->
+            model.showPermissions()
+            val first = model.await { it.permissions.data != null }
+            model.select("slack")
+            model.await { it.detail.data?.entry?.slug == "slack" }
+            fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            model.resume()
+            model.await { it.connected.data?.get(CONNECTOR_CALENDAR)?.accounts?.size == 1 }
+
+            online.value = false
+            model.await { it.offline }
+            model.select(CONNECTOR_CALENDAR)
+            val revisited = model.uiState.value
+            assertEquals(first.detail.data, revisited.detail.data)
+            assertEquals(first.permissions.data, revisited.permissions.data)
+            assertNull(revisited.accounts.data)
+            assertFalse(
+                revisited.accountsFor(CONNECTOR_CALENDAR).any {
+                    it.id == CONNECTOR_CALENDAR_PRIMARY
+                }
+            )
+            assertEquals(1, revisited.accountsFor(CONNECTOR_CALENDAR).size)
+
+            fixture.failAccountReads = true
+            online.value = true
+            val refreshing = model.await { !it.offline && it.accounts.failure != null }
+            assertEquals(first.permissions.data, refreshing.permissions.data)
+            model.startAuthorization(null, "oauth", emptyMap())
+            assertNull(model.uiState.value.action)
+        }
+    }
+
+    @Test
     fun browserReturnPublishesOnlyTheConfirmedAccount() =
         withModel("gmail") { fixture, model ->
             model.startAuthorization(null, "oauth", emptyMap())

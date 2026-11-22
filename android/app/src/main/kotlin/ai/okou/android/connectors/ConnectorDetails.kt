@@ -74,8 +74,9 @@ internal fun ConnectorDetails(
 ) {
     val detail = state.detail.data
     val entry = detail?.entry ?: preview
-    val accounts = state.accounts.data ?: entry?.slug?.let(state::accountsFor).orEmpty()
-    val hasAccountContent = state.accounts.data != null || accounts.isNotEmpty()
+    val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
+    val hasAccountContent =
+        state.accounts.data != null || state.cachedAccounts != null || accounts.isNotEmpty()
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
     var restoreAccountFocus by remember { mutableStateOf(false) }
@@ -246,7 +247,7 @@ internal fun ConnectorDetails(
                 } else if (state.offline && detail == null) {
                     ConnectorLoadWhenOnline()
                 }
-                if (detail != null && state.accounts.data != null) {
+                if (detail != null && hasAccountContent) {
                     Spacer(Modifier.height(8.dp))
                     if (detail.methods.isNotEmpty()) {
                         val label =
