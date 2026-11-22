@@ -27,7 +27,7 @@ async fn memory_delete_publishes_empty_content_and_supported_download_failures_p
             }
         });
         server.mock(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/storages/prepare");
+            when.method(POST).path("/api/webhooks/run/storages/prepare");
             then.json_body(json!({"versionId": empty, "existing": true, "memoryMerge": {
                 "base": {"versionId": base, "empty": false, "manifestUrl": format!("{origin}/base-manifest")},
                 "head": {"versionId": head, "empty": false, "manifestUrl": format!("{origin}/head-manifest")}
@@ -36,7 +36,7 @@ async fn memory_delete_publishes_empty_content_and_supported_download_failures_p
         let original_mount = mount.path().to_owned();
         server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/storages/commit")
+                .path("/api/webhooks/run/storages/commit")
                 .json_body_includes(json!({"parentVersionId": base}).to_string());
             then.respond_with(move |_| {
                 // The validated deletion-only candidate needs no local bytes.
@@ -50,7 +50,7 @@ async fn memory_delete_publishes_empty_content_and_supported_download_failures_p
             });
         });
         let published = server.mock(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/storages/commit")
+            when.method(POST).path("/api/webhooks/run/storages/commit")
                 .json_body_includes(json!({"parentVersionId": head, "versionId": empty, "files": []}).to_string());
             then.json_body(json!({"success": true, "versionId": empty, "storageName": "memory", "size": 0, "fileCount": 0}));
         });

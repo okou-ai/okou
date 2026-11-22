@@ -21,9 +21,9 @@ final class ChatPermissionTests: XCTestCase {
   func testTrustedOriginsAndCallbackValidationCannotPromoteForeignClaims() throws {
     let webURL = URL(string: "https://app.okou.ai")!
     let relative = PermissionHTTPFixture.actionURL()
-    let legacy = relative.replacingOccurrences(
-      of: "/connectors/permissions", with: "/agents/\(PermissionHTTPFixture.threadID)/permissions")
-    XCTAssertNil(ChatPermissionAction.trustedURL(legacy, webURL: webURL))
+    let unsupported = relative.replacingOccurrences(
+      of: "/connectors/permissions", with: "/connectors/unsupported")
+    XCTAssertNil(ChatPermissionAction.trustedURL(unsupported, webURL: webURL))
     for prefix in [
       "", "https://app.okou.ai", "https://api.okou.ai", "https://dev-platform.vm7.ai"
     ] {

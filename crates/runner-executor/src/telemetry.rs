@@ -854,10 +854,7 @@ impl JobTelemetry {
         let send = async {
             let mut response = match self
                 .http
-                .request_route(
-                    routes::webhooks::agent::telemetry::SEND,
-                    &self.sandbox_token,
-                )
+                .request_route(routes::webhooks::run::telemetry::SEND, &self.sandbox_token)
                 .timeout(Duration::from_secs(2))
                 .json(&payload)
                 .send("oom-evidence")
@@ -1364,7 +1361,7 @@ async fn send_telemetry(
     };
 
     let req = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, sandbox_token)
+        .request_route(routes::webhooks::run::telemetry::SEND, sandbox_token)
         .timeout(TELEMETRY_TIMEOUT)
         .json(&payload);
 

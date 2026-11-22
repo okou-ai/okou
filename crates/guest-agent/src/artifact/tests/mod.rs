@@ -102,8 +102,7 @@ async fn snapshot_rejects_empty_prepare_response_before_upload_or_commit() -> Re
     let files = archive::collect_file_metadata(root.to_str().unwrap()).unwrap();
 
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200);
     });
     let upload = server.mock(|when, then| {
@@ -111,8 +110,7 @@ async fn snapshot_rejects_empty_prepare_response_before_upload_or_commit() -> Re
         then.status(200);
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -166,8 +164,7 @@ async fn snapshot_rejects_shape_invalid_prepare_response_before_upload_or_commit
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::with_override(&telemetry_path).await;
 
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(serde_json::json!({
             "existing": false,
             "uploads": {
@@ -191,8 +188,7 @@ async fn snapshot_rejects_shape_invalid_prepare_response_before_upload_or_commit
         then.status(200);
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -266,7 +262,7 @@ async fn dedup_snapshot_posts_file_payloads_before_validation_failure_blocks_com
 
     let prepare = server.mock(|when, then| {
         when.method(httpmock::Method::POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-id",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -280,7 +276,7 @@ async fn dedup_snapshot_posts_file_payloads_before_validation_failure_blocks_com
     });
     let commit = server.mock(|when, then| {
         when.method(httpmock::Method::POST)
-            .path("/api/webhooks/agent/storages/commit")
+            .path("/api/webhooks/run/storages/commit")
             .json_body(serde_json::json!({
                 "runId": "run-id",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -325,7 +321,7 @@ async fn dedup_snapshot_posts_file_payloads_before_validation_failure_blocks_com
     std::fs::write(root.join("target.txt"), "changed").unwrap();
     let prepare = server.mock(|when, then| {
         when.method(httpmock::Method::POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-id",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -338,7 +334,7 @@ async fn dedup_snapshot_posts_file_payloads_before_validation_failure_blocks_com
     });
     let commit = server.mock(|when, then| {
         when.method(httpmock::Method::POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -396,7 +392,7 @@ async fn snapshot_uploads_archive_manifest_and_commits_new_version() -> Result<(
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-upload",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -435,7 +431,7 @@ async fn snapshot_uploads_archive_manifest_and_commits_new_version() -> Result<(
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit")
+            .path("/api/webhooks/run/storages/commit")
             .json_body(serde_json::json!({
                 "runId": "run-upload",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -537,7 +533,7 @@ async fn snapshot_archive_upload_failure_skips_manifest_and_commit() -> Result<(
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-failed-archive-upload",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -570,8 +566,7 @@ async fn snapshot_archive_upload_failure_skips_manifest_and_commit() -> Result<(
         then.status(200);
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -636,7 +631,7 @@ async fn snapshot_manifest_upload_failure_skips_commit() -> Result<(), AgentErro
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-failed-manifest-upload",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -669,8 +664,7 @@ async fn snapshot_manifest_upload_failure_skips_commit() -> Result<(), AgentErro
         then.status(403);
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -733,7 +727,7 @@ async fn uploaded_snapshot_fails_when_commit_reports_failure() -> Result<(), Age
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-upload-failed-commit",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -768,7 +762,7 @@ async fn uploaded_snapshot_fails_when_commit_reports_failure() -> Result<(), Age
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit")
+            .path("/api/webhooks/run/storages/commit")
             .json_body(serde_json::json!({
                 "runId": "run-upload-failed-commit",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -838,7 +832,7 @@ async fn dedup_snapshot_fails_when_commit_response_is_malformed() -> Result<(), 
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-dedup-malformed-commit",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -852,7 +846,7 @@ async fn dedup_snapshot_fails_when_commit_response_is_malformed() -> Result<(), 
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit")
+            .path("/api/webhooks/run/storages/commit")
             .json_body(serde_json::json!({
                 "runId": "run-dedup-malformed-commit",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -912,7 +906,7 @@ async fn dedup_snapshot_records_commit_http_failure() -> Result<(), AgentError> 
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-dedup-http-failed-commit",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -926,7 +920,7 @@ async fn dedup_snapshot_records_commit_http_failure() -> Result<(), AgentError> 
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit")
+            .path("/api/webhooks/run/storages/commit")
             .json_body(serde_json::json!({
                 "runId": "run-dedup-http-failed-commit",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -982,7 +976,7 @@ async fn snapshot_requires_upload_urls_for_new_version() -> Result<(), AgentErro
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare")
+            .path("/api/webhooks/run/storages/prepare")
             .json_body(serde_json::json!({
                 "runId": "run-missing-uploads",
                 "storageId": SNAPSHOT_STORAGE_ID,
@@ -995,8 +989,7 @@ async fn snapshot_requires_upload_urls_for_new_version() -> Result<(), AgentErro
         }));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });

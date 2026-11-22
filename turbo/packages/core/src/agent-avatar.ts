@@ -126,17 +126,6 @@ export type AvatarComposerSelection =
 export const DEFAULT_AGENT_AVATAR_URL =
   "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
 
-/** Keep the organization default agent on its canonical avatar. */
-export function agentAvatarUrlForDefaultAgent(args: {
-  readonly agentId: string;
-  readonly defaultAgentId: string | null;
-  readonly avatarUrl: string | null;
-}): string | null {
-  return args.agentId === args.defaultAgentId
-    ? DEFAULT_AGENT_AVATAR_URL
-    : args.avatarUrl;
-}
-
 /** Number of legacy built-in preset avatars kept for existing agent data. */
 export const AVATAR_PRESET_COUNT = 5;
 

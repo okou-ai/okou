@@ -120,7 +120,7 @@ async fn run_event_failure_case(
         then.status(http_status);
     });
     let _telemetry = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));

@@ -307,17 +307,14 @@ final class WorkspaceStore {
 
   func prepareWorkspaceComposer() async {
     guard !closed, !workspaceComposerReady, !Task.isCancelled else { return }
-    // A previous installation can have unsent text, attachments or voice under its old local key.
-    let storage = await sync.restoringWorkspaceDraft(draftStorage)
-    guard !closed, !workspaceComposerReady, !Task.isCancelled else { return }
     composerSyncTask?.cancel()
     let previous = newComposer
     let composer = ComposerDraftStore(
       target: .workspace, commands: commands,
-      repository: draftRepository, storage: storage,
+      repository: draftRepository, storage: draftStorage,
       didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
-    // Preserve input entered while the on-device draft was loading.
+    // Preserve input entered before the workspace composer was prepared.
     if !isCreating && previous.hasContent {
       previous.move(to: composer)
     }

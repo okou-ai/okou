@@ -1,6 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sessionOutputChannelName } from "@okouai/api-contracts/validators/realtime";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { screen, waitFor, within } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { setupPage, click } from "../../../__tests__/page-helper.ts";
@@ -104,32 +104,35 @@ test("markdown-parser-isolation-002 an unfinished reply keeps bold and literal p
 });
 test("markdown-parser-isolation-004 opening the completed run's logs preserves its distinct rich text elements", async () => {
   const run = "a0000000-0000-4000-a000-000000000001";
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [
-        {
-          sequenceNumber: 1,
-          createdAt: "2026-08-01T09:00:00Z",
-          eventType: "assistant",
-          eventData: {
-            type: "assistant",
-            message: {
-              role: "assistant",
-              content: [
-                {
-                  type: "text",
-                  text: "**Activity** ++literal++ <u>Log underline</u>",
-                },
-              ],
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: [
+          {
+            sequenceNumber: 1,
+            createdAt: "2026-08-01T09:00:00Z",
+            eventType: "assistant",
+            eventData: {
+              type: "assistant",
+              message: {
+                role: "assistant",
+                content: [
+                  {
+                    type: "text",
+                    text: "**Activity** ++literal++ <u>Log underline</u>",
+                  },
+                ],
+              },
             },
           },
-        },
-      ],
-      hasMore: false,
-      lastEventSequence: 1,
-      status: "completed",
-    });
-  });
+        ],
+        hasMore: false,
+        lastEventSequence: 1,
+        status: "completed",
+      });
+    },
+  );
   await fromInstructions(run, true);
   await screen.findByText("Harbor reply is complete");
   click(await findFastControl("link", "View run logs"));

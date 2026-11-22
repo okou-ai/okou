@@ -63,6 +63,52 @@ export const runWebhookContract: ClientDescriptor<
       500: true,
     },
   },
+  sessionOutput: {
+    method: "POST",
+    path: "/api/webhooks/run/session-output",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      503: true,
+    },
+  },
+  telemetry: {
+    method: "POST",
+    path: "/api/webhooks/run/telemetry",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      500: true,
+    },
+  },
+  storagePrepare: {
+    method: "POST",
+    path: "/api/webhooks/run/storages/prepare",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      413: true,
+      500: true,
+    },
+  },
+  storageCommit: {
+    method: "POST",
+    path: "/api/webhooks/run/storages/commit",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      409: true,
+      413: true,
+      500: true,
+    },
+  },
 };
 
 export const webhookBuiltInGenerationFalContract: ClientDescriptor<
@@ -99,7 +145,7 @@ export const webhookCompleteContract: ClientDescriptor<
 > = {
   complete: {
     method: "POST",
-    path: "/api/webhooks/agent/complete",
+    path: "/api/webhooks/run/complete",
     statuses: {
       200: true,
       400: true,
@@ -115,7 +161,7 @@ export const webhookEventsContract: ClientDescriptor<
 > = {
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/events",
+    path: "/api/webhooks/run/events",
     statuses: {
       200: true,
       400: true,
@@ -230,7 +276,7 @@ export const webhookHeartbeatContract: ClientDescriptor<
 > = {
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/heartbeat",
+    path: "/api/webhooks/run/heartbeat",
     statuses: {
       200: true,
       400: true,

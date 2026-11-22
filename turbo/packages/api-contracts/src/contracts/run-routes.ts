@@ -103,12 +103,12 @@ export const runsQueueContract = c.router({
 });
 
 /**
- * Agent run telemetry events contract (GET /api/runs/:id/telemetry/agent)
+ * Run telemetry events contract (GET /api/runs/:id/telemetry/events)
  */
-export const runAgentEventsContract = c.router({
-  getAgentEvents: {
+export const runTelemetryEventsContract = c.router({
+  getTelemetryEvents: {
     method: "GET",
-    path: "/api/runs/:id/telemetry/agent",
+    path: "/api/runs/:id/telemetry/events",
     headers: authHeadersSchema,
     pathParams: object({
       id: uuid("Run ID must be a valid UUID"),
@@ -121,7 +121,7 @@ export const runAgentEventsContract = c.router({
       403: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Get agent events with pagination",
+    summary: "Get run telemetry events with pagination",
   },
 });
 
@@ -216,7 +216,7 @@ export type RunRunnerResponse = zInfer<typeof runRunnerResponseSchema>;
 export type RunsByIdContract = typeof runsByIdContract;
 export type RunsCancelContract = typeof runsCancelContract;
 export type RunsQueueContract = typeof runsQueueContract;
-export type RunAgentEventsContract = typeof runAgentEventsContract;
+export type RunTelemetryEventsContract = typeof runTelemetryEventsContract;
 export type RunContextContract = typeof runContextContract;
 export type RunNetworkLogsContract = typeof runNetworkLogsContract;
 export type RunRunnerContract = typeof runRunnerContract;

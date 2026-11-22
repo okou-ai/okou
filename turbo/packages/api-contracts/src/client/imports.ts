@@ -1533,10 +1533,10 @@ export const clientContractImportManifest = [
   {
     module: "run-routes",
     contracts: [
-      "runAgentEventsContract",
       "runContextContract",
       "runNetworkLogsContract",
       "runRunnerContract",
+      "runTelemetryEventsContract",
       "runsByIdContract",
       "runsCancelContract",
       "runsQueueContract",

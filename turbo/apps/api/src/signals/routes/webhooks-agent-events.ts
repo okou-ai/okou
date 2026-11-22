@@ -1,8 +1,5 @@
 import { command } from "ccstate";
-import {
-  runWebhookContract,
-  webhookEventsContract,
-} from "@okouai/api-contracts/contracts/webhooks";
+import { webhookEventsContract } from "@okouai/api-contracts/contracts/webhooks";
 
 import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
@@ -42,10 +39,6 @@ const receiveEvents$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const webhooksAgentEventsRoutes: readonly RouteEntry[] = [
-  {
-    route: runWebhookContract.events,
-    handler: receiveEvents$,
-  },
   {
     route: webhookEventsContract.send,
     handler: receiveEvents$,

@@ -39,7 +39,7 @@ impl NetworkLogHttpClient for HttpClient {
         let request = self
             .client
             .post(format!(
-                "{}/api/webhooks/agent/telemetry",
+                "{}/api/webhooks/run/telemetry",
                 self.config.api_url
             ))
             .bearer_auth(sandbox_token)

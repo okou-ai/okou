@@ -1,4 +1,4 @@
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -34,21 +34,24 @@ function detail(overrides: Record<string, unknown> = {}) {
 }
 
 function mockAgentEvents(events: readonly AgentEventFixture[]): void {
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: events.map((event, index) => {
-        return {
-          sequenceNumber: index + 1,
-          eventType: event.eventType,
-          eventData: event.eventData,
-          createdAt: "2026-11-20T07:00:02.000Z",
-        };
-      }),
-      hasMore: false,
-      status: "completed",
-      lastEventSequence: events.length,
-    });
-  });
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: events.map((event, index) => {
+          return {
+            sequenceNumber: index + 1,
+            eventType: event.eventType,
+            eventData: event.eventData,
+            createdAt: "2026-11-20T07:00:02.000Z",
+          };
+        }),
+        hasMore: false,
+        status: "completed",
+        lastEventSequence: events.length,
+      });
+    },
+  );
 }
 
 async function openActivity(): Promise<void> {

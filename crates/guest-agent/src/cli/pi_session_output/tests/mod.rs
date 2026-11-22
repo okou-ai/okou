@@ -36,7 +36,7 @@ async fn merged_requests_receive_contiguous_published_indices() {
     let second_delta = "c".repeat(200);
     let first = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/session-output")
+            .path("/api/webhooks/run/session-output")
             .json_body(json!({
                 "runId": RUN_ID,
                 "threadId": THREAD_ID,
@@ -48,7 +48,7 @@ async fn merged_requests_receive_contiguous_published_indices() {
     });
     let second = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/session-output")
+            .path("/api/webhooks/run/session-output")
             .json_body(json!({
                 "runId": RUN_ID,
                 "threadId": THREAD_ID,
@@ -85,7 +85,7 @@ async fn merged_requests_receive_contiguous_published_indices() {
 async fn failed_request_is_never_retried_and_closes_the_block() {
     let server = MockServer::start();
     let endpoint = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/session-output");
+        when.method(POST).path("/api/webhooks/run/session-output");
         then.status(503);
     });
     let http = HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)
@@ -106,7 +106,7 @@ async fn failed_request_is_never_retried_and_closes_the_block() {
 async fn old_api_rejection_disables_future_blocks_without_affecting_the_caller() {
     let server = MockServer::start();
     let endpoint = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/session-output");
+        when.method(POST).path("/api/webhooks/run/session-output");
         then.status(404);
     });
     let http = HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)
@@ -127,7 +127,7 @@ async fn only_the_first_published_chunk_records_first_output_timing() {
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::with_override(&telemetry_path).await;
     let server = MockServer::start();
     let endpoint = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/session-output");
+        when.method(POST).path("/api/webhooks/run/session-output");
         then.status(204);
     });
     let http = HttpClient::with_api_config(server.base_url(), "test-token", RUN_ID, Duration::ZERO)

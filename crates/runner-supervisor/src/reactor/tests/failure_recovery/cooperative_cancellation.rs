@@ -33,7 +33,7 @@ async fn cooperative_failure_classification_preserves_completion_and_retirement(
     let telemetry = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_host_finalization_started");
             then.status(200)
                 .json_body(serde_json::json!({"success": true, "id": "ok"}));
@@ -42,7 +42,7 @@ async fn cooperative_failure_classification_preserves_completion_and_retirement(
     let startup_telemetry = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_sandbox_startup");
             then.status(200)
                 .json_body(serde_json::json!({"success": true, "id": "ok"}));

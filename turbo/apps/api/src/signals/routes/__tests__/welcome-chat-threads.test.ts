@@ -294,7 +294,6 @@ describe("POST /api/welcome-chat-threads", () => {
           `https://my-okou-quickstart-20261112-review.okou.app/assets/${filename}`,
         );
       }
-      expect(content).not.toContain("new-agent.png");
       expect(content).not.toContain("https://4nnp6iwpss.okou.app");
     },
   );

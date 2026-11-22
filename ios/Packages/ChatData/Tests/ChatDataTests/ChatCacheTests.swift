@@ -1,6 +1,5 @@
 import ChatDataTestSupport
 import Foundation
-import SQLite3
 import XCTest
 
 @testable import ChatData
@@ -33,7 +32,6 @@ final class ChatCacheTests: XCTestCase {
     try await legacy.replaceThreadList(
       snapshot: Data(#"{"chatThreads":[]}"#.utf8),
       cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
-    try LegacyComposerFixture.storeLocation("agent-old", in: legacyRoot.url)
     try await legacy.replaceHistory(
       threadID: "chat", rows: [event(1)],
       cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
@@ -49,8 +47,6 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertEqual(newest?.rows, [event(1), event(2)])
     let imported = try await app.loadHistory(threadID: "other")
     XCTAssertEqual(imported?.rows, [event(1)])
-    let restoredNavigation = try await app.previousComposerID()
-    XCTAssertEqual(restoredNavigation, "agent-old")
     let retained = try await legacy.loadHistory(threadID: "chat")
     XCTAssertEqual(retained?.rows, [event(1)])
   }
@@ -100,24 +96,7 @@ final class ChatCacheTests: XCTestCase {
       snapshot: snapshot, cursor: ChatCacheCursor(eventID: nil, seqID: 10),
       events: [event(11), event(13)])
 
-    // Reproduce the preceding build's version-one cache: the authoritative
-    // thread tables exist, but the additive navigation table does not.
-    let file = try XCTUnwrap(
-      FileManager.default.contentsOfDirectory(
-        at: directory.url.appendingPathComponent("ChatCache"), includingPropertiesForKeys: nil
-      ).first { $0.pathExtension == "sqlite" })
-    var handle: OpaquePointer?
-    let opened = sqlite3_open(file.path, &handle)
-    defer { sqlite3_close(handle) }
-    XCTAssertEqual(opened, SQLITE_OK)
-    XCTAssertEqual(sqlite3_exec(handle, "DROP TABLE sidebar_navigation", nil, nil, nil), SQLITE_OK)
-
     let reopened = directory.cache(scope: scope)
-    _ = try await reopened.loadThreadList()
-    try LegacyComposerFixture.storeLocation("agent-a", in: directory.url)
-    let persistedNavigation = try await directory.cache(scope: scope)
-      .previousComposerID()
-    XCTAssertEqual(persistedNavigation, "agent-a")
     let loaded = try await reopened.loadThreadList()
     let stored = try XCTUnwrap(loaded)
     XCTAssertEqual(stored.snapshot, snapshot)
@@ -145,12 +124,6 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertNil(foreignUser)
     XCTAssertNil(foreignWorkspace)
     XCTAssertNil(foreignAPI)
-    let foreignUserNavigation = try await otherUser.previousComposerID()
-    let foreignWorkspaceNavigation = try await otherWorkspace.previousComposerID()
-    let foreignAPINavigation = try await otherAPI.previousComposerID()
-    XCTAssertNil(foreignUserNavigation)
-    XCTAssertNil(foreignWorkspaceNavigation)
-    XCTAssertNil(foreignAPINavigation)
   }
 
   func testFailedAppendRollsBackEarlierRowsInSamePage() async throws {

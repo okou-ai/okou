@@ -140,7 +140,7 @@ async fn home_operations_use_the_existing_run_payload_and_first_run_context() {
     telemetry.flush().await;
     let requests = server.assert_finished_with_requests().await;
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].starts_with("POST /api/webhooks/agent/telemetry "));
+    assert!(requests[0].starts_with("POST /api/webhooks/run/telemetry "));
     let body: serde_json::Value =
         serde_json::from_str(requests[0].split_once("\r\n\r\n").unwrap().1).unwrap();
     assert_eq!(body["runId"], run_id.to_string());
@@ -735,7 +735,7 @@ async fn record_with_outcome_is_sent_in_flush_payload() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes(r#""action_type":"runner_host_physical_park_balloon_settle""#)
                 .body_includes(r#""duration_ms":125"#)
                 .body_includes(r#""success":true"#)
@@ -771,7 +771,7 @@ async fn telemetry_uses_the_callers_runner_version() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes(r#""runnerVersion":"9.8.7""#);
             then.status(200);
         })
@@ -1038,7 +1038,7 @@ async fn telemetry_flush_preserves_captured_operation_timestamp() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes(r#""ts":"2026-08-11T10:20:30.456Z""#)
                 .body_includes(r#""action_type":"concurrent_operation""#)
                 .body_includes(r#""runnerHostname":"prod-1.aws.vm3.ai""#)
@@ -1369,7 +1369,7 @@ async fn flush_waits_for_in_flight_auto_flush_after_buffer_is_drained() {
     assert_eq!(telemetry.in_flight_flushes.len(), 1);
 
     let request = server.next_request("auto flush request").await;
-    assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+    assert!(request.starts_with("POST /api/webhooks/run/telemetry "));
     assert!(
         request
             .to_ascii_lowercase()
@@ -1432,7 +1432,7 @@ async fn detached_reporter_sends_sandbox_operations_payload() {
 
     let requests = server.assert_finished_with_requests().await;
     let request = &requests[0];
-    assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+    assert!(request.starts_with("POST /api/webhooks/run/telemetry "));
     assert!(
         request
             .to_ascii_lowercase()
@@ -1551,7 +1551,7 @@ async fn home_startup_http_payload_matches_shared_contract_fixture() {
     telemetry.flush().await;
     let requests = server.assert_finished_with_requests().await;
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].starts_with("POST /api/webhooks/agent/telemetry "));
+    assert!(requests[0].starts_with("POST /api/webhooks/run/telemetry "));
     let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
     let actual: serde_json::Value = serde_json::from_str(body).unwrap();
     let mut expected: serde_json::Value = serde_json::from_str(include_str!(

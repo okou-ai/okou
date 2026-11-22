@@ -1,4 +1,4 @@
-//! Agent runs use managed tools unless the API explicitly opts into native tools.
+//! Runs use managed tools unless the API explicitly opts into native tools.
 
 use crate::common;
 
@@ -13,7 +13,7 @@ use std::path::Path;
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::test]
-async fn okou_agent_id_disables_builtin_web_search_for_claude_and_codex() -> TestResult {
+async fn builtin_web_search_is_disabled_by_default_for_claude_and_codex() -> TestResult {
     assert_native_tool_policy(&["claude-code", "codex"], None, None, true, false).await
 }
 
@@ -137,7 +137,7 @@ fn build_runtime(
     framework_web_search: Option<&str>,
     framework_image_generation: Option<&str>,
 ) -> TestResult<GuestRuntime> {
-    let run_id = format!("agent-web-search-{framework}");
+    let run_id = format!("framework-web-search-{framework}");
     let home = root.join("home");
     let runtime_dir = root.join("runtime");
     std::fs::create_dir_all(&home)?;
@@ -150,7 +150,6 @@ fn build_runtime(
         },
     )?;
     let mut user_env = HashMap::from([
-        ("OKOU_AGENT_ID", "agent-okou-web-search"),
         (
             "TEST_ARGS_PATH",
             args_path.to_str().ok_or("args path must be valid UTF-8")?,

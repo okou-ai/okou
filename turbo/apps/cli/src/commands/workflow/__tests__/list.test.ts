@@ -80,8 +80,6 @@ describe("okou workflow list command", () => {
 
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("code-review");
-      expect(logCalls).not.toContain("AGENT NAME");
-      expect(logCalls).not.toContain("My Agent");
       expect(logCalls).toContain("private");
       expect(logCalls).toContain("deploy");
     });

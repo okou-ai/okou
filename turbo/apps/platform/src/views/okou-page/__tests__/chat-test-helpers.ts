@@ -772,23 +772,27 @@ export function mockChatLifecycle(
   context.mocks.api(
     chatThreadEventsContract.rows,
     async ({ query, respond }) => {
-      const rows = mockChatEventRows(
+      const remaining = mockChatEventRows(
         normalizeMockChatEvents(
           buildCanonicalEvents().map(cloneMockChatEvent),
           threadId,
         ),
-      )
-        .filter((row) => {
-          return row.seqId > query.sinceSeqId;
-        })
-        .slice(0, query.limit ?? 50);
+      ).filter((row) => {
+        return row.seqId > query.sinceSeqId;
+      });
+      const rows = remaining.slice(0, query.limit ?? 50);
       if (query.sinceSeqId === 0) {
         options?.afterInitialEventsList?.();
       }
       if (options?.beforeEventRowsResponse) {
         await options.beforeEventRowsResponse(rows);
       }
-      return respond(200, chatEventRowsResponse(rows, query));
+      return respond(
+        200,
+        chatEventRowsResponse(rows, query, {
+          hasMore: rows.length < remaining.length,
+        }),
+      );
     },
   );
   context.mocks.api(chatThreadByIdContract.get, async ({ respond }) => {

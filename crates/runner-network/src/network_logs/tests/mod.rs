@@ -299,7 +299,7 @@ async fn upload_with_counted_batches(
                 let headers = read_counted_http_headers(&mut stream).await;
                 let mut request_line = headers.lines().next().unwrap().split_whitespace();
                 assert_eq!(request_line.next(), Some("POST"));
-                assert_eq!(request_line.next(), Some("/api/webhooks/agent/telemetry"));
+                assert_eq!(request_line.next(), Some("/api/webhooks/run/telemetry"));
                 batches += 1;
                 stream
                     .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -766,7 +766,7 @@ async fn upload_network_logs_posts_payload_and_keeps_file() {
     let upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .header("authorization", format!("Bearer {SANDBOX_TOKEN}"))
                 .json_body(expected.clone());
             then.status(200)
@@ -817,7 +817,7 @@ async fn upload_network_logs_splits_batches_by_entry_limit() {
     let first_upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(first_expected.clone());
             then.status(200);
         })
@@ -825,7 +825,7 @@ async fn upload_network_logs_splits_batches_by_entry_limit() {
     let second_upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(second_expected.clone());
             then.status(200);
         })
@@ -1083,7 +1083,7 @@ async fn upload_network_logs_splits_batches_by_estimated_bytes() {
     let first_upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(first_expected.clone());
             then.status(200);
         })
@@ -1091,7 +1091,7 @@ async fn upload_network_logs_splits_batches_by_estimated_bytes() {
     let second_upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(second_expected.clone());
             then.status(200);
         })
@@ -1131,7 +1131,7 @@ async fn upload_network_logs_skips_oversized_entry_and_continues() {
     let upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(expected.clone());
             then.status(200);
         })
@@ -1190,7 +1190,7 @@ async fn upload_network_logs_preserves_exact_trimmed_record_admission() {
                 server
                     .mock_async(move |when, then| {
                         when.method(POST)
-                            .path("/api/webhooks/agent/telemetry")
+                            .path("/api/webhooks/run/telemetry")
                             .json_body(expected);
                         then.status(200);
                     })
@@ -1227,7 +1227,7 @@ async fn upload_network_logs_stops_at_source_byte_budget() {
     let server = MockServer::start_async().await;
     let upload = server
         .mock_async(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/telemetry");
+            when.method(POST).path("/api/webhooks/run/telemetry");
             then.status(200);
         })
         .await;
@@ -1287,7 +1287,7 @@ async fn upload_network_logs_allows_exact_source_byte_budget() {
     let upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(expected.clone());
             then.status(200);
         })
@@ -1337,7 +1337,7 @@ async fn upload_network_logs_skips_malformed_lines() {
     let upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(expected.clone());
             then.status(200);
         })
@@ -1380,7 +1380,7 @@ async fn upload_network_logs_preserves_valid_entries_around_invalid_utf8_line() 
     let upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(expected.clone());
             then.status(200);
         })
@@ -1418,7 +1418,7 @@ async fn upload_network_logs_flushes_pending_batch_after_truncated_multibyte_seq
     let upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(expected.clone());
             then.status(200);
         })
@@ -1459,7 +1459,7 @@ async fn upload_network_logs_stops_after_rejected_batch() {
     let first_upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(first_expected.clone());
             then.status(200);
         })
@@ -1467,7 +1467,7 @@ async fn upload_network_logs_stops_after_rejected_batch() {
     let second_upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(second_expected.clone());
             then.status(500);
         })
@@ -1475,7 +1475,7 @@ async fn upload_network_logs_stops_after_rejected_batch() {
     let third_upload = server
         .mock_async(move |when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .json_body(third_expected.clone());
             then.status(200);
         })
@@ -1496,7 +1496,7 @@ async fn upload_network_logs_returns_without_post_for_empty_missing_or_unreadabl
     let server = MockServer::start_async().await;
     let upload = server
         .mock_async(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/telemetry");
+            when.method(POST).path("/api/webhooks/run/telemetry");
             then.status(200);
         })
         .await;
@@ -1529,7 +1529,7 @@ async fn upload_network_logs_returns_without_retry_when_server_rejects() {
     let server = MockServer::start_async().await;
     let upload = server
             .mock_async(|when, then| {
-                when.method(POST).path("/api/webhooks/agent/telemetry");
+                when.method(POST).path("/api/webhooks/run/telemetry");
                 then.status(400)
                     .header("content-type", "application/json")
                     .json_body(json!({

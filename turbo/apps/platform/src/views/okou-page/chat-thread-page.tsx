@@ -2816,17 +2816,48 @@ function ChatThreadRenderedEventGroups({
   thread: ChatPanelSignals;
 }) {
   const rows = useGet(thread.visibleRows$);
+  const layout = useGet(thread.transcriptPages.layout$);
+  const bindPages = useSet(thread.transcriptPages.containerOnRef$);
+  const bindPage = useSet(thread.transcriptPages.pageOnRef$);
+  const renderRow = (row: ChatThreadRowSignals) => {
+    return (
+      <ChatThreadRow key={row.model$.toString()} row={row} thread={thread} />
+    );
+  };
   return (
     <>
-      {rows.map((row) => {
-        return (
-          <ChatThreadRow
-            key={row.model$.toString()}
-            row={row}
-            thread={thread}
+      {layout ? (
+        <div ref={bindPages}>
+          <div
+            aria-hidden
+            data-transcript-spacer="before"
+            style={{ height: layout.before }}
           />
-        );
-      })}
+          {layout.pages.map((page, i) => {
+            return (
+              <div
+                key={page.key}
+                ref={bindPage}
+                data-transcript-page={page.key}
+                className={cn(
+                  "flex flex-col",
+                  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
+                  (i < layout.pages.length - 1 || layout.after > 0) && "pb-6",
+                )}
+              >
+                {layout.rows[i]!.map(renderRow)}
+              </div>
+            );
+          })}
+          <div
+            aria-hidden
+            data-transcript-spacer="after"
+            style={{ height: layout.after }}
+          />
+        </div>
+      ) : (
+        rows.map(renderRow)
+      )}
     </>
   );
 }

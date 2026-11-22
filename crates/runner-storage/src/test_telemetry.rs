@@ -221,7 +221,7 @@ async fn send(api_url: String, ops: Vec<Operation>) {
     });
     let _ = reqwest::Client::new()
         .post(format!(
-            "{}/api/webhooks/agent/telemetry",
+            "{}/api/webhooks/run/telemetry",
             api_url.trim_end_matches('/')
         ))
         .bearer_auth("test-token")

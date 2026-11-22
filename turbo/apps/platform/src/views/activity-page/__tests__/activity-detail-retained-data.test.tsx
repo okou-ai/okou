@@ -3,7 +3,7 @@ import {
   type LogDetail,
 } from "@okouai/api-contracts/contracts/logs";
 import {
-  runAgentEventsContract,
+  runTelemetryEventsContract,
   runContextContract,
   runNetworkLogsContract,
 } from "@okouai/api-contracts/contracts/run-routes";
@@ -104,14 +104,17 @@ test("A user can download all retained diagnostics for an older activity", async
     startedAt: "2025-12-02T09:00:01.000Z",
     completedAt: "2025-12-02T09:00:30.000Z",
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [event],
-      hasMore: false,
-      status: "completed",
-      lastEventSequence: 1,
-    });
-  });
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: [event],
+        hasMore: false,
+        status: "completed",
+        lastEventSequence: 1,
+      });
+    },
+  );
   context.mocks.api(runContextContract.getContext, ({ respond }) => {
     return respond(200, runContext);
   });

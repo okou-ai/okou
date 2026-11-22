@@ -103,7 +103,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
             .json_body(json!({}));
     });
     let _telemetry = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));

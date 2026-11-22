@@ -35,7 +35,7 @@ import {
 import { connectorPermissionsContract } from "../connector-permissions";
 import { initClient } from "../trpc-contract";
 
-const AGENT_ID = "00000000-0000-4000-a000-000000000001";
+const OAUTH_ATTEMPT_ID = "00000000-0000-4000-a000-000000000001";
 
 const customHttpConnectorPayloadBase = {
   id: "00000000-0000-4000-a000-000000000005",
@@ -146,7 +146,7 @@ describe("connector client response contracts", () => {
       const authorization = {
         result: "authorization",
         authorizationUrl: "https://example.test/authorize",
-        oauthAttemptId: AGENT_ID,
+        oauthAttemptId: OAUTH_ATTEMPT_ID,
         ...identity,
       };
       expect(

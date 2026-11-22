@@ -15,7 +15,7 @@ async fn telemetry_flush_includes_runner_pre_spawn_phase_spans() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_accepted_to_executor_start")
                 .body_includes("runner_pre_spawn_resume_session_validation")
                 .body_includes("runner_pre_spawn_device_rate_limits")
@@ -75,7 +75,7 @@ async fn telemetry_flush_classifies_no_resource_finalization() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_host_finalization_no_resource")
                 .body_includes("runner_host_completion_fallback");
             then.status(200)
@@ -110,7 +110,7 @@ async fn telemetry_flush_classifies_home_cache_finalization() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_host_finalization_home_cache")
                 .body_includes("runner_host_completion_fallback")
                 .body_includes("runner_active_reuse_key_released");
@@ -197,7 +197,7 @@ async fn telemetry_flush_classifies_failed_finalization() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_host_finalization_failed")
                 .body_includes("runner_host_completion_fallback");
             then.status(200)
@@ -240,7 +240,7 @@ async fn telemetry_flush_preserves_claim_spans_and_publishes_settled_reuse() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_pre_spawn_idle_reuse_lookup")
                 .body_includes("runner_pre_spawn_idle_unpark")
                 .body_includes("runner_pre_spawn_task_schedule_wait");
@@ -253,7 +253,7 @@ async fn telemetry_flush_preserves_claim_spans_and_publishes_settled_reuse() {
     let startup_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_sandbox_startup")
                 .body_includes(r#""runner_startup_path":"sandbox""#);
             then.status(200)
@@ -307,7 +307,7 @@ async fn invalid_resume_session_flushes_blank_selection_without_startup_fact() {
     let reuse_telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_sandbox_startup");
             then.status(200)
                 .header("content-type", "application/json")
@@ -317,7 +317,7 @@ async fn invalid_resume_session_flushes_blank_selection_without_startup_fact() {
     let blank_selection_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_pre_spawn_blank_pool_selection")
                 .body_includes(r#""outcome":"miss""#)
                 .body_includes(r#""reason":"disabled_plan""#);

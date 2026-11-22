@@ -37,7 +37,18 @@ function anchors(container: HTMLElement): HTMLElement[] {
 }
 
 /** Happy DOM has no layout engine; retain real rendering and navigation. */
-export function mockChatGeometry(): void {
+export function mockChatGeometry(
+  viewportHeight = () => {
+    return VIEWPORT_HEIGHT;
+  },
+  bottomPadding = VIEWPORT_HEIGHT,
+): void {
+  function spacerHeight(container: HTMLElement, side: "before" | "after") {
+    const spacer = container.querySelector<HTMLElement>(
+      `[data-transcript-spacer="${side}"]`,
+    );
+    return Number.parseFloat(spacer?.style.height ?? "") || 0;
+  }
   const positions = new WeakMap<HTMLElement, number>();
   const originalRect = HTMLElement.prototype.getBoundingClientRect;
   const originalScrollTo = HTMLElement.prototype.scrollTo;
@@ -45,14 +56,17 @@ export function mockChatGeometry(): void {
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
     function (this: HTMLElement) {
       return Object.hasOwn(this.dataset, "scrollContainer")
-        ? VIEWPORT_HEIGHT
+        ? viewportHeight()
         : 0;
     },
   );
   vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
     function (this: HTMLElement) {
       return Object.hasOwn(this.dataset, "scrollContainer")
-        ? anchors(this).length * ROW_HEIGHT + VIEWPORT_HEIGHT
+        ? spacerHeight(this, "before") +
+            anchors(this).length * ROW_HEIGHT +
+            spacerHeight(this, "after") +
+            bottomPadding
         : 0;
     },
   );
@@ -94,16 +108,35 @@ export function mockChatGeometry(): void {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       if (Object.hasOwn(this.dataset, "scrollContainer")) {
-        return new DOMRect(0, 0, 800, VIEWPORT_HEIGHT);
+        return new DOMRect(0, 0, 800, viewportHeight());
       }
       if (Object.hasOwn(this.dataset, "conversationLocator")) {
         return new DOMRect(0, 0, 24, VIEWPORT_HEIGHT);
       }
       const container = this.closest<HTMLElement>("[data-scroll-container]");
+      if (container && this.dataset.transcriptPage) {
+        return new DOMRect(0, 0, 800, anchors(this).length * ROW_HEIGHT);
+      }
+      const side = this.dataset.transcriptSpacer;
+      if (container && (side === "before" || side === "after")) {
+        const top =
+          side === "before"
+            ? 0
+            : spacerHeight(container, "before") +
+              anchors(container).length * ROW_HEIGHT;
+        return new DOMRect(
+          0,
+          top - container.scrollTop,
+          800,
+          spacerHeight(container, side),
+        );
+      }
       if (container && this.matches(ANCHOR_SELECTOR)) {
         return new DOMRect(
           0,
-          anchors(container).indexOf(this) * ROW_HEIGHT - container.scrollTop,
+          spacerHeight(container, "before") +
+            anchors(container).indexOf(this) * ROW_HEIGHT -
+            container.scrollTop,
           800,
           80,
         );
