@@ -27,6 +27,7 @@ import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -250,7 +251,8 @@ internal fun WorkspaceChatFeedback(
         ?.let { result ->
             val message =
                 when {
-                    result.connectionFailed -> stringResource(R.string.chat_action_connection_failed)
+                    result.connectionFailed ->
+                        stringResource(R.string.chat_action_connection_failed)
                     result.confirmed == result.requested ->
                         pluralStringResource(
                             R.plurals.chat_mark_all_read_success,
