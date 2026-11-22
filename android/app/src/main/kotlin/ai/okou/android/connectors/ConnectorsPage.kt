@@ -7,6 +7,7 @@ import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.ConnectorDirectoryState
 import ai.okou.android.state.rememberConnectorDirectory
+import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchControlHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -105,7 +106,8 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
     val keyboard = LocalSoftwareKeyboardController.current
     var restoreRow by remember { mutableStateOf<String?>(null) }
     val filter =
-        if (route.connected) null else ConnectorBrowseFilter.of(route.query.text, route.category)
+        if (route.connected) null
+        else ConnectorBrowseFilter.of(route.committedQuery.text, route.category)
     val wide = listWidth != null
     val selected = route.slug
 
@@ -129,11 +131,11 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
     }
 
     fun setQuery(value: TextFieldValue) {
-        if (route.query.text != value.text) {
+        if (value.composition == null && route.committedQuery.text != value.text) {
             discoverPosition.requestScrollToItem(0)
             connectedPosition.requestScrollToItem(0)
         }
-        route.query = value
+        route.editQuery(value)
     }
 
     fun setCategory(value: String?) {
@@ -250,16 +252,25 @@ private fun ConnectorDirectory(
     setCategory: (String?) -> Unit,
     open: (String) -> Unit,
 ) {
-    val query = route.query.text.trim()
+    val query = route.committedQuery.text.trim()
+    val searchFocus = remember { FocusRequester() }
+    fun clearQuery() {
+        editQuery(TextFieldValue())
+        searchFocus.requestFocus()
+    }
+    // Keep the visible directory stable while the input method is composing a word.
+    val directory =
+        if (route.query.composition == null) state
+        else remember(route.connected, filter, query) { state }
     val recommended = !route.connected && filter == null
-    val serviceEntries = state.browse.data?.entries
-    val connected = state.connected.data
+    val serviceEntries = directory.browse.data?.entries
+    val connected = directory.connected.data
     val read =
         when {
-            route.connected -> state.connected
+            route.connected -> directory.connected
             filter != null ->
-                state.matches?.takeIf { it.filter == filter }?.entries ?: ConnectorRead()
-            else -> state.browse
+                directory.matches?.takeIf { it.filter == filter }?.entries ?: ConnectorRead()
+            else -> directory.browse
         }
     val entries =
         remember(
@@ -295,7 +306,7 @@ private fun ConnectorDirectory(
                 }
                 recommended -> serviceEntries?.let(::recommendedConnectors)
                 else ->
-                    state.matches
+                    directory.matches
                         ?.takeIf { it.filter == filter }
                         ?.entries
                         ?.data
@@ -308,7 +319,14 @@ private fun ConnectorDirectory(
         Spacer(Modifier.height(12.dp))
         ConnectorTabs(route.connected) { route.connected = it }
         Spacer(Modifier.height(8.dp))
-        ConnectorFilters(route, state.browse.data?.categories.orEmpty(), editQuery, setCategory)
+        ConnectorFilters(
+            route,
+            directory.browse.data?.categories.orEmpty(),
+            searchFocus,
+            editQuery,
+            ::clearQuery,
+            setCategory,
+        )
         val restoreFocus = remember { FocusRequester() }
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth().testTag("connector-directory"),
@@ -330,9 +348,11 @@ private fun ConnectorDirectory(
                                 ConnectorEmpty(R.string.connector_load_failed)
                             }
                         query.isNotEmpty() ->
-                            ConnectorEmpty(R.string.connector_no_match, R.string.connector_clear) {
-                                editQuery(TextFieldValue())
-                            }
+                            ConnectorEmpty(
+                                R.string.connector_no_match,
+                                R.string.connector_clear,
+                                ::clearQuery,
+                            )
                         route.category != null ->
                             ConnectorEmpty(
                                 R.string.connector_empty_category,
@@ -366,7 +386,7 @@ private fun ConnectorDirectory(
                     val restoring = restoreRow == entry.slug
                     ConnectorDirectoryRow(
                         entry,
-                        state.accountsFor(entry.slug),
+                        directory.accountsFor(entry.slug),
                         selected == entry.slug,
                         (if (restoring) Modifier.focusRequester(restoreFocus) else Modifier)
                             .testTag("connector-${entry.slug}"),
@@ -393,6 +413,7 @@ private fun ConnectorDirectory(
 private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
     val selected = if (connected) 1 else 0
     val focus = remember { List(2) { FocusRequester() } }
+    val accent = LocalActivityStatusColor.current
     PrimaryTabRow(
         selectedTabIndex = selected,
         containerColor = MaterialTheme.colorScheme.background,
@@ -402,7 +423,7 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                 Modifier.tabIndicatorOffset(selected, matchContentSize = true)
                     .height(3.dp)
                     .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                    .background(LocalActivityStatusColor.current)
+                    .background(accent)
             )
         },
         divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outline) },
@@ -414,17 +435,19 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                 selected = selected == index,
                 onClick = { select(index == 1) },
                 modifier =
-                    Modifier.heightIn(min = 48.dp).focusRequester(focus[index]).onPreviewKeyEvent {
-                        event ->
-                        if (
-                            event.type == KeyEventType.KeyDown &&
-                                event.key in listOf(Key.DirectionLeft, Key.DirectionRight)
-                        ) {
-                            select(index == 0)
-                            focus[1 - index].requestFocus()
-                            true
-                        } else false
-                    },
+                    Modifier.heightIn(min = 48.dp)
+                        .focusRequester(focus[index])
+                        .updateFocusOutline(RoundedCornerShape(8.dp), accent)
+                        .onPreviewKeyEvent { event ->
+                            if (
+                                event.type == KeyEventType.KeyDown &&
+                                    event.key in listOf(Key.DirectionLeft, Key.DirectionRight)
+                            ) {
+                                select(index == 0)
+                                focus[1 - index].requestFocus()
+                                true
+                            } else false
+                        },
                 text = {
                     Text(
                         stringResource(label),
@@ -442,18 +465,20 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
 private fun ConnectorFilters(
     route: ConnectorDirectoryState,
     categories: Set<String>,
+    searchFocus: FocusRequester,
     editQuery: (TextFieldValue) -> Unit,
+    clearQuery: () -> Unit,
     setCategory: (String?) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     var restoreFocus by remember { mutableStateOf(false) }
     val categoryFocus = remember { FocusRequester() }
-    val searchFocus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
     val colors = MaterialTheme.colorScheme
     val label = stringResource(R.string.connector_search)
     val shape = RoundedCornerShape(18.dp)
+    val categoryShape = RoundedCornerShape(12.dp)
     val categoryLabel =
         route.category?.let { connectorCategory(it) }
             ?: stringResource(R.string.connector_any_category)
@@ -513,12 +538,7 @@ private fun ConnectorFilters(
                         field()
                     }
                     if (route.query.text.isNotEmpty()) {
-                        IconButton(
-                            onClick = {
-                                editQuery(TextFieldValue())
-                                searchFocus.requestFocus()
-                            }
-                        ) {
+                        IconButton(onClick = clearQuery) {
                             Icon(
                                 painterResource(R.drawable.ic_close),
                                 stringResource(R.string.connector_clear),
@@ -538,7 +558,8 @@ private fun ConnectorFilters(
                 modifier =
                     Modifier.size(48.dp)
                         .focusRequester(categoryFocus)
-                        .clip(RoundedCornerShape(12.dp))
+                        .updateFocusOutline(categoryShape, LocalActivityStatusColor.current)
+                        .clip(categoryShape)
                         .background(
                             if (route.category == null) colors.background
                             else colors.secondaryContainer

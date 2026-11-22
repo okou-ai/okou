@@ -77,6 +77,15 @@ internal class ConnectorDirectoryState(
     var category by mutableStateOf(category)
     var connected by mutableStateOf(connected)
     var query by mutableStateOf(query)
+        private set
+
+    var committedQuery by mutableStateOf(query)
+        private set
+
+    fun editQuery(value: TextFieldValue) {
+        query = value
+        if (value.composition == null) committedQuery = value
+    }
 }
 
 @Composable
@@ -86,7 +95,7 @@ internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
             listSaver<ConnectorDirectoryState, Any>(
                 save = {
                     val query =
-                        it.query.takeIf { value ->
+                        it.committedQuery.takeIf { value ->
                             value.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS
                         } ?: TextFieldValue()
                     listOf(

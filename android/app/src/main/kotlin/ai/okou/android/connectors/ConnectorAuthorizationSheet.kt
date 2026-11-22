@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
@@ -23,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -302,7 +304,12 @@ private fun ConnectorChoice(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected, onClick = null, enabled = enabled)
+        RadioButton(
+            selected,
+            onClick = null,
+            enabled = enabled,
+            colors = RadioButtonDefaults.colors(selectedColor = LocalActivityStatusColor.current),
+        )
         Text(label, style = connectorBodyType())
     }
 }

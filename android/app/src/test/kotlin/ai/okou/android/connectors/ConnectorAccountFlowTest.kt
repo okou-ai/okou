@@ -3,16 +3,21 @@ package ai.okou.android.connectors
 import ai.okou.android.CONNECTOR_CALENDAR
 import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
 import ai.okou.android.CONNECTOR_CALENDAR_SECONDARY
+import ai.okou.android.CONNECTOR_SLACK_ACCOUNT
 import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -24,13 +29,17 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
 import org.junit.Test
@@ -56,6 +65,46 @@ class ConnectorAccountFlowTest {
             skeleton.assertIsDisplayed()
         } finally {
             compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun directoryControlsKeepKeyboardFocusWhenCachedResultsRefresh() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            withCalendar { fixture, connectivity ->
+                compose.onNodeWithContentDescription("Back").performClick()
+                val discover = compose.onNodeWithText("Discover")
+                val connected = compose.onNodeWithText("Connected")
+                discover.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                discover.performKeyInput { pressKey(Key.DirectionRight) }
+                connected.assertIsSelected().assertIsFocused()
+                val slack = compose.onNodeWithTag("connector-slack").assertIsDisplayed()
+
+                compose.runOnIdle { connectivity.value = false }
+                awaitText("Offline")
+                connected.assertIsFocused()
+                slack.assertIsDisplayed()
+
+                val category = compose.onNodeWithContentDescription("Filter by service category")
+                category.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+                compose.runOnIdle { connectivity.value = true }
+                compose.waitUntilDoesNotExist(hasTestTag("connector-slack"), 10_000)
+                category.assertIsFocused().assertIsEnabled()
+                connected.assertIsSelected()
+
+                val search = compose.onNodeWithTag("connector-search")
+                search.performTextReplacement("Missing service")
+                compose.onNodeWithText("Clear search").performClick()
+                search.assertIsFocused()
+                connected.assertIsSelected()
+                compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").assertIsDisplayed()
+            }
+        } finally {
+            instrumentation.resetInTouchMode()
         }
     }
 
