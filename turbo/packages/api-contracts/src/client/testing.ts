@@ -700,6 +700,8 @@ import { teamsOauthContract as OriginalTeamsOauthContract } from "../contracts/t
 import { teamsOauthContract } from "./teams-oauth";
 import { thirdPartySubscriptionsMainContract as OriginalThirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { thirdPartySubscriptionsMainContract } from "./third-party-subscriptions";
+import { transcribeContract as OriginalTranscribeContract } from "../contracts/transcribe";
+import { transcribeContract } from "./transcribe";
 import { uploadsContract as OriginalUploadsContract } from "../contracts/uploads";
 import { uploadsContract } from "./uploads";
 import { usageRecordContract as OriginalUsageRecordContract } from "../contracts/usage-record";
@@ -1329,6 +1331,7 @@ export const clientDescriptorContracts: readonly (readonly [
     thirdPartySubscriptionsMainContract,
     OriginalThirdPartySubscriptionsMainContract,
   ],
+  [transcribeContract, OriginalTranscribeContract],
   [uploadsContract, OriginalUploadsContract],
   [usageRecordContract, OriginalUsageRecordContract],
   [usageMembersContract, OriginalUsageMembersContract],

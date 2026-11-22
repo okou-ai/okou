@@ -1,5 +1,5 @@
 {
-  "id": "e5963357-f361-4314-8822-403acb2e1a57",
+  "id": "0ed139fd-2c3d-4cfa-99e9-55a2e5d00d65",
   "prevId": "fb9a5c4a-de06-453f-8169-d51bf5b9e796",
   "version": "7",
   "dialect": "postgresql",
@@ -8250,6 +8250,12 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "event_executor_id": {
+          "name": "event_executor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "project_id": {
           "name": "project_id",
@@ -35723,6 +35729,98 @@
           "value": "\"vnc_credentials\".\"revision\" > 0"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.voice_transcriptions": {
+      "name": "voice_transcriptions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transcript": {
+          "name": "transcript",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "audio_tokens": {
+          "name": "audio_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text_tokens": {
+          "name": "text_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cached_text_tokens": {
+          "name": "cached_text_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cached_audio_tokens": {
+          "name": "cached_audio_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.chat_wechat_context": {

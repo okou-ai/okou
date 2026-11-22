@@ -1,3 +1,4 @@
+import { VOICE_TRANSCRIPTION_MODEL } from "@okouai/api-contracts/contracts/voice-clips";
 import {
   readSuggestionContext,
   suggestionFeedbacks,
@@ -176,6 +177,22 @@ export function hasAgentRunSourceAnnotation(
   return agentRunSourceAnnotation(document) !== null;
 }
 
+/** Keep the single provenance slot authoritative for server-attributed sends. */
+export function withServerSourceAnnotation(
+  document: UserMessageDocument,
+  source: Extract<UserMessagePart, { type: "source" }>,
+): UserMessageDocument {
+  return {
+    version: document.version,
+    parts: [
+      ...document.parts.filter((part) => {
+        return part.type !== "source" && part.type !== "automation";
+      }),
+      source,
+    ],
+  };
+}
+
 /** Replace client-owned annotations with authoritative agent-run provenance. */
 export function withAgentRunSourceAnnotation(
   document: UserMessageInputDocument,
@@ -189,23 +206,14 @@ export function withAgentRunSourceAnnotation(
   document: UserMessageDocument,
   source: ChatAgentRunSourceAnnotation,
 ): UserMessageDocument {
-  const contentParts = document.parts.filter((part) => {
-    return part.type !== "source" && part.type !== "automation";
+  return withServerSourceAnnotation(document, {
+    type: "source",
+    kind: "agent",
+    runId: source.runId,
+    threadId: source.threadId,
+    titleSnapshot: source.titleSnapshot,
+    href: chatAgentRunSourceHref(source),
   });
-  return {
-    version: 1,
-    parts: [
-      ...contentParts,
-      {
-        type: "source",
-        kind: "agent",
-        runId: source.runId,
-        threadId: source.threadId,
-        titleSnapshot: source.titleSnapshot,
-        href: chatAgentRunSourceHref(source),
-      },
-    ],
-  };
 }
 
 /** Replace any prior run-model annotation with the model persisted for the run. */
@@ -346,6 +354,26 @@ export function userMessagePhysicalFiles(
       original,
     ];
   });
+}
+
+function projectAttachment(
+  part: Extract<UserMessagePart, { type: "voice" | "file" }>,
+) {
+  if (part.type === "file") {
+    return {
+      prompt: userMessageFilePrompt(part),
+      label: `[File: ${part.filenameSnapshot}]`,
+    };
+  }
+  const flags = part.clips
+    .map(({ fileId }) => {
+      return `--file-id ${fileId}`;
+    })
+    .join(" ");
+  return {
+    prompt: `[Voice message] Transcribe the recordings in order:\nokou transcribe ${VOICE_TRANSCRIPTION_MODEL} ${flags}`,
+    label: `[Voice message: ${part.clips.length} clips]`,
+  };
 }
 
 function userMessageFilePrompt(part: UserMessageFilePart): string {
@@ -600,11 +628,10 @@ export function projectUserMessage(
       continue;
     }
     if (part.type === "chat_thread") {
-      const serialized = serializeChatThreadMention(
+      inlinePrompt += serializeChatThreadMention(
         part.threadId,
         part.titleSnapshot,
       );
-      inlinePrompt += serialized;
       inlineDisplayText += `[Chat thread: ${part.titleSnapshot}]`;
       hasTextContent = true;
       continue;
@@ -615,10 +642,12 @@ export function projectUserMessage(
       hasTextContent = true;
       continue;
     }
-    if (part.type === "file") {
+    if (part.type === "file" || part.type === "voice") {
       flushInlinePrompt();
-      promptBlocks.push(userMessageFilePrompt(part));
-      displayBlocks.push(`[File: ${part.filenameSnapshot}]`);
+      const attachment = projectAttachment(part);
+      promptBlocks.push(attachment.prompt);
+      displayBlocks.push(attachment.label);
+      hasTextContent ||= part.type === "voice";
       continue;
     }
     if (
