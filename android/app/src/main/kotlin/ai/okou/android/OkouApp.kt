@@ -164,8 +164,6 @@ internal fun OkouApp(
             WorkspaceTarget.List
         else requestedTarget
     var findVisit by remember(chats, target) { mutableStateOf<ConversationFindVisit?>(null) }
-    val showingFind =
-        settings == null && !showArtifacts && findVisit?.let { it.target == null } == true
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = currentWindowSizeDp()
     val listWidth = workspaceListPaneWidth(window.width, window.height)
@@ -180,6 +178,11 @@ internal fun OkouApp(
                 !showArtifacts &&
                 navigation.chatResourcesId == it
         }
+    val showingFind =
+        settings == null &&
+            !showArtifacts &&
+            resourcesId == null &&
+            findVisit?.let { it.target == null } == true
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && !artifactsOpen && navigation.search == SearchRoute.Open
@@ -828,7 +831,11 @@ internal fun OkouApp(
                                 Icon(
                                     painterResource(R.drawable.ic_arrow_back),
                                     stringResource(
-                                        if (artifactSource != null && settings == null)
+                                        if (
+                                            artifactSource != null &&
+                                                settings == null &&
+                                                findVisit?.target == null
+                                        )
                                             R.string.artifact_return_preview
                                         else R.string.back
                                     ),
