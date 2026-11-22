@@ -199,9 +199,10 @@ internal fun ConversationRoute(
                     )
                 }
         }
+    val showHistorySyncNotice = showSync && (activity == null || content.isEmpty())
     val feedback: @Composable (() -> Unit)? =
         when {
-            showSync -> ({ HistorySyncNotice() })
+            showHistorySyncNotice -> ({ HistorySyncNotice() })
             reconnect != null && !firstReadFailed -> ({
                     RealtimeNotice(reconnect, RealtimePhase.Unavailable)
                 })
@@ -382,7 +383,7 @@ internal fun ConversationRoute(
                     ) {
                         if (feedback != null || controls?.hasFeedback == true)
                             Column(
-                                Modifier.padding(top = 8.dp),
+                                Modifier.padding(top = if (showHistorySyncNotice) 4.dp else 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 feedback?.invoke()

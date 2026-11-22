@@ -242,7 +242,7 @@ class ConversationRouteTest {
             compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
         }
         val conversation = compose.onNodeWithTag("conversation")
-        compose.onNodeWithTag("message_output").assertIsDisplayed()
+        val reply = compose.onNodeWithTag("message_output").assertIsDisplayed()
         val syncLabel = compose.activity.getString(R.string.history_syncing)
         val refreshRequested = CountDownLatch(1)
         val allowRefreshResponse = CountDownLatch(1)
@@ -257,6 +257,9 @@ class ConversationRouteTest {
             compose.waitUntil(5_000) { compose.runOnIdle { refreshRequested.count == 0L } }
             compose.mainClock.advanceTimeBy(300)
             val notice = compose.onNodeWithText(syncLabel).assertIsDisplayed()
+            val messageGap =
+                notice.getUnclippedBoundsInRoot().top - reply.getUnclippedBoundsInRoot().bottom
+            assertEquals(4f, messageGap.value, 1f)
             val noticeBottom = notice.getUnclippedBoundsInRoot().bottom
             val viewportBottom = conversation.getUnclippedBoundsInRoot().bottom
             assertTrue(
@@ -267,6 +270,39 @@ class ConversationRouteTest {
             allowRefreshResponse.countDown()
         }
         compose.waitUntilDoesNotExist(hasText(syncLabel), 5_000)
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun slowSyncKeepsTheRunningStatusInPlaceWithoutAddingANotice() {
+        val model = openScrollHistory(AtomicInteger(12))
+        val status =
+            compose.onNodeWithText(compose.activity.getString(R.string.conversation_processing))
+        status.assertIsDisplayed()
+        val statusBounds = status.getUnclippedBoundsInRoot()
+        val syncLabel = compose.activity.getString(R.string.history_syncing)
+        val refreshRequested = CountDownLatch(1)
+        val allowRefreshResponse = CountDownLatch(1)
+        val historyRows = fixture.historyRows
+        fixture.historyRows = { request ->
+            refreshRequested.countDown()
+            allowRefreshResponse.await()
+            historyRows(request)
+        }
+        try {
+            compose.runOnIdle { model.history.refresh() }
+            compose.waitUntil(5_000) { refreshRequested.count == 0L }
+            compose.mainClock.advanceTimeBy(300)
+            compose.onNodeWithText(syncLabel).assertDoesNotExist()
+            assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
+        } finally {
+            allowRefreshResponse.countDown()
+        }
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
+        }
+        assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
+        assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
     }
 
     @Test
