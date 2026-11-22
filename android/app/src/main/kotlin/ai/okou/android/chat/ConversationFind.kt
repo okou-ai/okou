@@ -48,10 +48,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -421,9 +421,9 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
 @Composable
 private fun FindExcerpt(result: FindResult, matchLength: Int, style: TextStyle) {
     val colors = MaterialTheme.colorScheme
-    val width = LocalConfiguration.current.screenWidthDp
+    val windowSize = LocalWindowInfo.current.containerSize
     val density = LocalDensity.current
-    var startAtMatch by remember(result, matchLength, width, density) { mutableStateOf(false) }
+    var startAtMatch by remember(result, matchLength, windowSize, density) { mutableStateOf(false) }
     val text = result.message.text
     val excerptStart = result.passage?.start ?: 0
     val excerptEnd = result.passage?.end ?: text.length
