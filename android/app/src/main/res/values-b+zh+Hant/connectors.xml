@@ -42,6 +42,7 @@
     <string name="connector_disconnect">中斷帳號連接</string>
     <string name="connector_disconnect_title">要中斷此帳號的連接嗎？</string>
     <string name="connector_disconnect_copy">使用此帳號的聊天和自動化可能需要重新選擇連接。其他帳號仍可使用。</string>
+    <string name="connector_load_when_online">連線後載入…</string>
     <string name="connector_loading">正在載入連接器…</string>
     <string name="connector_loading_accounts">正在載入帳號…</string>
     <string name="connector_loading_permissions">正在載入權限…</string>

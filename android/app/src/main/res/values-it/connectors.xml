@@ -42,6 +42,7 @@
     <string name="connector_disconnect">Disconnetti account</string>
     <string name="connector_disconnect_title">Disconnettere questo account?</string>
     <string name="connector_disconnect_copy">Le chat e le automazioni che usano questo account potrebbero richiedere un’altra connessione. Gli altri account restano disponibili.</string>
+    <string name="connector_load_when_online">I contenuti verranno caricati quando tornerai online.</string>
     <string name="connector_loading">Caricamento connettori…</string>
     <string name="connector_loading_accounts">Caricamento account…</string>
     <string name="connector_loading_permissions">Caricamento autorizzazioni…</string>

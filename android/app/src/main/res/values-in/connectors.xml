@@ -42,6 +42,7 @@
     <string name="connector_disconnect">Putuskan akun</string>
     <string name="connector_disconnect_title">Putuskan hubungan akun ini?</string>
     <string name="connector_disconnect_copy">Chat dan otomatisasi yang memakai akun ini mungkin perlu memilih koneksi lain. Akun lainnya tetap tersedia.</string>
+    <string name="connector_load_when_online">Konten akan dimuat saat Anda kembali online.</string>
     <string name="connector_loading">Memuat konektor…</string>
     <string name="connector_loading_accounts">Memuat akun…</string>
     <string name="connector_loading_permissions">Memuat izin…</string>

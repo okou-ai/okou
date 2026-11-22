@@ -232,14 +232,16 @@ internal fun ConnectorDetails(
                     }
                 }
 
-                if (!hasAccountContent && !state.offline) {
-                    if (state.accounts.failure == null) {
-                        ConnectorSkeleton(
-                            stringResource(R.string.connector_loading_accounts),
-                            rows = 1,
-                        )
-                    } else {
-                        ConnectorStatusBanner(R.string.connector_accounts_failed)
+                if (!hasAccountContent) {
+                    when {
+                        state.offline -> ConnectorLoadWhenOnline()
+                        state.accounts.failure != null ->
+                            ConnectorStatusBanner(R.string.connector_accounts_failed)
+                        else ->
+                            ConnectorSkeleton(
+                                stringResource(R.string.connector_loading_accounts),
+                                rows = 1,
+                            )
                     }
                 }
                 if (detail != null && state.accounts.data != null) {
@@ -283,8 +285,12 @@ internal fun ConnectorDetails(
                         model.showPermissions()
                     }
                 }
-                if (state.offline) ConnectorStatusBanner(R.string.connector_offline_action)
-                else if (detail == null && state.detail.failure != null) {
+                if (state.offline) {
+                    if (hasAccountContent) {
+                        if (detail == null) ConnectorLoadWhenOnline()
+                        else ConnectorStatusBanner(R.string.connector_offline_action)
+                    }
+                } else if (detail == null && state.detail.failure != null) {
                     ConnectorStatusBanner(R.string.connector_load_failed)
                 } else if (
                     state.detail.failure == ConnectorReadFailure.Sustained ||
@@ -294,26 +300,19 @@ internal fun ConnectorDetails(
                     ConnectorStatusBanner(R.string.connector_refresh_failed)
                 }
                 if (panel == null) ConnectorActionFeedback(action)
-            } else if (!state.offline && state.detail.failure == null) {
-                if (rememberChatWaitIndicator(waiting = true)) {
-                    val label = stringResource(R.string.connector_loading)
-                    Column(
-                        Modifier.fillMaxWidth().semantics { contentDescription = label },
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        ChatSkeletonBlock(
-                            Modifier.widthIn(max = 220.dp).fillMaxWidth().height(24.dp)
-                        )
-                        ChatSkeletonBlock(
-                            Modifier.widthIn(max = 300.dp).fillMaxWidth().height(14.dp)
-                        )
-                    }
+            } else if (state.offline) {
+                ConnectorLoadWhenOnline()
+            } else if (state.detail.failure != null) {
+                ConnectorStatusBanner(R.string.connector_load_failed)
+            } else if (rememberChatWaitIndicator(waiting = true)) {
+                val label = stringResource(R.string.connector_loading)
+                Column(
+                    Modifier.fillMaxWidth().semantics { contentDescription = label },
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ChatSkeletonBlock(Modifier.widthIn(max = 220.dp).fillMaxWidth().height(24.dp))
+                    ChatSkeletonBlock(Modifier.widthIn(max = 300.dp).fillMaxWidth().height(14.dp))
                 }
-            } else {
-                ConnectorStatusBanner(
-                    if (state.offline) R.string.connector_offline
-                    else R.string.connector_load_failed
-                )
             }
         }
     }
@@ -505,10 +504,17 @@ private fun ConnectorPermissionSheet(
     ConnectorSheetHeading(stringResource(R.string.connector_permissions_title, service))
     Text(stringResource(R.string.connector_permissions_copy), style = connectorBodyType())
     when {
-        permissions.data == null -> {
-            if (!offline && permissions.failure == null)
-                ConnectorSkeleton(stringResource(R.string.connector_loading_permissions), rows = 1)
-        }
+        permissions.data == null ->
+            when {
+                offline -> ConnectorLoadWhenOnline()
+                permissions.failure != null ->
+                    ConnectorStatusBanner(R.string.connector_permissions_failed)
+                else ->
+                    ConnectorSkeleton(
+                        stringResource(R.string.connector_loading_permissions),
+                        rows = 1,
+                    )
+            }
         permissions.data.isEmpty() ->
             Text(stringResource(R.string.connector_no_permissions), style = connectorFeedbackType())
         else ->
@@ -533,11 +539,9 @@ private fun ConnectorPermissionSheet(
                 }
             }
     }
-    when {
-        offline -> ConnectorStatusBanner(R.string.connector_offline)
-        permissions.data == null && permissions.failure != null ->
-            ConnectorStatusBanner(R.string.connector_permissions_failed)
-        permissions.failure == ConnectorReadFailure.Sustained ->
+    if (permissions.data != null) {
+        if (offline) ConnectorStatusBanner(R.string.connector_offline)
+        else if (permissions.failure == ConnectorReadFailure.Sustained)
             ConnectorStatusBanner(R.string.connector_refresh_failed)
     }
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {

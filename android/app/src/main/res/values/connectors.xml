@@ -42,6 +42,7 @@
     <string name="connector_disconnect">Disconnect account</string>
     <string name="connector_disconnect_title">Disconnect this account?</string>
     <string name="connector_disconnect_copy">Chats and automations using this account may need to choose another connection. Other accounts remain available.</string>
+    <string name="connector_load_when_online">Content will load when you’re back online.</string>
     <string name="connector_loading">Loading connectors…</string>
     <string name="connector_loading_accounts">Loading accounts…</string>
     <string name="connector_loading_permissions">Loading permissions…</string>

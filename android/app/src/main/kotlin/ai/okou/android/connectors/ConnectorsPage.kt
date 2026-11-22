@@ -337,15 +337,18 @@ private fun ConnectorDirectory(
                 item {
                     when {
                         entries == null ->
-                            if (!state.offline && read.failure == null) {
-                                key(route.connected, filter) {
-                                    ConnectorSkeleton(
-                                        stringResource(R.string.connector_loading),
-                                        rows = 3,
-                                    )
-                                }
-                            } else if (!state.offline) {
-                                ConnectorEmpty(R.string.connector_load_failed)
+                            when {
+                                state.offline ->
+                                    ConnectorLoadWhenOnline(Modifier.padding(horizontal = 12.dp))
+                                read.failure != null ->
+                                    ConnectorEmpty(R.string.connector_load_failed)
+                                else ->
+                                    key(route.connected, filter) {
+                                        ConnectorSkeleton(
+                                            stringResource(R.string.connector_loading),
+                                            rows = 3,
+                                        )
+                                    }
                             }
                         query.isNotEmpty() ->
                             ConnectorEmpty(
@@ -401,9 +404,10 @@ private fun ConnectorDirectory(
                 }
             }
         }
-        if (state.offline) ConnectorStatusBanner(R.string.connector_offline)
-        else if (entries != null && read.failure == ConnectorReadFailure.Sustained) {
-            ConnectorStatusBanner(R.string.connector_refresh_failed)
+        if (entries != null) {
+            if (state.offline) ConnectorStatusBanner(R.string.connector_offline)
+            else if (read.failure == ConnectorReadFailure.Sustained)
+                ConnectorStatusBanner(R.string.connector_refresh_failed)
         }
     }
 }
@@ -782,6 +786,22 @@ private fun ConnectorEmpty(title: Int, action: Int? = null, onAction: () -> Unit
                 onAction,
                 treatment = ConnectorButtonTreatment.Text,
             )
+    }
+}
+
+@Composable
+internal fun ConnectorLoadWhenOnline(modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxWidth().heightIn(min = 48.dp).semantics(mergeDescendants = true) {
+            liveRegion = LiveRegionMode.Polite
+        },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            stringResource(R.string.connector_load_when_online),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = connectorFeedbackType(),
+        )
     }
 }
 

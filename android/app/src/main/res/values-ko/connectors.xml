@@ -42,6 +42,7 @@
     <string name="connector_disconnect">계정 연결 해제</string>
     <string name="connector_disconnect_title">이 계정의 연결을 해제하시겠어요?</string>
     <string name="connector_disconnect_copy">이 계정을 사용하는 채팅과 자동화에서 다른 연결을 선택해야 할 수 있습니다. 다른 계정은 계속 사용할 수 있습니다.</string>
+    <string name="connector_load_when_online">다시 온라인 상태가 되면 콘텐츠를 불러옵니다.</string>
     <string name="connector_loading">커넥터 불러오는 중…</string>
     <string name="connector_loading_accounts">계정 불러오는 중…</string>
     <string name="connector_loading_permissions">권한 불러오는 중…</string>

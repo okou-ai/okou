@@ -42,6 +42,7 @@
     <string name="connector_disconnect">断开账号</string>
     <string name="connector_disconnect_title">断开此账号？</string>
     <string name="connector_disconnect_copy">使用此账号的聊天和自动化可能需要重新选择连接。其他账号继续可用。</string>
+    <string name="connector_load_when_online">联网后加载…</string>
     <string name="connector_loading">正在读取连接器…</string>
     <string name="connector_loading_accounts">正在读取账号…</string>
     <string name="connector_loading_permissions">正在读取权限…</string>

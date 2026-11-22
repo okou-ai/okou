@@ -47,6 +47,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+private const val LOAD_WHEN_ONLINE = "Content will load when you’re back online."
+
 @OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w412dp-h892dp", application = TestOkouApplication::class)
@@ -107,6 +109,73 @@ class ConnectorAccountFlowTest {
             instrumentation.resetInTouchMode()
         }
     }
+
+    @Test
+    fun directoryShowsOfflineLoadingOnlyForTabsWithoutCachedResults() =
+        withDirectory(initiallyOnline = false) { fixture, connectivity ->
+            val waiting =
+                compose.onNode(
+                    hasText(LOAD_WHEN_ONLINE) and hasAnyAncestor(hasTestTag("connector-directory"))
+                )
+            val offline = compose.onNodeWithText("Offline")
+            val empty = "No accounts connected yet"
+            waiting.assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+            offline.assertDoesNotExist()
+            compose.onNodeWithText("Connected").performClick()
+            waiting.assertIsDisplayed()
+            compose.onNodeWithText(empty).assertDoesNotExist()
+
+            fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            fixture.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+            fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+            compose.runOnIdle { connectivity.value = true }
+            awaitText(empty)
+            waiting.assertDoesNotExist()
+            compose.onNodeWithText("Discover").performClick()
+            awaitText("Google Calendar")
+
+            compose.runOnIdle { connectivity.value = false }
+            awaitText("Offline")
+            compose.onNodeWithText("Google Calendar").assertIsDisplayed()
+            compose.onNodeWithText("Connected").performClick()
+            compose.onNodeWithText(empty).assertIsDisplayed()
+            offline.assertIsDisplayed()
+            waiting.assertDoesNotExist()
+
+            compose.runOnIdle { connectivity.value = true }
+            compose.waitUntilDoesNotExist(hasText("Offline"), 10_000)
+            compose.onNodeWithText(empty).assertIsDisplayed()
+        }
+
+    @Test
+    fun uncachedAccountsAndPermissionsLoadInPlaceAfterReconnect() =
+        withDirectory { _, connectivity ->
+            awaitText("Gmail")
+            compose.runOnIdle { connectivity.value = false }
+            awaitText("Offline")
+            compose.onNodeWithTag("connector-gmail").performClick()
+            compose.onNodeWithText("Gmail").assertIsDisplayed()
+            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertIsDisplayed()
+            compose.onNodeWithText("Connect account").assertDoesNotExist()
+            compose
+                .onNodeWithText("Connect to the internet to manage accounts.")
+                .assertDoesNotExist()
+
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("Connect account")
+            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
+            val permissions = "Permissions this service can request"
+            awaitText(permissions)
+            compose.runOnIdle { connectivity.value = false }
+            compose.onNodeWithText(permissions).performClick()
+            val inSheet = hasAnyAncestor(hasTestTag("connector-sheet"))
+            compose.onNode(hasText(LOAD_WHEN_ONLINE) and inSheet).assertIsDisplayed()
+            compose.onNode(hasText("Offline") and inSheet).assertDoesNotExist()
+
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("读取日历与日程")
+            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
+        }
 
     @Test
     fun changingTheDefaultSwitchUpdatesTheAccountRow() = withCalendar { _, _ ->
@@ -232,10 +301,21 @@ class ConnectorAccountFlowTest {
             compose.waitUntilAtLeastOneExists(hasText("Rename") and isEnabled(), 10_000)
         }
 
-    private fun withCalendar(exercise: (ConnectorApiFixture, MutableStateFlow<Boolean>) -> Unit) {
+    private fun withCalendar(exercise: (ConnectorApiFixture, MutableStateFlow<Boolean>) -> Unit) =
+        withDirectory { fixture, connectivity ->
+            awaitText("Google Calendar")
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
+            awaitText("Permission update required")
+            exercise(fixture, connectivity)
+        }
+
+    private fun withDirectory(
+        initiallyOnline: Boolean = true,
+        exercise: (ConnectorApiFixture, MutableStateFlow<Boolean>) -> Unit,
+    ) {
         ConnectorApiFixture().use { fixture ->
             val store = ViewModelStore()
-            val connectivity = MutableStateFlow(true)
+            val connectivity = MutableStateFlow(initiallyOnline)
             try {
                 val model =
                     compose.runOnIdle {
@@ -255,9 +335,6 @@ class ConnectorAccountFlowTest {
                             )[ConnectorModel::class]
                     }
                 compose.setContent { OkouTheme(false) { ConnectorsPage(model, null) {} } }
-                awaitText("Google Calendar")
-                compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").performClick()
-                awaitText("Permission update required")
                 exercise(fixture, connectivity)
             } finally {
                 compose.runOnIdle { store.clear() }

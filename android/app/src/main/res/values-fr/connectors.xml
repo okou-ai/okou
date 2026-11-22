@@ -42,6 +42,7 @@
     <string name="connector_disconnect">Déconnecter le compte</string>
     <string name="connector_disconnect_title">Déconnecter ce compte ?</string>
     <string name="connector_disconnect_copy">Les chats et automatisations qui utilisent ce compte peuvent nécessiter une autre connexion. Les autres comptes restent disponibles.</string>
+    <string name="connector_load_when_online">Le contenu se chargera dès que vous serez de nouveau en ligne.</string>
     <string name="connector_loading">Chargement des connecteurs…</string>
     <string name="connector_loading_accounts">Chargement des comptes…</string>
     <string name="connector_loading_permissions">Chargement des autorisations…</string>

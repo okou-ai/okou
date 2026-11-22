@@ -42,6 +42,7 @@
     <string name="connector_disconnect">Konto trennen</string>
     <string name="connector_disconnect_title">Dieses Konto trennen?</string>
     <string name="connector_disconnect_copy">Chats und Automatisierungen, die dieses Konto nutzen, benötigen eventuell eine andere Verbindung. Andere Konten bleiben verfügbar.</string>
+    <string name="connector_load_when_online">Die Inhalte werden geladen, sobald du wieder online bist.</string>
     <string name="connector_loading">Connectoren werden geladen…</string>
     <string name="connector_loading_accounts">Konten werden geladen…</string>
     <string name="connector_loading_permissions">Berechtigungen werden geladen…</string>

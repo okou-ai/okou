@@ -42,6 +42,7 @@
     <string name="connector_disconnect">アカウントの接続を解除</string>
     <string name="connector_disconnect_title">このアカウントの接続を解除しますか？</string>
     <string name="connector_disconnect_copy">このアカウントを使うチャットや自動化では、別の接続を選ぶ必要がある場合があります。他のアカウントは引き続き利用できます。</string>
+    <string name="connector_load_when_online">オンラインに戻るとコンテンツが読み込まれます。</string>
     <string name="connector_loading">コネクターを読み込み中…</string>
     <string name="connector_loading_accounts">アカウントを読み込み中…</string>
     <string name="connector_loading_permissions">権限を読み込み中…</string>
