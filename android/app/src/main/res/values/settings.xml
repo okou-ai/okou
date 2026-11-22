@@ -55,4 +55,19 @@
     <string name="settings_credit_top_up">Top-up credits</string>
     <string name="settings_credit_unit">credits</string>
     <string name="settings_credit_web">View credit details on Web</string>
+    <string name="settings_auto_model" translatable="false">Auto</string>
+    <string name="settings_default_model">Default model</string>
+    <string name="settings_auto_model_detail">Okou chooses an available model</string>
+    <string name="settings_model_plan_restricted">Requires a different plan</string>
+    <string name="settings_model_fast">Fast mode</string>
+    <string name="settings_model_fast_usage">Uses about %1$s× your subscription quota</string>
+    <string name="settings_model_offline">Offline. Changes sync when connected.</string>
+    <string name="settings_model_save_unavailable">Unable to sync the default model.</string>
+    <string name="settings_model_effort">Reasoning effort</string>
+    <string name="settings_model_effort_low">Low</string>
+    <string name="settings_model_effort_medium">Medium</string>
+    <string name="settings_model_effort_high">High</string>
+    <string name="settings_model_effort_extra">Extra high</string>
+    <string name="settings_model_effort_max">Max</string>
+    <string name="settings_model_effort_ultra">Ultra</string>
 </resources>
