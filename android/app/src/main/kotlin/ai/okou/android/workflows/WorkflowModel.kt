@@ -54,6 +54,7 @@ internal constructor(
     private var visible = false
     private var selected: String? = null
     private var catalogLoad: Job? = null
+    private var pendingDetailRules: MutableMap<String, List<WorkflowAutomation>>? = null
     private var detailLoad: Job? = null
     private var refreshAfterWrite = false
 
@@ -113,42 +114,47 @@ internal constructor(
     }
 
     private suspend fun loadCatalog(): Throwable? = coroutineScope {
+        val confirmedRules = mutableMapOf<String, List<WorkflowAutomation>>()
+        pendingDetailRules = confirmedRules
         val catalog = async { read { service.workflows().filter { it.official == null } } }
         val rules = async {
             read { service.workflowAutomations().groupBy({ it.workflow.id }, { it.automation }) }
         }
         val accounts = async { read { service.workflowConnections() } }
-        val workflows = catalog.await()
-        if (!authorized()) return@coroutineScope null
-        val catalogError = workflows.exceptionOrNull()
-        if (catalogError != null) {
-            rules.cancel()
-            accounts.cancel()
-            if (catalogError.denied()) {
-                clearAccess()
-                return@coroutineScope null
+        val automationRules =
+            try {
+                val workflows = catalog.await()
+                if (!authorized()) return@coroutineScope null
+                val catalogError = workflows.exceptionOrNull()
+                if (catalogError != null) {
+                    rules.cancel()
+                    accounts.cancel()
+                    if (catalogError.denied()) {
+                        clearAccess()
+                        return@coroutineScope null
+                    }
+                    return@coroutineScope catalogError
+                }
+                mutable.value = mutable.value.copy(catalog = workflows.getOrThrow())
+                rules.await()
+            } finally {
+                if (pendingDetailRules === confirmedRules) pendingDetailRules = null
             }
-            return@coroutineScope catalogError
-        }
-        mutable.value = mutable.value.copy(catalog = workflows.getOrThrow())
-        val automationRules = rules.await()
         if (!authorized()) return@coroutineScope null
         val current = mutable.value
         val directoryRules = automationRules.getOrNull()
-        val detail = current.detail
-        mutable.value =
-            current.copy(
-                rules =
-                    when {
-                        automationRules.exceptionOrNull().denied() -> null
-                        directoryRules == null -> current.rules
-                        // A confirmed detail owns the rules shown for the selected workflow.
-                        detail != null &&
-                            directoryRules[detail.id].orEmpty() != detail.automations ->
-                            directoryRules + (detail.id to detail.automations)
-                        else -> directoryRules
+        current.detail?.let { confirmedRules[it.id] = it.automations }
+        val rulesByWorkflow =
+            when {
+                automationRules.exceptionOrNull().denied() -> null
+                directoryRules == null -> current.rules
+                else ->
+                    confirmedRules.entries.fold(directoryRules) { merged, (id, automations) ->
+                        if (merged[id].orEmpty() == automations) merged
+                        else merged + (id to automations)
                     }
-            )
+            }
+        mutable.value = current.copy(rules = rulesByWorkflow)
 
         val connections = accounts.await()
         if (!authorized()) return@coroutineScope null
@@ -373,6 +379,8 @@ internal constructor(
 
     private fun publishDetail(detail: WorkflowDetail) {
         if (!authorized() || selected != detail.id) return
+        // The directory read may complete after the user has left this detail.
+        pendingDetailRules?.set(detail.id, detail.automations)
         val current = mutable.value
         mutable.value =
             current.copy(

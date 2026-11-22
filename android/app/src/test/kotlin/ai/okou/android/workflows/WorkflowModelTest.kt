@@ -78,7 +78,7 @@ class WorkflowModelTest {
         }
 
     @Test
-    fun directoryKeepsConfirmedDetailWhenOlderRulesArrive() = check { service, model ->
+    fun directoryKeepsConfirmedRulesAfterLeavingDetail() = check { service, model ->
         val rules = CompletableDeferred<WorkspaceWorkflowAutomations>()
         val connections = CompletableDeferred<Set<String>>()
         val active =
@@ -102,23 +102,29 @@ class WorkflowModelTest {
         service.detail = service.detail.copy(automations = listOf(active))
         service.rulesRead = { rules.await() }
         service.connectionsRead = { connections.await() }
-        model.select(service.summary.id)
         model.visibilityChanged(true)
         runCurrent()
+        model.select(service.summary.id)
+        runCurrent()
         assertEquals(listOf(active), model.state.value.detail?.automations)
+        model.select(null)
+        assertNull(model.state.value.detail)
 
-        rules.complete(
-            listOf(WorkspaceWorkflowAutomationsItem(service.summary, active.copy(enabled = false)))
-        )
+        val paused = active.copy(enabled = false)
+        rules.complete(listOf(WorkspaceWorkflowAutomationsItem(service.summary, paused)))
         runCurrent()
         assertNull(model.state.value.connections)
         assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
 
-        model.select(null)
         connections.complete(emptySet())
         runCurrent()
         assertEquals(emptySet<String>(), model.state.value.connections)
         assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
+
+        model.visibilityChanged(false)
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(listOf(paused), model.state.value.rules?.get(service.summary.id))
     }
 
     @Test
