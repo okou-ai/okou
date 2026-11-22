@@ -125,7 +125,13 @@ internal constructor(
     val projectId: String?,
     val projectName: String?,
 ) {
-    internal fun matchesMembership(threads: List<ConfirmedChat>): Boolean =
+    internal fun matches(state: ChatListUiState): Boolean =
+        state.projectList.deletingId == null &&
+            (projectId == null || state.projects.any { it.id == projectId }) &&
+            matchesMembership(state.confirmedThreads) &&
+            (state.confirmedThreads === state.threads || matchesMembership(state.threads))
+
+    private fun matchesMembership(threads: List<ConfirmedChat>): Boolean =
         threads.any { it.id == threadId && it.hidden != true && it.projectId == projectId }
 }
 
@@ -182,6 +188,7 @@ data class ChatListUiState(
     val markAllReadResult: ChatMarkAllReadResult? = null,
     internal val cachedUnread: CachedUnread? = null,
     internal val readIntents: Map<String, ChatReadIntent> = emptyMap(),
+    internal val confirmedThreads: List<ConfirmedChat> = emptyList(),
     internal val threadsByRecency: List<ConfirmedChat> = emptyList(),
     internal val acceptedNewChats: List<ProvisionalChat> = emptyList(),
 ) {
@@ -206,12 +213,15 @@ data class ChatListUiState(
     internal val projectRenameRejection: ProjectRenameRejection?
         get() = projectList.renameRejection
 
-    // Project metadata can confirm deletion before the chat feed confirms regrouping.
+    // Both the confirmed and displayed memberships must have caught up to the Project deletion.
     internal val projectDeleteFeedback: ProjectDeleteFeedback?
         get() =
             projectList.deleteFeedback?.takeUnless { feedback ->
                 feedback.status == ProjectDeleteStatus.Confirmed &&
-                    threads.any { it.projectId == feedback.projectId }
+                    (source != ChatListSource.Network ||
+                        confirmedThreads.any { it.projectId == feedback.projectId } ||
+                        (confirmedThreads !== threads &&
+                            threads.any { it.projectId == feedback.projectId }))
             }
 }
 
@@ -365,20 +375,7 @@ class ChatListModel(
             wallMillis = wallMillis,
             syncChatsAfterDelete = { awaitListRead { true } },
             readState = { mutable.value.projectList },
-            publish = { projectList ->
-                val state = mutable.value
-                reconcileProjectMoves(
-                    state.copy(
-                        projectList = projectList,
-                        chatMoveNotice =
-                            state.chatMoveNotice?.takeIf { notice ->
-                                projectList.deletingId == null &&
-                                    (notice.projectId == null ||
-                                        projectList.rows.any { it.id == notice.projectId })
-                            },
-                    )
-                )
-            },
+            publish = { reconcileProjectMoves(mutable.value.copy(projectList = it)) },
         )
     private var cacheRead = false
     private var restoreJob: Job? = null
@@ -959,7 +956,7 @@ class ChatListModel(
                     if (undoRequest == null) {
                         if (failure != null) {
                             val state = mutable.value.copy(failedRowAction = failure)
-                            if (movingProject) reconcileProjectMoves(state)
+                            if (movingProject) reconcileProjectMoves(state, rowsChanged = true)
                             else mutable.value = state
                         } else if (!rolledBack) {
                             recordConfirmedUndo(threadId, undo)
@@ -998,22 +995,30 @@ class ChatListModel(
 
     private fun publishRows(state: ChatListUiState = mutable.value) {
         val rows = projection.rows()
-        mutable.value =
+        publishWithCurrentMoveNotice(
             state.copy(
                 threads = rows.threads,
+                confirmedThreads = projection.confirmedRows.threads,
                 threadsByRecency = rows.byRecency,
                 acceptedNewChats = projection.acceptedNewChats,
-                chatMoveNotice = state.chatMoveNotice?.takeIf { it.matchesMembership(rows.threads) },
             )
+        )
     }
 
-    private fun reconcileProjectMoves(state: ChatListUiState) {
-        if (
+    private fun publishWithCurrentMoveNotice(state: ChatListUiState) {
+        val notice = state.chatMoveNotice
+        mutable.value =
+            if (notice == null || notice.matches(state)) state
+            else state.copy(chatMoveNotice = null)
+    }
+
+    private fun reconcileProjectMoves(state: ChatListUiState, rowsChanged: Boolean = false) {
+        val discarded =
             state.projectsSource == ChatListSource.Network &&
                 projection.discardUnconfirmedMovesToMissingProjects(state.projects)
-        ) {
+        if (rowsChanged || discarded) {
             publishRows(state.copy(failedRowAction = unresolvedRowAction(state.failedRowAction)))
-        } else mutable.value = state
+        } else publishWithCurrentMoveNotice(state)
     }
 
     private fun unresolvedRowAction(failure: ChatRowActionFailure?): ChatRowActionFailure? =
@@ -1024,7 +1029,7 @@ class ChatListModel(
         val projectName =
             edit.value?.let { id -> state.projects.firstOrNull { it.id == id }?.name ?: return }
         val notice = ChatMoveNotice(edit.eventId, edit.threadId, edit.value, projectName)
-        if (notice.matchesMembership(state.threads)) {
+        if (notice.matches(state)) {
             mutable.value = state.copy(chatMoveNotice = notice)
         }
     }

@@ -3139,6 +3139,111 @@ class ChatListModelTest {
     }
 
     @Test
+    fun deletionWaitsForConfirmedRegroupingWhenAnEarlierMoveIsUnconfirmed() = runTest {
+        val destination = "bcf53013-dfc9-4136-9de3-d3d070d8c488"
+        val source = ProjectOrganizationService(additionalProjectId = destination)
+        source.moveResponse = { _, _, _ ->
+            throw ApiFailure.Network(IOException("Move response unavailable"))
+        }
+        source.deleteResponse = source::publishDeletion
+        val connectivity = MutableStateFlow(true)
+        withCatchUpModel(source, connectivity = connectivity) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.moveThreadToProject(CHAT_IN_PROJECT, destination))
+            runCurrent()
+            val uncertainMove = model.uiState.value
+            assertEquals(
+                destination,
+                uncertainMove.threads.single { it.id == CHAT_IN_PROJECT }.projectId,
+            )
+            val failure = checkNotNull(uncertainMove.failedRowAction)
+            assertEquals(ChatRowAction.MoveProject, failure.action)
+
+            source.chatReadUnavailable = true
+            model.deleteProject(CHAT_PROJECT)
+            runCurrent()
+            val waiting = model.uiState.value
+            assertEquals(listOf(destination), waiting.projects.map { it.id })
+            assertEquals(ProjectDeleteStatus.Confirmed, waiting.projectList.deleteFeedback?.status)
+            assertNull(waiting.projectDeleteFeedback)
+
+            source.chatReadUnavailable = false
+            connectivity.value = false
+            runCurrent()
+            connectivity.value = true
+            runCurrent()
+            val regrouped = model.uiState.value
+            val outside = chatListGroups(regrouped).single { it.projectId == null }
+            assertEquals(listOf(CHAT_PERSONAL, CHAT_IN_PROJECT), outside.threads.map { it.id })
+            assertEquals("a2", outside.threads.single { it.id == CHAT_IN_PROJECT }.pinOrder)
+            assertEquals(ProjectDeleteStatus.Confirmed, regrouped.projectDeleteFeedback?.status)
+            assertSame(failure, regrouped.failedRowAction)
+            assertNull(regrouped.chatMoveNotice)
+
+            val originalMove = source.moveIds.single()
+            source.publishMembership(CHAT_IN_PROJECT, destination, originalMove)
+            model.refreshList()
+            runCurrent()
+            val committed = model.uiState.value
+            assertEquals(
+                destination,
+                committed.threads.single { it.id == CHAT_IN_PROJECT }.projectId,
+            )
+            assertNull(committed.failedRowAction)
+            assertEquals(listOf(originalMove), source.moveIds)
+        }
+    }
+
+    @Test
+    fun anUnconfirmedMoveYieldsToMembershipObservedWhileItWasInFlight() = runTest {
+        val otherProject = "bcf53013-dfc9-4136-9de3-d3d070d8c488"
+        val source = ProjectOrganizationService(additionalProjectId = otherProject)
+        val response = CompletableDeferred<Unit>()
+        source.moveResponse = { _, _, _ ->
+            response.await()
+            throw ApiFailure.Network(IOException("Move response unavailable"))
+        }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.moveThreadToProject(CHAT_IN_PROJECT, null))
+            runCurrent()
+
+            source.publishMembership(
+                CHAT_IN_PROJECT,
+                otherProject,
+                "00000021-0000-4000-8000-000000000000",
+            )
+            model.refreshList()
+            runCurrent()
+            assertNull(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT }.projectId)
+
+            response.complete(Unit)
+            runCurrent()
+            val unconfirmed = model.uiState.value
+            assertEquals(
+                otherProject,
+                unconfirmed.threads.single { it.id == CHAT_IN_PROJECT }.projectId,
+            )
+            assertEquals(ChatRowAction.MoveProject, unconfirmed.failedRowAction?.action)
+            assertNull(unconfirmed.chatMoveNotice)
+
+            source.publishMembership(
+                CHAT_IN_PROJECT,
+                CHAT_PROJECT,
+                "00000022-0000-4000-8000-000000000000",
+            )
+            model.refreshList()
+            runCurrent()
+            assertEquals(
+                CHAT_PROJECT,
+                model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT }.projectId,
+            )
+        }
+    }
+
+    @Test
     fun moveToProjectDeletedDuringTheRequestKeepsTheConfirmedMembership() = runTest {
         val source = ProjectOrganizationService()
         val response = CompletableDeferred<Unit>()
@@ -3224,7 +3329,9 @@ class ChatListModelTest {
         }
     }
 
-    private inner class ProjectOrganizationService : Service() {
+    private inner class ProjectOrganizationService(
+        private val additionalProjectId: String? = null
+    ) : Service() {
         private val events =
             mutableListOf(
                 17L to chatEventWire(),
@@ -3252,6 +3359,7 @@ class ChatListModelTest {
                     ),
             )
         private var deleted: ProjectEventsEventsItem? = null
+        var chatReadUnavailable = false
         val moveIds = mutableListOf<String>()
         val deleteIds = mutableListOf<String>()
         var moveResponse: suspend (String, String?, String) -> Unit = { _, _, _ ->
@@ -3262,18 +3370,23 @@ class ChatListModelTest {
         override suspend fun indicators() =
             Indicators(mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE), emptyMap())
 
-        override suspend fun chatEvents(since: Long?) =
-            page(events.filter { it.first > (since ?: 0) }.map { it.second })
+        override suspend fun chatEvents(since: Long?): ChatEvents {
+            if (chatReadUnavailable) throw ApiFailure.Http(503, null, null, null)
+            return page(events.filter { it.first > (since ?: 0) }.map { it.second })
+        }
 
         override suspend fun projectSnapshot() =
             ProjectSnapshotVariant1(
-                listOf(
+                listOfNotNull(
                     ProjectSnapshotVariant1ProjectsItem(
                         CHAT_PROJECT,
                         "Research",
                         CHAT_DATE,
                         CHAT_DATE,
-                    )
+                    ),
+                    additionalProjectId?.let {
+                        ProjectSnapshotVariant1ProjectsItem(it, "Operations", CHAT_DATE, CHAT_DATE)
+                    },
                 ),
                 null,
                 0,

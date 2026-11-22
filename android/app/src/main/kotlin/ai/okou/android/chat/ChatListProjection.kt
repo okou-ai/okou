@@ -9,8 +9,15 @@ internal class ChatListProjection {
     var confirmedRows = ReplayedChats(emptyList(), emptyList())
         private set
 
-    private var rowEdits = emptyList<ChatRowEdit>()
-    private val unconfirmedRowEvents = mutableSetOf<String>()
+    private class PendingRowEdit(val edit: ChatRowEdit) {
+        var unconfirmed = false
+        var confirmedMembershipChanged = false
+
+        val optimisticEdit: ChatRowEdit?
+            get() = edit.takeUnless { unconfirmed && confirmedMembershipChanged }
+    }
+
+    private var rowEdits = emptyList<PendingRowEdit>()
 
     class OutgoingAttempt(val threadId: String) {
         var sending = true
@@ -24,21 +31,24 @@ internal class ChatListProjection {
         get() = rowEdits.isNotEmpty() || outgoingActivity.isNotEmpty()
 
     fun restore(checkpoint: ChatCheckpoint, rows: ReplayedChats) {
+        recordMembershipChanges(rows)
         confirmedCheckpoint = checkpoint
         confirmedRows = rows
         acceptedNewChats = unobservedNewChats(acceptedNewChats)
     }
 
     fun rows(): ReplayedChats {
+        val optimisticEdits =
+            if (rowEdits.isEmpty()) emptyList() else rowEdits.mapNotNull { it.optimisticEdit }
         val recentThreads = outgoingActivity.values.toList().asReversed().map { it.threadId }
-        return confirmedRows.withLocalChanges(rowEdits, recentThreads)
+        return confirmedRows.withLocalChanges(optimisticEdits, recentThreads)
     }
 
     fun addEdits(edits: List<ChatRowEdit>) {
-        rowEdits = rowEdits + edits
+        rowEdits = rowEdits + edits.map(::PendingRowEdit)
     }
 
-    fun hasUnsettledEdits(edits: List<ChatRowEdit>) = edits.any { it in rowEdits }
+    fun hasUnsettledEdits(edits: List<ChatRowEdit>) = rowEdits.any { it.edit in edits }
 
     fun discardEdits(edits: List<ChatRowEdit>): Boolean {
         if (!hasUnsettledEdits(edits)) return false
@@ -47,28 +57,58 @@ internal class ChatListProjection {
     }
 
     fun discardUnconfirmedMovesToMissingProjects(projects: List<ConfirmedProject>): Boolean {
-        if (unconfirmedRowEvents.isEmpty()) return false
+        if (rowEdits.isEmpty()) return false
         // An authoritative Project deletion supersedes a local move into that destination,
         // regardless of whether the original request reached the server.
         val discarded =
-            rowEdits.filter { edit ->
-                edit.action == ChatRowAction.MoveProject &&
-                    edit.value != null &&
-                    edit.eventId in unconfirmedRowEvents &&
-                    projects.none { it.id == edit.value }
-            }
+            rowEdits
+                .filter { pending ->
+                    pending.unconfirmed &&
+                        pending.edit.action == ChatRowAction.MoveProject &&
+                        pending.edit.value != null &&
+                        projects.none { it.id == pending.edit.value }
+                }
+                .map { it.edit }
         return discardEdits(discarded)
     }
 
     fun hasConfirmedThread(threadId: String) = confirmedRows.byRecency.any { it.id == threadId }
 
-    fun retryEvents(): Set<String> = unconfirmedRowEvents.toSet()
+    fun retryEvents(): Set<String> =
+        rowEdits.asSequence().filter { it.unconfirmed }.map { it.edit.eventId }.toSet()
 
     fun confirmEdits(edits: List<ChatRowEdit>): Boolean {
-        val unresolved = edits.filter { it in rowEdits }
-        unresolved.mapTo(unconfirmedRowEvents) { it.eventId }
+        val unresolved = rowEdits.filter { it.edit in edits }
+        unresolved.forEach { it.unconfirmed = true }
         return unresolved.isEmpty()
     }
+
+    private fun recordMembershipChanges(rows: ReplayedChats) {
+        if (rowEdits.isEmpty()) return
+        val moves =
+            rowEdits.filter {
+                it.edit.action == ChatRowAction.MoveProject && !it.confirmedMembershipChanged
+            }
+        if (moves.isEmpty()) return
+        val threadIds = moves.mapTo(hashSetOf()) { it.edit.threadId }
+        val previous = confirmedRows.membershipFor(threadIds)
+        val current = rows.membershipFor(threadIds)
+        for (move in moves) {
+            val threadId = move.edit.threadId
+            // After a confirmed change, an unconfirmed move keeps its receipt identity
+            // and yields the displayed grouping to subsequent server state.
+            if (threadId !in current || previous[threadId] != current[threadId]) {
+                move.confirmedMembershipChanged = true
+            }
+        }
+    }
+
+    private fun ReplayedChats.membershipFor(threadIds: Set<String>): Map<String, String?> =
+        buildMap {
+            for (row in byRecency) {
+                if (row.id in threadIds) put(row.id, row.projectId)
+            }
+        }
 
     fun showOutgoing(eventId: String, threadId: String): Boolean {
         val checkpoint = confirmedCheckpoint
@@ -136,9 +176,10 @@ internal class ChatListProjection {
                     checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
                 }
                 addAll(read.eventIdsBeforeRebase)
-                if (editsBefore.any { it.action == ChatRowAction.Delete }) {
+                if (editsBefore.any { it.edit.action == ChatRowAction.Delete }) {
                     val present = rows.byRecency.mapTo(hashSetOf()) { it.id }
-                    for (edit in editsBefore) {
+                    for (pending in editsBefore) {
+                        val edit = pending.edit
                         if (edit.action == ChatRowAction.Delete && edit.threadId !in present)
                             add(edit.eventId)
                     }
@@ -160,17 +201,16 @@ internal class ChatListProjection {
 
     private fun settleRowEdits(observed: Set<String>, discarded: Set<String>) {
         val settledThrough = mutableMapOf<Pair<String, ChatRowField>, Int>()
-        rowEdits.forEachIndexed { index, edit ->
+        rowEdits.forEachIndexed { index, pending ->
+            val edit = pending.edit
             if (edit.eventId in observed) settledThrough[edit.threadId to edit.field] = index
         }
         if (settledThrough.isEmpty() && discarded.isEmpty()) return
         rowEdits =
-            rowEdits.filterIndexed { index, edit ->
-                val settled =
-                    edit.eventId in discarded ||
-                        index <= (settledThrough[edit.threadId to edit.field] ?: -1)
-                if (settled) unconfirmedRowEvents.remove(edit.eventId)
-                !settled
+            rowEdits.filterIndexed { index, pending ->
+                val edit = pending.edit
+                edit.eventId !in discarded &&
+                    index > (settledThrough[edit.threadId to edit.field] ?: -1)
             }
     }
 }
