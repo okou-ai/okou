@@ -90,7 +90,6 @@ async function setupCustomOAuthFirewall(
     displayName: "Custom OAuth refresh agent",
   });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "resolve custom OAuth firewall auth",
   });
   publicFixture.registerRun(run.runId);

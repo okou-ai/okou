@@ -173,7 +173,6 @@ export async function launchPublicToolRun(
   };
   registerCleanup(cleanup);
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     model: "claude-fable-5-1",
     prompt: "Use a paid tool",
   });

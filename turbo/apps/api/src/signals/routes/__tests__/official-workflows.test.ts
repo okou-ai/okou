@@ -172,7 +172,7 @@ async function listMorningBriefInstallations(actor: ApiTestUser) {
 }
 
 async function ordinaryDelegationScenario() {
-  const owned = await publicChatActor(context, { useDefaultAgent: true });
+  const owned = await publicChatActor(context, { });
   return await owned.run(async () => {
     await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     const workflowId = await workflowBdd.createWorkflow(owned.actor, {
@@ -659,7 +659,7 @@ describe("Debug Morning Brief", () => {
 
 describe("Workflow Run admission", () => {
   it("captures ordinary Workflows at dispatch and applies edits to later Runs", async () => {
-    const owned = await publicChatActor(context, { useDefaultAgent: true });
+    const owned = await publicChatActor(context, { });
     const fixture = createChatEventsFixture(context);
     const s3 = installWorkflowVolumeS3Fixture(context);
     await owned.run(() => {

@@ -128,7 +128,6 @@ describe("POST /api/integrations/slack/message", () => {
     });
     return await owner.run(async () => {
       const run = await api.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "send slack message",
       });
       // Product run creation authenticates through the Clerk session mocks;

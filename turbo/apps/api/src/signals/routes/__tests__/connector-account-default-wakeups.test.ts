@@ -88,7 +88,6 @@ describe("default connector account runtime wakeups", () => {
         { apiKey: "sk-personal" },
       );
       const run = await runs.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Observe my account default",
       });
       const otherRun = await memberRuns.run(async () => {
@@ -96,7 +95,6 @@ describe("default connector account runtime wakeups", () => {
         await runs.ensurePersonalSubscriptionModel(member);
         const agent = await bdd.createAgent(member);
         const created = await runs.createThreadRun(member, {
-          agentId: agent.agentId,
           prompt: "Keep a teammate's run active",
         });
         await memberRuns.executionInput(created.runId);
@@ -181,7 +179,6 @@ describe("default connector account runtime wakeups", () => {
 
     await outsider.run(async () => {
       const foreignRun = await runs.createThreadRun(outsider.actor, {
-        agentId: outsider.agentId,
         prompt: "A different workspace remains active",
       });
       await outsider.executionInput(foreignRun.runId);
@@ -216,7 +213,6 @@ describe("default connector account runtime wakeups", () => {
       }
       const target = { kind: "custom", customConnectorId: custom.id } as const;
       const run = await runs.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Observe custom account defaults",
       });
       await owned.executionInput(run.runId);

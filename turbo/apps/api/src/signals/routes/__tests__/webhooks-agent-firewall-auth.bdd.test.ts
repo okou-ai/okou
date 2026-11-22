@@ -201,7 +201,6 @@ async function firewallRun(
 
     await options.prepareAgent?.(actor, agent.agentId);
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       model: "claude-fable-5-1",
       prompt: "resolve firewall auth",
     });
@@ -281,7 +280,6 @@ async function withPublicFirewallRun(
       visibility: "private",
     });
     const run = await runsApi.createThreadRun(fixture.actor, {
-      agentId: agent.agentId,
       prompt: "resolve firewall auth",
     });
     fixture.registerRun(run.runId);
@@ -925,7 +923,6 @@ describe("FW-3: billable firewall lease", () => {
       visibility: "private",
     });
     const run = await runsApi.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "billable auth across a subscription deletion",
     });
     await runsApi.heartbeatRunner(runnerGroup);
@@ -1000,7 +997,6 @@ describe("FW-3: billable firewall lease", () => {
       visibility: "private",
     });
     const run = await runsApi.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "billable auth with expired credits",
     });
 

@@ -76,7 +76,7 @@ async function diagnosticFixture() {
       }
       run = { runId, threadId: sent.body.threadId };
     } else {
-      run = await api.createThreadRun(actor, { agentId, prompt });
+      run = await api.createThreadRun(actor, { prompt });
     }
     onTestFinished(async () => {
       await api.requestCancelRun(actor, run.runId, [200]);

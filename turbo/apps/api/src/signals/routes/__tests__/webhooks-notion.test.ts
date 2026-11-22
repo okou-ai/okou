@@ -1343,7 +1343,6 @@ describe("POST /api/webhooks/notion", () => {
     await expectAutomationConnector(secondAccount.id);
 
     const run = await runsApi.createThreadRun(actor, {
-      agentId,
       threadId,
       model: "claude-fable-5-1",
       prompt: "Switch this automation Chat's Notion account",

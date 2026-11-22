@@ -204,7 +204,6 @@ async function createOwnedRun(
   });
   options.onAgentCreated?.(agent.agentId);
   const run = await runsApi.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Create a connector check fixture",
   });
   return { runId: run.runId, agentId: agent.agentId };

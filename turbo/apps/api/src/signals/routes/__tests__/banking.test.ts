@@ -98,7 +98,6 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
           }),
         )
       : await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt: "banking precondition",
         });
   await api.heartbeatRunner(runnerGroup);

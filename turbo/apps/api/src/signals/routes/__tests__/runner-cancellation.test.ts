@@ -42,7 +42,6 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
     visibility: "private",
   });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "exercise cancellation reconciliation",
   });
   let identityDeleted = false;
@@ -140,7 +139,6 @@ async function directFixture(runCounts: readonly number[]) {
     });
     for (let index = 0; index < runCounts[actorIndex]!; index++) {
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "reconcile a directly dispatched Run",
       });
       const owned: (typeof ownedRuns)[number] = {

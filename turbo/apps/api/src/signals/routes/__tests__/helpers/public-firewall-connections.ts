@@ -43,7 +43,6 @@ export function createPublicFirewallConnections(context: TestContext) {
     });
 
     const created = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "resolve firewall auth",
     });
     const credential: { token?: string } = {};

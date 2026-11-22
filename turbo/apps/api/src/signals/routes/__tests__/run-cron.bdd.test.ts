@@ -57,7 +57,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
 
     await expect(
       api.readThreadRunRejection(actor, {
-        agentId,
         prompt: "Produce a concise status report.",
       }),
     ).resolves.toBe("insufficient_credits");

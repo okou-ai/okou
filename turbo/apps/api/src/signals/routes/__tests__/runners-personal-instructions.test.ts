@@ -41,19 +41,9 @@ describe("Captured personal Instructions in direct Runs", () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const s3 = installWorkflowVolumeS3Fixture(context);
-      const defaultAgentId = await bdd.readDefaultAgentId(owned.actor);
-      if (!defaultAgentId) {
-        throw new Error("Expected default executor");
-      }
-      await bdd.updateAgentInstructions(
-        owned.actor,
-        defaultAgentId,
-        "Shared legacy Instructions",
-      );
 
       await save(owned.actor, "personal at admission");
       const queued = await api.createThreadRun(owned.actor, {
-        agentId: defaultAgentId,
         prompt: "execute with personal instructions",
         model: "auto",
       });
@@ -88,7 +78,7 @@ describe("Captured personal Instructions in direct Runs", () => {
     });
   });
 
-  it("uses cleared member Instructions even when a legacy client supplies a named Agent", async () => {
+  it("mounts an empty Instructions file after the member clears it", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const s3 = installWorkflowVolumeS3Fixture(context);
@@ -106,40 +96,9 @@ describe("Captured personal Instructions in direct Runs", () => {
       );
       expect([...files.keys()]).toStrictEqual(["instructions.md"]);
       expect(files.get("instructions.md")?.byteLength).toBe(0);
-      await bdd.updateAgentInstructions(
-        owned.actor,
-        owned.agentId,
-        "retained non-default",
-      );
-      const retained = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
-        prompt: "legacy non-default",
-        model: "auto",
-      });
-      const nonDefault = await owned.runExecution(retained.runId);
-      const saved = await accept(
-        client().get({
-          headers: {
-            authorization: `Bearer ${nonDefault.execution.platformEnvironment.OKOU_TOKEN!}`,
-          },
-        }),
-        [200],
-      );
-      expect(saved.body).toMatchObject({
-        userId: owned.actor.userId,
-        content: "",
-      });
-      expect(
-        readExecutionContentBundle(
-          s3.objects,
-          nonDefault.execution.contentBundles.instructions!,
-        )
-          .get("instructions.md")
-          ?.toString(),
-      ).toBe("");
     });
   });
-  it("uses the default until the first save and isolates two members on the same default executor", async () => {
+  it("uses the default until the first save and isolates two members in the same workspace", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       // Deployments publish the default before serving.
@@ -158,13 +117,8 @@ describe("Captured personal Instructions in direct Runs", () => {
           ],
         ]),
       );
-      const defaultAgentId = await bdd.readDefaultAgentId(owned.actor);
-      if (!defaultAgentId) {
-        throw new Error("Expected default executor");
-      }
 
       const first = await api.createThreadRun(owned.actor, {
-        agentId: defaultAgentId,
         prompt: "first personal use",
         model: "auto",
       });
@@ -188,12 +142,10 @@ describe("Captured personal Instructions in direct Runs", () => {
         await save(owned.actor, "Alice only");
         await save(bob, "Bob only");
         const aliceRun = await api.createThreadRun(owned.actor, {
-          agentId: defaultAgentId,
           prompt: "Alice",
           model: "auto",
         });
         const bobRun = await api.createThreadRun(bob, {
-          agentId: defaultAgentId,
           prompt: "Bob",
           model: "auto",
         });

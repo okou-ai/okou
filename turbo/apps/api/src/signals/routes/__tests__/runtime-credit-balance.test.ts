@@ -52,7 +52,6 @@ async function fundedFreeRuns() {
 
     async function startRunExecution(prompt: string) {
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         model: null,
         prompt,
       });

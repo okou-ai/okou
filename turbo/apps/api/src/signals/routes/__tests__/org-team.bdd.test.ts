@@ -995,7 +995,6 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
     });
 
     const created = await runs.createThreadRun(admin, {
-      agentId: agent.agentId,
       prompt: "exercise org reads with the run Okou token",
     });
     await runs.heartbeatRunner(runnerGroup);

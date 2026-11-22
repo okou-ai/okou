@@ -6047,7 +6047,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         visibility: "private",
       });
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "deliver a phone attachment",
       });
       await runs.heartbeatRunner(runnerGroup);

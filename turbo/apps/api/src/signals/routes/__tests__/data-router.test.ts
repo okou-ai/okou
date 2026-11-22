@@ -48,7 +48,6 @@ async function createRun(actor = bdd.user()) {
   });
   const runnerGroup = await runs.configureRunnerGroup();
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Read data",
   });
   await runs.heartbeatRunner(runnerGroup);

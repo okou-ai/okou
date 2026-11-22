@@ -113,7 +113,6 @@ describe("private Runner VNC authority", () => {
       heartbeatAuthorization: vncRunnerHeaders.authorization,
     });
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId: owner.agentId,
       prompt: "Use my configured VNC desktop",
     });
     const input = await runs.executionInput(runId);

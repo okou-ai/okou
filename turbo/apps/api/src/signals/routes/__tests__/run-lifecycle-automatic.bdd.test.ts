@@ -189,7 +189,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         );
       });
       const run = await api.createThreadRun(actor, {
-        agentId,
         prompt: `use builtin Automatic ${resolution}`,
       });
       const runOwner: { sandboxToken?: string } = {};

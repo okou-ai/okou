@@ -130,7 +130,6 @@ async function primaryRun(enabled = true, secondary = false) {
     : defaultAgentId;
   await runs.heartbeatRunner(runnerGroup);
   const run = await runs.createThreadRun(actor, {
-    agentId,
     model: "claude-fable-5-1",
     prompt: "Curate useful suggestions",
   });

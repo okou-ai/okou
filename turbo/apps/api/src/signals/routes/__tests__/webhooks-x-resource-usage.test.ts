@@ -53,7 +53,6 @@ async function createRun(actor = bdd.user()): Promise<RunFixture> {
   ]);
   const runnerGroup = await runs.configureRunnerGroup();
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Read X resources",
   });
   await runs.heartbeatRunner(runnerGroup);

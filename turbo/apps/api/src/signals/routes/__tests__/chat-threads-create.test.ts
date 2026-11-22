@@ -1179,7 +1179,6 @@ describe("POST /api/chat-threads", () => {
       [201],
     );
     const { runId } = await api.createThreadRun(fixture.actor, {
-      agentId: fixture.agentId,
       threadId: source.body.id,
       prompt: "Create a separate thread using the workspace default",
     });
@@ -1250,7 +1249,6 @@ describe("POST /api/chat-threads", () => {
     expect(source.body.serviceTier).toBe("priority");
 
     const { runId } = await api.createThreadRun(fixture.actor, {
-      agentId: fixture.agentId,
       threadId: source.body.id,
       prompt: "Create a separate thread with the member's priority default",
     });

@@ -100,7 +100,6 @@ describe("GitHub file integration routes", () => {
       api.acceptTelemetryIngest();
       const runnerGroup = await api.configureRunnerGroup();
       const run = await api.createThreadRun(fixture.actor, {
-        agentId: fixture.agentId,
         prompt: "deliver github file",
       });
       await api.heartbeatRunner(runnerGroup);

@@ -2931,15 +2931,12 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     });
 
     const first = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "team upgrade run one",
     });
     const second = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "team upgrade run two",
     });
     const third = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "team upgrade run three",
     });
     const queuedThreadId = await sendChatInputAtCapacity(
@@ -3473,15 +3470,12 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     });
 
     await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "concurrency add-on run one",
     });
     await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "concurrency add-on run two",
     });
     await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "concurrency add-on run three",
     });
     const queuedThreadIds = [
@@ -4994,7 +4988,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       await connectors.startCustomConnectorOAuth2(actor, customOauth.id),
     );
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "survive until teardown",
     });
     expect(run.status).toBe("running");
@@ -5160,7 +5153,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     for (let index = 0; index < 3; index++) {
       active.push(
         await runs.createThreadRun(doomed, {
-          agentId: agent.agentId,
           prompt: `Previously started input ${index}`,
         }),
       );
@@ -5216,7 +5208,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     await api.requestClerkWebhook("{}", {}, [200]);
     const peerRunId = await waitForPickedThreadRun(peer, peerThread);
     await runs.createThreadRun(peer, {
-      agentId: agent.agentId,
       prompt: "New peer input after stop",
     });
     await flushWaitUntilForTest();
@@ -5607,12 +5598,10 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         model: "claude-sonnet-5-5",
       });
       const peerRun = await runs.createThreadRun(peer, {
-        agentId: doomedPublicAgent.agentId,
         prompt: "peer run on the deleted user's Agent",
         model: "claude-sonnet-5-5",
       });
       const doomedRun = await runs.createThreadRun(doomed, {
-        agentId: doomedAgent.agentId,
         prompt: "doomed run on the retained Agent",
       });
       await runs.heartbeatRunner(runnerGroup);
@@ -5684,7 +5673,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     });
 
     const run = await runs.createThreadRun(banned, {
-      agentId: agent.agentId,
       prompt: "banned user cleanup run",
     });
     expect(run.status).toBe("running");

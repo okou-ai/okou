@@ -115,7 +115,6 @@ async function createRunUploadFixture(
     threadId = sent.threadId;
   } else {
     const run = await runsApi.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "produce an uploaded artifact",
     });
     runId = run.runId;

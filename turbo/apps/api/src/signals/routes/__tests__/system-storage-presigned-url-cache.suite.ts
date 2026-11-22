@@ -271,7 +271,6 @@ describe("system storage presigned URL cache", () => {
     const api = createRunsApi(context);
     const createExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
-        agentId: runFixture.agentId,
         prompt,
       });
       onTestFinished(async () => {

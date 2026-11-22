@@ -272,12 +272,11 @@ async function createNativePasswordActionForPreflightTest(
   readonly token: string;
   readonly providerId: string;
 }> {
-  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
   const current = await createDispatchedChatRun(
     chat,
     runs,
     actor,
-    agent.agentId,
     "Enter a password on the current Browser page",
   );
   const providerId = randomUUID();
@@ -661,12 +660,11 @@ async function setupNativeMixedVerificationScenario(
   scalarKind: "text" | "username" | "password" | null = null,
   verificationStarted?: () => void,
 ) {
-  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
   const current = await createDispatchedChatRun(
     chat,
     runs,
     actor,
-    agent.agentId,
     "Enter native input without submitting the website form",
   );
   const providerId = randomUUID();
@@ -894,12 +892,11 @@ async function setupNativeMixedVerificationScenario(
 }
 
 async function setupNativeScalarGuardScenario(laterType = "password") {
-  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
   const current = await createDispatchedChatRun(
     chat,
     runs,
     actor,
-    agent.agentId,
     "Fill the captured scalar Browser controls",
   );
   const providerId = randomUUID();
@@ -1506,7 +1503,7 @@ function browserUserActionTokenHash(requestToken: string): string {
 async function setupNativeFileScenario(
   owned?: Awaited<ReturnType<typeof setupOwnedNativeFileBrowserScenario>>,
 ) {
-  const { routeMocks, runs, chat, actor, agent } =
+  const { routeMocks, runs, chat, actor } =
     owned ?? (await setupBrowserScenario());
   const run =
     owned?.run ??
@@ -1519,7 +1516,6 @@ async function setupNativeFileScenario(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Choose a local file for the website",
     ));
   const providerId = randomUUID();
@@ -3216,13 +3212,12 @@ describe("Browser user-action route", () => {
   );
 
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
+    const { routeMocks, runs, chat, actor } =
       await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Confirm a checkbox in the Browser",
     );
     const providerId = randomUUID();
@@ -3458,13 +3453,12 @@ describe("Browser user-action route", () => {
   });
 
   it("discovers exact radio member identities, selects duplicate-valued option by index, and rejects group drift", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
+    const { routeMocks, runs, chat, actor } =
       await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Choose radio option",
     );
     const providerId = randomUUID();
@@ -3854,13 +3848,12 @@ describe("Browser user-action route", () => {
   });
 
   it("selects by option index, rejects disabled and drifted options, and supports explicit clear", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
+    const { routeMocks, runs, chat, actor } =
       await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Choose a region on the current browser page",
     );
     const providerId = randomUUID();
@@ -4215,13 +4208,12 @@ describe("Browser user-action route", () => {
   });
 
   it("supports live number constraints, optional clear, and exact readback", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
+    const { routeMocks, runs, chat, actor } =
       await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Enter a quantity in the current browser",
     );
     const providerId = randomUUID();
@@ -4441,13 +4433,12 @@ describe("Browser user-action route", () => {
   });
 
   it("guards native slider position, constraints, required confirmation and post-event readback", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
+    const { routeMocks, runs, chat, actor } =
       await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Choose a website slider position",
     );
     const providerId = randomUUID();
@@ -4763,13 +4754,12 @@ describe("Browser user-action route", () => {
   });
 
   it("guards native opaque color selection, unchanged values, stale targets and independent readback", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
+    const { routeMocks, runs, chat, actor } =
       await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Choose a website color",
     );
     const providerId = randomUUID();
@@ -4996,13 +4986,12 @@ describe("Browser user-action route", () => {
   });
 
   it("validates all five native date/time subtypes, empty/required values and independent readback", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
+    const { routeMocks, runs, chat, actor } =
       await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Enter a date or time in the current browser",
     );
     const providerId = randomUUID();
@@ -5493,13 +5482,12 @@ describe("Browser user-action route", () => {
   );
 
   it("validates and applies CLI-resolved Browser input without exposing target or value data", async () => {
-    const { routeMocks, runs, chat, actor, agent } =
+    const { routeMocks, runs, chat, actor } =
       await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
-      agent.agentId,
       "Ask for credentials on the current Browser page",
     );
 
@@ -7262,10 +7250,6 @@ async function setupBrowserScenario() {
   await runs.grantProEntitlement(orgActor);
   await runs.ensurePersonalSubscriptionModel(orgActor);
   await runs.updateUserModelPreference(orgActor, "claude-fable-5-1");
-  const agent = await bdd.createAgent(orgActor, {
-    displayName: "Managed Browser Test",
-    visibility: "private",
-  });
 
   return {
     routeMocks,
@@ -7274,7 +7258,6 @@ async function setupBrowserScenario() {
     webhooks,
     actor: orgActor,
     runnerGroup,
-    agent,
   };
 }
 
@@ -7352,7 +7335,6 @@ async function setupOwnedNativeFileBrowserScenario() {
       chat,
       runs: createRunsApi(context),
       routeMocks: createRouteMocks(context),
-      agent: { agentId: owned.agentId },
       current: {
         runId: sent.runId,
         threadId: sent.threadId,
@@ -7406,7 +7388,6 @@ async function createDispatchedChatRun(
   chat: ReturnType<typeof createChatFilesBddApi>,
   runs: ReturnType<typeof createRunsApi>,
   actor: ApiTestUser,
-  agentId: string,
   prompt: string,
 ) {
   const sent = await chat.sendAndLaunch(actor, {

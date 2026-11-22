@@ -198,7 +198,6 @@ describe("Runner disk telemetry HTTP", () => {
     });
     const run = await fixture.run(async () => {
       const created = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Observe disk independently",
       });
       fixture.owned.runId = created.runId;

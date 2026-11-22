@@ -76,7 +76,6 @@ export async function withConnectorRuntime(
   onTestFinished(cleanup);
 
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Use the connected account",
     ...(options.model === undefined ? {} : { model: options.model }),
   });

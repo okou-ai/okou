@@ -983,7 +983,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "turn this deck into a template",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -1010,7 +1009,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
         });
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "write a project update",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -1029,7 +1027,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the Okou CLI",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -1044,7 +1041,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const { actor, agentId } = await entitledRunActor();
         const created = await api.createThreadRun(actor, {
-          agentId,
           prompt: "share the report with my organization",
         });
         const run = await api.executionInput(created.runId);
@@ -1062,7 +1058,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
         const created = await api.createThreadRun(actor, {
-          agentId,
           prompt: "inspect this Run's provider-token usage",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -1087,7 +1082,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const { actor, agentId } = await entitledRunActor();
         const disabled = await api.createThreadRun(actor, {
-          agentId,
           prompt: "send a message",
         });
         const disabledRun = await api.executionInput(disabled.runId);
@@ -1101,7 +1095,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [FeatureSwitchKey.LarkIntegration]: true,
         });
         const enabled = await api.createThreadRun(actor, {
-          agentId,
           prompt: "send a message",
         });
         const enabledRun = await api.executionInput(enabled.runId);
@@ -1118,7 +1111,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
         const created = await api.createThreadRun(actor, {
-          agentId,
           prompt: "run without connectors",
         });
 
@@ -1146,7 +1138,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
 
         async function targetsForRun(prompt: string) {
-          const run = await api.createThreadRun(actor, { agentId, prompt });
+          const run = await api.createThreadRun(actor, { prompt });
           const execution = await api.executionInput(run.runId);
           await api.requestCancelRun(actor, run.runId, [200]);
           await oauth.finishCancelledRun(run.runId, execution.sandboxToken);
@@ -1195,7 +1187,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         for (const clientId of ["api-test-calcom-oauth-client-id", undefined]) {
           mockOptionalEnv("CAL_COM_OAUTH_CLIENT_ID", clientId);
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt: "use the connected X account",
           });
           const execution = await api.executionInput(run.runId);
@@ -1219,7 +1210,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "reuse unchanged catalog validation authority",
         });
 
@@ -1246,7 +1236,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
 
         const initialRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "establish canonical storage for overlap",
         });
         const initialExecution = await api.executionInput(initialRun.runId);
@@ -1368,7 +1357,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "https://r2.example.com/storage/archive.tar.gz?sig=bdd",
         );
         const retry = await api.createThreadRun(actor, {
-          agentId,
           threadId: initialRun.threadId,
           prompt: "Retry the complete canonical storage manifest",
         });
@@ -1419,7 +1407,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
 
         const first = await api.createThreadRun(member, {
-          agentId: shared.agentId,
           prompt: "Start without a provisioned Memory",
           model: NATIVE_RUNNER_ROUTE.model,
         });
@@ -1439,7 +1426,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await finishCancelledRun(first.runId, firstExecution.sandboxToken);
 
         const next = await api.createThreadRun(member, {
-          agentId: shared.agentId,
           prompt: "Reuse the initialized Memory",
           model: NATIVE_RUNNER_ROUTE.model,
         });
@@ -1479,7 +1465,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected workflow creation to succeed");
         }
 
-        const created = await api.createThreadRun(actor, { agentId, prompt });
+        const created = await api.createThreadRun(actor, { prompt });
 
         const initialStorageCalls = [...context.mocks.s3.send.mock.calls];
         const execution = await api.executionInput(created.runId);
@@ -1544,7 +1530,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, created.runId, [200]);
 
         const initialized = await api.createThreadRun(actor, {
-          agentId,
           prompt: "storage manifest dimensions initialized artifact path",
         });
         await api.requestCancelRun(actor, initialized.runId, [200]);
@@ -1590,7 +1575,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         await api.heartbeatRunner(runnerGroup);
         const created = await api.createThreadRun(actor, {
-          agentId,
           prompt: "resolve only exact storage candidates",
         });
         expect(created.status).toBe("running");
@@ -1645,7 +1629,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
 
         const canonicalRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "canonical storage execution",
         });
         const canonicalExecution = await api.executionInput(canonicalRun.runId);
@@ -1689,7 +1672,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
 
         const initialRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "persist canonical storage mounts",
         });
         const initialExecution = await api.executionInput(initialRun.runId);
@@ -1772,7 +1754,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
 
         const sessionRun = await api.createThreadRun(actor, {
-          agentId,
           threadId: initialRun.threadId,
           prompt: "continue canonical storage session",
         });
@@ -1951,7 +1932,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const created = await api.createThreadRun(actor, {
-          agentId,
           prompt,
         });
 
@@ -1973,7 +1953,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const created = await api.createThreadRun(actor, {
-          agentId,
           prompt,
         });
 
@@ -1993,7 +1972,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const first = await api.createThreadRun(actor, {
-          agentId,
           prompt: "start a finalized timing session",
         });
         const execution = await api.executionInput(first.runId);
@@ -2018,7 +1996,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         // Continuing the thread resumes its Agent session: execution input carries the
         // first run's finalized CLI session.
         const resumed = await api.createThreadRun(actor, {
-          agentId,
           threadId: first.threadId,
           prompt: "continue finalized timing session",
         });
@@ -2052,7 +2029,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
           const created = await api.createThreadRun(actor, {
-            agentId,
             prompt: "summarize the repository",
           });
           expect(created.status).toBe("running");
@@ -2155,7 +2131,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const first = await api.createThreadRun(actor, {
-          agentId,
           prompt: "start a session",
         });
         const finalized = async (
@@ -2193,7 +2168,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         await flushWaitUntilForTest();
         const resumed = await api.createThreadRun(actor, {
-          agentId,
           threadId: first.threadId,
           prompt: "continue the session",
         });
@@ -2262,7 +2236,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
 
         const first = await api.createThreadRun(actor, {
-          agentId,
           prompt: "start a managed direct session",
           model: selectedModel,
         });
@@ -2303,7 +2276,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const resumed = await api.createThreadRun(actor, {
-          agentId,
           threadId: first.threadId,
           prompt: "continue on the same runtime and model family",
           model: selectedModel,
@@ -2333,7 +2305,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await finishCancelledRun(resumed.runId, resumedExecution.sandboxToken);
         await flushWaitUntilForTest();
         const changedRuntime = await api.createThreadRun(actor, {
-          agentId,
           threadId: first.threadId,
           prompt: "continue on a different native runtime",
           model: NATIVE_RUNNER_ROUTE.model,
@@ -2407,7 +2378,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         await expect(
           api.readThreadRunRejection(actor, {
-            agentId: agent.agentId,
             prompt: subscriptionPrompt,
           }),
         ).resolves.toBe("insufficient_credits");
@@ -2415,7 +2385,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         // The suspension applies to built-in model runs as well.
         await expect(
           api.readThreadRunRejection(actor, {
-            agentId: agent.agentId,
             prompt: builtInPrompt,
             model: null,
           }),
@@ -2447,7 +2416,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const insertedAt = requestStartedAt + 6 * 60_000;
           mockNow(requestStartedAt);
           const blocker = await api.createThreadRun(owned.actor, {
-            agentId: owned.agentId,
             prompt: "keep the thread busy before its next input",
           });
           const waiting = await owned.sendWaitingChatInput(owned.actor, {
@@ -2545,7 +2513,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
         const owned = await api.createThreadRun(actor, {
-          agentId,
           prompt: "open a session",
         });
         const rejected = await chat.requestSendEvent(
@@ -2584,7 +2551,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         await expect(
           api.readThreadRunRejection(uninitialized, {
-            agentId: bareAgent.agentId,
             prompt: "built-in model run",
           }),
         ).resolves.toBe("insufficient_credits");
@@ -2603,7 +2569,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         await expect(
           api.readThreadRunRejection(actor, {
-            agentId: agent.agentId,
             prompt: "built-in model run",
           }),
         ).resolves.toBe("insufficient_credits");
@@ -2632,7 +2597,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const ownedRuns = publicRunOwner(context, actor);
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt: "subscription subscription run",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -2648,13 +2612,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const builtInPrompt = `suspended built-in ${randomUUID()}`;
         await expect(
           api.readThreadRunRejection(actor, {
-            agentId: agent.agentId,
             prompt: subscriptionPrompt,
           }),
         ).resolves.toBe("insufficient_credits");
         await expect(
           api.readThreadRunRejection(actor, {
-            agentId: agent.agentId,
             prompt: builtInPrompt,
             model: null,
           }),
@@ -2814,7 +2776,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         // No personal subscription and an Auto send: the managed route.
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt: `managed Auto run ${randomUUID()}`,
           model: null,
         });
@@ -2907,7 +2868,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const claudeWebRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "generate an image with claude",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -3036,7 +2996,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           false,
         );
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "run without enabled stored connectors",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -3083,7 +3042,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the x connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -3171,7 +3129,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt: "use stored connector variable aliases",
         });
 
@@ -3207,7 +3164,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const withoutHost = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use gitlab without the optional host",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -3232,7 +3188,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           { intent: "reconnect", connectionId: gitlabConnection.id },
         );
         const withHost = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use gitlab with the optional host",
         });
         const hostExecution = await api.executionInput(withHost.runId);
@@ -3276,7 +3231,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use prefetched connector auth credentials",
         });
         const execution = await api.executionInput(run.runId);
@@ -3316,7 +3270,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use figma personal access token",
         });
         const execution = await api.executionInput(run.runId);
@@ -3399,7 +3352,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use lark before any cached access token exists",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -3569,7 +3521,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "refresh lark through exact current-catalog accounts",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -3664,7 +3615,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use google ads",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -3798,7 +3748,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "run without a connected OpenAI account",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -3961,7 +3910,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected Automatic MCP no-auth connection");
         }
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the no-auth HTTP and MCP connectors",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -4074,7 +4022,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await connectors.setCustomConnectorValues(actor, custom.id, []);
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the explicitly connected custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -4118,7 +4065,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the custom connector instead of the built-in connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -4182,7 +4128,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use custom auth for Figma files and built-in auth elsewhere",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -4336,7 +4281,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
           const run = await own(() => {
             return api.createThreadRun(actor, {
-              agentId,
               prompt: "use the custom connector",
             });
           });
@@ -4772,7 +4716,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the admitted MCP connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -4987,7 +4930,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const disconnectedRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "omit the disconnected MCP connector",
         });
         const disconnectedExecution = await api.executionInput(
@@ -5040,7 +4982,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             { key: "secret", kind: "secret", value: "original-source-token" },
           ]);
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt: "use the exact custom connector account",
           });
           await api.heartbeatRunner(runnerGroup);
@@ -5221,7 +5162,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("bounds authorized MCP awareness for an initial Claude run", async () => {
         const fixture = await setupBoundedMcpAwareness();
         const run = await fixture.api.createThreadRun(fixture.actor, {
-          agentId: fixture.agentId,
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
@@ -5234,7 +5174,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("preserves bounded MCP awareness across continuation", async () => {
         const fixture = await setupBoundedMcpAwareness();
         const first = await fixture.api.createThreadRun(fixture.actor, {
-          agentId: fixture.agentId,
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
@@ -5261,7 +5200,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
         const resumed = await fixture.api.createThreadRun(fixture.actor, {
-          agentId: fixture.agentId,
           threadId: first.threadId,
           prompt: "continue with bounded MCP awareness",
         });
@@ -5278,7 +5216,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("keeps bounded MCP awareness identical across Claude and Codex", async () => {
         const fixture = await setupBoundedMcpAwareness();
         const claude = await fixture.api.createThreadRun(fixture.actor, {
-          agentId: fixture.agentId,
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
@@ -5309,7 +5246,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             );
           });
         const codex = await fixture.api.createThreadRun(fixture.actor, {
-          agentId: fixture.agentId,
           prompt: "inspect MCP awareness with Codex",
           model: "gpt-6-astra",
         });
@@ -5447,7 +5383,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the seeded canonical connector",
         });
         owned.runId = run.runId;
@@ -5570,7 +5505,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           customConnectorId: custom.id,
         });
         const currentRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the current unrefreshable custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -5590,7 +5524,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         );
         const expiredRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "try the expired unrefreshable custom connector",
         });
         const expiredExecution = await api.executionInput(expiredRun.runId);
@@ -5715,7 +5648,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const run = await own(() => {
           return api.createThreadRun(actor, {
-            agentId,
             prompt: "use the OAuth custom connector",
           });
         });
@@ -6001,7 +5933,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
 
         const firstRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the revoked OAuth custom connector",
         });
         expect(
@@ -6065,7 +5996,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         await api.registerDirectRunner(runnerGroup);
         const secondRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "retry the revoked OAuth custom connector",
         });
         expect(provider.tokenBodies).toHaveLength(2);
@@ -6222,7 +6152,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the OAuth MCP connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -6278,7 +6207,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           issuer: provider.issuer,
         });
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use builtin Automatic OAuth through catalog no-auth",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -6400,7 +6328,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           issuer: provider.issuer,
         });
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "refresh builtin Automatic credentials",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -6513,7 +6440,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           issuer: provider.issuer,
         });
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use builtin Automatic without refresh token",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -6612,7 +6538,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const run = await own(() => {
           return api.createThreadRun(actor, {
-            agentId,
             prompt: "use the Automatic OAuth MCP connector",
           });
         });
@@ -6689,7 +6614,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const noAuthRun = await own(() => {
           return api.createThreadRun(actor, {
-            agentId,
             prompt: "use the Automatic MCP connector without credentials",
           });
         });
@@ -6808,7 +6732,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const kms = useSecretKmsProbe();
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the proposed custom connector",
         });
         expect(kms.decryptCalls).toBe(0);
@@ -6920,7 +6843,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const laterRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the updated custom connector route",
         });
         const laterExecution = await api.executionInput(laterRun.runId);
@@ -6999,7 +6921,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the optional custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -7150,7 +7071,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(updated.storageVersion).toBe(2);
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "do not use the incompatible custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -7263,7 +7183,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const blockedRun = await own(() => {
           return api.createThreadRun(actor, {
-            agentId,
             prompt: "do not use the reconnect-required custom connector",
           });
         });
@@ -7341,7 +7260,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const admittedRun = await own(() => {
           return api.createThreadRun(actor, {
-            agentId,
             prompt: "use the reconnected custom connector",
           });
         });
@@ -7421,7 +7339,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const incompleteRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "do not admit an incomplete custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -7481,7 +7398,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const unroutableRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "do not admit an unroutable custom connector",
         });
         const unroutableExecution = await api.executionInput(
@@ -7512,7 +7428,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const recoveredRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the fully recovered custom connector",
         });
         const recoveredExecution = await api.executionInput(recoveredRun.runId);
@@ -7580,7 +7495,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the optional-only custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -7699,7 +7613,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "expand custom and connector bases",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -7769,7 +7682,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
 
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt: "Perform an unrelated task",
           });
           await api.heartbeatRunner(runnerGroup);
@@ -7885,7 +7797,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         mockNow(now() + 2 * 3_600_000);
         await api.registerDirectRunner(runnerGroup);
         const expiringRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "expire a queued permission",
         });
         const expiredExecution = await api.executionInput(expiringRun.runId);
@@ -7912,7 +7823,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           grants: [],
         });
         const revokedRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "revoke a queued permission",
         });
         const revokedExecution = await api.executionInput(revokedRun.runId);
@@ -7939,7 +7849,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
 
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt: "execute without built-in connectors",
         });
         const execution = await api.executionInput(run.runId);
@@ -7965,7 +7874,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.heartbeatRunner(runnerGroup);
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "complete before runner policy cleanup",
         });
         const execution = await api.executionInput(run.runId);
@@ -8023,7 +7931,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(missingSync.body.error.code).toBe("NOT_FOUND");
 
         const failedRun = await api.createThreadRun(actor, {
-          agentId,
           prompt: "fail before runner policy cleanup",
         });
         const failedExecution = await api.executionInput(failedRun.runId);
@@ -8068,7 +7975,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const firstPrompt = "start combined execution delivery timing";
         const first = await api.createThreadRun(actor, {
-          agentId,
           prompt: firstPrompt,
         });
         const firstExecution = await api.executionInput(first.runId);
@@ -8097,7 +8003,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const resumedPrompt = "continue combined execution delivery timing";
         context.mocks.ably.publish.mockClear();
         const resumed = await api.createThreadRun(actor, {
-          agentId,
           threadId: first.threadId,
           prompt: resumedPrompt,
         });
@@ -8127,7 +8032,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         async function connectorPoliciesForRun(prompt: string) {
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt,
           });
           const execution = await api.executionInput(run.runId);
@@ -8194,7 +8098,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt: "thread run cloudflare defaults",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -8292,7 +8195,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt: "summarize release",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -8479,7 +8381,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "prepare an Outlook email",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -8503,7 +8404,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const { actor, agentId } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "summarize the safety policy",
         });
         const stored = await api.executionInput(run.runId);
@@ -8541,7 +8441,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await setPaidToolDisabled(context, actor, tool, true);
         }
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use my available capabilities",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -8570,7 +8469,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           NATIVE_RUNNER_ROUTE,
         );
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "discover a managed research tool",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -8596,7 +8494,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "web-search", true);
         await setPaidToolDisabled(context, actor, "image-generation", true);
         const queued = await api.createThreadRun(actor, {
-          agentId,
           prompt: "capture my paid tool preferences",
         });
         await setPaidToolDisabled(context, actor, "web-search", false);
@@ -8634,7 +8531,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await finishCancelledRun(queued.runId, execution.sandboxToken);
 
         const enabled = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use the updated paid tool preferences",
         });
         const enabledExecution = await api.executionInput(enabled.runId);
@@ -8656,7 +8552,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "web-search", true);
         await setPaidToolDisabled(context, actor, "video-generation", true);
         const latest = await api.createThreadRun(actor, {
-          agentId,
           prompt: "apply the latest paid tool preferences",
         });
         const latestExecution = await api.executionInput(latest.runId);
@@ -8678,7 +8573,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return api.updateUserModelPreference(actor, "claude-fable-5-1");
           });
         const codexSubscription = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use Codex native web search",
           model: "gpt-6-astra",
         });
@@ -8710,7 +8604,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "image-generation", true);
 
         const queued = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use native Codex images with managed web search",
           model: "gpt-6-astra",
         });
@@ -8740,7 +8633,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await finishCancelledRun(queued.runId, execution.sandboxToken);
 
         const managedImages = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use managed images with native web search",
           model: "gpt-6-astra",
         });
@@ -8767,7 +8659,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         await setPaidToolDisabled(context, actor, "image-generation", true);
         const nativeTools = await api.createThreadRun(actor, {
-          agentId,
           prompt: "use native images and web search",
           model: "gpt-6-astra",
         });
@@ -8800,7 +8691,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "web-search", true);
         await setPaidToolDisabled(context, member, "scrape", true);
         const run = await api.createThreadRun(member, {
-          agentId: agent.agentId,
           prompt: "respect the executing member's paid tool preferences",
           model: NATIVE_RUNNER_ROUTE.model,
         });
@@ -8825,7 +8715,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [FeatureSwitchKey.Banking]: false,
         });
         const gatedOff = await api.createThreadRun(actor, {
-          agentId,
           prompt: "review my recent banking activity",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -8839,7 +8728,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [FeatureSwitchKey.Banking]: true,
         });
         const gatedOn = await api.createThreadRun(actor, {
-          agentId,
           prompt: "review my recent banking activity",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -8870,7 +8758,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "inspect my SSH hosts",
         });
         const prompt =
@@ -8912,7 +8799,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "inspect my remote VNC desktop",
         });
         expect(run.status).toBe("running");
@@ -8965,7 +8851,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             [FeatureSwitchKey.PresentationConvert]: enabled,
           });
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt: "make me a deck about our quarterly plan",
           });
           expect(run.status).toBe("running");
@@ -9018,7 +8903,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             [FeatureSwitchKey.BatchConnectorPermissions]: enabled,
           });
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt: "prepare the connector permissions needed for this task",
           });
           await api.heartbeatRunner(runnerGroup);
@@ -9089,7 +8973,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId: defaultAgentId,
           prompt: "use the private workflow override",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -9121,7 +9004,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "continue the task",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -9167,7 +9049,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId: defaultAgentId,
           prompt: "use the workflow",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -9200,7 +9081,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(async () => {
           await api.updateUserModelPreference(actor, "claude-fable-5-1");
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt: "cancel while running",
           });
           await api.heartbeatRunner(runnerGroup);
@@ -9320,7 +9200,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const source = await api.createThreadRun(actor, {
-          agentId,
           prompt: "create history for a failed execution delivery",
         });
         const sourceExecution = await api.executionInput(source.runId);
@@ -9350,7 +9229,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           return originalSend(command);
         });
         const resumed = await api.createThreadRun(actor, {
-          agentId,
           threadId: source.threadId,
           prompt: "continue without history object metadata",
         });
@@ -9948,7 +9826,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             NATIVE_RUNNER_ROUTE,
           );
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt: "recover native history after Runner fallback",
           });
           const execution = await api.executionInput(run.runId);
@@ -10012,7 +9889,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             persisted.result,
           );
           const next = await api.createThreadRun(actor, {
-            agentId,
             threadId: run.threadId,
             prompt: "resume recovered native history",
           });
@@ -10060,7 +9936,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               return api.updateUserModelPreference(actor, model);
             });
           const run = await api.createThreadRun(actor, {
-            agentId,
             prompt: `complete with ${cliAgentType} history`,
             model,
           });
@@ -10151,7 +10026,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(stillSettled.failureReason).toBeUndefined();
 
           const continued = await api.createThreadRun(actor, {
-            agentId,
             threadId: run.threadId,
             prompt: `resume combined ${cliAgentType} history`,
             model,
@@ -10196,7 +10070,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(repeatedAfterSuccessor.body).toStrictEqual(completed.body);
 
           const afterRetry = await api.createThreadRun(actor, {
-            agentId,
             threadId: run.threadId,
             prompt: `resume successor ${cliAgentType} history`,
             model,
@@ -10220,7 +10093,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           NATIVE_RUNNER_ROUTE,
         );
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "cancel before combined recovery",
         });
         const execution = await api.executionInput(run.runId);
@@ -10255,7 +10127,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const continued = await api.createThreadRun(actor, {
-          agentId,
           threadId: run.threadId,
           prompt: "resume cancellation recovery",
         });
@@ -10278,7 +10149,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "time out after the runner execution budget",
         });
         const execution = await api.executionInput(run.runId);
@@ -10341,7 +10211,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
 
           const source = await api.createThreadRun(actor, {
-            agentId,
             prompt: "run until the execution deadline",
           });
           const sourceExecution = await api.executionInput(source.runId);
@@ -10410,7 +10279,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
 
           const continued = await api.createThreadRun(actor, {
-            agentId,
             threadId: source.threadId,
             prompt: "continue after the execution deadline",
           });
@@ -10667,7 +10535,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]) {
           await runs.registerDirectRunner(runnerGroup);
           const run = await runs.createThreadRun(owner.actor, {
-            agentId: owner.agentId,
             prompt: "generate images",
           });
           expect(run.status, JSON.stringify(run)).toBe("running");
@@ -10853,7 +10720,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId,
           prompt: "report events",
         });
         await api.heartbeatRunner(runnerGroup);

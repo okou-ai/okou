@@ -143,7 +143,6 @@ describe("content bundle presigned URL cache", () => {
     mockUniquePresignedUrls();
     const createExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
-        agentId,
         prompt,
       });
       await api.heartbeatRunner(runnerGroup);
@@ -336,7 +335,6 @@ describe("content bundle presigned URL cache", () => {
     });
     const oldExecution = withMockNowForTest(startedAt, () => {
       return api.createThreadRun(actor, {
-        agentId,
         prompt: "Older cache publisher",
       });
     });

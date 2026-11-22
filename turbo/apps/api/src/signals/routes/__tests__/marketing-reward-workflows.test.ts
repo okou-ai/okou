@@ -190,7 +190,6 @@ test("records event automation provenance but never certifies a failed Run or an
   const completion = createPublicAutomationRunApi(context);
   await completion.complete(actor, automated.runId, group, { exitCode: 1 });
   const ordinary = await runs.createThreadRun(actor, {
-    agentId,
     prompt: "An ordinary chat with available Workflows",
   });
   await completion.complete(actor, ordinary.runId, group, {});

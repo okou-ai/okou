@@ -125,7 +125,6 @@ export function createPublicRunnerMemory(
     model = "claude-fable-5-1",
   ) {
     const run = await api.createThreadRun(fixture.actor, {
-      agentId,
       prompt,
       // The Memory owner selects their own connected subscription;
       // the organization admin's personal credentials are never borrowed.

@@ -37,7 +37,6 @@ async function startRun(
   runnerGroup: string,
 ) {
   const run = await runs.createThreadRun(actor, {
-    agentId,
     prompt: "Exercise runtime wakeups",
   });
   await runs.heartbeatRunner(runnerGroup);

@@ -117,7 +117,7 @@ describe("Connector Skill bundle delivery", () => {
   ] as const)(
     "delivers current authorized $framework Skill bytes during preparation and for the next Run",
     async ({ framework, root, model }) => {
-      const owner = await publicChatActor(context, { useDefaultAgent: true });
+      const owner = await publicChatActor(context, { });
       owner.ownsFeatureSwitches();
       const fixture = createChatEventsFixture(context);
       const api = createConnectorBddApi(context);

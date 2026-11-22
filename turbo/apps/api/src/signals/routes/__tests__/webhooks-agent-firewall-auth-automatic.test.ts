@@ -154,7 +154,6 @@ describe("builtin Automatic firewall credential destinations", () => {
       )
     ).body.connectionId;
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the refreshed MCP identity",
     });
     await runs.heartbeatRunner(runnerGroup);
@@ -331,7 +330,6 @@ describe("builtin Automatic firewall credential destinations", () => {
       throw new Error("Expected reconnect state");
     }
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use a live DCR registration",
     });
     await runs.heartbeatRunner(runnerGroup);
@@ -548,7 +546,6 @@ describe("builtin Automatic firewall credential destinations", () => {
         )
       ).body.connectionId;
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Use persisted Automatic refresh tokens",
       });
       await runs.heartbeatRunner(runnerGroup);
@@ -848,7 +845,6 @@ describe("builtin Automatic firewall credential destinations", () => {
     );
     const connectionId = receipt.body.connectionId;
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the selected MCP account",
     });
     const outcome = await settleIncludingAbort(

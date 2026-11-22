@@ -43,7 +43,6 @@ describe("runner environment ownership", () => {
       visibility: "private",
     });
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "exercise environment ownership",
     });
     await runs.heartbeatRunner(runnerGroup);

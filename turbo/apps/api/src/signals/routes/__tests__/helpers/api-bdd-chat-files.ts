@@ -1048,7 +1048,7 @@ export function createChatFilesBddApi(context: TestContext) {
     /**
      * The read-cursor writers driven through an app whose operation signal the
      * caller aborts, which is the signal those route commands actually receive:
-     * the two single-thread writers and the bulk per-Agent one. The requests
+     * the two single-thread writers and the workspace-wide bulk writer. The requests
      * are returned unnarrowed so a caller can assert the off-contract response
      * a cancelled operation produces.
      */
@@ -1462,7 +1462,6 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       keyword: string,
       query: {
-        readonly agentId?: string;
       } = {},
     ): Promise<ChatSearchResponse> {
       const response = await accept(
@@ -1479,7 +1478,6 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       keyword: string,
       query: {
-        readonly agentId?: string;
         // Previous clients still send this retired parameter during rollout.
         readonly limit?: number;
       },

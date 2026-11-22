@@ -67,7 +67,6 @@ export function createVncExecutionApi(context: TestContext) {
       heartbeatAuthorization: vncRunnerHeaders.authorization,
     });
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId: value.agentId,
       prompt: "Use my configured VNC desktop",
     });
     const input = await runs.executionInput(runId);

@@ -110,7 +110,6 @@ async function observeMemory(
   }
   const { agentId, runnerGroup } = await owner.prepareActor(actor);
   const run = await runs.createThreadRun(actor, {
-    agentId,
     prompt: "Observe this member's initialized Memory",
     model: "claude-fable-5-1",
   });
@@ -200,7 +199,6 @@ describe("member memory account initialization", () => {
           // send before enqueue. The other Run can initialize Memory first.
           await flushWaitUntilForTest();
           const run = await runs.createThreadRun(actor, {
-            agentId,
             prompt: "Start my first Run without an attachment",
           });
           const execution = await owner.executionInput(actor, run.runId);

@@ -580,13 +580,11 @@ describe("thin MCP Web adapters", () => {
   it("reflects committed Run transitions without marking indicator or history reads as read", async () => {
     const f = await publicChatActor(context, {
       stripeTransport: "http",
-      useDefaultAgent: true,
     });
     const token = mcp.authorize(f.actor);
     const runs = createRunsApi(context);
     await f.run(async () => {
       const run = await runs.createThreadRun(f.actor, {
-        agentId: f.agentId,
         prompt: "observe indicator transitions",
       });
       expect(run.status).toBe("running");
@@ -870,7 +868,6 @@ describe("thin MCP Web adapters", () => {
     await runs.grantProEntitlement(f.actor);
     await runs.ensurePersonalSubscriptionModel(f.actor);
     const active = await runs.createThreadRun(f.actor, {
-      agentId: f.agentId,
       prompt: "hold the queue",
     });
     const sent = await send(f, "recall me", active.threadId);
@@ -1035,7 +1032,6 @@ describe("thin MCP Web adapters", () => {
     await runs.grantProEntitlement(f.actor);
     await runs.ensurePersonalSubscriptionModel(f.actor);
     const run = await runs.createThreadRun(f.actor, {
-      agentId: f.agentId,
       prompt: "native cancellation",
     });
     const history = mcpGetChatMessagesOutputSchema.parse(

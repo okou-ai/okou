@@ -73,7 +73,6 @@ describe("builtin MCP Run admission", () => {
       throw new Error("Expected the admitted manual MCP account");
     }
     const run = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use the admitted builtin MCP tools",
     });
 

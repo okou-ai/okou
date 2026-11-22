@@ -279,7 +279,6 @@ export function createBillingCheckoutFixture() {
         visibility: "private",
       });
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         model: "claude-fable-5-1",
         prompt: "Use the issued agent credential for billing",
       });

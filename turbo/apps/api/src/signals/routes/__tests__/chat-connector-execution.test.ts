@@ -71,7 +71,6 @@ async function owner() {
 }
 async function start(value: Awaited<ReturnType<typeof owner>>) {
   const run = await runs.createThreadRun(value.actor, {
-    agentId: value.agentId,
     threadId: value.threadId,
     prompt: "Use this Chat's current connector account",
   });

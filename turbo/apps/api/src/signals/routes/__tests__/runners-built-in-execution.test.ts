@@ -36,7 +36,6 @@ describe("Runner built-in and personal dispatch", () => {
       };
       const kms = useSecretKmsProbe(unavailable, unavailable);
       const run = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Use the captured Auto route",
         model: "auto",
       });
@@ -171,7 +170,6 @@ describe("Runner built-in and personal dispatch", () => {
         [FeatureSwitchKey.CodexExecution]: true,
       });
       const run = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Use Auto with Codex execution enabled",
         model: "auto",
       });
@@ -197,7 +195,6 @@ describe("Runner built-in and personal dispatch", () => {
     await owned.run(async () => {
       const { oauth } = await configureSubscriptionPiModel(owned.actor);
       const run = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Use my own subscription",
         model: "gpt-6-luna",
       });

@@ -774,7 +774,6 @@ describe("MCP OAuth foundations", () => {
       throw new Error("Expected the publicly authorized OAuth account");
     }
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Resolve my configured OAuth connector",
     });
     const input = await runs.executionInput(run.runId);

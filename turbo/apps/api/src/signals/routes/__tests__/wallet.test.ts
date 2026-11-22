@@ -84,7 +84,6 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
         workflowAgentId,
       )
     : await api.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Prepare a test Link purchase approval",
       });
   await api.heartbeatRunner(runnerGroup);
@@ -3221,7 +3220,6 @@ test("cancelling a watched purchase from another chat fails before contacting Li
   const fixture = await trackedPurchase();
   await fixture.complete();
   const other = await fixture.api.createThreadRun(fixture.actor, {
-    agentId: fixture.agentId,
     prompt: "Inspect an existing purchase from another chat",
   });
   await fixture.api.heartbeatRunner(fixture.runnerGroup);

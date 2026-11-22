@@ -388,7 +388,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     let carrier:
       | {
           actor: ApiTestUser;
-          agentId: string;
           kmsKeyId: string | undefined;
           storageBucket: string;
           runId?: string;
@@ -430,7 +429,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       const owned = await fixture.entitledNativeChatActor();
       const activeCarrier: NonNullable<typeof carrier> = {
         actor: owned.actor,
-        agentId: owned.agentId,
         kmsKeyId: env("SECRETS_KMS_KEY_ID"),
         storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
       };

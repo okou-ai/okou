@@ -647,7 +647,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         throw new Error("Expected default and sibling MCP accounts");
       }
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Use the MCP connector with incremental scope",
       });
       owned.runId = run.runId;
@@ -893,7 +892,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       throw new Error("Expected Automatic MCP no-auth connection");
     }
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the no-auth MCP connector",
     });
     expect(run.status).toBe("running");

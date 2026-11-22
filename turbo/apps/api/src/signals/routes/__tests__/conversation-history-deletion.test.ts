@@ -9,7 +9,7 @@ const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
-async function completedRun(actor: ApiTestUser, agentId?: string) {
+async function completedRun(actor: ApiTestUser) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -18,11 +18,7 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const targetAgentId =
-    agentId ??
-    (await bdd.createAgent(actor, { displayName: "History deletion" })).agentId;
   const run = await runs.createThreadRun(actor, {
-    agentId: targetAgentId,
     prompt: "retain history",
   });
   await runs.heartbeatRunner(runnerGroup);
@@ -41,19 +37,8 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "completed",
   });
-  return { ...run, agentId: targetAgentId, headers, completion };
+  return { ...run, headers, completion };
 }
-
-test("retains the member’s completed Run after a rejected legacy Agent deletion", async () => {
-  const actor = bdd.user();
-  const run = await completedRun(actor);
-  await bdd.expectAgentDeleteUnavailable(actor, run.agentId);
-  await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
-    runId: run.runId,
-    status: "completed",
-  });
-  await bdd.expectAgentDeleteUnavailable(actor, run.agentId);
-});
 
 test.each(["user", "organization"] as const)(
   "preserves completed Run history and callback replay after Clerk %s deletion",
@@ -76,19 +61,3 @@ test.each(["user", "organization"] as const)(
   },
 );
 
-test("a rejected Agent deletion preserves another Agent's completed Run and callback", async () => {
-  const actor = bdd.user();
-  const target = await completedRun(actor);
-  const survivor = await completedRun(actor);
-  await bdd.expectAgentDeleteUnavailable(actor, target.agentId);
-  await expect(runs.readRun(actor, survivor.runId)).resolves.toMatchObject({
-    runId: survivor.runId,
-    status: "completed",
-  });
-  await webhooks.requestAgentComplete(
-    { runId: survivor.runId, exitCode: 0, completion: survivor.completion },
-    survivor.headers,
-    [200],
-  );
-  await bdd.expectAgentDeleteUnavailable(actor, survivor.agentId);
-});

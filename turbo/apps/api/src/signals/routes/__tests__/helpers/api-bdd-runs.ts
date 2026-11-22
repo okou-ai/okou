@@ -384,32 +384,20 @@ export function createRunsApi(context: TestContext) {
   async function createThreadRun(
     actor: ApiTestUser,
     body: {
-      readonly agentId?: string;
       readonly prompt: string;
       /**
        * An explicit send model (null is Auto); omitted, the thread or member
        * selection applies.
        */
       readonly model?: string | null;
-      /** Continue an existing thread, which resumes its Agent session. */
+      /** Continue an existing thread, which resumes its runtime session. */
       readonly threadId?: string;
       /** Request staff-only network body capture for the run. */
       readonly captureNetworkBodies?: boolean;
     },
   ) {
     const chat = createChatFilesBddApi(context);
-    let threadId = body.threadId;
-    if (threadId === undefined && body.agentId !== undefined) {
-      const defaultAgentId =
-        await createBddApi(context).readDefaultAgentId(actor);
-      if (body.agentId !== defaultAgentId) {
-        // Exercise legacy clients that create the thread before sending.
-        const thread = await chat.createThread(actor, {
-          model: body.model,
-        });
-        threadId = thread.id;
-      }
-    }
+    const { threadId } = body;
     const clientEventId = randomUUID();
     const sent = await chat.requestSendEvent(
       actor,
@@ -461,7 +449,6 @@ export function createRunsApi(context: TestContext) {
   async function readThreadRunRejection(
     actor: ApiTestUser,
     body: {
-      readonly agentId: string;
       readonly prompt: string;
       /** Null selects Auto. */
       readonly model?: string | null;

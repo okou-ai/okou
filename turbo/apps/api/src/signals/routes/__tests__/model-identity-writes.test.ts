@@ -90,7 +90,6 @@ describe("model identity new writes", () => {
     );
     await chat.renameThread(actor, thread.id, "Keep my selection");
     const run = await runs.createThreadRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Continue my personal model",
     });
@@ -187,7 +186,6 @@ describe("model identity new writes", () => {
     await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     const run = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use the platform model",
       model: null,
     });

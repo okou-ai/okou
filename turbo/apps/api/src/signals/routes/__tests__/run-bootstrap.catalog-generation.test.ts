@@ -83,7 +83,6 @@ async function connectorActor() {
       connectors,
       async send(prompt: string, threadId?: string) {
         return await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt,
           threadId,
           model: "claude-fable-5-1",

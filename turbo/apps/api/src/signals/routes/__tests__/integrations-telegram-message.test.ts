@@ -225,7 +225,6 @@ function sendExecutionModelMessage(model: FooterModel) {
         codexServiceTier: fast ? "fast" : null,
       });
       const run = await api.createThreadRun(actor, {
-        agentId: agent.agentId,
         threadId: thread.id,
         prompt: "Exercise footer",
       });

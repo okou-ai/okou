@@ -124,7 +124,6 @@ describe("live chat SSH Run inventory", () => {
     }
     // Keep this owner host-free so first-host defaults remain the behavior under test.
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "List my enabled SSH hosts",
     });
     const input = await runs.executionInput(runId);

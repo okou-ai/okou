@@ -200,7 +200,7 @@ describe("chat search publication", () => {
       ),
     );
     await expect(
-      chat.searchChat(owner, keyword, { agentId: foreign.agentId }),
+      chat.searchChat(owner, keyword, { }),
     ).resolves.toStrictEqual(native);
     const token = mcp.authorize(owner);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
@@ -432,7 +432,6 @@ describe("chat search publication", () => {
           response.structuredContent,
         );
         const native = await chat.searchChat(owner, keyword, {
-          agentId: agent.agentId,
         });
         expect(
           result.results.map((hit) => {
@@ -577,7 +576,6 @@ describe("chat search publication", () => {
       `${keyword} oldest`,
     ]);
     const viaWeb = await chat.searchChat(owner, keyword, {
-      agentId: agent.agentId,
     });
     expect(
       viaWeb.results.map((hit) => {

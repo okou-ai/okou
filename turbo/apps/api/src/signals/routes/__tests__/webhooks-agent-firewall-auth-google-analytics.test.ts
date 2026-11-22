@@ -38,7 +38,6 @@ async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
     visibility: "private",
   });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "resolve Analytics firewall auth",
   });
   publicFixture.registerRun(run.runId);

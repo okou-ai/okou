@@ -24,7 +24,6 @@ export async function terminalPredecessor(
   const { actor, agentId, runnerGroup: group } = owned;
   const run = await owned.run(() => {
     return api.createThreadRun(actor, {
-      agentId,
       prompt: "Preserve terminal home state",
     });
   });
@@ -105,7 +104,6 @@ export async function heartbeat(
 export async function continuation(f: Fixture, model?: string) {
   return await f.owned.run(() => {
     return f.api.createThreadRun(f.actor, {
-      agentId: f.agentId,
       threadId: f.run.threadId,
       prompt: "Continue after terminal cleanup",
       ...(model === undefined ? {} : { model }),

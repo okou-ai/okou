@@ -217,7 +217,6 @@ function useExecutionFixture() {
     );
     await enableHostDefault(owner, connection.body.id);
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use my configured SSH host",
     });
     const input = await runs.executionInput(runId);

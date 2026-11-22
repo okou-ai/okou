@@ -99,7 +99,6 @@ export function createRunExecutionCredentials(context: TestContext) {
           { model: null },
         );
         const run = await runs.createThreadRun(actor, {
-          agentId: agent.agentId,
           threadId: thread.id,
           prompt: "Exercise the caller's API access",
         });

@@ -77,7 +77,6 @@ export function createSshExecutionApi(
       heartbeatAuthorization: options.runnerHeaders.authorization,
     });
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use my configured SSH hosts",
       model: "claude-sonnet-5-5",
     });

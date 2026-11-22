@@ -209,7 +209,6 @@ test.each([
     );
     await finish(run.runId, execution.sandboxToken);
     const next = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the next published version",
     });
     const subsequent = await runs.executionInput(next.runId);
@@ -391,7 +390,6 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
       await finish(runId, accepted.sandboxToken);
 
       const next = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         threadId: sent.body.threadId,
         prompt: "Continue with the remaining authorized workflows",
       });
@@ -445,7 +443,6 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
     instruction: "private body",
   });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: `/${name} summarize today`,
   });
   await runs.heartbeatRunner(group);
@@ -635,7 +632,6 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
   const instruction = "指令\n".repeat(800_000);
   const workflow = await createWorkflow(actor, { instruction });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
@@ -658,7 +654,6 @@ test("preserves a running Agent after rejected completion and accepts cancellati
     files: [{ path: "keep.md", content: "execution attachment" }],
   });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);

@@ -275,7 +275,6 @@ describe("recurring automation auto-disable platform feed events", () => {
     }
     await runs.heartbeatRunner(scenario.runnerGroup);
     const run = await runs.createThreadRun(scenario.actor, {
-      agentId: defaultAgentId,
       model: "claude-fable-5-1",
       prompt: "Review the failed automation and curate a useful suggestion.",
     });

@@ -487,7 +487,6 @@ function useExecutionFixture() {
     const actor = { ...bootstrapActor, orgRole: "org:member" as const };
     const configured = await configuredOwnerFixture(o);
     const { runId } = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use my configured Cloudflare Access SSH host",
     });
     const input = await runs.executionInput(runId);

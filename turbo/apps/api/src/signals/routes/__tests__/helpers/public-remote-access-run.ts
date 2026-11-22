@@ -100,7 +100,6 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     let threadId: string;
     if (source === "web") {
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Use my configured remote hosts",
         model: "claude-fable-5-1",
       });

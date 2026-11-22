@@ -231,7 +231,6 @@ test("chat account startup preserves HTTP/MCP network bindings and unbound Direc
       }
     }
     const run = await runs.createThreadRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "Use my protected and direct HTTP/MCP accounts",
     });
@@ -348,7 +347,6 @@ test("chat account startup preserves HTTP/MCP network bindings and unbound Direc
       [FeatureSwitchKey.CustomConnectorCloudflareAccess]: false,
     });
     const disabled = await runs.createThreadRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt:
         "Keep bound connectors unavailable while network support is disabled",

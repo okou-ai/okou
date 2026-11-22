@@ -64,7 +64,6 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
   });
   await runs.heartbeatRunner(runnerGroup);
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     model: "claude-fable-5-1",
     prompt: "Notify me about a useful update",
   });

@@ -41,7 +41,6 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
     visibility: "private",
   });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "resolve AWS firewall auth",
   });
   publicFixture.registerRun(run.runId);

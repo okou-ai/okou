@@ -1362,7 +1362,6 @@ describe("okou workflow automations", () => {
     mockEnv("OKOU_WEB_URL", "https://api.okou.ai");
     const owned = await publicChatActor(context, {
       tier: "team",
-      useDefaultAgent: true,
     });
     const { actor } = owned;
     await owned.run(async () => {
@@ -4323,7 +4322,6 @@ describe("okou workflow automations", () => {
     const requestedAt = Date.UTC(2026, 7, 1, 12, 34, 56, 123);
     const owned = await publicChatActor(context, {
       clockTime: requestedAt,
-      useDefaultAgent: true,
     });
     await owned.run(async () => {
       const sinceSeqId = (await readThreadLifecycleEvents()).at(-1)?.seqId;
@@ -4408,7 +4406,7 @@ describe("okou workflow automations", () => {
   });
 
   it("repairs a lazy destination after public thread deletion without reusing its identity", async () => {
-    const owned = await publicChatActor(context, { useDefaultAgent: true });
+    const owned = await publicChatActor(context, { });
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
         name: WORKFLOW_NAME,
@@ -4491,7 +4489,6 @@ describe("okou workflow automations", () => {
   it("keeps lazy destinations distinct for workflows and owners of one public workflow", async () => {
     const owned = await publicChatActor(context, {
       tier: "team",
-      useDefaultAgent: true,
     });
     await owned.run(async () => {
       const sinceSeqId = (await readThreadLifecycleEvents()).at(-1)?.seqId;
