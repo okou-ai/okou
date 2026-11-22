@@ -1,8 +1,11 @@
+import { randomUUID } from "node:crypto";
+import { Webhook } from "standardwebhooks";
+import { previewClerkWebhookKey } from "../../scripts/preview-clerk-webhook-key";
 import { resolveApiBackendUrl } from "../api-backend-url";
 import { expect, test } from "../fixtures";
 import { signInWithClerkEmailCode } from "../lib/auth";
 import {
-  createOrganization,
+  createOrganizationRecord,
   createUser,
   generateTestEmail,
 } from "../lib/clerk-api";
@@ -19,9 +22,62 @@ test("receive a reply and compose with an IME", async ({ page }) => {
   const userId = await createUser(email, undefined, {
     firstName: "Christopher",
   });
-  const orgId = await createOrganization("E2E Test Org", userId, "playwright");
+  const name = "E2E Test Org";
+  const organization = await createOrganizationRecord(
+    name,
+    userId,
+    "playwright",
+  );
+  const orgId = organization.id;
   const apiUrl = resolveApiBackendUrl();
   const appUrl = deriveAppUrl(apiUrl);
+
+  if (
+    process.env.GITHUB_EVENT_NAME === "pull_request" ||
+    process.env.GITHUB_EVENT_NAME === "merge_group"
+  ) {
+    // The isolated preview consumes only the organization this test just created.
+    expect(organization.created_at, "Clerk organization creation time").toEqual(
+      expect.any(Number),
+    );
+    const id = randomUUID();
+    const timestamp = new Date();
+    const body = JSON.stringify({
+      object: "event",
+      type: "organization.created",
+      data: {
+        id: orgId,
+        name,
+        created_at: organization.created_at,
+        created_by: userId,
+      },
+    });
+    const response = await fetch(new URL("/api/webhooks/clerk", apiUrl), {
+      method: "POST",
+      redirect: "error",
+      headers: {
+        "content-type": "application/json",
+        "svix-id": id,
+        "svix-timestamp": String(Math.floor(timestamp.getTime() / 1000)),
+        "svix-signature": new Webhook(previewClerkWebhookKey()).sign(
+          id,
+          timestamp,
+          body,
+        ),
+        ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+          ? {
+              "x-vercel-protection-bypass":
+                process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+            }
+          : {}),
+      },
+      body,
+    });
+    expect(
+      response.status,
+      "Deliver the test organization's creation to its preview",
+    ).toBe(200);
+  }
 
   const token = await signInWithClerkEmailCode(page, email, appUrl, {
     activeOrganizationId: orgId,
