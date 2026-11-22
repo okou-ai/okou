@@ -111,7 +111,7 @@ internal fun DefaultModelSetting(
     if (options == null || state.record == null) {
         val status =
             when {
-                state.offline -> stringResource(R.string.chat_list_offline)
+                state.offline -> stringResource(R.string.settings_model_load_when_online)
                 state.catalogUnavailable -> stringResource(R.string.chat_list_first_load_failed)
                 else -> null
             }
@@ -229,15 +229,9 @@ private fun DefaultModelSheet(
                 Modifier.weight(1f, fill = false).verticalScroll(scroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                val status =
-                    when {
-                        state.offline -> R.string.settings_model_offline
-                        state.catalogUnavailable -> R.string.chat_list_first_load_failed
-                        else -> null
-                    }
-                if (status != null)
+                if (state.catalogUnavailable)
                     Text(
-                        stringResource(status),
+                        stringResource(R.string.chat_list_first_load_failed),
                         Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

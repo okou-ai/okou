@@ -10,7 +10,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
@@ -24,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -39,7 +42,7 @@ class DefaultModelSettingTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
-    fun offlineRowRecoversAndCatalogReorderRetainsKeyboardFocus() {
+    fun offlinePickerRecoversAndKeepsCachedChoicesEditable() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         instrumentation.setInTouchMode(false)
@@ -66,7 +69,9 @@ class DefaultModelSettingTest {
 
                 val row = compose.onNodeWithText("Default model")
                 row.assertIsDisplayed().assertHasNoClickAction()
-                compose.onNodeWithText("Offline").assertIsDisplayed()
+                compose
+                    .onNodeWithText("Content will load when you’re back online.")
+                    .assertIsDisplayed()
                 compose.waitUntil(10_000) { model.state.value.record != null }
                 compose.onNodeWithText("Auto").assertIsDisplayed()
                 compose.runOnIdle { model.online(true) }
@@ -96,6 +101,13 @@ class DefaultModelSettingTest {
                     claude.getUnclippedBoundsInRoot().top < gpt.getUnclippedBoundsInRoot().top
                 )
                 gpt.assertIsFocused()
+
+                val auto = compose.onNode(hasText("Auto") and isSelectable())
+                val listTop = auto.getUnclippedBoundsInRoot().top
+                compose.runOnIdle { model.online(false) }
+                assertEquals(listTop, auto.getUnclippedBoundsInRoot().top)
+                claude.assertIsEnabled().performClick().assertIsSelected()
+                assertTrue(fixture.writes.isEmpty())
             }
         } finally {
             scope.cancel()
