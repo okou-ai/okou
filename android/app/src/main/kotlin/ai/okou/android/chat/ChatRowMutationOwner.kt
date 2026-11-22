@@ -22,10 +22,12 @@ internal class ChatRowMutationOwner(
         val edits: List<ChatRowEdit>,
         val submittedCount: Int,
         val targetMissing: Boolean,
+        val connectionFailed: Boolean,
     )
 
     enum class Rollback {
         Rejected,
+        ConnectionFailed,
         MissingTarget,
         CheckMissingDelete,
     }
@@ -65,15 +67,17 @@ internal class ChatRowMutationOwner(
     suspend fun submit(
         action: ChatRowAction,
         edits: List<ChatRowEdit>,
+        optimistic: Boolean,
         acknowledgeRead: suspend () -> Unit,
     ): Submission {
         var submittedCount = 0
         var targetMissing = false
+        var connectionFailed = false
         try {
             requireCurrent()
             if (edits.isNotEmpty()) {
-                projection.addEdits(edits)
-                publishRows()
+                projection.addEdits(edits, optimistic)
+                if (optimistic) publishRows()
             }
             if (action == ChatRowAction.Unmute) acknowledgeRead()
             // Submit the tied suffix first so it keeps its order on partial failure.
@@ -87,18 +91,22 @@ internal class ChatRowMutationOwner(
         } catch (error: Exception) {
             requireCurrent()
             targetMissing = error is ApiFailure.Http && error.status == 404
+            connectionFailed = error is ApiFailure.Network && error.connectionFailed
             // The target may have disappeared while the workspace is still authorized.
             if (!targetMissing) onFailure(error)
             requireCurrent()
-            if (submittedCount > 0 && error.rejectsEdit(action)) submittedCount--
+            if (submittedCount > 0 && (connectionFailed || error.rejectsEdit(action))) {
+                submittedCount--
+            }
         }
-        return Submission(action, edits, submittedCount, targetMissing)
+        return Submission(action, edits, submittedCount, targetMissing, connectionFailed)
     }
 
     fun discardRejected(submission: Submission): Rollback? {
         if (!projection.discardEdits(submission.edits.dropLast(submission.submittedCount)))
             return null
         return when {
+            submission.connectionFailed -> Rollback.ConnectionFailed
             !submission.targetMissing -> Rollback.Rejected
             submission.action == ChatRowAction.Delete -> Rollback.CheckMissingDelete
             else -> Rollback.MissingTarget

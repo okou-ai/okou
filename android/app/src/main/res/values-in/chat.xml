@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">Chat dikeluarkan dari arsip</string>
     <string name="chat_undo_marked_read">Chat ditandai sudah dibaca</string>
     <string name="chat_undo">Urungkan</string>
-    <string name="chat_undo_offline">%1$s\nUrungkan perubahan saat kembali online.</string>
+    <string name="chat_undo_connection_failed">Perubahan tidak dapat diurungkan. Periksa koneksi dan coba lagi.</string>
+    <string name="chat_action_connection_failed">Tidak dapat terhubung. Periksa koneksi dan coba lagi.</string>
     <string name="chat_undo_checking">Memeriksa hasil pengurungan…</string>
     <string name="chat_undo_failed">Perubahan tidak dapat diurungkan.</string>
     <string name="chat_undo_unconfirmed">Pengurungan perubahan tidak dapat dikonfirmasi.</string>
@@ -82,7 +83,7 @@
     <string name="chat_project_moved_named">Dipindahkan ke %1$s</string>
     <string name="chat_project_moved_outside">Dipindahkan ke luar proyek</string>
     <string name="chat_project_delete">Hapus proyek</string>
-    <string name="chat_project_delete_title">Hapus “%1$s”?</string>
+    <string name="chat_project_delete_title">Hapus proyek?</string>
     <string name="chat_project_delete_description">Chat dalam proyek ini akan dipindahkan ke luar proyek. Tugas yang sedang berjalan akan dilanjutkan.</string>
     <string name="chat_project_delete_pending">Menghapus proyek…</string>
     <string name="chat_project_deleted">Proyek dihapus dan chatnya dipindahkan ke luar proyek.</string>

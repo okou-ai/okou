@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">चैट संग्रह से निकाली गई</string>
     <string name="chat_undo_marked_read">चैट पढ़ी हुई चिह्नित की गई</string>
     <string name="chat_undo">पूर्ववत करें</string>
-    <string name="chat_undo_offline">%1$s\nदोबारा ऑनलाइन होने पर बदलाव पूर्ववत करें।</string>
+    <string name="chat_undo_connection_failed">बदलाव पूर्ववत नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
+    <string name="chat_action_connection_failed">कनेक्ट नहीं हो सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="chat_undo_checking">पूर्ववत करने का नतीजा जाँचा जा रहा है…</string>
     <string name="chat_undo_failed">बदलाव पूर्ववत नहीं किया जा सका।</string>
     <string name="chat_undo_unconfirmed">पुष्टि नहीं हो सकी कि बदलाव पूर्ववत हुआ।</string>
@@ -83,7 +84,7 @@
     <string name="chat_project_moved_named">%1$s में ले जाया गया</string>
     <string name="chat_project_moved_outside">प्रोजेक्ट से बाहर ले जाया गया</string>
     <string name="chat_project_delete">प्रोजेक्ट हटाएँ</string>
-    <string name="chat_project_delete_title">“%1$s” हटाएँ?</string>
+    <string name="chat_project_delete_title">प्रोजेक्ट हटाएँ?</string>
     <string name="chat_project_delete_description">इस प्रोजेक्ट की चैट बाहर चली जाएँगी। चल रहे काम जारी रहेंगे।</string>
     <string name="chat_project_delete_pending">प्रोजेक्ट हटाया जा रहा है…</string>
     <string name="chat_project_deleted">प्रोजेक्ट हटा दिया गया और उसकी चैट बाहर ले जाई गईं।</string>

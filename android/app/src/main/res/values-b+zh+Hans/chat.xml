@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">已取消归档</string>
     <string name="chat_undo_marked_read">已标为已读</string>
     <string name="chat_undo">撤销</string>
-    <string name="chat_undo_offline">%1$s · 联网后可撤销</string>
+    <string name="chat_undo_connection_failed">未能撤销，请检查网络后重试。</string>
+    <string name="chat_action_connection_failed">未能连接，请检查网络后重试。</string>
     <string name="chat_undo_checking">正在核对撤销结果</string>
     <string name="chat_undo_failed">未能撤销</string>
     <string name="chat_undo_unconfirmed">撤销结果尚未确认</string>
@@ -82,7 +83,7 @@
     <string name="chat_project_moved_named">已移到 %1$s</string>
     <string name="chat_project_moved_outside">已移到项目外</string>
     <string name="chat_project_delete">删除项目</string>
-    <string name="chat_project_delete_title">删除「%1$s」？</string>
+    <string name="chat_project_delete_title">删除项目？</string>
     <string name="chat_project_delete_description">项目里的聊天将移到项目外，正在运行的任务会继续。</string>
     <string name="chat_project_delete_pending">正在删除项目…</string>
     <string name="chat_project_deleted">已删除项目，聊天已移到项目外。</string>

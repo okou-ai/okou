@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">Conversa desarquivada</string>
     <string name="chat_undo_marked_read">Conversa marcada como lida</string>
     <string name="chat_undo">Desfazer</string>
-    <string name="chat_undo_offline">%1$s\nDesfaça a alteração quando estiver online novamente.</string>
+    <string name="chat_undo_connection_failed">Não foi possível desfazer a alteração. Verifique sua conexão e tente novamente.</string>
+    <string name="chat_action_connection_failed">Não foi possível conectar. Verifique sua conexão e tente novamente.</string>
     <string name="chat_undo_checking">Verificando se a alteração foi desfeita…</string>
     <string name="chat_undo_failed">Não foi possível desfazer a alteração.</string>
     <string name="chat_undo_unconfirmed">Não foi possível confirmar se a alteração foi desfeita.</string>
@@ -84,7 +85,7 @@
     <string name="chat_project_moved_named">Movida para %1$s</string>
     <string name="chat_project_moved_outside">Movida para fora dos projetos</string>
     <string name="chat_project_delete">Excluir projeto</string>
-    <string name="chat_project_delete_title">Excluir “%1$s”?</string>
+    <string name="chat_project_delete_title">Excluir projeto?</string>
     <string name="chat_project_delete_description">As conversas deste projeto serão movidas para fora dos projetos. As tarefas em execução continuarão.</string>
     <string name="chat_project_delete_pending">Excluindo projeto…</string>
     <string name="chat_project_deleted">O projeto foi excluído e suas conversas foram movidas para fora dos projetos.</string>

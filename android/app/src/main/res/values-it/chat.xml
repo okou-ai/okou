@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">Chat rimossa dall’archivio</string>
     <string name="chat_undo_marked_read">Chat contrassegnata come letta</string>
     <string name="chat_undo">Annulla</string>
-    <string name="chat_undo_offline">%1$s\nPotrai annullare la modifica quando tornerai online.</string>
+    <string name="chat_undo_connection_failed">Impossibile annullare la modifica. Controlla la connessione e riprova.</string>
+    <string name="chat_action_connection_failed">Impossibile connettersi. Controlla la connessione e riprova.</string>
     <string name="chat_undo_checking">Verifica dell’annullamento…</string>
     <string name="chat_undo_failed">Impossibile annullare la modifica.</string>
     <string name="chat_undo_unconfirmed">Impossibile confermare l’annullamento.</string>
@@ -84,7 +85,7 @@
     <string name="chat_project_moved_named">Spostata in %1$s</string>
     <string name="chat_project_moved_outside">Spostata fuori dai progetti</string>
     <string name="chat_project_delete">Elimina progetto</string>
-    <string name="chat_project_delete_title">Eliminare «%1$s»?</string>
+    <string name="chat_project_delete_title">Eliminare il progetto?</string>
     <string name="chat_project_delete_description">Le chat di questo progetto verranno spostate fuori dai progetti. Le attività in corso continueranno.</string>
     <string name="chat_project_delete_pending">Eliminazione del progetto…</string>
     <string name="chat_project_deleted">Il progetto è stato eliminato e le sue chat sono state spostate fuori dai progetti.</string>

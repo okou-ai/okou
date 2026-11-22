@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">已取消封存</string>
     <string name="chat_undo_marked_read">已標為已讀</string>
     <string name="chat_undo">復原</string>
-    <string name="chat_undo_offline">%1$s · 連線後可復原</string>
+    <string name="chat_undo_connection_failed">未能復原，請檢查網路連線後再試。</string>
+    <string name="chat_action_connection_failed">無法連線，請檢查網路連線後再試。</string>
     <string name="chat_undo_checking">正在確認復原結果</string>
     <string name="chat_undo_failed">未能復原</string>
     <string name="chat_undo_unconfirmed">復原結果尚未確認</string>
@@ -82,7 +83,7 @@
     <string name="chat_project_moved_named">已移到 %1$s</string>
     <string name="chat_project_moved_outside">已移到專案外</string>
     <string name="chat_project_delete">刪除專案</string>
-    <string name="chat_project_delete_title">刪除「%1$s」？</string>
+    <string name="chat_project_delete_title">刪除專案？</string>
     <string name="chat_project_delete_description">專案中的聊天將移到專案外，正在執行的任務會繼續。</string>
     <string name="chat_project_delete_pending">正在刪除專案…</string>
     <string name="chat_project_deleted">已刪除專案，聊天已移到專案外。</string>

@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">Chat aus dem Archiv geholt</string>
     <string name="chat_undo_marked_read">Chat als gelesen markiert</string>
     <string name="chat_undo">Rückgängig</string>
-    <string name="chat_undo_offline">%1$s\nSobald du wieder online bist, kannst du die Änderung rückgängig machen.</string>
+    <string name="chat_undo_connection_failed">Die Änderung konnte nicht rückgängig gemacht werden. Prüfe deine Verbindung und versuche es erneut.</string>
+    <string name="chat_action_connection_failed">Verbindung fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="chat_undo_checking">Ergebnis wird geprüft …</string>
     <string name="chat_undo_failed">Die Änderung konnte nicht rückgängig gemacht werden.</string>
     <string name="chat_undo_unconfirmed">Es konnte nicht bestätigt werden, dass die Änderung rückgängig gemacht wurde.</string>
@@ -83,7 +84,7 @@
     <string name="chat_project_moved_named">Nach %1$s verschoben</string>
     <string name="chat_project_moved_outside">Aus Projekten verschoben</string>
     <string name="chat_project_delete">Projekt löschen</string>
-    <string name="chat_project_delete_title">„%1$s“ löschen?</string>
+    <string name="chat_project_delete_title">Projekt löschen?</string>
     <string name="chat_project_delete_description">Chats in diesem Projekt werden aus den Projekten verschoben. Laufende Aufgaben werden fortgesetzt.</string>
     <string name="chat_project_delete_pending">Projekt wird gelöscht…</string>
     <string name="chat_project_deleted">Das Projekt wurde gelöscht und seine Chats wurden aus den Projekten verschoben.</string>

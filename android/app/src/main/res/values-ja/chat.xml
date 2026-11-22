@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">チャットのアーカイブを解除しました</string>
     <string name="chat_undo_marked_read">チャットを既読にしました</string>
     <string name="chat_undo">元に戻す</string>
-    <string name="chat_undo_offline">%1$s\nオンラインに戻ると元に戻せます</string>
+    <string name="chat_undo_connection_failed">変更を元に戻せませんでした。接続を確認してから、もう一度お試しください。</string>
+    <string name="chat_action_connection_failed">接続できませんでした。接続を確認してから、もう一度お試しください。</string>
     <string name="chat_undo_checking">元に戻せたか確認しています…</string>
     <string name="chat_undo_failed">元に戻せませんでした</string>
     <string name="chat_undo_unconfirmed">元に戻せたか確認できませんでした</string>
@@ -82,7 +83,7 @@
     <string name="chat_project_moved_named">%1$s に移動しました</string>
     <string name="chat_project_moved_outside">プロジェクト外に移動しました</string>
     <string name="chat_project_delete">プロジェクトを削除</string>
-    <string name="chat_project_delete_title">「%1$s」を削除しますか？</string>
+    <string name="chat_project_delete_title">プロジェクトを削除しますか？</string>
     <string name="chat_project_delete_description">このプロジェクト内のチャットはプロジェクト外に移動します。実行中のタスクは続行されます。</string>
     <string name="chat_project_delete_pending">プロジェクトを削除しています…</string>
     <string name="chat_project_deleted">プロジェクトを削除し、チャットをプロジェクト外に移動しました。</string>

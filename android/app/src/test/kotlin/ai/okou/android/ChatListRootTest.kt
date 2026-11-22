@@ -33,6 +33,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -1656,7 +1657,9 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun rejectedProjectDeletionStaysInItsOriginalConfirmation() {
+    fun projectDeletionCanBeAttemptedOfflineAndRejectionStaysInTheConfirmation() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
         val app = compose.activity.application as ChatListApplication
         val deletes = AtomicInteger()
         app.fixture.commandResponse = { request ->
@@ -1670,23 +1673,28 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        compose.onNodeWithText("Research").performTouchInput { longClick() }
+        val projectRow = compose.onNodeWithText("Research")
+        projectRow.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        projectRow.performKeyInput { pressKey(Key.Menu) }
         compose.onNodeWithText("Delete Project").performClick()
-        compose.onNodeWithText("Delete “Research”?").assertIsDisplayed()
+        compose.onNodeWithText("Delete Project?").assertIsDisplayed()
+        compose.onNode(hasText("Research").and(hasAnyAncestor(isDialog()))).assertIsDisplayed()
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(10_000) { currentList()?.offline == true }
         assertEquals(0, deletes.get())
-        compose.onNodeWithText("Delete Project").performClick()
+        compose.onNodeWithText("Delete Project").assertIsEnabled().performClick()
         compose.waitUntil(10_000) {
             compose
                 .onAllNodesWithText("Could not delete the Project.")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
-        compose.onNodeWithText("Delete “Research”?").assertIsDisplayed()
+        compose.onNodeWithText("Delete Project?").assertIsDisplayed()
         compose.onNodeWithText("Delete Project").assertIsEnabled()
         assertEquals(1, deletes.get())
         compose.onNodeWithText("Cancel").performClick()
-        compose.onNodeWithText("Delete “Research”?").assertDoesNotExist()
-        compose.onNodeWithText("Research").assertIsDisplayed()
+        compose.onNodeWithText("Delete Project?").assertDoesNotExist()
+        projectRow.assertIsFocused()
     }
 
     @Test
@@ -1734,7 +1742,7 @@ class ChatListRootTest {
         awaitListAndNames()
         compose.onNodeWithText("Research").performTouchInput { longClick() }
         compose.onNodeWithText("Delete Project").performClick()
-        compose.onNodeWithText("Delete “Research”?").assertIsDisplayed()
+        compose.onNodeWithText("Delete Project?").assertIsDisplayed()
         compose.onNodeWithText("Delete Project").performClick()
 
         compose.waitUntil(10_000) {
@@ -2034,16 +2042,8 @@ class ChatListRootTest {
         }
         awaitRowActionSettled(CHAT_PERSONAL)
         compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) {
-            compose
-                .onAllNodesWithText("Undo when you’re back online.", substring = true)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
-        undo.assertIsNotEnabled()
+        compose.waitUntil(10_000) { currentList()?.offline == true }
         compose.onNodeWithText("Offline").assertIsDisplayed()
-        compose.runOnIdle { app.connectivity.value = true }
-        compose.waitUntil(10_000) { currentList()?.offline == false }
         assertEquals(2, commands.size)
         try {
             undo.assertIsEnabled().performClick()
