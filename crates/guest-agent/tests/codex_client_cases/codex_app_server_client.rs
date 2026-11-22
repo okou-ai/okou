@@ -345,10 +345,13 @@ async fn codex_app_server_preserves_large_notification_before_response() -> Resu
         .pop_notification()
         .ok_or("missing large buffered notification")?;
     assert_eq!(notification.method, "experimental/server-notification");
-    let message = notification
+    let params = notification
         .params
         .as_ref()
-        .and_then(|params| params["message"].as_str())
+        .ok_or("large notification omitted its params")?;
+    assert!(params.get("index").is_none());
+    let message = params["message"]
+        .as_str()
         .ok_or("large notification omitted its message")?;
     assert_eq!(message.len(), 17 * 1024 * 1024);
     const EXPECTED_CHUNK: [u8; 8192] = [b'x'; 8192];
