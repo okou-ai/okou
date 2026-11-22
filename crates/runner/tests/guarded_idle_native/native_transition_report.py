@@ -1,4 +1,4 @@
-"""Original HTTP and held-wait evidence shared by native transition reports."""
+"""Original HTTP and cancellation evidence shared by native transition reports."""
 
 import hashlib
 import json
@@ -42,6 +42,34 @@ def wire(value, response=False, state="Resumed"):
     return hashlib.sha256(raw).hexdigest()
 
 
+def validate_preparation_loss(lost, previous_event, current_event, *, observer_unwound):
+    """Require the original uncertain owner after the preparation observer drops."""
+    requested = batch.clock(
+        lost.get("cancel_requested_ns"),
+        previous_event["monotonic_ns"],
+        current_event["monotonic_ns"],
+    )
+    dropped = batch.clock(lost.get("observation_dropped_ns"), requested, current_event["monotonic_ns"])
+    exact(
+        lost,
+        {
+            "cancel_requested_ns": requested,
+            "observation_dropped_ns": dropped,
+            "observer_unwound": observer_unwound,
+            "state": "Uncertain",
+            "commit_refused": True,
+            "repark_refused": True,
+            "incoming_refused": True,
+            "original_metadata_preserved": True,
+            "original_full_lease_active": True,
+            "original_exit_polled_pending": True,
+            "pool_empty": True,
+            "allocated": [2, 4096, 1],
+        },
+        "native cancellation lost original uncertain custody",
+    )
+
+
 def wait_progress(progress, previous_event, current_event):
     """Validate common retained-wait custody and return the joined heartbeat identity."""
     held = batch.clock(
@@ -76,3 +104,27 @@ def wait_progress(progress, previous_event, current_event):
         "native wait lost independent progress or no-headroom custody",
     )
     return runner
+
+
+def validate_producer_join(joined, previous_event, current_event, *, producer_unwound, request_sha):
+    """Require the observed producer join after release of the accepted response."""
+    released = batch.clock(
+        joined.get("response_released_ns"),
+        previous_event["monotonic_ns"],
+        current_event["monotonic_ns"],
+    )
+    finished = batch.clock(joined.get("producer_joined_ns"), released, current_event["monotonic_ns"])
+    exact(
+        joined,
+        {
+            "response_released_ns": released,
+            "producer_joined_ns": finished,
+            "producer_joined": True,
+            "producer_unwound": producer_unwound,
+            "backend_status": 204,
+            "joined_request_sha256": None if producer_unwound else request_sha,
+            "accepted_response_before_cancellation": True,
+            "internal_vmm_inflight_claimed": False,
+        },
+        "accepted request producer was not joined before required cleanup",
+    )

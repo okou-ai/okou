@@ -98,6 +98,12 @@ interface WorkspaceSession :
     suspend fun preferences(): UserPreferences
 
     suspend fun updatePreferences(update: UpdatePreferencesRequest): UserPreferences
+
+    /**
+     * Safe to call on Main. Stop accepting work and initiate cancellation before returning.
+     * Transport owners release sockets on their own workers.
+     */
+    override fun close()
 }
 
 fun interface WorkspaceSessionFactory {
@@ -297,6 +303,15 @@ class CanonicalWorkspaceSession(
     override suspend fun renameProject(projectId: String, name: String, eventId: String) =
         api.renameProject(projectId, name, eventId)
 
+    override suspend fun moveThreadToProject(
+        threadId: String,
+        projectId: String?,
+        eventId: String,
+    ) = api.moveThreadToProject(threadId, projectId, eventId)
+
+    override suspend fun deleteProject(projectId: String, eventId: String) =
+        api.deleteProject(projectId, eventId)
+
     override suspend fun renameThread(threadId: String, title: String, eventId: String) =
         api.renameThread(threadId, title, eventId)
 
@@ -388,8 +403,11 @@ class CanonicalWorkspaceSession(
         }
 
     override fun close() {
-        api.close()
-        transfers.close()
+        try {
+            api.close()
+        } finally {
+            transfers.close()
+        }
     }
 }
 

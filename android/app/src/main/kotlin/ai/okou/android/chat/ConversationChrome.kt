@@ -42,6 +42,7 @@ internal fun ConversationToolbarActions(
     state: ChatListUiState,
     thread: ConfirmedChat?,
     onRowAction: (String, ChatRowAction) -> Unit,
+    onMove: (String) -> Unit,
     onRename: (String, String) -> Unit,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
     openResources: ((restoreFocus: Boolean) -> Unit)? = null,
@@ -100,21 +101,6 @@ internal fun ConversationToolbarActions(
                 WorkspaceMenu(
                     items =
                         readingActions +
-                            actions.map { action ->
-                                WorkspaceMenuItem(
-                                    stringResource(action.label()),
-                                    action.icon(),
-                                    enabled = !busy,
-                                    destructive = action == ChatRowAction.Delete,
-                                ) {
-                                    menu = false
-                                    when (action) {
-                                        ChatRowAction.Rename -> rename = true
-                                        ChatRowAction.Delete -> delete = true
-                                        else -> onRowAction(checkNotNull(thread).id, action)
-                                    }
-                                }
-                            } +
                             listOfNotNull(
                                 openSettings?.let {
                                     WorkspaceMenuItem(
@@ -125,7 +111,29 @@ internal fun ConversationToolbarActions(
                                         it(restoreFocus)
                                     }
                                 }
-                            ),
+                            ) +
+                            actions.map { action ->
+                                WorkspaceMenuItem(
+                                    if (action == ChatRowAction.MoveProject)
+                                        projectMoveLabel(
+                                            state
+                                                .projectDestinations(checkNotNull(thread))
+                                                .singleOrNull()
+                                        )
+                                    else stringResource(action.label()),
+                                    action.icon(),
+                                    enabled = !busy,
+                                    destructive = action == ChatRowAction.Delete,
+                                ) {
+                                    menu = false
+                                    when (action) {
+                                        ChatRowAction.Rename -> rename = true
+                                        ChatRowAction.Delete -> delete = true
+                                        ChatRowAction.MoveProject -> onMove(checkNotNull(thread).id)
+                                        else -> onRowAction(checkNotNull(thread).id, action)
+                                    }
+                                }
+                            },
                     close = { menu = false },
                     separatorBefore = readingActions.size.takeIf { onFind != null },
                 )

@@ -103,4 +103,15 @@ describe("selected Kotlin wire generation", () => {
       "suspend fun `androidUpdates`(): Response<AndroidUpdates>",
     );
   });
+
+  it("uses a body-capable Retrofit annotation only for a DELETE with a request body", () => {
+    const files = renderKotlinFiles();
+    const api = files.get("CanonicalApi.kt");
+    expect(api).toContain("import retrofit2.http.HTTP");
+    expect(api).toContain(
+      '@HTTP(method = "DELETE", path = "/api/projects/{id}", hasBody = true)',
+    );
+    expect(api).toContain("@Body body: DeleteProjectRequest");
+    expect(api).toContain('@DELETE("/api/chat-threads/{id}")');
+  });
 });

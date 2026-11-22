@@ -5,6 +5,7 @@ internal enum class ChatRowField {
     Title,
     Archive,
     Mute,
+    Membership,
     Deletion,
 }
 
@@ -18,6 +19,7 @@ internal data class ChatRowEdit(
         get() =
             when (action) {
                 ChatRowAction.Rename -> ChatRowField.Title
+                ChatRowAction.MoveProject -> ChatRowField.Membership
                 ChatRowAction.Delete -> ChatRowField.Deletion
                 ChatRowAction.Archive,
                 ChatRowAction.Unarchive -> ChatRowField.Archive
@@ -34,6 +36,7 @@ internal data class ChatRowEdit(
     fun apply(row: ConfirmedChat): ConfirmedChat =
         when (action) {
             ChatRowAction.Rename -> row.copy(title = value, renamedAt = row.updatedAt)
+            ChatRowAction.MoveProject -> row.copy(projectId = value)
             ChatRowAction.Delete -> row.copy(hidden = true)
             ChatRowAction.Archive,
             ChatRowAction.Unarchive -> row.copy(archived = action == ChatRowAction.Archive)

@@ -108,10 +108,37 @@ enum class ChatRowAction(
     Unarchive,
     Delete,
     Rename(updatesIndicators = false),
+    MoveProject(updatesIndicators = false),
     Pin(updatesIndicators = false, changesPinOrder = true),
     Unpin(updatesIndicators = false, changesPinOrder = true),
     MovePinUp(updatesIndicators = false, changesPinOrder = true),
     MovePinDown(updatesIndicators = false, changesPinOrder = true),
+}
+
+internal data class ChatProjectDestination(val id: String?, val name: String?)
+
+@ConsistentCopyVisibility
+data class ChatMoveNotice
+internal constructor(
+    val eventId: String,
+    val threadId: String,
+    val projectId: String?,
+    val projectName: String?,
+) {
+    internal fun resolve(state: ChatListUiState): ChatMoveNotice? {
+        if (
+            state.projectList.deletingId != null ||
+                !matchesMembership(state.confirmedThreads) ||
+                (state.confirmedThreads !== state.threads && !matchesMembership(state.threads))
+        )
+            return null
+        val name =
+            projectId?.let { id -> state.projects.firstOrNull { it.id == id }?.name ?: return null }
+        return if (projectName == name) this else copy(projectName = name)
+    }
+
+    private fun matchesMembership(threads: List<ConfirmedChat>): Boolean =
+        threads.any { it.id == threadId && it.hidden != true && it.projectId == projectId }
 }
 
 class ChatRowActionFailure
@@ -156,6 +183,7 @@ data class ChatListUiState(
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
     val projectList: ProjectListUiState = ProjectListUiState(),
+    internal val chatMoveNotice: ChatMoveNotice? = null,
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Inbox,
@@ -166,6 +194,7 @@ data class ChatListUiState(
     val markAllReadResult: ChatMarkAllReadResult? = null,
     internal val cachedUnread: CachedUnread? = null,
     internal val readIntents: Map<String, ChatReadIntent> = emptyMap(),
+    internal val confirmedThreads: List<ConfirmedChat> = emptyList(),
     internal val threadsByRecency: List<ConfirmedChat> = emptyList(),
     internal val acceptedNewChats: List<ProvisionalChat> = emptyList(),
 ) {
@@ -189,10 +218,35 @@ data class ChatListUiState(
 
     internal val projectRenameRejection: ProjectRenameRejection?
         get() = projectList.renameRejection
+
+    // Both the confirmed and displayed memberships must have caught up to the Project deletion.
+    internal val projectDeleteFeedback: ProjectDeleteFeedback?
+        get() =
+            projectList.deleteFeedback?.takeUnless { feedback ->
+                feedback.status == ProjectDeleteStatus.Confirmed &&
+                    (source != ChatListSource.Network ||
+                        confirmedThreads.any { it.projectId == feedback.projectId } ||
+                        (confirmedThreads !== threads &&
+                            threads.any { it.projectId == feedback.projectId }))
+            }
 }
 
 internal val ChatListUiState.canRenameProject: Boolean
     get() = projectList.canRename(offline)
+
+internal val ChatListUiState.canDeleteProject: Boolean
+    get() =
+        projectList.canRename(offline) &&
+            pendingRowActions.values.none { it == ChatRowAction.MoveProject }
+
+internal fun ChatListUiState.projectDestinations(
+    thread: ConfirmedChat
+): List<ChatProjectDestination> = buildList {
+    if (thread.projectId != null) add(ChatProjectDestination(null, null))
+    projects.forEach { project ->
+        if (project.id != thread.projectId) add(ChatProjectDestination(project.id, project.name))
+    }
+}
 
 internal val ChatListUiState.displayUnreadAt: Map<String, String>?
     get() = indicators?.unreadAt ?: cachedUnread?.unreadAt
@@ -242,6 +296,13 @@ internal fun ChatListUiState.rowActions(
     }
     if (source != null) {
         add(ChatRowAction.Rename)
+        if (
+            !offline &&
+                projectsSource != null &&
+                projectList.deletingId == null &&
+                (thread.projectId != null || projects.isNotEmpty())
+        )
+            add(ChatRowAction.MoveProject)
         add(if (thread.muted == true) ChatRowAction.Unmute else ChatRowAction.Mute)
         add(if (thread.archived) ChatRowAction.Unarchive else ChatRowAction.Archive)
         add(ChatRowAction.Delete)
@@ -302,6 +363,7 @@ class ChatListModel(
             service,
             projection,
             dispatcher,
+            wallMillis,
             requireCurrent = ::requireCurrent,
             onFailure = onFailure,
             publishRows = { publishRows() },
@@ -317,8 +379,9 @@ class ChatListModel(
             onFailure = onFailure,
             dispatcher = dispatcher,
             wallMillis = wallMillis,
+            syncChatsAfterDelete = { awaitListRead { true } },
             readState = { mutable.value.projectList },
-            publish = { mutable.value = mutable.value.copy(projectList = it) },
+            publish = { reconcileProjectMoves(mutable.value.copy(projectList = it)) },
         )
     private var cacheRead = false
     private var restoreJob: Job? = null
@@ -651,7 +714,7 @@ class ChatListModel(
             return
         if (
             state.undoTarget(undo) == null ||
-                !performRowAction(undo.threadId, undo.inverse, title = null, undoRequest = undo)
+                !performRowAction(undo.threadId, undo.inverse, value = null, undoRequest = undo)
         ) {
             mutable.value = state.copy(rowUndo = undo.copy(phase = ChatUndoPhase.Failed))
         }
@@ -715,16 +778,19 @@ class ChatListModel(
     }
 
     internal fun performRowAction(threadId: String, action: ChatRowAction): Boolean =
-        performRowAction(threadId, action, title = null)
+        action != ChatRowAction.MoveProject && performRowAction(threadId, action, value = null)
 
     internal fun renameThread(threadId: String, title: String) {
         performRowAction(threadId, ChatRowAction.Rename, title.trim())
     }
 
+    internal fun moveThreadToProject(threadId: String, projectId: String?): Boolean =
+        performRowAction(threadId, ChatRowAction.MoveProject, projectId)
+
     private fun performRowAction(
         threadId: String,
         action: ChatRowAction,
-        title: String?,
+        value: String?,
         undoRequest: ChatRowUndo? = null,
     ): Boolean {
         if (!current()) return false
@@ -734,14 +800,16 @@ class ChatListModel(
         if (threadId in state.pendingRowActions) return false
         if (
             action == ChatRowAction.Rename &&
-                (title.isNullOrBlank() || title == thread.title?.trim())
+                (value.isNullOrBlank() || value == thread.title?.trim())
         )
             return false
+        val movingProject = action == ChatRowAction.MoveProject
         val pinGroup =
             if (action.changesPinOrder) chatListGroups(state).firstOrNull { thread in it.threads }
             else null
         val index = pinGroup?.threads?.indexOf(thread) ?: -1
         if (action !in state.rowActions(thread, pinGroup, index)) return false
+        if (movingProject && state.projectDestinations(thread).none { it.id == value }) return false
         val archiveAction = action == ChatRowAction.Archive || action == ChatRowAction.Unarchive
         val undo =
             if (
@@ -766,6 +834,14 @@ class ChatListModel(
         mutable.value =
             state.copy(
                 pendingRowActions = state.pendingRowActions + (threadId to action),
+                projectList =
+                    if (
+                        movingProject &&
+                            state.projectList.deleteFeedback?.status !=
+                                ProjectDeleteStatus.Unconfirmed
+                    )
+                        state.projectList.copy(deleteFeedback = null)
+                    else state.projectList,
                 rowUndo = undoRequest?.copy(phase = ChatUndoPhase.Checking) ?: state.rowUndo,
                 readIntents =
                     if (intent == null || undoRequest != null) state.readIntents
@@ -779,7 +855,7 @@ class ChatListModel(
                             rowMutations.prepareEdits(
                                 threadId,
                                 action,
-                                title,
+                                value,
                                 pinGroup,
                                 index,
                                 state,
@@ -859,7 +935,10 @@ class ChatListModel(
                                 failedRowAction = ChatRowActionFailure(action, rejected = true)
                             )
                     )
-                    if (rollback == ChatRowMutationOwner.Rollback.MissingTarget) refreshList()
+                    if (rollback == ChatRowMutationOwner.Rollback.MissingTarget) {
+                        refreshList()
+                        if (movingProject) refreshMetadata()
+                    }
                 }
                 val confirmedRead = confirmation?.receiptCoversIntent
                 val settledRead = intent != null && (confirmation == null || confirmedRead == true)
@@ -881,9 +960,14 @@ class ChatListModel(
                     if (submission == null) return@coroutineScope false
                     val failure = rowMutations.confirm(submission, rollback)
                     if (undoRequest == null) {
-                        if (failure != null)
-                            mutable.value = mutable.value.copy(failedRowAction = failure)
-                        else if (!rolledBack) recordConfirmedUndo(threadId, undo)
+                        if (failure != null) {
+                            val state = mutable.value.copy(failedRowAction = failure)
+                            if (movingProject) reconcileProjectMoves(state, rowsChanged = true)
+                            else mutable.value = state
+                        } else if (!rolledBack) {
+                            recordConfirmedUndo(threadId, undo)
+                            if (movingProject) recordConfirmedProjectMove(edits.single())
+                        }
                     }
                     failure == null
                 }
@@ -917,12 +1001,38 @@ class ChatListModel(
 
     private fun publishRows(state: ChatListUiState = mutable.value) {
         val rows = projection.rows()
-        mutable.value =
+        publishWithCurrentMoveNotice(
             state.copy(
                 threads = rows.threads,
+                confirmedThreads = projection.confirmedRows.threads,
                 threadsByRecency = rows.byRecency,
                 acceptedNewChats = projection.acceptedNewChats,
             )
+        )
+    }
+
+    private fun publishWithCurrentMoveNotice(state: ChatListUiState) {
+        val notice = state.chatMoveNotice?.resolve(state)
+        mutable.value =
+            if (notice === state.chatMoveNotice) state else state.copy(chatMoveNotice = notice)
+    }
+
+    private fun reconcileProjectMoves(state: ChatListUiState, rowsChanged: Boolean = false) {
+        val discarded =
+            state.projectsSource == ChatListSource.Network &&
+                projection.discardUnconfirmedMovesToMissingProjects(state.projects)
+        if (rowsChanged || discarded) {
+            publishRows(state.copy(failedRowAction = unresolvedRowAction(state.failedRowAction)))
+        } else publishWithCurrentMoveNotice(state)
+    }
+
+    private fun unresolvedRowAction(failure: ChatRowActionFailure?): ChatRowActionFailure? =
+        failure?.takeUnless { it.edits.isNotEmpty() && !projection.hasUnsettledEdits(it.edits) }
+
+    private fun recordConfirmedProjectMove(edit: ChatRowEdit) {
+        val state = mutable.value
+        val notice = ChatMoveNotice(edit.eventId, edit.threadId, edit.value, projectName = null)
+        notice.resolve(state)?.let { mutable.value = state.copy(chatMoveNotice = it) }
     }
 
     internal fun retainAcceptedNewChats(chats: List<ProvisionalChat>, restored: Boolean = false) {
@@ -995,6 +1105,12 @@ class ChatListModel(
     internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
         if (current() && mutable.value.failedRowAction === failure) {
             mutable.value = mutable.value.copy(failedRowAction = null)
+        }
+    }
+
+    internal fun dismissChatMoveNotice(notice: ChatMoveNotice) {
+        if (current() && mutable.value.chatMoveNotice == notice) {
+            mutable.value = mutable.value.copy(chatMoveNotice = null)
         }
     }
 
@@ -1393,10 +1509,7 @@ class ChatListModel(
                 listPhase = ChatReadPhase.Ready,
                 listReadFailure = null,
                 sustainedRefreshFailure = false,
-                failedRowAction =
-                    previousState.failedRowAction?.takeUnless {
-                        it.edits.isNotEmpty() && !projection.hasUnsettledEdits(it.edits)
-                    },
+                failedRowAction = unresolvedRowAction(previousState.failedRowAction),
             )
         resetListReadFailures()
         if (projectionChanged) publishRows(state) else mutable.value = state
@@ -1417,6 +1530,17 @@ class ChatListModel(
 
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) =
         projectOwner.dismissProjectRenameRejection(rejection)
+
+    internal fun deleteProject(id: String) {
+        if (mutable.value.canDeleteProject) projectOwner.deleteProject(id)
+    }
+
+    internal fun retryProjectDelete(feedback: ProjectDeleteFeedback) {
+        if (mutable.value.canDeleteProject) projectOwner.retryProjectDelete(feedback)
+    }
+
+    internal fun dismissProjectDeleteFeedback(feedback: ProjectDeleteFeedback) =
+        projectOwner.dismissProjectDeleteFeedback(feedback)
 
     private fun invalidateIndicators() {
         requestIndicators(immediate = true)

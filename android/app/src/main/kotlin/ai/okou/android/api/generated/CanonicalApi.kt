@@ -477,6 +477,20 @@ internal interface CanonicalApi {
         @Body body: RenameProjectRequest,
     ): Response<RenamedProject>
 
+    @PUT("/api/chat-threads/{id}/project")
+    suspend fun `moveThreadToProject`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: MoveThreadToProjectRequest,
+    ): Response<ProjectMembership>
+
+    @HTTP(method = "DELETE", path = "/api/projects/{id}", hasBody = true)
+    suspend fun `deleteProject`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: DeleteProjectRequest,
+    ): Response<Unit>
+
     @DELETE("/api/chat-threads/{id}")
     suspend fun `deleteThread`(
         @Header("Authorization") token: String,

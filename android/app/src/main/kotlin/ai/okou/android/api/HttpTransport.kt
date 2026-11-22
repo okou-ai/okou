@@ -121,8 +121,12 @@ private fun Response.errorBody(): ResponseBody {
 
 internal fun OkHttpClient.closeTransport() {
     dispatcher.cancelAll()
-    connectionPool.evictAll()
-    dispatcher.executorService.shutdown()
+    val executor = dispatcher.executorService
+    if (connectionPool.connectionCount() > 0) {
+        // Closing idle TLS sockets can write to the network.
+        executor.execute(connectionPool::evictAll)
+    }
+    executor.shutdown()
 }
 
 internal fun ResponseBody.bounded(maximumBytes: Long): ResponseBody {

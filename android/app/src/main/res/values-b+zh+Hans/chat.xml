@@ -75,4 +75,17 @@
     <string name="chat_project_rename_rejected">无法重命名项目。</string>
     <string name="chat_project_rename_save">保存</string>
     <string name="chat_project_rename_pending">正在重命名项目…</string>
+    <string name="chat_move_project">移动聊天</string>
+    <string name="chat_move_project_outside">移到项目外</string>
+    <string name="chat_move_project_named">移到 %1$s</string>
+    <string name="chat_project_outside">项目外</string>
+    <string name="chat_project_moved_named">已移到 %1$s</string>
+    <string name="chat_project_moved_outside">已移到项目外</string>
+    <string name="chat_project_delete">删除项目</string>
+    <string name="chat_project_delete_title">删除「%1$s」？</string>
+    <string name="chat_project_delete_description">项目里的聊天将移到项目外，正在运行的任务会继续。</string>
+    <string name="chat_project_delete_pending">正在删除项目…</string>
+    <string name="chat_project_deleted">已删除项目，聊天已移到项目外。</string>
+    <string name="chat_project_delete_rejected">无法删除项目。</string>
+    <string name="chat_project_delete_unconfirmed">无法确认项目是否已删除。</string>
 </resources>
