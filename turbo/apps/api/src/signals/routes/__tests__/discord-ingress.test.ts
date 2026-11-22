@@ -1,3 +1,5 @@
+import { createBddApi } from "./helpers/api-bdd";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import {
@@ -478,7 +480,7 @@ describe("canonical Discord ingress", () => {
     });
   });
 
-  it("sends one unavailable-agent notice before workspace bootstrap without admitting or replaying a chat", async () => {
+  it("admits one chat for a linked sender before workspace bootstrap, including replay", async () => {
     configureDiscordApp();
     mockEnv("DISCORD_APPLICATION_ID", DISCORD_TEST_APPLICATION_ID);
     mockEnv("DISCORD_GATEWAY_SECRET", DISCORD_TEST_GATEWAY_SECRET);
@@ -514,14 +516,17 @@ describe("canonical Discord ingress", () => {
       flow: "install",
       botUserId: DISCORD_TEST_APPLICATION_ID,
     });
+    mockClerkMembership(
+      context,
+      createBddApi(context).user(identity),
+      identity.orgRole,
+    );
     const provider = mockDiscordProvider(actor);
     const status = await discordStatus(actor);
     expect(status).toMatchObject({
       isAvailable: true,
       isConnected: true,
       discordUserId: actor.discordUserId,
-      defaultAgentId: null,
-      defaultAgentName: null,
     });
     expect(status.dmBindings).toStrictEqual([
       {
@@ -540,18 +545,8 @@ describe("canonical Discord ingress", () => {
       "accepted",
     );
     await flushWaitUntilForTest();
-    expect(provider.sentMessages).toStrictEqual([
-      expect.objectContaining({
-        channel_id: provider.guildChannelId,
-        content:
-          "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
-        message_reference: {
-          message_id: message.id,
-          fail_if_not_exists: true,
-        },
-      }),
-    ]);
-    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual([]);
+    const threads = await discordChatThreads(context, actor);
+    expect(threads).toHaveLength(1);
     const delivered = [...provider.sentMessages];
     expect(
       (await postDiscordMessage(context, message, `agent-replay:${message.id}`))
@@ -559,7 +554,9 @@ describe("canonical Discord ingress", () => {
     ).toBe("duplicate");
     await flushWaitUntilForTest();
     expect(provider.sentMessages).toStrictEqual(delivered);
-    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual([]);
+    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual(
+      threads,
+    );
   });
 
   it.each([true, false])(
@@ -1015,7 +1012,6 @@ describe("canonical Discord ingress", () => {
       const actor = await connected();
       const provider = mockDiscordProvider(actor);
       const chat = createChatFilesBddApi(context);
-      const before = await chat.getThreadSnapshot(actor.actor);
       const channelId =
         kind === "dm"
           ? provider.dmChannelId
@@ -1079,7 +1075,7 @@ describe("canonical Discord ingress", () => {
       );
       const lifecycle = await chat.requestThreadEvents(
         actor.actor,
-        before.latestSeqId === null ? {} : { sinceSeqId: before.latestSeqId },
+        { sinceSeqId: actor.sinceSetupSeqId },
         [200],
       );
       if (lifecycle.status !== 200) {
@@ -1130,7 +1126,7 @@ describe("canonical Discord ingress", () => {
       );
       const afterReplay = await chat.requestThreadEvents(
         actor.actor,
-        before.latestSeqId === null ? {} : { sinceSeqId: before.latestSeqId },
+        { sinceSeqId: actor.sinceSetupSeqId },
         [200],
       );
       if (afterReplay.status !== 200) {
@@ -1198,7 +1194,11 @@ describe("canonical Discord ingress", () => {
       type: "text",
       text: "start a new conversation after deletion",
     });
-    const lifecycle = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor.actor,
+      { sinceSeqId: actor.sinceSetupSeqId },
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected DM lifecycle events");
     }
@@ -1487,7 +1487,11 @@ describe("canonical Discord ingress", () => {
       content,
     });
     const chat = createChatFilesBddApi(context);
-    const lifecycle = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor.actor,
+      { sinceSeqId: actor.sinceSetupSeqId },
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected the routed failure's sidebar activity");
     }
@@ -1512,7 +1516,11 @@ describe("canonical Discord ingress", () => {
     await flushWaitUntilForTest();
     await expect(events(actor, thread.id)).resolves.toStrictEqual(original);
     expect(provider.sentMessages).toHaveLength(1);
-    const replayed = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    const replayed = await chat.requestThreadEvents(
+      actor.actor,
+      { sinceSeqId: actor.sinceSetupSeqId },
+      [200],
+    );
     expect(replayed.body).toStrictEqual(lifecycle.body);
   });
 

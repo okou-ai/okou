@@ -4,29 +4,17 @@ import {
   SUPPORTED_USER_LOCALES,
 } from "@okouai/api-contracts/validators/user-preferences";
 import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
-import deDEAgentsUrl from "./locales/de-DE/agents.json?url";
 import deDECommonUrl from "./locales/de-DE/common.json?url";
-import enUSAgents from "./locales/en-US/agents.json";
 import enUSCommon from "./locales/en-US/common.json";
-import esESAgentsUrl from "./locales/es-ES/agents.json?url";
 import esESCommonUrl from "./locales/es-ES/common.json?url";
-import frFRAgentsUrl from "./locales/fr-FR/agents.json?url";
 import frFRCommonUrl from "./locales/fr-FR/common.json?url";
-import hiINAgentsUrl from "./locales/hi-IN/agents.json?url";
 import hiINCommonUrl from "./locales/hi-IN/common.json?url";
-import idIDAgentsUrl from "./locales/id-ID/agents.json?url";
 import idIDCommonUrl from "./locales/id-ID/common.json?url";
-import itITAgentsUrl from "./locales/it-IT/agents.json?url";
 import itITCommonUrl from "./locales/it-IT/common.json?url";
-import jaJPAgentsUrl from "./locales/ja-JP/agents.json?url";
 import jaJPCommonUrl from "./locales/ja-JP/common.json?url";
-import koKRAgentsUrl from "./locales/ko-KR/agents.json?url";
 import koKRCommonUrl from "./locales/ko-KR/common.json?url";
-import ptBRAgentsUrl from "./locales/pt-BR/agents.json?url";
 import ptBRCommonUrl from "./locales/pt-BR/common.json?url";
-import zhHansAgentsUrl from "./locales/zh-Hans/agents.json?url";
 import zhHansCommonUrl from "./locales/zh-Hans/common.json?url";
-import zhHantAgentsUrl from "./locales/zh-Hant/agents.json?url";
 import zhHantCommonUrl from "./locales/zh-Hant/common.json?url";
 
 export const DEFAULT_LOCALE = DEFAULT_USER_LOCALE;
@@ -42,13 +30,7 @@ export interface LocaleResourceNamespace {
 
 export interface LocaleResources {
   readonly [namespace: string]: LocaleResourceNamespace;
-  readonly agents: LocaleResourceNamespace;
   readonly common: LocaleResourceNamespace;
-}
-
-interface LocaleResourceUrls {
-  readonly agents: string;
-  readonly common: string;
 }
 
 export function isSupportedLocale(value: string): value is SupportedLocale {
@@ -57,40 +39,40 @@ export function isSupportedLocale(value: string): value is SupportedLocale {
   });
 }
 
-function localeResourceUrls(locale: NonDefaultLocale): LocaleResourceUrls {
+function localeResourceUrl(locale: NonDefaultLocale): string {
   switch (locale) {
     case "pt-BR": {
-      return { agents: ptBRAgentsUrl, common: ptBRCommonUrl };
+      return ptBRCommonUrl;
     }
     case "ja-JP": {
-      return { agents: jaJPAgentsUrl, common: jaJPCommonUrl };
+      return jaJPCommonUrl;
     }
     case "ko-KR": {
-      return { agents: koKRAgentsUrl, common: koKRCommonUrl };
+      return koKRCommonUrl;
     }
     case "id-ID": {
-      return { agents: idIDAgentsUrl, common: idIDCommonUrl };
+      return idIDCommonUrl;
     }
     case "de-DE": {
-      return { agents: deDEAgentsUrl, common: deDECommonUrl };
+      return deDECommonUrl;
     }
     case "es-ES": {
-      return { agents: esESAgentsUrl, common: esESCommonUrl };
+      return esESCommonUrl;
     }
     case "it-IT": {
-      return { agents: itITAgentsUrl, common: itITCommonUrl };
+      return itITCommonUrl;
     }
     case "fr-FR": {
-      return { agents: frFRAgentsUrl, common: frFRCommonUrl };
+      return frFRCommonUrl;
     }
     case "hi-IN": {
-      return { agents: hiINAgentsUrl, common: hiINCommonUrl };
+      return hiINCommonUrl;
     }
     case "zh-Hans": {
-      return { agents: zhHansAgentsUrl, common: zhHansCommonUrl };
+      return zhHansCommonUrl;
     }
     case "zh-Hant": {
-      return { agents: zhHantAgentsUrl, common: zhHantCommonUrl };
+      return zhHantCommonUrl;
     }
   }
 }
@@ -134,16 +116,17 @@ export async function loadLocaleResources(
   signal?: AbortSignal,
 ): Promise<LocaleResources> {
   if (locale === DEFAULT_LOCALE) {
-    return { agents: enUSAgents, common: enUSCommon };
+    return { common: enUSCommon };
   }
 
-  const urls = localeResourceUrls(locale);
-  const [agents, common] = await Promise.all([
-    loadLocaleResourceNamespace(urls.agents, locale, "agents", signal),
-    loadLocaleResourceNamespace(urls.common, locale, "common", signal),
-  ]);
+  const common = await loadLocaleResourceNamespace(
+    localeResourceUrl(locale),
+    locale,
+    "common",
+    signal,
+  );
   signal?.throwIfAborted();
-  return { agents, common };
+  return { common };
 }
 
 // Clipboard payloads can outlive the locale that created them. Keep this

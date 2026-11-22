@@ -34,7 +34,6 @@ const teamsConnectStatusSchema = object({
   teamId: nullableStringSchema.optional(),
   teamName: nullableStringSchema.optional(),
   botName: nullableStringSchema.optional(),
-  defaultAgentName: nullableStringSchema.optional(),
   permissionMismatch: boolean().optional(),
   reinstallUrl: nullableStringSchema.optional(),
   environment: teamsEnvironmentSchema.optional(),

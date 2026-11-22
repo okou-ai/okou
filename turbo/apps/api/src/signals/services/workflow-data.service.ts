@@ -1,12 +1,10 @@
 import { visibleWorkflowCondition } from "./workflow-visibility";
-import { executionAgentId } from "./execution-agent";
 import { command, computed, type Computed } from "ccstate";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import type {
   WorkflowImportSource,
   WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, asc, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 
@@ -60,50 +58,29 @@ type WorkflowSummaryRow = Pick<
   | "createdAt"
 >;
 
-/**
- * Execution profile fields retained for existing API consumers.
- */
-export type WorkflowAgentInfo = Pick<
-  typeof agents.$inferSelect,
-  "id" | "name" | "displayName"
->;
-
-export function workflowExecutionProfileColumns() {
-  return { id: agents.id, name: agents.name, displayName: agents.displayName };
-}
-
 interface WorkflowShadow {
   readonly id: string;
   readonly name: string;
   readonly displayName: string | null;
 }
 
-/**
- * Whether the caller may edit, delete, or demote the workflow.
- * - private: owner only.
- * - public: workflow owner or a workspace admin.
- */
 function canManageWorkflow(
   workflow: WorkflowSummaryRow,
   member: WorkflowMember,
 ): boolean {
-  if (workflow.officialDefinitionName !== null) {
-    return false;
-  }
-  if (workflow.visibility === "private") {
-    return workflow.ownerUserId === member.userId;
-  }
-  return workflow.ownerUserId === member.userId || member.role === "admin";
+  return (
+    workflow.officialDefinitionName === null &&
+    (workflow.ownerUserId === member.userId ||
+      (workflow.visibility === "public" && member.role === "admin"))
+  );
 }
 
 function canPublishWorkflow(
   workflow: WorkflowSummaryRow,
   member: WorkflowMember,
 ): boolean {
-  if (workflow.officialDefinitionName !== null) {
-    return false;
-  }
   return (
+    workflow.officialDefinitionName === null &&
     workflow.visibility === "private" &&
     workflow.ownerUserId === member.userId &&
     member.role === "admin"
@@ -135,7 +112,6 @@ export function requireWorkflowPermission(
 
 export interface VisibleWorkflow {
   readonly workflow: WorkflowRow;
-  readonly agent: WorkflowAgentInfo | null;
 }
 
 export const loadVisibleWorkflowById$ = command(
@@ -153,13 +129,8 @@ export const loadVisibleWorkflowById$ = command(
       .select({
         workflow: workflows,
         observedXmin: sql`${workflows}.xmin::text`.mapWith(pgTextDecoder),
-        agent: workflowExecutionProfileColumns(),
       })
       .from(workflows)
-      .leftJoin(
-        agents,
-        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
-      )
       .where(
         and(
           eq(workflows.orgId, args.orgId),
@@ -184,7 +155,6 @@ export const loadVisibleWorkflowById$ = command(
     }
     return {
       workflow: row.workflow,
-      agent: row.agent,
       observedXmin: row.observedXmin,
     };
   },
@@ -192,16 +162,12 @@ export const loadVisibleWorkflowById$ = command(
 
 export function workflowSummary(args: {
   readonly workflow: WorkflowSummaryRow;
-  readonly agent: WorkflowAgentInfo | null;
   readonly member: WorkflowMember;
   readonly shadowedBy?: WorkflowShadow | null;
   readonly officialDefinitionLifecycle?: "active" | "retired" | "unavailable";
 }): WorkflowSummary {
   return {
     id: args.workflow.id,
-    agentId: args.agent?.id ?? null,
-    agentName: args.agent?.name ?? null,
-    agentDisplayName: args.agent?.displayName ?? null,
     name: args.workflow.name,
     displayName: args.workflow.displayName,
     description: args.workflow.description,
@@ -343,13 +309,8 @@ export function workflowList(args: {
           importSource: workflows.importSource,
           createdAt: workflows.createdAt,
         },
-        agent: workflowExecutionProfileColumns(),
       })
       .from(workflows)
-      .leftJoin(
-        agents,
-        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
-      )
       .where(
         and(
           eq(workflows.orgId, args.orgId),
@@ -383,7 +344,6 @@ export function workflowList(args: {
       const winner = winners.get(key);
       return workflowSummary({
         workflow: row.workflow,
-        agent: row.agent,
         member: args.member,
         shadowedBy:
           winner && winner.id !== row.workflow.id ? winner : undefined,

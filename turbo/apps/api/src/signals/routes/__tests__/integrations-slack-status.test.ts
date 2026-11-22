@@ -141,7 +141,6 @@ describe("GET /api/integrations/slack", () => {
       isInstalled: true,
       isAdmin: true,
       workspaceName: `Workspace ${slackWorkspaceId}`,
-      defaultAgentName: null,
       scopeMismatch: false,
       reinstallUrl: null,
     });

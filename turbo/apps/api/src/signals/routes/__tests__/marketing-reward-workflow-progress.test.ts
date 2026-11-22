@@ -28,12 +28,11 @@ const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 async function invokedWorkflow() {
   const consumer = marketingRewardConsumer();
-  const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg({
+  const { actor } = await workflows.setupWorkflowOrg({
     tier: "team",
   });
   installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(actor, {
-    agentId,
     name: `source-observation-${randomUUID().slice(0, 8)}`,
     instruction: "private-workflow-instruction-for-source-observation",
   });

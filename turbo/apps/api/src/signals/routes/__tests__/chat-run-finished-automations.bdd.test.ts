@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { randomUUID } from "node:crypto";
@@ -71,7 +72,6 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
     model: "claude-fable-5-1",
   });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId,
     name: "chat-run-finished-workflow",
   });
   context.mocks.s3.send.mockResolvedValue({});
@@ -118,7 +118,6 @@ async function createChatRunFinishedAutomation(
   options: { readonly workflowChatThreadId?: string } = {},
 ): Promise<string> {
   const workflowId = await wf.createWorkflow(fixture.actor, {
-    agentId: fixture.agentId,
     name: `crf-${randomUUID().slice(0, 8)}`,
     ...(options.workflowChatThreadId
       ? { chatThreadId: options.workflowChatThreadId }
@@ -285,11 +284,7 @@ async function expectAutomationSourceAnnotation(
       event.eventType === "input.prompt" &&
       event.runId !== undefined &&
       event.userMessage.parts.some((part) => {
-        return (
-          part.type === "source" &&
-          part.kind === "agent" &&
-          part.runId === sourceRun.runId
-        );
+        return part.type === "chat_thread" && part.runId === sourceRun.runId;
       })
     );
   });
@@ -304,16 +299,18 @@ async function expectAutomationSourceAnnotation(
   }
   expect(
     automationInput.userMessage.parts.filter((part) => {
-      return part.type === "source" || part.type === "automation";
+      return (
+        part.type === "source" ||
+        part.type === "automation" ||
+        isChatRunReference(part)
+      );
     }),
   ).toStrictEqual([
     {
-      type: "source",
-      kind: "agent",
+      type: "chat_thread",
       runId: sourceRun.runId,
       threadId: sourceRun.threadId,
       titleSnapshot: WATCHED_THREAD_TITLE,
-      href: `/chats/${sourceRun.threadId}#run-${sourceRun.runId}`,
     },
   ]);
   return {
@@ -466,7 +463,6 @@ describe("chat-run-finished workflow automations", () => {
       model: null,
     });
     const workflowId = await wf.createWorkflow(fixture.actor, {
-      agentId: fixture.agentId,
       name: `self-watching-${randomUUID().slice(0, 8)}`,
       chatThreadId: workflowThread.id,
     });

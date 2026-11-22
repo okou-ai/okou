@@ -29,10 +29,7 @@ const c = initContract();
 export const MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY = "daily-delivery";
 export const MORNING_BRIEF_PREFERENCES_PATH = `${MORNING_BRIEF_PREFERENCES_ROUTE}?settings=${MORNING_BRIEF_PREFERENCES_SECTION}&focus=${MORNING_BRIEF_PREFERENCES_FOCUS}`;
 
-const morningBriefUnavailableReasonSchema = zEnum([
-  "missing-timezone",
-  "missing-default-agent",
-]);
+const morningBriefUnavailableReasonSchema = zEnum(["missing-timezone"]);
 
 const morningBriefPreferenceResponseSchema = object({
   status: zEnum(["preparing", "enabled", "paused", "error"]),
@@ -50,7 +47,6 @@ const morningBriefPreferenceUpdateSchema = object({
 
 const morningBriefPreferenceErrorCodeSchema = zEnum([
   "MORNING_BRIEF_MISSING_TIMEZONE",
-  "MORNING_BRIEF_MISSING_DEFAULT_AGENT",
   "MORNING_BRIEF_STATE_CONFLICT",
 ]);
 

@@ -257,7 +257,7 @@ describe("shared Browser public consumers", () => {
       const integrations = createBddIntegrationApi(context);
       const runs = createRunsApi(context);
       integrations.configureSlackAppMocks();
-      await createBddApi(context).readOnboardingStatus(actor);
+      await createBddApi(context).provisionWorkspace(actor);
       const slackUserId = uniqueSlackUserId();
       const { teamId } = await integrations.installSlackWorkspace(actor, {
         installerSlackUserId: slackUserId,

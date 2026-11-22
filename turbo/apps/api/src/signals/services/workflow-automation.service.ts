@@ -1,4 +1,3 @@
-import { executionAgentId } from "./execution-agent";
 import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
@@ -91,7 +90,6 @@ import {
   chatThreadEvents,
   chatThreadEventSequences,
 } from "@okouai/db/schema/chat-thread-event";
-import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
@@ -177,7 +175,6 @@ import {
   type WorkflowAutomationAccountConnectorSlug,
 } from "./workflow-automation-account-classification.service";
 import {
-  workflowExecutionProfileColumns,
   loadVisibleWorkflowById$,
   workflowSummary,
   type WorkflowMember,
@@ -319,7 +316,6 @@ export type WorkflowAutomationRunNowResult =
 interface CreateEventAutomationWorkflowContext {
   readonly threadPreparation: WorkflowThreadPreparation;
   readonly workflowId: string;
-  readonly agentId: string;
   readonly workflowTitle: string;
   readonly automationId?: string;
 }
@@ -1065,11 +1061,10 @@ export const loadAutomationWorkflowRunTarget$ = command(
     args: {
       readonly orgId: string;
       readonly workflowId: string;
-      readonly userId: string;
+      readonly member: WorkflowMember;
     },
     signal: AbortSignal,
   ): Promise<{
-    readonly agentId: string;
     readonly workflowName: string;
     readonly workflowTitle: string;
   } | null> => {
@@ -1077,20 +1072,15 @@ export const loadAutomationWorkflowRunTarget$ = command(
 
     const [workflow] = await db
       .select({
-        agentId: agents.id,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
       })
       .from(workflows)
-      .innerJoin(
-        agents,
-        eq(agents.id, executionAgentId(workflows.orgId, args.userId)),
-      )
       .where(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.id, args.workflowId),
-          visibleWorkflowCondition(args.userId),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);
@@ -1099,7 +1089,6 @@ export const loadAutomationWorkflowRunTarget$ = command(
       return null;
     }
     return {
-      agentId: workflow.agentId,
       workflowName: workflow.workflowName,
       workflowTitle: workflow.workflowDisplayName ?? workflow.workflowName,
     };
@@ -1226,21 +1215,11 @@ export const listWorkspaceWorkflowAutomations$ = command(
       .select({
         automation: workflowAutomationColumns(),
         workflow: workflows,
-        agent: workflowExecutionProfileColumns(),
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(
-        workflows,
-        and(
-          eq(workflows.id, workflowAutomations.workflowId),
-          eq(workflows.orgId, workflowAutomations.orgId),
-        ),
-      )
-      .leftJoin(
-        agents,
-        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
-      )
+      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -1296,7 +1275,6 @@ export const listWorkspaceWorkflowAutomations$ = command(
         return {
           workflow: workflowSummary({
             workflow: row.workflow,
-            agent: row.agent,
             member: args.member,
             officialDefinitionLifecycle: row.workflow.officialDefinitionName
               ? (officialLifecycleByName.get(
@@ -1317,7 +1295,6 @@ export const listWorkspaceWorkflowAutomations$ = command(
 
 function chatThreadAutomationFromSummary(args: {
   readonly workflow: WorkflowRow;
-  readonly agentId: string | null;
   readonly summary: WorkflowAutomationSummary | null;
   readonly chatThreadId: string | null;
 }): readonly ChatThreadWorkflowAutomation[] {
@@ -1331,7 +1308,6 @@ function chatThreadAutomationFromSummary(args: {
       chatThreadId,
       workflow: {
         id: workflow.id,
-        agentId: args.agentId,
         name: workflow.name,
         displayName: workflow.displayName,
         description: workflow.description,
@@ -1360,7 +1336,6 @@ export const listThreadBoundWorkflowAutomations$ = command(
       .select({
         automation: workflowAutomationColumns(),
         workflow: workflows,
-        agentId: executionAgentId(workflows.orgId, args.userId),
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
@@ -1402,7 +1377,7 @@ export const listThreadBoundWorkflowAutomations$ = command(
     signal.throwIfAborted();
 
     const summaries = await Promise.all(
-      rows.map(async ({ automation, workflow, agentId, chatThreadId }) => {
+      rows.map(async ({ automation, workflow, chatThreadId }) => {
         const summary = await set(
           rowToPublicSummary$,
           automation,
@@ -1412,7 +1387,7 @@ export const listThreadBoundWorkflowAutomations$ = command(
           signal,
         );
         signal.throwIfAborted();
-        return { workflow, agentId, summary, chatThreadId };
+        return { workflow, summary, chatThreadId };
       }),
     );
     signal.throwIfAborted();
@@ -1767,7 +1742,6 @@ type InsertEventAutomationArgs = {
         readonly eventConfig: NotionAutomationEventConfig;
       });
   readonly workflowId: string;
-  readonly agentId: string;
   readonly workflowTitle: string;
   readonly automationId?: string;
   readonly currentTime: Date;
@@ -2136,7 +2110,6 @@ interface WebhookAutomationCreateArgs {
   readonly threadPreparation: WorkflowThreadPreparation;
   readonly input: CreateWebhookEventAutomationInput;
   readonly workflowId: string;
-  readonly agentId: string;
   readonly automationId?: string;
   readonly currentTime: Date;
 }
@@ -2161,10 +2134,9 @@ function webhookTierCapabilityColumns() {
 
 function webhookCreationAccessFailure(
   args: WebhookAutomationCreateArgs,
-  agent: { readonly id: string } | undefined,
   workflow: WorkflowRow | undefined,
 ): AutomationActionFailure | null {
-  if (!agent || !workflow) {
+  if (!workflow) {
     return { kind: "not-found" };
   }
   const official = args.input.officialInstallation;
@@ -2312,54 +2284,25 @@ function webhookCreationAccessCondition(
 ) {
   const owned = eq(workflow.ownerUserId, args.input.member.userId);
   const official = args.input.officialInstallation;
-  return and(
-    or(
-      and(
-        or(
-          isNull(workflow.officialDefinitionName),
-          eq(workflow.officialInstallationState, "installed"),
-        ),
+  return official === undefined
+    ? and(
+        isNull(workflow.officialDefinitionName),
         or(owned, eq(workflow.visibility, "public")),
-      ),
-      official === undefined
-        ? sql`false`
-        : and(owned, eq(workflow.officialInstallationState, "installing")),
-    ),
-    official === undefined
-      ? isNull(workflow.officialDefinitionName)
-      : and(
-          owned,
-          eq(workflow.officialDefinitionName, official.definitionName),
-          eq(
-            workflow.officialInstallationState,
-            official.installationState ?? "installing",
-          ),
+      )
+    : and(
+        owned,
+        eq(workflow.officialDefinitionName, official.definitionName),
+        eq(
+          workflow.officialInstallationState,
+          official.installationState ?? "installing",
         ),
-  );
+      );
 }
 
-/** Retain the original entitlement -> agent -> Workflow protection order. */
+/** Retain the original entitlement -> Workflow protection order. */
 function webhookCreationAdmissionPlan(args: WebhookAutomationCreateArgs) {
   const query = new QueryBuilder();
   const entitlement = enabledAutomationEntitlementPlan(args.input.orgId, true);
-  const agent = query.$with("webhook_creation_agent").as(
-    query
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, args.agentId),
-          eq(
-            agents.id,
-            executionAgentId(args.input.orgId, args.input.member.userId),
-          ),
-          eq(agents.orgId, args.input.orgId),
-          entitlement.eligible,
-        ),
-      )
-      .for("share")
-      .limit(1),
-  );
   const workflow = query.$with("webhook_creation_workflow").as(
     query
       .select(getTableColumns(workflows))
@@ -2369,13 +2312,12 @@ function webhookCreationAdmissionPlan(args: WebhookAutomationCreateArgs) {
           eq(workflows.id, args.workflowId),
           eq(workflows.orgId, args.input.orgId),
           entitlement.eligible,
-          gte(query.select({ total: count() }).from(agent), 0),
         ),
       )
       .for("share")
       .limit(1),
   );
-  return { ...entitlement, agent, workflow };
+  return { ...entitlement, workflow };
 }
 
 function webhookThreadPublicationValues(args: WebhookAutomationCreateArgs) {
@@ -2401,7 +2343,6 @@ function webhookBindingSource(
   args: WebhookAutomationCreateArgs,
   threadId: string,
   source: ReturnType<typeof webhookCreationAdmissionPlan>["workflow"],
-  agent: ReturnType<typeof webhookCreationAdmissionPlan>["agent"],
 ) {
   const binding = workflowUserAutomationThreads;
   return new QueryBuilder()
@@ -2425,7 +2366,6 @@ function webhookBindingSource(
         .as("updated_at"),
     })
     .from(source)
-    .crossJoin(agent)
     .where(webhookCreationAccessCondition(args, source));
 }
 
@@ -2496,7 +2436,6 @@ function webhookCreationPublicationResult(
           readonly missingEntitlement: boolean;
           readonly invalidRestriction: boolean;
         };
-        readonly webhook_creation_agent: { readonly id: string } | null;
         readonly webhook_creation_workflow: WorkflowRow | null;
         readonly accepted_binding: {
           readonly chatThreadId: string | null;
@@ -2524,7 +2463,6 @@ function webhookCreationPublicationResult(
   }
   const failure = webhookCreationAccessFailure(
     args,
-    result.webhook_creation_agent ?? undefined,
     result.webhook_creation_workflow ?? undefined,
   );
   if (failure) {
@@ -2557,9 +2495,7 @@ const commitWebhookEventAutomation$ = command(
     const binding = db.$with("accepted_binding").as(
       db
         .insert(workflowUserAutomationThreads)
-        .select(
-          webhookBindingSource(args, values.id, plan.workflow, plan.agent),
-        )
+        .select(webhookBindingSource(args, values.id, plan.workflow))
         .onConflictDoUpdate(webhookBindingConflict(args, values.id))
         .returning({
           chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -2637,7 +2573,6 @@ const commitWebhookEventAutomation$ = command(
       .with(
         plan.entitlement,
         plan.missingEntitlementOrg,
-        plan.agent,
         plan.workflow,
         binding,
         thread,
@@ -2648,7 +2583,6 @@ const commitWebhookEventAutomation$ = command(
       )
       .select()
       .from(plan.outcome)
-      .leftJoin(plan.agent, sql`true`)
       .leftJoin(plan.workflow, sql`true`)
       .leftJoin(binding, sql`true`)
       .leftJoin(automation, sql`true`)
@@ -2875,7 +2809,6 @@ const createGmailEventAutomationForWorkflow$ = command(
     const created = await set(insertEventAutomation$, {
       input: { ...args.input, eventConfig: preparedConfig.eventConfig },
       workflowId: args.context.workflowId,
-      agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
       threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
@@ -3032,7 +2965,6 @@ const createWebhookEventAutomationForWorkflow$ = command(
         input: args.input,
         threadPreparation: args.context.threadPreparation,
         workflowId: args.context.workflowId,
-        agentId: args.context.agentId,
         automationId: args.context.automationId,
         currentTime: nowDate(),
       },
@@ -3082,7 +3014,6 @@ const createGithubWorkflowRunEventAutomationForWorkflow$ = command(
     const created = await set(insertEventAutomation$, {
       input: { ...args.input, eventConfig },
       workflowId: args.context.workflowId,
-      agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
       threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
@@ -3140,7 +3071,6 @@ const createGithubWebhookEventAutomationForWorkflow$ = command(
     const created = await set(insertEventAutomation$, {
       input: args.input,
       workflowId: args.context.workflowId,
-      agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
       threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
@@ -3234,7 +3164,6 @@ const createGoogleCalendarEventAutomationForWorkflow$ = command(
     const created = await set(insertEventAutomation$, {
       input: { ...args.input, eventConfig: preparedConfig },
       workflowId: args.context.workflowId,
-      agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
       threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
@@ -3412,7 +3341,6 @@ const createGoogleFormsEventAutomationForWorkflow$ = command(
       set(insertEventAutomation$, {
         input: { ...args.input, eventConfig: prepared.eventConfig },
         workflowId: args.context.workflowId,
-        agentId: args.context.agentId,
         workflowTitle: args.context.workflowTitle,
         threadPreparation: args.context.threadPreparation,
         automationId: args.context.automationId,
@@ -3511,7 +3439,6 @@ const createGoogleMeetEventAutomationForWorkflow$ = command(
     const created = await set(insertEventAutomation$, {
       input: { ...args.input, eventConfig: preparedConfig },
       workflowId: args.context.workflowId,
-      agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
       threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
@@ -3756,7 +3683,6 @@ const persistCreatedNotionAutomation$ = command(
     const created = await set(insertEventAutomation$, {
       input: { ...args.input, eventConfig: args.eventConfig },
       workflowId: args.context.workflowId,
-      agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
       threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
@@ -3781,7 +3707,6 @@ const createChatRunFinishedEventAutomationForWorkflow$ = command(
       readonly context: {
         readonly threadPreparation: WorkflowThreadPreparation;
         readonly workflowId: string;
-        readonly agentId: string;
         readonly workflowTitle: string;
         readonly automationId?: string;
       };
@@ -3828,7 +3753,6 @@ const createChatRunFinishedEventAutomationForWorkflow$ = command(
     const created = await set(insertEventAutomation$, {
       input: args.input,
       workflowId: args.context.workflowId,
-      agentId: args.context.agentId,
       workflowTitle: args.context.workflowTitle,
       threadPreparation: args.context.threadPreparation,
       automationId: args.context.automationId,
@@ -3845,7 +3769,6 @@ const createEventAutomationForWorkflow$ = command(
     args: {
       readonly input: CreateEventAutomationInput;
       readonly workflowId: string;
-      readonly agentId: string;
       readonly workflowTitle: string;
       readonly automationId?: string;
     },
@@ -4305,20 +4228,12 @@ export const createWorkflowAutomation$ = command(
         message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
       };
     }
-    const agent = visible.agent;
-    if (!agent) {
-      return {
-        kind: "bad-request",
-        message: "Member executor is unavailable",
-      };
-    }
     if (!automationCreateInputIsSchedule(args)) {
       const created = await set(
         createEventAutomationForWorkflow$,
         {
           input: args,
           workflowId: workflow.id,
-          agentId: agent.id,
           workflowTitle: workflow.displayName ?? workflow.name,
           automationId: args.officialInstallation?.automationId,
         },
@@ -7104,23 +7019,13 @@ const readWorkflowAutomationEnableTarget$ = command(
         automation: workflowAutomationColumns(),
       })
       .from(workflowAutomations)
-      .innerJoin(
-        workflows,
-        and(
-          eq(workflows.id, workflowAutomations.workflowId),
-          eq(workflows.orgId, workflowAutomations.orgId),
-        ),
-      )
-      .innerJoin(
-        agents,
-        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
-      )
+      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+
       .where(
         and(
           eq(workflowAutomations.id, args.automationId),
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflows.orgId, args.orgId),
-          eq(agents.orgId, args.orgId),
           visibleWorkflowCondition(args.member.userId),
         ),
       )

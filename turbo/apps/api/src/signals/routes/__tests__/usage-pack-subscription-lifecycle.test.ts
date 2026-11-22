@@ -1275,7 +1275,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
     });
     authOrgApi.acceptAgentStorageWrites();
     authOrgApi.mockClerkOrg(actor);
-    await authOrgApi.readOnboardingStatus(actor);
+    await authOrgApi.provisionWorkspace(actor);
     await authOrgApi.completeOnboarding(actor);
     const creditsClient = setupApp({
       context,

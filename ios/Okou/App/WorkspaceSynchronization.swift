@@ -20,7 +20,6 @@ final class WorkspaceSynchronization {
   private let createRealtime: RealtimeService.ClientFactory?
   private let lifecycleTasks: LifecycleTasks
   private let conversationLimit: Int
-  private let prepareDefaultDraft: @MainActor ([AgentRecord]) -> Void
   private let didRestoreSidebar: @MainActor () -> Void
   private let notificationRevision: @MainActor () -> Int
   private let notificationChanged: @MainActor () -> Void
@@ -37,7 +36,6 @@ final class WorkspaceSynchronization {
     modelBootstrap: WorkspaceReadBootstrap?, projectBootstrap: WorkspaceReadBootstrap?,
     indicatorsBootstrap: WorkspaceReadBootstrap?, createRealtime: RealtimeService.ClientFactory?,
     lifecycleTasks: LifecycleTasks, conversationLimit: Int,
-    prepareDefaultDraft: @escaping @MainActor ([AgentRecord]) -> Void,
     didRestoreSidebar: @escaping @MainActor () -> Void,
     notificationRevision: @escaping @MainActor () -> Int,
     notificationChanged: @escaping @MainActor () -> Void,
@@ -56,7 +54,6 @@ final class WorkspaceSynchronization {
     self.createRealtime = createRealtime
     self.lifecycleTasks = lifecycleTasks
     self.conversationLimit = conversationLimit
-    self.prepareDefaultDraft = prepareDefaultDraft
     self.didRestoreSidebar = didRestoreSidebar
     self.notificationRevision = notificationRevision
     self.notificationChanged = notificationChanged
@@ -94,7 +91,6 @@ final class WorkspaceSynchronization {
       if Task.isCancelled, startupGeneration == generation {
         realtime?.stop()
         realtime = nil
-        list.cancelNavigationPublication()
       }
     }
     async let cachedList: Void = list.restoreCached()
@@ -102,10 +98,10 @@ final class WorkspaceSynchronization {
     await cachedList
     await cachedProjects
     guard canContinueStartup(generation) else { return }
-    prepareDefaultDraft(list.agents)
+    await workspace.prepareWorkspaceComposer()
+    guard canContinueStartup(generation) else { return }
     didRestoreSidebar()
     await withTaskCancellationHandler {
-      async let navigation: Void = workspace.refreshNavigation()
       let realtime = RealtimeService(
         userID: userID, workspaceID: workspaceID,
         tokenProvider: { [client] in
@@ -128,14 +124,12 @@ final class WorkspaceSynchronization {
       realtime.setForeground(isForeground)
       realtime.start()
       await refresh([.startup])
-      await navigation
     } onCancel: {
       Task { @MainActor [weak self] in
         guard let self, startupGeneration == generation else { return }
         realtime?.stop()
         realtime = nil
         list.cancelRefresh()
-        list.cancelNavigationPublication()
       }
     }
   }

@@ -482,7 +482,6 @@ const recoverOrRejectExistingInstallation$ = command(
     { get, set },
     args: {
       readonly orgId: string;
-
       readonly userId: string;
       readonly definitionName: string;
       readonly currentTime: Date;
@@ -534,7 +533,7 @@ const recoverOrRejectExistingInstallation$ = command(
     }
     return {
       kind: "conflict",
-      message: "Official Workflow is already installed in this workspace",
+      message: "Official Workflow is already installed for this member",
     };
   },
 );
@@ -568,7 +567,6 @@ function sameAcceptedDefinition(
 interface InstallOfficialWorkflowArgs {
   readonly orgId: string;
   readonly member: WorkflowMember;
-
   readonly definitionName: string;
   readonly blueprints: readonly OfficialWorkflowBlueprintBindings[];
 }
@@ -654,7 +652,6 @@ const insertInstallingWorkflow$ = command(
     { set },
     args: {
       readonly installation: InstallOfficialWorkflowArgs;
-
       readonly definition: OfficialWorkflowAcceptedDefinition;
       readonly currentTime: Date;
     },
@@ -698,18 +695,7 @@ const insertInstallingWorkflow$ = command(
         return {
           kind: "conflict",
           message:
-            "Official Workflow installation is in progress or already installed in this workspace",
-        };
-      }
-      if (
-        isUniqueViolation(
-          inserted.error,
-          "idx_workflows_private_owner_agent_name_unique",
-        )
-      ) {
-        return {
-          kind: "conflict",
-          message: `A private workflow named "${args.definition.name}" already exists in this workspace`,
+            "Official Workflow installation is in progress or already installed for this member",
         };
       }
       throw inserted.error;
@@ -783,7 +769,7 @@ const activateInstallation$ = command(
       return "stale" as const;
     }
 
-    // Hold the catalog release stable through activation of this member’s installation.
+    // Hold the accepted catalog release through activation of this member’s installation.
     const catalog = db.$with("activation_catalog").as(
       db
         .select({ authority: officialWorkflowCatalogState.authority })
@@ -925,7 +911,6 @@ export const installOfficialWorkflow$ = command(
       recoverOrRejectExistingInstallation$,
       {
         orgId: args.orgId,
-
         userId: args.member.userId,
         definitionName: args.definitionName,
         currentTime,
@@ -940,7 +925,6 @@ export const installOfficialWorkflow$ = command(
       insertInstallingWorkflow$,
       {
         installation: args,
-
         definition: resolved.definition,
         currentTime,
       },

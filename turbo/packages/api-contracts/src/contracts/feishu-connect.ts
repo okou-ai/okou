@@ -37,8 +37,6 @@ const feishuInstallationStatusSchema = object({
   messageReceived: boolean(),
   tenantKey: string().nullable(),
   tenantName: string().nullable(),
-  defaultAgentId: uuid().nullable(),
-  defaultAgentName: string().nullable(),
 });
 
 const feishuConnectStatusSchema = object({
@@ -58,8 +56,6 @@ const feishuConnectStatusSchema = object({
   messageReceived: boolean(),
   tenantKey: string().nullable(),
   tenantName: string().nullable(),
-  defaultAgentId: uuid().nullable(),
-  defaultAgentName: string().nullable(),
   installationId: uuid().nullable().optional(),
   installations: array(feishuInstallationStatusSchema).optional(),
 });

@@ -12,7 +12,6 @@ const slackOrgStatusSchema = object({
   isAdmin: boolean(),
   installUrl: string().nullable().optional(),
   connectUrl: string().nullable().optional(),
-  defaultAgentName: string().nullable().optional(),
   /** True when the installation's granted scopes are outdated (admin-only). */
   scopeMismatch: boolean().optional(),
   /** OAuth install URL for re-authorization (admin-only, when scopeMismatch). */

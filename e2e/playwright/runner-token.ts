@@ -8,7 +8,6 @@ import { refreshClerkSessionToken } from "./lib/auth";
 import { issueCliToken } from "./lib/cli-token";
 import { runnerTestAccounts } from "./lib/clerk-api";
 import { formatErrorReport } from "./lib/error-report";
-import { ensureRunnerOrganizationReady } from "./lib/onboarding";
 import { capturePaidOnboardingFailure } from "./lib/paid-onboarding-diagnostics";
 import {
   completeRunnerOnboarding,
@@ -165,11 +164,6 @@ async function provisionRunnerCredential(
         ),
       },
     );
-    await ensureRunnerOrganizationReady({
-      apiUrl,
-      clerkSessionToken,
-      vercelAutomationBypassSecret,
-    });
     await completeRunnerOnboarding({
       apiUrl,
       clerkSessionToken,

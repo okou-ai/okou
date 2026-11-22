@@ -100,7 +100,7 @@ async function primaryRun(enabled = true, secondary = false) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
-  const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+  const defaultAgentId = await bdd.readDefaultAgentId(actor);
   if (!actor.orgId || !defaultAgentId) {
     throw new Error("Expected a default Agent");
   }

@@ -2,18 +2,12 @@ import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-dra
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
-  agentsByIdContract,
-  agentsMainContract,
-  agentInstructionsContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
-import {
   chatSearchContract,
   chatThreadsContract,
   chatThreadByIdContract,
   chatThreadMetadataContract,
   chatThreadDraftContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadMarkReadContract,
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
@@ -23,75 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mockApi } from "../msw-contract.ts";
 
-const DEFAULT_AGENTS: AgentResponse[] = [
-  {
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    isDefaultAgent: true,
-    ownerId: "user_mock",
-    displayName: null,
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    visibility: "private",
-  },
-];
-
-let mockAgents: AgentResponse[] = [...DEFAULT_AGENTS];
-
-type MockAgentResponse = Pick<AgentResponse, "agentId"> &
-  Partial<Omit<AgentResponse, "agentId">>;
-
-function createMockAgentResponse(agent: MockAgentResponse): AgentResponse {
-  return {
-    isDefaultAgent: false,
-    ownerId: "user_mock",
-    displayName: null,
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    visibility: "private",
-    ...agent,
-  };
-}
-
-export function setMockAgents(agents: MockAgentResponse[]): void {
-  mockAgents = agents.map((agent) => {
-    return createMockAgentResponse(agent);
-  });
-}
-
-export function resetMockAgents(): void {
-  mockAgents = [...DEFAULT_AGENTS];
-}
-
 export const apiAgentsHandlers = [
-  // GET /api/agents
-  mockApi(agentsMainContract.list, ({ respond }) => {
-    return respond(200, mockAgents);
-  }),
-
-  // GET /api/agents/:id
-  mockApi(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      agentId: "c0000000-0000-4000-a000-000000000001",
-      isDefaultAgent: false,
-      ownerId: "test-user-123",
-      description: null,
-      displayName: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    });
-  }),
-
-  // GET /api/agents/:id/instructions
-  mockApi(agentInstructionsContract.get, ({ respond }) => {
-    return respond(200, {
-      content: null,
-      filename: null,
-    });
-  }),
-
   // GET /api/chat-drafts/composer
   mockApi(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
@@ -243,7 +169,7 @@ export const apiAgentsHandlers = [
   }),
 
   // POST /api/chat-thread-unreads/mark-read
-  mockApi(chatThreadMarkAgentReadContract.markAgentRead, ({ respond }) => {
+  mockApi(chatThreadMarkAllReadContract.markAllRead, ({ respond }) => {
     return respond(204);
   }),
 

@@ -54,7 +54,7 @@ final class DraftServer: Sendable {
         )
       }
       let draftPaths = [
-        "/api/agents/\(draftAgentID)/draft", "/api/chat-threads/\(draftThreadID)/draft",
+        "/api/chat-drafts/composer", "/api/chat-threads/\(draftThreadID)/draft",
         "/api/chat-threads/\(draftThreadID)"
       ]
       guard draftPaths.contains(path) else { throw URLError(.unsupportedURL) }

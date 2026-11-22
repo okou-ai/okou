@@ -138,15 +138,7 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
     });
 
     const after = await api.readOnboardingStatus(admin);
-    expect(after.hasDefaultAgent).toBeTruthy();
     expect(after.onboardingComplete).toBeTruthy();
-    expect(after.defaultAgentId).toBe(defaultAgentId);
-    expect(after.defaultAgentMetadata).toMatchObject({
-      displayName: "Okou",
-      sound: "professional",
-      avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-    });
-
     const defaultAgent = await api.readAgent(admin, defaultAgentId);
     expect(defaultAgent.displayName).toBe("Okou");
     expect(defaultAgent.avatarUrl).toBe(DEFAULT_AGENT_AVATAR_URL);
@@ -185,9 +177,6 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
         return agent.agentId === created.agentId;
       }),
     ).toBeTruthy();
-
-    const selectedStatus = await api.readOnboardingStatus(admin);
-    expect(selectedStatus.defaultAgentId).toBe(defaultAgentId);
 
     const updated = await api.updateAgentMetadata(admin, created.agentId, {
       displayName: "BDD Secondary Agent Updated",
@@ -230,7 +219,6 @@ describe("AUTH-03", () => {
     const preferences = await api.updatePreferences(admin, {
       timezone: "UTC",
       locale: "en-US",
-      pinnedAgentIds: [],
       sendMode: "cmd-enter",
       captureNetworkBodiesRemaining: 3,
     });
@@ -524,8 +512,8 @@ describe("ORG-03 onboarding status mapping", () => {
     async (role) => {
       const admin = api.user();
       api.acceptAgentStorageWrites();
-      const onboarding = await api.readOnboardingStatus(admin);
-      const defaultAgentId = onboarding.defaultAgentId;
+      const onboardingAgentId = await api.readDefaultAgentId(admin);
+      const defaultAgentId = onboardingAgentId;
       if (!defaultAgentId) {
         throw new Error("Expected the workspace default agent");
       }
@@ -622,9 +610,7 @@ describe("ORG-03 onboarding status mapping", () => {
       await expect(api.readAgent(owner, defaultAgentId)).resolves.toStrictEqual(
         updated.body,
       );
-      expect((await api.readOnboardingStatus(owner)).defaultAgentId).toBe(
-        defaultAgentId,
-      );
+      await expect(api.readDefaultAgentId(owner)).resolves.toBe(defaultAgentId);
 
       const savedInstructions = await accept(
         instructions.update({
@@ -702,9 +688,6 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: false,
       isAdmin: false,
       hasOrg: false,
-      hasDefaultAgent: false,
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
     });
 
     // A new member has their own source-first onboarding ahead of them.
@@ -714,9 +697,6 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: false,
       isAdmin: false,
       hasOrg: true,
-      hasDefaultAgent: false,
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
     });
 
     api.acceptAgentStorageWrites();
@@ -726,21 +706,8 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: false,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentMetadata: {
-        displayName: "Okou",
-        sound: "professional",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      },
     });
-    expect(adminBeforeSetup.defaultAgentId).toBeTruthy();
-    if (!adminBeforeSetup.defaultAgentId) {
-      throw new Error(
-        "Expected lazy onboarding status bootstrap to create an agent",
-      );
-    }
-    const bootstrappedAgentId = adminBeforeSetup.defaultAgentId;
-
+    await api.provisionWorkspace(admin);
     const bootstrappedBilling = await runsApi.readBillingStatus(admin);
     expect(bootstrappedBilling).toMatchObject({
       credits: 0,
@@ -776,10 +743,7 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: true,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
     });
-
-    const agentId = bootstrappedAgentId;
 
     await runsApi.grantProEntitlement(admin);
     const entitled = await api.readOnboardingStatus(admin);
@@ -788,13 +752,6 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: true,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentId: agentId,
-      defaultAgentMetadata: {
-        displayName: "Okou",
-        sound: "professional",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      },
     });
 
     const orphaned = await api.readOnboardingStatus(admin);
@@ -803,15 +760,7 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingComplete: true,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentMetadata: {
-        displayName: "Okou",
-        sound: "professional",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      },
     });
-    expect(orphaned.defaultAgentId).toBeTruthy();
-    expect(orphaned.defaultAgentId).toBe(agentId);
     const preservedPaidBilling = await runsApi.readBillingStatus(admin);
     expect(preservedPaidBilling).toMatchObject({
       tier: "pro",

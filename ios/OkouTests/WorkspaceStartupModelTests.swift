@@ -51,13 +51,13 @@ final class WorkspaceStartupModelTests: XCTestCase {
       }, 2)
   }
 
-  func testStartupReadsSettingsChangedWhileNavigationWasPending() async throws {
+  func testStartupReadsSettingsChangedWhileIndicatorsWerePending() async throws {
     let release = ModelResponseGate()
     defer { release.open() }
-    let navigation = expectation(
-      description: "Navigation is pending while startup resources refresh")
-    let fixture = WorkspaceStartupFixture(beforeNavigationRead: {
-      navigation.fulfill()
+    let indicatorsPending = expectation(
+      description: "Indicators are pending while startup resources refresh")
+    let fixture = WorkspaceStartupFixture(beforeIndicatorsRead: {
+      indicatorsPending.fulfill()
       await release.wait()
     })
     let workspace = fixture.workspace()
@@ -72,7 +72,7 @@ final class WorkspaceStartupModelTests: XCTestCase {
       workspace.close()
       await startup.value
     }
-    await fulfillment(of: [navigation], timeout: 3)
+    await fulfillment(of: [indicatorsPending], timeout: 3)
     fixture.setRemoteModel("claude-model")
     workspace.requestRefresh(.modelPreference)
     try await waitForBusinessResult {
@@ -161,7 +161,7 @@ final class WorkspaceStartupFixture: Sendable {
 
   init(
     beforeModelRead: (@Sendable (String) async throws -> Void)? = nil,
-    beforeNavigationRead: (@Sendable () async throws -> Void)? = nil,
+    beforeIndicatorsRead: (@Sendable () async throws -> Void)? = nil,
     beforeRealtimeToken: (@Sendable () async throws -> Void)? = nil,
     realtimeToken: String? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
@@ -182,15 +182,10 @@ final class WorkspaceStartupFixture: Sendable {
           return response
         }
         switch path {
-        case "/api/agents":
-          try await beforeNavigationRead?()
-          return ChatHTTPResponse(
-            body:
-              "[{\"agentId\":\"\(ConversationHistoryFixture.agentID)\",\"displayName\":\"Startup fixture\",\"isDefaultAgent\":true}]"
-          )
         case "/api/indicators":
+          try await beforeIndicatorsRead?()
           return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
-        case "/api/agents/\(ConversationHistoryFixture.agentID)/draft",
+        case "/api/chat-drafts/composer",
           "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
           return ChatHTTPResponse(
             body: #"{"revision":"0","document":null,"clientMutationId":null}"#)

@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { iosRouteBindings } from "./ios-routes";
+import { iosClientContracts } from "./ios-routes";
 
 interface Token {
   readonly kind: "word" | "string" | "symbol";
@@ -79,7 +79,7 @@ function checkSource(file: string, source: string): IosConsumptionFinding[] {
     if (call.path.value.includes("\uFFFD")) {
       report(call.path, "Use unescaped API path text.");
     } else if (
-      !iosRouteBindings.some(({ route }) => {
+      !iosClientContracts.some(({ route }) => {
         return (
           route.method === call.method &&
           matchesPath(route.path, call.path.value)

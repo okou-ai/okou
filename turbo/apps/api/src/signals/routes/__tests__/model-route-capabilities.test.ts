@@ -21,7 +21,7 @@ async function connectedActor() {
     throw new Error("Expected organization member");
   }
   authOrgApi.acceptAgentStorageWrites();
-  await bdd.readOnboardingStatus(actor);
+  await authOrgApi.provisionWorkspace(actor);
   await bdd.completeOnboarding(actor);
   await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
     tier: "limited-free-1",

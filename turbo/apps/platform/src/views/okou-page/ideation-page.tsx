@@ -28,7 +28,7 @@ import {
 } from "./ideation-localization.ts";
 
 export function IdeationPage() {
-  const { t } = useTranslation("agents");
+  const { t } = useTranslation("common");
   const connectorStatusLoadable = useLoadable(connectorCatalogStatusBySlug$);
   const lastConnectorStatusBySlug = useLastResolved(
     connectorCatalogStatusBySlug$,

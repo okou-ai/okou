@@ -5,7 +5,6 @@ import {
   text,
   jsonb,
   timestamp,
-  unique,
   uniqueIndex,
   uuid,
   varchar,
@@ -13,13 +12,9 @@ import {
 
 export type AgentVisibility = "public" | "private";
 
-/**
- * Canonical product Agent identity, presentation and current instructions.
- *
- * Production readers and writers use this table and its canonical references.
- */
-export const agents = pgTable(
-  "agents",
+/** Retained solely for old Agent HTTP clients during the mobile upgrade window. */
+export const legacyAgentApiProfiles = pgTable(
+  "legacy_agent_api_profiles",
   {
     id: uuid("id").primaryKey(),
     orgId: text("org_id").notNull(),
@@ -36,21 +31,14 @@ export const agents = pgTable(
     instructionsBundle: jsonb("instructions_bundle").$type<ContentBundle>(),
     sound: varchar("sound", { length: 64 }),
     avatarUrl: varchar("avatar_url", { length: 1024 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
     return {
-      orgNameIdx: uniqueIndex("idx_agents_org_name").on(
+      workspace: index("idx_legacy_agent_api_workspace").on(table.orgId),
+      workspaceName: uniqueIndex("uq_legacy_agent_api_workspace_name").on(
         table.orgId,
         table.name,
-      ),
-      orgIdx: index("idx_agents_org").on(table.orgId),
-      orgReference: unique("uq_agents_id_org").on(table.id, table.orgId),
-      ownerReference: unique("idx_agents_id_org_owner").on(
-        table.id,
-        table.orgId,
-        table.owner,
       ),
     };
   },

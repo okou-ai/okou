@@ -2486,7 +2486,7 @@ export function createConnectorBddApi(context: TestContext) {
       composeId: string,
       installationId: string,
     ): Promise<void> {
-      await createGithubBddApi(context).installGithubApp(actor, composeId, {
+      await createGithubBddApi(context).installGithubApp(actor, {
         installationId,
         targetLogin: "bdd-github-org",
       });

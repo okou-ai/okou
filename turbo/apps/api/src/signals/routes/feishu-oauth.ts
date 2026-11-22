@@ -1,4 +1,3 @@
-import { executionAgentId } from "../services/execution-agent";
 import { bindOfficialLarkTenant$ } from "../services/lark-official-tenant.service";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { randomUUID } from "node:crypto";
@@ -109,7 +108,6 @@ interface FeishuInstallationOAuthRow {
   readonly tenantKey: string | null;
   readonly setupCompletedAt: Date | null;
   readonly ownerUserId: string | null;
-  readonly defaultAgentId: string;
 }
 
 type FeishuCustomConnectorOAuthContext = Omit<
@@ -307,7 +305,6 @@ const loadInstallationForConnector$ = command(
     args: {
       readonly orgId: string;
       readonly appId: string;
-      readonly userId: string;
       readonly installationId?: string;
     },
   ): Promise<
@@ -330,18 +327,11 @@ const loadInstallationForConnector$ = command(
         tenantKey: feishuOrgInstallations.feishuTenantKey,
         setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
         ownerUserId: feishuOrgInstallations.ownerUserId,
-        defaultAgentId: executionAgentId(
-          feishuOrgInstallations.orgId,
-          args.userId,
-        ),
       })
       .from(feishuOrgInstallations)
       .where(and(...conditions))
       .limit(1);
-    if (!installation?.defaultAgentId) {
-      return null;
-    }
-    return { ...installation, defaultAgentId: installation.defaultAgentId };
+    return installation ?? null;
   },
 );
 
@@ -388,12 +378,7 @@ const persistFeishuOAuthConnection$ = command(
       ),
     );
     signal.throwIfAborted();
-    if (!result?.agent) {
-      throw new Error(
-        "Failed to authorize Feishu custom connector: agentNotFound",
-      );
-    }
-    if (!result.credentialContract) {
+    if (!result?.credentialContract) {
       throw new Error(
         "Custom connector credential contract changed during OAuth connection",
       );
@@ -839,7 +824,6 @@ const completeLegacyFeishuOAuth$ = command(
       return legacyFeishuOAuthFailure("bot", query, platform);
     }
     const installation = await set(loadInstallationForConnector$, {
-      userId: state.userId,
       orgId: state.orgId,
       appId: config.appId,
       installationId: state.installationId,
@@ -965,7 +949,6 @@ const completeClaimedCustomFeishuOAuth$ = command(
       );
     }
     const installation = await set(loadInstallationForConnector$, {
-      userId: state.userId,
       orgId: state.orgId,
       appId: connector.oauthConfig.clientId,
       installationId: context.providerContext.installationId,

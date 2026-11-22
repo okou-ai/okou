@@ -230,7 +230,7 @@ final class AttachmentDraftTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     store.newChatDraft = "Agent draft"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
@@ -253,14 +253,14 @@ final class AttachmentDraftTests: XCTestCase {
     let reopened = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
-    await reopened.refreshNavigation()
-    XCTAssertEqual(reopened.selectedAgentID, AttachmentFlowFixture.agentID)
+    await reopened.prepareWorkspaceComposer()
+    XCTAssertNil(reopened.selectedAgentID)
     XCTAssertEqual(reopened.newChatDraft, "Agent draft")
     XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
     _ = await reopened.createChat()
     XCTAssertEqual(reopened.selectedConversation?.draft, "Thread draft")
     reopened.startNewChat()
-    XCTAssertEqual(reopened.selectedAgentID, AttachmentFlowFixture.agentID)
+    XCTAssertNil(reopened.selectedAgentID)
     XCTAssertEqual(reopened.newChatDraft, "Agent draft")
     XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
     reopened.newComposer.clear()
@@ -387,7 +387,7 @@ final class NewChatAttachmentTests: XCTestCase {
     })
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     store.newChatDraft = "\n  Show this message immediately\n\t"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
@@ -454,7 +454,7 @@ final class NewChatAttachmentTests: XCTestCase {
       })
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     store.newChatDraft = "First conversation"
     let first = Task { await store.sendNewChat(sendTransition: ConversationSendTransition()) }
     addTeardownBlock { @MainActor in
@@ -526,7 +526,7 @@ final class NewChatAttachmentTests: XCTestCase {
     var old = ChatDraftDocument()
     old.replaceText("Previously saved Agent draft")
     fixture.state.value.withLock {
-      $0.agentDrafts["/api/agents/\(AttachmentFlowFixture.agentID)/draft"] = ComposerDraft(
+      $0.agentDrafts["/api/chat-drafts/composer"] = ComposerDraft(
         document: old)
     }
     let store = WorkspaceStore(
@@ -544,7 +544,7 @@ final class NewChatAttachmentTests: XCTestCase {
     }
     await fulfillment(of: [creating], timeout: 3)
     // Navigation can now select the default Agent before the first creation returns.
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     gate.continuation.finish()
     await sending.value
     await store.newComposer.synchronize()
@@ -575,11 +575,11 @@ final class NewChatAttachmentTests: XCTestCase {
       await sending.value
     }
     await fulfillment(of: [creating], timeout: 3)
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     gate.continuation.finish()
     await sending.value
     XCTAssertEqual(store.newChatDraft, "Keep the first message for retry")
-    XCTAssertEqual(store.selectedAgentID, AttachmentFlowFixture.agentID)
+    XCTAssertNil(store.selectedAgentID)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertNotNil(store.error)
   }
@@ -623,7 +623,7 @@ final class NewChatAttachmentTests: XCTestCase {
     })
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     store.newChatDraft = "Use my selected Slack account"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }

@@ -1,10 +1,8 @@
-import { selectedExecutionAgent } from "../services/execution-agent";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { waitUntil } from "../context/wait-until";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
-import { agents } from "@okouai/db/schema/agent";
-import { eq, and } from "drizzle-orm";
 import { array, number, object, string } from "zod";
 import {
   githubOauthContract,
@@ -27,7 +25,7 @@ import {
 } from "../services/integration-oauth-callback";
 import { queryOf } from "../context/request";
 import { authorization$, request$ } from "../context/hono";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { claimBuiltinConnectorOAuthState$ } from "../services/connector-oauth-state.service";
 import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
@@ -49,9 +47,7 @@ import {
   isGithubOauthStateSignatureValid,
   linkGithubUser$,
   loadActiveGithubInstallationForOrg$,
-  loadComposeFeatureSwitchContext$,
   parseGithubOauthState,
-  resolveGithubOauthOrgId$,
   tryLinkGithubFromLocalRecord$,
   verifyGithubConnectSignature,
 } from "../services/github-oauth.service";
@@ -750,28 +746,6 @@ const installGithubOauth$ = command(
       );
     }
     const userId = auth.userId;
-    const db = get(db$);
-    const [metadata] = await db
-      .select()
-      .from(selectedExecutionAgent(auth.orgId, userId));
-    signal.throwIfAborted();
-    const composeId = query.composeId ?? metadata?.id;
-    if (!composeId) {
-      return worksErrorRedirect(
-        "Finish workspace setup to initialize Okou before connecting GitHub.",
-      );
-    }
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, composeId), eq(agents.orgId, auth.orgId)))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      return worksErrorRedirect(
-        "The selected agent does not belong to your organization.",
-      );
-    }
     const linkedFromLocal = await set(
       tryLinkGithubFromLocalRecord$,
       { orgId: auth.orgId, userId },
@@ -795,7 +769,6 @@ const installGithubOauth$ = command(
         appSlug,
         userId,
         orgId: auth.orgId,
-        composeId,
         callbackOrigin,
         providerCallbackOrigin,
         oauthRequestedScopes,
@@ -936,7 +909,6 @@ const requestGithubInstallationUserAuthorization$ = command(
     args: {
       readonly state: ParsedGithubOauthState;
       readonly orgId: string;
-      readonly composeId: string;
       readonly installationId: string;
     },
     signal: AbortSignal,
@@ -960,7 +932,6 @@ const requestGithubInstallationUserAuthorization$ = command(
         appSlug,
         userId: args.state.userId,
         orgId: args.orgId,
-        composeId: args.composeId,
         callbackOrigin: origin,
         providerCallbackOrigin: origin,
         secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),
@@ -978,22 +949,22 @@ const requestGithubInstallationUserAuthorization$ = command(
 
 const encryptGithubInstallationAccessToken$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly appId: string;
       readonly privateKey: string;
       readonly installationId: string;
-      readonly composeId: string;
-      readonly userId: ParsedGithubOauthState["userId"];
+      readonly orgId: string;
+      readonly userId: string;
     },
     signal: AbortSignal,
   ) => {
     const { token } = await getGithubInstallationAccessToken(args, signal);
-    const context = await set(
-      loadComposeFeatureSwitchContext$,
-      { composeId: args.composeId, userId: args.userId },
-      signal,
+    signal.throwIfAborted();
+    const context = await get(
+      userFeatureSwitchContext(args.orgId, args.userId),
     );
+    signal.throwIfAborted();
     const encryptedToken = await encryptPersistentSecretValue(token, context);
     signal.throwIfAborted();
     return encryptedToken;
@@ -1008,22 +979,17 @@ const completeGithubAppInstallationCallback$ = command(
       readonly privateKey: string;
       readonly query: GithubAppSetupCallbackQuery;
       readonly state: ParsedGithubOauthState;
-      readonly composeId: string;
       readonly connectUser: boolean;
     },
     signal: AbortSignal,
   ): Promise<Response> => {
     set(writeDb$);
-    const orgId = await set(
-      resolveGithubOauthOrgId$,
-      {
-        orgId: args.state.orgId,
-        composeId: args.composeId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
+    const orgId = args.state.orgId;
+    if (!orgId || !args.state.userId) {
+      return worksErrorRedirect(
+        "Missing workspace or user in GitHub authorization. Please reconnect.",
+      );
+    }
     const access = await set(
       resolveGithubCallbackAccess$,
       { state: args.state, orgId },
@@ -1045,7 +1011,7 @@ const completeGithubAppInstallationCallback$ = command(
     if (!args.query.code) {
       return await set(
         requestGithubInstallationUserAuthorization$,
-        { state: args.state, orgId, composeId: args.composeId, installationId },
+        { state: args.state, orgId, installationId },
         signal,
       );
     }
@@ -1100,13 +1066,12 @@ const completeGithubAppInstallationCallback$ = command(
             appId: args.appId,
             privateKey: args.privateKey,
             installationId,
-            composeId: args.composeId,
+            orgId,
             userId: args.state.userId,
           },
           signal,
         ),
         adminGithubUserId,
-        composeId: args.composeId,
       },
       signal,
     );
@@ -1176,7 +1141,6 @@ const claimGithubInstallationCallback$ = command(
         ),
       };
     }
-    const composeId = args.state.composeId;
     const actorError = await set(
       checkOAuthCallbackActor$,
       { userId: claimed.state.userId, orgId: claimed.state.orgId },
@@ -1185,11 +1149,11 @@ const claimGithubInstallationCallback$ = command(
     if (actorError) {
       return { ok: false as const, response: worksErrorRedirect(actorError) };
     }
-    if (!composeId) {
+    if (!args.state.orgId) {
       return {
         ok: false as const,
         response: worksErrorRedirect(
-          "Missing default agent. Please select an agent before connecting GitHub.",
+          "Missing workspace. Please reconnect GitHub from settings.",
         ),
       };
     }
@@ -1221,7 +1185,6 @@ const claimGithubInstallationCallback$ = command(
     }
     return {
       ok: true as const,
-      composeId,
       query: {
         ...args.query,
         installation_id:
@@ -1301,7 +1264,6 @@ const completeCallbackGithubOauth$ = command(
         privateKey,
         query: claimed.query,
         state: stateResolution.state,
-        composeId: claimed.composeId,
         connectUser: claimed.connectUser,
       },
       signal,

@@ -1,9 +1,4 @@
-import {
-  iosWorkflowListTransform,
-  iosWorkflowDetailTransform,
-} from "@okouai/api-contracts/client-transforms/workflow-executor";
-import { workflowExecutorHintAllowed } from "../services/member-execution-agent.service";
-import { executionAgentId } from "../services/execution-agent";
+import { visibleWorkflowCondition } from "../services/workflow-visibility";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -32,7 +27,6 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import {
   workflowUserAutomationThreads,
   workflows,
@@ -107,17 +101,14 @@ import { reconcileGoogleCalendarWatchesForUser$ } from "../services/google-calen
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-watch.service";
 import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-watch.service";
 import {
-  workflowExecutionProfileColumns,
   loadVisibleWorkflowById$,
   type VisibleWorkflow,
   requireWorkflowPermission,
   workflowSummary,
   workflowList,
-  type WorkflowAgentInfo,
   type WorkflowMember,
   type WorkflowRow,
 } from "../services/workflow-data.service";
-import { visibleWorkflowCondition } from "../services/workflow-visibility";
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
 import {
@@ -330,7 +321,6 @@ function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
     query
       .select({ id: chatThreads.id })
       .from(chatThreads)
-
       .where(
         and(
           body.chatThreadId
@@ -522,7 +512,6 @@ const commitPreparedWorkflow$ = command(
         chatThreadId: linked.chatThreadId,
       })
       .from(sql`(SELECT true) AS result`)
-
       .leftJoin(created, sql`true`)
       .leftJoin(linked, sql`true`);
     signal.throwIfAborted();
@@ -618,7 +607,7 @@ type WorkflowCreationOutcome =
 
 /**
  * Shared creation path for a validated workflow body: the built-in name guard,
- * workspace permission and slug validation, volume preparation, and the publication
+ * workspace slug validation, volume preparation, and the publication
  * statement. Callers own request parsing, their own admission rules, and how
  * they render the created workflow.
  */
@@ -664,20 +653,13 @@ const createWorkflowInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const body = bodyResult.data;
-    if (
-      body.agentId !== undefined &&
-      !(await get(workflowExecutorHintAllowed(body.agentId)))
-    ) {
-      return forbidden("Create workflows in the current workspace");
-    }
     const inserted = await set(
       createWorkflowRecord$,
       {
         orgId: auth.orgId,
         member,
-        body,
-        visibility: body.visibility ?? "private",
+        body: bodyResult.data,
+        visibility: bodyResult.data.visibility ?? "private",
       },
       signal,
     );
@@ -699,7 +681,6 @@ const createWorkflowInner$ = command(
     }
     const summary = workflowSummary({
       workflow: visible.workflow,
-      agent: visible.agent,
       member,
     });
     await publishCreatedWorkflow(auth.userId, inserted.chatThreadId, signal);
@@ -1099,7 +1080,6 @@ function copiedWorkflowResponse(
     status: 201 as const,
     body: workflowSummary({
       workflow: visible.workflow,
-      agent: visible.agent,
       member,
     }),
   };
@@ -1212,13 +1192,8 @@ const publishCopiedWorkflow$ = command(
       const [visible] = await get(db$)
         .select({
           workflow: workflows,
-          agent: workflowExecutionProfileColumns(),
         })
         .from(workflows)
-        .leftJoin(
-          agents,
-          eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
-        )
         .where(
           and(
             eq(workflows.orgId, args.orgId),
@@ -1283,12 +1258,6 @@ const copyWorkflowInner$ = command(
     if (!sourceWorkflow) {
       return workflowNotFound(params.workflowId);
     }
-    if (
-      bodyResult.data.toAgentId !== undefined &&
-      !(await get(workflowExecutorHintAllowed(bodyResult.data.toAgentId)))
-    ) {
-      return forbidden("Make a private copy in the current workspace");
-    }
     const [slug] = await db.select().from(
       workflowCopySlugQuery({
         orgId: auth.orgId,
@@ -1315,8 +1284,8 @@ const copyWorkflowInner$ = command(
           )
         : null;
     signal.throwIfAborted();
-    // A copy is a fork owned by the caller: a new private workflow in the
-    // current workspace. User-scoped runtime configuration is cloned only for the
+    // A copy is a fork owned by the caller: a new private workflow under the
+    // target workspace. User-scoped runtime configuration is cloned only for the
     // caller so copies do not leak another user's automations.
     return await set(
       publishCopiedWorkflow$,
@@ -1324,7 +1293,7 @@ const copyWorkflowInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         member,
-        sourceWorkflow: sourceWorkflow,
+        sourceWorkflow,
         sourceFiles,
         inheritedAutonomyBudget,
         currentTime: nowDate(),
@@ -1500,7 +1469,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 interface VisibilityTransition {
   readonly workflow: WorkflowRow;
-  readonly agent: WorkflowAgentInfo | null;
   readonly member: WorkflowMember;
 }
 
@@ -1571,7 +1539,6 @@ function summaryFrom(
   };
   return workflowSummary({
     workflow: updatedWorkflow,
-    agent: args.agent,
     member: args.member,
   });
 }
@@ -1591,13 +1558,8 @@ const loadVisibilityTransition$ = command(
     const [visible] = await get(db$)
       .select({
         workflow: workflows,
-        agent: workflowExecutionProfileColumns(),
       })
       .from(workflows)
-      .leftJoin(
-        agents,
-        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
-      )
       .where(
         and(
           eq(workflows.orgId, args.orgId),
@@ -1647,6 +1609,7 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (member.role !== "admin") {
     return forbidden("Only workspace admins can publish workflows");
   }
+
   const slugError = await set(
     requireWorkflowSlugAvailable$,
     {
@@ -1763,7 +1726,6 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   },
   {
     route: workflowsCollectionContract.list,
-    responseTransforms: [iosWorkflowListTransform],
     handler: authRoute(workflowReadAuth, listWorkflowsInner$),
   },
   // Registered before the `/:workflowId` routes so the static path wins.
@@ -1777,7 +1739,6 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   },
   {
     route: workflowsDetailContract.get,
-    responseTransforms: [iosWorkflowDetailTransform],
     handler: authRoute(workflowReadAuth, getWorkflowDetailInner$),
   },
   {

@@ -1,3 +1,8 @@
+import { isChatRunReference } from "../contracts/chat-run-reference";
+import {
+  externalMessageSourceKinds,
+  readStoredMessageParts,
+} from "../contracts/stored-message-parts";
 import { MAX_VOICE_CLIPS } from "../contracts/voice-clips";
 import {
   modelSettingsPatchSchema,
@@ -420,12 +425,6 @@ const userMessageChatThreadPartSchema = object({
   titleSnapshot: string().min(1),
 }).strict();
 
-const userMessageAgentPartSchema = object({
-  type: literal("agent"),
-  agentId: uuid(),
-  nameSnapshot: string().min(1),
-}).strict();
-
 export const projectMentionSchema = object({
   type: literal("project"),
   projectId: uuid(),
@@ -441,7 +440,6 @@ const userMessageTemplatePartSchema = object({
 export const feedbackNotePartSchema = discriminatedUnion("type", [
   userMessageTextPartSchema,
   userMessageChatThreadPartSchema,
-  userMessageAgentPartSchema,
   userMessageTemplatePartSchema,
   projectMentionSchema,
 ]);
@@ -462,17 +460,7 @@ const feedbackRangeSchema = object({
 
 const userMessageExternalSourcePartSchema = object({
   type: literal("source"),
-  kind: zEnum([
-    "slack",
-    "discord",
-    "wechat",
-    "feishu",
-    "lark",
-    "teams",
-    "telegram",
-    "github",
-    "agentphone",
-  ]),
+  kind: zEnum(externalMessageSourceKinds),
   href: url().optional(),
 }).strict();
 
@@ -490,26 +478,14 @@ const userMessageMcpSourcePartSchema = object({
   clientName: string().trim().min(1).max(120).optional(),
 }).strict();
 
-const userMessageAgentSourcePartSchema = object({
-  type: literal("source"),
-  kind: literal("agent"),
-  runId: uuid(),
-  threadId: uuid(),
-  agentId: uuid().optional(),
-  titleSnapshot: string().min(1),
-  href: string().min(1),
-}).strict();
-
 const userMessageSourcePartSchema = discriminatedUnion("kind", [
   userMessageExternalSourcePartSchema,
   userMessageMcpSourcePartSchema,
-  userMessageAgentSourcePartSchema,
 ]);
 
 export const userMessageInputPartSchema = discriminatedUnion("type", [
   userMessageTextPartSchema,
-  userMessageChatThreadPartSchema,
-  userMessageAgentPartSchema,
+  userMessageChatThreadPartSchema.extend({ runId: uuid().optional() }),
   userMessageTemplatePartSchema,
   projectMentionSchema,
   userMessageSourcePartSchema,
@@ -577,12 +553,15 @@ export const userMessagePartSchema = discriminatedUnion("type", [
 export const userMessageDocumentSchema = object({
   version: literal(1),
   parts: array(userMessagePartSchema)
-    .min(1)
     .refine(
       (parts) => {
         return (
           parts.filter((part) => {
-            return part.type === "source" || part.type === "automation";
+            return (
+              part.type === "source" ||
+              part.type === "automation" ||
+              isChatRunReference(part)
+            );
           }).length <= 1
         );
       },
@@ -608,13 +587,31 @@ export const userMessageInputDocumentSchema = object({
       (parts) => {
         return (
           parts.filter((part) => {
-            return part.type === "source" || part.type === "automation";
+            return (
+              part.type === "source" ||
+              part.type === "automation" ||
+              isChatRunReference(part)
+            );
           }).length <= 1
         );
       },
       { message: "A user message may contain at most one non-content part" },
     ),
 }).strict();
+
+export function readStoredDraftMessage(value: unknown) {
+  if (value == null) return null;
+  const message = readStoredMessageParts(value);
+  if (
+    typeof message === "object" &&
+    message !== null &&
+    "parts" in message &&
+    Array.isArray(message.parts) &&
+    message.parts.length === 0
+  )
+    return null;
+  return userMessageInputDocumentSchema.parse(message);
+}
 
 const chatEventRecommendedFollowupShape = {
   prompt: string(),

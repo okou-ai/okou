@@ -1,4 +1,3 @@
-import { selectedExecutionAgent } from "./execution-agent";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
@@ -91,23 +90,6 @@ export type MorningBriefState =
         readonly reason: MorningBriefInconsistency;
       });
 
-/** Execution availability for this member’s Morning Brief. */
-export const loadMorningBriefDefaultAgentId$ = command(
-  async (
-    { get },
-    owner: MorningBriefMemberIdentity,
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    const db = get(db$);
-    const [executor] = await db
-      .select()
-      .from(selectedExecutionAgent(owner.orgId, owner.userId));
-    signal.throwIfAborted();
-    return executor?.id ?? null;
-  },
-);
-
-/** The partial unique index covers both Morning Brief variants for a member. */
 const loadMorningBriefInstallation$ = command(
   async (
     { get },
@@ -138,7 +120,7 @@ const loadMorningBriefInstallation$ = command(
   },
 );
 
-/** The unique member installation is shared by both Morning Brief definitions. */
+/** Resolve the member’s recorded installation, falling back to the oldest persisted one. */
 export const loadMorningBriefOwnership$ = command(
   async (
     { get, set },

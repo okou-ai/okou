@@ -1,6 +1,6 @@
 import { bankingWorkspaceContract } from "@okouai/api-contracts/client/banking";
 import type {
-  BankingAccessRequestStatusResponse,
+  BankingWorkspaceStatus,
   BankingConnectSessionRequest,
   BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
@@ -53,7 +53,7 @@ export interface BankingCardUiState {
 }
 
 export interface BankingSignals extends BankingActionDescriptor {
-  readonly status$: Computed<Promise<BankingAccessRequestStatusResponse>>;
+  readonly status$: Computed<Promise<BankingWorkspaceStatus>>;
   readonly subscribe$: Command<void, [AbortSignal]>;
   readonly uiState$: Computed<BankingCardUiState>;
   readonly runAction$: Command<Promise<void>, [BankingCardAction, AbortSignal]>;
@@ -159,7 +159,7 @@ function createBankingMutationSignals(
         readonly duration: BankingGrantDuration;
       },
       signal: AbortSignal,
-    ): Promise<BankingAccessRequestStatusResponse> => {
+    ): Promise<BankingWorkspaceStatus> => {
       const client = get(apiClient$)(bankingWorkspaceContract);
       const result = await accept(
         client.saveGrant({
@@ -181,7 +181,7 @@ function createBankingMutationSignals(
     async (
       { get, set },
       signal: AbortSignal,
-    ): Promise<BankingAccessRequestStatusResponse> => {
+    ): Promise<BankingWorkspaceStatus> => {
       const client = get(apiClient$)(bankingWorkspaceContract);
       const result = await accept(
         client.revokeGrant({

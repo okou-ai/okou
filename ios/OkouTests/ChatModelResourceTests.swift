@@ -163,94 +163,19 @@ final class ChatModelResourceTests: XCTestCase {
     XCTAssertEqual(observed, expected)
   }
 
-  func testNavigationAndModelsStartIndependentWorkspaceReadsTogether() async throws {
-    let gate = ModelResponseGate()
-    let began = expectation(description: "Independent workspace reads have all started")
-    began.expectedFulfillmentCount = 5
+  func testModelSelectionDoesNotRequestAnAgentProfile() async throws {
     let requests = Mutex<[String: Int]>([:])
     let fixture = ChatHTTPFixture { request in
       let path = request.url!.path
-      let count = requests.withLock { counts in
-        counts[path, default: 0] += 1
-        return counts[path, default: 0]
-      }
-      if count == 1 { began.fulfill() }
-      await gate.wait()
-      if path == "/api/agents" {
-        return ChatHTTPResponse(
-          body:
-            "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"displayName\":\"Shared agent\",\"isDefaultAgent\":true}]"
-        )
-      }
+      requests.withLock { $0[path, default: 0] += 1 }
       return try XCTUnwrap(ModelHTTPFixtures.response(path))
     }
     let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    let navigation = Task { await workspace.refreshNavigation() }
-    let models = Task { await workspace.modelStore.load() }
-    addTeardownBlock { @MainActor in
-      workspace.close()
-      navigation.cancel()
-      models.cancel()
-      gate.open()
-      await navigation.value
-      await models.value
-    }
-    await fulfillment(of: [began], timeout: 3)
-    gate.open()
-    await navigation.value
-    await models.value
-    XCTAssertEqual(workspace.currentAgentName, "Shared agent")
-    XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
-    let agents = try await workspace.list.stateStore.get(workspace.list.navigationValue).value
-    XCTAssertEqual(agents.first?.displayName, "Shared agent")
-    var expected = initialRequests
-    expected["/api/agents"] = 1
-    XCTAssertEqual(requests.withLock { $0 }, expected)
-  }
-
-  func testPreferenceInvalidationPreservesAnIndependentPendingNavigationRead() async throws {
-    let began = expectation(description: "The Agent response is pending")
-    let gate = ModelResponseGate()
-    let changed = Mutex(false)
-    let agentRequests = Mutex(0)
-    let fixture = ChatHTTPFixture { request in
-      let path = request.url!.path
-      if path == "/api/agents" {
-        agentRequests.withLock { $0 += 1 }
-        began.fulfill()
-        await gate.wait()
-        return ChatHTTPResponse(
-          body:
-            "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"displayName\":\"Shared agent\",\"isDefaultAgent\":true}]"
-        )
-      }
-      var result = try XCTUnwrap(ModelHTTPFixtures.response(path))
-      if changed.withLock({ $0 }) && path == "/api/user-model-preference" {
-        result.body = result.body.replacingOccurrences(
-          of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"claude-model\"")
-      }
-      return result
-    }
-    let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    let navigation = Task { await workspace.refreshNavigation() }
-    addTeardownBlock { @MainActor in
-      workspace.close()
-      navigation.cancel()
-      gate.open()
-      await navigation.value
-    }
-    await fulfillment(of: [began], timeout: 3)
+    defer { workspace.close() }
+    await workspace.prepareWorkspaceComposer()
     await workspace.newModelSelection.open()
     XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
-
-    changed.withLock { $0 = true }
-    await workspace.refresh([.modelPreference])
-    XCTAssertEqual(workspace.newModelSelection.selection.model, "claude-model")
-    gate.open()
-    await navigation.value
-
-    XCTAssertEqual(workspace.currentAgentName, "Shared agent")
-    XCTAssertEqual(agentRequests.withLock { $0 }, 1)
+    XCTAssertEqual(requests.withLock { $0 }, initialRequests)
   }
 
   private var initialRequests: [String: Int] {

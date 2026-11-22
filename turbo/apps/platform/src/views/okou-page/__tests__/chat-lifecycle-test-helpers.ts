@@ -13,8 +13,6 @@ export function setupPage(
   return baseSetupPage(options);
 }
 
-export const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-
 export function computerUsePermissions() {
   return {
     accessibility: true,

@@ -1,9 +1,9 @@
 import { DEFAULT_AGENT_NAME } from "./default-agent-profile";
-import { executionAgentId } from "./execution-agent";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { agents } from "@okouai/db/schema/agent";
-import { and, count, desc, eq, or } from "drizzle-orm";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 
@@ -42,20 +42,32 @@ export function agentResponse(row: {
 export function publicAgentCountReadPlan(orgId: string) {
   return {
     selection: { value: count() },
-    condition: and(eq(agents.orgId, orgId), eq(agents.visibility, "public")),
+    condition: and(
+      eq(legacyAgentApiProfiles.orgId, orgId),
+      eq(legacyAgentApiProfiles.visibility, "public"),
+    ),
   };
 }
 
-export function sharedExecutorCondition(orgId: string) {
-  return and(
-    eq(agents.orgId, orgId),
-    eq(agents.name, DEFAULT_AGENT_NAME),
-    eq(agents.visibility, "public"),
+const isDefaultProfile = and(
+  eq(legacyAgentApiProfiles.name, DEFAULT_AGENT_NAME),
+  eq(legacyAgentApiProfiles.visibility, "public"),
+);
+
+export const defaultProfileId =
+  sql`CASE WHEN ${isDefaultProfile} THEN ${legacyAgentApiProfiles.id} END`.mapWith(
+    nullableDriverValueDecoder(legacyAgentApiProfiles.id),
   );
+
+export function defaultProfileCondition(orgId: string) {
+  return and(eq(legacyAgentApiProfiles.orgId, orgId), isDefaultProfile);
 }
 
 function visibleAgentCondition(userId: string) {
-  return or(eq(agents.visibility, "public"), eq(agents.owner, userId));
+  return or(
+    eq(legacyAgentApiProfiles.visibility, "public"),
+    eq(legacyAgentApiProfiles.owner, userId),
+  );
 }
 
 export function visibleJoinedAgentCondition(userId: string) {
@@ -68,8 +80,8 @@ export function visibleAgentIdentityCondition(scope: {
   readonly agentId: string;
 }) {
   return and(
-    eq(agents.orgId, scope.orgId),
-    eq(agents.id, scope.agentId),
+    eq(legacyAgentApiProfiles.orgId, scope.orgId),
+    eq(legacyAgentApiProfiles.id, scope.agentId),
     visibleAgentCondition(scope.userId),
   );
 }
@@ -81,18 +93,23 @@ export function agentList(
   return computed(async (get): Promise<readonly AgentResponse[]> => {
     const rows = await get(db$)
       .select({
-        agentId: agents.id,
-        defaultAgentId: executionAgentId(agents.orgId),
-        owner: agents.owner,
-        displayName: agents.displayName,
-        description: agents.description,
-        sound: agents.sound,
-        avatarUrl: agents.avatarUrl,
-        visibility: agents.visibility,
+        agentId: legacyAgentApiProfiles.id,
+        defaultAgentId: defaultProfileId,
+        owner: legacyAgentApiProfiles.owner,
+        displayName: legacyAgentApiProfiles.displayName,
+        description: legacyAgentApiProfiles.description,
+        sound: legacyAgentApiProfiles.sound,
+        avatarUrl: legacyAgentApiProfiles.avatarUrl,
+        visibility: legacyAgentApiProfiles.visibility,
       })
-      .from(agents)
-      .where(and(eq(agents.orgId, orgId), visibleAgentCondition(userId)))
-      .orderBy(desc(agents.updatedAt));
+      .from(legacyAgentApiProfiles)
+      .where(
+        and(
+          eq(legacyAgentApiProfiles.orgId, orgId),
+          visibleAgentCondition(userId),
+        ),
+      )
+      .orderBy(desc(legacyAgentApiProfiles.updatedAt));
 
     return rows.map((row) => {
       return agentResponse(row);

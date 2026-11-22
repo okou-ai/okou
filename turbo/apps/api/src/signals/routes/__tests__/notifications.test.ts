@@ -310,13 +310,10 @@ describe("agent mail notifications", () => {
     const runs = createRunsApi(context);
     const automationRuns = createPublicAutomationRunApi(context);
     const runnerGroup = await runs.configureRunnerGroup();
-    const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg(
-      {
-        model: "claude-fable-5-1",
-      },
-    );
+    const { actor } = await workflows.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+    });
     const workflowId = await workflows.createWorkflow(actor, {
-      agentId,
       name: "morning-brief",
     });
     const automation = await accept(

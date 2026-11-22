@@ -36,7 +36,7 @@ interface GitHubFileFixture {
   readonly orgId: string;
   readonly userId: string;
   readonly actor: ApiTestUser;
-  readonly composeId: string;
+  readonly agentId: string;
   readonly remoteInstallationId: string;
 }
 
@@ -68,14 +68,14 @@ describe("GitHub file integration routes", () => {
       displayName: "GitHub Files Agent",
       visibility: "private",
     });
-    const install = await github.installGithubApp(actor, agent.agentId, {
+    const install = await github.installGithubApp(actor, {
       targetLogin: "bdd-files-org",
     });
     return {
       orgId: actor.orgId,
       userId: actor.userId,
       actor,
-      composeId: agent.agentId,
+      agentId: agent.agentId,
       remoteInstallationId: install.remoteInstallationId,
     };
   }
@@ -100,7 +100,7 @@ describe("GitHub file integration routes", () => {
       api.acceptTelemetryIngest();
       const runnerGroup = await api.configureRunnerGroup();
       const run = await api.createThreadRun(fixture.actor, {
-        agentId: fixture.composeId,
+        agentId: fixture.agentId,
         prompt: "deliver github file",
       });
       await api.heartbeatRunner(runnerGroup);

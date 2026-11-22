@@ -17,19 +17,16 @@ struct ChatFeedbackBanner: View {
 
 private struct ChatFeedbackBannerContent: View {
   let store: WorkspaceStore
-  @LoadableStatus<[AgentRecord]> private var navigationStatus: LoadableState
   @LoadableValue private var listRead: Loadable<Void>
 
   init(store: WorkspaceStore) {
     self.store = store
-    _navigationStatus = LoadableStatus(task: store.list.navigationValue)
     _listRead = LoadableValue(task: store.list.listValue)
   }
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var synchronizationState: ChatSynchronizationState? {
-    if navigationStatus == .hasError { return .updateFailed }
     if listRead.state == .loading { return .updating }
     if listRead.error != nil { return .updateFailed }
     return store.synchronizationState
@@ -46,7 +43,6 @@ private struct ChatFeedbackBannerContent: View {
         ChatSyncStatusView(
           state: synchronizationState
         ) {
-          if navigationStatus == .hasError { await store.refreshNavigation() }
           if listRead.error != nil || store.synchronizationState?.isFailure == true {
             await store.retrySynchronization()
           }

@@ -33,14 +33,10 @@ const {
 
 describe("thread-bound Pi Automation execution", () => {
   it("rotates a signed event Automation session into Pi and preserves its user conversation", async () => {
-    const { actor, defaultAgentId: agentId } = await entitledChatActor(
-      {},
-      "team",
-    );
+    const { actor } = await entitledChatActor({}, "team");
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
       actor,
       {
-        agentId,
         name: "pi-event-session",
       },
     );
@@ -145,13 +141,13 @@ describe("thread-bound Pi Automation execution", () => {
 describe("CHAT effort: automation launches", () => {
   async function startAutomation() {
     const scenario = await entitledChatActor({}, "pro");
-    const { actor, defaultAgentId: agentId } = scenario;
+    const { actor } = scenario;
     // Fable keeps the automation on the Claude Code Runner execution protocol;
     // the Sonnet fixture default would launch a Pi run instead.
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
       actor,
-      { agentId, name: "native-effort" },
+      { name: "native-effort" },
     );
     const created = await accept(
       threadPiAutomationsClient().create({
@@ -306,11 +302,7 @@ describe("thread-bound Pi terminal failures", () => {
   it.each([{ status: "failed" }, { status: "cancelled" }] as const)(
     "settles a user-owned automation $status once without Built-in charges",
     async ({ status }) => {
-      const {
-        actor,
-        defaultAgentId: agentId,
-        runnerGroup,
-      } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
       await configureSubscriptionPiModel(
         actor,
         { accountId: "terminal-owner" },
@@ -322,7 +314,7 @@ describe("thread-bound Pi terminal failures", () => {
       {
         const workflowId = await createWorkflowsBddApi(context).createWorkflow(
           actor,
-          { agentId, name: "pi-terminal" },
+          { name: "pi-terminal" },
         );
         const created = await accept(
           threadPiAutomationsClient().create({

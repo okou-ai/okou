@@ -32,10 +32,16 @@ import { connectorPermissionsRoutes } from "../connector-permissions";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  threadEventCursor,
+} from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { mockGoogleText } from "./helpers/google-text";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   mockClerkUsers,
@@ -329,6 +335,11 @@ describe("email-native signup", () => {
       text: "\n cOnFiRm \t\r\n\nOn Tuesday, Okou wrote:\n> CONFIRM",
       to: [pending.replyTo],
     });
+    await expect(confirmation.send(true)).rejects.toThrow(
+      "Email workspace initialization is pending",
+    );
+    await deliverOrganizationCreated(context, actor);
+    const emailSinceSeqId = await threadEventCursor(context, actor);
     await confirmation.send();
     expect(
       context.mocks.clerk.users.createUser,
@@ -356,9 +367,8 @@ describe("email-native signup", () => {
     await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       onboardingComplete: true,
-      hasDefaultAgent: true,
     });
-    const snapshot = await createdThreads(actor);
+    const snapshot = await createdThreads({ ...actor, emailSinceSeqId });
     expect(snapshot.chatThreads).toHaveLength(1);
     const { events } = await files.listThreadEvents(
       actor,
@@ -686,12 +696,19 @@ async function entitledActor(email?: string) {
   const group = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
+  const emailSinceSeqId = await threadEventCursor(context, actor);
   verifiedDirectory(actor);
-  return { actor: { ...actor, orgId }, group };
+  return { actor: { ...actor, orgId, emailSinceSeqId }, group };
 }
 
-async function createdThreads(actor: ApiTestUser) {
-  const response = await files.requestThreadEvents(actor, {}, [200]);
+async function createdThreads(
+  actor: ApiTestUser & { readonly emailSinceSeqId?: number },
+) {
+  const response = await files.requestThreadEvents(
+    actor,
+    { sinceSeqId: actor.emailSinceSeqId },
+    [200],
+  );
   if (response.status !== 200) {
     throw new Error("Expected thread lifecycle events");
   }
@@ -2476,6 +2493,8 @@ describe("Email integration", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const group = await runs.configureRunnerGroup();
+    await deliverOrganizationCreated(context, actor);
+    const emailSinceSeqId = await threadEventCursor(context, actor);
     verifiedDirectory(actor);
     await accept(
       emailClient().connect({
@@ -2496,10 +2515,9 @@ describe("Email integration", () => {
     await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       onboardingComplete: true,
-      hasDefaultAgent: true,
     });
     verifiedDirectory(actor);
-    const snapshot = await createdThreads(actor);
+    const snapshot = await createdThreads({ ...actor, emailSinceSeqId });
     expect(snapshot.chatThreads).toHaveLength(1);
     const { events } = await files.listThreadEvents(
       actor,
@@ -2630,13 +2648,17 @@ describe("Email workspace binding", () => {
   it("switches workspaces, confirms by email and starts a fresh conversation for old reply references", async () => {
     const { actor, token, message } = await startEmailFileExecution();
     const originalThreads = await createdThreads(actor);
-    const target = bdd.user({
+    const targetAccount = bdd.user({
       userId: actor.userId,
       email: actor.email,
       orgId: createUniqueStaffOrgIdFixture(),
     });
-    await runs.grantProEntitlement(target);
-    await runs.ensurePersonalSubscriptionModel(target);
+    await runs.grantProEntitlement(targetAccount);
+    await runs.ensurePersonalSubscriptionModel(targetAccount);
+    const target = {
+      ...targetAccount,
+      emailSinceSeqId: await threadEventCursor(context, targetAccount),
+    };
     verifiedDirectory(actor);
     const workspaces = [
       { id: actor.orgId!, name: "Original workspace" },

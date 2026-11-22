@@ -10,11 +10,14 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     self.parts = parts
   }
 
-  public var annotation: Part? { parts.first { ["source", "automation"].contains($0.type) } }
+  public var annotation: Part? {
+    parts.first { ["source", "automation"].contains($0.type) || $0.isForwardedChat }
+  }
 
   public var bodyParts: [Part] {
     let visible = parts.filter {
-      ["text", "chat_thread", "project", "template", "feedback"].contains($0.type)
+      !$0.isForwardedChat
+        && ["text", "chat_thread", "project", "template", "feedback"].contains($0.type)
     }
     if annotation?.type == "automation",
       visible.map(\.displayText).joined()
@@ -78,6 +81,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     public let clientName: String?
     public let threadId: String?
     public let projectId: String?
+    public var isForwardedChat: Bool { type == "chat_thread" && runId != nil }
     public let runId: String?
     public let workflowId: String?
     public let automationBrief: String?
@@ -144,7 +148,8 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       let valid: Bool
       switch type {
       case "text": valid = present(text)
-      case "chat_thread": valid = present(titleSnapshot) && identity(threadId)
+      case "chat_thread":
+        valid = present(titleSnapshot) && identity(threadId) && (runId == nil || identity(runId))
       case "project": valid = present(nameSnapshot) && identity(projectId)
       case "template": valid = present(titleSnapshot)
       case "automation":
@@ -162,9 +167,6 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       case "model": valid = present(selectedModel)
       case "source":
         switch kind {
-        case "agent":
-          valid =
-            present(titleSnapshot) && identity(threadId) && identity(runId)
         case "slack", "discord", "wechat", "feishu", "lark", "teams", "telegram", "github",
           "agentphone", "mcp":
           valid = true

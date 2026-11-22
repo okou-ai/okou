@@ -1,6 +1,4 @@
 import { automationWorkflowJoinCondition } from "./workflow-visibility";
-import { executionAgentId } from "./execution-agent";
-import { agents } from "@okouai/db/schema/agent";
 import {
   githubDeploymentStatusCreatedEventConfigSchema,
   githubIssueCommentCreatedEventConfigSchema,
@@ -469,23 +467,12 @@ const loadGithubWebhookAutomations$ = command(
     const rows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: agents.id,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
       .innerJoin(workflows, automationWorkflowJoinCondition())
-      .innerJoin(
-        agents,
-        eq(
-          agents.id,
-          executionAgentId(
-            workflowAutomations.orgId,
-            workflowAutomations.ownerUserId,
-          ),
-        ),
-      )
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -525,7 +512,6 @@ const loadGithubWebhookAutomations$ = command(
         workflowAutomationCanFire$,
         {
           automation: row.automation,
-          agentId: row.agentId,
         },
         signal,
       );

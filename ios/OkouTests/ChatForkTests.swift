@@ -225,7 +225,7 @@ private final class ForkFixture: Sendable {
   func workspace(owner: XCTestCase) async throws -> WorkspaceStore {
     let workspace = WorkspaceStore(client: history.http.client, webURL: history.http.baseURL)
     owner.addTeardownBlock { @MainActor in await workspace.close().value }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.list.refresh()
     workspace.selectChat(ConversationHistoryFixture.threadID)
     let conversation = try XCTUnwrap(workspace.selectedConversation)

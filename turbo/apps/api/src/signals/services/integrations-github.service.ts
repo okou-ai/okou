@@ -1,4 +1,3 @@
-import { selectedExecutionAgent } from "./execution-agent";
 import { command, computed } from "ccstate";
 import type {
   GithubConnectUserBody,
@@ -35,7 +34,7 @@ function githubConnectStartUrl(origin: string): string {
 
 const githubInstallUrl$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string;
@@ -49,20 +48,12 @@ const githubInstallUrl$ = command(
       return null;
     }
 
-    const db = get(db$);
-    const [orgRow] = await db
-      .select()
-      .from(selectedExecutionAgent(args.orgId, args.userId));
-    signal.throwIfAborted();
-    const composeId = orgRow?.id ?? null;
-
     return await set(
       buildGithubAppInstallUrl$,
       {
         appSlug,
         userId: args.userId,
         orgId: args.orgId,
-        composeId: composeId ?? undefined,
         callbackOrigin: args.callbackOrigin,
         providerCallbackOrigin: args.providerCallbackOrigin,
         secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),

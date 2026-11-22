@@ -70,7 +70,6 @@ describe("VNC authority and revocation", () => {
       await runs.ensurePersonalSubscriptionModel(bdd.user(member), {
         model: "claude-fable-5-1",
       });
-      await bdd.readOnboardingStatus(bdd.user(member));
       await bdd.completeOnboarding(bdd.user(member));
       const memberRun = await executionApi.runtime({
         ...member,

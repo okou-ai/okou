@@ -23,7 +23,7 @@ final class VoiceInputNavigationTests: XCTestCase {
 
     _ = try await VoiceInputIntent().perform()
     XCTAssertFalse(requests.open(in: workspace))
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.list.refresh()
     XCTAssertNil(workspace.list.error)
     workspace.setPhase(.active)
@@ -80,7 +80,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     workspace.close()
     let reopened = fixture.workspace(capture: VoiceCaptureFixture())
     defer { reopened.close() }
-    await reopened.refreshNavigation()
+    await reopened.prepareWorkspaceComposer()
     XCTAssertEqual(reopened.newChatDraft, "Existing notes: spoken words")
   }
 
@@ -91,7 +91,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     capture.startFailure = NativeVoiceAudioCapture.CaptureError.permissionDenied
     let workspace = fixture.workspace(capture: capture)
     addTeardownBlock { @MainActor in workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     workspace.setPhase(.active)
     workspace.newChatDraft = "Keep these notes"
     await workspace.newComposer.synchronize()
@@ -132,7 +132,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     capture.startGate = gate
     let workspace = fixture.workspace(capture: capture)
     addTeardownBlock { @MainActor in workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     workspace.setPhase(.active)
     workspace.newChatDraft = "Retain this draft"
     await workspace.newComposer.synchronize()
@@ -169,7 +169,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     addTeardownBlock { try fixture.removeFiles() }
     let workspace = fixture.workspace(capture: VoiceCaptureFixture())
     addTeardownBlock { @MainActor in workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.list.refresh()
     XCTAssertNil(workspace.list.error)
     workspace.setPhase(.active)

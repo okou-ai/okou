@@ -36,12 +36,11 @@ function detail() {
 async function fixture() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
+  await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Workflow member",
   });
   const s3 = installWorkflowVolumeS3Fixture(context);
   const body = {
-    agentId,
     name: `atomic-${randomUUID().slice(0, 8)}`,
     instruction: "Read the attached reference",
     files: [{ path: "reference.md", content: "附件" }],
@@ -191,20 +190,6 @@ test("does not reserve a Workflow name when its files conflict with a directory"
   ).rejects.toThrow("Workflow attachment file conflicts with a directory");
   expect(s3.writes).toHaveLength(0);
   await accept(collection().create({ headers: headers(actor), body }), [201]);
-});
-
-test("rejects a foreign workspace before preparing the attachment", async () => {
-  const { s3, body } = await fixture();
-  const outsider = bdd.user();
-  await bdd.bootstrapLimitedFreeOnboarding(outsider, {
-    displayName: "Workflow member",
-  });
-  const writes = s3.writes.length;
-  await accept(
-    collection().create({ headers: headers(outsider), body }),
-    [403],
-  );
-  expect(s3.writes).toHaveLength(writes);
 });
 
 test("publishes without linking a chat deleted while the attachment upload is in flight", async () => {
