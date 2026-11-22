@@ -135,7 +135,8 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
       const native = await accept(
         draftsClient().get({
           params: { id: fixture.agentId },
-          headers: { ...authHeaders(), [CLIENT_TYPE_HEADER]: client },
+          headers: authHeaders(),
+          extraHeaders: { [CLIENT_TYPE_HEADER]: client },
         }),
         [200],
       );

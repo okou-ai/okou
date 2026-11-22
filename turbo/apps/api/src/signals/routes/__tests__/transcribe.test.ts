@@ -167,6 +167,22 @@ test("ordered private recordings share one Vertex request and one credit settlem
   const cliHeaders = { authorization: `Bearer ${token}` };
   mockGoogleVoice();
   const before = await credits();
+  server.use(
+    http.post(
+      VERTEX_VOICE_URL,
+      () => {
+        return new HttpResponse(null, { status: 429 });
+      },
+      {
+        once: true,
+      },
+    ),
+  );
+  await accept(
+    api(transcribeContract).transcribe({ headers: cliHeaders, body }),
+    [503],
+  );
+  await expect(credits()).resolves.toBe(before);
   for (let i = 0; i < 2; i++) {
     const result = await accept(
       api(transcribeContract).transcribe({ headers: cliHeaders, body }),

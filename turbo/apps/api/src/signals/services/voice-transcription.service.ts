@@ -16,6 +16,7 @@ import {
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import { waitUntil } from "../context/wait-until";
+import { VoiceProviderUnavailableError } from "../external/voice-provider-request";
 import type { VoiceContentPart } from "../external/voice-completion-types";
 import { writeDb$ } from "../external/db";
 import { downloadS3BufferWithMaxBytes$ } from "../external/s3";
@@ -145,6 +146,19 @@ const completeVoiceTranscription$ = command(
       signal,
     );
     if (!generated.ok) {
+      if (
+        generated.error instanceof VoiceProviderUnavailableError &&
+        generated.error.status === 429
+      ) {
+        // Vertex rejected this attempt before generation. A retry can claim it.
+        await db
+          .delete(voiceTranscriptions)
+          .where(eq(voiceTranscriptions.id, claim.id));
+        signal.throwIfAborted();
+        return providerUnavailable(
+          "Vertex rate limited transcription. Retry the same operation.",
+        );
+      }
       return providerUnavailable(
         "Transcription did not produce a complete result. The operation has been retained for reconciliation.",
       );
