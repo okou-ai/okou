@@ -1504,3 +1504,268 @@ test("browser-viewer-interaction-123 An ordinary Page enable failure disables th
   await screen.findByText("Browser view unavailable");
   expect(input()).toBeDisabled();
 });
+
+async function holdShift(remote: Remote) {
+  const keyboard = userEvent.setup();
+  await keyboard.click(input());
+  await keyboard.keyboard("{Shift>}");
+  await waitFor(() => {
+    return expect(remote.inputForTarget("main")).toContainEqual(
+      expect.objectContaining({
+        params: expect.objectContaining({ type: "rawKeyDown", key: "Shift" }),
+      }),
+    );
+  });
+  return keyboard;
+}
+async function sendTo(remote: Remote, target: string, text: string) {
+  await userEvent.click(input());
+  insertText(text);
+  await waitFor(() => {
+    return expect(inserted(remote, target)).toContain(text);
+  });
+  for (const page of remote.targets.filter((page) => {
+    return page.targetId !== target;
+  })) {
+    expect(inserted(remote, page.targetId)).not.toContain(text);
+  }
+}
+async function pickPage(name: string, url: string) {
+  await userEvent.click(tab(name));
+  await expectStreamingAt(url);
+  selected(name);
+}
+test("browser-viewer-interaction-110 The original text error belongs to Example and omits the input", async () => {
+  const reports = context.mocks.sentry();
+  const remote = await localPair();
+  await holdShift(remote);
+  remote.failNext("Input.insertText", "Insertion rejected");
+  const receipt = remote.holdNext("Input.insertText");
+  const sensitive = "private fixture text";
+  insertText(sensitive);
+  await receipt.received;
+  await receipt.release();
+  await pickPage("Other", other);
+  await sendTo(remote, "notes", "another page");
+  await userEvent.click(tab("Example"));
+  await screen.findByText("Browser view unavailable");
+  expect(input()).toBeDisabled();
+  expect(reports.reports).toContainEqual(
+    expect.objectContaining({
+      error: expect.objectContaining({
+        request: expect.objectContaining({ method: "Input.insertText" }),
+      }),
+    }),
+  );
+  for (const report of reports.reports) {
+    expect(JSON.stringify(report)).not.toContain(sensitive);
+    const description =
+      report.type === "exception" ? String(report.error) : report.message;
+    expect(description).not.toContain(sensitive);
+  }
+});
+test("browser-viewer-interaction-113 Unsupported preedit preserves the committed text after returning to Example", async () => {
+  const remote = await localPair();
+  await userEvent.click(input());
+  remote.failNext("Input.imeSetComposition", "Preedit unavailable", -32_601);
+  const receipt = remote.holdNext("Input.imeSetComposition");
+  compose("ni");
+  await receipt.received;
+  await receipt.release();
+  ime("compositionend", "你");
+  await waitFor(() => {
+    expect(inserted(remote, "main")).toContain("你");
+  });
+  await pickPage("Other", other);
+  await pickPage("Example", home);
+  expect(inserted(remote, "main")).toStrictEqual(["你"]);
+});
+
+test("browser-viewer-interaction-114 A failed update after a successful preedit fences Example", async () => {
+  const journal = context.mocks.sentry();
+  const remote = await localPair();
+  await userEvent.click(input());
+  compose("n");
+  await waitFor(() => {
+    expect(remote.inputForTarget("main")).toContainEqual(
+      expect.objectContaining({
+        method: "Input.imeSetComposition",
+        params: expect.objectContaining({ text: "n" }),
+      }),
+    );
+  });
+  remote.failNext("Input.imeSetComposition", "Preedit unavailable", -32_601);
+  const receipt = remote.holdNext("Input.imeSetComposition");
+  ime("compositionupdate", "ni");
+  await receipt.received;
+  await receipt.release();
+  ime("compositionend", "你");
+  await pickPage("Other", other);
+  await userEvent.click(tab("Example"));
+  await screen.findByText("Browser view unavailable");
+  expect(input()).toBeDisabled();
+  expect(journal.reports).toContainEqual(
+    expect.objectContaining({
+      error: expect.objectContaining({
+        request: expect.objectContaining({
+          method: "Input.imeSetComposition",
+          code: -32_601,
+        }),
+      }),
+    }),
+  );
+});
+test("browser-viewer-interaction-136 Japanese preedit and commit resume after held Shift and tab admission", async () => {
+  const remote = await localPair();
+  const keyboard = await holdShift(remote);
+  const proof = remote.holdNextMembership("main");
+  remote.duplicate("main");
+  await proof.received;
+  await keyboard.keyboard("{/Shift}");
+  await proof.release();
+  await expectStreamingAt(home);
+  await userEvent.click(input());
+  compose("ni");
+  await waitFor(() => {
+    return expect(remote.inputForTarget("main")).toContainEqual(
+      expect.objectContaining({
+        method: "Input.imeSetComposition",
+        params: expect.objectContaining({ text: "ni" }),
+      }),
+    );
+  });
+  ime("compositionend", "你");
+  await waitFor(() => {
+    return expect(inserted(remote, "main")).toStrictEqual(["你"]);
+  });
+});
+async function returnAfterShiftCleanup(rejectRelease: boolean) {
+  const remote = await localPair();
+  await holdShift(remote);
+  if (rejectRelease) {
+    remote.failNext("Input.dispatchKeyEvent", "Release refused");
+  }
+  const key = remote.holdNext("Input.dispatchKeyEvent");
+  const capture = remote.holdNext("Page.stopScreencast");
+  const retired = remote.holdNextDetach(remote.pageSession("main"));
+  await userEvent.click(tab("Other"));
+  await Promise.all([key.received, capture.received]);
+  await capture.release();
+  await key.release();
+  await retired.received;
+  await retired.release();
+  await expectStreamingAt(other);
+  await sendTo(remote, "notes", "still here");
+  await userEvent.click(tab("Example"));
+  return remote;
+}
+test("browser-viewer-interaction-141 A confirmed release permits navigation on the original page", async () => {
+  const remote = await returnAfterShiftCleanup(false);
+  await expectStreamingAt(home);
+  await navigateFromEditor(remote, "main", "cleanup-proof.example/ready");
+  expect(
+    remote.targets.find((page) => {
+      return page.targetId === "notes";
+    })?.url,
+  ).toBe(other);
+});
+test("browser-viewer-interaction-142 A rejected release fences the original page after visiting Other", async () => {
+  await returnAfterShiftCleanup(true);
+  await screen.findByText("Browser view unavailable");
+  expect(input()).toBeDisabled();
+});
+test("browser-viewer-interaction-147 Detachment alone cannot prove an outstanding original release", async () => {
+  const remote = await localPair();
+  await holdShift(remote);
+  const original = [...remote.requests].reverse().find((r) => {
+    return r.method === "Page.startScreencast";
+  })?.sessionId;
+  expect(original).toBe(remote.pageSession("main"));
+  const key = remote.holdNext("Input.dispatchKeyEvent");
+  await userEvent.click(tab("Other"));
+  await key.received;
+  remote.event("Target.detachedFromTarget", { sessionId: original });
+  await expectStreamingAt(other);
+  await sendTo(remote, "notes", "surviving input");
+  await userEvent.click(tab("Example"));
+  await screen.findByText("Browser view unavailable");
+  expect(input()).toBeDisabled();
+});
+test("browser-viewer-interaction-154 Reconnect restores controls after unsupported membership", async () => {
+  const remote = await localPair();
+  await pickPage("Other", other);
+  const lookup = remote.holdNextMembership("main");
+  await userEvent.click(tab("Example"));
+  await lookup.received;
+  await lookup.releaseFailure("Unsupported lookup", -32_601);
+  await screen.findByText("Browser view unavailable");
+  expect(newTabButton()).toBeDisabled();
+  expect(input()).toBeDisabled();
+  await userEvent.click(screen.getByText("Reconnect"));
+  await expectStreamingAt(home);
+  expect(newTabButton()).toBeEnabled();
+  expect(remote.connections()).toBe(2);
+});
+
+async function separateImages(remote: Remote) {
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.hover(await screen.findByText("Connection mode"));
+  await userEvent.click(await screen.findByText("Separate image connection"));
+  await expectStreamingAt(home);
+  expect(remote.activeConnections()).toBe(2);
+}
+test("browser-viewer-interaction-125 The recovered frames connection keeps Other's input on its new session", async () => {
+  const remote = await localPair();
+  await separateImages(remote);
+  const obsolete = remote.holdNextMembership("notes");
+  await userEvent.click(tab("Other"));
+  await obsolete.received;
+  const next = remote.holdTargetFrames("notes");
+  remote.disconnect({ code: 1006 }, 1);
+  await screen.findByText("Reconnecting…");
+  expect(input()).toBeDisabled();
+  await next.received;
+  next.release();
+  await expectStreamingAt(other);
+  selected("Other");
+  const successor = remote.pageSession("notes");
+  await sendTo(remote, "notes", "new frame session");
+  expect(remote.inputForTarget("notes")).toContainEqual(
+    expect.objectContaining({
+      sessionId: successor,
+      params: expect.objectContaining({ text: "new frame session" }),
+    }),
+  );
+});
+test("browser-viewer-interaction-164 Widening removes the focused picker without stealing a later draft", async () => {
+  await localPair();
+  const budget = screen
+    .getByLabelText("Close Example")
+    .closest("[data-browser-tab-budget]");
+  if (!budget) {
+    throw new Error("Missing browser tab budget");
+  }
+  const size = vi.spyOn(budget, "getBoundingClientRect");
+  function resize(width: number) {
+    size.mockReturnValue(new DOMRect(0, 0, width, 44));
+    window.dispatchEvent(new Event("resize"));
+  }
+  resize(90);
+  const picker = await screen.findByLabelText("All tabs");
+  picker.focus();
+  expect(picker).toHaveFocus();
+  resize(480);
+  await waitFor(() => {
+    return expect(tab("Example")).toHaveFocus();
+  });
+  expect(screen.queryByLabelText("All tabs")).toBeNull();
+  resize(90);
+  await screen.findByLabelText("All tabs");
+  await replaceDraft("chosen.example/draft");
+  resize(480);
+  await waitFor(() => {
+    return expect(screen.queryByLabelText("All tabs")).toBeNull();
+  });
+  expect(field()).toHaveFocus();
+  expect(field()).toHaveValue("chosen.example/draft");
+});
