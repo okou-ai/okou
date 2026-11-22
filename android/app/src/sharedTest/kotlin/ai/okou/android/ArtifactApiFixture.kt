@@ -84,7 +84,26 @@ internal class ArtifactApiFixture(
     val catalogQueries = CopyOnWriteArrayList<Pair<String?, String?>>()
     val catalogScopes = CopyOnWriteArrayList<Pair<String?, String?>>()
     val requestedDownloads = CopyOnWriteArrayList<String>()
+    val requestedReferences = CopyOnWriteArrayList<String>()
     private val currentDispatcher = api.commandResponse
+
+    fun installInlineHistory() {
+        val intro = title("The release summary is ready.", "发布摘要已准备好。")
+        val text = "$intro\n\n[${summary.title}](/artifacts/artifacts2.md)"
+        api.historyRows = { request ->
+            val thread = checkNotNull(request.requestUrl).pathSegments[2]
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0
+            val event =
+                historyEventWire(
+                    thread = thread,
+                    payload = buildJsonObject { put("content", text) }.toString(),
+                )
+            val rows = if (after < 37) event else ""
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
+            )
+        }
+    }
 
     fun install() {
         val chatEvents = api.events
@@ -114,8 +133,10 @@ internal class ArtifactApiFixture(
                         detail != null -> detail(detail)
                         path == "/api/artifact-references/checklist1.md" ->
                             reference(checklist, "checklist", true)
-                        path == "/api/artifact-references/artifacts2.md" ->
+                        path == "/api/artifact-references/artifacts2.md" -> {
+                            requestedReferences.add(path)
                             reference(summary, "summary", summaryDownloadAllowed)
+                        }
                         path == "/api/artifact-references/checklist1.md/download" -> {
                             requestedDownloads.add(path)
                             beforeDownload()

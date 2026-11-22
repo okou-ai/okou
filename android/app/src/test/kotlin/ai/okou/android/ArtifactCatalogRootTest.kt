@@ -229,6 +229,25 @@ class ArtifactCatalogRootTest {
     }
 
     @Test
+    fun conversationCardOpensAnAuthorizedPreviewWithoutReadingTheCatalog() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        fixture.installInlineHistory()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(fixture.summary.title)
+        assertTrue(fixture.requestedReferences.isEmpty())
+        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(60.dp).performClick()
+        awaitText("Preview only", partial = true)
+        compose.onNodeWithText("Save file").assertDoesNotExist()
+        assertEquals(1, fixture.requestedReferences.size)
+        assertTrue(fixture.catalogScopes.isEmpty())
+        compose.onNodeWithContentDescription("Back").performClick()
+        awaitText(fixture.summary.title)
+    }
+
+    @Test
     fun workspaceCatalogHandlesPickerCancellationAfterLeavingThePreview() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()

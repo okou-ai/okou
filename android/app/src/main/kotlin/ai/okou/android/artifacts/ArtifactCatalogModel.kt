@@ -74,6 +74,7 @@ internal constructor(
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
     private var active = false
+    private var catalogVisible = false
     private var catalogJob: Job? = null
     private var previewJob: Job? = null
 
@@ -99,12 +100,19 @@ internal constructor(
         }
     }
 
-    internal fun setActive(visible: Boolean, currentQuery: ArtifactQuery = mutable.value.query) {
+    internal fun setActive(
+        visible: Boolean,
+        currentQuery: ArtifactQuery = mutable.value.query,
+        showCatalog: Boolean = true,
+    ) {
         if (active == visible) return
         active = visible
+        catalogVisible = visible && showCatalog
         if (visible) {
-            if (currentQuery != mutable.value.query) query(currentQuery, debounce = false)
-            else readCatalog()
+            if (catalogVisible) {
+                if (currentQuery != mutable.value.query) query(currentQuery, debounce = false)
+                else readCatalog()
+            }
             mutable.value.preview?.let { readPreview(it.id) }
         } else {
             catalogJob?.cancel()
@@ -165,8 +173,10 @@ internal constructor(
                 try {
                     val file =
                         cached
-                            ?: (service.info(id).resource as? ArtifactResource.File)?.let {
-                                service.fileAccess(it).save
+                            ?: service.info(id).let { info ->
+                                (info.resource as? ArtifactResource.File)?.let {
+                                    (info.resolvedAccess ?: service.fileAccess(it)).save
+                                }
                             }
                     if (file == null) ArtifactSaveResult.Denied
                     else {
@@ -199,7 +209,7 @@ internal constructor(
 
     private fun readCatalog(append: Boolean = false, debounce: Boolean = false) {
         val current = mutable.value
-        if (!active || current.offline) return
+        if (!catalogVisible || current.offline) return
         catalogJob?.cancel()
         val query = current.query
         val cursor = if (append) current.page?.nextCursor ?: return else null
@@ -322,22 +332,30 @@ internal constructor(
                         val content =
                             when (val resource = info.resource) {
                                 is ArtifactResource.File -> {
-                                    val access = service.fileAccess(resource)
+                                    val access = info.resolvedAccess ?: service.fileAccess(resource)
                                     updatePreview(id) { copy(access = access) }
                                     service.fileContent(resource, access)
                                 }
                                 is ArtifactResource.Site -> service.siteContent(resource)
+                                is ArtifactResource.ResolvedHtml ->
+                                    ArtifactContent.Website(resource.url)
                                 ArtifactResource.Unsupported -> ArtifactContent.Unsupported
                             }
                         updatePreview(id) {
-                            copy(content = content, problem = null).also {
-                                if (
-                                    content is ArtifactContent.Text ||
-                                        content is ArtifactContent.Image
-                                ) {
-                                    previews.remember(id, it, 3)
+                            val browser = (info.resource as? ArtifactResource.Site)?.url
+                            copy(
+                                    info = info.copy(browserUrl = browser ?: info.browserUrl),
+                                    content = content,
+                                    problem = null,
+                                )
+                                .also {
+                                    if (
+                                        content is ArtifactContent.Text ||
+                                            content is ArtifactContent.Image
+                                    ) {
+                                        previews.remember(id, it, 3)
+                                    }
                                 }
-                            }
                         }
                         false
                     } catch (cancelled: CancellationException) {

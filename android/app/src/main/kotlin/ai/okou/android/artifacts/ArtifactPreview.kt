@@ -129,12 +129,15 @@ internal fun ArtifactPreview(
                         style = MaterialTheme.typography.titleLarge,
                         color = colors.onSurface,
                     )
+                    val kind = stringResource(item.kind.label())
                     val metadata =
-                        stringResource(
-                            R.string.artifact_metadata,
-                            stringResource(item.kind.label()),
-                            dates.timestamp(item.createdAt, showDay = true),
-                        )
+                        item.createdAt?.let {
+                            stringResource(
+                                R.string.artifact_metadata,
+                                kind,
+                                dates.timestamp(it, showDay = true),
+                            )
+                        } ?: kind
                     Text(
                         if (preview.access?.previewOnly == true)
                             stringResource(

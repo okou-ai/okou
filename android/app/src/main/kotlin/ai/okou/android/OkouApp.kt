@@ -2,9 +2,11 @@ package ai.okou.android
 
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.artifacts.ArtifactsRoute
+import ai.okou.android.artifacts.ChatArtifactLinkPreview
 import ai.okou.android.artifacts.ChatArtifactResources
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
+import ai.okou.android.chat.ChatArtifactActions
 import ai.okou.android.chat.ChatComposerField
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
@@ -123,6 +125,7 @@ internal fun OkouApp(
     var navigation by rememberWorkspaceNavigation()
     val artifactPageState = rememberArtifactPageHolder()
     val resourcesPageState = rememberArtifactPageHolder()
+    val inlineArtifactPageState = rememberArtifactPageHolder()
     val resourcesFocus = remember { FocusRequester() }
     var restoreResourcesFocus by remember { mutableStateOf(false) }
     val artifactEntryFocus = remember { FocusRequester() }
@@ -173,12 +176,22 @@ internal fun OkouApp(
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && !artifactsOpen && navigation.search == SearchRoute.Open
+    val inlineArtifactLink =
+        navigation.chatArtifactLink.takeIf {
+            thread != null &&
+                chatArtifacts != null &&
+                settings == null &&
+                !showArtifacts &&
+                resourcesId == null &&
+                (listWidth != null || !searchActive)
+        }
     var composerFocused by
         remember(target, settings, searchActive, showArtifacts, resourcesId) {
             mutableStateOf(false)
         }
     val editing =
         showArtifacts ||
+            inlineArtifactLink != null ||
             resourcesId != null ||
             searchActive ||
             settings == SettingsDestination.Instructions ||
@@ -222,7 +235,19 @@ internal fun OkouApp(
         artifactPageState.removeState("artifacts")
     }
 
-    fun closeResources(returnToActions: Boolean = false) {
+    fun closeResources(returnToActions: Boolean = false, returnToCard: Boolean = false) {
+        if (navigation.chatArtifactLink != null) {
+            navigation =
+                navigation.copy(
+                    chatArtifactLink = null,
+                    chatArtifactFocusKey = navigation.chatArtifactFocusKey.takeIf { returnToCard },
+                )
+            chatArtifacts?.select(null)
+            inlineArtifactPageState.removeState("chat-artifact-link")
+        }
+        if (!returnToCard && navigation.chatArtifactFocusKey != null) {
+            navigation = navigation.copy(chatArtifactFocusKey = null)
+        }
         if (navigation.chatResourcesId == null) return
         if (!returnToActions) restoreResourcesFocus = false
         navigation = navigation.copy(chatResourcesId = null)
@@ -781,7 +806,11 @@ internal fun OkouApp(
             if (settings == null && listWidth == null && showList && !searchActive) {
                 Box(Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets)) { listToolbar() }
             } else if (
-                settings != null || listWidth == null && !searchActive && resourcesId == null
+                settings != null ||
+                    listWidth == null &&
+                        !searchActive &&
+                        resourcesId == null &&
+                        inlineArtifactLink == null
             ) {
                 detailBar()
             }
@@ -867,6 +896,20 @@ internal fun OkouApp(
                             Modifier.weight(1f).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) pane@{
+                            if (inlineArtifactLink != null && chatArtifacts != null) {
+                                inlineArtifactPageState.SaveableStateProvider(
+                                    "chat-artifact-link"
+                                ) {
+                                    ChatArtifactLinkPreview(
+                                        chatArtifacts,
+                                        inlineArtifactLink,
+                                        listWidth != null,
+                                    ) {
+                                        closeResources(returnToCard = true)
+                                    }
+                                }
+                                return@pane
+                            }
                             if (resourcesId != null && chatArtifacts != null) {
                                 resourcesPageState.SaveableStateProvider("chat-resources") {
                                     ChatArtifactResources(
@@ -908,6 +951,29 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 realtime = chats.updates.takeIf { workspaceReady },
                                                 controls = runActions,
+                                                artifactActions =
+                                                    if (chatArtifacts == null || thread == null)
+                                                        null
+                                                    else
+                                                        ChatArtifactActions(
+                                                            open = { link, key ->
+                                                                focus.clearFocus()
+                                                                keyboard?.hide()
+                                                                navigation =
+                                                                    navigation.copy(
+                                                                        chatArtifactLink = link,
+                                                                        chatArtifactFocusKey = key,
+                                                                    )
+                                                            },
+                                                            restoreKey =
+                                                                navigation.chatArtifactFocusKey,
+                                                            restored = {
+                                                                navigation =
+                                                                    navigation.copy(
+                                                                        chatArtifactFocusKey = null
+                                                                    )
+                                                            },
+                                                        ),
                                             ) { failureId ->
                                                 if (
                                                     recovery != null &&

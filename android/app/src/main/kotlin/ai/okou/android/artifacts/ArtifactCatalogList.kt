@@ -106,7 +106,7 @@ internal fun ArtifactCatalogList(
             page
                 ?.items
                 ?.groupBy { item ->
-                    if (query.keyword.isBlank()) localDates.group(item.createdAt)
+                    if (query.keyword.isBlank()) localDates.group(checkNotNull(item.createdAt))
                     else ArtifactDay.Search
                 }
                 .orEmpty()
@@ -215,7 +215,7 @@ internal fun ArtifactCatalogList(
                         item = item,
                         date =
                             localDates.timestamp(
-                                item.createdAt,
+                                checkNotNull(item.createdAt),
                                 showDay = day == ArtifactDay.Search,
                             ),
                         selected = item.id == selectedId,
