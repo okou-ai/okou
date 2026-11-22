@@ -89,14 +89,18 @@ class SavedUiStateTest {
         val checklist = compose.onNodeWithText("Release checklist").assertIsDisplayed()
         val feedback = compose.onNodeWithText("Customer feedback").assertIsDisplayed()
 
-        compose.runOnIdle { search.edit(TextFieldValue("fabu", TextRange(4), TextRange(0, 4))) }
+        compose.runOnIdle {
+            search.edit(TextFieldValue("fabu", TextRange(4), TextRange(0, 4)))
+            rows = rows + searchResult("summary", "Release summary")
+        }
         field.assertTextContains("fabu").assertIsFocused()
         checklist.assertIsDisplayed()
         feedback.assertIsDisplayed()
-
-        compose.runOnIdle { rows = rows + searchResult("summary", "Release summary") }
         val summary = compose.onNodeWithText("Release summary")
         summary.assertDoesNotExist()
+
+        compose.runOnIdle { rows = rows.filterNot { it.id == "feedback" } }
+        feedback.assertIsDisplayed()
 
         compose.runOnIdle { search.edit(TextFieldValue("Release", TextRange(7))) }
         field.assertTextContains("Release").assertIsFocused()
