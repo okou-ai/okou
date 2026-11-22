@@ -3,49 +3,59 @@
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 import time
 import zipfile
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+
+class HTTPSRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlsplit(newurl).scheme != "https":
+            raise ValueError("Artifact download requires an HTTPS redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def github_api(path, *, output=None, timeout=30):
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+    req = Request(
+        f"{api.rstrip('/')}/{path}",
+        headers={
+            "User-Agent": "okou-ios-ci",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    # The signed artifact URL authenticates itself. Keep the GitHub token on
+    # the original request, including when the artifact service redirects.
+    req.add_unredirected_header("Authorization", "Bearer " + os.environ["GH_TOKEN"])
+    opener = build_opener(HTTPSRedirect())
     for delay in (1, 2, 0):
+        if output is not None:
+            output.seek(0)
+            output.truncate()
         try:
-            if output is not None:
-                output.seek(0)
-                output.truncate()
-            result = subprocess.run(
-                ["gh", "api", path],
-                stdout=output if output is not None else subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=timeout,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
+            with opener.open(req, timeout=timeout) as response:
+                if output is None:
+                    return response.read()
+                shutil.copyfileobj(response, output, length=1024 * 1024)
+                return None
+        except HTTPError as exc:
+            exc.close()
+            if not delay or (exc.code != 429 and exc.code < 500):
+                raise RuntimeError(f"GitHub returned HTTP {exc.code}") from None
+        except (URLError, OSError, http.client.HTTPException) as exc:
             if not delay:
-                raise
-        else:
-            if result.returncode == 0:
-                return result.stdout
-            error = result.stderr.decode(errors="replace")
-            transient = any(
-                part in error
-                for part in (
-                    "HTTP 5",
-                    "HTTP 429",
-                    "timed out",
-                    "connection reset",
-                    "unexpected EOF",
-                )
-            )
-            if not delay or not transient:
-                raise RuntimeError(error.strip())
+                raise RuntimeError(
+                    f"GitHub transfer failed ({type(exc).__name__})"
+                ) from None
         time.sleep(delay)
 
 
@@ -100,8 +110,12 @@ def wait(kind):
     deadline = time.monotonic() + (900 if kind == "products" else 300)
     while time.monotonic() < deadline:
         jobs = request(base + "/jobs?filter=latest&per_page=100")
-        if jobs["total_count"] > len(jobs["jobs"]):
-            raise ValueError("Incomplete producer job inventory")
+        if jobs["total_count"] > 100:
+            raise ValueError("Producer job inventory exceeds this workflow's page")
+        if jobs["total_count"] != len(jobs["jobs"]) or None in jobs["jobs"]:
+            # GitHub can return an incomplete page just after dispatch.
+            time.sleep(5)
+            continue
         matching = [j for j in jobs["jobs"] if j["name"] == producer]
         if len(matching) > 1:
             raise ValueError("Ambiguous producer job")
@@ -124,6 +138,9 @@ def wait(kind):
             if len(live) > 1:
                 raise ValueError("Ambiguous input artifact")
             if live:
+                origin = live[0].get("workflow_run")
+                if origin and (str(origin["id"]) != run or origin["head_sha"] != head):
+                    raise ValueError("Artifact identity does not match this run")
                 print(
                     f"Receiving {name} from {producer}, artifact {live[0]['id']}",
                     flush=True,

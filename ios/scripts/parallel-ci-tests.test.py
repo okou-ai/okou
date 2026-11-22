@@ -41,6 +41,41 @@ class ArtifactTests(unittest.TestCase):
         }
         self.jobs = {"total_count": 1, "jobs": [self.job]}
 
+    def test_keeps_token_on_api_origin_and_rejects_insecure_redirect(self):
+        req = waiter.Request(
+            "https://api.github.com/example", headers={"Accept": "application/json"}
+        )
+        req.add_unredirected_header("Authorization", "Bearer test-placeholder")
+        redirect = waiter.HTTPSRedirect()
+        nxt = redirect.redirect_request(
+            req, None, 302, "", {}, "https://blob.example/artifact"
+        )
+        self.assertFalse(nxt.has_header("Authorization"))
+        with self.assertRaises(ValueError):
+            redirect.redirect_request(
+                req, None, 302, "", {}, "http://blob.example/artifact"
+            )
+
+    def test_retries_an_interrupted_stream_from_the_beginning(self):
+        class Incomplete(io.BytesIO):
+            def read(self, size=-1):
+                if self.tell():
+                    raise ConnectionResetError()
+                return super().read(2)
+
+        target = io.BytesIO()
+        with (
+            patch.dict(os.environ, {"GH_TOKEN": "test-placeholder"}),
+            patch.object(waiter, "build_opener") as factory,
+            patch.object(waiter.time, "sleep"),
+        ):
+            factory.return_value.open.side_effect = [
+                Incomplete(b"partial"),
+                io.BytesIO(b"complete"),
+            ]
+            waiter.github_api("repos/owner/repo/actions/artifacts/1/zip", output=target)
+        self.assertEqual(target.getvalue(), b"complete")
+
     def test_waits_for_the_actual_producer_attempt(self):
         name = "ios-ci-products-abc-2"
         artifacts = {"artifacts": [{"name": name, "id": 36, "expired": False}]}
@@ -49,7 +84,13 @@ class ArtifactTests(unittest.TestCase):
             patch.object(
                 waiter,
                 "request",
-                side_effect=[self.jobs, {"artifacts": []}, self.jobs, artifacts],
+                side_effect=[
+                    {"total_count": 1, "jobs": [None]},
+                    self.jobs,
+                    {"artifacts": []},
+                    self.jobs,
+                    artifacts,
+                ],
             ),
             patch.object(waiter.time, "sleep"),
         ):
