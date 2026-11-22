@@ -33,6 +33,7 @@ import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
 import { userModelPreferenceContract } from "../contracts/user-model-preference";
+import { featureSwitchesContract } from "../contracts/feature-switches";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import {
   billingStatusContract,
@@ -326,6 +327,11 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: userModelPreferenceContract.update,
   },
   {
+    name: "featureSwitches",
+    response: "FeatureSwitches",
+    route: featureSwitchesContract.get,
+  },
+  {
     name: "recoverySubscriptions",
     response: "RecoverySubscriptions",
     route: thirdPartySubscriptionsMainContract.list,
@@ -601,6 +607,14 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "UpdateDefaultModelPreference",
     schema: userModelPreferenceContract.update.body,
     direction: "input",
+  },
+  {
+    name: "FeatureSwitches",
+    schema: featureSwitchesContract.get.responses[200],
+    readSchema: featureSwitchesContract.get.responses[200].pick({
+      effectiveSwitches: true,
+    }),
+    direction: "output",
   },
   {
     name: "RecoverySubscriptions",
