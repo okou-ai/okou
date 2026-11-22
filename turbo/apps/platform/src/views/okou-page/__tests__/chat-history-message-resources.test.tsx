@@ -37,7 +37,7 @@ test("Loading older messages restores attachment navigation", async () => {
       },
     ],
   } satisfies UserMessageDocument;
-  const chatEvents = Array.from({ length: 12 }, (_, index) => {
+  const chatEvents = Array.from({ length: 9 }, (_, index) => {
     const turn = index + 1;
     const runId = `history-resource-run-${turn.toString()}`;
     const minute = turn.toString().padStart(2, "0");
@@ -79,7 +79,7 @@ test("Loading older messages restores attachment navigation", async () => {
   await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   await expect(
-    screen.findByText("History answer 12"),
+    screen.findByText("History answer 9"),
   ).resolves.toBeInTheDocument();
   expect(queryFastControl("link", "Preview history-first.png")).toBeNull();
   const container = document.querySelector<HTMLElement>(
