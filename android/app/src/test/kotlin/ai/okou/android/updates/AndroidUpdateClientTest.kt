@@ -266,19 +266,22 @@ class AndroidUpdateClientTest {
         val directory = files.newFolder()
         val record =
             UpdateRecord(
-                "0.12.0",
-                AndroidUpdates(null, updateRelease()),
-                true,
-                "0.13.0",
-                "0.13.0",
-                12345,
-                updateRelease(),
+                installedVersion = "0.12.0",
+                info = AndroidUpdates(null, updateRelease()),
+                blocked = true,
+                minimum = "0.13.0",
+                checkedAt = 12345,
+                target = updateRelease(),
             )
-        FileUpdateStore(directory).save(record)
-        assertEquals(record, FileUpdateStore(directory).load())
-        File(directory, "state.json").writeBytes(ByteArray(131_073))
+        val store = FileUpdateStore(directory)
+        val stateFile = File(directory, "state.json")
+        store.save(record)
+        assertEquals(record, store.load())
+        stateFile.writeText(stateFile.readText().replaceFirst("{", "{\"deferred\":\"0.13.0\","))
+        assertEquals(record, store.load())
+        stateFile.writeBytes(ByteArray(131_073))
         try {
-            FileUpdateStore(directory).load()
+            store.load()
             fail("Expected bounded read")
         } catch (_: java.io.IOException) {}
     }

@@ -43,7 +43,6 @@
     <string name="auth_workspace">Espace de travail actuel</string>
     <string name="auth_switch_workspace">Changer d’espace de travail</string>
     <string name="auth_browser_unavailable">Installez un navigateur pour configurer votre espace de travail.</string>
-    <string name="preferences_title">Apparence et région</string>
     <string name="preference_save_failed">Vos préférences n’ont pas pu être enregistrées. Vos choix restent actifs.</string>
     <string name="preference_refresh_failed">Impossible d’actualiser les préférences. Réessayez.</string>
     <string name="preference_color_theme">Thème de couleur</string>
@@ -100,7 +99,6 @@
     <string name="composer_revoked">Message révoqué</string>
     <string name="updates_title">Mises à jour de l’application</string>
     <string name="updates_installed">Version actuelle : %1$s</string>
-    <string name="updates_available">La mise à jour %1$s est disponible</string>
     <string name="updates_current">Vous utilisez la dernière version</string>
     <string name="updates_preparing">Préparation…</string>
     <string name="updates_installing">Installation…</string>
@@ -109,7 +107,6 @@
     <string name="updates_connect_to_check">Connectez-vous à Internet pour rechercher des mises à jour.</string>
     <string name="updates_connect_to_download">Connectez-vous à Internet pour télécharger la mise à jour.</string>
     <string name="updates_check">Rechercher des mises à jour</string>
-    <string name="updates_view">Voir la mise à jour</string>
     <string name="updates_toolbar">Mettre à jour</string>
     <string name="updates_download">Télécharger la mise à jour</string>
     <string name="updates_retry_download">Relancer le téléchargement</string>
@@ -153,7 +150,6 @@
     <string name="updates_waiting_to_download">Téléchargement en attente</string>
     <string name="instructions_placeholder">Que souhaitez-vous qu’Okou garde à l’esprit ?</string>
     <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>
-    <string name="settings_conversation">Conversation</string>
     <string name="settings_timezone">Fuseau horaire</string>
     <string name="settings_timezone_hint">Fuseau horaire par défaut des nouvelles tâches planifiées.</string>
     <string name="settings_timezone_utc">Temps universel coordonné (UTC)</string>

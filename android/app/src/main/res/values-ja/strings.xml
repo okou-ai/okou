@@ -43,7 +43,6 @@
     <string name="auth_workspace">現在のワークスペース</string>
     <string name="auth_switch_workspace">ワークスペースを切り替え</string>
     <string name="auth_browser_unavailable">ワークスペースの設定を開くにはブラウザをインストールしてください。</string>
-    <string name="preferences_title">外観と地域</string>
     <string name="preference_save_failed">設定を保存できませんでした。選択した設定は引き続き有効です。</string>
     <string name="preference_refresh_failed">設定を更新できませんでした。再試行してください。</string>
     <string name="preference_color_theme">カラーテーマ</string>
@@ -100,7 +99,6 @@
     <string name="composer_revoked">メッセージは取り消されました</string>
     <string name="updates_title">アプリの更新</string>
     <string name="updates_installed">現在のバージョン %1$s</string>
-    <string name="updates_available">バージョン %1$s に更新できます</string>
     <string name="updates_current">最新バージョンです</string>
     <string name="updates_preparing">準備中…</string>
     <string name="updates_installing">インストール中…</string>
@@ -109,7 +107,6 @@
     <string name="updates_connect_to_check">インターネットに接続して更新を確認してください。</string>
     <string name="updates_connect_to_download">インターネットに接続して更新をダウンロードしてください。</string>
     <string name="updates_check">更新を確認</string>
-    <string name="updates_view">更新を見る</string>
     <string name="updates_toolbar">更新</string>
     <string name="updates_download">アップデートをダウンロード</string>
     <string name="updates_retry_download">ダウンロードを再試行</string>
@@ -153,7 +150,6 @@
     <string name="updates_waiting_to_download">ダウンロード待ち</string>
     <string name="instructions_placeholder">Okou に覚えておいてほしいことはありますか？</string>
     <string name="instructions_save_when_online">接続すると変更を保存できます。</string>
-    <string name="settings_conversation">チャット</string>
     <string name="settings_timezone">タイムゾーン</string>
     <string name="settings_timezone_hint">新しいスケジュールタスクのデフォルトのタイムゾーン。</string>
     <string name="settings_timezone_utc">協定世界時（UTC）</string>

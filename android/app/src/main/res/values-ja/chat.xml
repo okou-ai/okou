@@ -34,7 +34,10 @@
     <string name="chat_archived">アーカイブ済み</string>
     <string name="chat_muted">ミュート中</string>
     <string name="chat_project_empty">このプロジェクトにチャットはありません。</string>
-    <string name="chat_empty">このビューにチャットはありません。</string>
+    <string name="chat_empty">まだチャットがありません</string>
+    <string name="chat_empty_unread">未読のチャットはありません</string>
+    <string name="chat_empty_archived">アーカイブ済みのチャットはありません</string>
+    <string name="chat_empty_muted">ミュート済みのチャットはありません</string>
     <string name="chat_untitled">無題のチャット</string>
     <string name="chat_pinned">ピン留め済み</string>
     <string name="chat_active">アクティブ</string>

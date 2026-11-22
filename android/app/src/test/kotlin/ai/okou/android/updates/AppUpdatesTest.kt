@@ -99,7 +99,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun pendingRecoveryDoesNotAnnounceADifferentDownloadCandidate() = runTest {
+    fun pendingRecoveryKeepsTheSelectedPackageUntilVerificationCompletes() = runTest {
         val store = MemoryUpdateStore()
         val original = ControlledUpdates().apply { transfer.complete(File("verified.apk")) }
         AppUpdates(original, store, "0.12.0", 35, StandardTestDispatcher(testScheduler)).use { owner
@@ -130,13 +130,11 @@ class AppUpdatesTest {
                 .use { owner ->
                     runCurrent()
                     assertTrue(owner.state.value.preparing)
-                    assertFalse(owner.state.value.announce)
                     assertFalse(owner.state.value.canDownload)
                     assertFalse(owner.state.value.canInstall)
                     assertEquals("0.13.0", owner.state.value.displayedRelease!!.version)
                     assertEquals("0.14.0", owner.state.value.candidate!!.version)
                     owner.download(updateRelease("0.14.0"))
-                    owner.defer(updateRelease())
                     assertNull(owner.installationFile(updateRelease()))
                     runCurrent()
                     assertTrue(owner.state.value.preparing)
@@ -193,7 +191,7 @@ class AppUpdatesTest {
             assertEquals("0.12.0", owner.state.value.displayedRelease?.version)
             service.heldCheck!!.complete(Unit)
             advanceUntilIdle()
-            assertTrue(owner.state.value.announce)
+            assertTrue(owner.state.value.canDownload)
             assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
 
             service.response = AndroidUpdates(null, updateRelease("0.14.0"))
@@ -207,7 +205,7 @@ class AppUpdatesTest {
             owner.check(false)
             advanceUntilIdle()
             assertEquals(UpdateCheck.Failed, owner.state.value.check)
-            assertTrue(owner.state.value.announce)
+            assertTrue(owner.state.value.canDownload)
             assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
 
             service.failCheck = false
@@ -251,7 +249,7 @@ class AppUpdatesTest {
 
                 connectivity.value = true
                 advanceUntilIdle()
-                assertTrue(owner.state.value.announce)
+                assertTrue(owner.state.value.canDownload)
                 assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
             }
         runCurrent()
@@ -351,10 +349,8 @@ class AppUpdatesTest {
             owner.check()
             advanceUntilIdle()
             owner.download(old)
-            owner.defer(old)
             runCurrent()
             assertTrue(service.downloadedReleases.isEmpty())
-            assertNull(owner.state.value.deferred)
             owner.download(latest)
             runCurrent()
             assertEquals(UpdateTransfer.Downloading(latest), owner.state.value.transfer)
@@ -453,7 +449,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun checksAreNonblockingThrottledAndDeferralIsPerRelease() = runTest {
+    fun checksAreNonblockingAndOnlyManualRequestsBypassTheCooldown() = runTest {
         val service = ControlledUpdates().apply { heldCheck = CompletableDeferred() }
         val store = MemoryUpdateStore()
         val owner =
@@ -473,10 +469,7 @@ class AppUpdatesTest {
             assertFalse(owner.state.value.available)
             service.heldCheck!!.complete(Unit)
             advanceUntilIdle()
-            assertTrue(owner.state.value.announce)
-            owner.defer(updateRelease())
-            advanceUntilIdle()
-            assertFalse(owner.state.value.announce)
+            assertTrue(owner.state.value.canDownload)
             owner.check(false)
             advanceUntilIdle()
             assertEquals(1, service.checks)
@@ -486,8 +479,8 @@ class AppUpdatesTest {
             service.response = AndroidUpdates(null, updateRelease("0.14.0"))
             owner.check()
             advanceUntilIdle()
-            assertTrue(owner.state.value.announce)
-            assertEquals("0.13.0", store.record!!.deferred)
+            assertEquals("0.14.0", owner.state.value.candidate?.version)
+            assertEquals("0.14.0", store.record?.info?.release?.version)
         } finally {
             owner.close()
             runCurrent()
@@ -510,10 +503,8 @@ class AppUpdatesTest {
             assertTrue(owner.state.value.required)
             assertEquals("0.13.0", owner.state.value.minimum)
             owner.requireUpdate(RequiredUpdate(null))
-            owner.defer(updateRelease())
             advanceUntilIdle()
             assertTrue(store.record!!.blocked)
-            assertNull(store.record!!.deferred)
         } finally {
             owner.close()
             runCurrent()

@@ -17,6 +17,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -24,6 +25,7 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -103,6 +105,19 @@ class NativeUpdateTest {
             }
             fun click(label: Int) = requireNotNull(text(app.getString(label))).click()
             fun exists(label: Int) = assertNotNull(text(app.getString(label)))
+            fun revealSettingsUpdate(label: String = app.getString(R.string.updates_title)) {
+                val target = By.pkg(app.packageName).text(label)
+                if (device.hasObject(target)) return
+                val settings = checkNotNull(find(By.pkg(app.packageName).scrollable(true)))
+                val visible =
+                    object : Condition<UiObject2, Boolean> {
+                        override fun apply(container: UiObject2) = device.hasObject(target)
+                    }
+                assertTrue(
+                    "Expected Settings update control $label",
+                    settings.scrollUntil(Direction.DOWN, visible) == true,
+                )
+            }
             fun captureState(name: String) {
                 device.waitForIdle()
                 takeScreenshot().writeToTestStorage("android-update-$name")
@@ -111,6 +126,18 @@ class NativeUpdateTest {
             val searchLabel = app.getString(R.string.chat_search_workspace)
             val search = By.pkg(app.packageName).desc(searchLabel)
             val searchBounds = button(search).visibleBounds
+            val density = app.resources.displayMetrics.density
+            fun assertGap(expectedDp: Int, actualPx: Int) {
+                // Compose rounds layout spacing first. UI Automator rounds each edge separately.
+                val expectedPx = (expectedDp * density).roundToInt()
+                assertEquals(expectedPx.toFloat(), actualPx.toFloat(), 1f)
+            }
+            val avatar =
+                By.pkg(app.packageName)
+                    .descStartsWith(app.getString(R.string.auth_switch_workspace))
+            val filterAction = By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
+            assertGap(8, searchBounds.left - button(avatar).visibleBounds.right)
+            assertGap(8, button(filterAction).visibleBounds.left - searchBounds.right)
             captureState("toolbar-current")
             val updateTarget = app.getString(R.string.updates_version, "99.0.0")
             fun closeDetails() {
@@ -128,6 +155,7 @@ class NativeUpdateTest {
                     device.wait(Until.findObject(By.desc(app.getString(R.string.settings))), 10_000)
                 )
                 .click()
+            revealSettingsUpdate()
             click(R.string.updates_title)
             exists(R.string.updates_check_in_progress)
             captureState("details-checking")
@@ -146,17 +174,14 @@ class NativeUpdateTest {
             val updateAction = app.getString(R.string.updates_toolbar)
             val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds
             assertEquals(searchBounds, button(search).visibleBounds)
+            assertGap(8, updateBounds.left - searchBounds.right)
             captureState("toolbar-available")
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
             )
             val more =
-                requireNotNull(
-                    device.wait(
-                        Until.findObject(By.desc(app.getString(R.string.chat_more_actions))),
-                        10_000,
-                    )
-                )
+                button(By.pkg(app.packageName).desc(app.getString(R.string.chat_more_actions)))
+            assertGap(4, more.visibleBounds.left - updateBounds.right)
             assertEquals(1, device.findObjects(By.pkg(app.packageName).desc(updateAction)).size)
             assertFalse(
                 device.hasObject(By.pkg(app.packageName).desc(app.getString(R.string.settings)))
@@ -210,6 +235,7 @@ class NativeUpdateTest {
                 requireNotNull(device.wait(Until.findObject(By.desc(moreLabel)), 10_000)).click()
             openOverflow()
             click(R.string.settings)
+            revealSettingsUpdate(app.getString(R.string.updates_new_version))
             exists(R.string.updates_new_version)
             captureState("settings-available")
             click(R.string.updates_title)
@@ -244,6 +270,7 @@ class NativeUpdateTest {
 
             openOverflow()
             click(R.string.settings)
+            revealSettingsUpdate(progressLabel)
             assertNotNull(text(progressLabel))
             captureState("settings-progress")
             backToChatList()
@@ -284,6 +311,7 @@ class NativeUpdateTest {
             captureState("toolbar-ready")
             openOverflow()
             click(R.string.settings)
+            revealSettingsUpdate(app.getString(R.string.updates_ready))
             exists(R.string.updates_ready)
             captureState("settings-ready")
             click(R.string.updates_title)
