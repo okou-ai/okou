@@ -356,7 +356,7 @@ private fun WorkspaceSettingsContent(
                     }
                 },
                 models = {
-                    DefaultModelSetting(ready.settings.defaultModel)
+                    DefaultModelSetting(ready?.settings?.defaultModel)
                     SettingsRow(
                         stringResource(R.string.settings_model_accounts),
                         leading = { SettingsIcon(R.drawable.ic_account_circle) },
