@@ -43,7 +43,6 @@ data class ChatCheckpoint(
         val threads = HashSet<String>()
         archive.chatThreads.forEach { row ->
             requireChatId(row.id)
-            row.agentId?.let(::requireChatId)
             row.projectId?.let(::requireChatId)
             requireChatWire(threads.add(row.id))
             chatTime(row.createdAt)
@@ -59,13 +58,10 @@ data class ChatCheckpoint(
             requireChatId(event.threadId())
             when (event) {
                 is ChatEventsEventsItemVariant1 -> {
-                    event.agentId?.let(::requireChatId)
-                    event.reassignedAgentId?.let(::requireChatId)
                     event.projectId?.let(::requireChatId)
                     chatTime(event.createdAt)
                 }
                 is ChatEventsEventsItemVariant2 -> {
-                    event.agentId?.let(::requireChatId)
                     event.projectId?.let(::requireChatId)
                     chatTime(event.createdAt)
                 }
@@ -162,7 +158,6 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
             rows[id] =
                 ConfirmedChat(
                     id = id,
-                    agentId = event.agentId,
                     projectId = event.projectId,
                     title = event.title,
                     createdAt = event.createdAt,
@@ -224,16 +219,14 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
                     event.muted != null -> row.copy(muted = event.muted)
                     event.pinOrder != null ->
                         row.copy(
-                            agentId = event.reassignedAgentId ?: row.agentId,
-                            pinOrder = if (row.pinnedAt != null) event.pinOrder else row.pinOrder,
+                            pinOrder = if (row.pinnedAt != null) event.pinOrder else row.pinOrder
                         )
                     else ->
                         row.copy(
-                            agentId = event.reassignedAgentId ?: row.agentId,
                             sortAt =
                                 if (chatTimestamp(event.createdAt) > chatTimestamp(row.sortAt))
                                     event.createdAt
-                                else row.sortAt,
+                                else row.sortAt
                         )
                 }
             return

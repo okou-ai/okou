@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
@@ -59,7 +58,7 @@ class RunControlsModelTest {
 
     private fun thread(id: String = CHAT_PERSONAL) =
         Json.decodeFromString<ChatArchive>(
-                """{"chatThreads":[{"id":"$id","agentId":"$CHAT_AGENT","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                """{"chatThreads":[{"id":"$id","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
             )
             .chatThreads
             .single()
@@ -475,7 +474,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("retired-reader"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -621,7 +619,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("cancelled-before-cleared"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -892,7 +889,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("retry-read-failure"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -958,7 +954,6 @@ class RunControlsModelTest {
                 RunControlIntent(
                     eventId("independent-metadata-failure"),
                     CHAT_PERSONAL,
-                    CHAT_AGENT,
                     RunControlKind.Interrupt,
                     HISTORY_RUN,
                 )
@@ -1009,7 +1004,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("older-recovery-read"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -1058,7 +1052,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("restored-control"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -1100,7 +1093,6 @@ class RunControlsModelTest {
                 RunControlIntent(
                     eventId("original-control"),
                     CHAT_PERSONAL,
-                    CHAT_AGENT,
                     RunControlKind.Interrupt,
                     HISTORY_RUN,
                 )
@@ -1164,7 +1156,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("unauthorized-control"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -1204,7 +1195,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("unreadable-control"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )

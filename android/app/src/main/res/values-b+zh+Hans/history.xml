@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="history_syncing">正在同步消息…</string>
     <string name="history_loading">正在加载会话…</string>
     <string name="history_failed">无法刷新会话，请重试。</string>
     <string name="history_missing">此会话已删除或不可用。</string>

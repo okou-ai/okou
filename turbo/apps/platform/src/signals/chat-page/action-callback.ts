@@ -21,7 +21,7 @@ export interface ChatActionCallbackIds {
 }
 
 export function chatActionCallbackFromUrl(
-  url: URL,
+  url: Pick<URL, "searchParams">,
   context: Pick<ChatActionContext, "threadId">,
 ): ChatActionCallback | null {
   const callbackPrompt = url.searchParams.get("callbackPrompt");
@@ -56,7 +56,6 @@ export const runChatActionCallback$ = command(
     { get },
     args: {
       readonly threadId: string;
-      readonly agentId?: string;
       readonly callbackPrompt: string;
       readonly callbackIds?: ChatActionCallbackIds;
     },

@@ -3,11 +3,8 @@ import {
   type ConnectorPermissionFixture,
 } from "../../../__tests__/connector-permissions.ts";
 import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
-import {
   chatEventsContract,
+  chatThreadMetadataContract,
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -33,13 +30,14 @@ import { mockNow } from "../../../__tests__/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "10000000-0000-4000-a000-000000000001";
+
 const THREAD_ID = "20000000-0000-4000-a000-000000000001";
 const NOW_MS = 1_893_456_000_000;
 
 interface PermissionPageOptions {
   readonly userName: string;
-  readonly agentName: string;
+  readonly member?: { orgId: string; userId: string };
+
   readonly connectorSlug?: string;
   readonly connectorLabel?: string;
   readonly permission?: string;
@@ -47,6 +45,7 @@ interface PermissionPageOptions {
   readonly action?: string;
   readonly expiresIn?: "1h" | "24h" | "7d" | "always";
   readonly connectorParam?: "connectorSlug" | "ref";
+
   readonly grants?:
     | readonly ConnectorPermissionFixture[]
     | (() => readonly ConnectorPermissionFixture[]);
@@ -60,19 +59,6 @@ interface PermissionPageOptions {
   readonly callback?: {
     readonly prompt: string;
     readonly threadId: string;
-  };
-}
-
-function agentFixture(displayName: string): AgentResponse {
-  return {
-    isDefaultAgent: false,
-    agentId: AGENT_ID,
-    ownerId: "test-user-123",
-    displayName,
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    visibility: "private",
   };
 }
 
@@ -174,10 +160,6 @@ function setupPermissionPage(options: PermissionPageOptions): Promise<void> {
   const permissionDefault = options.permissionDefault ?? "deny";
   const unknownPolicy = options.unknownPolicy ?? "deny";
   const connectorParam = options.connectorParam ?? "connectorSlug";
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    expect(params.id).toBe(AGENT_ID);
-    return respond(200, agentFixture(options.agentName));
-  });
   context.mocks.api(
     connectorCatalogContract.permissions,
     ({ params, respond }) => {
@@ -225,9 +207,31 @@ function setupPermissionPage(options: PermissionPageOptions): Promise<void> {
     params.set("callbackPrompt", options.callback.prompt);
   }
 
+  const member = options.member ?? {
+    orgId: "org_default",
+    userId: "test-user-123",
+  };
+  params.set("orgId", member.orgId);
+  params.set("userId", member.userId);
+  if (options.callback) {
+    context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+      return respond(200, {
+        id: params.id,
+        title: "Review",
+        selectedModel: null,
+        modelSettings: {},
+        serviceTier: null,
+        pinnedAt: null,
+        archived: false,
+        muted: false,
+        computerUseHostId: null,
+        cloudBrowserEnabled: false,
+      });
+    });
+  }
   return setupPage({
     context,
-    path: `/agents/${AGENT_ID}/permissions?${params.toString()}`,
+    path: `/connectors/permissions?${params}`,
     auth: {
       user: {
         id: "test-user-123",
@@ -264,7 +268,6 @@ test("A user grants a time-limited connector permission and resumes the chat", a
 
   await setupPermissionPage({
     userName: "Dana",
-    agentName: "Research Bot",
     connectorLabel: "Catalog Slack",
     permission: "catalog.analytics:read",
     permissionDescription: "Read catalog analytics",
@@ -277,10 +280,10 @@ test("A user grants a time-limited connector permission and resumes the chat", a
 
   await expect(
     screen.findByText(
-      "Hey Dana, you're updating your permissions for Research Bot.",
+      "Hey Dana, you're updating your permissions for Default Org.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Research Bot").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Default Org").length).toBeGreaterThan(0);
   expect(screen.getByText("Catalog Slack")).toBeInTheDocument();
   expect(screen.getByText("catalog.analytics:read")).toBeInTheDocument();
   expect(screen.getByText("Read catalog analytics")).toBeInTheDocument();
@@ -343,7 +346,6 @@ async function confirmPermissionAfterGrantNotification(
   });
   await setupPermissionPage({
     userName: "Dana",
-    agentName: "Research Bot",
     grants: () => {
       if (grants.length > 0 && !grantsRefreshed.settled()) {
         grantsRefreshed.resolve(undefined);
@@ -353,7 +355,7 @@ async function confirmPermissionAfterGrantNotification(
     callback: { prompt: "Resume the review", threadId: THREAD_ID },
   });
   await screen.findByText(
-    "Hey Dana, you're updating your permissions for Research Bot.",
+    "Hey Dana, you're updating your permissions for Default Org.",
   );
   click(buttonByText("Confirm"));
   await callbackStarted.promise;
@@ -412,7 +414,6 @@ test("A user can allow a connector's uncatalogued endpoints without exposing an 
 
   await setupPermissionPage({
     userName: "Casey",
-    agentName: "Cloudflare Bot",
     connectorSlug: "cloudflare",
     connectorLabel: "Cloudflare",
     permission: UNKNOWN_PERMISSION_GRANT,
@@ -422,7 +423,7 @@ test("A user can allow a connector's uncatalogued endpoints without exposing an 
 
   await expect(
     screen.findByText(
-      "Hey Casey, you're updating your permissions for Cloudflare Bot.",
+      "Hey Casey, you're updating your permissions for Default Org.",
     ),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Cloudflare")).toBeInTheDocument();
@@ -451,7 +452,6 @@ test("An already effective permission does not ask for confirmation again", asyn
   mockNow(NOW_MS, context.signal);
   await setupPermissionPage({
     userName: "Dana",
-    agentName: "Research Bot",
     permission: "bookmarks:read",
     permissionDescription: "List channel bookmarks",
     permissionDefault: "allow",
@@ -478,7 +478,6 @@ test("An already effective permission does not ask for confirmation again", asyn
 test("An already denied permission does not ask for denial again", async () => {
   await setupPermissionPage({
     userName: "Jordan",
-    agentName: "Review Bot",
     action: "deny",
     grants: [permissionGrant({ action: "deny", expiresAt: null })],
   });
@@ -495,48 +494,56 @@ test("An already denied permission does not ask for denial again", async () => {
   ).toBeUndefined();
 });
 
-test("An older permission link can still deny connector access safely", async () => {
-  let applied: ApplyConnectorPermissions | null = null;
+test("A member can approve a standalone link without a Chat", async () => {
   context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
-    applied = body;
+    expect(body.grants).toStrictEqual([
+      { permission: "branches:create", action: "allow", expiresIn: "1h" },
+    ]);
     return respond(
       200,
       connectorPermissionsResponse(body.target, [
-        permissionGrant({ action: "deny", expiresAt: null }),
+        permissionGrant({
+          connectorSlug: "neon",
+          permission: "branches:create",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        }),
       ]),
     );
   });
   await setupPermissionPage({
-    userName: "Morgan",
-    agentName: "Ops Bot",
-    connectorParam: "ref",
-    action: "deny",
-    grants: [permissionGrant({ expiresAt: null })],
+    userName: "Dana",
+    member: { orgId: "org_default", userId: "test-user-123" },
+    connectorSlug: "neon",
+    connectorLabel: "Neon",
+    permission: "branches:create",
   });
-
-  await expect(
-    screen.findByText(
-      "Hey Morgan, you're updating your permissions for Ops Bot.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Slack")).toBeInTheDocument();
-  expect(
-    screen.getByText("Access workspace analytics data"),
-  ).toBeInTheDocument();
-  expect(screen.queryByText("Duration")).not.toBeInTheDocument();
-
+  await screen.findByText(
+    "Hey Dana, you're updating your permissions for Default Org.",
+  );
   click(buttonByText("Confirm"));
-
   await expect(
-    screen.findByText("Permissions denied"),
+    screen.findByText("Permissions updated"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByText(/Expires in/u)).not.toBeInTheDocument();
-  expect(applied).toStrictEqual({
-    target: { kind: "builtin", connectorSlug: "slack" },
-    mode: "patch",
-    grants: [{ permission: "admin.analytics:read", action: "deny" }],
-  });
 });
+
+test.each([
+  { orgId: "other-org", userId: "test-user-123" },
+  { orgId: "org_default", userId: "other-user" },
+])(
+  "A standalone permission request cannot be confirmed in a different member scope: %o",
+  async (member) => {
+    await setupPermissionPage({
+      userName: "Dana",
+      member,
+    });
+    await screen.findByText("This permission link is invalid or unavailable.");
+    expect(
+      queryAllByRoleFast("button").some((button) => {
+        return button.textContent?.trim() === "Confirm";
+      }),
+    ).toBeFalsy();
+  },
+);
 
 test.each(["not-a-date", new Date(NOW_MS).toISOString()])(
   "An expired or invalid allow grant (%s) requires fresh confirmation",
@@ -544,14 +551,13 @@ test.each(["not-a-date", new Date(NOW_MS).toISOString()])(
     mockNow(NOW_MS, context.signal);
     await setupPermissionPage({
       userName: "Taylor",
-      agentName: "Research Bot",
       expiresIn: "24h",
       grants: [permissionGrant({ expiresAt })],
     });
 
     await expect(
       screen.findByText(
-        "Hey Taylor, you're updating your permissions for Research Bot.",
+        "Hey Taylor, you're updating your permissions for Default Org.",
       ),
     ).resolves.toBeInTheDocument();
     expect(screen.queryByText("Already allowed")).not.toBeInTheDocument();
@@ -565,7 +571,6 @@ test.each(["not-a-date", new Date(NOW_MS).toISOString()])(
 test("Permission grants that cannot be loaded fail closed", async () => {
   await setupPermissionPage({
     userName: "Avery",
-    agentName: "Load Error Bot",
     grantLoadError: true,
   });
 
@@ -582,7 +587,6 @@ test("Permission grants that cannot be loaded fail closed", async () => {
 test("A missing connector cannot be authorized", async () => {
   await setupPermissionPage({
     userName: "Dana",
-    agentName: "Hidden Connector Bot",
     connectorSlug: "hidden-connector",
     connectorLabel: "Hidden Connector",
     permission: "hidden.permission",
@@ -603,7 +607,6 @@ test("A missing connector cannot be authorized", async () => {
 test("An unsupported permission action fails closed", async () => {
   await setupPermissionPage({
     userName: "Dana",
-    agentName: "Research Bot",
     action: "approve",
   });
 

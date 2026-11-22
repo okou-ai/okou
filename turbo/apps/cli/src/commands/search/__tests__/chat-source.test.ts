@@ -42,10 +42,7 @@ describe("okou search --source chat", () => {
     // see calls made by the current case.
     vi.clearAllMocks();
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv(
-      "OKOU_TOKEN",
-      capturedRunToken(["agent:read", "chat-thread:read"]),
-    );
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["chat-thread:read"]));
     // Commander retains collector state across parseAsync calls on the
     // same command instance. Reset before each case.
     searchCommand.setOptionValue("source", []);
@@ -74,7 +71,6 @@ describe("okou search --source chat", () => {
           results: [
             {
               chatThreadId: "thread-abc",
-              agentName: "my-agent",
               matchedMessage: makeMessage({
                 content: "OOM killed the build",
               }),
@@ -100,7 +96,6 @@ describe("okou search --source chat", () => {
           results: [
             {
               chatThreadId: "thread-abc",
-              agentName: "my-agent",
               matchedMessage: makeMessage({
                 content: "OOM killed the build",
                 createdAt: "not-a-timestamp",

@@ -1,6 +1,7 @@
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { act, screen, waitFor, within } from "@testing-library/react";
-import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 
@@ -23,16 +24,18 @@ import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
-const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?agentId=${AGENT_ID}`;
-const PERMISSION_URL = `https://app.okou.ai/agents/${AGENT_ID}/permissions?connectorSlug=slack&permission=files:read`;
+const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?threadId=${THREAD_ID}`;
+const PERMISSION_URL = `https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read`;
 const EXACT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000911";
 const DEFAULT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000912";
+
+const MEMBER_PERMISSION_URL =
+  "https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read";
 
 function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
   const url = new URL(
     `https://app.okou.ai/connectors/github/reconnect/${connectionId}`,
   );
-  url.searchParams.set("agentId", AGENT_ID);
   url.searchParams.set("threadId", THREAD_ID);
   url.searchParams.set("callbackPrompt", "Continue the account-specific task");
   return url;
@@ -237,6 +240,18 @@ function expectNodeBefore(before: Node, after: Node): void {
   ).toBeTruthy();
 }
 
+test("A member permission link is enhanced only for its callback Chat", async () => {
+  const other = new URL(MEMBER_PERMISSION_URL);
+  other.searchParams.set("threadId", "d0000000-0000-4000-8000-000000000099");
+  other.searchParams.set("callbackPrompt", "Continue the task");
+  await setupChat(
+    `[Review permissions](${MEMBER_PERMISSION_URL}) and [Continue elsewhere](${other}).`,
+  );
+  await screen.findByTestId("permission-action-card");
+  expect(screen.getAllByTestId("permission-action-card")).toHaveLength(1);
+  expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(1);
+});
+
 test("A connector link becomes an action without losing surrounding prose", async () => {
   await setupChat(
     [
@@ -337,9 +352,7 @@ test("Removing formatted bare actions leaves readable prose without empty marker
 test("Incomplete action links are shown as unavailable", async () => {
   const connectorWithoutAgent =
     "https://app.okou.ai/connectors/github/authorize";
-  const bankingWithoutReason = new URL(
-    `https://app.okou.ai/agents/${AGENT_ID}/banking`,
-  );
+  const bankingWithoutReason = new URL(`https://app.okou.ai/banking/access`);
   bankingWithoutReason.searchParams.set("threadId", THREAD_ID);
   bankingWithoutReason.searchParams.set(
     "callbackPrompt",
@@ -372,8 +385,8 @@ test("Incomplete action links are shown as unavailable", async () => {
 
 test("Invalid actions remain unavailable beside valid and external links", async () => {
   const wrongAgentUrl = CONNECTOR_URL.replace(
-    AGENT_ID,
-    "c0000000-0000-4000-a000-000000000099",
+    THREAD_ID,
+    "b0000000-0000-4000-a000-000000000099",
   );
   const wrongThreadUrl = `${PERMISSION_URL}&threadId=b0000000-0000-4000-a000-000000000099&callbackPrompt=Continue`;
   const externalUrl = CONNECTOR_URL.replace(
@@ -555,8 +568,8 @@ test("A bare action stops before adjacent Chinese punctuation and prose", async 
 
 test("Action labels stay literal instead of becoming new Markdown links or headings", async () => {
   const wrongAgentUrl = CONNECTOR_URL.replace(
-    AGENT_ID,
-    "c0000000-0000-4000-a000-000000000099",
+    THREAD_ID,
+    "b0000000-0000-4000-a000-000000000099",
   );
   await setupChat(
     [
@@ -1039,11 +1052,6 @@ test("Closing the exact reconnect dialog does not send the callback", async () =
 });
 
 test("Malformed or context-mismatched exact reconnect links are inert", async () => {
-  const wrongAgent = exactReconnectUrl();
-  wrongAgent.searchParams.set(
-    "agentId",
-    "c0000000-0000-4000-a000-000000000099",
-  );
   const wrongThread = exactReconnectUrl();
   wrongThread.searchParams.set(
     "threadId",
@@ -1051,7 +1059,7 @@ test("Malformed or context-mismatched exact reconnect links are inert", async ()
   );
   const malformedId = exactReconnectUrl("not-an-account-id");
   await setupChat(
-    [wrongAgent, wrongThread, malformedId]
+    [wrongThread, malformedId]
       .map((url) => {
         return url.toString();
       })
@@ -1059,12 +1067,12 @@ test("Malformed or context-mismatched exact reconnect links are inert", async ()
   );
 
   await waitFor(() => {
-    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(3);
+    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
   });
   expect(screen.queryByTestId("connector-action-card")).toBeNull();
   expect(
     queryAllByRoleFast("link").some((link) => {
-      return [wrongAgent, wrongThread, malformedId].some((url) => {
+      return [wrongThread, malformedId].some((url) => {
         return link.getAttribute("href") === url.toString();
       });
     }),
@@ -1081,13 +1089,31 @@ test("A missing exact reconnect account never falls back to the default", async 
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
 
-test("Connector account switches A → B → A keep their icon and continue with fresh callback IDs", async () => {
+function mockOwnedApprovalThread() {
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    expect(params.id).toBe(THREAD_ID);
+    return respond(200, {
+      id: THREAD_ID,
+      title: "Action requests",
+      selectedModel: null,
+      modelSettings: {},
+      serviceTier: null,
+      pinnedAt: null,
+      archived: false,
+      muted: false,
+      computerUseHostId: null,
+      cloudBrowserEnabled: false,
+    });
+  });
+}
+
+async function exerciseAccountSwitch(entry: "chat" | "direct") {
   const github = connectorSlugSchema.parse("github");
   const connectionId = "f0000000-0000-4000-a000-000000000901";
   const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
   const iconUrl = "https://icons.example.test/account-switch-github.svg";
   const switchUrl = new URL(
-    `https://app.okou.ai/agents/${AGENT_ID}/connector-accounts/${connectionId}/select`,
+    `https://app.okou.ai/connectors/accounts/${connectionId}/select`,
   );
   switchUrl.searchParams.set("kind", "builtin");
   switchUrl.searchParams.set("connectorSlug", github);
@@ -1214,24 +1240,20 @@ test("Connector account switches A → B → A keep their icon and continue with
       });
     },
   });
+  if (entry === "direct") {
+    mockOwnedApprovalThread();
+  }
   await setupPage({
     context,
-    path: `/chats/${THREAD_ID}`,
+    path:
+      entry === "direct"
+        ? switchUrl.pathname + switchUrl.search
+        : `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
     featureSwitches: {},
   });
 
-  const chat = screen.getByRole("region", { name: "Chat thread" });
-  // These reply queries depend on text and children, not attribute changes.
-  const replyWaitOptions = {
-    container: chat,
-    mutationObserverOptions: {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    },
-  };
-  const card = await within(chat).findByTestId("connector-account-action-card");
+  const card = await screen.findByTestId("connector-account-action-card");
   expect(card).toHaveTextContent("Switch to Work GitHub?");
   await waitFor(() => {
     expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
@@ -1239,6 +1261,7 @@ test("Connector account switches A → B → A keep their icon and continue with
   expect(itemReads).toStrictEqual([github]);
   expect(statusReads).toBe(0);
 
+  expect(selectionWrites).toBe(0);
   click(buttonIn(card, "Switch"));
   await waitFor(() => {
     expect(callbackIds).toHaveLength(1);
@@ -1251,6 +1274,21 @@ test("Connector account switches A → B → A keep their icon and continue with
   await waitFor(() => {
     expect(card).toHaveTextContent("Switched to Work GitHub");
   });
+
+  const chat = screen.queryByRole("region", { name: "Chat thread" });
+  expect(Boolean(chat)).toBe(entry === "chat");
+  if (!chat) {
+    return;
+  }
+  // These reply queries depend on text and children, not attribute changes.
+  const replyWaitOptions = {
+    container: chat,
+    mutationObserverOptions: {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    },
+  };
 
   const otherSwitchUrl = new URL(switchUrl);
   otherSwitchUrl.pathname = otherSwitchUrl.pathname.replace(
@@ -1324,7 +1362,12 @@ test("Connector account switches A → B → A keep their icon and continue with
       within(chat).queryByText("Continued with Work GitHub again"),
     ).toBeInTheDocument();
   }, replyWaitOptions);
-});
+}
+
+test.each(["chat", "direct"] as const)(
+  "Connector account switching from %s",
+  exerciseAccountSwitch,
+);
 
 test("Ordinary or code links remain message content", async () => {
   const ordinaryUrl = "https://example.com/reference";
@@ -1350,9 +1393,9 @@ test("Ordinary or code links remain message content", async () => {
   expect(document.querySelector("[data-testid$='action-card']")).toBeNull();
 });
 
-test("A valid banking request becomes an action card", async () => {
+async function reviewBankingRequest(entry: "chat" | "direct") {
   const reason = "Review quarterly subscription expenses";
-  const bankingUrl = new URL(`https://app.okou.ai/agents/${AGENT_ID}/banking`);
+  const bankingUrl = new URL("https://app.okou.ai/banking/access");
   bankingUrl.searchParams.set("reason", reason);
   bankingUrl.searchParams.set("threadId", THREAD_ID);
   bankingUrl.searchParams.set(
@@ -1360,9 +1403,8 @@ test("A valid banking request becomes an action card", async () => {
     "Continue with the subscription review",
   );
   context.mocks.api(
-    bankingUserContract.accessRequestStatus,
-    ({ params, respond }) => {
-      expect(params.agentId).toBe(AGENT_ID);
+    bankingWorkspaceContract.accessRequestStatus,
+    ({ respond }) => {
       return respond(200, {
         agent: { id: AGENT_ID, name: "Finance Assistant" },
         connection: null,
@@ -1371,12 +1413,22 @@ test("A valid banking request becomes an action card", async () => {
       });
     },
   );
-  await setupChat(["Banking request", "", bankingUrl.toString()].join("\n"));
-
-  await screen.findByText("Banking request");
+  if (entry === "direct") {
+    mockOwnedApprovalThread();
+    await setupPage({
+      context,
+      path: bankingUrl.pathname + bankingUrl.search,
+      host: "app.okou.ai",
+    });
+  } else {
+    await setupChat(["Banking request", "", bankingUrl.toString()].join("\n"));
+    await screen.findByText("Banking request");
+  }
   const card = await screen.findByTestId("banking-action-card");
+  expect(Boolean(screen.queryByRole("region", { name: "Chat thread" }))).toBe(
+    entry === "chat",
+  );
   expect(card).toHaveTextContent("Banking access request");
-  expect(card).toHaveTextContent("Finance Assistant");
   expect(card).toHaveTextContent(reason);
   expect(card).toHaveTextContent(
     "Accounts, balances, and transactions · read only",
@@ -1386,4 +1438,29 @@ test("A valid banking request becomes an action card", async () => {
       return link.getAttribute("href") === bankingUrl.toString();
     }),
   ).toBeFalsy();
+}
+
+test.each(["chat", "direct"] as const)(
+  "Review banking request from %s",
+  reviewBankingRequest,
+);
+
+test.each([
+  "/banking/access?reason=Review+spend&",
+  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/select?kind=builtin&connectorSlug=github&",
+])("A direct approval requires access to its Chat (%s)", async (route) => {
+  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Chat thread not found" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `${route}threadId=${THREAD_ID}&callbackPrompt=Continue`,
+    host: "app.okou.ai",
+  });
+  const heading = await screen.findByRole("heading", { level: 1 });
+  expect(heading).toHaveTextContent("That page isn't here.");
+  expect(screen.queryByTestId("banking-action-card")).toBeNull();
+  expect(screen.queryByTestId("connector-account-action-card")).toBeNull();
 });

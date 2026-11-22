@@ -173,8 +173,6 @@ export const networkLogEntrySchema = object({
  */
 export const runningTaskSchema = object({
   runId: string().nullable(),
-  agentName: string(),
-  agentDisplayName: string().nullable(),
   userEmail: string(),
   startedAt: string().nullable(),
   isOwner: boolean(),

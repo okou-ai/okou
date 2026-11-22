@@ -361,6 +361,7 @@ export const chatThreadCreateRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       {
         requiredCapability: "chat-thread:write",
+        oauthScope: "okou:chat:send",
         requireOrganization: true,
         missingOrganizationStatus: 401,
       },

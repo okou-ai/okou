@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="chat_search">搜索</string>
-    <string name="chat_search_hint">搜索聊天</string>
+    <string name="chat_search_workspace">搜索工作区</string>
     <string name="chat_search_clear">清除搜索</string>
     <string name="chat_search_recent">最近聊天</string>
     <string name="chat_search_empty">没有匹配的聊天</string>

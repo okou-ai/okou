@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { ComposerDraft } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   click,
@@ -52,10 +52,10 @@ function control(
 async function openShelf() {
   const capture = mockTemplateChat();
   let savedDraft = originalDraft();
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, savedDraft);
   });
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
     savedDraft = {
       draftUserMessage: body.draftUserMessage,
       draftAttachments: body.draftAttachments ?? null,

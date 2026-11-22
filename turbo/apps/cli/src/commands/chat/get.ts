@@ -44,8 +44,23 @@ Notes:
         await getPlatformOrigin(),
       ).href;
       if (options.json) {
-        const { agentId: _agentId, ...metadata } = thread;
-        console.log(JSON.stringify({ ...metadata, url }));
+        console.log(
+          JSON.stringify({
+            id: thread.id,
+            title: thread.title,
+            selectedModel: thread.selectedModel,
+            modelSettings: thread.modelSettings,
+            reasoningEffort: thread.reasoningEffort,
+            serviceTier: thread.serviceTier,
+            pinnedAt: thread.pinnedAt,
+            archived: thread.archived,
+            hidden: thread.hidden,
+            muted: thread.muted,
+            computerUseHostId: thread.computerUseHostId,
+            cloudBrowserEnabled: thread.cloudBrowserEnabled,
+            url,
+          }),
+        );
         return;
       }
 

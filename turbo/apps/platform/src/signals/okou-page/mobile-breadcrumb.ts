@@ -3,13 +3,6 @@ import type { RoutePath } from "../route-paths";
 import { isWorkflowDetailRouteKey, ROUTES } from "../route-paths.ts";
 import { pathParams$, type RouterPathParams } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
-import { agents$, defaultAgentId$ } from "../agent.ts";
-import {
-  currentChatAgentId$,
-  currentChatThreadId$,
-  currentChatAgentDisplayName$,
-} from "../agent-chat.ts";
-import { activityDetail$ } from "../activity-page/activity-signals.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { currentWorkflowDetail$ } from "../workflows-page/workflows-signals.ts";
@@ -25,7 +18,6 @@ interface MobileBreadcrumb {
     searchParams?: URLSearchParams;
   };
   name?: string;
-  avatarAgentId?: string;
 }
 
 type Params = Record<string, unknown> | null;
@@ -39,31 +31,6 @@ function getStringParam(params: Params, key: string): string | null {
 
 const CHAT_PATH = "/" as RoutePath;
 
-const teamDetailBreadcrumb$ = computed(
-  async (get): Promise<MobileBreadcrumb> => {
-    get(locale$);
-    const section = i18n.t(($) => {
-      return $.appShell.sidebar.navigation.agents;
-    });
-    const params = get(pathParams$) as Params;
-    const agentId = getStringParam(params, "agentId");
-    if (agentId) {
-      const agentsList = await get(agents$);
-      const agent = agentsList.find((a) => {
-        return a.agentId === agentId;
-      });
-      if (agent) {
-        return {
-          section,
-          sectionPath: ROUTES.agents,
-          name: agent.displayName ?? undefined,
-        };
-      }
-    }
-    return { section, sectionPath: ROUTES.agents };
-  },
-);
-
 const activityDetailBreadcrumb$ = computed(
   async (get): Promise<MobileBreadcrumb | null> => {
     get(locale$);
@@ -73,17 +40,6 @@ const activityDetailBreadcrumb$ = computed(
     const features = await get(featureSwitches$);
     if (!features?.[FeatureSwitchKey.OkouDebug]) {
       return null;
-    }
-    const params = get(pathParams$) as Params;
-    const activityRunId = getStringParam(params, "activityRunId");
-    if (activityRunId) {
-      const detail = await get(activityDetail$);
-      if (detail && detail.id === activityRunId) {
-        return {
-          section,
-          name: detail.displayName ?? undefined,
-        };
-      }
     }
     return { section };
   },
@@ -114,33 +70,10 @@ const workflowsBreadcrumb$ = computed(
   },
 );
 
-const chatBreadcrumb$ = computed(async (get): Promise<MobileBreadcrumb> => {
-  const params = get(pathParams$) as Params;
-  const displayName = await get(currentChatAgentDisplayName$);
-  const defaultId = await get(defaultAgentId$);
-  const threadId = get(currentChatThreadId$);
-  const urlAgentId = getStringParam(params, "agentId");
-  const assistantName = get(assistantName$);
-
-  if (threadId !== null || urlAgentId !== null) {
-    const subagentId = await get(currentChatAgentId$);
-    if (subagentId) {
-      const agentsList = await get(agents$);
-      const subagent = agentsList.find((a) => {
-        return a.agentId === subagentId;
-      });
-      return {
-        section: subagent?.displayName ?? displayName ?? assistantName,
-        sectionPath: CHAT_PATH,
-        avatarAgentId: subagentId,
-      };
-    }
-  }
-
+const chatBreadcrumb$ = computed((get): MobileBreadcrumb => {
   return {
-    section: displayName ?? assistantName,
+    section: get(assistantName$),
     sectionPath: CHAT_PATH,
-    avatarAgentId: defaultId ?? undefined,
   };
 });
 
@@ -160,26 +93,17 @@ export const mobileBreadcrumb$ = computed(
       return await get(workflowsBreadcrumb$);
     }
 
-    if (
-      route === "agents" ||
-      route === "agentDetail" ||
-      route === "agentPermissions"
-    ) {
-      return await get(teamDetailBreadcrumb$);
-    }
-
     if (route === "activityDetail") {
       return await get(activityDetailBreadcrumb$);
     }
 
     if (route === "works") {
-      const displayName = await get(currentChatAgentDisplayName$);
       return {
         section: i18n.t(
           ($) => {
             return $.appShell.sidebar.navigation.works;
           },
-          { agentName: displayName ?? get(assistantName$) },
+          { agentName: get(assistantName$) },
         ),
         sectionPath: ROUTES.works,
       };
@@ -219,12 +143,7 @@ export const mobileBreadcrumb$ = computed(
     }
 
     // Chat-related routes
-    if (
-      route !== "home" &&
-      route !== "agentChat" &&
-      route !== "agentIdeas" &&
-      route !== "chat"
-    ) {
+    if (route !== "home" && route !== "chat") {
       return null;
     }
 

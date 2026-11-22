@@ -79,7 +79,7 @@ export type ConnectorConnectOrigin =
   /** The Google Calendar automation being recovered. */
   | { readonly kind: "google-calendar-recovery" }
   /** The standalone connect route that a chat action linked to. */
-  | { readonly kind: "directed-connect"; readonly agentId: string | null }
+  | { readonly kind: "directed-connect" }
   /** The standalone authorize route that a chat action linked to. */
   /** The composer registered under this key. */
   | { readonly kind: "composer"; readonly hostKey: string }
@@ -144,7 +144,6 @@ type ConnectorConnectPlan =
     }
   | {
       readonly kind: "directed-connect";
-      readonly agentId: string | null;
       readonly callback: ChatActionCallback;
     }
   | ({ readonly kind: "artifact-drive-sync" } & ArtifactDriveSyncTarget)
@@ -195,7 +194,6 @@ const resolveConnectorConnectPlan$ = command(
       case "directed-connect": {
         return {
           kind: "directed-connect",
-          agentId: origin.agentId,
           callback: get(routeChatActionCallback$),
         };
       }
@@ -283,12 +281,7 @@ const continueConnectorConnectPlan$ = command(
         return;
       }
       case "directed-connect": {
-        await set(
-          completeDirectedConnectorAction$,
-          plan.agentId,
-          plan.callback,
-          signal,
-        );
+        await set(completeDirectedConnectorAction$, plan.callback, signal);
         return;
       }
       case "composer": {
@@ -559,7 +552,7 @@ export type CustomConnectorConnectOrigin =
   /** The chat connector action that opened the connect dialog. */
   | { readonly kind: "chat-action" }
   /** The standalone connect route that a chat action linked to. */
-  | { readonly kind: "directed-connect"; readonly agentId: string | null }
+  | { readonly kind: "directed-connect" }
   /** The composer registered under this key. */
   | { readonly kind: "composer"; readonly hostKey: string };
 
@@ -581,7 +574,6 @@ type CustomConnectorConnectPlan =
     }
   | {
       readonly kind: "directed-connect";
-      readonly agentId: string | null;
       readonly callback: ChatActionCallback;
     }
   | { readonly kind: "composer"; readonly host: ComposerConnectHost };
@@ -605,7 +597,6 @@ const resolveCustomConnectorConnectPlan$ = command(
       case "directed-connect": {
         return {
           kind: "directed-connect",
-          agentId: origin.agentId,
           callback: get(routeChatActionCallback$),
         };
       }
@@ -661,12 +652,7 @@ const continueCustomConnectorSucceeded$ = command(
       }
       case "directed-connect": {
         set(reloadDirectedConnectAccounts$, signal);
-        await set(
-          completeDirectedConnectorAction$,
-          plan.agentId,
-          plan.callback,
-          signal,
-        );
+        await set(completeDirectedConnectorAction$, plan.callback, signal);
         return;
       }
       case "composer": {

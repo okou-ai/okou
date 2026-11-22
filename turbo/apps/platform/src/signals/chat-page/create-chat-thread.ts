@@ -1,3 +1,4 @@
+import { legacyAgentMentionsToText } from "../okou-page/legacy-agent-mention.ts";
 import {
   userMessageDocumentSchema,
   resolveChatEventRecommendedFollowups,
@@ -139,10 +140,6 @@ import {
   textToMessageDocument,
 } from "../okou-page/user-message-document-codec.ts";
 import { parseComposerVisualizationPreferences } from "../okou-page/composer-additional-info.ts";
-import {
-  createAgentReferenceSignalsRegistry,
-  type AgentReferenceSignalsRegistry,
-} from "./agent-reference-signals.ts";
 import {
   createArtifactCardSignalsRegistry,
   type ArtifactCardSignalsRegistry,
@@ -372,9 +369,6 @@ function createThreadMetadata(threadMeta$: Computed<ThreadMeta | null>) {
   const threadExists$ = computed((get) => {
     return get(threadMeta$) !== null;
   });
-  const threadAgentId$ = computed((get) => {
-    return get(threadMeta$)?.agentId ?? null;
-  });
   const threadTitle$ = computed((get): string | null => {
     return get(threadMeta$)?.title ?? null;
   });
@@ -389,7 +383,6 @@ function createThreadMetadata(threadMeta$: Computed<ThreadMeta | null>) {
   });
   return {
     threadExists$,
-    threadAgentId$,
     threadTitle$,
     threadTitleEmoji$,
     threadTitleText$,
@@ -1034,39 +1027,34 @@ function createRenderedChatGroups(
   };
 }
 
-const registerFeedbackNoteRenderPart$ = command(
-  (
-    { set },
-    part: FeedbackNotePart,
-    agentReferenceSignals: AgentReferenceSignalsRegistry,
-  ): UserMessageFeedbackNoteRenderPart => {
-    switch (part.type) {
-      case "text": {
-        return { type: "text", part };
-      }
-      case "project": {
-        return { type: "project", part };
-      }
-      case "chat_thread": {
-        return { type: "chat_thread", part };
-      }
-      case "template": {
-        return { type: "template", part };
-      }
-      case "agent": {
-        return {
-          type: part.type,
-          part,
-          signals: set(agentReferenceSignals.register$, part.agentId),
-        };
-      }
+function feedbackNoteRenderPart(
+  part: FeedbackNotePart,
+): UserMessageFeedbackNoteRenderPart {
+  switch (part.type) {
+    case "text": {
+      const text = legacyAgentMentionsToText(part.text);
+      return {
+        type: "text",
+        part: text === part.text ? part : { ...part, text },
+      };
     }
-  },
-);
+    case "project": {
+      return { type: "project", part };
+    }
+    case "chat_thread": {
+      return { type: "chat_thread", part };
+    }
+    case "template": {
+      return { type: "template", part };
+    }
+    case "agent": {
+      return { type: "text", part: { type: "text", text: part.nameSnapshot } };
+    }
+  }
+}
 
 interface UserMessagePartRegistries {
   readonly artifactCardSignals: ArtifactCardSignalsRegistry;
-  readonly agentReferenceSignals: AgentReferenceSignalsRegistry;
 }
 
 const registerUserMessageRenderPart$ = command(
@@ -1075,10 +1063,14 @@ const registerUserMessageRenderPart$ = command(
     part: Exclude<UserMessagePart, { type: "additional_info" }>,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderPart => {
-    const { artifactCardSignals, agentReferenceSignals } = registries;
+    const { artifactCardSignals } = registries;
     switch (part.type) {
       case "text": {
-        return { type: "text", part };
+        const text = legacyAgentMentionsToText(part.text);
+        return {
+          type: "text",
+          part: text === part.text ? part : { ...part, text },
+        };
       }
       case "project": {
         return { type: "project", part };
@@ -1097,9 +1089,8 @@ const registerUserMessageRenderPart$ = command(
       }
       case "agent": {
         return {
-          type: part.type,
-          part,
-          signals: set(agentReferenceSignals.register$, part.agentId),
+          type: "text",
+          part: { type: "text", text: part.nameSnapshot },
         };
       }
       case "source": {
@@ -1138,13 +1129,7 @@ const registerUserMessageRenderPart$ = command(
         return {
           type: part.type,
           part,
-          note: part.note.map((notePart) => {
-            return set(
-              registerFeedbackNoteRenderPart$,
-              notePart,
-              agentReferenceSignals,
-            );
-          }),
+          note: part.note.map(feedbackNoteRenderPart),
         };
       }
     }
@@ -1607,6 +1592,7 @@ function createPermissionCardRefRegistrar(cards: EventTreeRegistries) {
       if (descriptor.type === "permission-batch-action") {
         return {
           kind: descriptor.type,
+          originalUrl: descriptor.descriptor.originalUrl,
           signals: set(
             cards.permissionBatchCardSignals.register$,
             descriptor.descriptor,
@@ -2070,7 +2056,6 @@ function createPagedEventResources({
     onBrowserPageInput$,
   );
   const artifactCardSignals = createArtifactCardSignalsRegistry();
-  const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
@@ -2140,7 +2125,7 @@ function createPagedEventResources({
           set(
             registerUserMessageRenderDocument$,
             document,
-            { artifactCardSignals, agentReferenceSignals },
+            { artifactCardSignals },
             event.contextType,
           ),
         );
@@ -3209,7 +3194,6 @@ function sendRuntimeOptions(
 
 interface SendMessageDeps {
   readonly threadId: string;
-  readonly agentId?: string;
   modelSelectionForSend$: Command<
     Promise<ModelSelectionForSend>,
     [AbortSignal]
@@ -3223,7 +3207,6 @@ interface SendMessageDeps {
 interface ValidatedSendMessageRequest {
   readonly prompt: string;
   readonly options: SendMessageOptions | undefined;
-  readonly agentId?: string;
   readonly modelSelection: ModelSelectionForSend;
 }
 
@@ -3264,7 +3247,6 @@ function sendInputForRequest(args: {
   return {
     kind: "input",
     delivery: "run",
-    agentId: request.agentId,
     prompt: result.prompt,
     hasTextContent: result.hasTextContent,
     userMessage: args.userMessage,
@@ -3357,7 +3339,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
 }
 
 function createSendMessage(deps: SendMessageDeps) {
-  const { threadId, agentId, modelSelectionForSend$ } = deps;
+  const { threadId, modelSelectionForSend$ } = deps;
   const performSendMessage$ = createPerformSendMessage(deps);
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
@@ -3379,7 +3361,6 @@ function createSendMessage(deps: SendMessageDeps) {
         {
           prompt,
           options,
-          agentId,
           modelSelection,
         },
         signal,
@@ -3391,7 +3372,6 @@ function createSendMessage(deps: SendMessageDeps) {
 function createQueueMessage(deps: SendMessageDeps) {
   const {
     threadId,
-    agentId,
     modelSelectionForSend$,
     draft,
     cancelDraftSync$,
@@ -3444,7 +3424,6 @@ function createQueueMessage(deps: SendMessageDeps) {
           {
             kind: "input",
             delivery: "queue",
-            agentId,
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,
@@ -3474,7 +3453,6 @@ function createQueueMessage(deps: SendMessageDeps) {
 
 interface RecallMessageDeps {
   readonly threadId: string;
-  readonly agentId?: string;
   readonly queuedEvents$: ChatEventSignals["queuedEvents$"];
   draft: DraftSignals;
   queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -3482,7 +3460,7 @@ interface RecallMessageDeps {
 }
 
 function createRecallMessage(deps: RecallMessageDeps) {
-  const { agentId, queuedEvents$, draft, queueDraftSync$, sendEvent$ } = deps;
+  const { queuedEvents$, draft, queueDraftSync$, sendEvent$ } = deps;
 
   return command(async ({ get, set }, eventId: string, signal: AbortSignal) => {
     const event = get(queuedEvents$).find((candidate) => {
@@ -3513,7 +3491,6 @@ function createRecallMessage(deps: RecallMessageDeps) {
       sendEvent$,
       {
         kind: "revoke",
-        agentId,
         revokesEventId: event.id,
       },
       signal,
@@ -3525,7 +3502,6 @@ function createRecallMessage(deps: RecallMessageDeps) {
 }
 
 function createSkipAutomationEvent({
-  agentId,
   queuedEvents$,
   sendEvent$,
 }: RecallMessageDeps) {
@@ -3548,7 +3524,6 @@ function createSkipAutomationEvent({
         sendEvent$,
         {
           kind: "revoke",
-          agentId,
           revokesEventId: event.id,
         },
         signal,
@@ -3584,12 +3559,10 @@ function createThreadMessageActions(deps: MessageCommandsDeps) {
  */
 function createInterruptLiveRuns({
   threadId,
-  agentId,
   liveRunIds$,
   sendEvent$,
 }: {
   readonly threadId: string;
-  readonly agentId?: string;
   readonly liveRunIds$: ChatEventSignals["liveRunIds$"];
   sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }) {
@@ -3608,7 +3581,6 @@ function createInterruptLiveRuns({
           sendEvent$,
           {
             kind: "interrupt",
-            agentId,
             interruptsRunId: runId,
           },
           signal,
@@ -3664,7 +3636,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
 
 interface CreateChatThreadComposerSignalsOptions {
   readonly chatEvents: ChatEventSignals;
-  readonly agentId?: string;
   readonly draft: DraftSignals;
   readonly loadDraft$: Command<Promise<void>, [AbortSignal]>;
   readonly queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -3685,7 +3656,6 @@ interface ChatThreadComposerContext {
   readonly threadMeta$: Computed<ThreadMeta | null>;
   /** A dialog composer that leaves the thread's saved draft untouched. */
   readonly inPlace?: boolean;
-  readonly agentId?: string;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
@@ -3786,7 +3756,6 @@ function createChatThreadComposerSignals(
     },
   );
   return createComposerSignals({
-    agentId: options.agentId,
     connector: options.connector,
     draft: {
       signals: options.draft,
@@ -3859,7 +3828,6 @@ function createThreadComposerSignalsWithContext(
       : persistence;
   const messageActions = createThreadMessageActions({
     threadId,
-    agentId: context.agentId,
     modelSelectionForSend$,
     queuedEvents$: chatEvents.queuedEvents$,
     liveRunIds$: chatEvents.liveRunIds$,
@@ -3871,7 +3839,6 @@ function createThreadComposerSignalsWithContext(
   });
   return createChatThreadComposerSignals({
     chatEvents,
-    agentId: context.agentId,
     draft,
     loadDraft$,
     queueDraftSync$,
@@ -3893,7 +3860,6 @@ function createThreadComposerSignalsWithContext(
  */
 export function createThreadComposerSignals(
   threadId: string,
-  agentId: string | undefined,
   chatEvents: ChatEventSignals,
   options: {
     readonly forward?: ChatForwardContext;
@@ -3910,7 +3876,6 @@ export function createThreadComposerSignals(
     chatEvents,
     {
       threadMeta$,
-      agentId,
       cancellationRecoveryPending$: cancellationRecovery.pending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
@@ -3931,7 +3896,6 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   projectId?: string,
 ) => {
   const composer = createForwardAgentComposerSignals(
-    target.id,
     forward,
     onOptimisticSend,
     projectId,
@@ -3954,11 +3918,10 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
  */
 export function createInPlaceThreadComposerSignals(
   threadId: string,
-  agentId: string | undefined,
   onOptimisticSend: (submission: ComposerSubmission) => void,
 ) {
   const chatEvents = createChatEventSignals(threadId);
-  const composer = createThreadComposerSignals(threadId, agentId, chatEvents, {
+  const composer = createThreadComposerSignals(threadId, chatEvents, {
     onOptimisticSend,
     inPlace: true,
   });
@@ -3997,7 +3960,6 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
 
 export function createChatPanelSignals(
   threadId: string,
-  agentId: string | undefined,
   draft: DraftSignals,
   persistence: ThreadDraftPersistence,
 ): ChatPanelSignals {
@@ -4022,7 +3984,6 @@ export function createChatPanelSignals(
     chatEvents,
     {
       threadMeta$,
-      agentId,
       cancellationRecoveryPending$: cancellationRecovery.pending$,
     },
     draft,
@@ -4042,7 +4003,7 @@ export function createChatPanelSignals(
     );
   });
   const messagePipeline = createChatThreadMessagePipeline({
-    chatActionContext: { threadId, agentId },
+    chatActionContext: { threadId },
     chatEvents,
     connector: composer.connector,
     driveAccountRevision$,
@@ -4050,7 +4011,6 @@ export function createChatPanelSignals(
     onBrowserPageInput$: onPageInput$,
   });
   const browserPresence = createBrowserPresenceSignals({
-    agentId,
     latestRunId$: messagePipeline.latestRunId$,
     liveRunId$: messagePipeline.liveRunId$,
     sendEvent$: chatEvents.sendEvent$,
@@ -4087,7 +4047,6 @@ export function createChatPanelSignals(
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
     threadId,
-    agentId,
     threadDraft$,
     threadMeta$,
     optimisticCreateUnsettled$,

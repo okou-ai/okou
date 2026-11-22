@@ -76,7 +76,6 @@ class SavedUiStateTest {
                     val date = "2026-11-13T00:00:00Z"
                     ConfirmedChat(
                         id = index.toString(),
-                        agentId = "agent",
                         title = "$query $index",
                         sortAt = date,
                         createdAt = date,
@@ -105,6 +104,9 @@ class SavedUiStateTest {
                             threadsByRecency = rows,
                         ),
                     search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    workspaceName = null,
                     focusOnEntry = false,
                     onFocused = {},
                     onClose = {},

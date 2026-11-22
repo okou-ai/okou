@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,7 +21,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -36,10 +41,19 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+
+internal val ChatListRowHeight = 52.dp
+internal val ChatListRowShape = RoundedCornerShape(8.dp)
+internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+
+internal fun Density.chatInlineFeedbackHeight() = maxOf(216.dp, 16.sp.toDp() * 9)
 
 internal enum class ChatListStatus {
     Offline,
@@ -56,7 +70,7 @@ private enum class ListLayer {
 internal fun ChatListViewport(
     modifier: Modifier,
     listState: LazyListState,
-    lastContentKey: String?,
+    contentChangeKey: Any?,
     status: ChatListStatus?,
     newChatEnabled: Boolean,
     newChat: () -> Unit,
@@ -65,7 +79,7 @@ internal fun ChatListViewport(
 ) {
     SubcomposeLayout(modifier) { bounds ->
         val height = bounds.maxHeight
-        val short = height < maxOf(216.dp, 16.sp.toDp() * 9).roundToPx()
+        val short = height < chatInlineFeedbackHeight().roundToPx()
         val edge = 16.dp.roundToPx()
         val gap = 8.dp.roundToPx()
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
@@ -113,17 +127,7 @@ internal fun ChatListViewport(
             } else null
         val rows =
             subcompose(ListLayer.Rows) {
-                    // Lazy item keys preserve the visible row. Keep the final row in view
-                    // when the reader is already at the end.
-                    val followEnd =
-                        remember(listState, reserve, height, short, lastContentKey) {
-                            listState.canScrollBackward && !listState.canScrollForward
-                        }
-                    LaunchedEffect(listState, reserve, height, short, lastContentKey) {
-                        val lastIndex = listState.layoutInfo.totalItemsCount - 1
-                        if (followEnd && !listState.isScrollInProgress && lastIndex >= 0)
-                            listState.requestScrollToItem(lastIndex)
-                    }
+                    KeepLazyListEndInView(listState, reserve, height, short, contentChangeKey)
                     content(reserve, inline)
                 }
                 .single()
@@ -133,6 +137,27 @@ internal fun ChatListViewport(
             floating?.placeRelative(0, actionTop)
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }
+    }
+}
+
+@Composable
+internal fun KeepLazyListEndInView(
+    listState: LazyListState,
+    vararg layoutChanges: Any?,
+    lastItemIndex: Int? = null,
+) {
+    // Lazy item keys retain older reading positions. Capture the end before the new layout.
+    val followEnd =
+        remember(listState, lastItemIndex, *layoutChanges) {
+            listState.canScrollBackward && !listState.canScrollForward
+        }
+    LaunchedEffect(listState, lastItemIndex, *layoutChanges) {
+        if (!followEnd) return@LaunchedEffect
+        if (lastItemIndex != null) {
+            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > lastItemIndex }
+        }
+        val index = lastItemIndex ?: (listState.layoutInfo.totalItemsCount - 1)
+        if (!listState.isScrollInProgress && index >= 0) listState.requestScrollToItem(index)
     }
 }
 
@@ -239,20 +264,40 @@ private fun ListStatus(status: ChatListStatus) {
 }
 
 @Composable
+internal fun rememberChatWaitIndicator(waiting: Boolean, delayMillis: Long = 100): Boolean {
+    var visible by remember(waiting, delayMillis) { mutableStateOf(false) }
+    LaunchedEffect(waiting, delayMillis) {
+        if (waiting) {
+            delay(delayMillis)
+            visible = true
+        }
+    }
+    return visible
+}
+
+@Composable
+internal fun ChatSkeletonBlock(modifier: Modifier, cornerRadius: Dp = 8.dp) {
+    Box(
+        modifier.background(
+            MaterialTheme.colorScheme.surfaceVariant,
+            RoundedCornerShape(cornerRadius),
+        )
+    )
+}
+
+@Composable
 internal fun ChatListSkeleton() {
     val label = stringResource(R.string.chat_loading)
-    val fill = MaterialTheme.colorScheme.surfaceVariant
     Column(Modifier.semantics { this.contentDescription = label }) {
-        for (width in listOf(.45f, .62f, .51f, .39f, .55f, .47f)) {
+        val widths = listOf(.56f, .70f, .44f)
+        repeat(6) { index ->
             Box(
-                Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 12.dp),
+                Modifier.fillMaxWidth()
+                    .heightIn(min = ChatListRowHeight)
+                    .padding(ChatListRowPadding),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Box(
-                    Modifier.fillMaxWidth(width)
-                        .height(14.dp)
-                        .background(fill, RoundedCornerShape(8.dp))
-                )
+                ChatSkeletonBlock(Modifier.fillMaxWidth(widths[index % widths.size]).height(14.dp))
             }
         }
     }

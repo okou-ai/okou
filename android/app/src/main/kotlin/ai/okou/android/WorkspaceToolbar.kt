@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
@@ -36,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -67,9 +71,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -80,20 +87,21 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 
-@Composable
-internal fun workspaceSearchControlHeight() =
-    with(LocalDensity.current) {
-        maxOf(48.dp, MaterialTheme.typography.bodyLarge.lineHeight.toDp() + 16.dp)
-    }
+@Composable internal fun workspaceSearchTextStyle() = MaterialTheme.typography.bodyLarge
 
 @Composable
-internal fun WorkspaceListToolbar(
+internal fun workspaceSearchControlHeight(): Dp {
+    val lineHeight = workspaceSearchTextStyle().lineHeight
+    return with(LocalDensity.current) { maxOf(48.dp, lineHeight.toDp() + 16.dp) }
+}
+
+@Composable
+internal fun WorkspaceSearchToolbar(
     widthDp: Int,
     listWidth: Int?,
-    avatar: (@Composable () -> Unit)?,
-    workspaceName: String?,
-    openSearch: (() -> Unit)?,
-    actions: @Composable () -> Unit,
+    leading: @Composable () -> Unit,
+    field: @Composable (Modifier) -> Unit,
+    actions: (@Composable () -> Unit)? = null,
 ) {
     val inset =
         when {
@@ -103,60 +111,111 @@ internal fun WorkspaceListToolbar(
             else -> 12.dp
         }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = inset),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        Modifier.fillMaxWidth()
+            .heightIn(min = TopAppBarDefaults.TopAppBarExpandedHeight)
+            .padding(horizontal = inset, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        avatar?.invoke()
-        val searchLabel = stringResource(R.string.chat_search)
-        val searchShape = RoundedCornerShape(100)
-        val compact = (listWidth ?: widthDp).dp <= with(LocalDensity.current) { 16.sp.toDp() * 21 }
-        Surface(
-            Modifier.weight(1f),
-            shape = searchShape,
-            color = MaterialTheme.colorScheme.surface,
-        ) {
+        leading()
+        Spacer(Modifier.width(8.dp))
+        field(Modifier.weight(1f))
+        if (actions != null) {
+            Spacer(Modifier.width(4.dp))
             Row(
-                Modifier.heightIn(min = workspaceSearchControlHeight())
-                    .clip(searchShape)
-                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), searchShape)
-                    .then(
-                        if (openSearch != null)
-                            Modifier.clickable(role = Role.Button, onClick = openSearch)
-                        else Modifier
-                    )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier.widthIn(min = 100.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    painterResource(R.drawable.ic_search),
-                    contentDescription = searchLabel.takeIf { openSearch != null },
-                    modifier = Modifier.size(20.dp),
-                )
-                if (!compact || workspaceName != null) {
-                    Text(
-                        when {
-                            workspaceName == null -> searchLabel
-                            compact -> workspaceName
-                            else -> "$searchLabel · $workspaceName"
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                actions()
             }
         }
-        Row(
-            Modifier.widthIn(min = 100.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            actions()
-        }
     }
+}
+
+@Composable
+internal fun WorkspaceSearchField(
+    modifier: Modifier,
+    focused: Boolean? = null,
+    onClick: (() -> Unit)? = null,
+    hasTrailingAction: Boolean = false,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val outline =
+        when (focused) {
+            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, CircleShape)
+            false -> Modifier.border(1.dp, colors.outline, CircleShape)
+            null -> Modifier
+        }
+    Row(
+        modifier
+            .heightIn(min = workspaceSearchControlHeight())
+            .clip(CircleShape)
+            .background(colors.surfaceVariant)
+            .then(outline)
+            .then(
+                if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick)
+                else Modifier
+            )
+            .padding(start = 12.dp, end = if (hasTrailingAction) 0.dp else 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painterResource(R.drawable.ic_search),
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = colors.onSurfaceVariant,
+        )
+        content()
+    }
+}
+
+@Composable
+internal fun WorkspaceListToolbar(
+    widthDp: Int,
+    listWidth: Int?,
+    avatar: (@Composable () -> Unit)?,
+    searchFocus: FocusRequester,
+    onSearchFocusChanged: (Boolean) -> Unit,
+    openSearch: (() -> Unit)?,
+    actions: @Composable () -> Unit,
+) {
+    val label = stringResource(R.string.chat_search_workspace)
+    WorkspaceSearchToolbar(
+        widthDp,
+        listWidth,
+        leading = {
+            Box(Modifier.size(workspaceSearchControlHeight()).testTag("workspace_search_leading")) {
+                if (avatar == null) {
+                    Box(
+                        Modifier.matchParentSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    )
+                } else avatar()
+            }
+        },
+        field = { modifier ->
+            WorkspaceSearchField(
+                modifier
+                    .focusRequester(searchFocus)
+                    .onFocusChanged { onSearchFocusChanged(it.isFocused) }
+                    .testTag("workspace_search_entry")
+                    .semantics { if (openSearch != null) contentDescription = label },
+                onClick = openSearch,
+            ) {
+                Text(
+                    label,
+                    Modifier.padding(vertical = 8.dp).clearAndSetSemantics {},
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = workspaceSearchTextStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        actions = actions,
+    )
 }
 
 @Composable
@@ -183,7 +242,7 @@ internal fun WorkspaceToolbarActions(
     val filterTreatment =
         if (filterApplied) Modifier.background(colors.secondaryContainer, RoundedCornerShape(12.dp))
         else Modifier
-    val filterTint = if (filterApplied) colors.onSecondaryContainer else colors.onSurfaceVariant
+    val filterTint = if (filterApplied) colors.onSecondaryContainer else colors.onSurface
 
     fun closeMenu() {
         restoreMenuFocus = true
@@ -280,8 +339,14 @@ internal fun WorkspaceToolbarActions(
         }
         if (openSettings != null) {
             IconButton(modifier = settingsAnchor, onClick = { openSettings(anchorFocused) }) {
-                Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
+                Icon(
+                    painterResource(R.drawable.ic_settings),
+                    stringResource(R.string.settings),
+                    tint = colors.onSurface,
+                )
             }
+        } else if (showFilter) {
+            Spacer(Modifier.size(48.dp))
         }
     } else {
         UpdateToolbarButton(update)

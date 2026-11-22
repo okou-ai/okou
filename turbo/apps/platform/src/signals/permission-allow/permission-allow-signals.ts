@@ -13,16 +13,29 @@ import {
 } from "@okouai/connectors/firewall-contracts";
 import { apiClient$ } from "../api-client.ts";
 import {
+  chatActionCallbackFromUrl,
   runChatActionCallback$,
   type ChatActionCallback,
   type ChatActionCallbackIds,
 } from "../chat-page/action-callback.ts";
-import { pathParams$, searchParams$ } from "../route.ts";
+import { searchParams$ } from "../route.ts";
 import { accept } from "../../lib/accept.ts";
-import { agentById } from "../agent.ts";
+import { clerk$ } from "../auth.ts";
+import {
+  memberPermissionOwner,
+  type PermissionActionOwner,
+} from "../chat-page/permission-action-owner.ts";
+import {
+  permissionActionTarget,
+  memberPermissionClientOptions,
+  verifyPermissionCallbackThread,
+} from "./permission-action-target.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { resolveActiveUserPermissionGrantPolicy } from "../user-permission-grants.ts";
+import {
+  isActiveUserPermissionGrant,
+  resolveActiveUserPermissionGrantPolicy,
+} from "../user-permission-grants.ts";
 import { parseUserPermissionGrantExpiresIn } from "./permission-grant-expiration.ts";
 import { i18n } from "../../i18n/index.ts";
 import type {
@@ -34,10 +47,18 @@ import type {
 // Route params
 // ---------------------------------------------------------------------------
 
-export const permissionAllowAgentId$ = computed((get) => {
-  const params = get(pathParams$);
-  const agentId = params?.agentId;
-  return typeof agentId === "string" ? agentId : null;
+export const permissionAllowOwner$ = computed(
+  (get): PermissionActionOwner | null => {
+    return memberPermissionOwner(get(searchParams$));
+  },
+);
+
+export const permissionAllowCallback$ = computed((get) => {
+  const params = get(searchParams$);
+  return chatActionCallbackFromUrl(
+    { searchParams: params },
+    { threadId: params.get("threadId") ?? "" },
+  );
 });
 
 export const permissionAllowConnectorSlug$ = computed((get) => {
@@ -64,15 +85,16 @@ export const permissionAllowExpiresIn$ = computed((get) => {
 });
 
 // ---------------------------------------------------------------------------
-// Agent data
+// Permission target
 // ---------------------------------------------------------------------------
 
-export const permissionAllowAgent$ = computed((get) => {
-  const agentId = get(permissionAllowAgentId$);
-  if (!agentId) {
-    return null;
+export const permissionAllowTarget$ = computed((get) => {
+  const owner = get(permissionAllowOwner$);
+  const callback = get(permissionAllowCallback$);
+  if (!owner || !callback) {
+    return Promise.resolve(null);
   }
-  return get(agentById(agentId));
+  return get(permissionActionTarget(owner, callback.threadId));
 });
 
 // ---------------------------------------------------------------------------
@@ -165,8 +187,7 @@ export function permissionGrantsForConnectors(
 }
 
 export const permissionAllowUserPermissionGrants$ = computed(async (get) => {
-  const agentId = get(permissionAllowAgentId$);
-  if (!agentId) {
+  if (!get(permissionAllowOwner$)) {
     return [];
   }
   const connectorSlug = get(permissionAllowConnectorSlug$);
@@ -190,6 +211,7 @@ export const applyUserPermissionGrants$ = command(
   async (
     { get, set },
     params: {
+      owner?: PermissionActionOwner;
       connectorSlug: string;
       mode: UserPermissionGrantApplyMode;
       grants: readonly ApplyUserPermissionGrant[];
@@ -197,8 +219,12 @@ export const applyUserPermissionGrants$ = command(
     signal: AbortSignal,
   ): Promise<readonly PlatformUserPermissionGrant[]> => {
     signal.throwIfAborted();
+    const options =
+      params.owner?.kind === "member"
+        ? memberPermissionClientOptions(await get(clerk$), params.owner)
+        : undefined;
     const result = await accept(
-      get(apiClient$)(connectorPermissionsContract).apply({
+      get(apiClient$)(connectorPermissionsContract, options).apply({
         body: {
           target: { kind: "builtin", connectorSlug: params.connectorSlug },
           mode: params.mode,
@@ -223,6 +249,7 @@ export const applyUserPermissionGrants$ = command(
 );
 
 interface ApplyUserPermissionGrantParams {
+  owner?: PermissionActionOwner;
   connectorSlug: string;
   permission: string;
   action: UserPermissionGrantAction;
@@ -238,6 +265,7 @@ export const applyUserPermissionGrant$ = command(
     const grants = await set(
       applyUserPermissionGrants$,
       {
+        owner: params.owner,
         connectorSlug: params.connectorSlug,
         mode: "patch",
         grants: [
@@ -256,8 +284,14 @@ export const applyUserPermissionGrant$ = command(
       signal,
     );
     const grant = grants[0];
-    if (!grant) {
-      throw new Error("User permission grant apply did not return a grant");
+    if (
+      !grant ||
+      grant.action !== params.action ||
+      !isActiveUserPermissionGrant(grant)
+    ) {
+      throw new Error(
+        "Permission response did not acknowledge the requested change",
+      );
     }
     return grant;
   },
@@ -265,20 +299,26 @@ export const applyUserPermissionGrant$ = command(
 
 export const applyPermissionAndResumeChat$ = command(
   async (
-    { set },
-    params: ApplyUserPermissionGrantParams & { agentId: string },
+    { get, set },
+    params: ApplyUserPermissionGrantParams & { owner: PermissionActionOwner },
     callback: ChatActionCallback & {
       readonly callbackIds?: ChatActionCallbackIds;
     },
     signal: AbortSignal,
   ): Promise<PlatformUserPermissionGrant> => {
+    if (callback.threadId) {
+      await verifyPermissionCallbackThread(
+        get(apiClient$),
+        callback.threadId,
+        signal,
+      );
+    }
     const grant = await set(applyUserPermissionGrant$, params, signal);
     signal.throwIfAborted();
     if (callback.callbackPrompt && callback.threadId) {
       await set(
         runChatActionCallback$,
         {
-          agentId: params.agentId,
           threadId: callback.threadId,
           callbackPrompt: callback.callbackPrompt,
           callbackIds: callback.callbackIds,

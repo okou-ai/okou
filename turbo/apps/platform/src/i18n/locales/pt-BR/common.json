@@ -88,7 +88,6 @@
           "title": "Provedor temporariamente indisponível"
         }
       },
-      "fallbackAgent": "Agente",
       "fields": {
         "duration": "Duração",
         "model": "Modelo",
@@ -392,7 +391,6 @@
         "openAutomations": "Abrir automações no celular"
       },
       "navigation": {
-        "agents": "Agentes",
         "artifacts": "Artefatos",
         "connectors": "Conectores",
         "settings": "Configurações",
@@ -1007,11 +1005,9 @@
         "twentyFourHours": "24 horas"
       },
       "errors": {
-        "agentNotFound": "Agente não encontrado",
         "loadAgent": "Não foi possível carregar o agente",
         "loadGrants": "Não foi possível carregar as concessões de permissão",
         "loadMetadata": "Não foi possível carregar os metadados de permissão",
-        "missingAgentId": "O ID do agente não está nos parâmetros da URL",
         "missingPermission": "A permissão não está nos parâmetros da URL",
         "unknownAction": "Ação de permissão desconhecida: {{action}}",
         "unknownConnector": "Conector desconhecido: {{connector}}",
@@ -1069,7 +1065,6 @@
       "pending_many": "{{count}} permissões a permitir",
       "pending_other": "{{count}} permissões a permitir",
       "review": "Revisar permissões",
-      "sharedScopeNote": "Aplica-se a este conector em todos os seus chats e agentes.",
       "title": "Conceder as seguintes permissões"
     }
   },
@@ -1850,7 +1845,7 @@
       "repair": "Reparar",
       "repairRequired": "{{institution}} precisa de reparo",
       "revoke": "Revogar",
-      "revokeConfirm": "Revogar o acesso bancário deste Agente?",
+      "revokeConfirm": "Revogar o acesso bancário deste espaço de trabalho?",
       "selectAccounts": "Selecionar contas",
       "sevenDays": "7 dias",
       "thirtyDays": "30 dias",
@@ -2854,7 +2849,6 @@
       "noEmojiFound": "Nenhum emoji encontrado",
       "notFound": "Conversa não encontrada",
       "openBrowser": "Abrir navegador",
-      "openNamedAgent": "Abrir agente {{name}}",
       "openNamedChat": "Abrir conversa {{title}}",
       "pickEmoji": "Escolha um emoji",
       "scrollToBottom": "Rolar até o final",
@@ -4884,7 +4878,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
     "deleteProjectAndThreads_many": "Delete project and {{count}} threads…",

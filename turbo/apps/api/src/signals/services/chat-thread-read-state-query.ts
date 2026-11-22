@@ -42,7 +42,6 @@ export function createChatThreadReadPreparation(args: {
   const thread$ = computed(async (get) => {
     const [thread] = await get(db$)
       .select({
-        agentId: chatThreads.agentId,
         lastReadAt: chatThreads.lastReadAt,
       })
       .from(chatThreads)
@@ -81,7 +80,6 @@ export function createChatThreadReadPreparation(args: {
     return {
       threadId: args.threadId,
       userId: args.userId,
-      ...(thread.agentId ? { agentId: thread.agentId } : {}),
       orgId: args.orgId,
       lastReadAt: thread.lastReadAt,
       watermark,
@@ -91,11 +89,14 @@ export function createChatThreadReadPreparation(args: {
 
 /** Bounded caller-owned candidates and one terminal watermark query per Agent. */
 export function createAgentThreadReadPreparation(args: {
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly userId: string;
   readonly orgId: string;
 }) {
   const agent$ = computed(async (get) => {
+    if (args.agentId === undefined) {
+      return true;
+    }
     const [agent] = await get(db$)
       .select({ id: agents.id })
       .from(agents)

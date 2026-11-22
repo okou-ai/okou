@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.23.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.13...runner-executor-v0.23.14) (2026-11-22)
+
+
+### Refactoring
+
+* **runner-executor:** share sequential guest storage application ([#49891](https://github.com/okou-ai/okou/issues/49891)) ([44d1a47](https://github.com/okou-ai/okou/commit/44d1a4798ac74df4e8ede19b22fa7875fc8b2db3))
+
+## [0.23.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.12...runner-executor-v0.23.13) (2026-11-21)
+
+## [0.23.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.11...runner-executor-v0.23.12) (2026-11-21)
+
 ## [0.23.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.10...runner-executor-v0.23.11) (2026-11-21)
 
 ## [0.23.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.9...runner-executor-v0.23.10) (2026-11-21)

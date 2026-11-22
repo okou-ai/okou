@@ -72,7 +72,7 @@ function createWalletConnectSignals(
     get(reload$);
     const result = await accept(
       get(apiClient$)(walletUserContract).connectStatus({
-        body: { agentId: context.agentId, state: oauthState },
+        body: { state: oauthState },
       }),
       [200, 403],
     );
@@ -128,7 +128,7 @@ function createWalletConnectSignals(
       await set(
         runChatActionCallback$,
         {
-          ...context,
+          threadId: context.threadId,
           callbackPrompt: i18n.t(($) => {
             return $.chat.walletAction.callbackPrompt;
           }),

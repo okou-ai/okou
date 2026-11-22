@@ -1,10 +1,10 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ComposerApiFixture
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.workspaceStorageKey
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -37,7 +37,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class ComposerJournalRecoveryTest {
     @get:Rule val temporary = TemporaryFolder()
-    private val target = ComposerTarget(CHAT_PERSONAL, CHAT_AGENT)
+    private val target = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Fixture(val root: File, private val dispatcher: CoroutineDispatcher) {
         val api = ComposerApiFixture()
@@ -111,6 +111,47 @@ class ComposerJournalRecoveryTest {
     }
 
     @Test
+    fun upgradingOfflineNewChatPreservesBothLocalAndWorkspaceText() = check { fixture ->
+        val key = "agent:$CHAT_PERSONAL"
+        val file = fixture.root.resolve("${fixture.api.identity.workspaceStorageKey()}.json")
+        file.writeText(
+            """{"format":3,"defaultAgentId":"$CHAT_PERSONAL","drafts":{"$key":{"text":"Offline edit","dirty":true}},"retainedDrafts":{"$key":"Earlier edit"}}"""
+        )
+        val workspace = ComposerTarget()
+        val path = "/api/chat-drafts/composer"
+        fixture.api.drafts[path] = plainDraftDocument("Workspace edit")
+        val first = fixture.model()
+        first.open(workspace)
+        first.uiState.first {
+            it.sync(workspace) == ComposerSync.Saved &&
+                it.persistence == ComposerPersistence.Durable
+        }
+        fixture.reopen()
+
+        val model = fixture.model()
+        model.open(workspace)
+        val restored = model.uiState.first { it.sync(workspace) == ComposerSync.Saved }
+        assertEquals("Workspace edit", restored.entry(workspace).text)
+        val candidates = restored.journal!!.retainedDrafts
+        assertEquals(setOf("Offline edit", "Earlier edit"), candidates.values.toSet())
+        val offlineKey = candidates.entries.single { it.value == "Offline edit" }.key
+        model.restoreDraft(workspace, offlineKey)
+        assertEquals("Workspace edit", model.uiState.value.entry(workspace).text)
+        model.edit(workspace, "")
+        model.restoreDraft(workspace, offlineKey)
+        model.uiState.first {
+            it.entry(workspace).text == "Offline edit" &&
+                it.sync(workspace) == ComposerSync.Saved &&
+                it.persistence == ComposerPersistence.Durable
+        }
+        assertEquals("Offline edit", fixture.api.drafts[path]?.plainText())
+        assertEquals(
+            listOf("Earlier edit"),
+            model.uiState.value.journal!!.retainedDrafts.values.toList(),
+        )
+    }
+
+    @Test
     fun richWebDocumentStaysCompleteWhileNativeCandidateIsDurable() = check { fixture ->
         val path = "/api/chat-threads/$CHAT_PERSONAL/draft"
         val rich =
@@ -127,10 +168,7 @@ class ComposerJournalRecoveryTest {
             it.sync(target) == ComposerSync.Unsupported &&
                 it.persistence == ComposerPersistence.Durable
         }
-        assertEquals(
-            rich,
-            fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL, true)),
-        )
+        assertEquals(rich, fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL)))
         assertEquals(
             "A separate native candidate",
             fixture.store.load(fixture.api.identity).journal.drafts[target.key]!!.text,
@@ -166,7 +204,7 @@ class ComposerJournalRecoveryTest {
         }
         assertEquals(
             "Offline input retained across process owners 👋",
-            fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL, true)).plainText(),
+            fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL)).plainText(),
         )
         assertEquals(0, fixture.posts())
     }

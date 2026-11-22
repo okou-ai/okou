@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
@@ -85,7 +86,6 @@ describe("current-member connector status", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     for (const command of [statusCommand, ...customConnectorCommand.commands]) {
       command.setOptionValue("json", false);
@@ -376,7 +376,7 @@ describe("current-member connector status", () => {
   )(
     "$name keeps the member account view inside a Run",
     async ({ command, args, name, target, id }) => {
-      vi.stubEnv("OKOU_AGENT_ID", "550e8400-e29b-41d4-a716-446655440000");
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       server.use(
         stubConnectorAccounts([connectorAccount(target, { id })]),
         stubRunConnectorAccountInventory({

@@ -107,7 +107,6 @@ export const projectsContract = c.router({
       after: uuid().optional(),
       limit: coerce.number().int().min(1).max(100).default(100),
       archived: zEnum(["all", "true", "false"]).default("all"),
-      agentId: uuid().optional(),
     }),
     responses: {
       200: object({

@@ -1,4 +1,7 @@
-import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import {
+  CONNECTOR_PERMISSION_PATHS,
+  INTEGRATION_SETTINGS_PATHS,
+} from "@okouai/core/integration-routes";
 import {
   HOSTED_SITE_AUTHORIZATION_PATH,
   HOSTED_SITE_ACCESS_PATH,
@@ -8,10 +11,6 @@ export const ROUTES = {
   home: "/",
   forYou: "/for-you",
   agents: "/agents",
-  agentDetail: "/agents/:agentId",
-  agentChat: "/agents/:agentId/chat",
-  agentIdeas: "/agents/:agentId/ideas",
-  agentPermissions: "/agents/:agentId/permissions",
   workflows: "/workflows",
   workflowDetail: "/workflows/:workflowId",
   workflowDetailAutomations: "/workflows/:workflowId/automations",
@@ -34,11 +33,15 @@ export const ROUTES = {
   browserAuthorize: "/browser/authorize/:requestToken",
   ideas: "/ideas",
   connectors: "/connectors",
+  connectorPermissions: CONNECTOR_PERMISSION_PATHS.single,
+  connectorPermissionsBatch: CONNECTOR_PERMISSION_PATHS.batch,
   me: "/me",
   computerUseAuthorize: "/computer-use/authorize/:requestToken",
   vncAuthorize: "/vnc/authorize/:vncAuthorizationId",
   sshAuthorize: "/ssh/authorize/:sshAuthorizationId",
   desktopShellAuthorize: "/computer-use/shell/authorize/:shellAuthorizationId",
+  bankingAccess: "/banking/access",
+  connectorAccountSelect: "/connectors/accounts/:approvalConnectionId/select",
   bankingConnectReturn: "/banking/connect/return",
   bankingConnectReturnResult: "/banking/connect/return/:bankingConnectStatus",
   feishuOAuthCallback: "/connectors/feishu/callback",

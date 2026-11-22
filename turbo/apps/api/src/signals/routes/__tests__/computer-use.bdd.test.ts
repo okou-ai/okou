@@ -688,7 +688,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
               seqId: expect.any(Number),
               kind: "computer_use_host_updated",
               chatThreadId: run.threadId,
-              agentId: created.agentId,
               title: null,
               pinOrder: null,
               selectedModel: null,

@@ -188,8 +188,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "625c4607ccdcd2d46a5c7227f61419928035e13f" ]; then
       [ "${MOCK_PAIR_FREE_DISK_WRITER_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "4f5de2f6f8f7f61b0470bdaca4af99a7e3ce2aea" ]; then
-      [ "${MOCK_NATIVE_CUSTOM_CONNECTOR_SKILL_READER_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "ced5af12a0a881d545d7b6f571fb107365ea9c65" ]; then
+      [ "${MOCK_CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "968063848aea8cf54acd6f56facdf7cdcbd79051" ]; then
@@ -1040,11 +1040,11 @@ if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
 fi
 
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the native custom Connector Skill reader" \
-  run_resolver "${tmp_dir}/custom-connector-skill-reader.output" MOCK_NATIVE_CUSTOM_CONNECTOR_SKILL_READER_VALID=0
-[ ! -s "${tmp_dir}/custom-connector-skill-reader.output" ] || fail "legacy Skill reader must not publish rollback outputs"
+assert_failure "Rollback target predates the mirror-free custom connector Skill API" \
+  run_resolver "${tmp_dir}/custom-connector-skill-writer.output" MOCK_CUSTOM_CONNECTOR_SKILL_MIRROR_FREE_API_VALID=0
+[ ! -s "${tmp_dir}/custom-connector-skill-writer.output" ] || fail "legacy Skill writer must not publish rollback outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
-  fail "legacy Skill reader must fail before artifact or host access"
+  fail "legacy Skill writer must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
@@ -2212,8 +2212,10 @@ ruby - \
     raise "production migrations must finish before API deployment"
   end
 
-  artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Upload canonical app artifact" }
-  artifact_upload_run = artifact_upload_step.fetch("run")
+  artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Publish app artifact and immutable assets to R2" }
+  script = ".github/scripts/artifacts/upload-okou-app-artifact.sh"
+  raise "deploy-app must publish the archive" unless artifact_upload_step.fetch("run").include?(script)
+  artifact_upload_run = File.read(File.join(File.dirname(ARGV[0]), "../../", script))
   raise "deploy-app must upload the archived App artifact" unless artifact_upload_run.include?("/dist.tar.gz")
   raise "deploy-app must not upload per-file App artifacts" if artifact_upload_run.include?("aws s3 cp turbo/apps/platform/dist")
 RUBY

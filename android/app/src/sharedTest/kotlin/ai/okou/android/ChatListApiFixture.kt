@@ -5,7 +5,9 @@ import ai.okou.android.auth.CanonicalWorkspaceSession
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chat.plainDraftDocument
 import java.io.Closeable
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -16,9 +18,8 @@ import kotlinx.serialization.json.long
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
+import org.junit.Assert.assertEquals
 
-const val CHAT_AGENT = "22222222-2222-4222-8222-222222222222"
-const val CHAT_OTHER_AGENT = "33333333-3333-4333-8333-333333333333"
 const val CHAT_PROJECT = "44444444-4444-4444-8444-444444444444"
 const val CHAT_PERSONAL = "11111111-1111-4111-8111-111111111111"
 const val CHAT_IN_PROJECT = "55555555-5555-4555-8555-555555555555"
@@ -32,10 +33,38 @@ fun chatEventWire(
     kind: String = "created",
     extra: String = "",
     title: String = "Personal chat",
-    agent: String? = CHAT_AGENT,
 ): String {
-    val legacyAgent = agent?.let { ""","agentId":"$it"""" }.orEmpty()
-    return """{"id":"$id","seqId":$seq,"kind":"$kind","chatThreadId":"$thread"$legacyAgent,"title":"$title","selectedModel":null,"serviceTier":null,"computerUseHostId":null,"createdAt":"$CHAT_DATE"$extra}"""
+    return """{"id":"$id","seqId":$seq,"kind":"$kind","chatThreadId":"$thread","title":"$title","selectedModel":null,"serviceTier":null,"computerUseHostId":null,"createdAt":"$CHAT_DATE"$extra}"""
+}
+
+internal fun ChatListApiFixture.rowEventTail(
+    beforeReadback: (Long) -> Unit = {}
+): MutableList<Pair<Long, String>> {
+    val initialEvents = events
+    val tail = CopyOnWriteArrayList<Pair<Long, String>>()
+    events = { request ->
+        val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLong()
+        if (since == null) initialEvents(request)
+        else {
+            if (tail.isNotEmpty()) beforeReadback(since)
+            val observed = tail.filter { it.first > since }.joinToString(",") { it.second }
+            jsonResponse("""{"events":[$observed],"hasMore":false}""")
+        }
+    }
+    return tail
+}
+
+internal fun RecordedRequest.rowEvent(
+    seq: Long,
+    thread: String,
+    kind: String,
+    extra: String = "",
+): String {
+    val id = checkNotNull(requestUrl?.queryParameter("eventId"))
+    assertEquals(id, UUID.fromString(id).toString())
+    assertEquals("Bearer fixture-token", getHeader("Authorization"))
+    assertEquals(0L, bodySize)
+    return chatEventWire(id = id, seq = seq, thread = thread, kind = kind, extra = extra)
 }
 
 const val HISTORY_LAST_EVENT = "88888888-8888-4888-8888-888888888888"
@@ -134,19 +163,13 @@ class ChatListApiFixture : Closeable {
             jsonResponse("""{"events":[],"hasMore":false}""")
         else
             jsonResponse(
-                """{"events":[${chatEventWire()},${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, thread = CHAT_IN_PROJECT, extra = ",\"projectId\":\"$CHAT_PROJECT\"", title = "Project chat", agent = CHAT_OTHER_AGENT)}],"hasMore":false}"""
+                """{"events":[${chatEventWire()},${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, thread = CHAT_IN_PROJECT, extra = ",\"projectId\":\"$CHAT_PROJECT\"", title = "Project chat")}],"hasMore":false}"""
             )
     }
     @Volatile
     var indicators: () -> MockResponse = {
         jsonResponse(
-            """{"agents":{},"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
-        )
-    }
-    @Volatile
-    var agents: () -> MockResponse = {
-        jsonResponse(
-            """[{"agentId":"$CHAT_AGENT","isDefaultAgent":true,"ownerId":"user-a","description":null,"displayName":"My Okou","sound":null,"avatarUrl":null,"visibility":"private"},{"agentId":"$CHAT_OTHER_AGENT","isDefaultAgent":false,"ownerId":"user-a","description":null,"displayName":"Research Okou","sound":null,"avatarUrl":null,"visibility":"private"}]"""
+            """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
         )
     }
     @Volatile
@@ -176,9 +199,12 @@ class ChatListApiFixture : Closeable {
                     if (
                         segments.size in 3..4 &&
                             segments[0] == "api" &&
-                            segments[1] in setOf("agents", "chat-threads")
+                            (segments[1] == "chat-threads" ||
+                                segments == listOf("api", "chat-drafts", "composer"))
                     ) {
-                        val draftPath = segments.size == 4 && segments[3] == "draft"
+                        val draftPath =
+                            segments[1] == "chat-drafts" ||
+                                segments.size == 4 && segments[3] == "draft"
                         val key = "${segments[1]}:${segments[2]}"
                         if (request.method == "GET" && draftPath)
                             return jsonResponse(
@@ -186,7 +212,7 @@ class ChatListApiFixture : Closeable {
                             )
                         if (
                             request.method == "PATCH" &&
-                                (segments[1] == "agents" && draftPath ||
+                                (segments[1] == "chat-drafts" ||
                                     segments[1] == "chat-threads" && segments.size == 3)
                         ) {
                             composerDrafts[key] =
@@ -217,7 +243,6 @@ class ChatListApiFixture : Closeable {
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)
                         "/api/indicators" -> indicators()
-                        "/api/agents" -> agents()
                         "/api/projects/snapshot" -> projects()
                         "/api/projects/events" -> projectEvents(request)
                         "/archive" -> archive()

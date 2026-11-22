@@ -61,7 +61,9 @@ class ConversationHistorySync(
                 more = page.hasMore || confirmColdTail
                 confirmColdTail = false
             }
-            state.copy(rows = rows.toList()).also { it.validate() }
+            // A validated tail with no new rows keeps the original checkpoint and its projection.
+            if (cached != null && !fromSnapshot && state.cursor == cached.cursor) cached
+            else state.copy(rows = rows.toList()).also { it.validate() }
         }
 
     private suspend fun snapshot(threadId: String): HistoryCheckpoint {

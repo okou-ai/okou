@@ -81,7 +81,7 @@ struct ChatThreadMenu {
       items.append(
         Item(
           action: .markUnread, title: String(localized: "Mark as unread"),
-          icon: "message-square-dot", enabled: enabled && !list.markingAgentRead))
+          icon: "message-square-dot", enabled: enabled && !list.markingAllRead))
     }
     items.append(
       Item(

@@ -74,7 +74,7 @@ test("forwards authenticated campaign status and recovers a check-in from the le
     recentGrants: [],
   };
   mocks.clerk.session(selected.userId, selected.orgId);
-  expect((await api.status({ headers })).status).toBe(503);
+  expect((await api.status({ headers })).status).toBe(404);
   expect((await api.checkin({ headers })).status).toBe(503);
   mockEnv("MARKETING_REWARDS_CAMPAIGN_SECRET", campaignSecret);
   const financial = financialClient();

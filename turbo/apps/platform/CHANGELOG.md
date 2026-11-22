@@ -13,6 +13,93 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1162.5](https://github.com/okou-ai/okou/compare/app-v0.1162.4...app-v0.1162.5) (2026-11-22)
+
+
+### Bug Fixes
+
+* **mobile:** prepare native clients for workspace apis without agent ids ([#49889](https://github.com/okou-ai/okou/issues/49889)) ([acc1180](https://github.com/okou-ai/okou/commit/acc1180b74cc5401511eb40984f43c64db058604))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.4
+    * @okouai/core bumped to 8.858.9
+    * @okouai/ui bumped to 1.21.85
+
+## [0.1162.4](https://github.com/okou-ai/okou/compare/app-v0.1162.3...app-v0.1162.4) (2026-11-21)
+
+
+### Bug Fixes
+
+* **app:** shorten long url labels in chat ([#49870](https://github.com/okou-ai/okou/issues/49870)) ([e67322a](https://github.com/okou-ai/okou/commit/e67322a09416baaad1b15eb0bed206bd4518365d))
+
+
+### Refactoring
+
+* contract legacy chat and run agent storage ([#49868](https://github.com/okou-ai/okou/issues/49868)) ([abbf9f8](https://github.com/okou-ai/okou/commit/abbf9f8e672ac56f0f98583cfb0b536e9225e905))
+* remove project thread deletion feature switch ([#49871](https://github.com/okou-ai/okou/issues/49871)) ([87a5dd0](https://github.com/okou-ai/okou/commit/87a5dd02dd9f35ce5a9fcc6775d63cf11547eaef))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.3
+    * @okouai/core bumped to 8.858.8
+    * @okouai/ui bumped to 1.21.84
+
+## [0.1162.3](https://github.com/okou-ai/okou/compare/app-v0.1162.2...app-v0.1162.3) (2026-11-21)
+
+
+### Refactoring
+
+* **app:** retire legacy agent management and chat action ids ([#49838](https://github.com/okou-ai/okou/issues/49838)) ([c83928a](https://github.com/okou-ai/okou/commit/c83928ad6fc787a648fa6f2a71fbf5d98b3001cc))
+* stage retirement of chat and run agent identity ([#49839](https://github.com/okou-ai/okou/issues/49839)) ([01b34f9](https://github.com/okou-ai/okou/commit/01b34f9b9f1a7f7b117739ad834931fa646a1b8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.2
+    * @okouai/core bumped to 8.858.7
+    * @okouai/ui bumped to 1.21.83
+
+## [0.1162.2](https://github.com/okou-ai/okou/compare/app-v0.1162.1...app-v0.1162.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* **cli:** remove legacy agent ids from cli requests ([#49830](https://github.com/okou-ai/okou/issues/49830)) ([fad4dc9](https://github.com/okou-ai/okou/commit/fad4dc9a841aac86dcdaf62f17d07ff200c287e3))
+* return 404 for unconfigured get started rewards ([#49832](https://github.com/okou-ai/okou/issues/49832)) ([b8b046f](https://github.com/okou-ai/okou/commit/b8b046f5daf43e740a8ed051e59ca7738ed327ad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.1
+    * @okouai/core bumped to 8.858.6
+    * @okouai/ui bumped to 1.21.82
+
+## [0.1162.1](https://github.com/okou-ai/okou/compare/app-v0.1162.0...app-v0.1162.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **app:** support member-scoped connector permission approvals ([#49815](https://github.com/okou-ai/okou/issues/49815)) ([d264a98](https://github.com/okou-ai/okou/commit/d264a981e964c318ca2535b8e0651315c09fcf19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.858.5
+    * @okouai/ui bumped to 1.21.81
+
 ## [0.1162.0](https://github.com/okou-ai/okou/compare/app-v0.1161.3...app-v0.1162.0) (2026-11-21)
 
 

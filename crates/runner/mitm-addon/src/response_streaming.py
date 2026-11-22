@@ -22,10 +22,10 @@ import body_decoding
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_response_classification
+import model_usage_request
 import model_websocket_usage
 import response_inspection
 import run_usage
-import runtime_url_parsing
 import stream_capture
 import usage
 import websocket_handshake
@@ -57,6 +57,25 @@ class _ResponseStreamSetup(NamedTuple):
     parser: _ResponseChunkParser | None
     needs_buffered_fallback: bool
     reject_uninspectable: bool = False
+
+
+def _log_response_inspection_interruption(
+    flow: http.HTTPFlow,
+    message: str,
+    error: str,
+    *,
+    usage_protocol: str | None = None,
+) -> None:
+    log_usage_underbilling(
+        flow_metadata.proxy_log_path(flow.metadata),
+        message,
+        "response_inspection_interrupted",
+        "risk",
+        run_id=flow_metadata.run_id(flow.metadata),
+        firewall_name=flow_metadata.firewall_name(flow.metadata),
+        **({"usage_protocol": usage_protocol} if usage_protocol is not None else {}),
+        parse_error=error,
+    )
 
 
 class _ConnectorResponseFinalizer:
@@ -91,14 +110,10 @@ class _ConnectorResponseFinalizer:
 
     def interrupt(self, error: str) -> None:
         self.fail_decode(error)
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(self._flow.metadata),
+        _log_response_inspection_interruption(
+            self._flow,
             "Deferred connector response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(self._flow.metadata),
-            firewall_name=flow_metadata.firewall_name(self._flow.metadata),
-            parse_error=error,
+            error,
         )
 
     def finish(self) -> None:
@@ -114,12 +129,10 @@ class _ConnectorResponseFinalizer:
 
 def model_usage_protocol(flow: http.HTTPFlow) -> usage.ModelUsageProtocol:
     """Classify model usage from the observed request and CLI fallback."""
-    request_target = flow_metadata.original_url(flow.metadata) or flow.request.path
-    request_path = runtime_url_parsing.strip_url_query_and_fragment(request_target).rstrip("/")
-    if request_path.endswith("/chat/completions"):
-        return "openai_chat_completions"
-    if request_path.endswith("/responses"):
-        return "openai_responses"
+    target = model_usage_request.normalized_target(flow)
+    protocol = model_usage_request.openai_protocol(target)
+    if protocol is not None:
+        return protocol
     if flow_metadata.cli_agent_type(flow.metadata) == "codex":
         return "openai_responses"
     return "anthropic_messages"
@@ -312,15 +325,11 @@ def _configure_model_sse_inspection(
         run_usage.observe(flow, usage_dict)
         run_usage.mark(flow, "parse_error")
         run_usage.mark(flow, "interrupted")
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(flow.metadata),
+        _log_response_inspection_interruption(
+            flow,
             "Deferred model SSE response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(flow.metadata),
-            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            error,
             usage_protocol=usage_protocol,
-            parse_error=error,
         )
 
     sse_inspection = response_inspection.CooperativeResponseInspection(
@@ -406,15 +415,11 @@ def _configure_model_json_inspection(
         finished = True
         run_usage.mark(flow, "parse_error")
         run_usage.mark(flow, "interrupted")
-        log_usage_underbilling(
-            flow_metadata.proxy_log_path(flow.metadata),
+        _log_response_inspection_interruption(
+            flow,
             "Deferred model JSON response inspection was interrupted",
-            "response_inspection_interrupted",
-            "risk",
-            run_id=flow_metadata.run_id(flow.metadata),
-            firewall_name=flow_metadata.firewall_name(flow.metadata),
+            error,
             usage_protocol=model_protocol,
-            parse_error=error,
         )
 
     if decode_session is not None:

@@ -8,7 +8,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  ADA_AGENT_ID,
   findFastControl,
   MESSAGE_EXPERIENCE_AGENT_ID,
   SOURCE_AGENT_ID,
@@ -43,51 +42,6 @@ function assertBefore(first: Element, second: Element): void {
     first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).not.toBe(0);
 }
-
-test("Agent mentions are recognizable links in messages and feedback", async () => {
-  const userMessage = {
-    version: 1,
-    parts: [
-      { type: "text", text: "Ask " },
-      { type: "agent", agentId: ADA_AGENT_ID, nameSnapshot: "Ada" },
-      { type: "text", text: " to review this." },
-      {
-        type: "feedback",
-        quote: "The launch plan needs a second look.",
-        note: [
-          { type: "text", text: "Please have " },
-          { type: "agent", agentId: ADA_AGENT_ID, nameSnapshot: "Ada" },
-          { type: "text", text: " check the dates." },
-        ],
-      },
-    ],
-  } satisfies UserMessageDocument;
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: [userEventWith(userMessage)],
-  });
-
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
-
-  const message = await waitFor(() => {
-    const element = documentRoot();
-    expect(element).toHaveTextContent("Ask Ada to review this.");
-    return element;
-  });
-  const mentions = queryAllByRoleFast("link", message).filter((link) => {
-    return link.getAttribute("aria-label") === "Open agent Ada";
-  });
-  expect(mentions).toHaveLength(2);
-  for (const mention of mentions) {
-    expect(mention).toHaveAttribute("href", `/agents/${ADA_AGENT_ID}/chat`);
-    expect(mention).toHaveTextContent("Ada");
-    expect(mention.querySelector("img")).toHaveAttribute(
-      "src",
-      "https://cdn.vm7.io/avatars/ada.png",
-    );
-  }
-  expect(message).not.toHaveTextContent(ADA_AGENT_ID);
-});
 
 test("MCP messages show the saved client name or generic marker with a local icon", async () => {
   const named = {

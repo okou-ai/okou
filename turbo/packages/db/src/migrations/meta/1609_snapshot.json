@@ -1,5 +1,5 @@
 {
-  "id": "11df334b-602b-4fdd-b140-9c6b6e9ebfef",
+  "id": "a53d3a1a-aa41-4ca2-8aa4-7733cc103c2e",
   "prevId": "806658e7-1b0d-4112-9229-12afe4345e79",
   "version": "7",
   "dialect": "postgresql",
@@ -454,12 +454,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "framework": {
           "name": "framework",
           "type": "varchar(64)",
@@ -750,6 +744,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "artifact_result": {
           "name": "artifact_result",
           "type": "varchar(20)",
@@ -972,19 +972,6 @@
         }
       },
       "foreignKeys": {
-        "agent_runs_agent_id_agents_id_fk": {
-          "name": "agent_runs_agent_id_agents_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "agent_runs_workflow_automation_id_workflow_automations_id_fk": {
           "name": "agent_runs_workflow_automation_id_workflow_automations_id_fk",
           "tableFrom": "agent_runs",
@@ -1004,6 +991,19 @@
           "tableTo": "chat_threads",
           "columnsFrom": [
             "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "agent_runs_agent_id_agents_id_fk": {
+          "name": "agent_runs_agent_id_agents_id_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
           ],
           "columnsTo": [
             "id"
@@ -8822,12 +8822,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "project_id": {
           "name": "project_id",
           "type": "uuid",
@@ -8962,6 +8956,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -9077,19 +9077,6 @@
         }
       },
       "foreignKeys": {
-        "chat_threads_agent_id_agents_id_fk": {
-          "name": "chat_threads_agent_id_agents_id_fk",
-          "tableFrom": "chat_threads",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "chat_threads_computer_use_host_id_computer_use_hosts_id_fk": {
           "name": "chat_threads_computer_use_host_id_computer_use_hosts_id_fk",
           "tableFrom": "chat_threads",
@@ -9101,6 +9088,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "chat_threads_agent_id_agents_id_fk": {
+          "name": "chat_threads_agent_id_agents_id_fk",
+          "tableFrom": "chat_threads",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "chat_threads_agent_org_fk": {
@@ -24107,6 +24107,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "skill_storage_version_id": {
+          "name": "skill_storage_version_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -24142,6 +24148,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_org_custom_connectors_skill_storage_version": {
+          "name": "idx_org_custom_connectors_skill_storage_version",
+          "columns": [
+            {
+              "expression": "skill_storage_version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -38037,7 +38058,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },

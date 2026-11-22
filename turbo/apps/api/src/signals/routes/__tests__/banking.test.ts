@@ -4,6 +4,7 @@ import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   bankingContract,
   bankingUserContract,
+  bankingWorkspaceContract,
 } from "@okouai/api-contracts/contracts/banking";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -847,11 +848,11 @@ describe("banking access request lifecycle", () => {
     const client = setupApp({ context, routes: bankingRoutes })(
       bankingUserContract,
     );
+    const workspaceClient = setupApp({ context, routes: bankingRoutes })(
+      bankingWorkspaceContract,
+    );
     const status = await accept(
-      client.accessRequestStatus({
-        headers: sessionHeaders(),
-        params: { agentId: fixture.agentId },
-      }),
+      workspaceClient.accessRequestStatus({ headers: sessionHeaders() }),
       [200],
     );
     const accountId = status.body.connection?.accounts[0]?.id;
@@ -860,10 +861,9 @@ describe("banking access request lifecycle", () => {
     }
 
     const saved = await accept(
-      client.saveAgentGrant({
+      workspaceClient.saveGrant({
         headers: sessionHeaders(),
         body: {
-          agentId: fixture.agentId,
           accountIds: [accountId],
           duration: "7d",
           purpose: "Review recent household spending",
@@ -890,9 +890,9 @@ describe("banking access request lifecycle", () => {
     expect(savedStatus.body.connection).toStrictEqual(saved.body.connection);
 
     const revoked = await accept(
-      client.revokeAgentGrant({
+      workspaceClient.revokeGrant({
         headers: sessionHeaders(),
-        body: { agentId: fixture.agentId },
+        body: {},
       }),
       [200],
     );

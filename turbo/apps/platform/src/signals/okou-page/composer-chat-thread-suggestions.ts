@@ -9,32 +9,17 @@ import type {
 const MAX_VISIBLE_CHAT_THREAD_SUGGESTIONS = 25;
 
 export interface ComposerChatThreadSuggestionResult {
-  readonly agentId: string | null;
   readonly query: string | null;
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
 }
 
 export function createComposerChatThreadSuggestions(
   activeRange$: Computed<ChatThreadSuggestionRange | null>,
-  agentId$: Computed<Promise<string | null>>,
 ): Computed<Promise<ComposerChatThreadSuggestionResult>> {
-  return computed(async (get): Promise<ComposerChatThreadSuggestionResult> => {
+  return computed((get): Promise<ComposerChatThreadSuggestionResult> => {
     const range = get(activeRange$);
     if (!range) {
-      return {
-        agentId: null,
-        query: null,
-        chatThreads: [],
-      };
-    }
-
-    const agentId = await get(agentId$);
-    if (!agentId) {
-      return {
-        agentId: null,
-        query: range.query,
-        chatThreads: [],
-      };
+      return Promise.resolve({ query: null, chatThreads: [] });
     }
 
     const query = range.query.toLowerCase();
@@ -59,10 +44,6 @@ export function createComposerChatThreadSuggestions(
       }
     }
 
-    return {
-      agentId,
-      query: range.query,
-      chatThreads,
-    };
+    return Promise.resolve({ query: range.query, chatThreads });
   });
 }

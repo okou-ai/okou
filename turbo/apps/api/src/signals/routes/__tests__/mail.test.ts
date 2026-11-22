@@ -971,9 +971,7 @@ async function seedGmailMailCardFixture(
   } as const;
   mocks.clerk.session(actor.userId, actorWithOrg.orgId, actor.orgRole);
   const agent = await bdd.createAgent(actor, agentBody);
-  registerCleanup?.(async () => {
-    await bdd.deleteAgent(actor, agent.agentId);
-  });
+
   const thread = await chat.createThread(actor, {
     title: "Mail review",
   });
@@ -1019,17 +1017,11 @@ async function createPublicGmailMailCardFixture(
       });
     }),
   );
-  let agentId: string | undefined;
   const owner = createPublicConnectorActor(context, {
     optionalEnvironmentNames: [
       "GOOGLE_OAUTH_CLIENT_ID",
       "GOOGLE_OAUTH_CLIENT_SECRET",
     ],
-    beforeWorkspaceCleanup: async () => {
-      if (agentId) {
-        await bdd.deleteAgent(owner.actor, agentId);
-      }
-    },
   });
   const { actor, run: own } = owner;
   return await own(async () => {
@@ -1039,7 +1031,6 @@ async function createPublicGmailMailCardFixture(
         visibility: "private",
       });
     });
-    agentId = agent.agentId;
     const thread = await own(() => {
       return chat.createThread(actor, {
         title: "Mail review",

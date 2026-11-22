@@ -10,7 +10,7 @@ import {
   finalizeActionUrl,
   printCallbackTurnInstruction,
 } from "../connector/action-url";
-import { currentAgentId, parseMailProvider } from "./shared";
+import { parseMailProvider } from "./shared";
 
 function currentChatThreadId(): string {
   const threadId = getOkouChatThreadId()?.trim();
@@ -20,18 +20,6 @@ function currentChatThreadId(): string {
     });
   }
   return threadId;
-}
-
-function mailDraftReviewUrl(args: {
-  readonly mailDraftUrl: string;
-  readonly agentId: string;
-  readonly callbackPrompt: string | undefined;
-}): string {
-  const actionUrl = new URL(args.mailDraftUrl);
-  if (args.callbackPrompt !== undefined) {
-    actionUrl.searchParams.set("agentId", args.agentId);
-  }
-  return finalizeActionUrl(actionUrl, args.callbackPrompt, args.agentId);
 }
 
 const callbackPromptOption = new Option(
@@ -74,20 +62,17 @@ ${callbackPromptNotes}  - Revise the same provider draft in place and reuse its 
         draftId: string,
         opts: { callbackPrompt?: string; provider: string },
       ) => {
-        const agentId = currentAgentId();
         const threadId = currentChatThreadId();
         const result = await linkMailDraft({
           threadId,
-          agentId,
           ...(parseMailProvider(opts.provider) === "outlook"
             ? { provider: "outlook" as const, outlookMessageId: draftId }
             : { gmailDraftId: draftId }),
         });
-        const reviewUrl = mailDraftReviewUrl({
-          mailDraftUrl: result.mailDraftUrl,
-          agentId,
-          callbackPrompt: opts.callbackPrompt,
-        });
+        const reviewUrl = finalizeActionUrl(
+          new URL(result.mailDraftUrl),
+          opts.callbackPrompt,
+        );
         console.log(
           `Return the exact review URL on its own line, separated from other text by blank lines. Example reply:\n\nYour email draft is ready to review and send.\n\n${reviewUrl}`,
         );

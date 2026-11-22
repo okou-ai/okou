@@ -4,7 +4,6 @@ import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { command } from "ccstate";
 import {
@@ -53,9 +52,7 @@ import { cleanupStaleRunnerState$ } from "./runner-state-cleanup.service";
 const L = logger("CronCleanupSandboxes");
 
 const HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
-const DEBUG_HEARTBEAT_TIMEOUT_MS = 60 * 60 * 1000;
 const PENDING_TIMEOUT_MS = 5 * 60 * 1000;
-const DEBUG_COMPOSE_PREFIX = "debug-";
 const CONNECTOR_DIAGNOSTIC_REGISTRATION_CLEANUP_BATCH_SIZE = 20;
 const TERMINAL_RUN_STATUSES = [
   "completed",
@@ -179,12 +176,10 @@ interface StaleRun {
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
   readonly lastHeartbeatAt: Date;
-  readonly composeName: string | null;
 }
 
 interface CleanupCutoffs {
   readonly running: Date;
-  readonly debug: Date;
   readonly pending: Date;
 }
 
@@ -203,8 +198,7 @@ function staleRunCutoff(run: StaleRun, cutoffs: CleanupCutoffs): Date {
     return cutoffs.pending;
   }
 
-  const isDebug = run.composeName?.startsWith(DEBUG_COMPOSE_PREFIX) ?? false;
-  return isDebug ? cutoffs.debug : cutoffs.running;
+  return cutoffs.running;
 }
 
 function isExpiredRun(run: StaleRun, cutoffs: CleanupCutoffs): boolean {
@@ -300,13 +294,10 @@ const cleanupSingleRun$ = command(
     );
     signal.throwIfAborted();
 
-    const isDebug = run.composeName?.startsWith(DEBUG_COMPOSE_PREFIX) ?? false;
     L.debug("Cleaned up expired run", {
       runId: run.id,
       status: run.status,
       sandboxId: committed.sandboxId,
-      composeName: run.composeName,
-      isDebug,
       referenceTime: run.lastHeartbeatAt.toISOString(),
     });
 
@@ -563,14 +554,12 @@ export const cleanupSandboxes$ = command(
     }
     const cutoffs = {
       running: new Date(currentTime - HEARTBEAT_TIMEOUT_MS),
-      debug: new Date(currentTime - DEBUG_HEARTBEAT_TIMEOUT_MS),
       pending: new Date(currentTime - PENDING_TIMEOUT_MS),
     };
 
     L.debug("Checking for expired runs", {
       runningBefore: cutoffs.running.toISOString(),
       pendingBefore: cutoffs.pending.toISOString(),
-      debugBefore: cutoffs.debug.toISOString(),
     });
 
     const staleRuns = await db
@@ -584,12 +573,10 @@ export const cleanupSandboxes$ = command(
         runnerGroup: agentRuns.runnerGroup,
         chatThreadId: agentRuns.chatThreadId,
         lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt,
-        composeName: agents.name,
       })
       .from(activeAgentRuns)
       .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
 
-      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
       .where(inArray(agentRuns.status, ["pending", "running"]));
     signal.throwIfAborted();
 

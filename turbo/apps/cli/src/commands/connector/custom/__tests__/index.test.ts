@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../../test/fixtures/captured-run-token";
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +19,7 @@ import {
 } from "../../../__tests__/helpers/connector-accounts";
 
 const CONNECTOR_ID = "33333333-3333-4333-8333-333333333333";
-const AGENT_ID = "44444444-4444-4444-8444-444444444444";
+const OTHER_CONNECTOR_ID = "44444444-4444-4444-8444-444444444444";
 
 describe("okou connector custom readers", () => {
   const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -42,7 +43,7 @@ describe("okou connector custom readers", () => {
   it("reports saved-account membership and Chat allowance inside a Run", async () => {
     const connector = customConnector({});
     const mcp = customMcpConnector();
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
     server.use(
       stubConnectedConnectors([], [connector, mcp]),
       stubCustomConnectors([connector, mcp]),
@@ -261,7 +262,7 @@ describe("okou connector custom readers", () => {
       server.use(
         stubCustomConnectors([
           customConnector({
-            id: AGENT_ID,
+            id: OTHER_CONNECTOR_ID,
             slug: "_acme-search-extra",
             displayName: "Another connector",
           }),

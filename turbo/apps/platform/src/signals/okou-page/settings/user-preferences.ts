@@ -111,9 +111,6 @@ function confirmedFields(
   return {
     ...(timezone !== undefined && { timezone }),
     ...(locale !== undefined && { locale }),
-    ...(update.pinnedAgentIds !== undefined && {
-      pinnedAgentIds: result.pinnedAgentIds,
-    }),
     ...(update.sendMode !== undefined && { sendMode: result.sendMode }),
     ...(update.cloudBrowserEnabledByDefault !== undefined && {
       cloudBrowserEnabledByDefault: result.cloudBrowserEnabledByDefault,

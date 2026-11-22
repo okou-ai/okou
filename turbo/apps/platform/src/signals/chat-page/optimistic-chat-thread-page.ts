@@ -28,7 +28,7 @@ import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { logger } from "../log.ts";
-import { clearAgentDraftById$ } from "../okou-page/agent-draft.ts";
+import { clearComposerDraft$ } from "../okou-page/agent-draft.ts";
 import {
   talkDraft$,
   type DraftSignals,
@@ -52,7 +52,6 @@ import {
 } from "../okou-page/user-message-document-codec.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { sendChatEvent } from "./chat-event-api.ts";
-import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
 import { loadRightThread$ } from "./chat-thread-pane-navigation.ts";
@@ -71,7 +70,6 @@ import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
 export type NewChatThreadPane = "main" | "sidebar";
 
 interface NewChatThreadTarget {
-  readonly agentId: string;
   readonly projectId?: string;
 }
 
@@ -85,7 +83,6 @@ export const newChatThreadDisabled$ = computed(() => {
 });
 
 interface SendNewThreadMessageRequest {
-  agentId: string;
   /** A prepared title skips automatic title generation. */
   title?: string;
   /** The Project the new thread starts in. */
@@ -149,27 +146,6 @@ function userMessageForNewThread(
     throw new Error("Failed to serialize user message");
   }
   return userMessage;
-}
-
-function annotatedMessagesForNewThread(
-  request: SendNewThreadMessageRequest,
-  userMessage: UserMessageInputDocument,
-  modelSelection: ModelProviderSelection,
-): {
-  readonly annotatedUserMessage: UserMessageDocument;
-  readonly optimisticUserMessage: UserMessageDocument;
-} {
-  const annotatedUserMessage = withSelectedModelAnnotation(
-    userMessage,
-    modelSelection.selectedModel,
-    apiServiceTierFromSelection(modelSelection) ?? undefined,
-  );
-  return {
-    annotatedUserMessage,
-    optimisticUserMessage: request.forward
-      ? withOptimisticAgentRunSource(annotatedUserMessage, request.forward)
-      : annotatedUserMessage,
-  };
 }
 
 function createNewThreadOptimisticEventEntry({
@@ -358,7 +334,6 @@ const mintOptimisticThreadWithEvent$ = command(
     args: {
       readonly threadId: string;
       readonly eventId: string;
-      readonly agentId: string;
       readonly projectId?: string;
       readonly title?: string;
       readonly selectedModel: string | null;
@@ -372,13 +347,11 @@ const mintOptimisticThreadWithEvent$ = command(
     signal.throwIfAborted();
     L.debug("optimistic thread minted", {
       threadId: args.threadId,
-      agentId: args.agentId,
     });
     set(registerOptimisticChatThreadEvent$, {
       id: args.eventId,
       kind: "created",
       chatThreadId: args.threadId,
-      agentId: args.agentId,
       projectId: args.projectId,
       title: args.title ?? null,
       selectedModel: args.selectedModel,
@@ -393,7 +366,6 @@ const mintOptimisticThreadWithEvent$ = command(
 async function createChatThread(
   args: {
     readonly createClient: ApiClientFactory;
-    readonly agentId: string;
     readonly projectId?: string;
     readonly title: string | undefined;
     readonly clientThreadId: string;
@@ -499,7 +471,7 @@ const startNewChatThreadCreate$ = command(
     readonly threadId: string;
     readonly createResult: Promise<void>;
   }> => {
-    const { agentId, projectId } = target;
+    const { projectId } = target;
     const threadId = crypto.randomUUID();
     const eventId = crypto.randomUUID();
     const models = await get(availableRunModels$);
@@ -522,7 +494,6 @@ const startNewChatThreadCreate$ = command(
       {
         threadId,
         eventId,
-        agentId,
         projectId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
@@ -539,7 +510,6 @@ const startNewChatThreadCreate$ = command(
       await createChatThread(
         {
           createClient,
-          agentId,
           projectId,
           title: undefined,
           clientThreadId: threadId,
@@ -598,11 +568,7 @@ const mintNewThreadSubmission$ = command(
     { set },
     request: Pick<
       SendNewThreadMessageRequest,
-      | "agentId"
-      | "projectId"
-      | "title"
-      | "computerUseHostId"
-      | "cloudBrowserEnabled"
+      "projectId" | "title" | "computerUseHostId" | "cloudBrowserEnabled"
     >,
     identity: Omit<PendingThreadIdentity, "intent">,
     submission: {
@@ -628,7 +594,6 @@ const mintNewThreadSubmission$ = command(
       {
         threadId: identity.threadId,
         eventId: identity.chatThreadEventId,
-        agentId: request.agentId,
         projectId: request.projectId,
         title: request.title,
         selectedModel: modelSelection.selectedModel,
@@ -687,7 +652,6 @@ const reserveNewThreadSubmissionIdentity$ = command(
     const identity = customDirection
       ? await customDirectionIdentity(
           JSON.stringify({
-            agentId: request.agentId,
             userMessage: {
               ...userMessage,
               parts: userMessage.parts.filter((part) => {
@@ -699,7 +663,6 @@ const reserveNewThreadSubmissionIdentity$ = command(
       : set(
           draft.reserveThreadIdentity$,
           JSON.stringify({
-            agentId: request.agentId,
             projectId: request.projectId,
             title: request.title,
             userMessage,
@@ -740,7 +703,7 @@ const clearSubmittedNewThreadDraft$ = command(
     }
     set(draft.clear$);
     if (!request.forward && !request.preserveAgentDraft) {
-      await set(clearAgentDraftById$, request.agentId, signal);
+      await set(clearComposerDraft$, signal);
     }
   },
 );
@@ -762,7 +725,6 @@ function newThreadRecordOptions(args: {
   const { createClient, request, identity, resolved, codexExecution } = args;
   return {
     createClient,
-    agentId: request.agentId,
     projectId: request.projectId,
     title: request.title,
     clientThreadId: identity.threadId,
@@ -824,12 +786,11 @@ const sendNewThreadMessage$ = command(
     }
     const features = await get(featureSwitches$);
     signal.throwIfAborted();
-    const { annotatedUserMessage, optimisticUserMessage } =
-      annotatedMessagesForNewThread(
-        request,
-        userMessageForNewThread(request, prepared),
-        resolvedModelSelection,
-      );
+    const annotatedUserMessage = withSelectedModelAnnotation(
+      userMessageForNewThread(request, prepared),
+      resolvedModelSelection.selectedModel,
+      apiServiceTierFromSelection(resolvedModelSelection) ?? undefined,
+    );
     const { threadId, clientEventId, chatThreadEventId, customDirection } =
       await set(
         reserveNewThreadSubmissionIdentity$,
@@ -884,7 +845,7 @@ const sendNewThreadMessage$ = command(
       { threadId, clientEventId, chatThreadEventId },
       {
         modelSelection: resolvedModelSelection,
-        userMessage: optimisticUserMessage,
+        userMessage: annotatedUserMessage,
       },
       signal,
     );

@@ -86,7 +86,6 @@
           "title": "Anbieter vorübergehend nicht erreichbar"
         }
       },
-      "fallbackAgent": "Agent",
       "fields": {
         "duration": "Dauer",
         "model": "Modell",
@@ -378,7 +377,6 @@
         "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen"
       },
       "navigation": {
-        "agents": "Agenten",
         "artifacts": "Artefakte",
         "connectors": "Integrationen",
         "settings": "Einstellungen",
@@ -990,11 +988,9 @@
         "twentyFourHours": "24 Stunden"
       },
       "errors": {
-        "agentNotFound": "Agent nicht gefunden",
         "loadAgent": "Der Agent konnte nicht geladen werden",
         "loadGrants": "Berechtigungserteilungen konnten nicht geladen werden",
         "loadMetadata": "Berechtigungsmetadaten konnten nicht geladen werden",
-        "missingAgentId": "Fehlende Agent-ID in den URL-Parametern",
         "missingPermission": "Fehlende Berechtigung in URL-Parametern",
         "unknownAction": "Unbekannte Berechtigungsaktion: {{action}}",
         "unknownConnector": "Unbekannter Integration: {{connector}}",
@@ -1047,7 +1043,6 @@
       "pending_one": "{{count}} Berechtigung ausstehend",
       "pending_other": "{{count}} Berechtigungen ausstehend",
       "review": "Berechtigungen prüfen",
-      "sharedScopeNote": "Die Berechtigungen für diesen Connector gelten für alle deine Chats und Agenten.",
       "title": "Folgende Berechtigungen erlauben"
     }
   },
@@ -1820,7 +1815,7 @@
       "repair": "Reparieren",
       "repairRequired": "{{institution}} muss repariert werden",
       "revoke": "Widerrufen",
-      "revokeConfirm": "Banking-Zugriff dieses Agenten widerrufen?",
+      "revokeConfirm": "Banking-Zugriff für diesen Arbeitsbereich widerrufen?",
       "selectAccounts": "Konten auswählen",
       "sevenDays": "7 Tage",
       "thirtyDays": "30 Tage",
@@ -2804,7 +2799,6 @@
       "noEmojiFound": "Kein Emoji gefunden",
       "notFound": "Chat-Thread nicht gefunden",
       "openBrowser": "Browser öffnen",
-      "openNamedAgent": "Agent {{name}} öffnen",
       "openNamedChat": "Chat {{title}} öffnen",
       "pickEmoji": "Ein Emoji auswählen",
       "scrollToBottom": "Nach unten scrollen",
@@ -4823,7 +4817,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
     "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",

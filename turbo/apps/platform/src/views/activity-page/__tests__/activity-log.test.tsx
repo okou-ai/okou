@@ -27,8 +27,7 @@ function makeLogDetail(
   return {
     id: RUN_ID,
     sessionId: "session-activity-log",
-    agentId: "e0000000-0000-4000-a000-000000000010",
-    displayName: "Activity Log Test",
+
     framework,
     modelProvider: null,
     selectedModel: null,
@@ -240,7 +239,7 @@ test("Activity logs do not hide a failed run behind completed child work", async
   await openActivity();
 
   await expect(
-    screen.findByRole("heading", { name: "Activity Log Test" }),
+    screen.findByRole("heading", { name: "Okou" }),
   ).resolves.toBeInTheDocument();
   expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
   await expect(

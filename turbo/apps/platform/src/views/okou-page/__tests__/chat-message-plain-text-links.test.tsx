@@ -170,3 +170,14 @@ test("Text that only looks like a link stays plain text", async () => {
   });
   expect(queryAllByRoleFast("link", message)).toHaveLength(0);
 });
+
+test("A long URL typed into chat keeps its full link target", async () => {
+  const url = "https://example.com/search?q=" + "x".repeat(100);
+  installPrompt(url);
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+  await waitFor(() => {
+    expect(linkTo(url, userMessage())).toHaveTextContent(
+      url.slice(0, 77) + "...",
+    );
+  });
+});

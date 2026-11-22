@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
+import { urlLabel } from "./url-label.tsx";
 
 /**
  * User-authored text with its plain http(s) URLs made clickable.
@@ -49,7 +50,7 @@ export function PlainTextWithLinks({
             rel="noopener noreferrer"
             className="text-link underline-offset-2 hover:text-link-hover hover:underline"
           >
-            {segment.value}
+            {urlLabel(segment.value)}
           </a>
         ) : (
           <span key={key}>{segment.value}</span>

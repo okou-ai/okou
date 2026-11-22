@@ -1,9 +1,6 @@
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$ } from "../external/db";
-import {
-  legacyThreadAgentId,
-  chatThreadOrganizationPredicate,
-} from "../services/chat-thread-organization.service";
+import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import { iosChatUltrafastTransforms } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
@@ -26,7 +23,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
   const [thread] = await db
     .select({
       id: chatThreads.id,
-      agentId: legacyThreadAgentId(chatThreads.agentId, chatThreads.orgId),
       title: chatThreads.title,
       selectedModel: chatThreads.selectedModel,
       modelSettings: chatThreads.modelSettings,
@@ -57,7 +53,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       id: thread.id,
-      ...(thread.agentId ? { agentId: thread.agentId } : {}),
       title: thread.title,
       selectedModel: thread.selectedModel,
       modelSettings: modelSettingsSchema.parse(thread.modelSettings),

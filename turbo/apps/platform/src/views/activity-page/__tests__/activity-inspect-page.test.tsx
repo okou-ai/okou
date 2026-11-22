@@ -18,10 +18,9 @@ const context = testContext();
 const user = userEvent.setup();
 
 function inspectFile(): File {
-  const meta: Partial<LogDetail> = {
+  const meta: Partial<LogDetail> & { displayName: string } = {
     id: "b0000000-0000-4000-a000-000000000777",
     sessionId: "session-inspect",
-    agentId: "c0000000-0000-4000-a000-000000000001",
     displayName: "Imported Analysis",
     framework: "claude-code",
     modelProvider: null,
@@ -156,10 +155,9 @@ function inspectFile(): File {
 }
 
 function codexInspectFile(): File {
-  const meta: Partial<LogDetail> = {
+  const meta: Partial<LogDetail> & { displayName: string } = {
     id: "b0000000-0000-4000-a000-000000000778",
     sessionId: "codex-inspect-session",
-    agentId: "c0000000-0000-4000-a000-000000000002",
     displayName: "Imported Codex Adapter Log",
     framework: "codex",
     modelProvider: null,
@@ -271,10 +269,9 @@ function codexInspectFile(): File {
 }
 
 function codexThreadItemsInspectFile(): File {
-  const meta: Partial<LogDetail> = {
+  const meta: Partial<LogDetail> & { displayName: string } = {
     id: "b0000000-0000-4000-a000-000000000779",
     sessionId: "codex-thread-items-session",
-    agentId: "c0000000-0000-4000-a000-000000000003",
     displayName: "Imported Codex Thread Items",
     framework: "codex",
     modelProvider: null,

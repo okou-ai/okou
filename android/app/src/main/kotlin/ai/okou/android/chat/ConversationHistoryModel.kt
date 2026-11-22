@@ -33,6 +33,7 @@ data class ConversationUiState(
     val detail: ThreadDetail? = null,
     val detailPhase: ChatReadPhase = ChatReadPhase.Idle,
     val detailFailure: Exception? = null,
+    val initialReadFailed: Boolean = false,
 )
 
 /** A completed network read, distinct from both selection identity and the event cursor. */
@@ -157,8 +158,8 @@ class ConversationHistoryModel(
         }
     }
 
-    internal fun stopAutomaticRead(threadId: String): Job? =
-        if (mutable.value.thread?.id == threadId) visit?.stopAutomaticRead() else null
+    internal fun readSessionFor(threadId: String): ConversationReadSession? =
+        visit?.takeIf { mutable.value.thread?.id == threadId }
 
     fun refresh() {
         refreshHistory()
@@ -188,7 +189,11 @@ class ConversationHistoryModel(
                     requireCurrent(ticket)
                     confirmed = ConfirmedTimeline(saved, transcript)
                     publish(
-                        mutable.value.copy(transcript = transcript, source = ChatListSource.Cache)
+                        mutable.value.copy(
+                            transcript = transcript,
+                            source = ChatListSource.Cache,
+                            initialReadFailed = false,
+                        )
                     )
                 }
                 try {
@@ -212,7 +217,10 @@ class ConversationHistoryModel(
                         requireCurrent(ticket)
                         diskFailed = true
                     }
-                    val transcript = withContext(dispatcher) { projectHistory(next.checkpoint) }
+                    // Room may select a different prefix at the same cursor.
+                    val transcript =
+                        confirmed?.takeIf { it.history.checkpoint === next.checkpoint }?.transcript
+                            ?: withContext(dispatcher) { projectHistory(next.checkpoint) }
                     requireCurrent(ticket)
                     confirmed = ConfirmedTimeline(next, transcript)
                     publish(
@@ -221,6 +229,7 @@ class ConversationHistoryModel(
                             phase = HistoryPhase.Ready,
                             source = ChatListSource.Network,
                             cacheUnavailable = diskFailed,
+                            initialReadFailed = false,
                             // Equal rows still complete a new read; StateFlow may conflate phases.
                             confirmation =
                                 HistoryConfirmation(ticket, ++revision, next.checkpoint.cursor),
@@ -235,8 +244,15 @@ class ConversationHistoryModel(
                         missing(thread.id, ticket, error)
                     } else {
                         reportAuthorization(error)
-                        if (current(ticket))
-                            publish(mutable.value.copy(phase = HistoryPhase.Failed))
+                        if (current(ticket)) {
+                            val state = mutable.value
+                            publish(
+                                state.copy(
+                                    phase = HistoryPhase.Failed,
+                                    initialReadFailed = state.transcript == null,
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -284,6 +300,7 @@ class ConversationHistoryModel(
                 source = null,
                 phase = HistoryPhase.Missing,
                 confirmation = null,
+                initialReadFailed = false,
                 detail = null,
                 detailPhase = ChatReadPhase.Failed,
                 detailFailure = error,

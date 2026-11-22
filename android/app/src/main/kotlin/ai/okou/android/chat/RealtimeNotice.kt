@@ -39,6 +39,11 @@ fun WorkspaceRealtimeLifecycle(model: ChatUpdatesModel) {
 @Composable
 fun RealtimeNotice(model: ChatUpdatesModel) {
     val phase by model.phase.collectAsStateWithLifecycle()
+    RealtimeNotice(model, phase)
+}
+
+@Composable
+internal fun RealtimeNotice(model: ChatUpdatesModel, phase: RealtimePhase) {
     if (phase == RealtimePhase.Connecting || phase == RealtimePhase.Unavailable) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
             Text(

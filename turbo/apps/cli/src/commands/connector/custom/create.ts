@@ -8,7 +8,6 @@ import { Command } from "commander";
 import { createCustomConnector } from "../../../lib/api/domains/connectors";
 import { decodeSandboxTokenPayload } from "../../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
-import { getOkouAgentId } from "../../../lib/okou-env";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   CALLBACK_PROMPT_MAX_LENGTH,
@@ -29,9 +28,7 @@ interface CreateOptions {
 function requireCustomConnectorWriteCapability(): void {
   const payload = decodeSandboxTokenPayload();
   if (payload && !payload.capabilities.includes("connector:write")) {
-    throw new Error(
-      `Custom connector creation is not enabled for this ${payload.singleAgent ? "Run" : "agent run"}`,
-    );
+    throw new Error("Custom connector creation is not enabled for this Run");
   }
 }
 
@@ -39,7 +36,6 @@ function printCreateResult(
   connector: CustomConnectorResponse,
   options: CreateOptions,
   connectUrl: string,
-  agentId: string | undefined,
 ): void {
   if (options.json) {
     console.log(
@@ -66,7 +62,7 @@ function printCreateResult(
   if (options.callbackPrompt !== undefined) {
     printCallbackTurnInstruction();
   } else {
-    printCallbackActionUrlExample(connectUrl, agentId);
+    printCallbackActionUrlExample(connectUrl);
   }
 }
 
@@ -259,20 +255,18 @@ Notes
         options.file,
         createCustomConnectorDefinitionFileSchema,
       );
-      const agentId = getOkouAgentId()?.trim() || undefined;
       const actionUrl = new URL(
         connectorActionUrl({
           origin: await getPlatformOrigin(),
           path: "/connectors",
-          agentId,
         }),
       );
       // Validate the callback before creating a definition that needs connection.
       const connectUrl = new URL(
-        finalizeActionUrl(actionUrl, options.callbackPrompt, agentId),
+        finalizeActionUrl(actionUrl, options.callbackPrompt),
       );
       const connector = await createCustomConnector(definition);
       connectUrl.pathname = `/connectors/${connector.slug}/connect`;
-      printCreateResult(connector, options, connectUrl.toString(), agentId);
+      printCreateResult(connector, options, connectUrl.toString());
     }),
   );

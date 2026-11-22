@@ -464,25 +464,4 @@ describe("Agent database instructions", () => {
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
     await expect(fixture.content()).resolves.toBe("Private instructions");
   });
-
-  it("cannot recreate deleted instructions", async () => {
-    const fixture = await instructionFixture();
-    await accept(
-      fixture.agents.delete({ headers, params: fixture.params }),
-      [204],
-    );
-    const missing = await accept(
-      fixture.instructions.get({ headers, params: fixture.params }),
-      [404],
-    );
-    expect(missing.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-    await accept(
-      fixture.instructions.update({
-        headers,
-        params: fixture.params,
-        body: { content: "Deleted" },
-      }),
-      [404],
-    );
-  });
 });

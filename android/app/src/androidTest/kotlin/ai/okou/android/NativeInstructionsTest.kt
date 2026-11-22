@@ -4,8 +4,7 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import android.view.KeyEvent
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -102,26 +101,26 @@ class NativeInstructionsTest {
                     )
                     .click()
             }
-            fun editor() =
+            fun editor(requireFocus: Boolean = false) =
                 checkNotNull(
                     device.wait(
-                        Until.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
+                        Until.findObject(
+                            By.pkg(app.packageName).clazz("android.widget.EditText").apply {
+                                if (requireFocus) focused(true)
+                            }
+                        ),
                         10_000,
                     )
                 )
+            fun imeVisible() =
+                instrumentation.uiAutomation.windows.any {
+                    it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                }
             fun awaitIme(visible: Boolean) {
                 assertTrue(
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
-                            override fun apply(unused: UiDevice): Boolean {
-                                var actual = false
-                                checkNotNull(scenario).onActivity {
-                                    actual =
-                                        ViewCompat.getRootWindowInsets(it.window.decorView)
-                                            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
-                                }
-                                return actual == visible
-                            }
+                            override fun apply(unused: UiDevice): Boolean = imeVisible() == visible
                         },
                         10_000,
                     ) == true
@@ -154,7 +153,6 @@ class NativeInstructionsTest {
             // The host Compose test covers pending Instructions feedback. Release the actual HTTP
             // response after native first-display proof, before gestures can exhaust its deadline.
             held.countDown()
-            reveal(app.getString(R.string.instructions_current))
             editor().click()
             awaitIme(true)
             editor().text = "Native **instructions** 👋"
@@ -165,10 +163,18 @@ class NativeInstructionsTest {
             awaitIme(false)
             reveal(app.getString(R.string.instructions_title))
             scenario.recreate()
-            reveal(app.getString(R.string.instructions_unsaved))
-            assertTrue(editor().text.contains("Native **instructions** 👋"))
+            assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
+            device.waitForIdle()
+            assertFalse("Recreation reopened the dismissed keyboard", imeVisible())
+
+            editor().click()
+            awaitIme(true)
+            scenario.recreate()
+            assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
+            awaitIme(true)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            awaitIme(false)
             click(R.string.instructions_save)
-            reveal(app.getString(R.string.instructions_current))
             assertTrue(
                 device.wait(
                     object : Condition<UiDevice, Boolean> {
@@ -179,14 +185,19 @@ class NativeInstructionsTest {
                 ) == true
             )
             assertTrue(fixture.saved.content.contains("Native **instructions** 👋"))
+            reveal(app.getString(R.string.appearance))
+            click(R.string.instructions_title)
             editor().text = "Keep this local draft"
             fixture.externalEdit("Changed on Web")
-            click(R.string.instructions_refresh)
+            scenario.onActivity {
+                checkNotNull(ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready)
+                    .instructions
+                    .refresh()
+            }
             reveal(app.getString(R.string.instructions_conflict))
             assertEquals("Keep this local draft", editor().text)
             assertEquals(1, fixture.requests.count { it.method == "PUT" })
             click(R.string.instructions_reload)
-            reveal(app.getString(R.string.instructions_current))
             assertEquals("Changed on Web", editor().text)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             reveal(app.getString(R.string.appearance))

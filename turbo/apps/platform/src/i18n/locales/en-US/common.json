@@ -86,7 +86,6 @@
           "title": "Provider temporarily unavailable"
         }
       },
-      "fallbackAgent": "Agent",
       "fields": {
         "duration": "Duration",
         "model": "Model",
@@ -378,7 +377,6 @@
         "openAutomations": "Open mobile automations"
       },
       "navigation": {
-        "agents": "Agents",
         "artifacts": "Artifacts",
         "connectors": "Connectors",
         "settings": "Settings",
@@ -990,11 +988,9 @@
         "twentyFourHours": "24 hours"
       },
       "errors": {
-        "agentNotFound": "Agent not found",
         "loadAgent": "Failed to load agent",
         "loadGrants": "Failed to load permission grants",
         "loadMetadata": "Failed to load permission metadata",
-        "missingAgentId": "Missing agent ID in URL parameters",
         "missingPermission": "Missing permission in URL parameters",
         "unknownAction": "Unknown permission action: {{action}}",
         "unknownConnector": "Unknown connector: {{connector}}",
@@ -1047,7 +1043,6 @@
       "pending_one": "{{count}} permission to allow",
       "pending_other": "{{count}} permissions to allow",
       "review": "Review permissions",
-      "sharedScopeNote": "Applies to this connector across all your chats and agents.",
       "title": "Allow the following permissions"
     }
   },
@@ -1820,7 +1815,7 @@
       "repair": "Repair",
       "repairRequired": "{{institution}} needs repair",
       "revoke": "Revoke",
-      "revokeConfirm": "Revoke this Agent's banking access?",
+      "revokeConfirm": "Revoke banking access for this workspace?",
       "selectAccounts": "Select accounts",
       "sevenDays": "7 days",
       "thirtyDays": "30 days",
@@ -2804,7 +2799,6 @@
       "noEmojiFound": "No emoji found",
       "notFound": "Chat thread not found",
       "openBrowser": "Open browser",
-      "openNamedAgent": "Open agent {{name}}",
       "openNamedChat": "Open chat {{title}}",
       "pickEmoji": "Pick an emoji",
       "scrollToBottom": "Scroll to bottom",
@@ -4821,7 +4815,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
     "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",

@@ -476,17 +476,9 @@ async function getThreadSnapshot(
   return toolBody({
     snapshot,
     ...page,
-    events: page.events.map(
-      ({
-        id,
-        chatThreadId,
-        agentId: _agentId,
-        reassignedAgentId: _reassignedAgentId,
-        ...event
-      }) => {
-        return { ...event, eventId: id, threadId: chatThreadId };
-      },
-    ),
+    events: page.events.map(({ id, chatThreadId, ...event }) => {
+      return { ...event, eventId: id, threadId: chatThreadId };
+    }),
   });
 }
 
@@ -613,7 +605,6 @@ function registerProjectTools(
       description:
         "List Chats currently in your Project. Pass nextAfter as after to read the next page.",
       inputSchema: projectsContract.threads.query
-        .omit({ agentId: true })
         .extend({
           projectId: projectsContract.threads.pathParams.shape.id,
         })
@@ -639,7 +630,7 @@ function registerProjectTools(
           projectsContract.threads.responses[200].parse(await response.json());
         return toolBody({
           nextAfter,
-          threads: threads.map(({ id, agentId: _agentId, ...thread }) => {
+          threads: threads.map(({ id, ...thread }) => {
             return { ...thread, threadId: id };
           }),
         });

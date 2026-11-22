@@ -1,13 +1,14 @@
 import { apiClient$ } from "../api-client.ts";
+import {
+  permissionActionTarget,
+  verifyPermissionCallbackThread,
+} from "../permission-allow/permission-action-target.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { command, computed, state } from "ccstate";
 
 import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
-import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { accept } from "../../lib/accept.ts";
-import { agentById } from "../agent.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import {
   findPermissionInMetadata,
@@ -21,14 +22,13 @@ import type {
 } from "../connector-domain.ts";
 import { DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN } from "../permission-allow/permission-grant-expiration.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
-import { chatActionIdMatches } from "./chat-action-context.ts";
 import {
   permissionBatchActionResourceKey,
   type PermissionBatchActionDescriptor,
 } from "./permission-batch-action-block.ts";
 
 function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
-  const agent$ = agentById(descriptor.agentId);
+  const target$ = permissionActionTarget(descriptor.owner, descriptor.threadId);
   const grants$ = permissionGrantsForConnectors(
     descriptor.items.map((item) => {
       return item.connectorSlug;
@@ -43,22 +43,8 @@ function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
   ].map((connectorSlug) => {
     return firewallPermissionMetadataByConnector({ connectorSlug });
   });
-  const callbackTarget$ = computed(async (get) => {
-    if (!descriptor.threadId) {
-      return;
-    }
-    const client = get(apiClient$)(chatThreadMetadataContract);
-    const result = await accept(
-      client.get({ params: { id: descriptor.threadId } }),
-      [200],
-    );
-    if (!chatActionIdMatches(result.body.id, descriptor.threadId)) {
-      throw new Error("Permission callback thread does not match");
-    }
-  });
   const metadata$ = computed(
     async (get): Promise<readonly PlatformConnectorPermissionMetadata[]> => {
-      await get(callbackTarget$);
       const metadata = await Promise.all(
         metadataResources.map((resource$) => {
           return get(resource$);
@@ -82,7 +68,7 @@ function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
       return present;
     },
   );
-  return { agent$, grants$, metadata$ };
+  return { target$, grants$, metadata$ };
 }
 type BatchResources = ReturnType<typeof createBatchResources>;
 
@@ -215,14 +201,18 @@ function createBatchSaveCommand(
       if (get(local.dismissed$)) {
         return false;
       }
-      const [agent, grants, metadata] = await Promise.all([
-        get(resources.agent$),
+      const [, grants, metadata] = await Promise.all([
+        get(resources.target$),
         get(resources.grants$),
         get(resources.metadata$),
       ]);
       signal.throwIfAborted();
-      if (!chatActionIdMatches(agent.agentId, descriptor.agentId)) {
-        throw new Error("Permission agent does not match");
+      if (descriptor.threadId) {
+        await verifyPermissionCallbackThread(
+          get(apiClient$),
+          descriptor.threadId,
+          signal,
+        );
       }
       const groups = missingPermissionGroups(
         descriptor,
@@ -240,6 +230,7 @@ function createBatchSaveCommand(
             ...(await set(
               applyUserPermissionGrants$,
               {
+                owner: descriptor.owner,
                 connectorSlug: group.connectorSlug,
                 mode: "patch",
                 grants: group.grants,
@@ -259,7 +250,6 @@ function createBatchSaveCommand(
         await set(
           runChatActionCallback$,
           {
-            agentId: descriptor.agentId,
             threadId: descriptor.threadId,
             callbackPrompt: descriptor.callbackPrompt,
             callbackIds,
@@ -283,7 +273,6 @@ export function createPermissionBatchSignals(
   return {
     ...descriptor,
     descriptor,
-    href: permissionBatchActionResourceKey(descriptor),
     ...resources,
     expiresIn$: local.expiresIn$,
     dismissed$: local.dismissed$,

@@ -15,7 +15,10 @@ import {
   type PreparedCopiedWebhook,
   type CopyWorkflowDatabaseResult,
 } from "./workflow-copy-publication-plans";
-import { workflowNamespace$ } from "../services/workflow-namespace.service";
+import {
+  workflowNamespace$,
+  workspaceWorkflowNamespace$,
+} from "../services/workflow-namespace.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -246,7 +249,10 @@ const listWorkflowsInner$ = computed(async (get) => {
     workflowList({
       orgId: auth.orgId,
       member: memberFromAuth(auth),
-      agentId: (await get(workflowNamespace$)) ?? query.agentId,
+      agentId:
+        query.scope === "workspace"
+          ? await get(workspaceWorkflowNamespace$)
+          : ((await get(workflowNamespace$)) ?? query.agentId),
     }),
   );
   return { status: 200 as const, body: [...workflows] };
@@ -254,7 +260,11 @@ const listWorkflowsInner$ = computed(async (get) => {
 
 const listComposerWorkflowsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const { agentId } = get(queryOf(workflowsCollectionContract.composer));
+  const query = get(queryOf(workflowsCollectionContract.composer));
+  const agentId = query.agentId ?? (await get(workflowNamespace$));
+  if (!agentId) {
+    return forbidden("A workspace Workflow namespace is required");
+  }
   const workflows = await get(
     workflowList({
       orgId: auth.orgId,
@@ -284,7 +294,7 @@ const listComposerWorkflowsInner$ = computed(async (get) => {
 export interface WorkflowCreationInput {
   readonly orgId: string;
   readonly member: WorkflowMember;
-  readonly body: WorkflowCreateRequest;
+  readonly body: WorkflowCreateRequest & { readonly agentId: string };
   readonly visibility: "public" | "private";
   /** Set only by the skill import, for the tool the skill came from. */
   readonly importSource?: WorkflowImportSource | null;
@@ -779,10 +789,15 @@ const createWorkflowInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const body = bodyResult.data;
     const namespace = await get(workflowNamespace$);
     signal.throwIfAborted();
-    if (namespace && body.agentId !== namespace) {
+    const agentId =
+      bodyResult.data.agentId ??
+      namespace ??
+      (await get(workspaceWorkflowNamespace$));
+    signal.throwIfAborted();
+    const body = { ...bodyResult.data, agentId };
+    if (namespace && agentId !== namespace) {
       return forbidden("Create workflows in the current workspace");
     }
     const inserted = await set(
@@ -1408,15 +1423,20 @@ const copyWorkflowInner$ = command(
     if (!sourceWorkflow) {
       return workflowNotFound(params.workflowId);
     }
-    const [targetAgent] = await db
-      .select()
-      .from(workflowCopyAgentQuery(auth.orgId, bodyResult.data.toAgentId));
-    signal.throwIfAborted();
-    if (!targetAgent) {
-      return notFound(`Agent not found: ${bodyResult.data.toAgentId}`);
-    }
     const namespace = await get(workflowNamespace$);
     signal.throwIfAborted();
+    const targetId =
+      bodyResult.data.toAgentId ??
+      namespace ??
+      (await get(workspaceWorkflowNamespace$));
+    signal.throwIfAborted();
+    const [targetAgent] = await db
+      .select()
+      .from(workflowCopyAgentQuery(auth.orgId, targetId));
+    signal.throwIfAborted();
+    if (!targetAgent) {
+      return notFound(`Agent not found: ${targetId}`);
+    }
     if (namespace && targetAgent.id !== namespace) {
       return forbidden("Make a private copy in the current workspace");
     }

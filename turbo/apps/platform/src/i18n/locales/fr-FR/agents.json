@@ -1,73 +1,7 @@
 {
   "actions": {
-    "cancel": "Annuler",
-    "close": "Fermer",
-    "copying": "Copie en cours…",
-    "delete": "Supprimer l'agent",
-    "deleting": "Suppression en cours…",
-    "discard": "Ignorer",
-    "save": "Enregistrer",
-    "saving": "Enregistrement en cours…"
+    "close": "Fermer"
   },
-  "avatar": {
-    "accessibilityDescription": "Personnalisez le style, la couleur et les détails du visage de l'avatar de l'agent.",
-    "actions": {
-      "customize": "Personnaliser l'avatar"
-    },
-    "create": "Créer un avatar personnalisé",
-    "description": "Choisissez un style ou appuyez sur mélanger pour une surprise.",
-    "editDescription": "Ajustez chaque détail ou appuyez sur mélanger pour un nouveau look.",
-    "editTitle": "Modifier l’avatar",
-    "nextStep": "Étape suivante",
-    "previousStep": "Étape précédente",
-    "randomize": "Randomiser l'avatar",
-    "shuffleHint": "Mélanger — essayez un look aléatoire !",
-    "steps": {
-      "color": "Couleur",
-      "face": "Visage",
-      "hair": "Cheveux",
-      "mood": "Humeur",
-      "skin": "Peau",
-      "sweater": "Pull"
-    },
-    "title": "Donnez un visage à votre agent",
-    "use": "Utiliser cet avatar"
-  },
-  "delete": {
-    "dangerZone": "Zone de danger",
-    "dangerZoneDescription": "Supprimer définitivement cet agent et toutes ses données. Cette action est irréversible.",
-    "description": "Supprime l'agent, ses workflows, ses automatisations et l'historique des chats de tout le monde.",
-    "irreversible": "Cela ne peut pas être annulé.",
-    "success": "Agent supprimé",
-    "title": "Supprimer {{agentName}} ?",
-    "workflows": {
-      "copyTo": "Copier vers {{agentName}}",
-      "deleteWithAgent": "Supprimer avec l'agent",
-      "description": "Copiez un workflow vers un autre agent pour le conserver. Tout le reste sera supprimé.",
-      "handle": "Gérer le workflow {{workflowTitle}}",
-      "loadFailed": "Impossible de charger les workflows.",
-      "loading": "Chargement des workflows…",
-      "title": "Conserver les workflows ?"
-    }
-  },
-  "detail": {
-    "chatWith": "Chat avec {{agentName}}",
-    "defaultDescription": "Votre coéquipier IA, adapté à vous",
-    "notFound": {
-      "back": "Retour à l'équipe",
-      "description": "L'agent « {{agentId}} » n'existe pas ou vous n'y avez pas accès.",
-      "title": "Agent introuvable"
-    },
-    "sectionNavigation": "Rubrique des détails de l'agent",
-    "tabs": {
-      "instructions": "Instructions",
-      "profile": "Profil"
-    }
-  },
-  "errors": {
-    "unknown": "Erreur inconnue"
-  },
-  "fallbackName": "Agent",
   "ideation": {
     "all": "Tous",
     "catalog": {
@@ -194,10 +128,6 @@
           "personal-weekly-digest": {
             "description": "pull requests, e-mail et calendrier dans une seule mise à jour Slack",
             "title": "Résumé hebdomadaire personnel"
-          },
-          "self-update-instructions": {
-            "description": "Mettre à jour les instructions de l'agent directement dans le chat",
-            "title": "Instructions d'auto-mise à jour"
           },
           "send-messages-on-your-behalf": {
             "description": "Publie les annonces de l'équipe sur Slack pour vous",
@@ -434,91 +364,6 @@
     },
     "title": "Idées et cas d'utilisation"
   },
-  "instructions": {
-    "editor": {
-      "accessibilityLabel": "Éditeur d'instructions",
-      "footerHint": "Modifiez directement les instructions pour personnaliser le comportement de votre agent.",
-      "placeholder": "Rédigez des instructions pour votre agent...",
-      "toolbar": {
-        "blockquote": "Bloc de citation",
-        "bold": "Gras",
-        "bulletList": "Liste à puces",
-        "heading1": "Titre 1",
-        "heading2": "Titre 2",
-        "heading3": "Titre 3",
-        "inlineCode": "Code en ligne",
-        "italic": "Italique",
-        "orderedList": "Liste numérotée",
-        "strikethrough": "Barré"
-      }
-    },
-    "saved": "Instructions enregistrées"
-  },
-  "list": {
-    "title": "Agents"
-  },
-  "profile": {
-    "fields": {
-      "avatar": {
-        "description": "Créez votre propre avatar.",
-        "label": "Avatar"
-      },
-      "description": {
-        "description": "Ce que cet agent aide à faire — visible par les coéquipiers.",
-        "label": "Description",
-        "placeholder": "Que fait cet agent ?"
-      },
-      "name": {
-        "description": "Affiché dans la liste de l'équipe et lorsque cet agent parle.",
-        "label": "Nom",
-        "placeholder": "Comment devrions-nous l'appeler ?"
-      },
-      "tone": {
-        "accessibilityLabel": "Comment {{agentName}} sonne",
-        "description": "Style de voix pour les réponses. L'aperçu se met à jour lorsque vous changez de ton.",
-        "groupLabel": "Ton",
-        "label": "Comment il sonne"
-      },
-      "visibility": {
-        "description": "Visible par tous dans cet espace de travail.",
-        "label": "Rendre public"
-      }
-    },
-    "makePrivate": {
-      "confirm": "Rendre privé",
-      "description": "Tant que cet agent est privé, les autres membres perdent l'accès à leur historique de conversation le concernant. Ils retrouvent l'accès si vous le rendez public à nouveau.",
-      "title": "Rendre {{agentName}} privé ?",
-      "warningDescription": "Les autres membres ne verront plus {{agentName}} ni leurs discussions associées.",
-      "warningTitle": "Les membres n'ont plus accès"
-    },
-    "saved": "Profil enregistré",
-    "tones": {
-      "direct": {
-        "agentSample": "Vendredi. J'enverrai un brouillon jeudi.",
-        "hint": "Aller droit au but",
-        "label": "Direct",
-        "userSample": "J'ai besoin du rapport du T3 d'ici vendredi."
-      },
-      "friendly": {
-        "agentSample": "Bien sûr ! Je vous ferai parvenir ce rapport du T3 d'ici vendredi — j'enverrai un brouillon jeudi pour que vous puissiez le consulter.",
-        "hint": "Chaleureux et accessible",
-        "label": "Amical",
-        "userSample": "J'ai besoin du rapport du T3 d'ici vendredi."
-      },
-      "professional": {
-        "agentSample": "J'aurai le rapport du T3 prêt d'ici vendredi. J'enverrai un brouillon jeudi pour votre révision.",
-        "hint": "Clair et soigné",
-        "label": "Professionnel",
-        "userSample": "J'ai besoin du rapport du T3 d'ici vendredi."
-      },
-      "supportive": {
-        "agentSample": "Je m'assurerai que vous ayez le rapport du troisième trimestre d'ici vendredi. J'enverrai un brouillon jeudi pour que vous ayez le temps de le réviser—faites-moi savoir si vous souhaitez autre chose.",
-        "hint": "Dans ton coin",
-        "label": "Soutenant",
-        "userSample": "J'ai besoin du rapport du T3 d'ici vendredi."
-      }
-    }
-  },
   "sidebar": {
     "escapeShortcut": "Esc",
     "filterAll": "Tout",
@@ -538,8 +383,5 @@
   },
   "status": {
     "unread": "Non lu"
-  },
-  "unsaved": {
-    "message": "Vous avez des modifications non enregistrées"
   }
 }

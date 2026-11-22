@@ -36,8 +36,7 @@ function logDetail(
   return {
     id: runId,
     sessionId: "session-runner-attribution",
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    displayName: "Runner Attribution",
+
     framework,
     modelProvider: null,
     selectedModel: null,

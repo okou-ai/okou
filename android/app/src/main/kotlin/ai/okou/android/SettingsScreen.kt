@@ -19,14 +19,21 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 internal fun SettingsPage(scroll: ScrollState, content: @Composable () -> Unit) {
+    val window = currentWindowSizeDp()
+    val wide = workspaceListPaneWidth(window.width, window.height) != null
     Column(Modifier.fillMaxSize().imePadding()) {
-        HorizontalDivider()
+        if (wide) HorizontalDivider()
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(
-                Modifier.widthIn(max = 768.dp)
-                    .fillMaxWidth()
-                    .verticalScroll(scroll)
-                    .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
+                Modifier.verticalScroll(scroll)
+                    .padding(
+                        start = 24.dp,
+                        end = 24.dp,
+                        top = if (wide) 24.dp else 12.dp,
+                        bottom = 32.dp,
+                    )
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 content()
@@ -40,12 +47,16 @@ internal fun SettingsScreen(
     appUpdates: @Composable (() -> Unit)? = null,
     workspacePreferences: @Composable () -> Unit,
     workspace: @Composable () -> Unit = {},
+    conversation: @Composable () -> Unit,
     account: @Composable () -> Unit = {},
 ) {
+    workspace()
+    SettingsSection(stringResource(R.string.settings_conversation)) {
+        SettingsGroup { conversation() }
+    }
+    workspacePreferences()
     if (appUpdates != null) {
         SettingsSection(stringResource(R.string.on_this_device)) { SettingsGroup { appUpdates() } }
     }
-    workspacePreferences()
-    workspace()
     account()
 }

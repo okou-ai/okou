@@ -1,6 +1,5 @@
 package ai.okou.android.api
 
-import ai.okou.android.api.fixtures.Agents
 import ai.okou.android.api.fixtures.CanonicalApi as FixtureApi
 import ai.okou.android.api.fixtures.CanonicalEmptyArray
 import ai.okou.android.api.fixtures.ChatArchive
@@ -111,10 +110,6 @@ class ChatReadBindingsTest {
     fun mapsRootArraysAndArchiveInputDefaultsCompileAndDecodeThroughRealSerializers() {
         val indicators = json.decodeFromJsonElement<Indicators>(wire("indicators"))
         assertEquals(
-            JsonPrimitive("active"),
-            json.encodeToJsonElement(indicators.agents.values.single()),
-        )
-        assertEquals(
             JsonPrimitive("unread"),
             json.encodeToJsonElement(indicators.threads.values.single()),
         )
@@ -124,12 +119,6 @@ class ChatReadBindingsTest {
             )
         assertEquals(indicators.threads.keys, map.keys)
 
-        val agents = json.decodeFromJsonElement<Agents>(wire("agents"))
-        assertTrue(agents.single().isDefaultAgent)
-        assertNull(agents.single().sound)
-        assertDecodeFails<Agents>(
-            JsonArray(listOf(JsonObject(wire("agents").jsonArray[0].jsonObject - "sound")))
-        )
         val projects = json.decodeFromJsonElement<Projects>(wire("projects"))
         assertEquals("A project", projects.projects.single().name)
 
@@ -203,9 +192,6 @@ class ChatReadBindingsTest {
                 val request = server.takeRequest()
                 assertEquals("/api/chat-threads/events?sinceSeqId=17", request.path)
                 assertEquals("Bearer fixture", request.getHeader("Authorization"))
-                server.enqueue(MockResponse().setBody(wire("agents").toString()))
-                assertTrue(api.agents("Bearer fixture").body()!!.single().isDefaultAgent)
-                assertEquals("/api/agents", server.takeRequest().path)
             }
         } finally {
             http.closeTransport()

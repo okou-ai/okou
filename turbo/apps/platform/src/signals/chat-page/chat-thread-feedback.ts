@@ -16,7 +16,7 @@ import type {
   FeedbackSource,
 } from "../okou-page/chat-feedback.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
-import { defaultAgentId$ } from "../agent.ts";
+
 import { ASSISTANT_NAME } from "../branding.ts";
 import {
   chatThreadMetaMap$,
@@ -501,7 +501,6 @@ function forwardContextFrom(
 ): ChatForwardContext {
   return {
     ...selection,
-    agentId: source.agentId,
     titleSnapshot:
       source.title ??
       i18n.t(($) => {
@@ -628,17 +627,16 @@ function createStartForward(
         ...(selection.source ? { source: selection.source } : {}),
       };
 
-      const agentId = await get(defaultAgentId$);
       signal.throwIfAborted();
       const source = get(chatThreadMetaMap$).get(captured.threadId);
-      if (!agentId || !source) {
-        throw new Error("Fork source or default Okou is unavailable");
+      if (!source) {
+        throw new Error("Fork source is unavailable");
       }
       set(forward.openForward$, captured);
       await set(
         forward.prepareRequest$,
         {
-          target: { id: agentId, title: ASSISTANT_NAME },
+          target: { title: ASSISTANT_NAME },
           forward: forwardContextFrom(captured, source),
           projectId:
             get(eventDrivenChatThreads$).find((thread) => {

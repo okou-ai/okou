@@ -86,7 +86,6 @@
           "title": "Provider sementara tidak tersedia"
         }
       },
-      "fallbackAgent": "Agen",
       "fields": {
         "duration": "Durasi",
         "model": "Model",
@@ -378,7 +377,6 @@
         "openAutomations": "Buka otomatisasi mobile"
       },
       "navigation": {
-        "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
         "settings": "Pengaturan",
@@ -989,11 +987,9 @@
         "twentyFourHours": "24 jam"
       },
       "errors": {
-        "agentNotFound": "Agen tidak ditemukan",
         "loadAgent": "Gagal memuat agen",
         "loadGrants": "Gagal memuat pemberian izin",
         "loadMetadata": "Gagal memuat metadata izin",
-        "missingAgentId": "ID agen tidak ada di parameter URL",
         "missingPermission": "Izin tidak ada di parameter URL",
         "unknownAction": "Tindakan izin tidak dikenal: {{action}}",
         "unknownConnector": "Konektor tidak dikenal: {{connector}}",
@@ -1043,7 +1039,6 @@
       "notNow": "Tidak sekarang",
       "pending_other": "{{count}} izin untuk disetujui",
       "review": "Tinjau izin",
-      "sharedScopeNote": "Berlaku untuk konektor ini di semua chat dan agen Anda.",
       "title": "Berikan izin berikut"
     }
   },
@@ -1814,7 +1809,7 @@
       "repair": "Perbaiki",
       "repairRequired": "{{institution}} perlu diperbaiki",
       "revoke": "Cabut",
-      "revokeConfirm": "Cabut akses perbankan Agen ini?",
+      "revokeConfirm": "Cabut akses perbankan untuk ruang kerja ini?",
       "selectAccounts": "Pilih rekening",
       "sevenDays": "7 hari",
       "thirtyDays": "30 hari",
@@ -2789,7 +2784,6 @@
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
       "openBrowser": "Buka browser",
-      "openNamedAgent": "Buka agen {{name}}",
       "openNamedChat": "Buka chat {{title}}",
       "pickEmoji": "Pilih emoji",
       "scrollToBottom": "Gulir ke bawah",
@@ -4802,7 +4796,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
     "deleteProjectOnly": "Delete project only",

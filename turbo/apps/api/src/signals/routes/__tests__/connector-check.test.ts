@@ -1199,9 +1199,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
           }
           await flushWaitUntilForTest();
         }
-        if (owned.agentId) {
-          await bdd.deleteAgent(owner, owned.agentId);
-        }
+
         const accounts = await connectorsApi.listBuiltinConnectorAccounts(
           owner,
           "cloudflare",

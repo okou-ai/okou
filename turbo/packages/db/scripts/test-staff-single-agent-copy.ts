@@ -373,7 +373,6 @@ try {
       return row.value;
     }),
   );
-  assert.equal(replay[0]?.agentId, target);
   assert.equal(replay[0]?.projectId, collision);
   const counts = async () => {
     return JSON.stringify(

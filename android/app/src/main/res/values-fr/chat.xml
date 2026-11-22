@@ -3,7 +3,11 @@
     <string name="chat_undo_unarchived">Discussion désarchivée</string>
     <string name="chat_undo_marked_read">Discussion marquée comme lue</string>
     <string name="chat_undo">Annuler</string>
-    <string name="chat_undo_close">Fermer</string>
+    <string name="chat_undo_offline">%1$s\nVous pourrez annuler la modification une fois la connexion rétablie.</string>
+    <string name="chat_undo_checking">Vérification de l’annulation…</string>
+    <string name="chat_undo_failed">Impossible d’annuler la modification.</string>
+    <string name="chat_undo_unconfirmed">Impossible de confirmer l’annulation.</string>
+    <string name="chat_feedback_dismiss">Fermer</string>
     <string name="chat_list_offline">Hors ligne</string>
     <string name="chat_list_refresh_failed">Échec de l’actualisation de la liste des chats</string>
     <string name="chat_list_first_load_failed">Chargement temporairement indisponible</string>
@@ -12,7 +16,6 @@
     <string name="chat_refresh">Actualiser les discussions</string>
     <string name="chat_loading">Chargement des discussions…</string>
     <string name="chat_refresh_failed">Actualisation impossible. Les dernières discussions chargées sont affichées.</string>
-    <string name="chat_cached">Les discussions enregistrées sont affichées.</string>
     <string name="chat_cache_unavailable">Le stockage hors ligne est indisponible. Ces discussions pourraient être indisponibles après un redémarrage.</string>
     <string name="chat_metadata_unavailable">Certaines informations Okou ou de projet sont indisponibles.</string>
     <string name="chat_inbox">Boîte de réception</string>
@@ -45,6 +48,7 @@
     <string name="chat_unarchive">Désarchiver la discussion</string>
     <string name="chat_row_action_pending">Mise à jour de la discussion…</string>
     <string name="chat_row_action_failed">Impossible de confirmer la modification de la discussion.</string>
+    <string name="chat_row_action_rejected">Impossible de terminer la modification de la discussion.</string>
     <string name="chat_rename">Renommer la discussion</string>
     <string name="chat_pin">Épingler la discussion</string>
     <string name="chat_unpin">Détacher la discussion</string>
@@ -60,6 +64,7 @@
     <string name="chat_rename_project">Renommer le projet</string>
     <string name="chat_project_name">Nom du projet</string>
     <string name="chat_project_rename_unconfirmed">Impossible de confirmer le nom du projet.</string>
+    <string name="chat_project_rename_rejected">Impossible de renommer le projet.</string>
     <string name="chat_project_rename_save">Enregistrer</string>
     <string name="chat_project_rename_pending">Renommage du projet…</string>
 </resources>

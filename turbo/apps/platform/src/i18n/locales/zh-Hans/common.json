@@ -86,7 +86,6 @@
           "title": "提供方暂时不可用"
         }
       },
-      "fallbackAgent": "智能体",
       "fields": {
         "duration": "时长",
         "model": "模型",
@@ -378,7 +377,6 @@
         "openAutomations": "打开自动化面板"
       },
       "navigation": {
-        "agents": "智能体",
         "artifacts": "成果",
         "connectors": "连接器",
         "settings": "设置",
@@ -989,11 +987,9 @@
         "twentyFourHours": "24 小时"
       },
       "errors": {
-        "agentNotFound": "未找到智能体",
         "loadAgent": "加载智能体失败",
         "loadGrants": "加载权限授予失败",
         "loadMetadata": "加载权限信息失败",
-        "missingAgentId": "URL 参数中缺少智能体 ID",
         "missingPermission": "URL 参数中缺少权限",
         "unknownAction": "未知的权限操作：{{action}}",
         "unknownConnector": "未知的连接器：{{connector}}",
@@ -1043,7 +1039,6 @@
       "notNow": "暂不允许",
       "pending_other": "待允许 {{count}} 项权限",
       "review": "查看并授权",
-      "sharedScopeNote": "此连接器的权限由你的所有聊天和智能体共用。",
       "title": "允许以下权限"
     }
   },
@@ -1814,7 +1809,7 @@
       "repair": "修复",
       "repairRequired": "{{institution}} 需要修复",
       "revoke": "撤销",
-      "revokeConfirm": "撤销这个智能体的银行访问权限？",
+      "revokeConfirm": "撤销此工作区的银行访问权限？",
       "selectAccounts": "选择账户",
       "sevenDays": "7 天",
       "thirtyDays": "30 天",
@@ -2789,7 +2784,6 @@
       "noEmojiFound": "没有找到表情",
       "notFound": "找不到该聊天会话",
       "openBrowser": "打开浏览器",
-      "openNamedAgent": "打开智能体 {{name}}",
       "openNamedChat": "打开聊天 {{title}}",
       "pickEmoji": "选择表情",
       "scrollToBottom": "滚动到底部",
@@ -4802,7 +4796,6 @@
     "create": "创建 Project",
     "delete": "删除",
     "deleteChoiceDescription": "可以只删除 Project 并保留聊天，也可以同时删除其中的聊天。",
-    "deleteDescription": "仅删除 Project，聊天及其历史记录会保留。",
     "deleteError": "无法删除 Project",
     "deleteProjectAndThreads_other": "删除 Project 和 {{count}} 个聊天…",
     "deleteProjectOnly": "仅删除 Project",

@@ -1,10 +1,12 @@
 package ai.okou.android
 
+import ai.okou.android.state.rememberSettingsFlag
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -18,12 +20,16 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,15 +44,18 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 internal fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
@@ -55,7 +64,7 @@ internal fun SettingsSection(title: String, content: @Composable ColumnScope.() 
             title,
             Modifier.padding(horizontal = 8.dp).semantics { heading() },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 20.sp),
         )
         content()
     }
@@ -89,6 +98,7 @@ internal fun SettingsRow(
     showChevron: Boolean = onClick != null,
     valueMaxLines: Int = Int.MAX_VALUE,
     valueLeading: (@Composable () -> Unit)? = null,
+    supportingText: String? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val muted = colors.onSurfaceVariant
@@ -107,7 +117,23 @@ internal fun SettingsRow(
     ) {
         leading()
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (supportingText == null) null else FontWeight(550),
+            )
+            if (supportingText != null) {
+                Text(
+                    supportingText,
+                    Modifier.padding(top = 2.dp),
+                    color = muted,
+                    style =
+                        MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                        ),
+                )
+            }
             if (expandedText && value != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -154,72 +180,151 @@ internal fun SettingsRow(
 @Composable
 internal fun SettingsPickerRow(
     title: String,
-    value: String,
+    value: String?,
     leading: @Composable () -> Unit,
-    enabled: Boolean,
+    enabled: Boolean = true,
     sheet: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
-    var open by remember { mutableStateOf(false) }
+    SettingsTrigger(enabled = enabled, content = sheet) { modifier, open ->
+        SettingsRow(title, leading, modifier, value, onClick = open, enabled = enabled)
+    }
+}
+
+@Composable
+internal fun SettingsTrigger(
+    enabled: Boolean = true,
+    content: @Composable (dismiss: () -> Unit) -> Unit,
+    trigger: @Composable (Modifier, open: () -> Unit) -> Unit,
+) {
+    var open by rememberSettingsFlag()
     var focused by remember { mutableStateOf(false) }
-    var restoreFocus by remember { mutableStateOf(false) }
-    val trigger = remember { FocusRequester() }
-    SettingsRow(
-        title,
-        leading,
-        value = value,
-        onClick = {
+    var restoreFocus by rememberSettingsFlag()
+    val focus = remember { FocusRequester() }
+    trigger(Modifier.focusRequester(focus).onFocusChanged { focused = it.isFocused }) {
+        if (enabled) {
             restoreFocus = focused
             open = true
-        },
-        enabled = enabled,
-        modifier = Modifier.focusRequester(trigger).onFocusChanged { focused = it.isFocused },
-    )
-    if (open) sheet { open = false }
+        }
+    }
+    if (open) content { open = false }
     LaunchedEffect(open, enabled) {
         if (!open && enabled && restoreFocus) {
             restoreFocus = false
-            trigger.requestFocus()
+            focus.requestFocus()
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+internal fun SettingsModal(
+    onDismiss: () -> Unit,
+    content: @Composable (centered: Boolean) -> Unit,
+) {
+    val window = currentWindowSizeDp()
+    if (workspaceListPaneWidth(window.width, window.height) != null) {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(
+                Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                content(true)
+            }
+        }
+    } else {
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetMaxWidth = 460.dp,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            content(false)
+        }
+    }
+}
+
+@Composable
 internal fun SettingsSheet(
     title: String,
     onDismiss: () -> Unit,
+    actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val windowHeight =
-        with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        sheetMaxWidth = 520.dp,
-        containerColor = MaterialTheme.colorScheme.surface,
-    ) {
+    val windowHeight = currentWindowSizeDp().height.dp
+    val scroll = rememberScrollState()
+    SettingsModal(onDismiss) { centered ->
         Column(
             Modifier.fillMaxWidth()
-                // Limit scrollable content while the modal uses the full window for its anchors.
                 .heightIn(max = windowHeight * 0.80f)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = if (centered) 16.dp else 0.dp,
+                    bottom = 16.dp,
+                )
+                .verticalScroll(scroll),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 title,
-                Modifier.padding(horizontal = 24.dp).semantics { heading() },
-                style = MaterialTheme.typography.titleLarge,
+                Modifier.semantics { heading() },
+                style =
+                    MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp),
             )
             Column(
-                Modifier.weight(1f, fill = false)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 content = content,
             )
+            actions?.invoke()
         }
     }
+}
+
+@Composable
+internal fun SettingsConfirmation(
+    title: String,
+    message: String,
+    confirm: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.widthIn(max = 360.dp),
+        shape = RoundedCornerShape(28.dp),
+        containerColor = colors.surface,
+        title = { Text(title) },
+        text = { Text(message) },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+            ) {
+                Text(stringResource(R.string.settings_cancel))
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.heightIn(min = 48.dp),
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = colors.inverseSurface,
+                        contentColor = colors.inverseOnSurface,
+                    ),
+            ) {
+                Text(confirm)
+            }
+        },
+    )
 }
 
 @Composable
@@ -256,11 +361,11 @@ internal fun SettingsChoiceRow(
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = 56.dp)
             .clip(RoundedCornerShape(12.dp))
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -269,14 +374,16 @@ internal fun SettingsChoiceRow(
             label,
             Modifier.weight(1f),
             color = foreground,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
         )
-        if (selected)
-            Icon(
-                painterResource(R.drawable.ic_check),
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = foreground,
-            )
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            if (selected)
+                Icon(
+                    painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = foreground,
+                )
+        }
     }
 }

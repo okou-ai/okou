@@ -112,10 +112,7 @@ function metadataTouchFields(
     return { muted: event.muted };
   }
   if (event.pinOrder != null) {
-    return {
-      agentId: event.reassignedAgentId ?? thread.agentId,
-      ...(thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {}),
-    };
+    return thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {};
   }
   return null;
 }
@@ -129,7 +126,6 @@ function applyEvent(
     threads.set(event.chatThreadId, {
       id: event.chatThreadId,
       projectId: event.projectId ?? null,
-      agentId: event.agentId,
       title: event.title,
       sortAt: event.createdAt,
       createdAt: event.createdAt,
@@ -181,12 +177,6 @@ function applyEvent(
   if (fields === null) {
     threads.set(event.chatThreadId, {
       ...thread,
-      // Ordinary and optimistic activity touches may have captured an older
-      // agent. Only the canonical reassignment event changes this identity.
-      agentId:
-        event.kind === "sort_touched"
-          ? (event.reassignedAgentId ?? thread.agentId)
-          : thread.agentId,
       sortAt: event.createdAt > thread.sortAt ? event.createdAt : thread.sortAt,
     });
     return;

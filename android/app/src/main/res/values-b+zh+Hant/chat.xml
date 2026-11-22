@@ -1,9 +1,13 @@
 <resources>
-    <string name="chat_undo_archived">聊天已封存</string>
-    <string name="chat_undo_unarchived">聊天已取消封存</string>
-    <string name="chat_undo_marked_read">聊天已標為已讀</string>
+    <string name="chat_undo_archived">已封存</string>
+    <string name="chat_undo_unarchived">已取消封存</string>
+    <string name="chat_undo_marked_read">已標為已讀</string>
     <string name="chat_undo">復原</string>
-    <string name="chat_undo_close">關閉</string>
+    <string name="chat_undo_offline">%1$s · 連線後可復原</string>
+    <string name="chat_undo_checking">正在確認復原結果</string>
+    <string name="chat_undo_failed">未能復原</string>
+    <string name="chat_undo_unconfirmed">復原結果尚未確認</string>
+    <string name="chat_feedback_dismiss">關閉提示</string>
     <string name="chat_list_offline">離線</string>
     <string name="chat_list_refresh_failed">列表重新整理失敗</string>
     <string name="chat_list_first_load_failed">暫時無法載入</string>
@@ -12,7 +16,6 @@
     <string name="chat_refresh">重新整理聊天</string>
     <string name="chat_loading">正在載入聊天…</string>
     <string name="chat_refresh_failed">無法重新整理，正在顯示上次載入的聊天。</string>
-    <string name="chat_cached">正在顯示已儲存的聊天。</string>
     <string name="chat_cache_unavailable">離線儲存空間無法使用，重新啟動後可能無法查看這些聊天。</string>
     <string name="chat_metadata_unavailable">部分 Okou 或專案資訊無法使用。</string>
     <string name="chat_inbox">收件匣</string>
@@ -43,6 +46,7 @@
     <string name="chat_unarchive">取消歸檔</string>
     <string name="chat_row_action_pending">正在更新聊天…</string>
     <string name="chat_row_action_failed">無法確認聊天變更。</string>
+    <string name="chat_row_action_rejected">未能完成聊天變更。</string>
     <string name="chat_rename">重新命名聊天</string>
     <string name="chat_pin">置頂聊天</string>
     <string name="chat_unpin">取消置頂</string>
@@ -58,6 +62,7 @@
     <string name="chat_rename_project">重新命名專案</string>
     <string name="chat_project_name">專案名稱</string>
     <string name="chat_project_rename_unconfirmed">無法確認專案名稱。</string>
+    <string name="chat_project_rename_rejected">無法重新命名專案。</string>
     <string name="chat_project_rename_save">儲存</string>
     <string name="chat_project_rename_pending">正在重新命名專案…</string>
 </resources>

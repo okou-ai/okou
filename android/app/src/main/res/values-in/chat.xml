@@ -3,7 +3,11 @@
     <string name="chat_undo_unarchived">Chat dikeluarkan dari arsip</string>
     <string name="chat_undo_marked_read">Chat ditandai sudah dibaca</string>
     <string name="chat_undo">Urungkan</string>
-    <string name="chat_undo_close">Tutup</string>
+    <string name="chat_undo_offline">%1$s\nUrungkan perubahan saat kembali online.</string>
+    <string name="chat_undo_checking">Memeriksa hasil pengurungan…</string>
+    <string name="chat_undo_failed">Perubahan tidak dapat diurungkan.</string>
+    <string name="chat_undo_unconfirmed">Pengurungan perubahan tidak dapat dikonfirmasi.</string>
+    <string name="chat_feedback_dismiss">Tutup</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Daftar chat gagal diperbarui</string>
     <string name="chat_list_first_load_failed">Untuk sementara tidak dapat dimuat</string>
@@ -12,7 +16,6 @@
     <string name="chat_refresh">Muat ulang chat</string>
     <string name="chat_loading">Memuat chat…</string>
     <string name="chat_refresh_failed">Tidak dapat memperbarui. Menampilkan chat terakhir yang dimuat.</string>
-    <string name="chat_cached">Menampilkan chat tersimpan.</string>
     <string name="chat_cache_unavailable">Penyimpanan offline tidak tersedia. Chat ini mungkin tidak tersedia setelah aplikasi dimulai ulang.</string>
     <string name="chat_metadata_unavailable">Sebagian informasi Okou atau Proyek tidak tersedia.</string>
     <string name="chat_inbox">Kotak masuk</string>
@@ -43,6 +46,7 @@
     <string name="chat_unarchive">Batalkan pengarsipan</string>
     <string name="chat_row_action_pending">Memperbarui chat…</string>
     <string name="chat_row_action_failed">Perubahan chat tidak dapat dikonfirmasi.</string>
+    <string name="chat_row_action_rejected">Perubahan chat tidak dapat diselesaikan.</string>
     <string name="chat_rename">Ganti nama chat</string>
     <string name="chat_pin">Sematkan chat</string>
     <string name="chat_unpin">Lepas sematan chat</string>
@@ -58,6 +62,7 @@
     <string name="chat_rename_project">Ganti nama proyek</string>
     <string name="chat_project_name">Nama proyek</string>
     <string name="chat_project_rename_unconfirmed">Nama proyek tidak dapat dikonfirmasi.</string>
+    <string name="chat_project_rename_rejected">Nama proyek tidak dapat diubah.</string>
     <string name="chat_project_rename_save">Simpan</string>
     <string name="chat_project_rename_pending">Mengganti nama proyek…</string>
 </resources>

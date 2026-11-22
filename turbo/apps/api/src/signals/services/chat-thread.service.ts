@@ -330,11 +330,9 @@ type IndicatorScope = {
 };
 type IndicatorThreadRow = {
   readonly threadId: string;
-  readonly agentId: string | null;
 };
 type UnreadIndicatorRow = IndicatorThreadRow & {
   readonly unreadAt: Date;
-  readonly archived: boolean;
 };
 
 function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
@@ -352,7 +350,7 @@ function createIndicatorRows(args: IndicatorScope) {
   const activeRows$ = computed(
     async (get): Promise<readonly IndicatorThreadRow[]> => {
       return await get(db$)
-        .select({ threadId: chatThreads.id, agentId: chatThreads.agentId })
+        .select({ threadId: chatThreads.id })
         .from(agentRuns)
         .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
         .where(
@@ -366,7 +364,7 @@ function createIndicatorRows(args: IndicatorScope) {
             eq(chatThreads.orgId, args.orgId),
           ),
         )
-        .groupBy(chatThreads.id, chatThreads.agentId)
+        .groupBy(chatThreads.id)
         .orderBy(desc(max(agentRuns.createdAt)))
         .limit(INDICATOR_ACTIVE_LIMIT);
     },
@@ -380,9 +378,7 @@ function createIndicatorRows(args: IndicatorScope) {
       const candidates = await db
         .select({
           threadId: chatThreads.id,
-          agentId: chatThreads.agentId,
           lastReadAt: chatThreads.lastReadAt,
-          archived: chatThreads.archived,
         })
         .from(chatThreads)
         .where(
@@ -464,9 +460,7 @@ function createIndicatorRows(args: IndicatorScope) {
         }
         unreadRows.push({
           threadId: candidate.threadId,
-          agentId: candidate.agentId,
           unreadAt,
-          archived: candidate.archived,
         });
       }
       return newestUnreadIndicators(unreadRows);
@@ -497,14 +491,10 @@ export function chatIndicators(
       get(unreadRows$),
     ]);
 
-    const agentIndicators: Record<string, Indicator> = {};
     const threads: Record<string, Indicator> = {};
     const unreadAt: Record<string, string> = {};
     for (const row of activeRows) {
       threads[row.threadId] = "active";
-      if (row.agentId !== null) {
-        agentIndicators[row.agentId] = "active";
-      }
     }
     for (const row of unreadRows) {
       const active = threads[row.threadId] === "active";
@@ -516,11 +506,8 @@ export function chatIndicators(
         continue;
       }
       threads[row.threadId] = "unread";
-      if (row.agentId !== null && !row.archived) {
-        agentIndicators[row.agentId] = "unread";
-      }
     }
-    return { agents: agentIndicators, threads, unreadAt };
+    return { threads, unreadAt };
   });
 }
 

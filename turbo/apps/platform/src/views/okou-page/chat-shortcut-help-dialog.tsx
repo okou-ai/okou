@@ -164,7 +164,7 @@ function shortcutSectionsForRoute(
   if (route === "chat") {
     return CHAT_THREAD_SHORTCUT_SECTIONS;
   }
-  if (route === "agentChat" || route === "home") {
+  if (route === "home") {
     return AGENT_CHAT_SHORTCUT_SECTIONS;
   }
   if (route === "project") {

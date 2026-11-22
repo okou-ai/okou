@@ -277,7 +277,6 @@ private fun userBlocks(value: JsonElement?): List<HistoryBlock> {
                 "annotation",
                 "feedback",
                 "chat_thread",
-                "agent",
                 "project",
                 "template",
                 "source",

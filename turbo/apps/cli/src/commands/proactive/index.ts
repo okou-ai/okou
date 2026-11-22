@@ -22,8 +22,11 @@ function printPreference(
   if ("unavailableReason" in preference) {
     if (preference.unavailableReason === "missing-timezone") {
       console.log("Set your time zone in Settings before this can run.");
-    } else if (preference.unavailableReason === "missing-default-agent") {
-      console.log("Ask a workspace administrator to configure Okou.");
+    } else if (
+      preference.unavailableReason !== null &&
+      preference.status !== "error"
+    ) {
+      console.log("Ask a workspace administrator to check availability.");
     } else if (preference.status === "error") {
       console.log(
         "The preference is saved, but setup needs attention in Settings.",

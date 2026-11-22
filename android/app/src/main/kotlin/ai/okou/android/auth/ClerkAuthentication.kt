@@ -17,12 +17,18 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /** Application-lifetime SDK adapter. Its encrypted storage is the only credential owner. */
 class ClerkAuthentication(private val context: Context) : Authentication {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val setupFailed = MutableStateFlow(false)
+
+    override val account =
+        Clerk.userFlow.map { user ->
+            user?.primaryEmailAddress?.emailAddress?.let { NativeAccount(user.id, it) }
+        }
 
     override val state =
         combine(

@@ -14,6 +14,7 @@ import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
 import ai.okou.android.auth.MembershipAccess
+import ai.okou.android.auth.NativeAccount
 import ai.okou.android.auth.NativeSession
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceMembership
@@ -153,6 +154,7 @@ open class TestOkouApplication : OkouApplication() {
                 val updated =
                     stored()
                         .copy(
+                            timezone = update.timezone ?: stored().timezone,
                             colorTheme =
                                 update.colorTheme?.let {
                                     UserPreferencesColorTheme.valueOf(it.name)
@@ -180,6 +182,7 @@ class PendingAuthenticationApplication : TestOkouApplication() {
 class TestAuthentication(initial: AuthenticationState = testAuthenticationState()) :
     Authentication {
     override val state = MutableStateFlow(initial)
+    override val account = MutableStateFlow<NativeAccount?>(null)
     var available =
         listOf(
             WorkspaceMembership("org-a", "Workspace A", "org:member"),
@@ -240,4 +243,4 @@ fun testOrganization(workspace: String = "org-a") =
 fun testPreferences() = Json.decodeFromString<UserPreferences>(TEST_PREFERENCES)
 
 const val TEST_PREFERENCES =
-    """{"timezone":"UTC","locale":"en-US","supportedLocales":["en-US","pt-BR","ja-JP","ko-KR","id-ID","de-DE","es-ES","it-IT","fr-FR","hi-IN","zh-Hans","zh-Hant"],"pinnedAgentIds":[],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":"default","captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
+    """{"timezone":"UTC","locale":"en-US","supportedLocales":["en-US","pt-BR","ja-JP","ko-KR","id-ID","de-DE","es-ES","it-IT","fr-FR","hi-IN","zh-Hans","zh-Hant"],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":"default","captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""

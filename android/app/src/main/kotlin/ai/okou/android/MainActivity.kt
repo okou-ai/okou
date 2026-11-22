@@ -9,6 +9,7 @@ import ai.okou.android.auth.WorkspaceSessionFactory
 import ai.okou.android.preferences.applyApplicationLocale
 import ai.okou.android.preferences.resetApplicationLocale
 import ai.okou.android.state.SavedStatePolicy
+import ai.okou.android.state.rememberUpdateDetailsOpen
 import ai.okou.android.updates.AppUpdateSettings
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateHost
@@ -47,6 +48,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -114,6 +116,7 @@ class MainActivity : AppCompatActivity() {
         val authentication = session
         setContent {
             val sessionState by authentication.uiState.collectAsStateWithLifecycle()
+            val account by authentication.account.collectAsStateWithLifecycle(initialValue = null)
             val updateState by updates.state.collectAsStateWithLifecycle()
             val lifecycleState by lifecycle.currentStateAsState()
             val updateRequired =
@@ -164,6 +167,9 @@ class MainActivity : AppCompatActivity() {
                     ?: cachedAppearance?.colorTheme
                     ?: UserPreferencesColorTheme.DEFAULT,
             ) {
+                val updateDetails = rememberUpdateDetailsOpen()
+                var updateDetailsFocused by remember { mutableStateOf(false) }
+                val insideUpdateFlow = updateDetails.value || updateRequired
                 val installProgress = updateInstall.progressLabel
                 val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
                 val interactionActive = editing || contextualAction != null || keyboardVisible
@@ -174,14 +180,21 @@ class MainActivity : AppCompatActivity() {
                     updateState.canInstall,
                     lifecycleState,
                     windowFocused,
+                    updateDetailsFocused,
+                    insideUpdateFlow,
                     interactionActive,
                 ) {
-                    if (verified != null) launchInstaller(verified)
+                    if (verified != null) {
+                        if (verified.automatic && !insideUpdateFlow)
+                            updateInstall.deferAutomaticInstall(verified)
+                        else launchInstaller(verified, updateDetailsFocused)
+                    }
                 }
                 val pending = updateInstall.automaticRelease
                 val automaticInstall =
                     pending?.takeIf {
-                        installProgress == null &&
+                        insideUpdateFlow &&
+                            installProgress == null &&
                             updateState.canInstall &&
                             updateState.selectedRelease == it &&
                             lifecycleState == Lifecycle.State.RESUMED &&
@@ -189,6 +202,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 LaunchedEffect(pending, updateState.selectedRelease) {
                     updateInstall.discardObsoleteDownload()
+                }
+                LaunchedEffect(insideUpdateFlow, updateState.canInstall, pending) {
+                    if (!insideUpdateFlow && updateState.canInstall)
+                        updateInstall.skipAutomaticInstall()
                 }
                 UpdateHost(
                     updateState.copy(required = updateRequired),
@@ -206,12 +223,15 @@ class MainActivity : AppCompatActivity() {
                     },
                     showAnnouncement =
                         sessionState.stage != SessionStage.Ready || sessionState.ready == null,
+                    detailsOpen = updateDetails,
+                    onDetailsFocusChanged = { updateDetailsFocused = it },
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,
                         { authentication.retry(presentedGeneration) },
                         { id -> authentication.chooseWorkspace(id, presentedGeneration) },
                         { authentication.signOut(presentedGeneration) },
+                        account = account,
                         openWorkspaceSetup = {
                             try {
                                 startActivity(
@@ -227,7 +247,12 @@ class MainActivity : AppCompatActivity() {
                             }
                         },
                         appUpdates = {
-                            AppUpdateSettings(updateState, installProgress, openUpdates)
+                            AppUpdateSettings(
+                                updateState,
+                                installProgress,
+                                openUpdates,
+                                updateDetails.value,
+                            )
                         },
                         updateToolbarAction =
                             updateToolbarAction(
@@ -353,9 +378,6 @@ class MainActivity : AppCompatActivity() {
     private fun canInstallPackages() =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()
 
-    private fun canHandOffUpdate() =
-        lifecycle.currentState == Lifecycle.State.RESUMED && windowFocused
-
     private fun canAutomaticallyPrepare() =
         lifecycle.currentState == Lifecycle.State.RESUMED &&
             !editing &&
@@ -381,9 +403,11 @@ class MainActivity : AppCompatActivity() {
         updateInstall.install(release, automatic = false, canInstallPackages())
     }
 
-    private fun launchInstaller(verified: UpdateInstallAttempt.Verified) {
+    private fun launchInstaller(verified: UpdateInstallAttempt.Verified, detailsFocused: Boolean) {
         val foregroundReady =
-            canHandOffUpdate() && (!verified.automatic || canAutomaticallyPrepare())
+            lifecycle.currentState == Lifecycle.State.RESUMED &&
+                (windowFocused || detailsFocused) &&
+                (!verified.automatic || canAutomaticallyPrepare())
         val file =
             updateInstall.takeVerifiedFile(verified, foregroundReady, canInstallPackages())
                 ?: return
@@ -425,6 +449,16 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
 
     fun discardObsoleteDownload() {
         if (automaticRelease != updates.state.value.selectedRelease) automaticRelease = null
+    }
+
+    fun skipAutomaticInstall() {
+        automaticRelease = null
+    }
+
+    fun deferAutomaticInstall(verified: UpdateInstallAttempt.Verified) {
+        if (attempt != verified) return
+        skipAutomaticInstall()
+        attempt = UpdateInstallAttempt.Idle
     }
 
     fun install(release: AndroidUpdatesRelease, automatic: Boolean, authorized: Boolean) {

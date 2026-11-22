@@ -30,11 +30,10 @@ extension ChatSync {
   }
 }
 
-/// A workflow in workspace search: what to show and the agent and `/name` that run it.
+/// A workflow in workspace search: what to show and its `/name` command.
 public struct ChatSearchWorkflow: Decodable, Equatable, Identifiable, Sendable {
   public struct Official: Decodable, Equatable, Sendable {}
   public let id: String
-  public let agentId: String
   public let name: String
   public let displayName: String?
   public let description: String?
@@ -42,11 +41,10 @@ public struct ChatSearchWorkflow: Decodable, Equatable, Identifiable, Sendable {
   public let official: Official?
 
   public init(
-    id: String, agentId: String, name: String, displayName: String? = nil,
+    id: String, name: String, displayName: String? = nil,
     description: String? = nil
   ) {
     self.id = id
-    self.agentId = agentId
     self.name = name
     self.displayName = displayName
     self.description = description
