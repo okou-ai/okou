@@ -824,7 +824,9 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
   }).length;
 
   for (const [partIndex, part] of parts.entries()) {
-    if (isChatRunReference(part)) continue;
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "text") {
       appendRestoredText(state, part.text);
       continue;
@@ -958,7 +960,9 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   };
 
   for (const part of parsed.data.parts) {
-    if (isChatRunReference(part)) continue;
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "feedback") {
       flushInlineText();
       feedbackParts.push(part);
@@ -1013,7 +1017,9 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   };
 
   for (const part of parsed.data.parts) {
-    if (isChatRunReference(part)) continue;
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "feedback") {
       flushInlineText();
       const context = suggestionContexts.get(part);

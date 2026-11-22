@@ -1075,8 +1075,9 @@ const registerUserMessageRenderPart$ = command(
         return { type: "project", part };
       }
       case "chat_thread": {
-        if (isChatRunReference(part))
+        if (isChatRunReference(part)) {
           return { type: "source", kind: "chat", part };
+        }
         return { type: "chat_thread", part };
       }
       case "template": {
