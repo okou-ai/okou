@@ -34,7 +34,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 private val retryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
-private val preferenceSaveRetryDelays = listOf(5_000L, 10_000L)
+private val preferenceSaveRetryDelays = listOf(3_000L, 3_000L)
 private const val preferenceRefreshMillis = 10 * 60_000L
 private const val catalogFailureWindowMillis = 30_000L
 
