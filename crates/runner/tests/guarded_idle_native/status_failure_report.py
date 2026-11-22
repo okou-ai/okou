@@ -38,9 +38,7 @@ def validate(directory):
             raise ValueError("status failure changed original identity or tail ordering")
         blocked, pool, tail, waiting, failed, retried, joined = [e["evidence"] for e in events]
         status_path = blocked.get("status_path")
-        if not status_evidence.valid_status_path(status_path) or status_path in paths:
-            raise ValueError("status-failure private destination identity changed")
-        paths.add(status_path)
+        status_evidence.claim_status_path(status_path, paths, "status-failure private destination identity changed")
         status_evidence.original_status(blocked.get("published_status"), sandbox=identity[0])
         coverage(blocked.get("coverage"), policy, False)
         exact(blocked, {"policy": policy, "published_status": blocked["published_status"],
