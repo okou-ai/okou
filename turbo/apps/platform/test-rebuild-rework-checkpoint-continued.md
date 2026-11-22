@@ -1494,3 +1494,386 @@ The unit of this batch is a distinct frozen test file. Opening head `1ad4f43948`
 | `turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx` | 012, 015, 021                                                                                                                              |                             14 |
 | `turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.test.tsx`                            | 001                                                                                                                                        |                              2 |
 | `turbo/apps/platform/src/views/router/__tests__/link-navigation.test.tsx`                                 | 005                                                                                                                                        |                              3 |
+
+## Batch 75 evidence
+
+35 first acceptances from 30 distinct frozen files and 97 outstanding retained IDs. Telegram OAuth closes with all seven selected IDs verified. The other 29 files retain their full BDD. 62 intake selections remain open. Historical coverage is 1,495/2,681 (+35). Current complete coverage is 1,471/2,681 (+28), after 7 additional historical losses from main. [Opening file roster](#batch-75-file-intake). [97 GWT dispositions and expanded rows](https://app.okou.ai/artifacts/xhpcarj297.tsv) · [Probe source, controls and run reports](https://app.okou.ai/artifacts/5w0ujgbeqe.zip) · [Next 30 frozen files and their retained IDs](https://app.okou.ai/artifacts/vcnxev97zp.md).
+
+The current partition has 250 closed files (1,574 frozen executions and 851 selections including 4 retirements) and 235 open files (3,537 executions, 1,830 selections, 624 covered). The original cohort contributes 420 historical and 411 current of 506. Outside the cohort the counts are 1,075 and 1,060 of 2,175. The 86 original withdrawals, 17 earlier historical losses and 68 independent upstream pending scenarios retain their prior ownership. The newly identified losses are itemized below. File counts include each frozen file once across this batch's stages.
+
+### Batch 75 verification
+
+The 35 first-acceptance rows passed the targeted run. The 30 complete intake files passed 217 rows, including 180 previously accepted selections and two separate existing regressions: the completed-run activity indicator and the upstream legacy-model-to-Home redirect. The shuffled run (seed 75043) passed 386 rows in 46 files, including the other native browser fixture callers and the batch 65 quality cases. The running-regressions.tsv table identifies the ownership and exact passing title of each of those 182 rows. Two intake IDs are prior upstream retirements (org-billing-tab-001 and onboarding-progress-005), and nine have upstream changes to their prerequisites or expectations. Another 51 lack complete evidence. These 62 dispositions are separate from the 68 independently owned upstream items. The additional 169 expanded rows are regression scope. The shared test fixture transitively affects 331 App files. An additional shuffled run on seed 75111 passed all 1,502 rows in these files. After the scoped lint fixes, the three affected full files passed all 40 rows again with seed 75112; the targeted suite passed 35/35. The archive includes both pre-sync and final reports. Across the 29 partial files, all 528 opening GWT sections survived verbatim. Repository size checking, three App TypeScript configurations, scoped ESLint, both oxlint modes and formatting cover the surviving branch changes and both ledger files.
+
+The initial pre-sync shuffled run had two failures, in the browser-history password form and the presentation-to-document gallery selection. Both passed in the post-sync full App survey. Subsequent shuffle and directed reruns are recorded independently. One archived domain-initialization diagnostic used the earlier explicit real-time wait. It received zero acceptance credit. The documented monotonic checkpoint replay still did not identify a positive post-deadline processing signal.
+
+### Batch 75 controls and authorship review
+
+The real Router opens the local Telegram provider. Changing only the popup-window guard or the origin guard accepts a different, deliberately named user in each run. Withholding the same-window refresh prevented deadline-012 from enabling input. Withholding the current image prevented deadline-014 from becoming ready. Deadline-018 was removed from first acceptance after both delivered and held first responses produced the same replacement result. A delivered-500 probe could not establish a visible earlier action-error message. Extending the 30-second transport deadline to 45 seconds defeats the reconnect assertions for deadline-036, 050 and 052. Withholding the first membership reply prevents the second moved-target lookup in discovery-046. The old-attachment hold for deadline-054 prevents fresh original-session text. Resetting the FPS sample on a repeated On selection defeats frame-rate-004. The restored cases are present in the final target and shuffled runs.
+
+The delivery-versus-withholding probes for discovery-023/027, deadlines-007/009/022/023/035/039/043/053 and activity-summary-002 preserve their original open IDs. The detailed tables report any further comparisons. Distinct native sockets, browser target inventories, per-session input text, painted images, and the independent error reporter identify the receiving boundary where required. The full BDD remains for every partial file, including the existing address, shortcut, multi-tab navigation and billing survey gaps.
+
+The authoring sources were the frozen GWT, current production entry points, `AGENTS.md`, `docs/testing.md`, `docs/app/app-testing.md`, the Platform ccstate ownership and SharedWorker guidance, and documented local browser boundaries. After authoring, the comparison covered 1,886 distinct historic test and helper blobs, 760 paths, 739 four-line windows in new code and 8 distinct shared windows. It included the freeze (`b0a10287`), both pre-withdrawal trees (`5310dbb9ba`, `a445586e04`), both sides of the path rename, restored tree, opening head, current cross-file helpers and main. Maximum same-registration token similarity was 0.627. Shared windows contain test and fixture imports, the existing example target, and the browser input event envelope. The highest similarity, frame-rate-003, follows the specified canvas sizes and expected coordinates; its Router and menu setup differs from the historical window-size orchestration. Per-ID source, comparison and line locations are in the archive. No historical registration body was imported.
+
+### Batch 75 main synchronization
+
+[Opening commit](https://github.com/okou-ai/okou/commit/1ad4f439480b3a69619b727495fbe221f2b5459c). Synced main `2c95e9e4b8d7a6cc6f0355c5406779465e7de022`. [Member-flow migration](https://github.com/okou-ai/okou/pull/49854) removed agent prerequisites from member-owned chat, integration, onboarding and workflow contracts. Of 171 conflict paths, 70 previously withdrawn tests remained absent. The other 101 retained the branch's tests and helpers, with fixtures adapted to the new public contracts. The member-flow survey ran 331 files and 1,504 rows. Three failures located the removed Feishu and Lark routing descriptions and the old agent Instructions bookmark. The bookmark belonged to a separate upstream regression. Its Router probe and retired registration are archived without a change to historical frozen credit. Member chat input now uses Home, thread reference payloads use the chat-thread schema, and provider fixtures omit removed executor fields. The surviving behavior of old cases with retired clauses remains a separate regression. The complete original BDD is restored for each previously closed file that lost coverage. The archive indexes upstream titles and parameter changes separately. Updated descriptor and chat-mention registrations correspond to non-selected frozen sources (api-client-bootstrap-002 and chat-composer-mentions-015/016). Project rewordings belong to the open project-chat-list-010 and projects-011/035/048/055. The older restored-attachment replacement retains the prior loss at chat-history-message-resources-001. The two workflow replacements run as member-owned regressions. None contributes first acceptance in this intake.
+
+- `chat-list-cache-001`. The remote agent-loading service was removed. The cached rename and chat link are observable while member chat synchronization is held. The second pending source required by the frozen Given no longer exists.
+- `pwa-navigation-014`. The member thread snapshot has no agent ownership. The unread conversation still marks Chats and leaves Me clear. Its ownership by a different agent cannot be constructed, including under the batch 69 amendment.
+- `workflows-page-072`. A workflow has no executor-agent association. The member still sees both the shared workflow and its private override, but the fixture can no longer assign the other workflow to the agent in the stale filter.
+- `workflows-page-075`. Create in chat still opens the member composer. The default-agent record required by the original Given is no longer supplied or stored.
+- `integrations-feishu-005`. The Feishu card still opens the connected bot, account and uninstall options. The routing description was removed from Works. The original routing-information clause failed in the post-sync suite.
+- `integrations-feishu-018`. The Lark card still opens the connected bot, account and uninstall options. The routing description was removed from Works. The original routing-information clause failed in the post-sync suite.
+- `chat-list-configuration-002`. The pending conversation and its replayed configuration work from member Home. The independently rerun original agent-chat URL did not reach the required sidebar selection.
+
+### Batch 75 file outcomes
+
+#### browser-discovery-startup
+
+[Routed tests](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md). Partial file. 19 first acceptances, 4 previously accepted at intake, 5 open. Evidence in the probe archive includes disc75, setc75, setd75, sete75, seti75, held2-75 and extra75.log.
+
+- [browser-discovery-startup-002](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L184) `browser-discovery-startup-002 First accepts text before Later appears`. Exact text reaches First with Later's lookup held. Later subsequently appears and Sibling 19 stays absent.
+
+- [browser-discovery-startup-009](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L299) `browser-discovery-startup-009 Readiness joins the first picture, input and membership`. Layout completes with membership outstanding. After native proof and before the first picture, input remains disabled. Releasing that picture enables First and delivers input-proof-frame to its session.
+
+- [browser-discovery-startup-015](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L299) `browser-discovery-startup-015 Readiness joins the first picture, input and membership`. The first static picture is delivered before validation. Further frames are held. Only the released membership proof enables First's viewer after input setup.
+
+- [browser-discovery-startup-017](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L299) `browser-discovery-startup-017 Readiness joins the first picture, input and membership`. While membership is held, the first picture arrives and additional frames are blocked. Input setup alone leaves the proxy disabled. After proof, the retained picture and First's fresh text both work.
+
+- [browser-discovery-startup-021](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L384) `browser-discovery-startup-021 Moving First retires its picture and directs input to Later`. Move First to window 19 during proof. Later becomes selected and ready, First disappears, and only Later receives the submitted text.
+
+- [browser-discovery-startup-030](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L523) `browser-discovery-startup-030 The recovered quality setting survives a second membership check`. After the failed quality-60 capture, another membership proof disables input. Releasing proof restores First and the capture has quality 60.
+
+- [browser-discovery-startup-033](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L252) `browser-discovery-startup-033 Closing First waits for the background survivor`. Close First with the survivor lookup held. New tab becomes selected and streaming, First disappears, and the actual assigned window contains only created-1.
+
+- [browser-discovery-startup-036](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L196) `browser-discovery-startup-036 A tab created during a sibling lookup survives the completed scan`. Create during the foreign neighbor lookup. The created tab and Later appear in the rail, Neighbor 3 stays absent and remote input enables after inventory.
+
+- [browser-discovery-startup-038](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L211) `browser-discovery-startup-038 Destroying First leaves the viewer connecting until Later is discovered`. Destroy First while Later's lookup is in flight. Connecting is visible and input and New tab are disabled. Later becomes selected and usable on release.
+
+- [browser-discovery-startup-041](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L456) `browser-discovery-startup-041 A foreign candidate resolves to an empty assigned window`. Destroy both owned tabs with the foreign candidate still being checked. Connecting disables input and creation. The empty-window action creates and selects a usable blank tab.
+
+- [browser-discovery-startup-044](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L478) `browser-discovery-startup-044 Closing both visible tabs preserves the correct final page`. Close First and the admitted sibling before the final scan. Only Later's URL survives in the assigned window, with Later selected.
+
+- [browser-discovery-startup-045](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L478) `browser-discovery-startup-045 Closing both visible tabs preserves the correct final page`. The same two user closes without Later leave only about:blank in the assigned window, with New tab selected.
+
+- [browser-discovery-startup-046](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L284) `browser-discovery-startup-046 Moving Later during its lookup leaves First selected`. Move the in-flight Later target to the other window. Receiving a second lookup for that target distinguishes delivery from withholding. First remains selected and usable and Later stays absent.
+
+- [browser-discovery-startup-047](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L225) `browser-discovery-startup-047 An unsupported membership check disables the admitted viewer`. An unsupported membership reply causes the visible unsupported-operation message, disables input and keeps Later out of the rail.
+
+- [browser-discovery-startup-048](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L239) `browser-discovery-startup-048 Publishing Later cannot enable input while First is still opening`. While the page attachment is held, releasing background inventory renders Later. Input stays disabled until the attachment is released and First is selected and ready.
+
+- [browser-discovery-startup-049](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L344) `browser-discovery-startup-049 Leaving the viewer cancels the close awaiting Later's inventory`. Dispose the owner of the routed page while its close waits on inventory. The actual socket closes, the proxy leaves the page and both assigned-window targets survive.
+
+- [browser-discovery-startup-051](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L400) `browser-discovery-startup-051 First can navigate on resume while Later is still being checked`. On resume, the visible live view has disabled input until First is readmitted. Enter in the address field sends the exact destination to First while Later's check is still held.
+
+- [browser-discovery-startup-053](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L430) `browser-discovery-startup-053 A second resume waits for the surviving Later tab`. Move First while hidden and resume twice across pending inventory. Input is disabled while the second Later proof is held. It enables on Later and First is absent.
+
+- [browser-discovery-startup-056](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L364) `browser-discovery-startup-056 A reopened viewer selects the tab still in its window`. Pause, move First out and leave the route. After the socket closes, browser Back remounts the viewer. Later is selected and ready and First is absent.
+
+- [browser-discovery-startup-003](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#browser-discovery-startup-003). After established streaming and duplicate, the readmission or background receipt did not arrive in the tested inventory order. No verified interval allows entering text before the background proof.
+
+- [browser-discovery-startup-023](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#browser-discovery-startup-023). Withhold First's late image while allowing membership and the same Later selection and text assertions still pass. Image processing has no positive acknowledgement.
+
+- [browser-discovery-startup-027](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#browser-discovery-startup-027). Keep the old Page.getFrameTree response withheld. Later still receives new text and the same readiness assertion passes.
+
+- [browser-discovery-startup-040](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#browser-discovery-startup-040). With the final candidate in the assigned window, the expected Connecting/disabled interval could not be established. The foreign-candidate control is 041.
+
+- [browser-discovery-startup-054](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#browser-discovery-startup-054). Hidden creation and window removal were visible at the boundary, but the pending membership lookup required by the Given never arrived before removal.
+
+#### browser-response-deadlines
+
+[Routed tests](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.bdd.md). Partial file. 10 first acceptances, 0 previously accepted at intake, 18 open. Evidence in the probe archive includes set75 through seti75, held75, held2-75, withheld-more, hold-current-paint, extended-socket-deadline, extra75.log, sync-control-held and sync-control-delivered-error.
+
+- [browser-response-deadlines-001](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L54) `browser-response-deadlines-001 Opening a hidden viewer defers use until it becomes visible`. A hidden initial page shows Viewing paused with disabled input. Revealing it enables Original and the local browser receives the submitted text on its sole connection.
+
+- [browser-response-deadlines-012](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L145) `browser-response-deadlines-012 A same-window refresh joins the pending startup before its deadline`. During same-binding refresh, wait at attachment and hello for 21 seconds each. Release getWindow just before the minute. Original remains usable more than a minute later and accepts text over the same connection. Withholding the same-window service reply leaves the remote input disabled at the ready check.
+
+- [browser-response-deadlines-014](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L123) `browser-response-deadlines-014 A successful window check waits for paint before reenabling input`. Fail the window check and advance four seconds. Successful proof alone leaves input disabled while the image is held. Delivering the frame restores Original over the same socket.
+
+- [browser-response-deadlines-020](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L77) `browser-response-deadlines-020 A reconnected empty window can create a tab after a minute`. Reconnecting returns directly to No tabs open. After another minute the enabled empty-state action creates one selected, usable about:blank tab in the assigned window.
+
+- [browser-response-deadlines-021](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L65) `browser-response-deadlines-021 An idle static page still receives text in its original session`. More than a minute after streaming, the original attachment still receives the submitted text with its address and connection intact.
+
+- [browser-response-deadlines-036](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L100) `browser-response-deadlines-036 An unopened socket expires and a fresh socket restores the displayed page`. The unopened socket leaves input disabled before 30 seconds. Crossing the deadline displays Reconnecting. Opening the recovered physical socket restores the same page.
+
+- [browser-response-deadlines-047](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L207) `browser-response-deadlines-047 Selecting a sibling recovers input on the healthy wire`. A failed native window read displays Reconnecting and disables input. Selecting the sibling restores its address and directs the text to its own page session on the existing connection.
+
+- [browser-response-deadlines-050](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L226) `browser-response-deadlines-050 Expired text input stays with the original attachment`. Let the original x input expire and type y after recovery. The external browser receives x on the first page session and y on the distinct recovered session; x is not replayed there.
+
+- [browser-response-deadlines-052](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L180) `browser-response-deadlines-052 Timing out a created tab preserves the original selection`. Hold the new-tab receipt through 30 seconds. On recovery the selected tab is Original and the assigned window contains just Original and created-1.
+
+- [browser-response-deadlines-054](src/views/browser-session/__tests__/browser-response-deadlines.test.tsx#L260) `browser-response-deadlines-054 Retiring the target with a pending attachment preserves original input`. Destroy the pending replacement and advance past its original deadline. After delivering its old attachment, fresh text reaches the original session and neither the page nor the external error reporter reports an error.
+
+- [browser-response-deadlines-004](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-004). The observer delivered an offscreen canvas and the native hello was received, but the following native window receipt or the page's paused acknowledgement did not arrive in this ordering.
+
+- [browser-response-deadlines-006](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-006). A concealed replacement descriptor reached the local service, but revealing the page after expiry did not establish the expected Reconnecting state before replacement.
+
+- [browser-response-deadlines-007](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-007). Retiring the hidden startup connection and typing on the new connection succeeded even when the original hello stayed withheld.
+
+- [browser-response-deadlines-009](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-009). Both delivered and withheld descriptor controls left the replacement address and typing identical. Service ingress or serialization does not identify consumption by the page.
+
+- [browser-response-deadlines-011](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-011). Transport phases and expiry were observable, but the remaining exact-one descriptor fetch was distinguished only by counting requests, which the testing guide excludes.
+
+- [browser-response-deadlines-018](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-018). The replacement address, enabled New tab and absent error matched delivery even when the first descriptor reply was withheld. An independent delivered-500 probe could not observe the original action-error message before switching. Server ingress is insufficient to establish that the earlier failure was processed.
+
+- [browser-response-deadlines-022](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-022). The replacement chat receives new input equally when the old recovery delivery is withheld.
+
+- [browser-response-deadlines-023](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-023). Releasing or withholding the old paint after changing chats while hidden leaves the same replacement input outcome.
+
+- [browser-response-deadlines-024](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-024). The prior image was withheld while wall time moved backwards. The retry capture needed to anchor monotonic expiry did not arrive at the required boundary.
+
+- [browser-response-deadlines-026](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-026). The documented clock and held image did not establish both expired retries, their visible reconnecting states and restored replacement input in the original order.
+
+- [browser-response-deadlines-029](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-029). Delaying the start receipt and holding the first picture did not produce the expected reconnecting state at the picture-relative deadline.
+
+- [browser-response-deadlines-031](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-031). After resume and image expiry, the pending old stop-screencast acknowledgement required by the scenario did not arrive before the selection.
+
+- [browser-response-deadlines-034](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-034). A replacement descriptor and address appeared while the transport was pending, but fresh text on its own page session was not established after release.
+
+- [browser-response-deadlines-035](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-035). Current-transport readiness and fresh input still pass with the prior transport proof withheld. No acknowledgement distinguishes that old response.
+
+- [browser-response-deadlines-039](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-039). The unavailable screen, explicit Reconnect and new tab all work with the old native hello withheld. None proves handling of that hello.
+
+- [browser-response-deadlines-043](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-043). The original address and fresh input still pass when the old native scope reply is withheld.
+
+- [browser-response-deadlines-051](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-051). Recovery reaches the accepted URL, but replay of the same destination has the same final URL. The exact-once clause was not verified via a distinct navigation effect.
+
+- [browser-response-deadlines-053](src/views/browser-session/__tests__/browser-response-deadlines.bdd.md#browser-response-deadlines-053). Switching chats shows the replacement address and delivers text with the old proof still withheld. The missing acknowledgement remains with this ID.
+
+#### browser-frame-rate
+
+[Routed tests](src/views/browser-session/__tests__/browser-frame-rate.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/browser-session/__tests__/browser-frame-rate.bdd.md). Partial file. 5 first acceptances, 0 previously accepted at intake, 1 open. Evidence in the probe archive includes setg75, full and reset-on-reselect.
+
+- [browser-frame-rate-002](src/views/browser-session/__tests__/browser-frame-rate.test.tsx#L34) `browser-frame-rate-002 Keyboard selection opens the FPS display and restores toolbar focus`. Keyboard typeahead focuses FPS. Right, End and Enter enable the overlay and restore Browser settings focus.
+
+- [browser-frame-rate-003](src/views/browser-session/__tests__/browser-frame-rate.test.tsx#L125) `browser-frame-rate-003 Resizing a letterboxed image moves its FPS overlay to the image origin`. Two canvas sizes give the rendered FPS overlay coordinates (80, 0) and (0, 250). The latter follows the resize event.
+
+- [browser-frame-rate-004](src/views/browser-session/__tests__/browser-frame-rate.test.tsx#L66) `browser-frame-rate-004 Choosing On again keeps the original one-second sample`. Reselect On 300 ms into the original sample. Nine separately painted frames produce 9 FPS at the original one-second boundary.
+
+- [browser-frame-rate-010](src/views/browser-session/__tests__/browser-frame-rate.test.tsx#L85) `browser-frame-rate-010 PNG capture starts an empty FPS chart and then samples zero`. After a 9 FPS sample, selecting PNG clears the chart and shows an em dash. One second without frames produces 0 FPS.
+
+- [browser-frame-rate-011](src/views/browser-session/__tests__/browser-frame-rate.test.tsx#L101) `browser-frame-rate-011 Tab selection resets samples and reopening FPS discards the old chart`. Switching away and back resets the displayed address, reading and graph for both tabs. Two quiet seconds yield 0 FPS. Disabling removes it; enabling again starts with an empty graph.
+
+- [browser-frame-rate-001](src/views/browser-session/__tests__/browser-frame-rate.bdd.md#browser-frame-rate-001). The menu placement and checked states, chart dimensions, removal and focus are observable. The absence of inserted text does not establish that all browser traffic stayed idle.
+
+#### browser-address-search
+
+[Routed tests](src/views/browser-session/__tests__/browser-address-search.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/browser-session/__tests__/browser-address-search.bdd.md). Partial file. 0 first acceptances, 40 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-browser-address-search.
+
+- [browser-address-search-004](src/views/browser-session/__tests__/browser-address-search.bdd.md#browser-address-search-004). Open address was disabled and the draft remained ///invalid on the original remote page. Pressing Enter did not deliver a submit event or show an alert. An explicitly dispatched submit could reach the validation handler, but bypasses the disabled user action.
+
+#### browser-domain-initialization
+
+[Routed tests](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md). Partial file. 0 first acceptances, 8 previously accepted at intake, 1 open. Evidence in the probe archive includes tg75 (documented clock replay); historical real-time probe excluded from acceptance.
+
+- [browser-domain-initialization-018](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#browser-domain-initialization-018). The Page failure probe displayed Browser view unavailable, retired the original attachment and stayed disabled with one physical connection after 31 real seconds. The explicit timer and enlarged timeout fail the repository lint rules. A second probe used the documented 31,000 ms monotonic advance after retirement; no subsequent application clock read acknowledged the advance before the default case timeout. The timing clause remains open.
+
+#### billing-survey
+
+[Routed tests](src/views/okou-page/__tests__/billing-survey.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/billing-survey.bdd.md). Partial file. 0 first acceptances, 4 previously accepted at intake, 1 open. Evidence in the probe archive includes gaps275.
+
+- [billing-survey-004](src/views/okou-page/__tests__/billing-survey.bdd.md#billing-survey-004). After the restored plan chooser closes the checkout feedback appears, and the answer records its session and price choice. While the chooser is open, its sibling chat action cannot confirm that the same survey-status response was already consumed. The service handler receiving a request is insufficient. Full opening BDD restored. Reserve redeem-campaign-page-003 passed independently.
+
+#### chat-activity-summary
+
+[Routed tests](src/views/okou-page/__tests__/chat-activity-summary.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/chat-activity-summary.bdd.md). Partial file. 0 first acceptances, 1 previously accepted at intake, 1 open. Evidence in the probe archive includes gaps475 (withheld response).
+
+- [chat-activity-summary-002](src/views/okou-page/__tests__/chat-activity-summary.bdd.md#chat-activity-summary-002). The routed chat switches away from the completed run. With the old summary withheld, the indicator and composer still reached the same state as after delivery. No UI signal confirms processing of the late summary.
+
+#### chat-artifact-action-group
+
+[Routed tests](src/views/okou-page/__tests__/chat-artifact-action-group.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/chat-artifact-action-group.bdd.md). Partial file. 0 first acceptances, 6 previously accepted at intake, 2 open. Evidence in the probe archive includes carried75 and b75check-chat-artifact-action-group.
+
+- [chat-artifact-action-group-010](src/views/okou-page/__tests__/chat-artifact-action-group.bdd.md#chat-artifact-action-group-010). Dialog uses dispatch.pdf despite the owned artifact title. Batch 52 control retained.
+
+- [chat-artifact-action-group-011](src/views/okou-page/__tests__/chat-artifact-action-group.bdd.md#chat-artifact-action-group-011). Sidebar uses dispatch.pdf despite the owned artifact title. Batch 52 control retained.
+
+#### chat-composer-connector-status
+
+[Routed tests](src/views/okou-page/__tests__/chat-composer-connector-status.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md). Partial file. 0 first acceptances, 4 previously accepted at intake, 2 open. Evidence in the probe archive includes carried75 and b75check-chat-composer-connector-status.
+
+- [chat-composer-connector-status-001](src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md#chat-composer-connector-status-001). GitHub details and Acme Search were reachable with saved accounts requiring reconnection. The directory cannot show whether a same-state authorization write, credential read or manual grant request occurred. No request-count assertion was substituted.
+
+- [chat-composer-connector-status-006](src/views/okou-page/__tests__/chat-composer-connector-status.bdd.md#chat-composer-connector-status-006). With 503 inventory, Accounts are unavailable and the separate Feishu card appeared; Acme Search and No accounts were absent. Browsing does not expose proof of zero authorization updates.
+
+#### chat-private-artifact-previews
+
+[Routed tests](src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.bdd.md). Partial file. 0 first acceptances, 4 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-chat-private-artifact-previews.
+
+- [chat-private-artifact-previews-001](src/views/okou-page/__tests__/chat-private-artifact-previews.bdd.md#chat-private-artifact-previews-001). The rendered thumbnail points to the resolved delivery pathname under /cdn-cgi/image/ and omits the relative /artifacts reference. Clicking it opens the correct original image in the lightbox. The frozen thumbnail clause fails.
+
+#### composer-custom-template-recommendations
+
+[Routed tests](src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.bdd.md). Partial file. 0 first acceptances, 7 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-composer-custom-template-recommendations.
+
+- [composer-custom-template-recommendations-009](src/views/okou-page/__tests__/composer-custom-template-recommendations.bdd.md#composer-custom-template-recommendations-009). Pasting unsupported.pdf adds a visible Remove unsupported.pdf attachment. The draft and Image action survive and the WEBP import sends its style task. The frozen Then forbids the PDF attachment.
+
+#### directed-connect-page
+
+[Routed tests](src/views/okou-page/__tests__/directed-connect-page.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.bdd.md). Partial file. 0 first acceptances, 4 previously accepted at intake, 3 open. Evidence in the probe archive includes opening BDD amendments #48841, #49830 and #49838, complete routed regressions and the #49854 member contract.
+
+- [directed-connect-page-004](src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-004). The current custom connector completion resumes the requesting chat. The old empty-permission agent grant has no verified recipient on this path after the chat-account migration (#48841 and #49838).
+
+- [directed-connect-page-008](src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-008). The original Given requires a chat-originated Stripe no-auth link with an agent ID. #49830 changed the originating link and the current Stripe catalog advertises OAuth, device sign-in and API key. No matching no-auth transaction was established.
+
+- [directed-connect-page-012](src/views/okou-page/__tests__/directed-connect-page.bdd.md#directed-connect-page-012). The current GitHub OAuth start contract targets the saved connection and callback target. It does not carry the frozen directed agent ID and authorization flag after #49838. The original clause remains open.
+
+#### discord-oauth-compatibility
+
+[Routed tests](src/views/okou-page/__tests__/discord-oauth-compatibility.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-compatibility.bdd.md). Partial file. 0 first acceptances, 7 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-discord-oauth-compatibility.
+
+- [discord-oauth-compatibility-007](src/views/okou-page/__tests__/discord-oauth-compatibility.bdd.md#discord-oauth-compatibility-007). Router probe verifies the matching signed approval was submitted, the original window closed, the consent page reported interruption, removed its proof and omitted Open Discord. The explicit exactly-one HTTP request clause remains unverified under the Platform request-count rule.
+
+#### feishu-setup-guide
+
+[Routed tests](src/views/okou-page/__tests__/feishu-setup-guide.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/feishu-setup-guide.bdd.md). Partial file. 0 first acceptances, 3 previously accepted at intake, 2 open. Evidence in the probe archive includes gaps275.
+
+- [feishu-setup-guide-001](src/views/okou-page/__tests__/feishu-setup-guide.bdd.md#feishu-setup-guide-001). Feishu View setup reference and Back to fields scroll between always-mounted sections. The screenshot stayed visible after Back to fields, then after a confirmed zoom change and Escape. The values survived and a fresh bot draft started with an empty password field. Reference closure is unverified. Full provider BDD retained.
+
+- [feishu-setup-guide-002](src/views/okou-page/__tests__/feishu-setup-guide.bdd.md#feishu-setup-guide-002). Lark View setup reference and Back to fields scroll between always-mounted sections. The screenshot stayed visible after Back to fields, then after a confirmed zoom change and Escape. The values survived and a fresh bot draft started with an empty password field. Reference closure is unverified. Full provider BDD retained.
+
+#### integrations-wechat
+
+[Routed tests](src/views/okou-page/__tests__/integrations-wechat.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/integrations-wechat.bdd.md). Partial file. 0 first acceptances, 5 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-integrations-wechat.
+
+- [integrations-wechat-008](src/views/okou-page/__tests__/integrations-wechat.bdd.md#integrations-wechat-008). The remapped upstream registration still belongs to frozen 008. The signed-in account and workspace appear, but the Agent field displays Okou, not the frozen Workspace Assistant. The full confirmation scenario remains open.
+
+#### keyboard-shortcut-hints
+
+[Routed tests](src/views/okou-page/__tests__/keyboard-shortcut-hints.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/keyboard-shortcut-hints.bdd.md). Partial file. 0 first acceptances, 2 previously accepted at intake, 1 open. Evidence in the probe archive includes gaps475.
+
+- [keyboard-shortcut-hints-003](src/views/okou-page/__tests__/keyboard-shortcut-hints.bdd.md#keyboard-shortcut-hints-003). Starting with the list closed, Command+B opens it and Hide chat list is visible. At the specified hover step there is no Show chat list button. A separate reordered probe found the shortcut tooltip after closing; that does not satisfy the original When.
+
+#### org-billing-tab
+
+[Routed tests](src/views/okou-page/__tests__/org-billing-tab.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/org-billing-tab.bdd.md). Partial file. 0 first acceptances, 21 previously accepted at intake, 1 open. Evidence in the probe archive includes #49556 permanently removed the feature switch; full iPhone settings regression 002.
+
+- [org-billing-tab-001](src/views/okou-page/__tests__/org-billing-tab.bdd.md#org-billing-tab-001). #49556 removed the My Okou switch. Disabled iOS Given is impossible. Permanent link is 002. Original BDD retained.
+
+#### org-general-tab
+
+[Routed tests](src/views/okou-page/__tests__/org-general-tab.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/org-general-tab.bdd.md). Partial file. 0 first acceptances, 5 previously accepted at intake, 1 open. Evidence in the probe archive includes gaps475; the saved result lacks an old-logo-read acknowledgement.
+
+- [org-general-tab-004](src/views/okou-page/__tests__/org-general-tab.bdd.md#org-general-tab-004). The original read was held during the upload. This run did not reach the expected Workspace updated notice; earlier save/reload evidence established the new logo, but neither the new logo nor the refreshed organization acknowledges the old read.
+
+#### paid-tools-settings
+
+[Routed tests](src/views/okou-page/__tests__/paid-tools-settings.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/paid-tools-settings.bdd.md). Partial file. 0 first acceptances, 9 previously accepted at intake, 3 open. Evidence in the probe archive includes carried75 and b75check-paid-tools-settings.
+
+- [paid-tools-settings-014](src/views/okou-page/__tests__/paid-tools-settings.bdd.md#paid-tools-settings-014). The Web search save reached the held token and displayed Saving. Switching to Second workspace left Web search checked. The second workspace was ready independently of the abandoned save, leaving its completion and the no-cross-workspace-write clause unverified.
+
+- [paid-tools-settings-023](src/views/okou-page/__tests__/paid-tools-settings.bdd.md#paid-tools-settings-023). The original model preference read was held after selecting Ideogram 4. Second workspace became visible with a usable picker. Releasing that read had no observable completion for the old save, so absence of an update remains unproved.
+
+- [paid-tools-settings-024](src/views/okou-page/__tests__/paid-tools-settings.bdd.md#paid-tools-settings-024). The original write token was held after the model preference read. Second workspace and its usable picker appeared on switching. Token release alone cannot prove the old save finished without an update.
+
+#### preference-settings
+
+[Routed tests](src/views/okou-page/__tests__/preference-settings.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/preference-settings.bdd.md). Partial file. 0 first acceptances, 3 previously accepted at intake, 1 open. Evidence in the probe archive includes whole-file Home redirect regression and original Agents route compared against #49556 and #49854.
+
+- [preference-settings-003](src/views/okou-page/__tests__/preference-settings.bdd.md#preference-settings-003). The restored Then requires /agents?settings=model. The real legacy entry reaches /?settings=model with Use more models, Claude and ChatGPT (Codex). #49556 changed the shared route expectation. The passing Home row has separate upstream ownership.
+
+#### preferences-page
+
+[Routed tests](src/views/okou-page/__tests__/preferences-page.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/preferences-page.bdd.md). Partial file. 0 first acceptances, 2 previously accepted at intake, 3 open. Evidence in the probe archive includes carried75; 009 also uses the #48892 conflicting cookie/workspace precedence.
+
+- [preferences-page-001](src/views/okou-page/__tests__/preferences-page.bdd.md#preferences-page-001). With a shared dark cookie and no workspace appearance, the loaded Theme panel selects System and resolves to Light. #48892 changed workspace restoration. The frozen dark initial state remains unproved.
+
+- [preferences-page-002](src/views/okou-page/__tests__/preferences-page.bdd.md#preferences-page-002). With the light cookie and a dark workspace using Golden hour, the loaded panel selects Dark and retains Golden hour. The required initial Light is absent. #48892 replaced the cookie-first registration.
+
+- [preferences-page-009](src/views/okou-page/__tests__/preferences-page.bdd.md#preferences-page-009). The frozen Then requires the shared dark preference to win, Light to display and Light to be written into the shared cookie. Batch 60 recorded the conflict and #48892’s replacement with a duplicate-cookie first-paint scenario. Its original BDD and ownership carry forward.
+
+#### settings-model-loading
+
+[Routed tests](src/views/okou-page/__tests__/settings-model-loading.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.bdd.md). Partial file. 0 first acceptances, 1 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-settings-model-loading.
+
+- [settings-model-loading-001](src/views/okou-page/__tests__/settings-model-loading.bdd.md#settings-model-loading-001). Connect account was enabled before navigating Preference → Models. The rendered heading is “Use more models”; “Models” labels navigation. The frozen heading has no page evidence.
+
+#### settings-wallet-cards
+
+[Routed tests](src/views/okou-page/__tests__/settings-wallet-cards.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/settings-wallet-cards.bdd.md). Partial file. 0 first acceptances, 3 previously accepted at intake, 2 open. Evidence in the probe archive includes carried75 and b75check-settings-wallet-cards.
+
+- [settings-wallet-cards-005](src/views/okou-page/__tests__/settings-wallet-cards.bdd.md#settings-wallet-cards-005). The real focus action preserved Everyday and the recent purchase. The delayed notification refresh then replaced them with the default Business card and the new purchase. The frozen focus clause also requires no extra requests, which the testing guide excludes as an assertion.
+
+- [settings-wallet-cards-010](src/views/okou-page/__tests__/settings-wallet-cards.bdd.md#settings-wallet-cards-010). Disconnecting while the card refresh was held restored the Connect action. The section was already gone before the delayed response was released. No subsequent observable completion identifies consumption or dismissal of that response.
+
+#### sidebar-workspace
+
+[Routed tests](src/views/okou-page/__tests__/sidebar-workspace.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-workspace.bdd.md). Partial file. 0 first acceptances, 2 previously accepted at intake, 1 open. Evidence in the probe archive includes #49556 removed pinned-agent controls; complete workspace-search regressions and #49854 member route.
+
+- [sidebar-workspace-005](src/views/okou-page/__tests__/sidebar-workspace.bdd.md#sidebar-workspace-005). Upstream #49556 removed pinned agents and their per-agent chat destinations.
+
+#### telegram-oauth-connect
+
+[Routed tests](src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/okou-page/__tests__/telegram-oauth-connect.bdd.md). All retained selections accepted. 1 first acceptances, 6 previously accepted at intake, 0 open. Evidence in the probe archive includes target, full, wrong-window and wrong-origin.
+
+- [telegram-oauth-connect-003](src/views/okou-page/__tests__/telegram-oauth-connect.test.tsx#L122) `telegram-oauth-connect-003 Works shows the identity supplied by the opened provider tab`. A local popup with an unrelated source and a message from an unrelated origin use distinct usernames. The supplied provider tab's valid callback links the third account, which Works displays after the success notice. Removing either check selects its corresponding wrong account.
+
+#### onboarding-agentphone-tile
+
+[Routed tests](src/views/onboarding-sources-first/__tests__/onboarding-agentphone-tile.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-agentphone-tile.bdd.md). Partial file. 0 first acceptances, 3 previously accepted at intake, 1 open. Evidence in the probe archive includes seth75 (DOM) and earlier desktop Chromium layout evidence in the opening ledger.
+
+- [onboarding-agentphone-tile-001](src/views/onboarding-sources-first/__tests__/onboarding-agentphone-tile.bdd.md#onboarding-agentphone-tile-001). Desktop Chromium at 1280px with a fine pointer gives the issued QR a layout box. The inline SMS anchor has the matching href but no layout box because its responsive container has display:none. The desktop Then requires both to be shown.
+
+#### onboarding-progress
+
+[Routed tests](src/views/onboarding-sources-first/__tests__/onboarding-progress.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-progress.bdd.md). Partial file. 0 first acceptances, 7 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-onboarding-progress.
+
+- [onboarding-progress-005](src/views/onboarding-sources-first/__tests__/onboarding-progress.bdd.md#onboarding-progress-005). Historical retirement in #49278 (4338aeeabf) for a pre-draft API rollback. On this branch a separate Router probe received a draft-service 404 and displayed the legacy launch plan at /onboarding/ready. The supported 404 now denotes a member who no longer needs onboarding. The pre-draft service is a retired deployment condition and retains zero first-acceptance credit. Its full BDD remains in the progress file. #49384 (25d468f63e) separately adds another member’s shared-browser draft isolation, tracked as upstream-25d468f6-onboarding-progress-01 among the 68.
+
+#### onboarding-sources-first-flow
+
+[Routed tests](src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md). Partial file. 0 first acceptances, 14 previously accepted at intake, 3 open. Evidence in the probe archive includes carried75 and b75check-onboarding-sources-first-flow.
+
+- [onboarding-sources-first-flow-012](src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-012). The owner’s completion was held at the ready page; release allowed the first task to run. The frozen Then also requires exactly one completion. The testing guide forbids request-count assertions.
+
+- [onboarding-sources-first-flow-015](src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-015). The invited member saw the full competitor-research preset, edited it to Draft my meeting agenda and opened chat with that task. Completion was observed from the ready step. The exact-one completion clause conflicts with the testing guide.
+
+- [onboarding-sources-first-flow-021](src/views/onboarding-sources-first/__tests__/onboarding-sources-first-flow.bdd.md#onboarding-sources-first-flow-021). The edited EU launch prompt stayed at onboarding until the completion response was released, then reached chat with the document instructions. The frozen single-completion clause cannot be credited under the request-count rule.
+
+#### onboarding-start
+
+[Routed tests](src/views/onboarding/__tests__/onboarding-start.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/onboarding/__tests__/onboarding-start.bdd.md). Partial file. 0 first acceptances, 2 previously accepted at intake, 1 open. Evidence in the probe archive includes carried75 and b75check-onboarding-start.
+
+- [onboarding-start-001](src/views/onboarding/__tests__/onboarding-start.bdd.md#onboarding-start-001). The open-page probe saw the authenticated, un-aborted production POST with the onboarding-start tag and UUID while its response was held. At ingress the correct actor and workspace already had started telemetry without a status code. The industry question was visible before release. Its exact one-POST requirement conflicts with the current request-count assertion rule. Neither exact count was credited.
+
+#### link-navigation
+
+[Routed tests](src/views/router/__tests__/link-navigation.test.tsx) · [Complete opening BDD](https://github.com/okou-ai/okou/blob/1ad4f439480b3a69619b727495fbe221f2b5459c/turbo/apps/platform/src/views/router/__tests__/link-navigation.bdd.md). Partial file. 0 first acceptances, 3 previously accepted at intake, 1 open. Evidence in the probe archive includes gaps475 (actual default navigation in the detached browser).
+
+- [link-navigation-005](src/views/router/__tests__/link-navigation.bdd.md#link-navigation-005). The real Home rail link received a Meta click. The detached Vitest browser followed its default action in the original frame, leaving /workflows where the GWT requires Home to remain at /. The probe cannot establish a separate native browsing context, and the full original BDD with its upstream amendment stays open.
+
+### Batch 76 file nominations
+
+30 distinct open frozen paths, 115 retained selections. Recheck their complete BDD, upstream amendments and history against the next head.
+
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-browser-shutdown.test.tsx` · 001, 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx` · 002, 004, 006, 007, 009, 011.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx` · 002, 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-isolation.test.tsx` · 001, 002.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-codex-execution.test.tsx` · 001, 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx` · 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx` · 005, 006, 007, 008, 010.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx` · 001, 003, 007, 008, 009.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx` · 001, 002, 003, 005, 008, 009.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ime.test.tsx` · 002.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx` · 002, 003, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx` · 003, 005, 006, 007, 010.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx` · 001, 003, 004, 005, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx` · 001, 002, 003, 004, 007, 010, 011.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx` · 001, 002, 003, 007, 010, 012, 013.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx` · 001, 002, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx` · 002, 003, 004, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-history.test.tsx` · 001, 003, 006.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx` · 001, 003, 004, 006, 011, 013, 014.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx` · 001, 002, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx` · 003, 004, 005, 006, 007, 010.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx` · 002, 003.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-expected-failures.test.tsx` · 001, 003.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx` · 001, 004, 006, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx` · 001, 002, 004, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-member-model-route.test.tsx` · 003, 004, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx` · 002, 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-offline-cache.test.tsx` · 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx` · 001, 002, 005, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx` · 001, 003.
