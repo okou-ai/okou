@@ -612,22 +612,33 @@ class NativeChatListTest {
                 }
             }
             val personalChat = By.pkg(app.packageName).text("Personal chat")
+            fun awaitSwipePosition(matches: (Int) -> Boolean): Boolean =
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean =
+                            device.findObject(personalChat)?.visibleBounds?.right?.let(matches) ==
+                                true
+                    },
+                    10_000,
+                )
+
+            var previousRight = row.right
             fun captureSwipe(displacement: Int, name: String) {
                 val point = swipePoint(displacement, 0)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
                 val targetRight = row.right + point.x - start.x
+                val midpoint = (previousRight + targetRight) / 2
+                // Give input resampling a small final delta after the approach becomes visible.
+                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, Point(point.x + 1, point.y)))
+                assertTrue(
+                    "Chat row did not move toward the $displacement dp swipe",
+                    awaitSwipePosition { it < midpoint },
+                )
+                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
                 assertTrue(
                     "Chat row failed to follow the $displacement dp swipe",
-                    device.wait(
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean =
-                                device.findObject(personalChat)?.visibleBounds?.right?.let {
-                                    abs(it - targetRight) <= 2
-                                } == true
-                        },
-                        10_000,
-                    ),
+                    awaitSwipePosition { abs(it - targetRight) <= 2 },
                 )
+                previousRight = targetRight
                 takeScreenshot().writeToTestStorage(name)
             }
             assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
