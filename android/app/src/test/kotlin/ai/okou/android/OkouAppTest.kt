@@ -22,12 +22,14 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
@@ -73,6 +75,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.test.platform.app.InstrumentationRegistry
 import java.text.NumberFormat
 import java.util.Locale
 import kotlinx.coroutines.CompletableDeferred
@@ -322,6 +325,12 @@ class OkouAppTest {
                 )
                 .assertIsDisplayed()
         val actionBounds = retry.getUnclippedBoundsInRoot()
+        val searchBounds =
+            compose.onNodeWithTag("workspace_search_entry").getUnclippedBoundsInRoot()
+        val logoBounds =
+            compose.onNodeWithTag("workspace_search_leading").getUnclippedBoundsInRoot()
+        assertEquals(8f, (searchBounds.left - logoBounds.right).value, 0.5f)
+        assertEquals(8f, (actionBounds.left - searchBounds.right).value, 0.5f)
         val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         val percent = NumberFormat.getPercentInstance(Locale.GERMANY).format(0.5)
         listOf(
@@ -634,6 +643,48 @@ class OkouAppTest {
             assertTrue(
                 title.getUnclippedBoundsInRoot().top > entry.getUnclippedBoundsInRoot().top + 18.dp
             )
+        }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun workspaceToolEntryKeepsFocusWhenWidthOrFontScaleChangesItsLayout() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val width = mutableStateOf(320.dp)
+            val fontScale = mutableStateOf(1f)
+            val requestFocus = FocusRequester()
+            compose.setContent {
+                CompositionLocalProvider(
+                    LocalDensity provides Density(LocalDensity.current.density, fontScale.value)
+                ) {
+                    OkouTheme(dark = false) {
+                        Box(Modifier.width(width.value)) {
+                            WorkspaceToolEntries(openArtifacts = {}, artifactFocus = requestFocus)
+                        }
+                    }
+                }
+            }
+            val entry = compose.onNodeWithContentDescription("Artifacts")
+            val title = compose.onNodeWithText("Artifacts", useUnmergedTree = true)
+            fun titleOffset() =
+                title.getUnclippedBoundsInRoot().top - entry.getUnclippedBoundsInRoot().top
+
+            entry.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            assertTrue(titleOffset() < 18.dp)
+            compose.runOnIdle { width.value = 300.dp }
+            assertTrue(titleOffset() > 18.dp)
+            entry.assertIsFocused()
+            compose.runOnIdle { width.value = 320.dp }
+            assertTrue(titleOffset() < 18.dp)
+            entry.assertIsFocused()
+            compose.runOnIdle { fontScale.value = 2f }
+            assertTrue(titleOffset() > 18.dp)
+            entry.assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
         }
     }
 
