@@ -263,8 +263,10 @@ internal constructor(
     }
 
     internal fun toggle(rule: WorkflowAutomation) {
-        val confirmed = mutable.value.detail?.automations?.firstOrNull { it.id == rule.id }
-        if (confirmed?.enabled != rule.enabled) return
+        val state = mutable.value
+        val confirmed = state.detail?.automations?.firstOrNull { it.id == rule.id } ?: return
+        if (confirmed.enabled != rule.enabled) return
+        if (!confirmed.enabled && !confirmed.canEnable(state.connections)) return
         changeRule(rule.id) { service.setAutomationEnabled(rule.id, !rule.enabled) }
     }
 

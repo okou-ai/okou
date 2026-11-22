@@ -71,6 +71,7 @@
     <string name="workflow_private">Only me</string>
     <string name="workflow_purpose">Purpose</string>
     <string name="workflow_recent_runs">Recent automation runs</string>
+    <string name="workflow_resume_provider">Connect %1$s to resume this rule.</string>
     <string name="workflow_refresh_failed">Could not refresh. Showing last loaded data.</string>
     <string name="workflow_rule_paused">Paused</string>
     <string name="workflow_rule_stays_enabled">This rule stays enabled when saved.</string>
@@ -90,9 +91,9 @@
     <string name="workflow_timezone">Time zone</string>
     <string name="workflow_transcript">Google Meet transcript ready</string>
     <string name="workflow_trigger">Trigger</string>
+    <string name="workflow_trigger_rules">Trigger rules</string>
     <string name="workflow_unavailable">Workflow unavailable</string>
     <string name="workflow_use_in_chat">Use in chat</string>
-    <string name="workflow_utc">Coordinated Universal Time</string>
     <string name="workflow_view_connection">View connections</string>
     <string name="workflow_webhook">Webhook received</string>
     <string name="workflow_weekday_schedule">Weekdays at %1$s</string>

@@ -137,6 +137,9 @@ internal fun WorkflowAutomation.needsConnection(connected: Set<String>?): Boolea
             else -> false
         }
 
+internal fun WorkflowAutomation.canEnable(connected: Set<String>?): Boolean =
+    (source.connector == null || connected != null) && !needsConnection(connected)
+
 internal sealed interface WorkflowEdit {
     val changed: Boolean
 

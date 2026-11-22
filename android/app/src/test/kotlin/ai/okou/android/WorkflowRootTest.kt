@@ -3,10 +3,12 @@ package ai.okou.android
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
@@ -22,17 +24,21 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -128,6 +134,13 @@ class WorkflowRootTest {
         compose.onNodeWithText("Confirm the release owner.").assertIsDisplayed()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
+        compose.onNodeWithText("Trigger rules").assertIsDisplayed()
+        compose.onNodeWithText("Time zone · Shanghai (UTC+8)").assertIsDisplayed()
+        compose
+            .onNode(hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_weekday")))
+            .performClick()
+        compose.onNodeWithText("Shanghai (UTC+8)").assertIsDisplayed()
+        back()
         compose.onNodeWithText("Add automation").performClick()
         compose.onNodeWithText("Schedule").performClick()
         compose.onNodeWithText("Gmail message received").performClick()
@@ -139,6 +152,7 @@ class WorkflowRootTest {
         compose.onNodeWithText("Discard").performClick()
         compose.onNodeWithTag("workflow_toggle_weekday").performClick()
         waitFor("Enabled")
+        compose.onNodeWithText(" · Shanghai (UTC+8)", substring = true).assertIsDisplayed()
         assertTrue(app.fixture.active.get())
         compose.onNodeWithTag("workflow_use").performClick()
         waitForTag("message_input")
@@ -156,6 +170,74 @@ class WorkflowRootTest {
         compose.onNodeWithText("Enabled").assertIsDisplayed()
         back()
         compose.onNodeWithTag("workflow_query").assertTextContains("/release-review")
+    }
+
+    @Test
+    fun offlineDetailKeepsContentAndExplainsTheUnavailableActionInPlace() {
+        openWorkflowDetail()
+        val use = compose.onNodeWithTag("workflow_use").assertIsEnabled()
+
+        app.connectivity.value = false
+        val offline = "Offline · Showing last loaded data"
+        waitFor(offline)
+        compose.onNodeWithText("Workflow instructions").assertIsDisplayed()
+        val notice = compose.onNodeWithText(offline).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val action = use.assertIsNotEnabled().getUnclippedBoundsInRoot()
+        assertTrue(notice.bottom <= action.top)
+
+        app.connectivity.value = true
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(offline).fetchSemanticsNodes().isEmpty()
+        }
+        use.assertIsEnabled()
+    }
+
+    @Test
+    fun connectorRuleWaitsForConnectionAvailabilityBeforeEnabling() {
+        val releaseConnections = CountDownLatch(1)
+        app.fixture.beforeConnectionsRead = { releaseConnections.await() }
+        try {
+            openWorkflowDetail()
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            compose.onNodeWithTag("workflow_toggle_gmail").assertIsNotEnabled()
+            compose.onNodeWithText("View connections").assertDoesNotExist()
+        } finally {
+            releaseConnections.countDown()
+        }
+        waitFor("Paused · Needs connection")
+        compose.onNodeWithText("View connections").assertIsEnabled()
+    }
+
+    @Test
+    fun returningWithAConnectedAccountKeepsFocusOnTheSameRule() {
+        val scenario = compose.activityRule.scenario
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            scenario.recreate()
+            app.fixture.gmailEnabled.set(true)
+            openWorkflowDetail()
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            waitFor("Enabled · Needs connection")
+            compose.onNodeWithTag("workflow_toggle_gmail").assertIsEnabled()
+            compose
+                .onNodeWithText("View connections")
+                .performSemanticsAction(SemanticsActions.RequestFocus)
+                .assertIsFocused()
+                .performClick()
+
+            scenario.moveToState(Lifecycle.State.STARTED)
+            app.fixture.gmailConnected.set(true)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("View connections").fetchSemanticsNodes().isEmpty()
+            }
+            compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+            compose.onNodeWithTag("workflow_toggle_gmail").assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
     }
 
     @Test
@@ -197,13 +279,16 @@ class WorkflowRootTest {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
     fun wideChatClosesSearchBeforeReturningToTheWorkflowTab() {
         app.gate.countDown()
         compose.onNodeWithContentDescription("Workflows").performClick()
         waitFor("Release checklist")
         compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
         waitForTag("workflow_detail_title")
+        val use = compose.onNodeWithTag("workflow_use").getUnclippedBoundsInRoot()
+        val history = compose.onNodeWithTag("workflow_tab_history").getUnclippedBoundsInRoot()
+        assertEquals(history.right, use.right)
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         compose.onNodeWithTag("workflow_use").performClick()
         waitForTag("message_input")
@@ -216,6 +301,14 @@ class WorkflowRootTest {
 
         back()
         compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+    }
+
+    private fun openWorkflowDetail() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        waitFor("Release checklist")
+        compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
+        waitForTag("workflow_detail_title")
     }
 
     private fun selectScope(label: String) =

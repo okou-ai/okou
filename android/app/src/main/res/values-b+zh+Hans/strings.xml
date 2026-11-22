@@ -161,5 +161,6 @@
     <string name="settings_conversation">对话</string>
     <string name="settings_timezone">时区</string>
     <string name="settings_timezone_hint">用于新建定时任务的默认时区。</string>
-    <string name="settings_timezone_utc">协调世界时（UTC）</string>
+    <string name="settings_timezone_utc">协调世界时</string>
+    <string name="settings_timezone_format">%1$s（UTC%2$s）</string>
 </resources>

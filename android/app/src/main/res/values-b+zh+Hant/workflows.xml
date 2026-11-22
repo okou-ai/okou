@@ -71,6 +71,7 @@
     <string name="workflow_private">僅自己</string>
     <string name="workflow_purpose">用途</string>
     <string name="workflow_recent_runs">最近自動化執行</string>
+    <string name="workflow_resume_provider">連接 %1$s 後恢復觸發。</string>
     <string name="workflow_refresh_failed">無法重新整理，繼續顯示已載入內容。</string>
     <string name="workflow_rule_paused">已暫停</string>
     <string name="workflow_rule_stays_enabled">儲存後沿用目前的啟用狀態。</string>
@@ -90,9 +91,9 @@
     <string name="workflow_timezone">時區</string>
     <string name="workflow_transcript">Google Meet 轉錄已完成</string>
     <string name="workflow_trigger">觸發方式</string>
+    <string name="workflow_trigger_rules">觸發規則</string>
     <string name="workflow_unavailable">工作流無法使用</string>
     <string name="workflow_use_in_chat">在聊天中使用</string>
-    <string name="workflow_utc">世界協調時間</string>
     <string name="workflow_view_connection">查看連線</string>
     <string name="workflow_webhook">收到 Webhook</string>
     <string name="workflow_weekday_schedule">平日 %1$s</string>

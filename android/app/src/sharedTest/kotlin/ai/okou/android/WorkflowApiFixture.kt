@@ -19,7 +19,10 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     val service = chats.service
     val requests = CopyOnWriteArrayList<RecordedRequest>()
     val active = AtomicBoolean(false)
+    val gmailEnabled = AtomicBoolean(false)
+    val gmailConnected = AtomicBoolean(false)
     @Volatile var beforeCatalog: () -> Unit = {}
+    @Volatile var beforeConnectionsRead: () -> Unit = {}
     @Volatile var beforeDraftRead: () -> Unit = {}
     @Volatile var previousDraft = if (chinese) "保留原有草稿" else "Keep my existing draft"
     @Volatile
@@ -42,8 +45,14 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         requests += request
         val path = request.requestUrl?.encodedPath
         return when (path) {
-            "/api/connectors/connected" ->
-                jsonResponse("""{"builtinConnectors":[],"customConnectors":[]}""")
+            "/api/connectors/connected" -> {
+                beforeConnectionsRead()
+                val gmail =
+                    if (gmailConnected.get())
+                        """{"slug":"gmail","label":"Gmail","icon":{"url":"/gmail.svg","invertInDarkMode":false},"hasPermissions":true}"""
+                    else ""
+                jsonResponse("""{"builtinConnectors":[$gmail],"customConnectors":[]}""")
+            }
             "/api/workflows" -> {
                 assertNull(request.requestUrl?.query)
                 beforeCatalog()
@@ -143,7 +152,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     }
 
     private fun gmail() =
-        """{"id":"gmail","ownerUserId":"user-a","enabled":false,"chatThreadId":null,"nextRunAt":null,"lastRunAt":null,"official":null,"kind":"event","eventType":"gmail-new-message","eventConfig":{"provider":"gmail","event":"new_message","match":{"subject":{"contains":"${if (chinese) "发布" else "Release"}"}}},"schedule":null,"scheduleSummary":null}"""
+        """{"id":"gmail","ownerUserId":"user-a","enabled":${gmailEnabled.get()},"chatThreadId":null,"nextRunAt":null,"lastRunAt":null,"official":null,"kind":"event","eventType":"gmail-new-message","eventConfig":{"provider":"gmail","event":"new_message","match":{"subject":{"contains":"${if (chinese) "发布" else "Release"}"}}},"schedule":null,"scheduleSummary":null}"""
 
     override fun close() = chats.close()
 }

@@ -161,5 +161,6 @@
     <string name="settings_conversation">Conversa</string>
     <string name="settings_timezone">Fuso horário</string>
     <string name="settings_timezone_hint">Fuso horário padrão para novas tarefas agendadas.</string>
-    <string name="settings_timezone_utc">Tempo Universal Coordenado (UTC)</string>
+    <string name="settings_timezone_utc">Tempo Universal Coordenado</string>
+    <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

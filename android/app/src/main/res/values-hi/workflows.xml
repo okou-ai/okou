@@ -71,6 +71,7 @@
     <string name="workflow_private">सिर्फ़ मैं</string>
     <string name="workflow_purpose">उद्देश्य</string>
     <string name="workflow_recent_runs">हाल के ऑटोमेशन रन</string>
+    <string name="workflow_resume_provider">इस नियम को फिर से चलाने के लिए %1$s कनेक्ट करें।</string>
     <string name="workflow_refresh_failed">रीफ़्रेश नहीं हो सका। पिछला लोड किया गया डेटा दिख रहा है।</string>
     <string name="workflow_rule_paused">रुका हुआ</string>
     <string name="workflow_rule_stays_enabled">सहेजने के बाद भी यह नियम चालू रहेगा।</string>
@@ -90,9 +91,9 @@
     <string name="workflow_timezone">समय क्षेत्र</string>
     <string name="workflow_transcript">Google Meet ट्रांसक्रिप्ट तैयार है</string>
     <string name="workflow_trigger">ट्रिगर</string>
+    <string name="workflow_trigger_rules">ट्रिगर के नियम</string>
     <string name="workflow_unavailable">वर्कफ़्लो उपलब्ध नहीं है</string>
     <string name="workflow_use_in_chat">चैट में इस्तेमाल करें</string>
-    <string name="workflow_utc">समन्वित सार्वभौम समय</string>
     <string name="workflow_view_connection">कनेक्शन देखें</string>
     <string name="workflow_webhook">वेबहुक मिला</string>
     <string name="workflow_weekday_schedule">कामकाजी दिनों में %1$s बजे</string>

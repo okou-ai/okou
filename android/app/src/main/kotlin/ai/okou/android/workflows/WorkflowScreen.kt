@@ -619,12 +619,13 @@ private fun WorkflowDetailPane(
     onOpenChat: (String) -> Unit,
 ) {
     val padding = if (wide) 32.dp else 20.dp
-    Column(Modifier.fillMaxSize().testTag("workflow_detail")) {
+    val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
+    Column(
+        Modifier.fillMaxSize().testTag("workflow_detail"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         LazyColumn(
-            Modifier.weight(1f)
-                .widthIn(max = 730.dp)
-                .fillMaxWidth()
-                .align(Alignment.CenterHorizontally),
+            contentWidth.weight(1f),
             state = position,
             contentPadding =
                 PaddingValues(
@@ -654,7 +655,7 @@ private fun WorkflowDetailPane(
                 WorkflowTab.Automations -> {
                     item {
                         WorkflowSectionHeader(
-                            R.string.workflow_automations,
+                            R.string.workflow_trigger_rules,
                             if (detail.canManage) R.string.workflow_add_automation else null,
                             !state.offline && !state.writing && !handoffPending,
                             onNewRule,
@@ -698,17 +699,19 @@ private fun WorkflowDetailPane(
                 }
             }
         }
-        WorkflowReadFeedback(state.offline, state.detailFailure)
+        if (!state.offline) WorkflowReadFeedback(offline = false, failure = state.detailFailure)
         WorkflowDivider()
         val unavailable =
             detail.shadowedBy != null || handoffPending || state.writing || state.offline
         Column(
-            Modifier.fillMaxWidth()
-                .padding(start = padding, end = padding, top = 8.dp, bottom = 10.dp),
+            contentWidth.padding(start = padding, end = padding, top = 8.dp, bottom = 10.dp),
             horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,
         ) {
-            if (detail.shadowedBy != null) WorkflowNotice(R.string.workflow_shadowed)
-            else if (handoffFailed) WorkflowNotice(R.string.workflow_draft_unavailable)
+            when {
+                detail.shadowedBy != null -> WorkflowActionNotice(R.string.workflow_shadowed)
+                state.offline -> WorkflowActionNotice(R.string.workflow_offline_cache)
+                handoffFailed -> WorkflowActionNotice(R.string.workflow_draft_unavailable)
+            }
             WorkflowAction(
                 stringResource(R.string.workflow_use_in_chat),
                 onUse,
@@ -987,6 +990,16 @@ internal fun WorkflowNotice(label: Int) {
         Modifier.padding(vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = workflowSmallStyle(),
+    )
+}
+
+@Composable
+internal fun WorkflowActionNotice(label: Int) {
+    Text(
+        stringResource(label),
+        Modifier.padding(bottom = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
     )
 }
 

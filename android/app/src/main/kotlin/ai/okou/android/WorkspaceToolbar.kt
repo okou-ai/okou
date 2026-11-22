@@ -1,11 +1,13 @@
 package ai.okou.android
 
 import ai.okou.android.chat.ChatListFilter
+import ai.okou.android.chat.ChatListRowShape
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.label
 import ai.okou.android.chat.markAllReadTargets
 import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.updates.UpdateToolbarButton
+import ai.okou.android.updates.updateFocusOutline
 import android.os.Build
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -19,7 +21,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -121,13 +122,12 @@ internal fun WorkspaceSearchToolbar(
         Modifier.fillMaxWidth()
             .heightIn(min = TopAppBarDefaults.TopAppBarExpandedHeight)
             .padding(horizontal = inset, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         leading()
-        Spacer(Modifier.width(8.dp))
         field(Modifier.weight(1f))
         if (actions != null) {
-            Spacer(Modifier.width(4.dp))
             Row(
                 Modifier.widthIn(min = 100.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
@@ -281,9 +281,9 @@ private fun WorkspaceToolEntry(
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (onClick == null) 0.4f else 1f)
     val interaction =
         if (onClick != null) {
-            Modifier.clickable(role = Role.Button, onClick = onClick).clearAndSetSemantics {
-                contentDescription = title
-            }
+            Modifier.updateFocusOutline(ChatListRowShape, LocalActivityStatusColor.current)
+                .clickable(role = Role.Button, onClick = onClick)
+                .clearAndSetSemantics { contentDescription = title }
         } else {
             Modifier.clearAndSetSemantics {
                 contentDescription = title
@@ -291,37 +291,52 @@ private fun WorkspaceToolEntry(
                 disabled()
             }
         }
-    val entry =
-        modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .then(interaction)
-            .padding(horizontal = 4.dp, vertical = 4.dp)
-    val content: @Composable () -> Unit = {
+    val iconContent: @Composable () -> Unit = {
         Icon(painterResource(icon), null, Modifier.size(18.dp), tint = color)
+    }
+    val titleContent: @Composable (Modifier) -> Unit = { titleModifier ->
         Text(
             title,
+            modifier = titleModifier,
             color = color,
             textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style =
+                MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    letterSpacing = 0.sp,
+                ),
         )
     }
-    if (stacked) {
-        Column(
-            entry,
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
-        ) {
-            content()
-        }
-    } else {
-        FlowRow(
-            entry,
-            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically),
-            itemVerticalAlignment = Alignment.CenterVertically,
-        ) {
-            content()
+    Box(
+        modifier
+            .heightIn(min = 48.dp)
+            .clip(ChatListRowShape)
+            .then(interaction)
+            .padding(
+                horizontal = if (stacked) 0.dp else 6.dp,
+                vertical = if (stacked) 4.dp else 2.dp,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (stacked) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                iconContent()
+                titleContent(Modifier)
+            }
+        } else {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                iconContent()
+                titleContent(Modifier.weight(1f, fill = false))
+            }
         }
     }
 }

@@ -161,5 +161,6 @@
     <string name="settings_conversation">チャット</string>
     <string name="settings_timezone">タイムゾーン</string>
     <string name="settings_timezone_hint">新しいスケジュールタスクのデフォルトのタイムゾーン。</string>
-    <string name="settings_timezone_utc">協定世界時（UTC）</string>
+    <string name="settings_timezone_utc">協定世界時</string>
+    <string name="settings_timezone_format">%1$s（UTC%2$s）</string>
 </resources>

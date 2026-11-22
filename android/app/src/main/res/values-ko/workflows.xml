@@ -71,6 +71,7 @@
     <string name="workflow_private">나만</string>
     <string name="workflow_purpose">목적</string>
     <string name="workflow_recent_runs">최근 자동화 실행</string>
+    <string name="workflow_resume_provider">%1$s 연결 후 이 규칙이 다시 실행됩니다.</string>
     <string name="workflow_refresh_failed">새로 고치지 못했습니다. 마지막으로 불러온 데이터를 표시합니다.</string>
     <string name="workflow_rule_paused">일시 중지됨</string>
     <string name="workflow_rule_stays_enabled">저장해도 이 규칙은 활성 상태로 유지됩니다.</string>
@@ -90,9 +91,9 @@
     <string name="workflow_timezone">시간대</string>
     <string name="workflow_transcript">Google Meet 스크립트 준비됨</string>
     <string name="workflow_trigger">트리거</string>
+    <string name="workflow_trigger_rules">트리거 규칙</string>
     <string name="workflow_unavailable">워크플로를 사용할 수 없습니다</string>
     <string name="workflow_use_in_chat">채팅에서 사용</string>
-    <string name="workflow_utc">협정 세계시</string>
     <string name="workflow_view_connection">연결 보기</string>
     <string name="workflow_webhook">웹훅 수신</string>
     <string name="workflow_weekday_schedule">평일 %1$s</string>

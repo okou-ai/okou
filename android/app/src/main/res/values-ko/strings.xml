@@ -161,5 +161,6 @@
     <string name="settings_conversation">대화</string>
     <string name="settings_timezone">시간대</string>
     <string name="settings_timezone_hint">새 예약 작업에 사용할 기본 시간대입니다.</string>
-    <string name="settings_timezone_utc">협정 세계시(UTC)</string>
+    <string name="settings_timezone_utc">협정 세계시</string>
+    <string name="settings_timezone_format">%1$s(UTC%2$s)</string>
 </resources>

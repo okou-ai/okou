@@ -10,15 +10,14 @@ import ai.okou.android.api.generated.WorkflowAutomationVariant11
 import ai.okou.android.api.generated.WorkflowAutomationVariant12
 import ai.okou.android.api.generated.WorkflowAutomationVariant13
 import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1
-import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant2
 import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant3
 import ai.okou.android.api.generated.WorkflowAutomationVariant2
 import ai.okou.android.api.generated.WorkflowAutomationVariant3
 import ai.okou.android.api.generated.WorkflowAutomationVariant4
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.chat.chatTime
+import ai.okou.android.preferences.timezoneLabel
 import ai.okou.android.state.rememberJournalEditor
-import android.icu.text.TimeZoneNames
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +49,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,8 +57,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
@@ -77,7 +81,6 @@ import androidx.compose.ui.unit.sp
 import java.text.DateFormat
 import java.util.Date
 import java.util.TimeZone
-import kotlin.math.abs
 
 @Composable
 internal fun WorkflowRuleRow(
@@ -105,6 +108,7 @@ internal fun WorkflowRuleRow(
             else -> colors.onSurfaceVariant
         }
     val editable = remember(rule, timezone) { rule.editableRule(timezone) }
+    val titleMinWidth = with(LocalDensity.current) { 16.sp.toDp() * 10 }
     val uriHandler = LocalUriHandler.current
     var couldNotOpen by remember(rule.id) { mutableStateOf(false) }
     fun viewConnections() {
@@ -114,45 +118,65 @@ internal fun WorkflowRuleRow(
         Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("workflow_rule_${rule.id}"),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(
+        FlowRow(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Top,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 ruleTitle(rule),
-                Modifier.weight(1f).semantics { heading() },
+                Modifier.widthIn(min = titleMinWidth).weight(1f).semantics { heading() },
                 style = workflowBodyStyle(),
                 fontWeight = FontWeight.SemiBold,
             )
-            Box(Modifier.widthIn(max = 130.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
+            Box(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
                 WorkflowStatus(badge, badgeColor)
             }
         }
-        val description = ruleDescription(rule, timezone, connectionRequired)
-        if (description != null) WorkflowSecondary(description, small = true)
-        if (rule.enabled && rule.nextRunAt != null) {
-            WorkflowSecondary(
-                stringResource(
-                    R.string.workflow_next_run,
-                    workflowTimestamp(rule.nextRunAt.orEmpty(), ruleZone(rule, timezone)),
-                ),
-                small = true,
-            )
+        val scheduleZone = ruleScheduleZone(rule)
+        val nextRun =
+            rule.nextRunAt
+                ?.takeIf { rule.enabled }
+                ?.let {
+                    stringResource(
+                        R.string.workflow_next_run,
+                        workflowTimestamp(it, scheduleZone ?: timezone),
+                    )
+                }
+        if (scheduleZone != null) {
+            val label = timezoneLabel(scheduleZone)
+            val schedule =
+                if (nextRun == null) stringResource(R.string.workflow_rule_timezone, label)
+                else "$nextRun · $label"
+            WorkflowSecondary(schedule, small = true)
+        } else {
+            ruleDescription(rule, connectionRequired)?.let { WorkflowSecondary(it, small = true) }
+            if (nextRun != null) WorkflowSecondary(nextRun, small = true)
         }
         if (canManage && rule.official == null) {
+            val toggleFocus = remember { FocusRequester() }
+            var connectionFocused by remember { mutableStateOf(false) }
+            val showSeparateConnection = connectionRequired && rule.enabled
+            val restoreToggleFocus = !showSeparateConnection && connectionFocused
+            LaunchedEffect(showSeparateConnection) {
+                if (restoreToggleFocus) toggleFocus.requestFocus()
+            }
             FlowRow(
                 Modifier.padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (connectionRequired && rule.enabled)
+                if (showSeparateConnection)
                     WorkflowAction(
                         stringResource(R.string.workflow_view_connection),
                         ::viewConnections,
+                        Modifier.onFocusChanged { connectionFocused = it.isFocused },
                         enabled = actionsEnabled,
                     )
                 val needsRecovery = connectionRequired && !rule.enabled
+                val canToggle =
+                    !state.offline && (rule.enabled || rule.canEnable(state.connections))
                 WorkflowAction(
                     stringResource(
                         when {
@@ -164,10 +188,13 @@ internal fun WorkflowRuleRow(
                     {
                         if (needsRecovery) viewConnections() else if (!state.writing) onToggle(rule)
                     },
-                    enabled = actionsEnabled && (needsRecovery || !state.offline),
+                    enabled = actionsEnabled && (needsRecovery || canToggle),
                     modifier =
-                        if (needsRecovery) Modifier
-                        else Modifier.testTag("workflow_toggle_${rule.id}"),
+                        Modifier.focusRequester(toggleFocus)
+                            .then(
+                                if (needsRecovery) Modifier
+                                else Modifier.testTag("workflow_toggle_${rule.id}")
+                            ),
                 )
                 if (editable != null)
                     WorkflowAction(
@@ -203,21 +230,15 @@ private fun ruleTitle(rule: WorkflowAutomation): String =
     }
 
 @Composable
-private fun ruleDescription(
-    rule: WorkflowAutomation,
-    timezone: String,
-    connectionRequired: Boolean,
-): String? {
+private fun ruleDescription(rule: WorkflowAutomation, connectionRequired: Boolean): String? {
     if (connectionRequired)
-        return stringResource(R.string.workflow_connect_provider, stringResource(rule.source.label))
+        return stringResource(
+            if (rule.enabled) R.string.workflow_resume_provider
+            else R.string.workflow_connect_provider,
+            stringResource(rule.source.label),
+        )
     return when (rule) {
-        is WorkflowAutomationVariant1 ->
-            when (val schedule = rule.schedule) {
-                is WorkflowAutomationVariant1ScheduleVariant1,
-                is WorkflowAutomationVariant1ScheduleVariant3 ->
-                    stringResource(R.string.workflow_rule_timezone, ruleZone(rule, timezone))
-                is WorkflowAutomationVariant1ScheduleVariant2 -> null
-            }
+        is WorkflowAutomationVariant1 -> null
         is WorkflowAutomationVariant2 -> rule.eventConfig.outputPattern
         is WorkflowAutomationVariant3 ->
             rule.eventConfig.match?.from?.contains?.let {
@@ -231,11 +252,11 @@ private fun ruleDescription(
     }
 }
 
-private fun ruleZone(rule: WorkflowAutomation, fallback: String): String =
+private fun ruleScheduleZone(rule: WorkflowAutomation): String? =
     when (val schedule = (rule as? WorkflowAutomationVariant1)?.schedule) {
         is WorkflowAutomationVariant1ScheduleVariant1 -> schedule.timezone
         is WorkflowAutomationVariant1ScheduleVariant3 -> schedule.timezone
-        else -> fallback
+        else -> null
     }
 
 @Composable
@@ -366,7 +387,7 @@ internal fun WorkflowEditor(
             horizontalAlignment = Alignment.End,
         ) {
             when {
-                state.offline -> WorkflowNotice(R.string.workflow_offline_changes)
+                state.offline -> WorkflowActionNotice(R.string.workflow_offline_changes)
                 state.issue == WorkflowWriteIssue.UncertainCreate ->
                     WorkflowNotice(R.string.workflow_create_uncertain)
                 state.issue != null -> WorkflowNotice(R.string.workflow_write_failed)
@@ -639,26 +660,5 @@ private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -
                 }
             },
         )
-    }
-}
-
-@Composable
-private fun timezoneLabel(id: String): String {
-    val locale = LocalConfiguration.current.locales[0]
-    val utc = stringResource(R.string.workflow_utc)
-    return remember(id, locale, utc) {
-        val zone = TimeZone.getTimeZone(id)
-        if (zone.id == "GMT" && id != "GMT") return@remember id
-        val name =
-            if (id in setOf("UTC", "Etc/UTC", "GMT")) utc
-            else TimeZoneNames.getInstance(locale).getExemplarLocationName(id) ?: id
-        val minutes = zone.getOffset(System.currentTimeMillis()) / 60_000
-        val sign = if (minutes < 0) "-" else "+"
-        val hours = abs(minutes) / 60
-        val remainder = abs(minutes) % 60
-        val offset =
-            if (remainder == 0) "$sign$hours"
-            else "$sign$hours:${remainder.toString().padStart(2, '0')}"
-        "$name (UTC$offset)"
     }
 }

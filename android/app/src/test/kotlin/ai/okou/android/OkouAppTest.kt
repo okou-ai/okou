@@ -322,6 +322,12 @@ class OkouAppTest {
                 )
                 .assertIsDisplayed()
         val actionBounds = retry.getUnclippedBoundsInRoot()
+        val searchBounds =
+            compose.onNodeWithTag("workspace_search_entry").getUnclippedBoundsInRoot()
+        val logoBounds =
+            compose.onNodeWithTag("workspace_search_leading").getUnclippedBoundsInRoot()
+        assertEquals(8f, (searchBounds.left - logoBounds.right).value, 0.5f)
+        assertEquals(8f, (actionBounds.left - searchBounds.right).value, 0.5f)
         val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         val percent = NumberFormat.getPercentInstance(Locale.GERMANY).format(0.5)
         listOf(

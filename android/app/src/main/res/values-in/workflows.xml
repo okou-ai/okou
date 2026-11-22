@@ -71,6 +71,7 @@
     <string name="workflow_private">Hanya saya</string>
     <string name="workflow_purpose">Tujuan</string>
     <string name="workflow_recent_runs">Eksekusi otomatisasi terbaru</string>
+    <string name="workflow_resume_provider">Hubungkan %1$s untuk melanjutkan aturan ini.</string>
     <string name="workflow_refresh_failed">Pembaruan gagal. Menampilkan data terakhir.</string>
     <string name="workflow_rule_paused">Dijeda</string>
     <string name="workflow_rule_stays_enabled">Aturan tetap aktif saat disimpan.</string>
@@ -90,9 +91,9 @@
     <string name="workflow_timezone">Zona waktu</string>
     <string name="workflow_transcript">Transkrip Google Meet siap</string>
     <string name="workflow_trigger">Pemicu</string>
+    <string name="workflow_trigger_rules">Aturan pemicu</string>
     <string name="workflow_unavailable">Alur kerja tidak tersedia</string>
     <string name="workflow_use_in_chat">Gunakan di chat</string>
-    <string name="workflow_utc">Waktu Universal Terkoordinasi</string>
     <string name="workflow_view_connection">Lihat koneksi</string>
     <string name="workflow_webhook">Webhook diterima</string>
     <string name="workflow_weekday_schedule">Hari kerja pukul %1$s</string>

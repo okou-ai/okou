@@ -161,5 +161,6 @@
     <string name="settings_conversation">Unterhaltung</string>
     <string name="settings_timezone">Zeitzone</string>
     <string name="settings_timezone_hint">Standardzeitzone für neue geplante Aufgaben.</string>
-    <string name="settings_timezone_utc">Koordinierte Weltzeit (UTC)</string>
+    <string name="settings_timezone_utc">Koordinierte Weltzeit</string>
+    <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

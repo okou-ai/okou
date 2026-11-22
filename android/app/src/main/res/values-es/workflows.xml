@@ -71,6 +71,7 @@
     <string name="workflow_private">Solo yo</string>
     <string name="workflow_purpose">Propósito</string>
     <string name="workflow_recent_runs">Ejecuciones recientes</string>
+    <string name="workflow_resume_provider">Conecta %1$s para reanudar esta regla.</string>
     <string name="workflow_refresh_failed">No se pudo actualizar. Se muestran los últimos datos cargados.</string>
     <string name="workflow_rule_paused">En pausa</string>
     <string name="workflow_rule_stays_enabled">La regla sigue activa al guardarla.</string>
@@ -90,9 +91,9 @@
     <string name="workflow_timezone">Zona horaria</string>
     <string name="workflow_transcript">Transcripción de Google Meet lista</string>
     <string name="workflow_trigger">Desencadenante</string>
+    <string name="workflow_trigger_rules">Reglas de activación</string>
     <string name="workflow_unavailable">Flujo no disponible</string>
     <string name="workflow_use_in_chat">Usar en el chat</string>
-    <string name="workflow_utc">Tiempo universal coordinado</string>
     <string name="workflow_view_connection">Ver conexiones</string>
     <string name="workflow_webhook">Webhook recibido</string>
     <string name="workflow_weekday_schedule">Días laborables a las %1$s</string>

@@ -71,6 +71,7 @@
     <string name="workflow_private">自分のみ</string>
     <string name="workflow_purpose">目的</string>
     <string name="workflow_recent_runs">最近の自動化の実行</string>
+    <string name="workflow_resume_provider">%1$s を接続すると、このルールが再開されます。</string>
     <string name="workflow_refresh_failed">更新できませんでした。最後に読み込んだデータを表示しています。</string>
     <string name="workflow_rule_paused">一時停止中</string>
     <string name="workflow_rule_stays_enabled">保存してもこのルールは有効のままです。</string>
@@ -90,9 +91,9 @@
     <string name="workflow_timezone">タイムゾーン</string>
     <string name="workflow_transcript">Google Meet の文字起こしが完了</string>
     <string name="workflow_trigger">トリガー</string>
+    <string name="workflow_trigger_rules">トリガールール</string>
     <string name="workflow_unavailable">ワークフローを利用できません</string>
     <string name="workflow_use_in_chat">チャットで使う</string>
-    <string name="workflow_utc">協定世界時</string>
     <string name="workflow_view_connection">接続を表示</string>
     <string name="workflow_webhook">Webhook を受信</string>
     <string name="workflow_weekday_schedule">平日 %1$s</string>
