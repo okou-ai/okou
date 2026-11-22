@@ -1,11 +1,11 @@
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
-import { agentDrafts } from "../schema/agent-draft";
+import { composerDrafts } from "../schema/composer-draft";
 
-describe("agentDrafts schema", () => {
+describe("composerDrafts schema", () => {
   it("uses canonical physical storage identifiers", () => {
-    const config = getTableConfig(agentDrafts);
+    const config = getTableConfig(composerDrafts);
 
     expect({
       table: config.name,
@@ -39,7 +39,7 @@ describe("agentDrafts schema", () => {
 
   it("exposes canonical document draft storage", () => {
     const columns = new Map(
-      getTableConfig(agentDrafts).columns.map((column) => {
+      getTableConfig(composerDrafts).columns.map((column) => {
         return [column.name, column.notNull] as const;
       }),
     );

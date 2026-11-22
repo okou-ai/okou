@@ -249,7 +249,7 @@ export function createBddApi(context: TestContext) {
     async bootstrapLimitedFreeOnboarding(
       nextUser: ApiTestUser,
       options: OnboardingBootstrapOptions = {},
-    ): Promise<void> {
+    ) {
       await provisionWorkspace(nextUser);
       const headers = authenticate(nextUser);
 
@@ -263,7 +263,7 @@ export function createBddApi(context: TestContext) {
         );
       }
 
-      await accept(
+      return await accept(
         onboardingCompleteClient().complete({
           headers,
           body: {},

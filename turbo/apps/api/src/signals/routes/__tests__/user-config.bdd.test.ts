@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { expectApiError } from "./helpers/api-bdd";
@@ -28,7 +28,7 @@ credentials come from device authorization.
 */
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 const cfg = createUserConfigBddApi(context);
 
 afterEach(() => {

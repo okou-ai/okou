@@ -8,7 +8,7 @@ import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { runnerCancellationRoutes } from "../runner-cancellation";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
@@ -81,7 +81,7 @@ async function directFixture(runCounts: readonly number[]) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const webhooks = createWebhookCallbackApi(context);
-  const workspaces = createAuthOrgAgentsBddApi(context);
+  const workspaces = createAuthOrgBddApi(context);
   const actors = runCounts.map(() => {
     return bdd.user();
   });

@@ -2,7 +2,7 @@ import { command, computed } from "ccstate";
 import { chatThreadPinOrderContract } from "@okouai/api-contracts/client/chat-threads";
 import { moveChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
 import { apiClient$ } from "../api-client.ts";
-import { currentChatThreadList$ } from "../agent-chat.ts";
+import { currentChatThreadList$ } from "../chat-thread-list.ts";
 import { accept } from "../../lib/accept.ts";
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";

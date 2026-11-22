@@ -1511,7 +1511,7 @@
       "description": "Diese Aktion gehört nicht zu diesem Chat oder ist nicht mehr gültig.",
       "title": "Aktion nicht verfügbar"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "Eingecheckt",
         "checkin": {

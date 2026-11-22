@@ -1,6 +1,6 @@
 import { computed } from "ccstate";
 
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import { searchParams$ } from "../route.ts";
 
 /** The chat the route asks the secondary pane to show, if any. */

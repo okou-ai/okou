@@ -11,8 +11,8 @@ import {
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import {
   composerDraftContract,
-  type AgentDraftRequest,
-} from "@okouai/api-contracts/contracts/agent-draft";
+  type ComposerDraftRequest,
+} from "@okouai/api-contracts/contracts/composer-draft";
 import {
   expectInlineTemplate,
   openTemplatePicker,
@@ -143,7 +143,7 @@ test("Select a presentation theme from its preview", async () => {
 
 function mockSavedThemeDraft(colorSystemId: string) {
   const template = builtInTemplate();
-  const drafts: AgentDraftRequest[] = [];
+  const drafts: ComposerDraftRequest[] = [];
   context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {

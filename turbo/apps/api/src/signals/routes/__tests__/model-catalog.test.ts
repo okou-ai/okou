@@ -15,7 +15,7 @@ import { mcpServerRoutes } from "../mcp-server";
 import { modelCatalogRoutes } from "../model-catalog";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createRouteMocks } from "./helpers/route-test";
@@ -23,7 +23,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const {
   api,
   chat,

@@ -1,3 +1,4 @@
+import { buildWelcomeMessage } from "../../lib/slack-connect-blocks";
 import { rootSignal$ } from "../context/root";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -25,7 +26,6 @@ import {
   buildLoginMessage,
   buildLoginPromptMessage,
   buildSuccessMessage,
-  buildWelcomeMessage,
 } from "../../lib/slack-webhook-blocks";
 import type { SlackFile } from "../../lib/slack-webhook-context";
 import { nowDate } from "../../lib/time";
@@ -734,7 +734,6 @@ const refreshOrgAppHome$ = command(
         isLinked: true,
         userId: connection.userId,
         userEmail: metadata?.email ?? undefined,
-        agentName: BRAND_PRESENTATION.assistantName,
       }),
     );
   },
@@ -834,7 +833,7 @@ export const handleSlackCommands$ = command(
         const { assistantName } = BRAND_PRESENTATION;
         return ephemeral(
           buildSuccessMessage(
-            `You are already connected to ${assistantName}.\nMention ${officialSlackBotMention(installation.botUserId)} in any channel or send a DM to start chatting with your agent.`,
+            `You are already connected to ${assistantName}.\nMention ${officialSlackBotMention(installation.botUserId)} in any channel or send a DM to chat with ${assistantName}.`,
           ),
         );
       }
@@ -1002,12 +1001,9 @@ const handleMessagesTabOpened$ = command(
     }
     const sent = await client.postMessage(
       args.channelId,
-      `Hi! I'm ${officialSlackBotMention(installation.botUserId)}. I can connect you to AI agents to help with your tasks.`,
+      `Hi! I'm ${officialSlackBotMention(installation.botUserId)}. Send me a message or mention me in a channel to get started.`,
       {
-        blocks: buildWelcomeMessage(
-          installation.botUserId,
-          BRAND_PRESENTATION.assistantName,
-        ),
+        blocks: buildWelcomeMessage(installation.botUserId),
       },
     );
     // A provider rejection is safe to retry; an unknown outcome retains the claim.

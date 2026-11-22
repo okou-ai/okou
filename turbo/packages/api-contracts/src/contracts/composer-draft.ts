@@ -7,13 +7,13 @@ import {
 } from "./chat-threads";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { apiErrorSchema } from "./errors";
-import { agentDraftResponseSchema } from "../validators/agent-draft";
+import { composerDraftResponseSchema } from "../validators/composer-draft";
 
-export { agentDraftResponseSchema } from "../validators/agent-draft";
+export { composerDraftResponseSchema } from "../validators/composer-draft";
 
 const c = initContract();
 
-export const agentDraftRequestSchema = object({
+export const composerDraftRequestSchema = object({
   draftUserMessage: userMessageInputDocumentSchema.nullable(),
   draftAttachments: array(persistedAttachmentSchema).nullable().optional(),
 }).superRefine(requireUserMessageForDraftAttachments);
@@ -24,7 +24,7 @@ export const composerDraftContract = c.router({
     path: "/api/chat-drafts/composer",
     headers: authHeadersSchema,
     responses: {
-      200: agentDraftResponseSchema,
+      200: composerDraftResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -36,7 +36,7 @@ export const composerDraftContract = c.router({
     method: "PATCH",
     path: "/api/chat-drafts/composer",
     headers: authHeadersSchema,
-    body: agentDraftRequestSchema,
+    body: composerDraftRequestSchema,
     responses: {
       204: c.noBody(),
       400: apiErrorSchema,
@@ -48,5 +48,5 @@ export const composerDraftContract = c.router({
   },
 });
 
-export type AgentDraftResponse = zInfer<typeof agentDraftResponseSchema>;
-export type AgentDraftRequest = zInfer<typeof agentDraftRequestSchema>;
+export type ComposerDraftResponse = zInfer<typeof composerDraftResponseSchema>;
+export type ComposerDraftRequest = zInfer<typeof composerDraftRequestSchema>;

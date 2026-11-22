@@ -7,7 +7,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { expectApiError } from "./helpers/api-bdd";
@@ -27,12 +27,10 @@ helper gap:
   domain helpers; this file covers user-owned secrets, variables, preferences,
   and org custom connector safe metadata.
 - ORG-01 logo upload/delete needs a multipart org-logo helper.
-- AGENT-02 has no default-agent GET route; assertions use onboarding status as
-  the visible read model for the selected default agent.
 */
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 const runsApi = createRunsApi(context);
 const connectors = createConnectorBddApi(context);
 
@@ -47,8 +45,6 @@ function slug(prefix: string): string {
 async function onboardAdmin(
   admin: ApiTestUser,
   options: {
-    readonly displayName?: string;
-    readonly workspaceName?: string;
     readonly slug?: string;
     readonly name?: string;
   } = {},
@@ -57,7 +53,7 @@ async function onboardAdmin(
   if (options.slug !== undefined) {
     orgState.slug = options.slug;
   }
-  const orgName = options.name ?? options.workspaceName;
+  const orgName = options.name;
   if (orgName !== undefined) {
     orgState.name = orgName;
   }
@@ -115,8 +111,6 @@ describe("AUTH-01 and ORG-03", () => {
     expect(missingOrg.body.error.code).toBe("NOT_FOUND");
 
     await onboardAdmin(admin, {
-      displayName: "BDD Default Agent",
-      workspaceName: "BDD Chain Org",
       slug: orgSlug,
       name: "BDD Chain Org",
     });

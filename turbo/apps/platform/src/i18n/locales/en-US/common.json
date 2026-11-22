@@ -1511,7 +1511,7 @@
       "description": "This action does not belong to this chat or is no longer valid.",
       "title": "Action unavailable"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "Checked in",
         "checkin": {

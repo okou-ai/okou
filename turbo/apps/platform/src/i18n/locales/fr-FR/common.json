@@ -1536,7 +1536,7 @@
       "description": "Cette action n’appartient pas à cette discussion ou n’est plus valide.",
       "title": "Action indisponible"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "Présence validée",
         "checkin": {

@@ -35,7 +35,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { integrationsTeamsDownloadFileRoutes } from "../integrations-teams-download-file";
 import { teamsBotRoutes } from "../teams-bot";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -68,7 +68,7 @@ import { teamsConnectRoutes } from "../teams-connect";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const runsApi = createRunsApi(context);
 const runReadsApi = createRunReadsApi(context);
 const userConfigApi = createUserConfigBddApi(context);

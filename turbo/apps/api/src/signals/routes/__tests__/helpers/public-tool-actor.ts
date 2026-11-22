@@ -16,7 +16,7 @@ import { env, mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { billingCreditCheckoutRoutes } from "../../billing-credit-checkout";
-import { createBddApi, type ApiTestUser } from "./api-bdd";
+import type { ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { createRouteMocks } from "./route-test";

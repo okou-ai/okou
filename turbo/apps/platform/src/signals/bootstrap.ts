@@ -60,7 +60,7 @@ import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
-import { setupHomeChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
+import { setupHomeChatPage$ } from "./okou-page/home-chat-page-setup.ts";
 import { setupProjectPage$ } from "./projects/project-page-setup.ts";
 import {
   hydrateProjects$,

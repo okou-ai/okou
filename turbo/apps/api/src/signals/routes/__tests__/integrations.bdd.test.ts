@@ -3102,7 +3102,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("resumes the main Slack DM session with the org default agent", async () => {
+    it("resumes the member’s Slack DM session", async () => {
       const { teamId, slackUserId, firstMessageTs, channelId, runnerGroup } =
         preparedScenario;
       await integrations.postSlackEvent(teamId, {
@@ -4760,7 +4760,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     const home = JSON.stringify(context.mocks.slack.views.publish.mock.calls);
     expect(home).toContain("/okou help");
-    expect(home).toContain("workspace's default agent");
+    expect(home).toContain("chat with Okou");
     expect(home).toContain("/okou connect");
     expect(home).toContain("/okou disconnect");
 

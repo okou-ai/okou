@@ -103,7 +103,7 @@ import { useTitleReveal } from "./use-title-reveal.ts";
 import {
   currentChatThreadId$,
   hasCurrentChatThread$,
-} from "../../signals/agent-chat.ts";
+} from "../../signals/chat-thread-list.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";

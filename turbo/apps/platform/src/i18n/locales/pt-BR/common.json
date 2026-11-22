@@ -1536,7 +1536,7 @@
       "description": "Esta ação não pertence a este chat ou não é mais válida.",
       "title": "Ação indisponível"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "Check-in feito",
         "checkin": {

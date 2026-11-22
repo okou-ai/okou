@@ -5,13 +5,13 @@ import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
 function organization(actor: ApiTestUser, name: string) {

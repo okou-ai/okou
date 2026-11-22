@@ -388,9 +388,9 @@ describe("thin MCP Web adapters", () => {
       f.actor.orgId,
       f.actor.orgRole,
     );
-    const expired = await mcp.web(f.token({ exp: 1 }), "/api/billing");
+    const expired = await mcp.web(f.token({ exp: 1 }), "/api/run-models");
     expect(expired.status).toBe(401);
-    const unsupported = await mcp.web(f.token(), "/api/billing");
+    const unsupported = await mcp.web(f.token(), "/api/billing/status");
     expect(unsupported.status).toBe(401);
   });
 
@@ -406,7 +406,7 @@ describe("thin MCP Web adapters", () => {
         );
       }),
     );
-    const unavailable = await mcp.web(f.token(), "/api/billing");
+    const unavailable = await mcp.web(f.token(), "/api/run-models");
     expect(unavailable.status).toBe(503);
     expect(unavailable.body).toMatchObject({
       error: { code: "PROVIDER_UNAVAILABLE" },

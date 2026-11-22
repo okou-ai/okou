@@ -22,7 +22,7 @@ import { createPublicComputerUseHosts } from "./public-computer-use-hosts";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { captureSessionStorageMocks } from "./prepared-session-history";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
-import { createAuthOrgAgentsBddApi } from "./api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./api-bdd-auth-org";
 
 /** Own this case's normal Desktop requests and the real Runs issuing its tokens. */
 export function createPublicComputerUseScenario(
@@ -314,7 +314,7 @@ export function createPublicComputerUseScenario(
     },
     async createCliToken(actor: ApiTestUser) {
       return await run(async () => {
-        const result = await createAuthOrgAgentsBddApi(context).createCliToken(
+        const result = await createAuthOrgBddApi(context).createCliToken(
           remember(actor),
           run,
         );

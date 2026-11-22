@@ -1507,7 +1507,7 @@
       "description": "Tindakan ini bukan milik chat ini atau sudah tidak valid.",
       "title": "Tindakan tidak tersedia"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "Sudah check in",
         "checkin": {

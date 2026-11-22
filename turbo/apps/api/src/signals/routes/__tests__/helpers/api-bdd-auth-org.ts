@@ -361,7 +361,7 @@ function defaultOrgMember(actor: ApiTestUser): BddOrgMember {
   return actor.orgRole ? { actor, role: actor.orgRole } : { actor };
 }
 
-export function createAuthOrgAgentsBddApi(context: TestContext) {
+export function createAuthOrgBddApi(context: TestContext) {
   const routeMocks = createRouteMocks(context);
 
   function testApp() {
@@ -762,8 +762,10 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       actor: ApiTestUser,
       body: OnboardingBootstrapOptions = {},
     ) {
-      await createBddApi(context).bootstrapLimitedFreeOnboarding(actor, body);
-      return { status: 200 as const };
+      return await createBddApi(context).bootstrapLimitedFreeOnboarding(
+        actor,
+        body,
+      );
     },
 
     async completeOnboarding(actor: ApiTestUser) {

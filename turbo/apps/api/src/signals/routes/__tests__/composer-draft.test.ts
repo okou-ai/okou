@@ -6,7 +6,7 @@ import {
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import type { infer as zInfer } from "zod";
 import type { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { describe, expect, it } from "vitest";

@@ -17,7 +17,7 @@ import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddApi } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -1559,7 +1559,7 @@ describe("private Runner VNC authority", () => {
       expect(checked.status).toBe(401);
       expect(checked.headers.get("cache-control")).toBe("no-store");
     }
-    const auth = createAuthOrgAgentsBddApi(context);
+    const auth = createAuthOrgBddApi(context);
     const actor = auth.user();
     auth.mockClerkOrg(actor);
     const pat = await auth.createCliToken(actor);

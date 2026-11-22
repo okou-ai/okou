@@ -708,11 +708,11 @@ export {
   type SkillImportSkillsContract,
 } from "./skill-import";
 export {
-  agentDraftResponseSchema,
-  agentDraftRequestSchema,
-  type AgentDraftResponse,
-  type AgentDraftRequest,
-} from "./agent-draft";
+  composerDraftResponseSchema,
+  composerDraftRequestSchema,
+  type ComposerDraftResponse,
+  type ComposerDraftRequest,
+} from "./composer-draft";
 export {
   workflowVisibilitySchema,
   workflowNameSchema,

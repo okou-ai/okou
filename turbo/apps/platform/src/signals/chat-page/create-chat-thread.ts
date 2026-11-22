@@ -200,7 +200,7 @@ import {
   createChatThreadFeedbackSignals,
   type ChatForwardComposerFactory,
 } from "./chat-thread-feedback.ts";
-import { createForwardChatComposerSignals } from "../okou-page/agent-composer-signals.ts";
+import { createForwardChatComposerSignals } from "../okou-page/workspace-composer-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
 import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
 import {

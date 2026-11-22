@@ -3,17 +3,6 @@
 
 export const clientContractImportManifest = [
   {
-    module: "agent-draft",
-    contracts: ["composerDraftContract"],
-    bindings: [
-      {
-        name: "agentDraftResponseSchema",
-        source: "validators/chat-threads",
-        imported: "composerDraftSchema",
-      },
-    ],
-  },
-  {
     module: "android-updates",
     contracts: ["androidUpdatesContract"],
     bindings: [],
@@ -479,6 +468,17 @@ export const clientContractImportManifest = [
     module: "codex-device-auth",
     contracts: ["codexDeviceAuthContract"],
     bindings: [],
+  },
+  {
+    module: "composer-draft",
+    contracts: ["composerDraftContract"],
+    bindings: [
+      {
+        name: "composerDraftResponseSchema",
+        source: "validators/chat-threads",
+        imported: "composerDraftSchema",
+      },
+    ],
   },
   {
     module: "computer-use",

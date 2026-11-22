@@ -9,7 +9,7 @@ import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -33,7 +33,7 @@ the cleanup must not change the other owners' still-armed automations.
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const org = createAuthOrgAgentsBddApi(context);
+const org = createAuthOrgBddApi(context);
 const wf = createWorkflowsBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);

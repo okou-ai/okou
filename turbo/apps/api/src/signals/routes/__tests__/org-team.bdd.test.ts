@@ -6,7 +6,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -31,7 +31,7 @@ ORG-01/02/03, TEAM, and AGENT-02 integration chains:
 */
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 
 class ClerkApiResponseTestError extends Error {
   static readonly kind = "ClerkAPIResponseError";
@@ -62,7 +62,6 @@ function orgIdOf(actor: ApiTestUser): string {
 async function onboardAdmin(
   admin: ApiTestUser,
   options: {
-    readonly displayName?: string;
     readonly slug?: string;
     readonly name?: string;
   } = {},

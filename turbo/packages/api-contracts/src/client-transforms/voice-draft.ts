@@ -1,4 +1,4 @@
-import { composerDraftContract } from "../contracts/agent-draft";
+import { composerDraftContract } from "../contracts/composer-draft";
 import {
   chatThreadDraftContract,
   type UserMessageInputPart,

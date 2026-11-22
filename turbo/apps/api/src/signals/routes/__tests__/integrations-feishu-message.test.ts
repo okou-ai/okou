@@ -34,7 +34,7 @@ import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -52,7 +52,7 @@ const TEST_APP_ROUTES = Object.freeze([
 const context = testContext();
 const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
 

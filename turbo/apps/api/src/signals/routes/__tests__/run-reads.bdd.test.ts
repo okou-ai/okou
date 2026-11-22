@@ -899,30 +899,6 @@ describe("RUN-01: run admission boundaries", () => {
     await api.requestCancelRun(actor, third.runId, [200]);
   });
 
-  it("ignores a legacy foreign agent ID when admitting a member run", async () => {
-    const actor = await entitledActor();
-    await prepareChatModel(actor);
-    const first = await api.createThreadRun(actor, {
-      prompt: "first concurrent run",
-    });
-    const second = await api.createThreadRun(actor, {
-      prompt: "second concurrent run",
-    });
-    const outsider = bdd.user();
-    await prepareChatModel(outsider);
-    const crossOrgCompose = await chat.requestSendEvent(
-      actor,
-      {
-        prompt: "run in another workspace",
-        model: "claude-fable-5-1",
-      },
-      [201],
-    );
-    expect(crossOrgCompose.status).toBe(201);
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await api.requestCancelRun(actor, second.runId, [200]);
-  });
-
   it("restricts production network-body capture to staff organizations", async () => {
     const actor = await entitledActor();
     await prepareChatModel(actor);

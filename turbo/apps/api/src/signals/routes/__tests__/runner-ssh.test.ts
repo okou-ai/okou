@@ -21,7 +21,7 @@ import { runnerSshRoutes } from "../runner-ssh";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -1276,7 +1276,7 @@ describe("official Runner SSH authority", () => {
       });
       expect(r.status).toBe(401);
     }
-    const authApi = createAuthOrgAgentsBddApi(context);
+    const authApi = createAuthOrgBddApi(context);
     const actor = authApi.user();
     authApi.mockClerkOrg(actor);
     const pat = await authApi.createCliToken(actor);

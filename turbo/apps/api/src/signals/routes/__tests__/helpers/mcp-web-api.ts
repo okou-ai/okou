@@ -1,3 +1,4 @@
+import { billingStatusRoutes } from "../../billing-status";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { http, HttpResponse } from "msw";
@@ -158,6 +159,7 @@ export function createMcpWebApi(context: TestContext) {
     routes: [
       ...projectRoutes,
       ...runModelsRoutes,
+      ...billingStatusRoutes,
       ...chatThreadRoutes,
       ...chatEventsRoutes,
       ...runsCancelRoutes,

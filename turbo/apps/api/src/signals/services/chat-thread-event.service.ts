@@ -36,7 +36,6 @@ interface ChatThreadEventAppend {
   readonly userId: string;
   readonly orgId?: string | null;
   readonly chatThreadId: string;
-  readonly agentId?: string;
   readonly eventId?: string;
   readonly title?: string | null;
   readonly pinOrder?: string | null;
@@ -86,15 +85,13 @@ function initialThreadEventPlan(
 
 /** Pure writes for a creation owner that publishes other rows in the same statement. */
 export function chatThreadEventInsertPlan(
-  args: Omit<ChatThreadEventAppend, "agentId" | "chatThreadId"> & {
+  args: Omit<ChatThreadEventAppend, "chatThreadId"> & {
     /** Publish a creation and its archive in the same ordered event batch. */
     readonly initiallyArchived?: boolean;
-    readonly agentId?: string;
     readonly chatThreadId: string | SQL;
   },
   source?: {
     readonly gate: SQL;
-    readonly agentId?: SQL;
     readonly reservationSource?: SQL;
   },
 ) {
@@ -149,7 +146,6 @@ export function chatThreadEventInsertSql(
   source?: {
     readonly cte: SQL;
     readonly gate: SQL;
-    readonly agentId?: SQL;
     readonly result?: SQL;
   },
 ) {

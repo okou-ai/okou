@@ -3,10 +3,6 @@
 
 export const clientDescriptorManifest = [
   {
-    module: "agent-draft",
-    contracts: ["composerDraftContract"],
-  },
-  {
     module: "android-updates",
     contracts: ["androidUpdatesContract"],
   },
@@ -161,6 +157,10 @@ export const clientDescriptorManifest = [
   {
     module: "codex-device-auth",
     contracts: ["codexDeviceAuthContract"],
+  },
+  {
+    module: "composer-draft",
+    contracts: ["composerDraftContract"],
   },
   {
     module: "computer-use",

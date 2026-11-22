@@ -1507,7 +1507,7 @@
       "description": "이 작업은 이 채팅에 속하지 않거나 더 이상 유효하지 않습니다.",
       "title": "작업을 사용할 수 없음"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "출석 완료",
         "checkin": {

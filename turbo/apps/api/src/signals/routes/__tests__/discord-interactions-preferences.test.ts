@@ -32,7 +32,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { discordInteractionsRoutes } from "../discord-interactions";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import {
   removePublicDiscordBinding,
   mockDiscordApplication,
@@ -43,7 +43,7 @@ import {
 import { DISCORD_TEST_APPLICATION_ID } from "./helpers/discord-fixture";
 
 const context = testContext();
-const accountApi = createAuthOrgAgentsBddApi(context);
+const accountApi = createAuthOrgBddApi(context);
 const keys = generateKeyPairSync("ed25519");
 const publicKey = keys.publicKey
   .export({ format: "der", type: "spki" })

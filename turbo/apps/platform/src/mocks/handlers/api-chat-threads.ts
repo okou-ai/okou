@@ -1,4 +1,4 @@
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {

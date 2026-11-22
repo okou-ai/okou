@@ -6,7 +6,7 @@ import {
   chatThreadByIdContract,
   chatThreadDraftContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";

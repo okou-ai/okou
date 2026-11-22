@@ -5,7 +5,7 @@ import { now } from "../../../../lib/time";
 import { settleIncludingAbort } from "../../../utils";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createAuthDeviceSupportApi } from "./api-bdd-auth-device-support";
-import { createAuthOrgAgentsBddApi } from "./api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./api-bdd-auth-org";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import { captureConnectorExternalState } from "./public-connector-actor";
@@ -141,7 +141,7 @@ export function createRunExecutionCredentials(context: TestContext) {
         throw new Error("Launch a Run before revoking its member");
       }
       // Release this actor's accepted work while its credentials still exist.
-      const auth = createAuthOrgAgentsBddApi(context);
+      const auth = createAuthOrgBddApi(context);
       const actor = auth.user(identity);
       const admin =
         survivingAdmin ??

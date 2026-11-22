@@ -67,7 +67,7 @@ import { feishuBrowserConnectRoutes } from "../feishu-browser-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import {
@@ -113,7 +113,7 @@ const customConnectorByIdTestRoutes = Object.freeze([
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const runsApi = createRunsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);

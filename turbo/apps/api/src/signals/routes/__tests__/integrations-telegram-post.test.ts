@@ -43,7 +43,7 @@ import {
   settleIncludingAbort,
 } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
@@ -64,7 +64,7 @@ const TELEGRAM_COMPLETION_CHUNK_THROTTLE_MS = 1100;
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
 const context = testContext();
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
@@ -256,7 +256,7 @@ async function linkOfficialTelegramUser(
 
 /**
  * Builds a Telegram poster through production APIs: onboarding creates the
- * org, member and default agent; an optional signed official-bot link binds a
+ * org and member; an optional signed official-bot link binds a
  * unique Telegram user to that member.
  */
 async function createTelegramPostFixture(
@@ -1197,7 +1197,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     const owned = createTelegramDmOwner(actor);
     const foreground = owned.context;
-    const authOrg = createAuthOrgAgentsBddApi(foreground);
+    const authOrg = createAuthOrgBddApi(foreground);
     const runs = createRunsApi(foreground);
     const prepared = owned.run(async () => {
       await authOrg.completeOnboarding(actor);
@@ -1263,7 +1263,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     const ownedRuns = createTelegramDmOwner(actor);
     const foreground = ownedRuns.context;
-    const authOrg = createAuthOrgAgentsBddApi(foreground);
+    const authOrg = createAuthOrgBddApi(foreground);
     const runs = createRunsApi(foreground);
     const reads = createRunReadsApi(foreground);
     const chat = createChatFilesBddApi(foreground);

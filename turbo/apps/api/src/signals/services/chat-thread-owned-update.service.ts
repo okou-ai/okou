@@ -8,7 +8,7 @@ import { chatThreadOrganizationCondition } from "./chat-thread-organization.serv
 
 type ChatThreadEventFields = Omit<
   Parameters<typeof chatThreadEventInsertSql>[0],
-  "userId" | "orgId" | "chatThreadId" | "agentId"
+  "userId" | "orgId" | "chatThreadId"
 >;
 
 /** A repeated owned UPDATE still appends the client's event so it can settle. */

@@ -23,7 +23,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -52,7 +52,7 @@ import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 const context = testContext();
 const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const runsApi = createRunsApi(context);
 const runReadsApi = createRunReadsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);

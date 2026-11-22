@@ -4,8 +4,8 @@ import {
   androidVoiceDraftTransforms,
 } from "@okouai/api-contracts/client-transforms/voice-draft";
 import { command, computed } from "ccstate";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
-import { agentDrafts } from "@okouai/db/schema/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
+import { composerDrafts } from "@okouai/db/schema/composer-draft";
 import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -21,14 +21,14 @@ const getComposerDraft$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const [draft] = await get(db$)
     .select({
-      draftUserMessage: agentDrafts.draftUserMessage,
-      draftAttachments: agentDrafts.draftAttachments,
+      draftUserMessage: composerDrafts.draftUserMessage,
+      draftAttachments: composerDrafts.draftAttachments,
     })
-    .from(agentDrafts)
+    .from(composerDrafts)
     .where(
       and(
-        eq(agentDrafts.userId, auth.userId),
-        eq(agentDrafts.orgId, auth.orgId),
+        eq(composerDrafts.userId, auth.userId),
+        eq(composerDrafts.orgId, auth.orgId),
       ),
     )
     .limit(1);
@@ -69,14 +69,14 @@ const patchComposerDraft$ = command(
     };
     await (async () => {
       const keyPredicate = and(
-        eq(agentDrafts.userId, draft.userId),
-        eq(agentDrafts.orgId, draft.orgId),
+        eq(composerDrafts.userId, draft.userId),
+        eq(composerDrafts.orgId, draft.orgId),
       );
       if (
         !draft.draftUserMessage &&
         !(draft.draftAttachments && draft.draftAttachments.length > 0)
       ) {
-        await writeDb.delete(agentDrafts).where(keyPredicate);
+        await writeDb.delete(composerDrafts).where(keyPredicate);
         return;
       }
 
@@ -87,10 +87,10 @@ const patchComposerDraft$ = command(
       };
 
       await writeDb
-        .insert(agentDrafts)
+        .insert(composerDrafts)
         .values(draft)
         .onConflictDoUpdate({
-          target: [agentDrafts.userId, agentDrafts.orgId],
+          target: [composerDrafts.userId, composerDrafts.orgId],
           set: update,
         });
     })();

@@ -1,5 +1,5 @@
 import { array } from "zod";
-import { composerDraftContract } from "../contracts/agent-draft";
+import { composerDraftContract } from "../contracts/composer-draft";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import {

@@ -1507,7 +1507,7 @@
       "description": "このアクションはこのチャットのものではないか、無効になっています。",
       "title": "アクションを利用できません"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "チェックイン済み",
         "checkin": {

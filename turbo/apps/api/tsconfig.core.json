@@ -425,7 +425,7 @@
     "src/signals/external/teams-bot-client.ts",
     "src/signals/external/telegram-client.ts",
     "src/signals/external/telegram-official.ts",
-    "src/signals/services/single-agent-scope-prompt.ts",
+    "src/signals/services/personal-scope-prompt.ts",
     "src/signals/services/agent-run-cancellation.ts",
     "src/signals/services/agent-run-metadata-write.service.ts",
     "src/signals/services/agent-tools-prompt.service.ts",

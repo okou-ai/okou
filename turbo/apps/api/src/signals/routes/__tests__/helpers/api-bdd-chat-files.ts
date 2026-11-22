@@ -1464,7 +1464,7 @@ export function createChatFilesBddApi(context: TestContext) {
       return await accept(
         chatSearchClient().search({
           headers: authenticate(context, actor),
-          query: { keyword },
+          query: { keyword, ...query },
         }),
         statuses,
       );

@@ -1507,7 +1507,7 @@
       "description": "這個操作不屬於當前對話，或者已經失效。",
       "title": "操作不可用"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "已簽到",
         "checkin": {

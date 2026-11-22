@@ -1,12 +1,12 @@
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 
 const context = testContext();
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const { api, bdd, configureSubscriptionPiModel, sessionHeaders } =
   createChatEventsFixture(context);
 function preferencesApi() {

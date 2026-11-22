@@ -32,10 +32,7 @@ import type {
 } from "../../../external/discord-client";
 import { chatThreadRoutes } from "../../chat-threads";
 import { discordGatewayRoutes } from "../../discord-gateway";
-import {
-  createAuthOrgAgentsBddApi,
-  type ApiTestUser,
-} from "./api-bdd-auth-org";
+import { createAuthOrgBddApi, type ApiTestUser } from "./api-bdd-auth-org";
 import { threadEventCursor } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import {
@@ -80,7 +77,7 @@ export async function setupConnectedDiscordActor(
   const guildId = options.guildId ?? uniqueDiscordSnowflake();
   const discordUserId = options.discordUserId ?? uniqueDiscordSnowflake();
   const botUserId = DISCORD_TEST_APPLICATION_ID;
-  const authOrgApi = createAuthOrgAgentsBddApi(context);
+  const authOrgApi = createAuthOrgBddApi(context);
   const runsApi = createRunsApi(context);
   const actor = authOrgApi.user({ userId, orgId, orgRole: "org:admin" });
   const runnerGroup = await runsApi.configureRunnerGroup();

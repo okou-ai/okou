@@ -5,8 +5,6 @@
 
 import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
-import { composerDraftContract as OriginalComposerDraftContract } from "../contracts/agent-draft";
-import { composerDraftContract } from "./agent-draft";
 import { androidUpdatesContract as OriginalAndroidUpdatesContract } from "../contracts/android-updates";
 import { androidUpdatesContract } from "./android-updates";
 import { artifactCatalogContract as OriginalArtifactCatalogContract } from "../contracts/artifact-catalog";
@@ -163,6 +161,8 @@ import { cloudflareAccessContract as OriginalCloudflareAccessContract } from "..
 import { cloudflareAccessContract } from "./cloudflare-access";
 import { codexDeviceAuthContract as OriginalCodexDeviceAuthContract } from "../contracts/codex-device-auth";
 import { codexDeviceAuthContract } from "./codex-device-auth";
+import { composerDraftContract as OriginalComposerDraftContract } from "../contracts/composer-draft";
+import { composerDraftContract } from "./composer-draft";
 import {
   computerUseAuditEventsContract as OriginalComputerUseAuditEventsContract,
   computerUseAuthorizationRequestsContract as OriginalComputerUseAuthorizationRequestsContract,
@@ -788,7 +788,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ClientRouter,
   AppRouter,
 ])[] = [
-  [composerDraftContract, OriginalComposerDraftContract],
   [androidUpdatesContract, OriginalAndroidUpdatesContract],
   [artifactCatalogContract, OriginalArtifactCatalogContract],
   [artifactDownloadsContract, OriginalArtifactDownloadsContract],
@@ -881,6 +880,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [cliAuthTokenContract, OriginalCliAuthTokenContract],
   [cloudflareAccessContract, OriginalCloudflareAccessContract],
   [codexDeviceAuthContract, OriginalCodexDeviceAuthContract],
+  [composerDraftContract, OriginalComposerDraftContract],
   [computerUseAuditEventsContract, OriginalComputerUseAuditEventsContract],
   [
     computerUseAuthorizationRequestsContract,

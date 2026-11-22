@@ -9,14 +9,14 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { userPreferencesRoutes } from "../user-preferences";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
-const org = createAuthOrgAgentsBddApi(context);
+const org = createAuthOrgBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 

@@ -1511,7 +1511,7 @@
       "description": "यह कार्रवाई इस चैट से संबंधित नहीं है या अब मान्य नहीं है।",
       "title": "कार्रवाई उपलब्ध नहीं है"
     },
-    "agentPage": {
+    "homePage": {
       "getStarted": {
         "checkedIn": "चेक इन हो गया",
         "checkin": {
