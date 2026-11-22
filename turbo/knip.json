@@ -118,6 +118,7 @@
         "scripts/**/*.ts"
       ],
       "project": ["src/**/*.ts", "scripts/**/*.ts", "drizzle.config.ts"],
+      "ignoreDependencies": ["@aws-sdk/client-s3", "tar"],
       "ignoreBinaries": ["drizzle-kit", "psql"]
     },
     "packages/ui": {
