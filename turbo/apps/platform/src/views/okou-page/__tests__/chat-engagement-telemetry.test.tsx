@@ -89,7 +89,7 @@ test("chat-engagement-telemetry-003 row impressions and selections retain each r
   await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
   const order = [0, 1, 2, 1];
   for (const i of order) {
-    click(await findFastControl("button", new RegExp(followups[i]!.prompt)));
+    click(await findFastControl("button", followups[i]!.prompt));
   }
   const shown = analytics.events
     .filter((e) => {

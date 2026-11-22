@@ -83,7 +83,9 @@ async function visit(
   return { trigger, started, authorized };
 }
 function phoneSwitch(name: string) {
-  return screen.findByRole("switch", { name: new RegExp(name) });
+  return screen.findByRole("switch", {
+    name: (label) => label === name || label === name + " Offline",
+  });
 }
 test("chat-capability-phone-use-004 disabling the selected offline phone clears chat access", async () => {
   const old = device("Travel phone", false);

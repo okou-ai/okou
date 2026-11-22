@@ -37,10 +37,11 @@ async function mode(name: "Image" | "Presentation") {
     await userEvent.click(editor);
     await userEvent.keyboard(" /");
     const menu = await screen.findByTestId("slash-workflow-menu");
-    let choice = queryFastControl("button", new RegExp(name, "i"), menu);
+    const option = name === "Image" ? /image/i : /presentation/i;
+    let choice = queryFastControl("button", option, menu);
     if (!choice) {
       click(await findFastControl("button", "Create", menu));
-      choice = await findFastControl("button", new RegExp(name, "i"));
+      choice = await findFastControl("button", option);
     }
     click(choice);
   }
