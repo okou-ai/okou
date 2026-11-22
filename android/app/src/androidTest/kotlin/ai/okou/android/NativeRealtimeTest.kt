@@ -142,14 +142,14 @@ class NativeRealtimeTest {
                     "Native reply and its scroll container are both unavailable"
                 }
                 if (!device.hasObject(target)) {
-                    val container = checkNotNull(device.findObject(scrollable))
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Compose exposes virtual descendants through the current window.
                             override fun apply(unused: UiObject2) = device.hasObject(target)
                         }
-                    if (!container.scrollUntil(Direction.UP, visible)) {
-                        container.scrollUntil(Direction.DOWN, visible)
+                    // The timeline can stop scrolling as the updated reply is laid out.
+                    if (device.findObject(scrollable)?.scrollUntil(Direction.UP, visible) != true) {
+                        device.findObject(scrollable)?.scrollUntil(Direction.DOWN, visible)
                     }
                 }
                 text(value)
