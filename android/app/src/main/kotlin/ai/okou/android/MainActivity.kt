@@ -353,8 +353,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        session.refreshPreferences()
+        session.foregroundChanged(true)
         updates.check(manual = false)
+    }
+
+    override fun onPause() {
+        session.foregroundChanged(false)
+        super.onPause()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

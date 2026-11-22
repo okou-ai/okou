@@ -6,8 +6,13 @@ database, API service, account credentials, or local Web server is needed.
 
 Signed-out launches open the native Clerk login page. A restored active session
 with a selected workspace opens the native conversation list while access is
-checked. Once workspace access is confirmed, cached conversations and Projects
-can appear while the app refreshes the list and loads member preferences.
+checked. The toolbar uses the bundled workspace logo and shows filter and
+Settings as soon as the selected workspace is identified. The tool shortcuts
+stay in place in the same shell, and a known optional update uses the toolbar.
+A fresh selected membership with known permissions allows cached conversations
+and Projects to appear while the app refreshes the list and loads workspace
+metadata and member preferences. The full membership check and organization
+gate still apply when selected permissions are unavailable.
 The workspace chat list uses single-line rows, indented
 Project chats, and separators within groups that have pins and ordinary chats.
 Collapsed Projects summarize unread or running chats. Selecting a chat opens
@@ -25,9 +30,14 @@ Simplified and Traditional Chinese.
 
 Android reads a private cache of the last confirmed display mode and palette
 while the identified workspace loads. The cache is scoped to the API origin,
-account and workspace and is read off the main thread. The existing preference
-response takes precedence and refreshes the cache. Only the server-confirmed
-workspace can open workspace content.
+account and workspace and is read off the main thread. Settings can show those
+values after workspace authorization while its preference controls wait for
+the initial response. The server response takes precedence and refreshes the
+cache. Workspace content requires current authorization for the selected
+workspace.
+Temporary workspace metadata and preference failures after authorization retry
+in the foreground and on reconnect. Cached chats stay usable, and the workspace
+row in Settings shows preparation and temporary failures in its subtitle.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace through the canonical Instructions API. Loading
@@ -437,8 +447,10 @@ selections, failed saves, retry, readback and retired work. PaletteColorsTest re
 mode/palette combinations from generated resources; LegacyLanguageSettingsTest
 exercises pre-Android13 app-language changes through the real Activity.
 Add modules and shared helpers for actual application boundaries.
-SessionModelTest also holds the workspace response to exercise cached
-appearance, confirmation and account and workspace isolation.
+SessionModelTest holds workspace responses to exercise cached appearance,
+confirmation and account and workspace isolation. PendingWorkspaceRootTest
+holds access, workspace metadata and chat sync to verify the first display with
+and without cached chats, along with late access removal.
 Shared font bytes/licenses are sourced from `ios/Okou/Resources/Fonts` during
 the build; the app does not keep a second font copy in source. Its launcher
 vector retains the geometry from `ios/Assets/AppIcon.svg`. App controls use

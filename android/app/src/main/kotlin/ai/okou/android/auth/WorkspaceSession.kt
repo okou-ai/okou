@@ -323,9 +323,7 @@ class CanonicalWorkspaceSession(
 
     override suspend fun organization(): Organization {
         val organization = api.organization()
-        check(organization.id == identity.workspaceId) {
-            "Workspace response belongs to another identity"
-        }
+        if (organization.id != identity.workspaceId) throw ApiFailure.Unauthenticated()
         return organization
     }
 

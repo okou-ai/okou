@@ -50,6 +50,10 @@
     <string name="chat_unmute">Aktifkan notifikasi chat</string>
     <string name="chat_archive">Arsipkan chat</string>
     <string name="chat_unarchive">Batalkan pengarsipan</string>
+    <string name="chat_swipe_read">Dibaca</string>
+    <string name="chat_swipe_unread">Belum dibaca</string>
+    <string name="chat_swipe_archive">Arsipkan</string>
+    <string name="chat_swipe_restore">Pulihkan</string>
     <string name="chat_row_action_pending">Memperbarui chat…</string>
     <string name="chat_row_action_failed">Perubahan chat tidak dapat dikonfirmasi.</string>
     <string name="chat_row_action_rejected">Perubahan chat tidak dapat diselesaikan.</string>

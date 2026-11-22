@@ -126,7 +126,13 @@ internal fun OkouApp(
     val artifactSource = navigation.artifacts?.sourceId.takeIf { artifacts != null }
     val showArtifacts = artifactsOpen && artifacts != null && artifactSource == null
     val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
-    val settings = navigation.settings.takeIf { workspaceReady }
+    val settings =
+        when {
+            chats == null -> null
+            navigation.settings == SettingsDestination.Instructions && !workspaceReady ->
+                SettingsDestination.Overview
+            else -> navigation.settings
+        }
     val requestedTarget = artifactSource?.let { WorkspaceTarget.Chat(it) } ?: navigation.target
     val restoringFirstSend =
         !workspaceReady &&
@@ -140,8 +146,8 @@ internal fun OkouApp(
         if (
             chats == null ||
                 (!workspaceReady &&
-                    (navigation.settings != null ||
-                        requestedTarget is WorkspaceTarget.NewChat && !restoringFirstSend))
+                    requestedTarget is WorkspaceTarget.NewChat &&
+                    !restoringFirstSend)
         )
             WorkspaceTarget.List
         else requestedTarget
@@ -600,16 +606,16 @@ internal fun OkouApp(
 
     val toolbarActions =
         @Composable {
-            if (settings == null && !searchActive && chats != null) {
+            if (settings == null && !searchActive) {
                 WorkspaceToolbarActions(
                     showFilter = showList,
                     list = list,
-                    selectFilter = chats::selectFilter,
-                    markAllRead = chats::markAllRead,
-                    update = updateToolbarAction.takeIf { showList && workspaceReady },
+                    selectFilter = chats?.let { it::selectFilter },
+                    markAllRead = { chats?.markAllRead() },
+                    update = updateToolbarAction.takeIf { showList },
                     settingsFocus = settingsFocus,
                     openSettings =
-                        if (!workspaceReady) null
+                        if (chats == null) null
                         else
                             { restore ->
                                 restoreSettingsFocus = restore
@@ -639,12 +645,10 @@ internal fun OkouApp(
                     openSearch = if (chats != null) ::openSearch else null,
                     actions = toolbarActions,
                 )
-                if (chats != null) {
-                    WorkspaceToolEntries(
-                        openArtifacts = if (artifacts == null) null else ::openArtifacts,
-                        artifactFocus = artifactEntryFocus,
-                    )
-                }
+                WorkspaceToolEntries(
+                    openArtifacts = if (artifacts == null) null else ::openArtifacts,
+                    artifactFocus = artifactEntryFocus,
+                )
             }
             LaunchedEffect(Unit) {
                 if (restoreSearchFocus) {
