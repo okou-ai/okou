@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.859.0](https://github.com/okou-ai/okou/compare/core-v8.858.10...core-v8.859.0) (2026-11-22)
+
+
+### Features
+
+* transcribe ordered voice messages with model credits ([#49901](https://github.com/okou-ai/okou/issues/49901)) ([10fb53e](https://github.com/okou-ai/okou/commit/10fb53e67b9ae25cd3bcb984e8dca394e5682a94))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.99.0
+
 ## [8.858.10](https://github.com/okou-ai/okou/compare/core-v8.858.9...core-v8.858.10) (2026-11-22)
 
 

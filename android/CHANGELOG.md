@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/okou-ai/okou/compare/android-v0.37.2...android-v0.38.0) (2026-11-22)
+
+
+### Features
+
+* transcribe ordered voice messages with model credits ([#49901](https://github.com/okou-ai/okou/issues/49901)) ([10fb53e](https://github.com/okou-ai/okou/commit/10fb53e67b9ae25cd3bcb984e8dca394e5682a94))
+
 ## [0.37.2](https://github.com/okou-ai/okou/compare/android-v0.37.1...android-v0.37.2) (2026-11-22)
 
 
