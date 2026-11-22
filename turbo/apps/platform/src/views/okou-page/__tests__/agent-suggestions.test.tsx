@@ -964,7 +964,7 @@ test("A deleted target shows its unavailable page and preserves the home draft",
     expect(composer()).toHaveTextContent("Keep my home draft");
   });
 });
-test("Suggestion options start a member chat after visiting a legacy Agent", async () => {
+test("Suggestion options start a member chat and keep the suggestion open", async () => {
   mockPool();
   mockChatLifecycle(context);
   const sender = context.mocks.deferred<string>();

@@ -8,7 +8,6 @@ it.each([undefined, "private diagnostic"])(
     const wire = logsByIdContract.getById.responses[200].parse({
       id: "a0000000-0000-4000-a000-000000000001",
       sessionId: null,
-      agentId: null,
       displayName: "Failed task",
       framework: "codex",
       modelProvider: "codex-oauth-token",

@@ -2606,7 +2606,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       "automation-event",
       "web",
     ]);
-    expect(listed.body.filters).not.toHaveProperty("agents");
   });
 
   it("pages run logs and falls back from malformed cursors", async () => {
