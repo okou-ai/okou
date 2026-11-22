@@ -58,7 +58,7 @@ class ConversationHistoryTest {
     @Test
     fun readingAnchorSurvivesReopenAndStaysScopedToAccountWorkspaceAndThread() = runTest {
         val directory = temporary.newFolder()
-        val anchor = ConversationAnchor(HISTORY_LAST_EVENT, 27f)
+        val anchor = ConversationAnchor(HISTORY_LAST_EVENT, -27f)
         val original = cache(directory)
         original.open(identity) { true }.saveReadingAnchor(CHAT_PERSONAL, anchor)
         original.close()

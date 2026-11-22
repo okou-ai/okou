@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,12 +63,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal sealed interface ConversationTimelineRow {
+    val key: String
+}
+
 internal data class ConversationMessage(
     val message: HistoryMessage,
     val earlier: List<HistoryMessage> = emptyList(),
     @StringRes val deliveryStatus: Int? = null,
-) {
-    val key: String
+) : ConversationTimelineRow {
+    override val key: String
         get() = earlier.firstOrNull()?.id ?: message.id
 
     fun includes(id: String?) = message.id == id || earlier.any { it.id == id }
@@ -104,12 +109,7 @@ internal fun conversationMessages(messages: List<HistoryMessage>): List<Conversa
 private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.isNotEmpty()
 
 @Composable
-internal fun ConversationMessageRow(
-    entry: ConversationMessage,
-    @StringRes activity: Int?,
-    revoke: (() -> Unit)?,
-    runningFrame: LongState? = null,
-) {
+internal fun ConversationMessageRow(entry: ConversationMessage, revoke: (() -> Unit)?) {
     val message = entry.message
     val colors = MaterialTheme.colorScheme
     when {
@@ -196,8 +196,6 @@ internal fun ConversationMessageRow(
                         }
                 }
                 MessageBody(message)
-                if (activity != null)
-                    ConversationActivity(activity, Modifier.padding(top = 8.dp), runningFrame)
             }
         else ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
@@ -218,11 +216,11 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
     val clipboard = LocalClipboard.current
     val context = LocalContext.current
     val label = stringResource(R.string.conversation_reply_actions)
+    val openMenu by rememberUpdatedState {
+        restoreFocus = keyboardFocused
+        menuMessage = message
+    }
     Box(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-        val openMenu = {
-            restoreFocus = keyboardFocused
-            menuMessage = message
-        }
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = 48.dp)

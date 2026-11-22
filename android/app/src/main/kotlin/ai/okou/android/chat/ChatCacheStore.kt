@@ -46,6 +46,7 @@ internal data class PreparedChatList(
 
 internal class HistoryCacheRevision
 
+/** The message can start past the reading edge when a status row is partially visible below it. */
 @Serializable internal data class ConversationAnchor(val eventId: String, val offsetDp: Float)
 
 internal data class CachedHistory(
@@ -208,9 +209,7 @@ internal constructor(
                             null
                         }
                     checkCurrent()
-                    anchor?.takeIf {
-                        it.offsetDp.isFinite() && it.offsetDp >= 0f && it.eventId.isNotEmpty()
-                    }
+                    anchor?.takeIf { it.offsetDp.isFinite() && it.eventId.isNotEmpty() }
                 }
             }
 

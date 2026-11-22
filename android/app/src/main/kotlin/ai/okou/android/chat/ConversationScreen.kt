@@ -2,13 +2,13 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,7 +66,13 @@ import kotlinx.coroutines.launch
 private const val HistoryFeedbackDelayMillis = 250L
 private const val TimelineEnd = "conversation_end"
 private const val TimelineInitial = "conversation_initial"
+private const val TimelineActivity = "conversation_activity"
 private val TimelineEndPadding = 16.dp
+
+private data class ConversationActivityRow(@StringRes val label: Int, val showHeader: Boolean) :
+    ConversationTimelineRow {
+    override val key = TimelineActivity
+}
 
 @Composable
 internal fun ConversationRoute(
@@ -168,13 +175,29 @@ internal fun ConversationRoute(
     val activeMessage =
         remember(content, activeRun) {
             activeRun?.let { runId ->
-                content
-                    .lastOrNull {
-                        it.message.runId == runId && it.message.role == HistoryRole.Assistant
-                    }
-                    ?.message
-                    ?.id ?: content.lastOrNull { it.message.runId == runId }?.message?.id
+                content.lastOrNull {
+                    it.message.runId == runId && it.message.role == HistoryRole.Assistant
+                } ?: content.lastOrNull { it.message.runId == runId }
             }
+        }
+    val timeline =
+        remember(content, activity, activeMessage) {
+            val messages = content.asReversed()
+            if (activity == null || messages.isEmpty()) messages
+            else
+                buildList<ConversationTimelineRow> {
+                    addAll(messages)
+                    // Reverse layout places the status below its owning message.
+                    val index =
+                        messages.indexOfFirst { it.key == activeMessage?.key }.coerceAtLeast(0)
+                    add(
+                        index,
+                        ConversationActivityRow(
+                            activity,
+                            activeMessage?.message?.role != HistoryRole.Assistant,
+                        ),
+                    )
+                }
         }
     val feedback: @Composable (() -> Unit)? =
         when {
@@ -201,11 +224,8 @@ internal fun ConversationRoute(
     key(model, threadId) {
         val position = rememberLazyListState()
         val runningRows =
-            remember(content, activity, activeMessage) {
-                if (activity == R.string.conversation_processing)
-                    setOf(content.lastOrNull { it.message.id == activeMessage }?.key ?: TimelineEnd)
-                else emptySet()
-            }
+            if (activity == R.string.conversation_processing) setOf(TimelineActivity)
+            else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
         var restored by remember { mutableStateOf(false) }
@@ -232,9 +252,9 @@ internal fun ConversationRoute(
             }
         val density = LocalDensity.current
         val jumpDistance = with(density) { 80.dp.roundToPx() }
-        val messages = content.asReversed()
-        // Measure the tail and the nearest four rows. Older rows each reserve a 20dp gap.
-        val recentKeys = remember(content) { listOf(TimelineEnd) + messages.take(4).map { it.key } }
+        // Measure the tail and the nearest four rows, including their message spacing.
+        val recentKeys =
+            remember(timeline) { listOf(TimelineEnd) + timeline.take(4).map { it.key } }
         val recentSizes = remember(position) { mutableStateMapOf<String, Int>() }
         val pastJumpThreshold by
             remember(position, jumpDistance, recentKeys) {
@@ -245,10 +265,11 @@ internal fun ConversationRoute(
             restoredAnchor = model.restoreReadingAnchor(threadId)
             restored = true
         }
-        LaunchedEffect(restored, positioned, messages, state.phase, list.offline) {
+        LaunchedEffect(restored, positioned, timeline, state.phase, list.offline) {
             if (!restored || positioned || (!hasContent && !missing)) return@LaunchedEffect
             val anchor = restoredAnchor
-            val index = messages.indexOfFirst { it.includes(anchor?.eventId) }
+            val index =
+                timeline.indexOfFirst { it is ConversationMessage && it.includes(anchor?.eventId) }
             // A cached checkpoint can be older than the saved anchor. Give catch-up a chance first.
             if (anchor != null && index < 0 && state.phase == HistoryPhase.Loading && !list.offline)
                 return@LaunchedEffect
@@ -289,30 +310,28 @@ internal fun ConversationRoute(
         SideEffect {
             if (positioned) {
                 if (atEnd) newReply = false
-                else if (newestReply != null && newestReply != lastReply) newReply = true
+                else {
+                    position.keepMessageWhenStatusMoves(timeline)
+                    if (newestReply != null && newestReply != lastReply) newReply = true
+                }
                 lastReply = newestReply
             }
         }
         LaunchedEffect(model, thread?.id, position, positioned, visible, density) {
             if (!positioned || !visible || thread == null) return@LaunchedEffect
             snapshotFlow {
-                    if (position.isScrollInProgress) null
-                    else {
-                        val first =
-                            position.layoutInfo.visibleItemsInfo.firstOrNull {
-                                it.index == position.firstVisibleItemIndex
-                            }
-                        if (!position.canScrollBackward) ReadingPosition(null)
-                        else if (first?.key is String && first.key !in TimelineFixedKeys)
-                            ReadingPosition(
-                                ConversationAnchor(
-                                    first.key as String,
-                                    with(density) {
-                                        position.firstVisibleItemScrollOffset.toDp().value
-                                    },
+                    when {
+                        position.isScrollInProgress -> null
+                        !position.canScrollBackward -> ReadingPosition(null)
+                        else ->
+                            position.firstVisibleMessage()?.let {
+                                ReadingPosition(
+                                    ConversationAnchor(
+                                        it.key as String,
+                                        with(density) { (-it.offset).toDp().value },
+                                    )
                                 )
-                            )
-                        else null
+                            }
                     }
                 }
                 .filterNotNull()
@@ -332,22 +351,22 @@ internal fun ConversationRoute(
                 state = position,
                 reverseLayout = true,
                 contentPadding =
-                    PaddingValues(start = messageInset, end = messageInset, top = 24.dp),
+                    PaddingValues(
+                        start = messageInset,
+                        end = messageInset,
+                        top = 24.dp,
+                        bottom = TimelineEndPadding,
+                    ),
                 verticalArrangement = Arrangement.spacedBy(0.dp, Alignment.Top),
             ) {
                 // A stable last item anchors the viewport even when a stream grows or the IME
                 // resizes it.
                 item(key = TimelineEnd) {
                     Column(
-                        Modifier.fillMaxWidth()
-                            .onSizeChanged { recentSizes[TimelineEnd] = it.height }
-                            .padding(bottom = TimelineEndPadding)
-                    ) {
-                        if (activity != null && activeMessage == null && messages.isNotEmpty()) {
-                            Spacer(Modifier.height(20.dp))
-                            ConversationReplyHeader()
-                            ConversationActivity(activity, runningFrame = runningFrame)
+                        Modifier.fillMaxWidth().onSizeChanged {
+                            recentSizes[TimelineEnd] = it.height
                         }
+                    ) {
                         if (feedback != null || controls?.hasFeedback == true)
                             Column(
                                 Modifier.padding(top = 8.dp),
@@ -358,30 +377,37 @@ internal fun ConversationRoute(
                             }
                     }
                 }
-                itemsIndexed(messages, key = { _, entry -> entry.key }) { index, entry ->
+                itemsIndexed(timeline, key = { _, entry -> entry.key }) { index, entry ->
                     val trackSize =
                         if (index < 4) Modifier.onSizeChanged { recentSizes[entry.key] = it.height }
                         else Modifier
-                    Column(trackSize.padding(bottom = if (index == 0) 0.dp else 20.dp)) {
-                        ConversationMessageRow(
-                            entry,
-                            activity = activity.takeIf { entry.message.id == activeMessage },
-                            revoke = controls?.revoke(entry.message.id),
-                            runningFrame = runningFrame,
-                        )
-                        if (
-                            activity != null &&
-                                entry.message.id == activeMessage &&
-                                entry.message.role != HistoryRole.Assistant
-                        ) {
-                            Spacer(Modifier.height(20.dp))
-                            ConversationReplyHeader()
-                            ConversationActivity(activity, runningFrame = runningFrame)
+                    when (entry) {
+                        is ConversationActivityRow ->
+                            Column(
+                                trackSize
+                                    .fillMaxWidth()
+                                    .padding(top = if (entry.showHeader) 20.dp else 8.dp)
+                            ) {
+                                if (entry.showHeader) ConversationReplyHeader()
+                                ConversationActivity(entry.label, runningFrame = runningFrame)
+                            }
+                        is ConversationMessage -> {
+                            // Keep a message's lower edge independent of a new reply below it.
+                            Column(
+                                trackSize.padding(
+                                    top = if (index == timeline.lastIndex) 0.dp else 20.dp
+                                )
+                            ) {
+                                ConversationMessageRow(
+                                    entry,
+                                    revoke = controls?.revoke(entry.message.id),
+                                )
+                                if (entry.message.status == "run.failed") recovery(entry.message.id)
+                            }
                         }
-                        if (entry.message.status == "run.failed") recovery(entry.message.id)
                     }
                 }
-                if (messages.isEmpty()) {
+                if (timeline.isEmpty()) {
                     item(key = TimelineInitial) {
                         when {
                             missing -> Text(stringResource(R.string.history_missing))
@@ -429,9 +455,22 @@ internal fun ConversationRoute(
     }
 }
 
-private val TimelineFixedKeys = setOf(TimelineEnd, TimelineInitial)
+private val TimelineFixedKeys = setOf(TimelineEnd, TimelineInitial, TimelineActivity)
 
 private data class ReadingPosition(val anchor: ConversationAnchor?)
+
+private fun LazyListState.firstVisibleMessage(): LazyListItemInfo? =
+    layoutInfo.visibleItemsInfo.firstOrNull { it.key !in TimelineFixedKeys }
+
+private fun LazyListState.keepMessageWhenStatusMoves(timeline: List<ConversationTimelineRow>) {
+    if (isScrollInProgress) return
+    val first = layoutInfo.visibleItemsInfo.firstOrNull { it.index == firstVisibleItemIndex }
+    if (first?.key !in TimelineFixedKeys) return
+    val message = firstVisibleMessage() ?: return
+    val newIndex = timeline.indexOfFirst { it.key == message.key } + 1
+    // Compose would otherwise anchor to the status row while it moves to a different message.
+    if (newIndex > 0 && newIndex != message.index) requestScrollToItem(newIndex, -message.offset)
+}
 
 private fun LazyListState.pastEnd(
     threshold: Int,

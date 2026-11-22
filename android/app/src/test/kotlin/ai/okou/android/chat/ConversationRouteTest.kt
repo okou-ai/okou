@@ -16,23 +16,30 @@ import ai.okou.android.api.generated.ReadState
 import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
+import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -82,7 +89,9 @@ class ConversationRouteTest {
         }
         val displayed = mutableStateOf(message("provider_request_timeout"))
         compose.setContent {
-            OkouTheme { ConversationMessageRow(ConversationMessage(displayed.value), null, null) }
+            OkouTheme {
+                ConversationMessageRow(ConversationMessage(displayed.value), revoke = null)
+            }
         }
         compose.onNodeWithText("The model response timed out").assertExists()
         compose
@@ -92,6 +101,37 @@ class ConversationRouteTest {
         compose.runOnIdle { displayed.value = message("future_reason") }
         compose.onNodeWithText("This run couldn't finish").assertExists()
         compose.onNodeWithText("Open the chat on the Okou website for details.").assertExists()
+    }
+
+    @Test
+    fun longPressCopiesTheReplyShownAfterAStreamUpdate() {
+        fun reply(text: String) =
+            HistoryMessage(
+                "output",
+                null,
+                HistoryRole.Assistant,
+                listOf(HistoryBlock(HistoryBlockKind.Text, text)),
+            )
+        val displayed = mutableStateOf(reply("First chunk"))
+        compose.setContent {
+            OkouTheme {
+                ConversationMessageRow(ConversationMessage(displayed.value), revoke = null)
+            }
+        }
+        val header = compose.onNodeWithText(compose.activity.getString(R.string.app_name))
+        // Start the same pointer handler before this reply receives more content.
+        header.performTouchInput { click() }
+        val complete = "First chunk and its continuation"
+        compose.runOnIdle { displayed.value = reply(complete) }
+        compose.onNodeWithText(complete).assertIsDisplayed()
+        header.performTouchInput { longClick() }
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.conversation_copy_reply))
+            .performClick()
+        val clipboard =
+            checkNotNull(compose.activity.getSystemService(ClipboardManager::class.java))
+        compose.waitUntil(5_000) { clipboard.primaryClip != null }
+        assertEquals(complete, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
     }
 
     @After
@@ -307,8 +347,45 @@ class ConversationRouteTest {
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
     fun firstReplyPreservesAnOlderAnchorAndDefersReadUntilJumpingToLatest() {
         val received = AtomicInteger(12)
-        fun eventId(sequence: Int) =
-            "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
+        val model = openScrollHistory(received)
+        val readCount = fixture.readRequests.get()
+        compose.onNodeWithTag("conversation").performScrollToIndex(7)
+        val anchor = compose.onNodeWithTag("message_${scrollEventId(6)}").assertIsDisplayed()
+        val bounds = anchor.getUnclippedBoundsInRoot()
+        receiveFirstReply(model, received)
+        assertEquals(bounds, anchor.getUnclippedBoundsInRoot())
+        assertEquals(readCount, fixture.readRequests.get())
+        compose.onNodeWithTag("conversation_jump").performClick()
+        compose.onNodeWithText("The first reply").assertIsDisplayed()
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { fixture.readRequests.get() == readCount + 1 }
+        }
+        compose.onNodeWithTag("conversation_jump").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun newReplyKeepsTheCurrentMessageAfterASmallScrollAwayFromTheEnd() {
+        val received = AtomicInteger(12)
+        val model = openScrollHistory(received)
+        val readCount = fixture.readRequests.get()
+        val anchor = compose.onNodeWithTag("message_${scrollEventId(12)}").assertIsDisplayed()
+        val atEnd = anchor.getUnclippedBoundsInRoot()
+        val density = compose.activity.resources.displayMetrics.density
+        compose.onNodeWithTag("conversation").performSemanticsAction(SemanticsActions.ScrollBy) {
+            assertTrue(it(0f, 8f * density))
+        }
+        val reading = anchor.getUnclippedBoundsInRoot()
+        assertEquals(8.dp.value, (reading.bottom - atEnd.bottom).value, 1f)
+        receiveFirstReply(model, received)
+        assertEquals(reading, anchor.getUnclippedBoundsInRoot())
+        assertEquals(readCount, fixture.readRequests.get())
+    }
+
+    private fun scrollEventId(sequence: Int) =
+        "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
+
+    private fun openScrollHistory(received: AtomicInteger): ChatListModel {
         fixture.historyRows = { request ->
             val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
             val last = received.get()
@@ -316,7 +393,7 @@ class ConversationRouteTest {
                 ((after + 1)..last).joinToString(",") { sequence ->
                     val isReply = sequence > 12
                     historyEventWire(
-                        id = eventId(sequence),
+                        id = scrollEventId(sequence),
                         seq = sequence.toLong(),
                         thread = CHAT_IN_PROJECT,
                         type = if (isReply) "output.message" else "input.prompt",
@@ -328,7 +405,7 @@ class ConversationRouteTest {
                     )
                 }
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"${eventId(last)}","lastSeqId":$last},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}"""
             )
         }
         val model = createListModel()
@@ -350,10 +427,10 @@ class ConversationRouteTest {
         compose.waitUntil("the visible latest history is acknowledged", 10_000) {
             compose.runOnIdle { fixture.readRequests.get() > 0 }
         }
-        val readCount = fixture.readRequests.get()
-        compose.onNodeWithTag("conversation").performScrollToIndex(7)
-        val anchor = compose.onNodeWithTag("message_${eventId(6)}").assertIsDisplayed()
-        val bounds = anchor.getUnclippedBoundsInRoot()
+        return model
+    }
+
+    private fun receiveFirstReply(model: ChatListModel, received: AtomicInteger) {
         received.incrementAndGet()
         compose.runOnIdle { model.history.refresh() }
         compose.waitUntilExactlyOneExists(
@@ -361,14 +438,6 @@ class ConversationRouteTest {
                 hasContentDescription(compose.activity.getString(R.string.conversation_new_reply)),
             10_000,
         )
-        assertEquals(bounds, anchor.getUnclippedBoundsInRoot())
-        assertEquals(readCount, fixture.readRequests.get())
-        compose.onNodeWithTag("conversation_jump").performClick()
-        compose.onNodeWithText("The first reply").assertIsDisplayed()
-        compose.waitUntil(10_000) {
-            compose.runOnIdle { fixture.readRequests.get() == readCount + 1 }
-        }
-        compose.onNodeWithTag("conversation_jump").assertDoesNotExist()
     }
 
     private fun createListModel(realtime: RealtimeService? = null): ChatListModel =
