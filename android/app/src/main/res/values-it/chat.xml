@@ -52,6 +52,10 @@
     <string name="chat_unmute">Riattiva notifiche chat</string>
     <string name="chat_archive">Archivia chat</string>
     <string name="chat_unarchive">Rimuovi dall\'archivio</string>
+    <string name="chat_swipe_read">Letto</string>
+    <string name="chat_swipe_unread">Non letto</string>
+    <string name="chat_swipe_archive">Archivia</string>
+    <string name="chat_swipe_restore">Ripristina</string>
     <string name="chat_row_action_pending">Aggiornamento della chat…</string>
     <string name="chat_row_action_failed">Impossibile confermare la modifica alla chat.</string>
     <string name="chat_row_action_rejected">Impossibile completare la modifica alla chat.</string>

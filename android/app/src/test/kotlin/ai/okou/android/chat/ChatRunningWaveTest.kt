@@ -60,13 +60,17 @@ class ChatRunningWaveTest {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun drawsCenterDotAtFrameOffsetsThatCrashedTheEasingSolver() {
+    fun drawsCenterDotAtPhaseBoundariesAndPreviouslyFailingFrames() {
         val frameOffsetsAndAlpha =
             listOf(
+                0L to 0.34f,
+                1_080_000_000L to 0.511f,
                 1_247_999_553L to 0.52f,
                 1_247_999_680L to 0.52f,
                 1_247_999_809L to 0.52f,
+                1_248_000_000L to 0.52f,
                 2_399_999_617L to 0.34f,
+                2_400_000_000L to 0.34f,
             )
         for ((frameNanos, expectedAlpha) in frameOffsetsAndAlpha) {
             val bitmap = ImageBitmap(14, 14)
