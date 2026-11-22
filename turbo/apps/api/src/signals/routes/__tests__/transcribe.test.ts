@@ -109,6 +109,34 @@ test("ordered private recordings share one Vertex request and one credit settlem
     );
     fileIds.push(body.id);
   }
+  const playback = api(transcribeContract).playback;
+  const [fileId] = fileIds;
+  if (!fileId) {
+    throw new Error("Expected an uploaded clip");
+  }
+  const path = { fileId };
+  await accept(playback({ headers: uploadHeaders, params: path }), [403]);
+  const otherUser = "user_other";
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId, userId: otherUser },
+    { [FeatureSwitchKey.VoiceMessages]: true },
+  );
+  await accept(
+    playback({
+      headers: {
+        authorization: `Bearer ${authorize({ scope: "okou:chat:read", sub: otherUser })}`,
+      },
+      params: path,
+    }),
+    [404],
+  );
+  const recording = await accept(
+    playback({ headers: readOnlyHeaders, params: path }),
+    [200],
+  );
+  expect(recording.headers.get("cache-control")).toBe("private, no-store");
+  expect(await (await fetch(recording.body.url)).text()).toBe(recordings[0]);
   const calls: string[][] = [];
   server.use(
     http.post(VERTEX_VOICE_URL, async ({ request }) => {
