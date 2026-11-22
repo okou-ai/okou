@@ -33,7 +33,10 @@ import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
-import { billingStatusContract } from "../contracts/billing";
+import {
+  billingStatusContract,
+  billingUsagePackCreditsContract,
+} from "../contracts/billing";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
@@ -182,6 +185,17 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: billingStatusContract.get,
   },
   {
+    name: "usagePackCredits",
+    response: "UsagePackCredits",
+    route: billingUsagePackCreditsContract.get,
+  },
+  {
+    name: "activateModelAccount",
+    request: "ActivateModelAccountRequest",
+    response: "ActivatedModelAccount",
+    route: personalModelProviderAccountsByIdContract.activate,
+  },
+  {
     name: "resetSubscription",
     request: "ResetSubscriptionRequest",
     response: "ResetSubscriptionResult",
@@ -316,8 +330,12 @@ export interface KotlinTypeBinding {
   readonly name: string;
   readonly schema: ZodType;
   readonly direction: "input" | "output";
+  /** Native response projection. Route validation still uses the full schema. */
+  readonly readSchema?: ZodType;
   /** Raw transport/cache envelopes retain all JSON members; their consumer owns decoding. */
   readonly representation?: "raw-object";
+  /** Response fields where explicit null and omission have distinct meanings. */
+  readonly preserveOptionalNullable?: readonly string[];
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
@@ -396,10 +414,36 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "RecoverySubscriptions",
     schema: thirdPartySubscriptionsMainContract.list.responses[200],
     direction: "output",
+    preserveOptionalNullable: ["subscriptionCredits"],
   },
   {
     name: "RecoveryBilling",
     schema: billingStatusContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UsagePackCredits",
+    schema: billingUsagePackCreditsContract.get.responses[200],
+    readSchema: billingUsagePackCreditsContract.get.responses[200].pick({
+      totalCredits: true,
+      purchasedCredits: true,
+      bonusCredits: true,
+    }),
+    direction: "output",
+  },
+  {
+    name: "ActivateModelAccountRequest",
+    schema: personalModelProviderAccountsByIdContract.activate.body,
+    direction: "input",
+  },
+  {
+    name: "ActivatedModelAccount",
+    schema: personalModelProviderAccountsByIdContract.activate.responses[200],
+    readSchema:
+      personalModelProviderAccountsByIdContract.activate.responses[200].pick({
+        id: true,
+        isActive: true,
+      }),
     direction: "output",
   },
   {

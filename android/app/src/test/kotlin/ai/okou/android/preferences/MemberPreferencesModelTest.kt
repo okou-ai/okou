@@ -45,6 +45,14 @@ class MemberPreferencesModelTest {
         override val artifacts: ArtifactService
             get() = error("Artifacts are outside this fixture")
 
+        override suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits =
+            error("Credits are outside this fixture")
+
+        override suspend fun activateModelAccount(
+            accountId: String
+        ): ai.okou.android.api.generated.ActivatedModelAccount =
+            error("Accounts are outside this fixture")
+
         override suspend fun sendControl(
             request: ai.okou.android.api.generated.SendRequest
         ): ai.okou.android.api.generated.AcceptedInput = error("No control backend in this fixture")
@@ -75,6 +83,8 @@ class MemberPreferencesModelTest {
                         request.locale?.let { UserPreferencesLocale.valueOf(it.name) }
                             ?: stored.locale,
                     timezone = request.timezone ?: stored.timezone,
+                    cloudBrowserEnabledByDefault =
+                        request.cloudBrowserEnabledByDefault ?: stored.cloudBrowserEnabledByDefault,
                 )
             stored
         }
@@ -158,10 +168,13 @@ class MemberPreferencesModelTest {
             assertEquals(UserPreferencesLocale.EN_US, model.uiState.value.confirmed.locale)
             model.refresh()
             model.selectColorTheme(UserPreferencesColorTheme.BERRY_BLUSH)
+            val cloudBrowser = !api.stored.cloudBrowserEnabledByDefault
+            model.setCloudBrowser(cloudBrowser)
             model.selectLocale(UserPreferencesLocale.JA_JP)
             model.selectLocale(UserPreferencesLocale.ZH_HANS)
             assertEquals(PreferenceStatus.Saving, model.uiState.value.status)
             assertEquals(UserPreferencesLocale.ZH_HANS, model.uiState.value.locale)
+            assertEquals(cloudBrowser, model.uiState.value.cloudBrowser)
             assertEquals(1, api.requests.size)
             gate.complete(Unit)
             runCurrent()
@@ -172,6 +185,8 @@ class MemberPreferencesModelTest {
                 model.uiState.value.confirmed.colorTheme,
             )
             assertEquals(2, api.requests.size)
+            assertEquals(cloudBrowser, model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+            assertEquals(cloudBrowser, api.requests.last().cloudBrowserEnabledByDefault)
             assertNull(api.requests.first().colorTheme)
             assertNull(api.requests.last().theme)
             assertNull(api.requests.last().timezone)

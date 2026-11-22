@@ -43,7 +43,6 @@
     <string name="auth_workspace">현재 워크스페이스</string>
     <string name="auth_switch_workspace">워크스페이스 전환</string>
     <string name="auth_browser_unavailable">워크스페이스 설정을 열려면 브라우저를 설치하세요.</string>
-    <string name="preferences_title">모양 및 지역</string>
     <string name="preference_save_failed">환경설정을 저장하지 못했습니다. 선택한 설정은 계속 적용됩니다.</string>
     <string name="preference_refresh_failed">환경설정을 새로고침할 수 없습니다. 다시 시도하세요.</string>
     <string name="preference_color_theme">컬러 테마</string>
@@ -151,7 +150,6 @@
     <string name="updates_waiting_to_download">다운로드 대기 중</string>
     <string name="instructions_placeholder">Okou가 어떤 점을 기억하면 좋을까요?</string>
     <string name="instructions_save_when_online">인터넷에 연결하면 변경사항을 저장할 수 있습니다.</string>
-    <string name="settings_conversation">대화</string>
     <string name="settings_timezone">시간대</string>
     <string name="settings_timezone_hint">새 예약 작업에 사용할 기본 시간대입니다.</string>
     <string name="settings_timezone_utc">협정 세계시(UTC)</string>

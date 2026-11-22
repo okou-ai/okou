@@ -43,7 +43,6 @@
     <string name="auth_workspace">目前的工作區</string>
     <string name="auth_switch_workspace">切換工作區</string>
     <string name="auth_browser_unavailable">請安裝瀏覽器以開啟工作區設定頁面。</string>
-    <string name="preferences_title">外觀與地區</string>
     <string name="preference_save_failed">無法儲存偏好設定。目前仍使用你的選擇。</string>
     <string name="preference_refresh_failed">無法重新整理偏好設定，請重試。</string>
     <string name="preference_color_theme">配色主題</string>
@@ -151,7 +150,6 @@
     <string name="updates_waiting_to_download">等待下載</string>
     <string name="instructions_placeholder">填寫你希望 Okou 遵循的回覆偏好</string>
     <string name="instructions_save_when_online">連線後即可儲存，變更已保留。</string>
-    <string name="settings_conversation">對話</string>
     <string name="settings_timezone">時區</string>
     <string name="settings_timezone_hint">用於新建排程任務的預設時區。</string>
     <string name="settings_timezone_utc">世界協調時間（UTC）</string>

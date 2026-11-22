@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -28,6 +29,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -52,6 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -99,6 +103,7 @@ internal fun SettingsRow(
     valueMaxLines: Int = Int.MAX_VALUE,
     valueLeading: (@Composable () -> Unit)? = null,
     supportingText: String? = null,
+    valueMaxWidth: Dp = 144.dp,
 ) {
     val colors = MaterialTheme.colorScheme
     val muted = colors.onSurfaceVariant
@@ -110,7 +115,7 @@ internal fun SettingsRow(
         modifier
             .fillMaxWidth()
             .then(action)
-            .heightIn(min = 56.dp)
+            .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -158,7 +163,7 @@ internal fun SettingsRow(
                 valueLeading?.invoke()
                 Text(
                     value,
-                    Modifier.widthIn(max = 144.dp),
+                    Modifier.widthIn(max = valueMaxWidth),
                     color = muted,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.End,
@@ -174,6 +179,50 @@ internal fun SettingsRow(
                 modifier = Modifier.size(18.dp),
                 tint = muted,
             )
+    }
+}
+
+@Composable
+internal fun SettingsSwitchRow(
+    title: String,
+    leading: @Composable () -> Unit,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    supportingText: String? = null,
+    enabled: Boolean = true,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .toggleable(
+                checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        leading()
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (supportingText != null) {
+                Text(
+                    supportingText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        val outline = MaterialTheme.colorScheme.onSurfaceVariant
+        Switch(
+            checked,
+            onCheckedChange = null,
+            enabled = enabled,
+            colors =
+                SwitchDefaults.colors(uncheckedThumbColor = outline, uncheckedBorderColor = outline),
+        )
     }
 }
 
