@@ -492,7 +492,13 @@ private fun ConnectorFilters(
             onValueChange = editQuery,
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+            keyboardActions =
+                KeyboardActions(
+                    onSearch = {
+                        editQuery(route.query.copy(composition = null))
+                        keyboard?.hide()
+                    }
+                ),
             textStyle = connectorBodyType().copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.onSurface),
             modifier =
