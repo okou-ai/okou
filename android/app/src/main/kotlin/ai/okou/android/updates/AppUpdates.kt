@@ -82,7 +82,6 @@ data class UpdateUiState(
     val check: UpdateCheck = UpdateCheck.Unknown,
     val required: Boolean = false,
     val minimum: String? = null,
-    val deferred: String? = null,
     val transfer: UpdateTransfer = UpdateTransfer.Recovering(null),
     val problem: UpdateProblem? = null,
     val sdk: Int,
@@ -135,16 +134,6 @@ data class UpdateUiState(
 
     val canInstall
         get() = (transfer as? UpdateTransfer.Ready)?.release?.let(::isEligible) == true
-
-    val announce
-        get() =
-            !preparing &&
-                !required &&
-                available &&
-                (deferred != displayedRelease?.version ||
-                    transfer is UpdateTransfer.Downloading ||
-                    transfer is UpdateTransfer.Waiting ||
-                    transfer is UpdateTransfer.Ready)
 }
 
 private val UpdateUiState.needsRequiredRelease: Boolean
@@ -156,7 +145,6 @@ data class UpdateRecord(
     val info: AndroidUpdates? = null,
     val blocked: Boolean = false,
     val minimum: String? = null,
-    val deferred: String? = null,
     val checkedAt: Long = 0,
     val target: AndroidUpdatesRelease? = null,
 )
@@ -227,7 +215,6 @@ class AppUpdates(
                             info = saved.info,
                             required = saved.blocked,
                             minimum = saved.minimum,
-                            deferred = saved.deferred,
                             check =
                                 if (saved.info != null) UpdateCheck.Checked
                                 else UpdateCheck.Unknown,
@@ -337,19 +324,6 @@ class AppUpdates(
                 reportStorageFailure(error)
             }
             if (mutable.value.needsRequiredRelease) check()
-        }
-    }
-
-    fun defer(release: AndroidUpdatesRelease) {
-        val snapshot = mutable.value
-        if (snapshot.preparing || snapshot.required || snapshot.displayedRelease != release) return
-        mutable.update { it.copy(deferred = release.version) }
-        scope.launch {
-            try {
-                persist()
-            } catch (error: Exception) {
-                reportStorageFailure(error)
-            }
         }
     }
 
@@ -479,13 +453,12 @@ class AppUpdates(
             val value = mutable.value
             store.save(
                 UpdateRecord(
-                    version,
-                    value.info,
-                    value.required,
-                    value.minimum,
-                    value.deferred,
-                    checkedAt,
-                    value.selectedRelease,
+                    installedVersion = version,
+                    info = value.info,
+                    blocked = value.required,
+                    minimum = value.minimum,
+                    checkedAt = checkedAt,
+                    target = value.selectedRelease,
                 )
             )
         }

@@ -105,7 +105,6 @@
     <string name="composer_revoked">訊息已撤回</string>
     <string name="updates_title">應用程式更新</string>
     <string name="updates_installed">目前版本 %1$s</string>
-    <string name="updates_available">可更新至 %1$s</string>
     <string name="updates_current">已是最新版本</string>
     <string name="updates_preparing">準備中…</string>
     <string name="updates_installing">正在安裝…</string>
@@ -114,7 +113,6 @@
     <string name="updates_connect_to_check">連上網路後檢查更新。</string>
     <string name="updates_connect_to_download">連上網路後下載更新。</string>
     <string name="updates_check">檢查更新</string>
-    <string name="updates_view">查看更新</string>
     <string name="updates_toolbar">更新</string>
     <string name="updates_download">下載更新</string>
     <string name="updates_retry_download">重試下載</string>

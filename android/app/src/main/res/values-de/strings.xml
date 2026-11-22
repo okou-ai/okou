@@ -105,7 +105,6 @@
     <string name="composer_revoked">Nachricht zurückgenommen</string>
     <string name="updates_title">App-Updates</string>
     <string name="updates_installed">Aktuelle Version: %1$s</string>
-    <string name="updates_available">Update %1$s verfügbar</string>
     <string name="updates_current">Du verwendest die neueste Version</string>
     <string name="updates_preparing">Vorbereitung…</string>
     <string name="updates_installing">Installation…</string>
@@ -114,7 +113,6 @@
     <string name="updates_connect_to_check">Stelle eine Internetverbindung her, um nach Updates zu suchen.</string>
     <string name="updates_connect_to_download">Stelle eine Internetverbindung her, um das Update herunterzuladen.</string>
     <string name="updates_check">Nach Updates suchen</string>
-    <string name="updates_view">Update ansehen</string>
     <string name="updates_toolbar">Update</string>
     <string name="updates_download">Update herunterladen</string>
     <string name="updates_retry_download">Download wiederholen</string>

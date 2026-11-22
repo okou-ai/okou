@@ -105,7 +105,6 @@
     <string name="composer_revoked">メッセージは取り消されました</string>
     <string name="updates_title">アプリの更新</string>
     <string name="updates_installed">現在のバージョン %1$s</string>
-    <string name="updates_available">バージョン %1$s に更新できます</string>
     <string name="updates_current">最新バージョンです</string>
     <string name="updates_preparing">準備中…</string>
     <string name="updates_installing">インストール中…</string>
@@ -114,7 +113,6 @@
     <string name="updates_connect_to_check">インターネットに接続して更新を確認してください。</string>
     <string name="updates_connect_to_download">インターネットに接続して更新をダウンロードしてください。</string>
     <string name="updates_check">更新を確認</string>
-    <string name="updates_view">更新を見る</string>
     <string name="updates_toolbar">更新</string>
     <string name="updates_download">アップデートをダウンロード</string>
     <string name="updates_retry_download">ダウンロードを再試行</string>

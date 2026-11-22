@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.HistorySnapshot
@@ -22,6 +23,9 @@ import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.cursor
+import ai.okou.android.updates.ControlledUpdates
+import ai.okou.android.updates.UpdateCheck
+import ai.okou.android.updates.updateRelease
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -33,6 +37,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -234,6 +239,42 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithContentDescription("Settings").assertExists()
         compose.onNodeWithText("New chat").assertIsEnabled()
         assertEquals(startupBounds, searchEntry.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    fun updateDiscoveredDuringWorkspaceOpeningUsesOnlyTheReadyToolbar() {
+        val search = compose.onNodeWithTag("workspace_search_entry")
+        val startupBounds = search.getUnclippedBoundsInRoot()
+        val release = updateRelease("99.0.0")
+        val announcement = compose.onNodeWithText("Update ${release.version} is available")
+        val action = app.getString(R.string.updates_toolbar)
+        val previousService = app.updateService
+        try {
+            compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Checked }
+            compose.runOnIdle {
+                app.updateService =
+                    ControlledUpdates().apply { response = AndroidUpdates(null, release) }
+                app.updates.check()
+            }
+            compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+            announcement.assertDoesNotExist()
+            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
+
+            compose.runOnIdle { app.organizationResponse.complete(Unit) }
+            awaitCachedRow()
+            announcement.assertDoesNotExist()
+            compose.onNodeWithContentDescription(action).assertDoesNotExist()
+
+            compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithContentDescription(action).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithContentDescription(action).assertIsDisplayed().assertIsEnabled()
+            announcement.assertDoesNotExist()
+            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
+        } finally {
+            compose.runOnIdle { app.updateService = previousService }
+        }
     }
 
     @Test

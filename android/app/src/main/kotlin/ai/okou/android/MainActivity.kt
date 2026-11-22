@@ -211,7 +211,6 @@ class MainActivity : AppCompatActivity() {
                     updateState.copy(required = updateRequired),
                     { updates.check() },
                     updateInstall::download,
-                    updates::defer,
                     ::installUpdate,
                     installProgress,
                     automaticInstall,
@@ -221,8 +220,6 @@ class MainActivity : AppCompatActivity() {
                             updateInstall.install(release, automatic = true, canInstallPackages())
                         }
                     },
-                    showAnnouncement =
-                        sessionState.stage != SessionStage.Ready || sessionState.ready == null,
                     detailsOpen = updateDetails,
                     onDetailsFocusChanged = { updateDetailsFocused = it },
                 ) { openUpdates ->

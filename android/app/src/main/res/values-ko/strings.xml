@@ -105,7 +105,6 @@
     <string name="composer_revoked">메시지가 철회되었습니다</string>
     <string name="updates_title">앱 업데이트</string>
     <string name="updates_installed">현재 버전: %1$s</string>
-    <string name="updates_available">%1$s 버전으로 업데이트할 수 있습니다</string>
     <string name="updates_current">최신 버전입니다</string>
     <string name="updates_preparing">준비 중…</string>
     <string name="updates_installing">설치 중…</string>
@@ -114,7 +113,6 @@
     <string name="updates_connect_to_check">인터넷에 연결하여 업데이트를 확인하세요.</string>
     <string name="updates_connect_to_download">인터넷에 연결하여 업데이트를 다운로드하세요.</string>
     <string name="updates_check">업데이트 확인</string>
-    <string name="updates_view">업데이트 보기</string>
     <string name="updates_toolbar">업데이트</string>
     <string name="updates_download">업데이트 다운로드</string>
     <string name="updates_retry_download">다운로드 다시 시도</string>
