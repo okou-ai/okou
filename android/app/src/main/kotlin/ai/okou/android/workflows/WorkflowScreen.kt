@@ -14,6 +14,7 @@ import ai.okou.android.state.ChatSearchState
 import ai.okou.android.state.WorkflowScope
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
+import ai.okou.android.state.rememberWorkflowDiscardConfirmation
 import ai.okou.android.state.retainWhileComposing
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
@@ -75,7 +76,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -145,7 +145,7 @@ internal fun WorkflowScreen(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val editor = state.editor
-    var discard by rememberSaveable(route.id, editor != null) { mutableStateOf(false) }
+    var discard by rememberWorkflowDiscardConfirmation(route.id, editor != null)
     var restoreRow by remember { mutableStateOf<String?>(null) }
     fun exitEditor() {
         if (state.writing) return

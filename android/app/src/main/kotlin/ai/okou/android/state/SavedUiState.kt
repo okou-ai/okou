@@ -398,6 +398,12 @@ internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
         mutableStateOf(WorkflowsRoute())
     }
 
+@Composable
+internal fun rememberWorkflowDiscardConfirmation(
+    workflowId: String?,
+    editing: Boolean,
+): MutableState<Boolean> = rememberSaveable(workflowId, editing) { mutableStateOf(false) }
+
 internal class SavedUiIds(private val state: MutableState<List<String>>, private val limit: Int) {
     fun record(id: String): List<String> {
         val next = (state.value - id) + id
