@@ -449,21 +449,21 @@ export function waitForAnimationFrame(signal: AbortSignal): Promise<void> {
   signal.throwIfAborted();
   if (
     typeof window === "undefined" ||
-    typeof window.requestAnimationFrame !== "function" ||
-    typeof window.cancelAnimationFrame !== "function"
+    typeof globalThis.window.requestAnimationFrame !== "function" ||
+    typeof globalThis.window.cancelAnimationFrame !== "function"
   ) {
     return Promise.resolve();
   }
 
   const deferred = createDeferredPromise<void>(signal);
-  const frame = window.requestAnimationFrame(() => {
+  const frame = globalThis.window.requestAnimationFrame(() => {
     signal.removeEventListener("abort", cancel);
     if (!deferred.settled()) {
       deferred.resolve(undefined);
     }
   });
   function cancel(): void {
-    window.cancelAnimationFrame(frame);
+    globalThis.window.cancelAnimationFrame(frame);
   }
   signal.addEventListener("abort", cancel, { once: true });
   return deferred.promise;
