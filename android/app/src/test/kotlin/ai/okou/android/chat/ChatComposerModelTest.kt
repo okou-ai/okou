@@ -6,8 +6,10 @@ import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.AcceptedInput
+import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreatedThread
+import ai.okou.android.api.generated.CreatedThreadServiceTier
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.auth.WorkspaceIdentity
 import androidx.lifecycle.ViewModelProvider
@@ -416,8 +418,8 @@ class ChatComposerModelTest {
                     request.projectId,
                     null,
                     CHAT_DATE,
-                    null,
-                    null,
+                    "workspace-default",
+                    CreatedThreadServiceTier.PRIORITY,
                 )
             }
             service.write = { request ->
@@ -433,6 +435,12 @@ class ChatComposerModelTest {
             runCurrent()
             assertEquals(1, service.creates.size)
             assertEquals(1, service.requests.size)
+            val creation = service.creates.single()
+            assertEquals(CanonicalOptional.Absent, creation.model)
+            assertEquals(CanonicalOptional.Absent, creation.serviceTier)
+            assertNull(creation.reasoningEffort)
+            assertEquals(CanonicalOptional.Absent, service.requests.single().model)
+            assertNull(service.requests.single().runOptions)
             assertEquals("原始 **text** 👋\nsecond line", service.requests.single().prompt)
             gate.complete(Unit)
             runCurrent()

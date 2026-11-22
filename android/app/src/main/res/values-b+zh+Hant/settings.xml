@@ -61,7 +61,8 @@
     <string name="settings_model_fast">快速模式</string>
     <string name="settings_model_fast_usage">訂閱用量約 %1$s 倍</string>
     <string name="settings_model_offline">離線，連線後同步變更。</string>
-    <string name="settings_model_save_unavailable">暫時無法同步預設模型。</string>
+    <string name="settings_model_save_unavailable">未能在此裝置儲存預設模型。</string>
+    <string name="settings_model_sync_retained">預設模型未能同步，此裝置已保留這次修改。</string>
     <string name="settings_model_effort">推理強度</string>
     <string name="settings_model_effort_low">低</string>
     <string name="settings_model_effort_medium">中</string>

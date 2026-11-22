@@ -7,6 +7,7 @@ import ai.okou.android.SettingsModal
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
@@ -37,6 +38,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -45,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,48 +71,67 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.repeatOnLifecycle
 import java.text.NumberFormat
 
 @Composable
-internal fun DefaultModelSetting(model: DefaultModelSettings?) {
+internal fun DefaultModelFeedback(model: DefaultModelSettings, snackbar: SnackbarHostState) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val syncFailed by rememberUpdatedState(stringResource(R.string.settings_model_sync_retained))
+    val localSaveFailed by
+        rememberUpdatedState(stringResource(R.string.settings_model_save_unavailable))
+    LaunchedEffect(model, lifecycle, snackbar) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            model.notices.collect { notice ->
+                val message =
+                    when (notice) {
+                        DefaultModelNotice.SyncFailed -> syncFailed
+                        DefaultModelNotice.LocalSaveFailed -> localSaveFailed
+                    }
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DefaultModelSetting(
+    model: DefaultModelSettings?,
+    snackbar: SnackbarHostState,
+    onFeedbackInOverlay: (Boolean) -> Unit,
+) {
     val title = stringResource(R.string.settings_default_model)
+    val auto = stringResource(R.string.settings_auto_model)
     if (model == null) {
-        DefaultModelPlaceholder(title)
+        DefaultModelUnavailableRow(title, value = null)
         return
     }
     val state by model.state.collectAsStateWithLifecycle()
-    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
-    DisposableEffect(model, active) {
-        model.visible(active)
-        onDispose { model.visible(false) }
-    }
     val options = state.options
-    if (options == null) {
+    if (options == null || state.record == null) {
         val status =
             when {
                 state.offline -> stringResource(R.string.chat_list_offline)
-                state.failed -> stringResource(R.string.chat_list_first_load_failed)
+                state.catalogUnavailable -> stringResource(R.string.chat_list_first_load_failed)
                 else -> null
             }
-        DefaultModelPlaceholder(title, status)
+        val value =
+            state.record?.let { if (isAutoDefaultModel(it.selectedModel)) auto else it.label }
+        DefaultModelUnavailableRow(title, value, status)
         return
     }
     val selected = state.selected
-    if (options.choices.none { it.canSelect } && selected == null) {
-        if (state.failed)
-            DefaultModelPlaceholder(title, stringResource(R.string.settings_model_save_unavailable))
-        return
-    }
-    SettingsTrigger(content = { dismiss -> DefaultModelSheet(title, state, model, dismiss) }) {
-        modifier,
-        open ->
+    if (options.choices.none { it.canSelect } && selected == null) return
+    SettingsTrigger(
+        content = { dismiss ->
+            DefaultModelSheet(title, state, model, snackbar, onFeedbackInOverlay, dismiss)
+        }
+    ) { modifier, open ->
         SettingsRow(
             title,
             leading = { SettingsIcon(R.drawable.ic_memory) },
             modifier = modifier,
-            value = selected?.label ?: stringResource(R.string.settings_auto_model),
+            value = selected?.label ?: auto,
             onClick = open,
         )
     }
@@ -116,7 +139,7 @@ internal fun DefaultModelSetting(model: DefaultModelSettings?) {
 }
 
 @Composable
-private fun DefaultModelPlaceholder(title: String, status: String? = null) {
+private fun DefaultModelUnavailableRow(title: String, value: String?, status: String? = null) {
     val placeholder: @Composable () -> Unit = {
         Box(
             Modifier.width(64.dp)
@@ -130,8 +153,9 @@ private fun DefaultModelPlaceholder(title: String, status: String? = null) {
         modifier =
             if (status == null) Modifier
             else Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        value = status.orEmpty(),
-        valueLeading = placeholder.takeIf { status == null },
+        value = value ?: "".takeIf { status == null },
+        valueLeading = placeholder.takeIf { value == null && status == null },
+        supportingText = status,
     )
     HorizontalDivider()
 }
@@ -141,6 +165,8 @@ private fun DefaultModelSheet(
     title: String,
     state: DefaultModelState,
     model: DefaultModelSettings,
+    snackbar: SnackbarHostState,
+    onFeedbackInOverlay: (Boolean) -> Unit,
     dismiss: () -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height
@@ -151,6 +177,11 @@ private fun DefaultModelSheet(
         else Modifier.heightIn(max = windowHeight.dp * 0.86f).animateContentSize()
     val selected = state.selected
     SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
+        val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
+        DisposableEffect(Unit) {
+            routeFeedback(true)
+            onDispose { routeFeedback(false) }
+        }
         val initialModel = remember { selected?.takeIf { it.canSelect }?.id }
         val reveal = remember { BringIntoViewRequester() }
         val focus = remember { FocusRequester() }
@@ -201,7 +232,7 @@ private fun DefaultModelSheet(
                 val status =
                     when {
                         state.offline -> R.string.settings_model_offline
-                        state.failed -> R.string.settings_model_save_unavailable
+                        state.catalogUnavailable -> R.string.chat_list_first_load_failed
                         else -> null
                     }
                 if (status != null)
@@ -264,6 +295,7 @@ private fun DefaultModelSheet(
                         }
                     }
             }
+            WorkspaceFeedbackHost(snackbar, Modifier.padding(top = 8.dp))
         }
     }
 }

@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.RecoveryBilling
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemType
 import ai.okou.android.api.generated.UsagePackCredits
+import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
 import androidx.lifecycle.ViewModel
@@ -51,6 +52,8 @@ internal data class WorkspaceSettingsState(
 class WorkspaceSettingsModel
 internal constructor(
     private val service: WorkspaceSession,
+    identity: WorkspaceIdentity,
+    defaultModelStore: DefaultModelStore,
     internal val showWorkspaceCredits: Boolean,
     private val authorized: () -> Boolean,
     private val onSessionFailure: (Exception) -> Unit,
@@ -59,7 +62,9 @@ internal constructor(
     private val mutable = MutableStateFlow(WorkspaceSettingsState())
     internal val uiState = mutable.asStateFlow()
     internal val defaultModel =
-        DefaultModelSettings(viewModelScope, service, authorized, ::reportSessionFailure)
+        DefaultModelSettings(viewModelScope, service, identity, defaultModelStore, authorized) {
+            reportSessionFailure(it)
+        }
 
     private var visible: SettingsDestination? = null
     private var accountsRead: Job? = null

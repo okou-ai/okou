@@ -61,7 +61,8 @@
     <string name="settings_model_fast">Mode cepat</string>
     <string name="settings_model_fast_usage">Menggunakan sekitar %1$s kali kuota langganan</string>
     <string name="settings_model_offline">Offline. Perubahan disinkronkan saat terhubung.</string>
-    <string name="settings_model_save_unavailable">Model default tidak dapat disinkronkan.</string>
+    <string name="settings_model_save_unavailable">Model default tidak dapat disimpan di perangkat ini.</string>
+    <string name="settings_model_sync_retained">Model default tidak dapat disinkronkan. Perubahan Anda tersimpan di perangkat ini.</string>
     <string name="settings_model_effort">Tingkat penalaran</string>
     <string name="settings_model_effort_low">Rendah</string>
     <string name="settings_model_effort_medium">Sedang</string>

@@ -24,6 +24,7 @@ import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.PreferenceChange
 import ai.okou.android.preferences.appearance
+import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.settings.WorkspaceSettingsModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -118,6 +119,7 @@ class SessionModel(
     private val runControlJournal: RunControlJournalStore,
     private val appearanceCache: MemberAppearanceCache,
     private val projectExpansionStore: ProjectExpansionStore,
+    private val defaultModelStore: DefaultModelStore,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
     private val connectivity: Flow<Boolean> = emptyFlow(),
@@ -515,12 +517,15 @@ class SessionModel(
         val settings =
             store.workspaceModel {
                 WorkspaceSettingsModel(
-                    owner,
-                    resolvedOrganization.role == OrganizationRole.ADMIN,
-                    { current(ticket, snapshot) },
-                    { workspaceFailure(ticket, snapshot, it) },
-                    connectivity,
-                )
+                        owner,
+                        opened.identity,
+                        defaultModelStore,
+                        resolvedOrganization.role == OrganizationRole.ADMIN,
+                        { current(ticket, snapshot) },
+                        { workspaceFailure(ticket, snapshot, it) },
+                        connectivity,
+                    )
+                    .also { it.defaultModel.foreground(foreground.value) }
             }
         val connectors =
             owner.connectors?.let { service ->
@@ -616,6 +621,7 @@ class SessionModel(
 
     fun foregroundChanged(active: Boolean) {
         foreground.value = active
+        mutable.value.ready?.settings?.defaultModel?.foreground(active)
         if (!active) return
         val state = mutable.value
         state.ready?.preferences?.refreshFromForeground()

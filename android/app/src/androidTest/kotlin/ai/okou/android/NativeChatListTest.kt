@@ -541,7 +541,14 @@ class NativeChatListTest {
                 )
                 text("Native history reply")
                 assertTrue(device.pressDPadCenter())
-                clickText(app.getString(R.string.chat_inbox))
+                text(app.getString(R.string.chat_inbox))
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
+                device.awaitKeyboardFocus(
+                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted))
+                )
+                repeat(3) { assertTrue(device.pressDPadUp()) }
+                device.awaitKeyboardFocus(inbox)
+                assertTrue(device.pressDPadCenter())
                 revealText("Project chat")
                 click(UiSelector().description(app.getString(R.string.settings)))
                 text(app.getString(R.string.appearance))
@@ -615,17 +622,19 @@ class NativeChatListTest {
             val personalChat = By.pkg(app.packageName).text("Personal chat")
             fun captureSwipe(displacement: Int, name: String) {
                 val point = swipePoint(displacement, 0)
-                // A second sample at the same point lets platform resampling settle at the target.
-                repeat(2) { assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point)) }
+                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
                 val targetRight = row.right + point.x - start.x
                 assertTrue(
                     "Chat row failed to follow the $displacement dp swipe",
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean =
-                                device.findObject(personalChat)?.visibleBounds?.right?.let {
-                                    abs(it - targetRight) <= 2
-                                } == true
+                            override fun apply(device: UiDevice): Boolean {
+                                val right = device.findObject(personalChat)?.visibleBounds?.right
+                                if (right != null && abs(right - targetRight) <= 2) return true
+                                // Send a stationary sample if input resampling has not settled.
+                                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
+                                return false
+                            }
                         },
                         10_000,
                     ),

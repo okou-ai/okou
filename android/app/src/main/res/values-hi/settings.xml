@@ -61,7 +61,8 @@
     <string name="settings_model_fast">तेज़ मोड</string>
     <string name="settings_model_fast_usage">लगभग %1$s गुना सदस्यता कोटा</string>
     <string name="settings_model_offline">ऑफ़लाइन। कनेक्ट होने पर बदलाव सिंक होंगे।</string>
-    <string name="settings_model_save_unavailable">डिफ़ॉल्ट मॉडल सिंक नहीं हो सका।</string>
+    <string name="settings_model_save_unavailable">डिफ़ॉल्ट मॉडल इस डिवाइस पर सेव नहीं हो सका।</string>
+    <string name="settings_model_sync_retained">डिफ़ॉल्ट मॉडल सिंक नहीं हो सका। आपका बदलाव इस डिवाइस पर सेव है।</string>
     <string name="settings_model_effort">तर्क का स्तर</string>
     <string name="settings_model_effort_low">कम</string>
     <string name="settings_model_effort_medium">मध्यम</string>
