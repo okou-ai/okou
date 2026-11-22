@@ -36,8 +36,8 @@ the initial response. The server response takes precedence and refreshes the
 cache. Workspace content requires current authorization for the selected
 workspace.
 Temporary workspace metadata and preference failures after authorization retry
-in the foreground and on reconnect. Cached chats stay usable, and Settings
-shows a load failure in its affected section while it recovers.
+in the foreground and on reconnect. Cached chats stay usable, and the workspace
+row in Settings shows preparation and temporary failures in its subtitle.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace through the canonical Instructions API. Loading

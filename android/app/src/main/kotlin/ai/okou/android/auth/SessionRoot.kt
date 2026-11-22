@@ -26,6 +26,7 @@ import ai.okou.android.state.rememberWorkspaceSwitchTarget
 import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchControlHeight
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -336,7 +337,9 @@ private fun WorkspaceSettingsContent(
                 appUpdates = appUpdates,
                 workspacePreferences = {
                     MemberPreferencesSettings(preferenceModel, state.cachedAppearance)
-                    if (ready == null) WorkspaceSettingsPreparation(state, retry)
+                    if (state.stage == SessionStage.Unavailable && !state.working) {
+                        WorkspaceStartupRecovery(retry)
+                    }
                 },
                 workspace = {
                     WorkspaceSettings(workspaceId, workspaceName, state, switchWorkspace) {
@@ -398,14 +401,20 @@ private fun WorkspaceSettingsContent(
     }
 }
 
+@StringRes
+private fun workspacePreparationMessage(state: SessionUiState): Int? =
+    when {
+        !state.working -> null
+        state.stage == SessionStage.Unavailable -> R.string.chat_list_first_load_failed
+        else -> R.string.auth_preparing_workspace
+    }
+
 @Composable
 private fun WorkspaceSettingsPreparation(state: SessionUiState, retry: () -> Unit) {
-    if (state.working) {
+    val message = workspacePreparationMessage(state)
+    if (message != null) {
         Text(
-            stringResource(
-                if (state.stage == SessionStage.Unavailable) R.string.chat_list_first_load_failed
-                else R.string.auth_preparing_workspace
-            ),
+            stringResource(message),
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
@@ -445,6 +454,9 @@ private fun WorkspaceSettings(
 ) {
     val enabled = state.ready != null
     val label = stringResource(R.string.auth_workspace)
+    val message = workspacePreparationMessage(state)
+    val subtitle =
+        if (message == null) label.takeIf { workspaceName != null } else stringResource(message)
     SettingsGroup {
         SettingsTrigger(
             enabled = enabled,
@@ -455,8 +467,10 @@ private fun WorkspaceSettings(
             SettingsRow(
                 workspaceName ?: label,
                 leading = { WorkspaceLogo(workspaceId, Modifier.size(40.dp)) },
-                modifier = modifier,
-                supportingText = label.takeIf { workspaceName != null },
+                modifier =
+                    if (message == null) modifier
+                    else modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                supportingText = subtitle,
                 onClick = open,
                 enabled = enabled,
             )

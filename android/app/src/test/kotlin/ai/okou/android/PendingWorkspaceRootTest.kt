@@ -70,6 +70,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
     protected open val selectedAccess: MembershipAccess? = null
     protected open val seedChats = true
     val authorizationResponse = CompletableDeferred<Unit>()
+    var membershipsResponse = CompletableDeferred(Unit)
     var organizationResponse = CompletableDeferred<Unit>()
     @Volatile var listResponse = CompletableDeferred<Unit>()
     var preferencesResponse = CompletableDeferred<Unit>()
@@ -78,7 +79,13 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
     override fun createAuthentication(): Authentication {
         val access = selectedAccess ?: return super.createAuthentication()
         return TestAuthentication(testAuthenticationState().copy(membershipAccess = listOf(access)))
-            .apply { refreshAction = { authorizationResponse.await() } }
+            .apply {
+                refreshAction = { authorizationResponse.await() }
+                membershipsAction = {
+                    membershipsResponse.await()
+                    available
+                }
+            }
     }
 
     override fun onCreate() {
@@ -232,6 +239,7 @@ class PendingWorkspaceRootTest {
             compose.activityRule.scenario.close()
         } finally {
             application.authorizationResponse.complete(Unit)
+            application.membershipsResponse.complete(Unit)
             application.organizationResponse.complete(Unit)
             application.preferencesResponse.complete(Unit)
             application.listResponse.complete(Unit)
@@ -260,7 +268,10 @@ class PendingWorkspaceRootTest {
         val toolBounds = tools.map { it.getUnclippedBoundsInRoot() }
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
 
-        compose.runOnIdle { app.authorizationResponse.complete(Unit) }
+        compose.runOnIdle {
+            app.membershipsResponse = CompletableDeferred()
+            app.authorizationResponse.complete(Unit)
+        }
         awaitCachedRow()
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
         assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
@@ -276,7 +287,11 @@ class PendingWorkspaceRootTest {
 
         settings.assertIsEnabled().performClick()
         compose.onNodeWithText("Display mode").assertIsNotEnabled()
-        compose.onNodeWithText("Credit balance").assertIsNotEnabled()
+        val creditBalance = compose.onNodeWithText("Credit balance").assertIsNotEnabled()
+        val creditBounds = creditBalance.getUnclippedBoundsInRoot()
+        val preparing = compose.onNodeWithText(app.getString(R.string.auth_preparing_workspace))
+        preparing.assertIsDisplayed()
+        compose.onNodeWithText("Workspace A").assertDoesNotExist()
         compose.onNodeWithText("Model accounts").assertIsNotEnabled()
         compose.onNodeWithText("Cloud Browser").assertIsNotEnabled()
         compose.waitUntil(10_000) {
@@ -295,11 +310,29 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
         settings.performClick()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Workspace A").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals(creditBounds, creditBalance.getUnclippedBoundsInRoot())
+        preparing.assertIsDisplayed()
         compose.onNodeWithText("Dark").assertExists()
-        compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+        val account = compose.onNodeWithText("Account and security")
+        val timezone = compose.onNodeWithText("Time zone")
+        val accountGap =
+            account.getUnclippedBoundsInRoot().top - timezone.getUnclippedBoundsInRoot().bottom
+        compose.runOnIdle {
+            app.membershipsResponse.complete(Unit)
+            app.preferencesResponse.complete(Unit)
+        }
         compose.waitUntil(10_000) { sessionState().stage == SessionStage.Ready }
+        preparing.assertDoesNotExist()
+        assertEquals(creditBounds, creditBalance.getUnclippedBoundsInRoot())
+        assertEquals(
+            accountGap,
+            account.getUnclippedBoundsInRoot().top - timezone.getUnclippedBoundsInRoot().bottom,
+        )
         compose.onNodeWithText("Display mode").assertIsEnabled()
-        compose.onNodeWithText("Credit balance").assertIsEnabled()
+        creditBalance.assertIsEnabled()
         compose.onNodeWithText("Model accounts").assertIsEnabled()
         compose.onNodeWithText("Cloud Browser").assertIsEnabled()
         compose.onNodeWithText("Follow system").assertExists()
