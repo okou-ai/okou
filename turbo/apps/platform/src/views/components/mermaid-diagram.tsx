@@ -1,3 +1,4 @@
+import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -71,10 +72,10 @@ export function MermaidDiagramView({
   });
 
   if (loadable.state !== "loading" && image === null) {
-    return <MermaidCodeBlock signals={signals} />;
+    return withChatScrollLayout(<MermaidCodeBlock signals={signals} />);
   }
 
-  return (
+  return withChatScrollLayout(
     <div
       className="mb-4"
       data-mermaid-status={image ? "rendered" : "rendering"}
@@ -125,6 +126,6 @@ export function MermaidDiagramView({
           <code>{signals.code}</code>
         </MarkdownCodeBlock>
       </details>
-    </div>
+    </div>,
   );
 }

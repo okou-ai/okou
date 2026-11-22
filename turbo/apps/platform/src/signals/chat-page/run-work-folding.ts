@@ -485,7 +485,6 @@ function runWorkGroups(events: readonly EnrichedChatEvent[]): RunWorkGroup[] {
 
 export function buildRunWorkFolding(
   groups: readonly ChatEventGroup[],
-  includesTail = true,
 ): RunWorkFolding {
   const events = groups.flatMap((group) => {
     return group.events;
@@ -515,9 +514,6 @@ export function buildRunWorkFolding(
   }
 
   // Historical errors stay in the source events; only the latest tail is rendered.
-  if (!includesTail) {
-    statusTail = null;
-  }
   visibleEvents.push(...(statusTail?.events ?? []));
 
   const workAnchorEventIds = new Set(
