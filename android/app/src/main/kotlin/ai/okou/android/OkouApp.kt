@@ -591,6 +591,7 @@ internal fun OkouApp(
                 listWidth,
                 onClose = { closeArtifacts(restoreFocus = true) },
                 onSource = { source ->
+                    closeFind()
                     conversations.open(source.id)
                     navigation = navigation.copy(artifacts = ArtifactsDestination(source.id))
                 },

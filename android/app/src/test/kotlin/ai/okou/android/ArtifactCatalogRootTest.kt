@@ -99,6 +99,32 @@ class ArtifactCatalogRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun openingTheSourceConversationLeavesFindAndBackRestoresThePreview() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText("Native history reply")
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val find = compose.onNodeWithTag("conversation_find")
+        find.assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        awaitText("View source conversation")
+        compose.onNodeWithText("View source conversation").performClick()
+
+        find.assertDoesNotExist()
+        compose.onNodeWithText("Native history reply").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to artifact preview").performClick()
+        awaitText("View source conversation")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
     fun wideFiltersKeepThePreviewAndDownloadRechecksTheGrant() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.pageSize = 2
