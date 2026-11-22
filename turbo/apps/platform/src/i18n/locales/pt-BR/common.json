@@ -398,7 +398,7 @@
         "connectors": "Conectores",
         "settings": "Configurações",
         "workflows": "Fluxos de trabalho",
-        "works": "Onde {{agentName}} trabalha"
+        "works": "Onde {{assistantName}} trabalha"
       },
       "rail": {
         "workflows": "Fluxos de trabalho",
@@ -2561,7 +2561,7 @@
     "sidebar": {
       "archive": "Arquivar conversa",
       "archived": "Arquivadas",
-      "chatsWith": "Conversas com {{agentName}}",
+      "chatsWith": "Conversas com {{assistantName}}",
       "chatThreads": "Conversas",
       "delete": "Excluir",
       "deleteDescription": "Esta conversa será excluída permanentemente. Qualquer tarefa em execução nesta conversa será interrompida imediatamente. Todas as automações vinculadas serão pausadas. Esta ação não pode ser desfeita.",
@@ -2576,7 +2576,7 @@
       "movePinUp": "Mover para cima",
       "mute": "Silenciar conversa",
       "muted": "Silenciada",
-      "newChatWith": "Nova conversa com {{agentName}}",
+      "newChatWith": "Nova conversa com {{assistantName}}",
       "noArchived": "Nenhuma conversa arquivada",
       "noMuted": "Nenhuma conversa silenciada",
       "noUnread": "Nenhuma conversa não lida",
@@ -3332,7 +3332,7 @@
     "directed": {
       "connectDocumentTitle": "Conectar {{connector}}",
       "connected": "{{connector}} conectado",
-      "needsConnector": "{{agent}} precisa de {{connector}} para continuar",
+      "needsConnector": "{{assistantName}} precisa de {{connector}} para continuar",
       "reconnecting": "Reconectando..."
     },
     "expiration": {
@@ -7398,7 +7398,7 @@
         "visibilityHelp": "Escolha como este fluxo de trabalho é compartilhado no seu espaço de trabalho."
       },
       "notFound": "Fluxo de trabalho não encontrado.",
-      "refineWith": "Refinar com {{agent}}",
+      "refineWith": "Refinar com {{assistantName}}",
       "sectionNavigation": "Seção de detalhes do fluxo de trabalho",
       "visibility": {
         "automationWarning": "As automações serão interrompidas",

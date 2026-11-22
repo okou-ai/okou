@@ -398,7 +398,7 @@
         "connectors": "Connecteurs",
         "settings": "Paramètres",
         "workflows": "Workflows",
-        "works": "Où {{agentName}} travaille"
+        "works": "Où {{assistantName}} travaille"
       },
       "rail": {
         "workflows": "Workflows",
@@ -2561,7 +2561,7 @@
     "sidebar": {
       "archive": "Archiver la discussion",
       "archived": "Archivées",
-      "chatsWith": "Discussions avec {{agentName}}",
+      "chatsWith": "Discussions avec {{assistantName}}",
       "chatThreads": "Fils de discussion",
       "delete": "Supprimer la discussion",
       "deleteDescription": "Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible.",
@@ -2576,7 +2576,7 @@
       "movePinUp": "Déplacer vers le haut",
       "mute": "Mettre la discussion en sourdine",
       "muted": "En sourdine",
-      "newChatWith": "Nouvelle discussion avec {{agentName}}",
+      "newChatWith": "Nouvelle discussion avec {{assistantName}}",
       "noArchived": "Aucune discussion archivée",
       "noMuted": "Aucune discussion en sourdine",
       "noUnread": "Aucune discussion non lue",
@@ -3332,7 +3332,7 @@
     "directed": {
       "connectDocumentTitle": "Connecter {{connector}}",
       "connected": "{{connector}} connecté",
-      "needsConnector": "{{agent}} a besoin de {{connector}} pour continuer",
+      "needsConnector": "{{assistantName}} a besoin de {{connector}} pour continuer",
       "reconnecting": "Reconnexion en cours..."
     },
     "expiration": {
@@ -7398,7 +7398,7 @@
         "visibilityHelp": "Choisissez comment ce workflow est partagé au sein de votre espace de travail."
       },
       "notFound": "Workflow introuvable.",
-      "refineWith": "Affiner avec {{agent}}",
+      "refineWith": "Affiner avec {{assistantName}}",
       "sectionNavigation": "Rubrique des détails du workflow",
       "visibility": {
         "automationWarning": "Les automatisations s'arrêteront",

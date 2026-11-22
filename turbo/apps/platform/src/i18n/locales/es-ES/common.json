@@ -398,7 +398,7 @@
         "connectors": "Conectores",
         "settings": "Configuración",
         "workflows": "Flujos de trabajo",
-        "works": "Dónde trabaja {{agentName}}"
+        "works": "Dónde trabaja {{assistantName}}"
       },
       "rail": {
         "workflows": "Flujos de trabajo",
@@ -2561,7 +2561,7 @@
     "sidebar": {
       "archive": "Archivar chat",
       "archived": "Archivados",
-      "chatsWith": "Conversaciones con {{agentName}}",
+      "chatsWith": "Conversaciones con {{assistantName}}",
       "chatThreads": "Conversaciones",
       "delete": "Eliminar chat",
       "deleteDescription": "Esto eliminará permanentemente este chat. Cualquier tarea que se esté ejecutando en este chat se detendrá inmediatamente. Todas las automatizaciones vinculadas se pausarán. Esta acción no puede deshacerse.",
@@ -2576,7 +2576,7 @@
       "movePinUp": "Mover hacia arriba",
       "mute": "Silenciar chat",
       "muted": "Silenciado",
-      "newChatWith": "Nuevo chat con {{agentName}}",
+      "newChatWith": "Nuevo chat con {{assistantName}}",
       "noArchived": "No hay chats archivados",
       "noMuted": "No hay chats silenciados",
       "noUnread": "No hay conversaciones sin leer",
@@ -3332,7 +3332,7 @@
     "directed": {
       "connectDocumentTitle": "Conectar {{connector}}",
       "connected": "{{connector}} conectado",
-      "needsConnector": "{{agent}} necesita {{connector}} para seguir adelante",
+      "needsConnector": "{{assistantName}} necesita {{connector}} para seguir adelante",
       "reconnecting": "Reconectando..."
     },
     "expiration": {
@@ -7398,7 +7398,7 @@
         "visibilityHelp": "Elige cómo se comparte este flujo de trabajo dentro de tu espacio de trabajo."
       },
       "notFound": "Flujo de trabajo no encontrado.",
-      "refineWith": "Refinar con {{agent}}",
+      "refineWith": "Refinar con {{assistantName}}",
       "sectionNavigation": "Sección de detalles del flujo de trabajo",
       "visibility": {
         "automationWarning": "Las automatizaciones se detendrán",

@@ -384,7 +384,7 @@
         "connectors": "Integrationen",
         "settings": "Einstellungen",
         "workflows": "Workflows",
-        "works": "Einsatzorte von {{agentName}}"
+        "works": "Einsatzorte von {{assistantName}}"
       },
       "rail": {
         "workflows": "Workflows",
@@ -2513,7 +2513,7 @@
     "sidebar": {
       "archive": "Chat archivieren",
       "archived": "Archiviert",
-      "chatsWith": "Chats mit {{agentName}}",
+      "chatsWith": "Chats mit {{assistantName}}",
       "chatThreads": "Chat-Threads",
       "delete": "Chat löschen",
       "deleteDescription": "Dadurch wird dieser Chat dauerhaft gelöscht. Jede derzeit in diesem Chat ausgeführte Aufgabe wird sofort gestoppt. Alle verknüpften Automatisierungen werden pausiert. Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -2528,7 +2528,7 @@
       "movePinUp": "Nach oben verschieben",
       "mute": "Chat stummschalten",
       "muted": "Stummgeschaltet",
-      "newChatWith": "Neuer Chat mit {{agentName}}",
+      "newChatWith": "Neuer Chat mit {{assistantName}}",
       "noArchived": "Keine archivierten Chats",
       "noMuted": "Keine stummgeschalteten Chats",
       "noUnread": "Keine ungelesenen Chats",
@@ -3278,7 +3278,7 @@
     "directed": {
       "connectDocumentTitle": "Verbinden Sie {{connector}}",
       "connected": "{{connector}} verbunden",
-      "needsConnector": "{{agent}} benötigt {{connector}}, um fortzufahren",
+      "needsConnector": "{{assistantName}} benötigt {{connector}}, um fortzufahren",
       "reconnecting": "Verbindung wird wieder hergestellt..."
     },
     "expiration": {
@@ -7316,7 +7316,7 @@
         "visibilityHelp": "Wählen Sie aus, wie dieser Workflow in Ihrem Arbeitsbereich geteilt wird."
       },
       "notFound": "Workflow nicht gefunden.",
-      "refineWith": "Verfeinern mit {{agent}}",
+      "refineWith": "Verfeinern mit {{assistantName}}",
       "sectionNavigation": "Bereich der Workflow-Details",
       "visibility": {
         "automationWarning": "Automatisierungen werden gestoppt",

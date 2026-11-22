@@ -398,7 +398,7 @@
         "connectors": "Connettori",
         "settings": "Impostazioni",
         "workflows": "Flussi di lavoro",
-        "works": "Dove lavora {{agentName}}"
+        "works": "Dove lavora {{assistantName}}"
       },
       "rail": {
         "workflows": "Flussi di lavoro",
@@ -2561,7 +2561,7 @@
     "sidebar": {
       "archive": "Archivia chat",
       "archived": "Archiviate",
-      "chatsWith": "Chatta con {{agentName}}",
+      "chatsWith": "Chatta con {{assistantName}}",
       "chatThreads": "Thread di chat",
       "delete": "Elimina la chat",
       "deleteDescription": "Ciò eliminerà definitivamente questa chat. Qualsiasi attività attualmente in esecuzione in questa chat verrà interrotta immediatamente. Tutte le automazioni collegate verranno messe in pausa. Questa azione non può essere annullata.",
@@ -2576,7 +2576,7 @@
       "movePinUp": "Sposta su",
       "mute": "Silenzia chat",
       "muted": "Silenziata",
-      "newChatWith": "Nuova chat con {{agentName}}",
+      "newChatWith": "Nuova chat con {{assistantName}}",
       "noArchived": "Nessuna chat archiviata",
       "noMuted": "Nessuna chat silenziata",
       "noUnread": "Nessuna chat non letta",
@@ -3332,7 +3332,7 @@
     "directed": {
       "connectDocumentTitle": "Connetti {{connector}}",
       "connected": "{{connector}} connesso",
-      "needsConnector": "{{agent}} necessita di {{connector}} per procedere",
+      "needsConnector": "{{assistantName}} necessita di {{connector}} per procedere",
       "reconnecting": "Riconnessione..."
     },
     "expiration": {
@@ -7398,7 +7398,7 @@
         "visibilityHelp": "Scegli come condividere questo flusso di lavoro all'interno della tua area di lavoro."
       },
       "notFound": "Flusso di lavoro non trovato.",
-      "refineWith": "Perfeziona con {{agent}}",
+      "refineWith": "Perfeziona con {{assistantName}}",
       "sectionNavigation": "Sezione dei dettagli del flusso di lavoro",
       "visibility": {
         "automationWarning": "Le automazioni si fermeranno",

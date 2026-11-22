@@ -384,7 +384,7 @@
         "connectors": "कनेक्टर्स",
         "settings": "सेटिंग्स",
         "workflows": "वर्कफ़्लो",
-        "works": "जहां {{agentName}} काम करता है"
+        "works": "जहां {{assistantName}} काम करता है"
       },
       "rail": {
         "workflows": "वर्कफ़्लो",
@@ -2513,7 +2513,7 @@
     "sidebar": {
       "archive": "चैट आर्काइव करें",
       "archived": "आर्काइव की गई",
-      "chatsWith": "{{agentName}} के साथ चैट",
+      "chatsWith": "{{assistantName}} के साथ चैट",
       "chatThreads": "चैट थ्रेड",
       "delete": "चैट हटाएं",
       "deleteDescription": "इससे यह चैट स्थायी रूप से हट जाएगी. इस चैट में वर्तमान में चल रहा कोई भी कार्य तुरंत बंद कर दिया जाएगा। इससे जुड़ी सभी ऑटोमेशन रोक दी जाएंगी। इस एक्शन को वापस नहीं किया जा सकता।",
@@ -2528,7 +2528,7 @@
       "movePinUp": "ऊपर ले जाएँ",
       "mute": "चैट म्यूट करें",
       "muted": "म्यूट किया गया",
-      "newChatWith": "{{agentName}} के साथ नई चैट",
+      "newChatWith": "{{assistantName}} के साथ नई चैट",
       "noArchived": "कोई आर्काइव की गई चैट नहीं",
       "noMuted": "कोई म्यूट की गई चैट नहीं",
       "noUnread": "कोई अपठित चैट नहीं",
@@ -3278,7 +3278,7 @@
     "directed": {
       "connectDocumentTitle": "{{connector}} कनेक्ट करें",
       "connected": "{{connector}} कनेक्ट हुआ",
-      "needsConnector": "{{agent}} को आगे बढ़ने के लिए {{connector}} की आवश्यकता है",
+      "needsConnector": "{{assistantName}} को आगे बढ़ने के लिए {{connector}} की आवश्यकता है",
       "reconnecting": "पुनः कनेक्ट हो रहा है..."
     },
     "expiration": {
@@ -7316,7 +7316,7 @@
         "visibilityHelp": "चुनें कि यह वर्कफ़्लो आपके वर्कस्पेस में कैसे साझा किया जाता है।"
       },
       "notFound": "वर्कफ़्लो नहीं मिला.",
-      "refineWith": "{{agent}} के साथ परिष्कृत करें",
+      "refineWith": "{{assistantName}} के साथ परिष्कृत करें",
       "sectionNavigation": "वर्कफ़्लो विवरण अनुभाग",
       "visibility": {
         "automationWarning": "ऑटोमेशन बंद हो जाएगा",

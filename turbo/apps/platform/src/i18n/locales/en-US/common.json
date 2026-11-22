@@ -384,7 +384,7 @@
         "connectors": "Connectors",
         "settings": "Settings",
         "workflows": "Workflows",
-        "works": "Where {{agentName}} works"
+        "works": "Where {{assistantName}} works"
       },
       "rail": {
         "workflows": "Workflows",
@@ -2513,7 +2513,7 @@
     "sidebar": {
       "archive": "Archive chat",
       "archived": "Archived",
-      "chatsWith": "Chats with {{agentName}}",
+      "chatsWith": "Chats with {{assistantName}}",
       "chatThreads": "Chat threads",
       "delete": "Delete chat",
       "deleteDescription": "This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone.",
@@ -2528,7 +2528,7 @@
       "movePinUp": "Move up",
       "mute": "Mute chat",
       "muted": "Muted",
-      "newChatWith": "New chat with {{agentName}}",
+      "newChatWith": "New chat with {{assistantName}}",
       "noArchived": "No archived chats",
       "noMuted": "No muted chats",
       "noUnread": "No unread chats",
@@ -3276,7 +3276,7 @@
     "directed": {
       "connectDocumentTitle": "Connect {{connector}}",
       "connected": "{{connector}} connected",
-      "needsConnector": "{{agent}} needs {{connector}} to proceed",
+      "needsConnector": "{{assistantName}} needs {{connector}} to proceed",
       "reconnecting": "Reconnecting..."
     },
     "expiration": {
@@ -7314,7 +7314,7 @@
         "visibilityHelp": "Choose how this workflow is shared inside your workspace."
       },
       "notFound": "Workflow not found.",
-      "refineWith": "Refine with {{agent}}",
+      "refineWith": "Refine with {{assistantName}}",
       "sectionNavigation": "Workflow details section",
       "visibility": {
         "automationWarning": "Automations will stop",

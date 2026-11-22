@@ -384,7 +384,7 @@
         "connectors": "コネクター",
         "settings": "設定",
         "workflows": "ワークフロー",
-        "works": "{{agentName}}の連携先"
+        "works": "{{assistantName}}の連携先"
       },
       "rail": {
         "workflows": "ワークフロー",
@@ -2500,7 +2500,7 @@
     "sidebar": {
       "archive": "チャットをアーカイブ",
       "archived": "アーカイブ済み",
-      "chatsWith": "{{agentName}} とのチャット",
+      "chatsWith": "{{assistantName}} とのチャット",
       "chatThreads": "チャットスレッド",
       "delete": "チャットを削除する",
       "deleteDescription": "これにより、このチャットは完全に削除されます。このチャットで現在実行中のタスクはすぐに停止されます。リンクされている自動化は一時停止されます。この操作は元に戻すことができません。",
@@ -2515,7 +2515,7 @@
       "movePinUp": "上に移動",
       "mute": "チャットをミュート",
       "muted": "ミュート中",
-      "newChatWith": "{{agentName}} との新しいチャット",
+      "newChatWith": "{{assistantName}} との新しいチャット",
       "noArchived": "アーカイブ済みのチャットはありません",
       "noMuted": "ミュート中のチャットはありません",
       "noUnread": "未読のチャットはありません",
@@ -3260,7 +3260,7 @@
     "directed": {
       "connectDocumentTitle": "{{connector}} を接続します",
       "connected": "{{connector}} が接続されました",
-      "needsConnector": "{{agent}} を続行するには {{connector}} が必要です",
+      "needsConnector": "{{assistantName}} を続行するには {{connector}} が必要です",
       "reconnecting": "再接続中..."
     },
     "expiration": {
@@ -7287,7 +7287,7 @@
         "visibilityHelp": "このワークフローをワークスペース内で共有する方法を選択します。"
       },
       "notFound": "ワークフローが見つかりません。",
-      "refineWith": "{{agent}} で絞り込む",
+      "refineWith": "{{assistantName}} で絞り込む",
       "sectionNavigation": "ワークフロー詳細セクション",
       "visibility": {
         "automationWarning": "オートメーションは停止します",

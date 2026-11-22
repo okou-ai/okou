@@ -384,7 +384,7 @@
         "connectors": "连接器",
         "settings": "设置",
         "workflows": "工作流",
-        "works": "{{agentName}} 的工作渠道"
+        "works": "{{assistantName}} 的工作渠道"
       },
       "rail": {
         "workflows": "工作流",
@@ -2500,7 +2500,7 @@
     "sidebar": {
       "archive": "归档聊天",
       "archived": "已归档",
-      "chatsWith": "与{{agentName}}的聊天",
+      "chatsWith": "与{{assistantName}}的聊天",
       "chatThreads": "聊天会话",
       "delete": "删除聊天",
       "deleteDescription": "这将永久删除该聊天。聊天中正在运行的任务会立即停止，关联的自动化会被暂停。此操作无法撤销。",
@@ -2515,7 +2515,7 @@
       "movePinUp": "上移",
       "mute": "静音聊天",
       "muted": "已静音",
-      "newChatWith": "与{{agentName}}新建聊天",
+      "newChatWith": "与{{assistantName}}新建聊天",
       "noArchived": "没有已归档的聊天",
       "noMuted": "没有已静音的聊天",
       "noUnread": "没有未读聊天",
@@ -3260,7 +3260,7 @@
     "directed": {
       "connectDocumentTitle": "连接{{connector}}",
       "connected": "{{connector}}已连接",
-      "needsConnector": "{{agent}}需要{{connector}}才能继续",
+      "needsConnector": "{{assistantName}}需要{{connector}}才能继续",
       "reconnecting": "正在重新连接…"
     },
     "expiration": {
@@ -7287,7 +7287,7 @@
         "visibilityHelp": "选择这个工作流在工作区内的共享方式。"
       },
       "notFound": "未找到该工作流。",
-      "refineWith": "用{{agent}}优化",
+      "refineWith": "用{{assistantName}}优化",
       "sectionNavigation": "工作流详情栏目",
       "visibility": {
         "automationWarning": "自动化将停止",

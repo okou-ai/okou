@@ -384,7 +384,7 @@
         "connectors": "커넥터",
         "settings": "설정",
         "workflows": "워크플로",
-        "works": "{{agentName}}가(이) 작업하는 곳"
+        "works": "{{assistantName}}가(이) 작업하는 곳"
       },
       "rail": {
         "workflows": "워크플로",
@@ -2500,7 +2500,7 @@
     "sidebar": {
       "archive": "채팅 보관",
       "archived": "보관됨",
-      "chatsWith": "{{agentName}}와의 채팅",
+      "chatsWith": "{{assistantName}}와의 채팅",
       "chatThreads": "채팅 스레드",
       "delete": "채팅 삭제",
       "deleteDescription": "이 채팅을 영구 삭제합니다. 현재 실행 중인 작업은 즉시 중단됩니다. 연결된 자동화는 일시 중지됩니다. 이 작업은 되돌릴 수 없습니다.",
@@ -2515,7 +2515,7 @@
       "movePinUp": "위로 이동",
       "mute": "채팅 알림 끄기",
       "muted": "알림 꺼짐",
-      "newChatWith": "{{agentName}}와 새 채팅",
+      "newChatWith": "{{assistantName}}와 새 채팅",
       "noArchived": "보관된 채팅 없음",
       "noMuted": "음소거된 채팅 없음",
       "noUnread": "읽지 않은 채팅 없음",
@@ -3260,7 +3260,7 @@
     "directed": {
       "connectDocumentTitle": "{{connector}} 연결",
       "connected": "{{connector}} 연결됨",
-      "needsConnector": "{{agent}}가 진행하려면 {{connector}}가 필요합니다",
+      "needsConnector": "{{assistantName}}가 진행하려면 {{connector}}가 필요합니다",
       "reconnecting": "다시 연결 중..."
     },
     "expiration": {
@@ -7287,7 +7287,7 @@
         "visibilityHelp": "워크스페이스 내에서 이 워크플로가 공유되는 방식을 선택하세요."
       },
       "notFound": "워크플로를 찾을 수 없습니다.",
-      "refineWith": "{{agent}}와 함께 다듬기",
+      "refineWith": "{{assistantName}}와 함께 다듬기",
       "sectionNavigation": "워크플로 상세 섹션",
       "visibility": {
         "automationWarning": "자동화가 중지됩니다",

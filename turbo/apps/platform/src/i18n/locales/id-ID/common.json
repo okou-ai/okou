@@ -384,7 +384,7 @@
         "connectors": "Konektor",
         "settings": "Pengaturan",
         "workflows": "Alur kerja",
-        "works": "Tempat {{agentName}} bekerja"
+        "works": "Tempat {{assistantName}} bekerja"
       },
       "rail": {
         "workflows": "Alur kerja",
@@ -2500,7 +2500,7 @@
     "sidebar": {
       "archive": "Arsipkan chat",
       "archived": "Diarsipkan",
-      "chatsWith": "Chat dengan {{agentName}}",
+      "chatsWith": "Chat dengan {{assistantName}}",
       "chatThreads": "Thread chat",
       "delete": "Hapus chat",
       "deleteDescription": "Ini akan menghapus chat ini secara permanen. Setiap tugas yang sedang berjalan di chat ini akan dihentikan segera. Semua automasi yang ditautkan akan dijeda. Tindakan ini tidak dapat dibatalkan.",
@@ -2515,7 +2515,7 @@
       "movePinUp": "Pindahkan ke atas",
       "mute": "Bisukan chat",
       "muted": "Dibisukan",
-      "newChatWith": "Chat baru dengan {{agentName}}",
+      "newChatWith": "Chat baru dengan {{assistantName}}",
       "noArchived": "Tidak ada chat yang diarsipkan",
       "noMuted": "Tidak ada chat yang dibisukan",
       "noUnread": "Tidak ada chat belum dibaca",
@@ -3260,7 +3260,7 @@
     "directed": {
       "connectDocumentTitle": "Hubungkan {{connector}}",
       "connected": "{{connector}} terhubung",
-      "needsConnector": "{{agent}} membutuhkan {{connector}} untuk melanjutkan",
+      "needsConnector": "{{assistantName}} membutuhkan {{connector}} untuk melanjutkan",
       "reconnecting": "Menyambungkan ulang..."
     },
     "expiration": {
@@ -7287,7 +7287,7 @@
         "visibilityHelp": "Pilih cara alur kerja ini dibagikan di dalam ruang kerja Anda."
       },
       "notFound": "Alur kerja tidak ditemukan.",
-      "refineWith": "Perhalus dengan {{agent}}",
+      "refineWith": "Perhalus dengan {{assistantName}}",
       "sectionNavigation": "Bagian detail alur kerja",
       "visibility": {
         "automationWarning": "Otomatisasi akan berhenti",
