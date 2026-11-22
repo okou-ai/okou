@@ -3,7 +3,9 @@ package ai.okou.android.workflows
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
+import ai.okou.android.api.generated.WorkflowDetailVisibility
 import ai.okou.android.api.generated.WorkflowSummary
+import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -54,7 +56,8 @@ internal constructor(
     private var visible = false
     private var selected: String? = null
     private var catalogLoad: Job? = null
-    private var pendingDetailRules: MutableMap<String, List<WorkflowAutomation>>? = null
+    // A null update records a workflow that the detail endpoint confirmed is unavailable.
+    private var pendingDirectoryUpdates: MutableMap<String, WorkflowDirectoryUpdate?>? = null
     private var detailLoad: Job? = null
     private var refreshAfterWrite = false
 
@@ -114,8 +117,8 @@ internal constructor(
     }
 
     private suspend fun loadCatalog(): Throwable? = coroutineScope {
-        val confirmedRules = mutableMapOf<String, List<WorkflowAutomation>>()
-        pendingDetailRules = confirmedRules
+        val updates = mutableMapOf<String, WorkflowDirectoryUpdate?>()
+        pendingDirectoryUpdates = updates
         val catalog = async { read { service.workflows().filter { it.official == null } } }
         val rules = async {
             read { service.workflowAutomations().groupBy({ it.workflow.id }, { it.automation }) }
@@ -135,26 +138,34 @@ internal constructor(
                     }
                     return@coroutineScope catalogError
                 }
-                mutable.value = mutable.value.copy(catalog = workflows.getOrThrow())
+                val directory = workflows.getOrThrow()
+                val catalogRows =
+                    if (updates.isEmpty()) directory
+                    else
+                        directory.mapNotNull { row ->
+                            if (row.id in updates) updates[row.id]?.applyTo(row) else row
+                        }
+                mutable.value = mutable.value.copy(catalog = catalogRows)
                 rules.await()
             } finally {
-                if (pendingDetailRules === confirmedRules) pendingDetailRules = null
+                if (pendingDirectoryUpdates === updates) pendingDirectoryUpdates = null
             }
         if (!authorized()) return@coroutineScope null
         val current = mutable.value
         val directoryRules = automationRules.getOrNull()
-        current.detail?.let { confirmedRules[it.id] = it.automations }
-        val rulesByWorkflow =
-            when {
-                automationRules.exceptionOrNull().denied() -> null
-                directoryRules == null -> current.rules
-                else ->
-                    confirmedRules.entries.fold(directoryRules) { merged, (id, automations) ->
-                        if (merged[id].orEmpty() == automations) merged
-                        else merged + (id to automations)
-                    }
-            }
-        mutable.value = current.copy(rules = rulesByWorkflow)
+        if (directoryRules != null) {
+            val rulesByWorkflow = directoryRules.withDirectoryUpdates(updates)
+            // Both endpoints return the caller's automations for each visible workflow.
+            val detail =
+                current.detail?.let { active ->
+                    val confirmed = rulesByWorkflow[active.id].orEmpty()
+                    if (active.automations == confirmed) active
+                    else active.copy(automations = confirmed)
+                }
+            mutable.value = current.copy(rules = rulesByWorkflow, detail = detail)
+        } else if (automationRules.exceptionOrNull().denied()) {
+            mutable.value = current.copy(rules = null)
+        }
 
         val connections = accounts.await()
         if (!authorized()) return@coroutineScope null
@@ -212,10 +223,12 @@ internal constructor(
                         error.denied() ||
                             (error as? ApiFailure.Http)?.status == 404 ||
                             detail?.official != null -> {
+                            pendingDirectoryUpdates?.set(id, null)
                             val current = mutable.value
                             mutable.value =
                                 current.copy(
                                     catalog = current.catalog?.filterNot { it.id == id },
+                                    rules = current.rules?.minus(id),
                                     detail = null,
                                     detailFailure = WorkflowReadFailure.Unavailable,
                                     editor = null,
@@ -379,8 +392,9 @@ internal constructor(
 
     private fun publishDetail(detail: WorkflowDetail) {
         if (!authorized() || selected != detail.id) return
+        val update = WorkflowDirectoryUpdate(detail)
         // The directory read may complete after the user has left this detail.
-        pendingDetailRules?.set(detail.id, detail.automations)
+        pendingDirectoryUpdates?.set(detail.id, update)
         val current = mutable.value
         mutable.value =
             current.copy(
@@ -388,14 +402,7 @@ internal constructor(
                 detailFailure = null,
                 catalog =
                     current.catalog?.map { item ->
-                        if (item.id == detail.id)
-                            item.copy(
-                                name = detail.name,
-                                displayName = detail.displayName,
-                                description = detail.description,
-                                canManage = detail.canManage,
-                            )
-                        else item
+                        if (item.id == detail.id) update.applyTo(item) else item
                     },
                 rules = current.rules?.plus(detail.id to detail.automations),
             )
@@ -424,6 +431,41 @@ internal constructor(
                 error is ApiFailure.Http && error.status == 401
         )
             onFailure(error)
+    }
+}
+
+private class WorkflowDirectoryUpdate(detail: WorkflowDetail) {
+    private val name = detail.name
+    private val displayName = detail.displayName
+    private val description = detail.description
+    private val canManage = detail.canManage
+    private val visibility =
+        when (detail.visibility) {
+            WorkflowDetailVisibility.PUBLIC -> WorkflowSummaryVisibility.PUBLIC
+            WorkflowDetailVisibility.PRIVATE -> WorkflowSummaryVisibility.PRIVATE
+        }
+    val automations = detail.automations
+
+    fun applyTo(row: WorkflowSummary): WorkflowSummary =
+        row.copy(
+            name = name,
+            displayName = displayName,
+            description = description,
+            canManage = canManage,
+            visibility = visibility,
+        )
+}
+
+private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
+    updates: Map<String, WorkflowDirectoryUpdate?>
+): Map<String, List<WorkflowAutomation>> {
+    if (updates.all { (id, update) -> this[id].orEmpty() == update?.automations.orEmpty() })
+        return this
+    return toMutableMap().apply {
+        for ((id, update) in updates) {
+            val rules = update?.automations.orEmpty()
+            if (rules.isEmpty()) remove(id) else put(id, rules)
+        }
     }
 }
 

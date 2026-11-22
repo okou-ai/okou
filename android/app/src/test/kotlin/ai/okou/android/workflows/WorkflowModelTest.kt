@@ -121,10 +121,85 @@ class WorkflowModelTest {
         assertEquals(emptySet<String>(), model.state.value.connections)
         assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
 
+        model.select(service.summary.id)
+        runCurrent()
+        assertEquals(listOf(active), model.state.value.detail?.automations)
+        val refreshedDetail = CompletableDeferred<WorkflowDetail>()
+        service.detailRead = { refreshedDetail.await() }
+        model.connectivityChanged(true)
+        model.connectivityChanged(false)
+        runCurrent()
+        assertEquals(listOf(paused), model.state.value.rules?.get(service.summary.id))
+        assertEquals(listOf(paused), model.state.value.detail?.automations)
+
+        refreshedDetail.complete(service.detail.copy(automations = listOf(paused)))
+        runCurrent()
+        assertEquals(listOf(paused), model.state.value.detail?.automations)
+    }
+
+    @Test
+    fun directoryKeepsConfirmedSummaryWhenOlderCatalogArrives() = check { service, model ->
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+
+        val catalog = CompletableDeferred<List<WorkflowSummary>>()
+        service.catalogRead = { catalog.await() }
+        model.connectivityChanged(true)
+        model.connectivityChanged(false)
+        runCurrent()
+
+        val published =
+            service.summary.copy(
+                displayName = "Published release review",
+                description = "Review the deployment",
+                visibility = WorkflowSummaryVisibility.PUBLIC,
+            )
+        service.detail =
+            service.detail.copy(
+                displayName = published.displayName,
+                description = published.description,
+                visibility = WorkflowDetailVisibility.PUBLIC,
+            )
+        model.select(service.summary.id)
+        runCurrent()
+        assertEquals(published.displayName, model.state.value.detail?.displayName)
+        model.select(null)
+        catalog.complete(listOf(service.summary))
+        runCurrent()
+        assertEquals(listOf(published), model.state.value.catalog)
+
         model.visibilityChanged(false)
         model.visibilityChanged(true)
         runCurrent()
-        assertEquals(listOf(paused), model.state.value.rules?.get(service.summary.id))
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+    }
+
+    @Test
+    fun lateCatalogLeavesUnavailableWorkflowRemoved() = check { service, model ->
+        val other = service.summary.copy(id = "b2222222-2222-4222-8222-222222222222")
+        val previous = listOf(service.summary, other)
+        service.catalogRead = { previous }
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(previous, model.state.value.catalog)
+
+        val catalog = CompletableDeferred<List<WorkflowSummary>>()
+        service.catalogRead = { catalog.await() }
+        model.connectivityChanged(true)
+        model.connectivityChanged(false)
+        runCurrent()
+
+        service.detailRead = { throw ApiFailure.Http(404, null, null, null) }
+        model.select(service.summary.id)
+        runCurrent()
+        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.detailFailure)
+        assertEquals(listOf(other), model.state.value.catalog)
+        model.select(null)
+
+        catalog.complete(previous)
+        runCurrent()
+        assertEquals(listOf(other), model.state.value.catalog)
     }
 
     @Test
@@ -249,6 +324,7 @@ class WorkflowModelTest {
                 automations = emptyList(),
             )
         var catalogRead: suspend () -> List<WorkflowSummary> = { listOf(summary) }
+        var detailRead: suspend () -> WorkflowDetail = { detail }
         var rulesRead: suspend () -> WorkspaceWorkflowAutomations = { emptyList() }
         var connectionsRead: suspend () -> Set<String> = { emptySet() }
         var detailReads = 0
@@ -261,7 +337,7 @@ class WorkflowModelTest {
 
         override suspend fun workflow(id: String): WorkflowDetail {
             detailReads++
-            return detail
+            return detailRead()
         }
 
         override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations = rulesRead()
