@@ -3739,6 +3739,13 @@
       "when": 1795310579598,
       "tag": "1612_voice_transcription",
       "breakpoints": true
+    },
+    {
+      "idx": 1613,
+      "version": "7",
+      "when": 1795317432970,
+      "tag": "1613_retire_custom_connector_skill_mirror",
+      "breakpoints": true
     }
   ]
 }
