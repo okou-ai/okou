@@ -13,6 +13,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,24 +43,34 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -109,7 +120,11 @@ internal fun conversationMessages(messages: List<HistoryMessage>): List<Conversa
 private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.isNotEmpty()
 
 @Composable
-internal fun ConversationMessageRow(entry: ConversationMessage, revoke: (() -> Unit)?) {
+internal fun ConversationMessageRow(
+    entry: ConversationMessage,
+    revoke: (() -> Unit)?,
+    findHighlight: ConversationFindHighlight? = null,
+) {
     val message = entry.message
     val colors = MaterialTheme.colorScheme
     when {
@@ -155,7 +170,7 @@ internal fun ConversationMessageRow(entry: ConversationMessage, revoke: (() -> U
                         Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        MessageBody(message)
+                        MessageBody(message, findHighlight = findHighlight)
                         MessageStatus(message, entry.deliveryStatus)
                     }
                 }
@@ -165,6 +180,12 @@ internal fun ConversationMessageRow(entry: ConversationMessage, revoke: (() -> U
                 ConversationReplyHeader(message)
                 if (entry.earlier.isNotEmpty()) {
                     var expanded by rememberEarlierRepliesExpanded()
+                    if (findHighlight?.reveal != null) {
+                        val targetId = findHighlight.target.id
+                        LaunchedEffect(targetId) {
+                            if (entry.earlier.any { it.id == targetId }) expanded = true
+                        }
+                    }
                     TextButton(
                         onClick = { expanded = !expanded },
                         colors =
@@ -190,12 +211,19 @@ internal fun ConversationMessageRow(entry: ConversationMessage, revoke: (() -> U
                         ) {
                             for (earlier in entry.earlier) {
                                 Column(Modifier.testTag("message_${earlier.id}")) {
-                                    MessageBody(earlier)
+                                    MessageBody(
+                                        earlier,
+                                        findHighlight =
+                                            findHighlight?.takeIf { it.target.id == earlier.id },
+                                    )
                                 }
                             }
                         }
                 }
-                MessageBody(message)
+                MessageBody(
+                    message,
+                    findHighlight = findHighlight?.takeIf { it.target.id == message.id },
+                )
             }
         else ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
@@ -340,13 +368,24 @@ private fun ConversationMeta(text: String, maxLines: Int = Int.MAX_VALUE) {
 }
 
 @Composable
-private fun MessageBody(message: HistoryMessage, compact: Boolean = false) {
+private fun MessageBody(
+    message: HistoryMessage,
+    compact: Boolean = false,
+    findHighlight: ConversationFindHighlight? = null,
+) {
     val typography = MaterialTheme.typography
+    val colors = MaterialTheme.colorScheme
+    val markdownHighlight = findHighlight?.takeIf { message.role == HistoryRole.Assistant }
+    val bodyHighlight = findHighlight.takeUnless { markdownHighlight != null }
+    val foreground = if (bodyHighlight != null) colors.onSecondaryContainer else colors.onSurface
     val style =
         if (compact) typography.bodyMedium
         else typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 28.sp, letterSpacing = 0.sp)
     SelectionContainer {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.conversationFindHighlight(bodyHighlight),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             for (block in message.blocks) {
                 when (block.kind) {
                     HistoryBlockKind.Unsupported ->
@@ -356,11 +395,47 @@ private fun MessageBody(message: HistoryMessage, compact: Boolean = false) {
                     else -> Unit
                 }
                 if (block.kind == HistoryBlockKind.Text && message.role == HistoryRole.Assistant)
-                    HistoryMarkdown(block.text, style)
-                else Text(block.text, style = style, color = MaterialTheme.colorScheme.onSurface)
+                    HistoryMarkdown(block.text, style, markdownHighlight)
+                else Text(block.text, style = style, color = foreground)
             }
         }
     }
+}
+
+internal data class ConversationFindHighlight(
+    val target: ConversationFindTarget,
+    val reveal: (suspend (LayoutCoordinates) -> Unit)?,
+)
+
+@Composable
+internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighlight?): Modifier {
+    if (highlight == null) return this
+    val colors = MaterialTheme.colorScheme
+    val focus = remember { FocusRequester() }
+    val reveal = highlight.reveal
+    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    if (reveal != null) {
+        LaunchedEffect(highlight.target) {
+            val bounds =
+                snapshotFlow { coordinates?.takeIf { it.isAttached } }.filterNotNull().first()
+            reveal(bounds)
+            focus.requestFocus()
+        }
+    }
+    return drawBehind {
+            val edge = 2.dp.toPx()
+            drawRoundRect(
+                colors.secondaryContainer,
+                topLeft = Offset(-edge, -edge),
+                size = Size(size.width + 2 * edge, size.height + 2 * edge),
+                cornerRadius = CornerRadius(4.dp.toPx() + edge),
+            )
+        }
+        .then(if (reveal != null) Modifier.onGloballyPositioned { coordinates = it } else Modifier)
+        .focusRequester(focus)
+        .focusable()
+        .semantics(mergeDescendants = true) {}
+        .testTag("conversation_find_hit")
 }
 
 @Composable

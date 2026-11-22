@@ -61,7 +61,11 @@ import org.commonmark.parser.Parser
 
 /** UI-owned parsing stays off Main; no HTML execution, image downloads or automatic link opens. */
 @Composable
-internal fun HistoryMarkdown(source: String, style: TextStyle) =
+internal fun HistoryMarkdown(
+    source: String,
+    style: TextStyle,
+    highlight: ConversationFindHighlight? = null,
+) =
     key(source) {
         val rendered by
             produceState<List<HistoryMarkdownBlock>?>(null) {
@@ -71,7 +75,16 @@ internal fun HistoryMarkdown(source: String, style: TextStyle) =
         if (blocks == null) {
             Text(source, style = style)
         } else {
-            HistoryMarkdownBlocks(blocks, style)
+            val hit = highlight?.target?.markdownBlock?.takeIf { it in blocks.indices } ?: -1
+            val whole = highlight.takeIf { hit < 0 }
+            HistoryMarkdownBlocks(
+                blocks,
+                if (whole == null) style
+                else style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer),
+                Modifier.conversationFindHighlight(whole),
+                hit,
+                highlight,
+            )
         }
     }
 
@@ -89,37 +102,55 @@ private fun HistoryMarkdownBlocks(
     blocks: List<HistoryMarkdownBlock>,
     style: TextStyle,
     modifier: Modifier = Modifier,
+    hit: Int = -1,
+    highlight: ConversationFindHighlight? = null,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        for (block in blocks) when (block) {
-            is HistoryMarkdownBlock.Table -> HistoryMarkdownTable(block.rows)
-            is HistoryMarkdownBlock.ListItems ->
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (item in block.items) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text(item.marker, Modifier.widthIn(min = 16.dp), style = style)
-                            HistoryMarkdownBlocks(item.blocks, style, Modifier.weight(1f))
+        for ((index, block) in blocks.withIndex()) {
+            val selected = highlight.takeIf { index == hit }
+            val blockModifier = Modifier.conversationFindHighlight(selected)
+            val contentStyle =
+                if (selected == null) style
+                else style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
+            when (block) {
+                is HistoryMarkdownBlock.Table ->
+                    HistoryMarkdownTable(block.rows, blockModifier, selected != null)
+                is HistoryMarkdownBlock.ListItems ->
+                    Column(blockModifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (item in block.items) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text(
+                                    item.marker,
+                                    Modifier.widthIn(min = 16.dp),
+                                    style = contentStyle,
+                                )
+                                HistoryMarkdownBlocks(
+                                    item.blocks,
+                                    contentStyle,
+                                    Modifier.weight(1f),
+                                )
+                            }
                         }
                     }
+                is HistoryMarkdownBlock.Paragraph -> {
+                    val blockStyle =
+                        when (block.heading) {
+                            1 ->
+                                contentStyle.copy(
+                                    fontSize = 20.sp,
+                                    lineHeight = 28.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            in 2..6 ->
+                                contentStyle.copy(
+                                    fontSize = 16.sp,
+                                    lineHeight = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            else -> contentStyle
+                        }
+                    Text(block.text, blockModifier, style = blockStyle)
                 }
-            is HistoryMarkdownBlock.Paragraph -> {
-                val blockStyle =
-                    when (block.heading) {
-                        1 ->
-                            style.copy(
-                                fontSize = 20.sp,
-                                lineHeight = 28.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        in 2..6 ->
-                            style.copy(
-                                fontSize = 16.sp,
-                                lineHeight = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        else -> style
-                    }
-                Text(block.text, style = blockStyle)
             }
         }
     }
@@ -139,6 +170,18 @@ private data class HistoryMarkdownListItem(
     val marker: String,
     val blocks: List<HistoryMarkdownBlock>,
 )
+
+private fun HistoryMarkdownBlock.findText(): String =
+    when (this) {
+        is HistoryMarkdownBlock.Paragraph -> text.text
+        is HistoryMarkdownBlock.Table ->
+            rows.joinToString(" ") { row -> row.joinToString(" ") { it.text.text } }
+        is HistoryMarkdownBlock.ListItems ->
+            items.joinToString(" ") { item -> item.blocks.joinToString(" ") { it.findText() } }
+    }
+
+internal fun conversationMarkdownFindPassages(source: String): List<String> =
+    historyMarkdownBlocks(source).map { it.findText() }
 
 private val historyMarkdownParser =
     Parser.builder().extensions(listOf(TablesExtension.create())).build()
@@ -199,22 +242,29 @@ private fun historyMarkdownRows(table: TableBlock): List<List<HistoryMarkdownCel
         .toList()
 
 @Composable
-private fun HistoryMarkdownTable(rows: List<List<HistoryMarkdownCell>>) {
+private fun HistoryMarkdownTable(
+    rows: List<List<HistoryMarkdownCell>>,
+    modifier: Modifier,
+    highlighted: Boolean,
+) {
     val columns = rows.firstOrNull()?.size ?: return
     if (columns == 0) return
     val colors = MaterialTheme.colorScheme
-    BoxWithConstraints {
+    BoxWithConstraints(modifier) {
         val cellWidth = (maxWidth / columns).coerceIn(112.dp, 240.dp)
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = colors.background,
-            contentColor = colors.onSurface,
+            color = if (highlighted) colors.secondaryContainer else colors.background,
+            contentColor = if (highlighted) colors.onSecondaryContainer else colors.onSurface,
             border = BorderStroke(1.dp, colors.outline),
         ) {
             Column(Modifier.horizontalScroll(rememberScrollState()).width(cellWidth * columns)) {
                 for ((index, row) in rows.withIndex()) {
                     if (index != 0) HorizontalDivider(color = colors.outline)
-                    Row(if (index == 0) Modifier.background(colors.surfaceVariant) else Modifier) {
+                    Row(
+                        if (index == 0 && !highlighted) Modifier.background(colors.surfaceVariant)
+                        else Modifier
+                    ) {
                         for (cell in row) {
                             Text(
                                 cell.text,
