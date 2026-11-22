@@ -119,6 +119,8 @@ class ChatListRootTest {
     @Config(qualifiers = "en-rUS-w960dp-h800dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun messageLinkOpensTheNativeReadingTargetAndReturnsToTheSourceDraft() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
         val app = compose.activity.application as ChatListApplication
         app.fixture.historyReply =
             "Read [Project update](/chats/$CHAT_IN_PROJECT#event-output).\n\n" +
@@ -142,7 +144,6 @@ class ChatListRootTest {
                     hasAnyAncestor(hasText("Project update", substring = true)),
                 useUnmergedTree = true,
             )
-        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         link.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         link.performKeyInput { pressKey(Key.Enter) }
         compose.waitUntil(10_000) {
