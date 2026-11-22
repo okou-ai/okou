@@ -1486,20 +1486,34 @@ data class SendRequestVariant1UserMessagePartsItemVariant12(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant13Type {
+    @SerialName("voice") VOICE
+}
+
+@Serializable
+data class SendRequestVariant1UserMessagePartsItemVariant13ClipsItem(val `fileId`: String)
+
+@Serializable
+data class SendRequestVariant1UserMessagePartsItemVariant13(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant13Type,
+    val `clips`: List<SendRequestVariant1UserMessagePartsItemVariant13ClipsItem>,
+) : SendRequestVariant1UserMessagePartsItem
+
+@Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant14Type {
     @SerialName("model") MODEL
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant13ServiceTier {
+enum class SendRequestVariant1UserMessagePartsItemVariant14ServiceTier {
     @SerialName("priority") PRIORITY,
     @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant13(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant13Type,
+data class SendRequestVariant1UserMessagePartsItemVariant14(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant14Type,
     val `selectedModel`: String,
-    val `serviceTier`: SendRequestVariant1UserMessagePartsItemVariant13ServiceTier? = null,
+    val `serviceTier`: SendRequestVariant1UserMessagePartsItemVariant14ServiceTier? = null,
 ) : SendRequestVariant1UserMessagePartsItem
 
 object SendRequestVariant1UserMessagePartsItemSerializer :
@@ -1632,6 +1646,12 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                         (field is JsonPrimitive && field.isString && field.content == "feedback")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("voice")
+                } == true && value.containsKey("clips")) &&
+                    (value["type"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "voice")
+                    }),
+                ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("model")
                 } == true && value.containsKey("selectedModel")) &&
                     (value["type"].let { field ->
@@ -1708,6 +1728,11 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                     SendRequestVariant1UserMessagePartsItemVariant13.serializer(),
                     value,
                 )
+            13 ->
+                input.json.decodeFromJsonElement(
+                    SendRequestVariant1UserMessagePartsItemVariant14.serializer(),
+                    value,
+                )
             else ->
                 throw SerializationException(
                     "Unknown SendRequestVariant1UserMessagePartsItem variant"
@@ -1780,6 +1805,11 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
             is SendRequestVariant1UserMessagePartsItemVariant13 ->
                 encoder.encodeSerializableValue(
                     SendRequestVariant1UserMessagePartsItemVariant13.serializer(),
+                    value,
+                )
+            is SendRequestVariant1UserMessagePartsItemVariant14 ->
+                encoder.encodeSerializableValue(
+                    SendRequestVariant1UserMessagePartsItemVariant14.serializer(),
                     value,
                 )
         }

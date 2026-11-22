@@ -645,3 +645,40 @@ test("A user's Markdown image syntax stays literal", async () => {
     userMessageContainer.querySelector('[data-testid^="attachment-preview-"]'),
   ).toBeNull();
 });
+
+test("Voice message clips open the selected recording in playback order", async () => {
+  const first = "aaaaaaaa-1111-4000-8000-111111111111";
+  const second = "aaaaaaaa-2222-4000-8000-222222222222";
+  mockAttachmentChat(context, {
+    chatEvents: [
+      sentUserMessage(
+        userMessage([
+          { type: "voice", clips: [{ fileId: first }, { fileId: second }] },
+        ]),
+      ),
+    ],
+  });
+  const secondUrl = "https://private-files.example/second.wav";
+  mockPrivateUrlSequence(context, {
+    [first]: ["https://private-files.example/first.wav"],
+    [second]: [secondUrl],
+  });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const firstClip = await findNamedButton(
+    "Open audio preview for Voice clip 1",
+  );
+  const secondClip = await findNamedButton(
+    "Open audio preview for Voice clip 2",
+  );
+  expect(
+    firstClip.compareDocumentPosition(secondClip) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  click(secondClip);
+  await waitFor(() => {
+    return expect(document.querySelector("audio")).toHaveAttribute(
+      "src",
+      secondUrl,
+    );
+  });
+});

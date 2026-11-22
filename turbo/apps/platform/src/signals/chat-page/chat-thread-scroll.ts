@@ -1,29 +1,20 @@
-import {
-  command,
-  computed,
-  state,
-  type Command,
-  type Computed,
-  type State,
-} from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { logger } from "../log.ts";
-import { pageSignal$ } from "../page-signal.ts";
 import {
-  detach,
   onDomEventFn,
   onRef,
-  Reason,
+  waitForBrowserPaint,
   waitLoopUntil,
 } from "../utils.ts";
-import type { ChatEvent } from "./chat-event-types.ts";
+import type { ChatEventSignals } from "./chat-event-signals.ts";
+
+import { visibleTranscriptSpacer } from "./chat-transcript-pages.ts";
 
 const L = logger("AutoScroll");
 const AT_BOTTOM_THRESHOLD_PX = 10;
 const SCROLL_ANCHOR_ATTRIBUTE = "data-chat-scroll-anchor-event-id";
 const SCROLL_ANCHOR_ALIASES_ATTRIBUTE =
   "data-chat-scroll-anchor-alias-event-ids";
-const SCROLL_COMMIT_REVISION_ATTRIBUTE = "data-chat-scroll-commit-revision";
-const SCROLL_COMMIT_TO_TAIL_ATTRIBUTE = "data-chat-scroll-commit-to-tail";
 
 export interface ThreadScrollPosition {
   readonly targetEventId: string;
@@ -37,17 +28,6 @@ export interface ScrollToEventOptions {
   readonly preloadPreviousRenderWindow: boolean;
 }
 
-export interface ScrollAfterRenderRequest {
-  readonly revision: number;
-  readonly position: ThreadScrollPosition | null;
-  readonly behavior: ScrollBehavior;
-}
-
-export interface ReadyScrollAfterRenderRequest {
-  readonly request: ScrollAfterRenderRequest;
-  readonly renderedEventKeys: readonly string[];
-}
-
 export interface ChatThreadScrollSignals {
   readonly scrollContainerOnRef$: Command<
     (() => void) | undefined,
@@ -57,11 +37,6 @@ export interface ChatThreadScrollSignals {
     (() => void) | undefined,
     [HTMLElement | null]
   >;
-  readonly scrollCommitOnRef$: Command<
-    (() => void) | undefined,
-    [HTMLElement | null]
-  >;
-  readonly pendingScrollAfterRenderRequest$: Computed<ScrollAfterRenderRequest | null>;
   /** The mounted scroll viewport, for readers that measure it themselves. */
   readonly scrollContainer$: Computed<HTMLElement | null>;
   readonly threadScrollPosition$: Computed<ThreadScrollPosition | null>;
@@ -77,7 +52,7 @@ export interface ChatThreadScrollSignals {
   >;
   readonly autoScroll$: Command<
     Promise<void>,
-    [ThreadScrollPosition | null, AbortSignal]
+    [ThreadScrollPosition | null, "instant" | "preserve-layout", AbortSignal]
   >;
   readonly scrollToEvent$: Command<
     Promise<void>,
@@ -104,6 +79,12 @@ interface ThreadScrollPositionSignals {
 }
 
 interface ChatThreadScrollRenderWindow {
+  readonly awaitingAnchor$: Computed<boolean>;
+  readonly tailMounted$: Computed<boolean>;
+  readonly positionInSpacer$: Command<
+    ThreadScrollPosition | null,
+    [HTMLElement]
+  >;
   readonly afterThreadScrollPositionChanged$: Command<
     Promise<void>,
     [AbortSignal]
@@ -175,23 +156,6 @@ function scrollAnchorForEvent(
       `[${SCROLL_ANCHOR_ATTRIBUTE}]`,
     ) ?? null
   );
-}
-
-function scrollContainerForCommitMarker(marker: HTMLElement): HTMLElement {
-  const container = marker.closest("[data-scroll-container]");
-  if (!(container instanceof HTMLElement)) {
-    throw new Error("Chat scroll commit marker has no scroll container");
-  }
-  return container;
-}
-
-function scrollRenderRevision(marker: HTMLElement): number {
-  const value = marker.getAttribute(SCROLL_COMMIT_REVISION_ATTRIBUTE);
-  const revision = Number(value);
-  if (value === null || revision < 1 || !Number.isSafeInteger(revision)) {
-    throw new Error("Chat scroll commit marker has no valid revision");
-  }
-  return revision;
 }
 
 function applyScrollTop(
@@ -335,7 +299,7 @@ interface ScrollRuntime {
   hiddenLayout: HiddenScrollLayout | null;
   initialized: boolean;
   hasMeasuredPosition: boolean;
-  latestRenderRequestRevision: number;
+  pendingScroll: { readonly preserveThroughLayout: boolean } | null;
   // Offset this module last wrote to the container, cleared once the container
   // reports a different one. Scroll events are delivered asynchronously, so
   // content rendered in between (an async diagram, a late image) can make that
@@ -519,10 +483,20 @@ function createScrollNavigationSignals(
   threadId: string,
   scroll: InternalScrollSignals,
   runtime: ScrollRuntime,
-  pendingScrollAfterRenderRequest$: Computed<ScrollAfterRenderRequest | null>,
+  render: ReturnType<typeof createRenderScrollSignals>,
+  window: ChatThreadScrollRenderWindow,
 ) {
+  const seekSpacer$ = command(
+    ({ set }, container: HTMLElement, signal: AbortSignal) => {
+      const position = set(window.positionInSpacer$, container);
+      return position
+        ? set(render.requestScrollAfterRender$, position, "instant", signal)
+        : null;
+    },
+  );
   const scrollTo$ = command(({ get }, position: ThreadScrollPosition) => {
     releaseHiddenLayout(runtime);
+    runtime.pendingScroll = null;
     const container = get(scroll.scrollContainer$);
     if (!container) {
       throw new Error("Chat scroll container is not mounted");
@@ -538,6 +512,7 @@ function createScrollNavigationSignals(
   const scrollToBottom$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       releaseHiddenLayout(runtime);
+      runtime.pendingScroll = null;
       const container = get(scroll.scrollContainer$);
       if (!container) {
         throw new Error("Chat scroll container is not mounted");
@@ -553,20 +528,31 @@ function createScrollNavigationSignals(
       // part of the current task and cannot paint at the old offset first.
       applyScrollTop(runtime, container, container.scrollHeight);
       runtime.initialized = true;
-      await set(scroll.clearThreadScrollPosition$, signal);
+      if (get(scroll.threadScrollPosition$) && !get(window.tailMounted$)) {
+        // Supersede an incoming history commit while the tail page is preparing.
+        await set(render.requestScrollAfterRender$, null, "instant", signal);
+      } else {
+        await set(scroll.clearThreadScrollPosition$, signal);
+      }
     },
   );
 
   const scrollToTop$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       releaseHiddenLayout(runtime);
+      runtime.pendingScroll = null;
       const container = get(scroll.scrollContainer$);
       if (!container) {
         throw new Error("Chat scroll container is not mounted");
       }
       applyScrollTop(runtime, container, 0);
       runtime.initialized = true;
-      await set(scroll.syncThreadScrollPosition$, container, true, signal);
+      const seek = set(seekSpacer$, container, signal);
+      if (seek) {
+        await seek;
+      } else {
+        await set(scroll.syncThreadScrollPosition$, container, true, signal);
+      }
     },
   );
 
@@ -574,14 +560,14 @@ function createScrollNavigationSignals(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const position = get(scroll.threadScrollPosition$);
       const container = get(scroll.scrollContainer$);
-      if (runtime.hiddenLayout || !runtime.initialized || !container) {
+      if (
+        runtime.hiddenLayout ||
+        runtime.pendingScroll ||
+        !runtime.initialized ||
+        !container
+      ) {
         return;
       }
-      L.debug("layout scroll restore", {
-        threadId,
-        targetEventId: position?.targetEventId ?? null,
-        viewportOffsetTop: position?.viewportOffsetTop ?? null,
-      });
       if (position) {
         if (
           scrollToPosition(
@@ -594,13 +580,7 @@ function createScrollNavigationSignals(
           runtime.initialized = true;
           return;
         }
-        if (get(pendingScrollAfterRenderRequest$) !== null) {
-          // The commit marker owns the pending event batch. Keep its anchor
-          // until React acknowledges the final DOM for that batch.
-          L.debug("layout scroll restore waiting for render commit", {
-            threadId,
-            targetEventId: position.targetEventId,
-          });
+        if (get(window.awaitingAnchor$)) {
           return;
         }
         L.debug("layout scroll restore target no longer rendered", {
@@ -627,6 +607,7 @@ function createScrollNavigationSignals(
   );
 
   return {
+    seekSpacer$,
     scrollTo$,
     scrollToBottom$,
     scrollToTop$,
@@ -635,196 +616,109 @@ function createScrollNavigationSignals(
   };
 }
 
-function createRequestScrollAfterRender(
-  threadId: string,
-  scroll: InternalScrollSignals,
-  runtime: ScrollRuntime,
-  internalPendingRequest$: State<ScrollAfterRenderRequest | null>,
-) {
-  return command(
-    async (
-      { set },
-      position: ThreadScrollPosition | null,
-      behavior: ScrollBehavior,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      runtime.latestRenderRequestRevision += 1;
-      runtime.hasMeasuredPosition = false;
-      const request: ScrollAfterRenderRequest = {
-        revision: runtime.latestRenderRequestRevision,
-        position,
-        behavior,
-      };
-      L.debug("render scroll requested", {
-        threadId,
-        revision: request.revision,
-        targetEventId: position?.targetEventId ?? null,
-        viewportOffsetTop: position?.viewportOffsetTop ?? null,
-        behavior,
-      });
-      set(internalPendingRequest$, request);
-      if (position === null) {
-        await set(scroll.clearThreadScrollPosition$, signal);
-      } else {
-        // Layout commits and the matching render commit must restore the same
-        // anchor, including when a projection removes the previously held one.
-        await set(scroll.setThreadScrollPosition$, position, signal);
-      }
-    },
+function transcriptViewportNeedsContent(
+  container: HTMLElement,
+  atTail: boolean,
+): boolean {
+  return (
+    container.clientHeight > 0 &&
+    ((atTail && container.scrollHeight <= container.clientHeight) ||
+      visibleTranscriptSpacer(container) !== null)
   );
 }
 
-/**
- * Following the tail again commits the larger window, whose commit measures
- * the viewport and repeats until the transcript overflows or history ends. A
- * newer scroll request, such as a jump to a linked message, keeps its target
- * and measures again on its own commit.
- */
-function createFillViewportWithEarlierGroups(
-  runtime: ScrollRuntime,
-  loadEarlierGroups$: ChatThreadScrollRenderWindow["loadEarlierGroups$"],
-  requestScrollAfterRender$: ReturnType<typeof createRequestScrollAfterRender>,
-) {
-  return command(
-    async (
-      { set },
-      committedRevision: number,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const didPrepend = await set(loadEarlierGroups$, signal);
-      signal.throwIfAborted();
-      if (
-        didPrepend &&
-        runtime.latestRenderRequestRevision === committedRevision
-      ) {
-        await set(requestScrollAfterRender$, null, "instant", signal);
-      }
-    },
-  );
-}
-
-/** Commits scroll only when React acknowledges the matching event batch. */
 function createRenderScrollSignals(
-  threadId: string,
   scroll: InternalScrollSignals,
   runtime: ScrollRuntime,
   loadEarlierGroups$: ChatThreadScrollRenderWindow["loadEarlierGroups$"],
+  events: Pick<ChatEventSignals, "chatEvents$" | "queuedEvents$">,
 ) {
-  const internalPendingRequest$ = state<ScrollAfterRenderRequest | null>(null);
-  const pendingScrollAfterRenderRequest$ = computed((get) => {
-    return get(internalPendingRequest$);
-  });
-  const clearPendingRequest$ = command(
-    ({ get, set }, revision: number): void => {
-      if (get(internalPendingRequest$)?.revision === revision) {
-        set(internalPendingRequest$, null);
-      }
-    },
-  );
-  const requestScrollAfterRender$ = createRequestScrollAfterRender(
-    threadId,
-    scroll,
-    runtime,
-    internalPendingRequest$,
-  );
-  const fillViewportWithEarlierGroups$ = createFillViewportWithEarlierGroups(
-    runtime,
-    loadEarlierGroups$,
-    requestScrollAfterRender$,
-  );
-  const scrollCommitOnRef$ = onRef(
-    command(
-      async (
-        { get, set },
-        marker: HTMLElement,
-        signal: AbortSignal,
-      ): Promise<void> => {
-        signal.throwIfAborted();
-        const revision = scrollRenderRevision(marker);
-        const request = get(pendingScrollAfterRenderRequest$);
-        if (!request || request.revision !== revision) {
-          L.debug("stale render scroll commit ignored", {
-            threadId,
-            revision,
-            currentRevision: request?.revision ?? null,
-          });
-          return;
-        }
-        const container = scrollContainerForCommitMarker(marker);
-        if (scrollAnchors(container).length === 0) {
-          L.debug("render scroll commit waiting for messages", {
-            threadId,
-            revision,
-          });
-          return;
-        }
-        if (runtime.hiddenLayout) {
-          // A background batch is rendered, not measured. The closing command
-          // alone restores the covered transcript at its real geometry.
-          set(clearPendingRequest$, revision);
-          return;
-        }
-        const commitToTail = marker.hasAttribute(
-          SCROLL_COMMIT_TO_TAIL_ATTRIBUTE,
-        );
-        if (commitToTail) {
-          applyScrollTop(
-            runtime,
-            container,
-            container.scrollHeight,
-            request.behavior,
-          );
-        } else if (
-          !request.position ||
-          !scrollToPosition(
-            runtime,
-            container,
-            request.position,
-            request.behavior,
-          )
-        ) {
-          throw new Error(
-            `Chat scroll target is not rendered: ${request.position?.targetEventId ?? "none"}`,
-          );
-        }
-        runtime.initialized = true;
-        // A tail that fits the viewport cannot produce the scroll event that
-        // loads earlier history, so this commit requests it instead.
-        const viewportUnfilled =
-          commitToTail &&
-          container.clientHeight > 0 &&
-          container.scrollHeight <= container.clientHeight;
-        set(clearPendingRequest$, revision);
-        L.debug("render scroll committed", {
-          threadId,
-          revision,
-          targetEventId: request.position?.targetEventId ?? null,
-          viewportOffsetTop: request.position?.viewportOffsetTop ?? null,
-          behavior: request.behavior,
-          scrollTop: container.scrollTop,
-        });
-        if (viewportUnfilled) {
-          // Like a scroll-triggered load, this outlives the marker, which
-          // unmounts once its request clears.
-          detach(
-            set(fillViewportWithEarlierGroups$, revision, get(pageSignal$)),
-            Reason.DomCallback,
-            "load earlier chat history into an unfilled viewport",
-          );
-        }
-        if (commitToTail) {
-          // After the DOM write: the commit runs during React's ref phase, and
-          // the offset must be applied before this frame paints.
+  const requestScrollAfterRender$ = command(
+    async (
+      { get, set },
+      position: ThreadScrollPosition | null,
+      alignment: ScrollBehavior | "preserve-layout",
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      const request = {
+        preserveThroughLayout: alignment === "preserve-layout",
+      };
+      const behavior = alignment === "preserve-layout" ? "instant" : alignment;
+      runtime.pendingScroll = request;
+      runtime.hasMeasuredPosition = false;
+      const inputRoot = get(scroll.scrollContainer$)?.parentElement;
+      const releaseInput =
+        request.preserveThroughLayout && inputRoot
+          ? onReaderInput(inputRoot, () => {
+              if (runtime.pendingScroll === request) {
+                runtime.pendingScroll = null;
+              }
+            })
+          : undefined;
+      async function alignAfterPaint() {
+        if (position) {
+          await set(scroll.setThreadScrollPosition$, position, signal);
+        } else {
           await set(scroll.clearThreadScrollPosition$, signal);
         }
-      },
-    ),
+        if (runtime.hiddenLayout || !get(events.chatEvents$).length) {
+          return;
+        }
+        do {
+          await waitForBrowserPaint(signal);
+          signal.throwIfAborted();
+          const container = get(scroll.scrollContainer$);
+          if (
+            runtime.pendingScroll !== request ||
+            runtime.hiddenLayout ||
+            !container ||
+            !scrollAnchors(container).length
+          ) {
+            return;
+          }
+          const atTail =
+            !position ||
+            get(events.queuedEvents$).some((event) => {
+              return event.id === position.targetEventId;
+            });
+          if (atTail) {
+            applyScrollTop(
+              runtime,
+              container,
+              container.scrollHeight,
+              behavior,
+            );
+          } else if (
+            !scrollToPosition(runtime, container, position, behavior)
+          ) {
+            return;
+          }
+          runtime.initialized = true;
+          if (atTail && position) {
+            await set(scroll.clearThreadScrollPosition$, signal);
+          }
+          if (
+            !transcriptViewportNeedsContent(container, atTail) ||
+            runtime.pendingScroll !== request
+          ) {
+            return;
+          }
+        } while (await set(loadEarlierGroups$, signal));
+      }
+      await alignAfterPaint().finally(() => {
+        releaseInput?.();
+        if (runtime.pendingScroll === request) {
+          runtime.pendingScroll = null;
+        }
+      });
+    },
   );
   const autoScroll$ = command(
     (
       { set },
       position: ThreadScrollPosition | null,
+      alignment: "instant" | "preserve-layout",
       signal: AbortSignal,
     ): Promise<void> => {
       // A new sent message requests the tail even while the chat is covered;
@@ -832,16 +726,11 @@ function createRenderScrollSignals(
       if (runtime.hiddenLayout && position === null) {
         runtime.hiddenLayout.position = null;
       }
-      return set(requestScrollAfterRender$, position, "instant", signal);
+      return set(requestScrollAfterRender$, position, alignment, signal);
     },
   );
 
-  return {
-    autoScroll$,
-    requestScrollAfterRender$,
-    pendingScrollAfterRenderRequest$,
-    scrollCommitOnRef$,
-  };
+  return { autoScroll$, requestScrollAfterRender$ };
 }
 
 type ScrollNavigationSignals = ReturnType<typeof createScrollNavigationSignals>;
@@ -851,6 +740,7 @@ function createAttachScrollContainer(
   scroll: InternalScrollSignals,
   navigation: ScrollNavigationSignals,
   runtime: ScrollRuntime,
+  seekSpacer$: Command<Promise<void> | null, [HTMLElement, AbortSignal]>,
 ) {
   return command(({ set }, container: HTMLElement, signal: AbortSignal) => {
     set(scroll.bindScrollContainer$, container);
@@ -860,11 +750,22 @@ function createAttachScrollContainer(
     });
 
     const handleScroll = onDomEventFn((event: Event) => {
-      // Zero/intermediate reveal geometry is not a new reader position.
-      if (runtime.hiddenLayout) {
+      // Native anchoring may scroll the viewport before sharing's two-frame
+      // restore. Only reader input supersedes the captured message or tail.
+      if (
+        runtime.hiddenLayout ||
+        runtime.pendingScroll?.preserveThroughLayout
+      ) {
         return;
       }
-      if (!runtime.initialized) {
+      if (
+        !runtime.initialized &&
+        !(
+          runtime.pendingScroll &&
+          container.clientHeight > 0 &&
+          scrollAnchors(container).length
+        )
+      ) {
         L.debug("pre-initialization scroll ignored", { threadId });
         return;
       }
@@ -884,7 +785,16 @@ function createAttachScrollContainer(
         // A reader takeover with real geometry supersedes an initial hidden
         // viewport attempt; a later layout must not replay its stale anchor.
         if (container.clientHeight > 0) {
+          // Reader input between the two frames supersedes the scheduled write.
+          runtime.initialized = true;
+          runtime.pendingScroll = null;
           runtime.hasMeasuredPosition = true;
+        }
+      }
+      if (!programmatic && !isAtBottom(container)) {
+        const seek = set(seekSpacer$, container, signal);
+        if (seek) {
+          return seek;
         }
       }
       return set(
@@ -943,6 +853,7 @@ function createAttachScrollContainer(
         container.removeEventListener("scrollend", handleScrollEnd);
         releaseHiddenLayout(runtime);
         set(scroll.clearScrollContainer$, container);
+        runtime.pendingScroll = null;
         runtime.initialized = false;
         runtime.hasMeasuredPosition = false;
         runtime.programmaticScrollTop = null;
@@ -966,7 +877,7 @@ function createScrollContentOnRef(
         return set(navigation.restoreScrollPosition$, signal);
       });
       // These events do not bubble; capture them from the actual resource or
-      // details element. React-owned changes restore at their commit marker.
+      // details element.
       for (const event of ["load", "error", "loadedmetadata", "toggle"]) {
         content.addEventListener(event, restoreLayout, {
           capture: true,
@@ -977,11 +888,48 @@ function createScrollContentOnRef(
   );
 }
 
+function onReaderInput(inputRoot: HTMLElement, cancel: () => void): () => void {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      [
+        "ArrowUp",
+        "ArrowDown",
+        "PageUp",
+        "PageDown",
+        "Home",
+        "End",
+        " ",
+      ].includes(event.key) &&
+      !(
+        event.target instanceof HTMLElement &&
+        event.target.closest("input, textarea, [contenteditable]")
+      )
+    ) {
+      cancel();
+    }
+  };
+  inputRoot.addEventListener("wheel", cancel, { passive: true });
+  inputRoot.addEventListener("touchmove", cancel, { passive: true });
+  inputRoot.addEventListener("pointerdown", cancel, {
+    passive: true,
+    capture: true,
+  });
+  inputRoot.addEventListener("keydown", onKeyDown);
+  return () => {
+    inputRoot.removeEventListener("wheel", cancel);
+    inputRoot.removeEventListener("touchmove", cancel);
+    inputRoot.removeEventListener("pointerdown", cancel, true);
+    inputRoot.removeEventListener("keydown", onKeyDown);
+  };
+}
+
 function createHiddenScrollLayoutSignals(
   scroll: InternalScrollSignals,
   navigation: ScrollNavigationSignals,
   runtime: ScrollRuntime,
-  pendingRequest$: Computed<ScrollAfterRenderRequest | null>,
 ) {
   const preserveHiddenLayout$ = command(({ get, set }) => {
     const container = get(scroll.scrollContainer$);
@@ -989,7 +937,7 @@ function createHiddenScrollLayoutSignals(
       runtime.hiddenLayout ||
       !runtime.initialized ||
       runtime.programmaticSmoothScrollTop !== null ||
-      get(pendingRequest$) !== null ||
+      runtime.pendingScroll ||
       !container?.isConnected ||
       container.clientWidth <= 0 ||
       container.clientHeight <= 0
@@ -1009,48 +957,14 @@ function createHiddenScrollLayoutSignals(
         releaseHiddenLayout(runtime);
       }
     };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        [
-          "ArrowUp",
-          "ArrowDown",
-          "PageUp",
-          "PageDown",
-          "Home",
-          "End",
-          " ",
-        ].includes(event.key) &&
-        !(
-          event.target instanceof HTMLElement &&
-          event.target.closest("input, textarea, [contenteditable]")
-        )
-      ) {
-        cancel();
-      }
-    };
     const snapshot: HiddenScrollLayout = {
       container,
       position,
-      release: () => {
-        inputRoot.removeEventListener("wheel", cancel);
-        inputRoot.removeEventListener("touchmove", cancel);
-        inputRoot.removeEventListener("pointerdown", cancel, true);
-        inputRoot.removeEventListener("keydown", onKeyDown);
-      },
+      release: onReaderInput(inputRoot, cancel),
     };
     runtime.hiddenLayout = snapshot;
     // Reader input after reveal wins over the pending one-shot restore. These
     // listeners never prevent native scrolling or change focus behavior.
-    inputRoot.addEventListener("wheel", cancel, { passive: true });
-    inputRoot.addEventListener("touchmove", cancel, { passive: true });
-    inputRoot.addEventListener("pointerdown", cancel, {
-      passive: true,
-      capture: true,
-    });
-    inputRoot.addEventListener("keydown", onKeyDown);
     // Publish the live intent to the existing window authority before hiding.
     // Incoming rows must retain this anchor even if their resource preparation
     // is still pending when the reader reveals the transcript.
@@ -1098,14 +1012,14 @@ export function createChatThreadScrollSignals(
   threadId: string,
   position: ThreadScrollPositionSignals,
   renderWindow: ChatThreadScrollRenderWindow,
-  chatEvents$: Computed<readonly ChatEvent[]>,
+  events: Pick<ChatEventSignals, "chatEvents$" | "queuedEvents$">,
   initialEventsReady$: Computed<boolean>,
 ): ChatThreadScrollSignals {
   const runtime: ScrollRuntime = {
     hiddenLayout: null,
     initialized: false,
     hasMeasuredPosition: false,
-    latestRenderRequestRevision: 0,
+    pendingScroll: null,
     programmaticScrollTop: null,
     programmaticSmoothScrollTop: null,
   };
@@ -1116,21 +1030,25 @@ export function createChatThreadScrollSignals(
     renderWindow.afterThreadScrollPositionChanged$,
   );
   const render = createRenderScrollSignals(
-    threadId,
     scroll,
     runtime,
     renderWindow.loadEarlierGroups$,
+    events,
   );
   const navigation = createScrollNavigationSignals(
     threadId,
     scroll,
     runtime,
-    render.pendingScrollAfterRenderRequest$,
+    render,
+    renderWindow,
   );
-  const scrollContainerOnRef$ = onRef(
-    createAttachScrollContainer(threadId, scroll, navigation, runtime),
+  const attachContainer$ = createAttachScrollContainer(
+    threadId,
+    scroll,
+    navigation,
+    runtime,
+    navigation.seekSpacer$,
   );
-  const scrollContentOnRef$ = createScrollContentOnRef(threadId, navigation);
   const isProgrammaticScrollEvent$ = command(
     ({ get }, target: EventTarget | null): boolean => {
       const container = get(scroll.scrollContainer$);
@@ -1157,7 +1075,7 @@ export function createChatThreadScrollSignals(
         signal,
       );
       signal.throwIfAborted();
-      const eventExists = get(chatEvents$).some((event) => {
+      const eventExists = get(events.chatEvents$).some((event) => {
         return event.id === eventId;
       });
       if (!eventExists) {
@@ -1179,8 +1097,6 @@ export function createChatThreadScrollSignals(
         targetEventId: eventId,
         viewportOffsetTop: viewportHeight * options.viewportRatio,
       };
-      await set(scroll.setThreadScrollPosition$, position, signal);
-      signal.throwIfAborted();
       await set(
         render.requestScrollAfterRender$,
         position,
@@ -1194,15 +1110,12 @@ export function createChatThreadScrollSignals(
     scroll,
     navigation,
     runtime,
-    render.pendingScrollAfterRenderRequest$,
   );
 
   return {
     ...hiddenLayout,
-    scrollContainerOnRef$,
-    scrollContentOnRef$,
-    scrollCommitOnRef$: render.scrollCommitOnRef$,
-    pendingScrollAfterRenderRequest$: render.pendingScrollAfterRenderRequest$,
+    scrollContainerOnRef$: onRef(attachContainer$),
+    scrollContentOnRef$: createScrollContentOnRef(threadId, navigation),
     scrollContainer$: scroll.scrollContainer$,
     threadScrollPosition$: scroll.threadScrollPosition$,
     awayFromBottom$: scroll.awayFromBottom$,

@@ -9,6 +9,7 @@ from weakref import WeakSet
 from mitmproxy import http
 
 import flow_metadata_keys as keys
+import stream_capture
 
 _uploads: WeakSet[Upload] = WeakSet()
 PARSE_SLICE = 4096
@@ -134,8 +135,7 @@ def release(flow: http.HTTPFlow) -> None:
     upload = flow.metadata.pop(keys.MANAGED_OPENROUTER_UPLOAD, None)
     if isinstance(upload, Upload):
         upload.close()
-        if flow.request.stream is upload:
-            flow.request.stream = False
+        stream_capture.replace_owned_stream(flow.request, upload)
 
 
 def close_all() -> None:

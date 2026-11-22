@@ -196,7 +196,7 @@ function responseDiagnostics(
 
 function parseVertexResponse<T>(
   body: string,
-  parseResponse: (content: string) => T,
+  parseResponse: (content: string, usage: unknown) => T,
 ): T {
   const parsed = responseSchema.safeParse(safeJsonParse(body));
   if (!parsed.success) {
@@ -239,7 +239,7 @@ function parseVertexResponse<T>(
     throw new VertexVoiceError(502, "empty_output", diagnostics);
   }
   const result = safeSync(() => {
-    return parseResponse(text);
+    return parseResponse(text, parsed.data.usageMetadata);
   });
   if (!("ok" in result)) {
     throw new VertexVoiceError(502, "invalid_output", diagnostics);
@@ -253,9 +253,10 @@ export async function generateVertexVoice<T>(
     readonly model: VertexVoiceModel;
     /** Bounds generation time as well as size; a looping model runs to this cap. */
     readonly maxOutputTokens: number;
+    readonly singleAttempt?: boolean;
     readonly diagnosticOwner?: VertexVoiceDiagnosticOwner;
   },
-  parseResponse: (content: string) => T,
+  parseResponse: (content: string, usage: unknown) => T,
   signal: AbortSignal,
 ): Promise<T | null> {
   const configuration = gcpLlmConfiguration();
@@ -268,7 +269,12 @@ export async function generateVertexVoice<T>(
       ? [{ text: args.content }]
       : args.content.map((part) => {
           return part.type === "audio"
-            ? { inlineData: { mimeType: "audio/wav", data: part.audio.data } }
+            ? {
+                inlineData: {
+                  mimeType: part.audio.mimeType ?? "audio/wav",
+                  data: part.audio.data,
+                },
+              }
             : { text: part.text };
         });
   const schema = args.jsonSchema;
@@ -340,6 +346,7 @@ export async function generateVertexVoice<T>(
       {
         model: args.model,
         responseSchema: args.jsonSchema?.name,
+        singleAttempt: args.singleAttempt,
       },
       signal,
     ),

@@ -15,6 +15,8 @@ import {
 } from "../../__tests__/helpers/connector-catalog";
 import { permissionRequestCommand } from "../permission-request";
 
+const CHAT_THREAD_ID = "20000000-0000-4000-8000-000000000001";
+
 const slack = {
   connector: "slack",
   permission: "chat:write",
@@ -31,6 +33,7 @@ const gmail = {
 // All fixtures cross the real diagnostic HTTP boundary; no provider operation is sent.
 function diagnostics(
   policies: ConnectorCheckPolicy[] = [{ outcome: "ask", basis: "ask-list" }],
+  names: readonly string[] = [],
 ) {
   let index = 0;
   server.use(
@@ -71,7 +74,9 @@ function diagnostics(
             kind: "matched",
             permissions: [
               {
-                name: isGmail ? gmail.permission : slack.permission,
+                name:
+                  names[index] ??
+                  (isGmail ? gmail.permission : slack.permission),
                 policy: policies[index++] ?? policies[0],
               },
             ],
@@ -119,7 +124,7 @@ describe("okou connector permission-request --batch-file", () => {
     directory = await mkdtemp(join(tmpdir(), "okou-permission-batch-"));
     vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-current");
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", CHAT_THREAD_ID);
     diagnostics();
   });
   afterEach(async () => {
@@ -140,6 +145,7 @@ describe("okou connector permission-request --batch-file", () => {
     expect(url.pathname).toBe("/connectors/permissions/batch");
     expect(url.searchParams.get("orgId")).toBe("test-org");
     expect(url.searchParams.get("userId")).toBe("test-user");
+    expect(url.searchParams.has("threadId")).toBe(false);
     expect(JSON.parse(url.searchParams.get("items") ?? "")).toStrictEqual([
       { connectorSlug: "slack", permission: slack.permission },
       { connectorSlug: "gmail", permission: gmail.permission },
@@ -172,9 +178,20 @@ describe("okou connector permission-request --batch-file", () => {
     expect(output()).not.toContain("end the current turn");
   });
 
+  it("rejects a callback to a malformed Chat before printing a batch link", async () => {
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", "invalid-chat");
+    await expect(
+      run([slack, gmail], ["--callback-prompt", "Continue"]),
+    ).rejects.toThrow("exit");
+    expect(errors()).toContain(
+      "--callback-prompt requires the current web chat",
+    );
+    expect(output()).not.toContain("action=allow");
+  });
+
   it("adds exactly one callback to the single batch action", async () => {
     await run([slack, gmail], ["--callback-prompt", "Continue & verify"]);
-    expect(actionUrl().searchParams.get("threadId")).toBe("thread-current");
+    expect(actionUrl().searchParams.get("threadId")).toBe(CHAT_THREAD_ID);
     expect(actionUrl().searchParams.getAll("callbackPrompt")).toStrictEqual([
       "Continue & verify",
     ]);
@@ -233,9 +250,22 @@ describe("okou connector permission-request --batch-file", () => {
   });
 
   it("enforces the final encoded URL byte limit including callback", async () => {
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", "a".repeat(7500));
+    const operations = Array.from({ length: 20 }, (_, index) => {
+      return {
+        ...slack,
+        permission: `${"x:".repeat(63)}${index}`,
+      };
+    });
+    const permissions = operations.map(({ permission }) => {
+      return permission;
+    });
+    diagnostics(undefined, permissions);
+    await run(operations);
+    expect(Buffer.byteLength(actionUrl().href)).toBeLessThanOrEqual(8192);
+    log.mockClear();
+    diagnostics(undefined, permissions);
     await expect(
-      run([slack], ["--callback-prompt", "继".repeat(100)]),
+      run(operations, ["--callback-prompt", "继".repeat(200)]),
     ).rejects.toThrow("exit");
     expect(errors()).toContain("exceeds 8192 UTF-8 bytes");
     expect(output()).not.toContain("action=allow");

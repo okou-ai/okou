@@ -544,7 +544,7 @@ export function createChatThreadSharingSignals(
     set(internalCreatedSharedThreadId$, null);
     set(changeAudience$, "public");
     set(internalPhase$, "selecting");
-    return set(scroll.autoScroll$, position, signal);
+    return set(scroll.autoScroll$, position, "preserve-layout", signal);
   });
 
   const close$ = command(({ set }, signal: AbortSignal) => {
@@ -553,7 +553,7 @@ export function createChatThreadSharingSignals(
     set(internalCreatedSharedThreadId$, null);
     set(changeAudience$, "public");
     set(internalPhase$, "idle");
-    return set(scroll.autoScroll$, position, signal);
+    return set(scroll.autoScroll$, position, "preserve-layout", signal);
   });
 
   const toggle$ = createToggleSelectionCommand(

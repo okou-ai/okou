@@ -13,6 +13,39 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1163.0](https://github.com/okou-ai/okou/compare/app-v0.1162.6...app-v0.1163.0) (2026-11-22)
+
+
+### Features
+
+* transcribe ordered voice messages with model credits ([#49901](https://github.com/okou-ai/okou/issues/49901)) ([10fb53e](https://github.com/okou-ai/okou/commit/10fb53e67b9ae25cd3bcb984e8dca394e5682a94))
+
+
+### Bug Fixes
+
+* bound message preparation and rendering in long conversations ([#49882](https://github.com/okou-ai/okou/issues/49882)) ([075a292](https://github.com/okou-ai/okou/commit/075a292be95df156fb4434243b7c4b302956ba1b))
+* **platform:** restore native scrolling for permission and connector flows ([#49896](https://github.com/okou-ai/okou/issues/49896)) ([c12849b](https://github.com/okou-ai/okou/commit/c12849b5ee95b2ce691de781df23517c4d978504))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.99.0
+    * @okouai/core bumped to 8.859.0
+    * @okouai/ui bumped to 1.21.87
+
+## [0.1162.6](https://github.com/okou-ai/okou/compare/app-v0.1162.5...app-v0.1162.6) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.5
+    * @okouai/core bumped to 8.858.10
+    * @okouai/ui bumped to 1.21.86
+
 ## [0.1162.5](https://github.com/okou-ai/okou/compare/app-v0.1162.4...app-v0.1162.5) (2026-11-22)
 
 

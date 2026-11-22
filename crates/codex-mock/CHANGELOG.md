@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.92](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.91...codex-mock-v0.12.92) (2026-11-22)
+
+
+### Refactoring
+
+* **codex-mock:** share terminal turn notification construction ([#49903](https://github.com/okou-ai/okou/issues/49903)) ([e14aa4d](https://github.com/okou-ai/okou/commit/e14aa4d6b51ad8b3548e073ee9ee0e0cfb326a7e))
+
 ## [0.12.91](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.90...codex-mock-v0.12.91) (2026-11-21)
 
 

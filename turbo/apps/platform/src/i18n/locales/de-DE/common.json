@@ -2284,7 +2284,9 @@
       "agent": "[Agent: {{name}}]",
       "chatThread": "[Chat-Thread: {{title}}]",
       "file": "[Datei: {{filename}}]",
-      "template": "[Vorlage: {{title}}]"
+      "template": "[Vorlage: {{title}}]",
+      "voice": "Sprachnachricht",
+      "voiceClip": "Audioaufnahme {{index}}"
     },
     "newChat": "Neuer Chat",
     "origins": {

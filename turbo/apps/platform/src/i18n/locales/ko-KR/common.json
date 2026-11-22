@@ -2275,7 +2275,9 @@
       "agent": "[에이전트: {{name}}]",
       "chatThread": "[채팅 스레드: {{title}}]",
       "file": "[파일: {{filename}}]",
-      "template": "[템플릿: {{title}}]"
+      "template": "[템플릿: {{title}}]",
+      "voice": "음성 메시지",
+      "voiceClip": "음성 클립 {{index}}"
     },
     "newChat": "새 채팅",
     "origins": {

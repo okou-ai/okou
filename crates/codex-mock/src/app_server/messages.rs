@@ -568,32 +568,11 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
 }
 
 pub(super) fn turn_completed_notification(thread_id: &str, turn_id: &str) -> Value {
-    json!({
-        "method": "turn/completed",
-        "params": {
-            "threadId": thread_id,
-            "turn": completed_turn(turn_id)
-        }
-    })
+    terminal_turn_notification(thread_id, turn_id, TerminalTurn::Completed)
 }
 
 pub(super) fn turn_interrupted_notification(thread_id: &str, turn_id: &str) -> Value {
-    json!({
-        "method": "turn/completed",
-        "params": {
-            "threadId": thread_id,
-            "turn": {
-                "id": turn_id,
-                "items": [],
-                "itemsView": "notLoaded",
-                "status": "interrupted",
-                "error": null,
-                "startedAt": 1,
-                "completedAt": 3,
-                "durationMs": 2
-            }
-        }
-    })
+    terminal_turn_notification(thread_id, turn_id, TerminalTurn::Interrupted)
 }
 
 pub(super) fn turn_failed_notification(
@@ -601,6 +580,21 @@ pub(super) fn turn_failed_notification(
     turn_id: &str,
     failure: TurnFailure,
 ) -> Value {
+    terminal_turn_notification(thread_id, turn_id, TerminalTurn::Failed(failure))
+}
+
+enum TerminalTurn {
+    Completed,
+    Interrupted,
+    Failed(TurnFailure),
+}
+
+fn terminal_turn_notification(thread_id: &str, turn_id: &str, outcome: TerminalTurn) -> Value {
+    let (status, error) = match outcome {
+        TerminalTurn::Completed => ("completed", Value::Null),
+        TerminalTurn::Interrupted => ("interrupted", Value::Null),
+        TerminalTurn::Failed(failure) => ("failed", turn_failure_error(failure)),
+    };
     json!({
         "method": "turn/completed",
         "params": {
@@ -609,8 +603,8 @@ pub(super) fn turn_failed_notification(
                 "id": turn_id,
                 "items": [],
                 "itemsView": "notLoaded",
-                "status": "failed",
-                "error": turn_failure_error(failure),
+                "status": status,
+                "error": error,
                 "startedAt": 1,
                 "completedAt": 3,
                 "durationMs": 2
@@ -1058,19 +1052,6 @@ pub(super) fn turn(turn_id: &str) -> Value {
         "startedAt": null,
         "completedAt": null,
         "durationMs": null
-    })
-}
-
-fn completed_turn(turn_id: &str) -> Value {
-    json!({
-        "id": turn_id,
-        "items": [],
-        "itemsView": "notLoaded",
-        "status": "completed",
-        "error": null,
-        "startedAt": 1,
-        "completedAt": 3,
-        "durationMs": 2
     })
 }
 
