@@ -49,8 +49,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 class WorkflowRootApplication : TestOkouApplication() {
     internal lateinit var fixture: WorkflowApiFixture
@@ -312,6 +314,45 @@ class WorkflowRootTest {
         compose.onNodeWithText("Add automation").assertIsEnabled().performClick()
 
         compose.onNodeWithText("Tokyo (UTC+9)").assertIsDisplayed()
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun discardConfirmationKeepsBothActionsReachableAfterResizingAtLargeText() {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            openWorkflowDetail()
+            compose.onNodeWithText("Edit instructions").performClick()
+            val input = compose.onNodeWithContentDescription("Display name")
+            input.performTextReplacement("Prepare the release")
+            compose.onNodeWithText("Cancel").performClick()
+            val heading = "Discard unsaved changes?"
+            waitFor(heading)
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w900dp-h280dp")
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            compose.activityRule.scenario.onActivity {
+                assertEquals(280, it.resources.configuration.screenHeightDp)
+                assertEquals(2f, it.resources.configuration.fontScale, 0f)
+            }
+            waitFor(heading)
+            compose.onNodeWithText(heading).assertIsDisplayed()
+            compose.onNodeWithText("Discard").assertIsDisplayed()
+            compose.onNodeWithText("Keep editing").assertIsDisplayed().performClick()
+            input.assertTextContains("Prepare the release")
+
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("Discard").assertIsDisplayed().performClick()
+            waitForTag("workflow_detail_title")
+            compose
+                .onNodeWithTag("workflow_detail_title")
+                .assertTextContains(app.fixture.releaseTitle)
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
     }
 
     @Test
