@@ -1,6 +1,7 @@
 package ai.okou.android.api
 
 import ai.okou.android.BuildConfig
+import ai.okou.android.api.generated.ActivateModelAccountRequest
 import ai.okou.android.api.generated.AndroidUpgradeRequired
 import ai.okou.android.api.generated.ApiError
 import ai.okou.android.api.generated.ApiHeaders
@@ -216,6 +217,12 @@ class ApiClient(
     suspend fun recoverySubscriptions() = execute { reads.recoverySubscriptions(it) }
 
     suspend fun recoveryBilling() = execute { reads.recoveryBilling(it) }
+
+    suspend fun usagePackCredits() = execute { reads.usagePackCredits(it) }
+
+    suspend fun activateModelAccount(accountId: String) = execute {
+        api.activateModelAccount(it, accountId, ActivateModelAccountRequest)
+    }
 
     suspend fun resetSubscription(accountId: String, idempotencyKey: String) = execute {
         api.resetSubscription(

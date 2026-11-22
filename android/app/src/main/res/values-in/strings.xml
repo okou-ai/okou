@@ -48,7 +48,6 @@
     <string name="auth_workspace">Ruang kerja saat ini</string>
     <string name="auth_switch_workspace">Ganti ruang kerja</string>
     <string name="auth_browser_unavailable">Instal browser untuk membuka pengaturan ruang kerja.</string>
-    <string name="preferences_title">Tampilan dan wilayah</string>
     <string name="preference_save_failed">Preferensi tidak dapat disimpan. Pilihan Anda tetap aktif.</string>
     <string name="preference_refresh_failed">Preferensi tidak dapat dimuat ulang. Coba lagi.</string>
     <string name="preference_color_theme">Tema warna</string>
@@ -158,7 +157,6 @@
     <string name="updates_waiting_to_download">Menunggu unduhan</string>
     <string name="instructions_placeholder">Apa yang ingin Anda minta Okou perhatikan?</string>
     <string name="instructions_save_when_online">Sambungkan ke internet untuk menyimpan perubahan.</string>
-    <string name="settings_conversation">Percakapan</string>
     <string name="settings_timezone">Zona waktu</string>
     <string name="settings_timezone_hint">Zona waktu default untuk tugas terjadwal baru.</string>
     <string name="settings_timezone_utc">Waktu Universal Terkoordinasi (UTC)</string>

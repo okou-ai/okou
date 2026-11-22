@@ -11,11 +11,14 @@ import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsScreen
 import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
+import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
+import ai.okou.android.settings.WorkspaceSettingsDataPage
+import ai.okou.android.settings.settingsWebClick
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.rememberSettingsFlag
 import ai.okou.android.state.rememberWorkspaceSwitchTarget
@@ -52,6 +55,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -112,33 +116,19 @@ internal fun SessionRoot(
                     ready?.composer ?: opened?.composer,
                     ready?.controls,
                     projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
-                    settingsContent = { destination, openInstructions, closeInstructions ->
+                    settingsContent = { destination, open, close ->
                         if (ready != null) {
-                            val instructionsOpen = destination == SettingsDestination.Instructions
-                            SettingsScreen(
-                                appUpdates = appUpdates,
-                                workspacePreferences = {
-                                    MemberPreferencesSettings(ready.preferences)
-                                },
-                                workspace = { WorkspaceSettings(state, switchWorkspace) },
-                                conversation = {
-                                    InstructionsSetting(instructionsOpen, openInstructions)
-                                },
-                                account = {
-                                    AccountSettings(
-                                        account?.takeIf { it.userId == ready.identity.userId },
-                                        signOut,
-                                    )
-                                },
+                            WorkspaceSettingsContent(
+                                destination,
+                                state,
+                                ready,
+                                open,
+                                close,
+                                switchWorkspace,
+                                account?.takeIf { it.userId == ready.identity.userId },
+                                signOut,
+                                appUpdates,
                             )
-                            if (instructionsOpen) {
-                                val chatState by ready.chats.uiState.collectAsStateWithLifecycle()
-                                PersonalInstructionsSettings(
-                                    ready.instructions,
-                                    closeInstructions,
-                                    chatState.offline,
-                                )
-                            }
                         }
                     },
                     recovery = ready?.recovery,
@@ -313,7 +303,102 @@ private fun OkouAuthLogo() {
 }
 
 @Composable
-private fun WorkspaceSettings(state: SessionUiState, chooseWorkspace: (String) -> Unit) {
+private fun WorkspaceSettingsContent(
+    destination: SettingsDestination,
+    state: SessionUiState,
+    ready: ReadyWorkspace,
+    open: (SettingsDestination) -> Unit,
+    close: () -> Unit,
+    switchWorkspace: (String) -> Unit,
+    account: NativeAccount?,
+    signOut: () -> Unit,
+    appUpdates: @Composable (() -> Unit)?,
+) {
+    val rowFocus = remember { SettingsDestination.entries.associateWith { FocusRequester() } }
+    var focused by remember { mutableStateOf<SettingsDestination?>(null) }
+    var restore by rememberSaveable { mutableStateOf<SettingsDestination?>(null) }
+    fun focusFor(page: SettingsDestination) =
+        Modifier.focusRequester(rowFocus.getValue(page)).onFocusChanged {
+            if (it.isFocused) focused = page else if (focused == page) focused = null
+        }
+    fun openPage(page: SettingsDestination) {
+        restore = page.takeIf { it == focused }
+        open(page)
+    }
+    LaunchedEffect(destination) {
+        if (destination == SettingsDestination.Overview) {
+            restore?.let { page -> rowFocus.getValue(page).requestFocus() }
+            restore = null
+        }
+    }
+    when (destination) {
+        SettingsDestination.ModelAccounts,
+        SettingsDestination.CreditBalance ->
+            WorkspaceSettingsDataPage(destination, ready.organization.name, ready.settings)
+        SettingsDestination.Account -> AccountSettings(account, signOut)
+        SettingsDestination.Overview,
+        SettingsDestination.Instructions -> {
+            val instructionsOpen = destination == SettingsDestination.Instructions
+            val preferences by ready.preferences.uiState.collectAsStateWithLifecycle()
+            SettingsScreen(
+                appUpdates = appUpdates,
+                workspacePreferences = { MemberPreferencesSettings(ready.preferences) },
+                workspace = {
+                    WorkspaceSettings(
+                        state,
+                        switchWorkspace,
+                        focusFor(SettingsDestination.CreditBalance),
+                        { openPage(SettingsDestination.CreditBalance) },
+                    )
+                },
+                models = {
+                    SettingsRow(
+                        stringResource(R.string.settings_model_accounts),
+                        leading = { SettingsIcon(R.drawable.ic_account_circle) },
+                        modifier = focusFor(SettingsDestination.ModelAccounts),
+                        onClick = { openPage(SettingsDestination.ModelAccounts) },
+                    )
+                },
+                tools = {
+                    SettingsSwitchRow(
+                        stringResource(R.string.settings_cloud_browser),
+                        leading = { SettingsIcon(R.drawable.ic_language) },
+                        checked = preferences.cloudBrowser,
+                        supportingText = stringResource(R.string.settings_cloud_browser_detail),
+                        onCheckedChange = ready.preferences::setCloudBrowser,
+                    )
+                },
+                myOkou = {
+                    InstructionsSetting(instructionsOpen) { open(SettingsDestination.Instructions) }
+                },
+                account = {
+                    SettingsSection(stringResource(R.string.settings_account)) {
+                        SettingsGroup {
+                            SettingsRow(
+                                stringResource(R.string.settings_account_security),
+                                leading = { SettingsIcon(R.drawable.ic_shield) },
+                                modifier = focusFor(SettingsDestination.Account),
+                                onClick = { openPage(SettingsDestination.Account) },
+                            )
+                        }
+                    }
+                },
+            )
+            if (instructionsOpen) {
+                val chatState by ready.chats.uiState.collectAsStateWithLifecycle()
+                PersonalInstructionsSettings(ready.instructions, close, chatState.offline)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceSettings(
+    state: SessionUiState,
+    chooseWorkspace: (String) -> Unit,
+    creditFocus: Modifier,
+    openCredits: () -> Unit,
+) {
     val organization = checkNotNull(state.ready).organization
     SettingsGroup {
         SettingsTrigger(
@@ -329,6 +414,13 @@ private fun WorkspaceSettings(state: SessionUiState, chooseWorkspace: (String) -
                 onClick = open,
             )
         }
+        HorizontalDivider()
+        SettingsRow(
+            stringResource(R.string.settings_credit_balance),
+            leading = { SettingsIcon(R.drawable.ic_paid) },
+            modifier = creditFocus,
+            onClick = openCredits,
+        )
     }
 }
 
@@ -357,34 +449,38 @@ private fun InstructionsSetting(instructionsOpen: Boolean, openInstructions: () 
 
 @Composable
 private fun AccountSettings(account: NativeAccount?, signOut: () -> Unit) {
-    SettingsSection(stringResource(R.string.settings_account)) {
-        SettingsGroup {
-            if (account != null) {
-                SettingsRow(account.email, leading = { SettingsIcon(R.drawable.ic_account_circle) })
-                HorizontalDivider()
-            }
-            SettingsTrigger(
-                content = { dismiss ->
-                    SettingsConfirmation(
-                        title = stringResource(R.string.settings_sign_out_title),
-                        message = stringResource(R.string.settings_sign_out_body),
-                        confirm = stringResource(R.string.auth_sign_out),
-                        onDismiss = dismiss,
-                        onConfirm = {
-                            dismiss()
-                            signOut()
-                        },
-                    )
-                }
-            ) { modifier, open ->
-                SettingsRow(
-                    stringResource(R.string.auth_sign_out),
-                    leading = { SettingsIcon(R.drawable.ic_logout) },
-                    modifier = modifier,
-                    onClick = open,
-                    showChevron = false,
+    SettingsGroup {
+        if (account != null) {
+            SettingsRow(account.email, leading = { SettingsIcon(R.drawable.ic_mail) })
+            HorizontalDivider()
+        }
+        SettingsRow(
+            stringResource(R.string.settings_account_web),
+            leading = { SettingsIcon(R.drawable.ic_shield) },
+            onClick = settingsWebClick("preference"),
+        )
+        HorizontalDivider()
+        SettingsTrigger(
+            content = { dismiss ->
+                SettingsConfirmation(
+                    title = stringResource(R.string.settings_sign_out_title),
+                    message = stringResource(R.string.settings_sign_out_body),
+                    confirm = stringResource(R.string.auth_sign_out),
+                    onDismiss = dismiss,
+                    onConfirm = {
+                        dismiss()
+                        signOut()
+                    },
                 )
             }
+        ) { modifier, open ->
+            SettingsRow(
+                stringResource(R.string.auth_sign_out),
+                leading = { SettingsIcon(R.drawable.ic_logout) },
+                modifier = modifier,
+                onClick = open,
+                showChevron = false,
+            )
         }
     }
 }

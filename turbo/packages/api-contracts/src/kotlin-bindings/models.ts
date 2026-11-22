@@ -324,6 +324,7 @@ export function renderKotlinModels(
   let hasOptionalJson = false;
   let hasOptionalInput = false;
   let requestBinding = false;
+  let preserveOptionalNullable: readonly string[] = [];
   const integerLiterals = new Set<number>();
   const imports = new Set([
     "kotlinx.serialization.SerialName",
@@ -545,7 +546,7 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
         if (opaque) optionalJson();
         const optionalNullable =
           optional &&
-          requestBinding &&
+          (requestBinding || preserveOptionalNullable.includes(field)) &&
           schemaObject(schema) &&
           nullableSchema(schema, `${name}${suffix(field)}`) !== undefined;
         if (optionalNullable) optionalInput();
@@ -763,6 +764,7 @@ ${types
   };
   for (const binding of bindings) {
     requestBinding = requestTypes.has(binding.name);
+    preserveOptionalNullable = binding.preserveOptionalNullable ?? [];
     const name = kotlinTypeName(binding.name);
     const result = render(
       toJSONSchema(binding.readSchema ?? binding.schema, {

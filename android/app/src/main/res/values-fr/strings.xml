@@ -48,7 +48,6 @@
     <string name="auth_workspace">Espace de travail actuel</string>
     <string name="auth_switch_workspace">Changer d’espace de travail</string>
     <string name="auth_browser_unavailable">Installez un navigateur pour configurer votre espace de travail.</string>
-    <string name="preferences_title">Apparence et région</string>
     <string name="preference_save_failed">Vos préférences n’ont pas pu être enregistrées. Vos choix restent actifs.</string>
     <string name="preference_refresh_failed">Impossible d’actualiser les préférences. Réessayez.</string>
     <string name="preference_color_theme">Thème de couleur</string>
@@ -158,7 +157,6 @@
     <string name="updates_waiting_to_download">Téléchargement en attente</string>
     <string name="instructions_placeholder">Que souhaitez-vous qu’Okou garde à l’esprit ?</string>
     <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>
-    <string name="settings_conversation">Conversation</string>
     <string name="settings_timezone">Fuseau horaire</string>
     <string name="settings_timezone_hint">Fuseau horaire par défaut des nouvelles tâches planifiées.</string>
     <string name="settings_timezone_utc">Temps universel coordonné (UTC)</string>

@@ -47,16 +47,18 @@ internal fun SettingsScreen(
     appUpdates: @Composable (() -> Unit)? = null,
     workspacePreferences: @Composable () -> Unit,
     workspace: @Composable () -> Unit = {},
-    conversation: @Composable () -> Unit,
+    models: @Composable () -> Unit,
+    tools: @Composable () -> Unit,
+    myOkou: @Composable () -> Unit,
     account: @Composable () -> Unit = {},
 ) {
     workspace()
-    SettingsSection(stringResource(R.string.settings_conversation)) {
-        SettingsGroup { conversation() }
-    }
+    SettingsSection(stringResource(R.string.settings_models)) { SettingsGroup { models() } }
+    SettingsSection(stringResource(R.string.settings_tools)) { SettingsGroup { tools() } }
+    SettingsSection(stringResource(R.string.settings_my_okou)) { SettingsGroup { myOkou() } }
     workspacePreferences()
+    account()
     if (appUpdates != null) {
         SettingsSection(stringResource(R.string.on_this_device)) { SettingsGroup { appUpdates() } }
     }
-    account()
 }

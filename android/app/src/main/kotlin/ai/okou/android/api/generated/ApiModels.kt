@@ -5987,7 +5987,9 @@ data class RecoverySubscriptionsSubscriptionsItem(
     val `subscriptionResetPeriod`: String? = null,
     val `subscriptionNextResetAt`: String? = null,
     val `subscriptionUsage`: RecoverySubscriptionsSubscriptionsItemSubscriptionUsage? = null,
-    val `subscriptionCredits`: RecoverySubscriptionsSubscriptionsItemSubscriptionCredits? = null,
+    val `subscriptionCredits`:
+        CanonicalOptional<RecoverySubscriptionsSubscriptionsItemSubscriptionCredits?> =
+        CanonicalOptional.Absent,
     val `subscriptionResetSupported`: Boolean? = null,
     val `subscriptionResetCredits`: Long? = null,
     val `subscriptionResetCreditsNextExpiresAt`: String? = null,
@@ -6114,6 +6116,124 @@ data class RecoveryBilling(
     val `creditGrants`: List<RecoveryBillingCreditGrantsItem>,
     val `concurrencyLimit`: Long,
     val `concurrencySubscriptions`: List<RecoveryBillingConcurrencySubscriptionsItem>,
+)
+
+@Serializable
+enum class UsagePackCreditsCreditGrantsItemGrantType {
+    @SerialName("purchased") PURCHASED,
+    @SerialName("bonus") BONUS,
+}
+
+@Serializable
+data class UsagePackCreditsCreditGrantsItem(
+    val `id`: String,
+    val `grantType`: UsagePackCreditsCreditGrantsItemGrantType,
+    val `amount`: Long,
+    val `remaining`: Long,
+    val `createdAt`: String,
+    val `expiresAt`: String,
+)
+
+@Serializable
+enum class UsagePackCreditsMemberCreditsItemCreditGrantsItemGrantType {
+    @SerialName("purchased") PURCHASED,
+    @SerialName("bonus") BONUS,
+}
+
+@Serializable
+data class UsagePackCreditsMemberCreditsItemCreditGrantsItem(
+    val `id`: String,
+    val `grantType`: UsagePackCreditsMemberCreditsItemCreditGrantsItemGrantType,
+    val `amount`: Long,
+    val `remaining`: Long,
+    val `createdAt`: String,
+    val `expiresAt`: String,
+)
+
+@Serializable
+data class UsagePackCreditsMemberCreditsItem(
+    val `totalCredits`: Long,
+    val `purchasedCredits`: Long,
+    val `bonusCredits`: Long,
+    val `creditGrants`: List<UsagePackCreditsMemberCreditsItemCreditGrantsItem>,
+    val `memberId`: String,
+)
+
+@Serializable
+data class UsagePackCredits(
+    val `totalCredits`: Long,
+    val `purchasedCredits`: Long,
+    val `bonusCredits`: Long,
+    val `creditGrants`: List<UsagePackCreditsCreditGrantsItem>,
+    val `hasUsagePack`: Boolean? = null,
+    val `memberCredits`: List<UsagePackCreditsMemberCreditsItem>? = null,
+)
+
+@Serializable data object ActivateModelAccountRequest
+
+@Serializable
+enum class ActivatedModelAccountType {
+    @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
+    @SerialName("openrouter-codex") OPENROUTER_CODEX,
+    @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("built-in") BUILT_IN,
+}
+
+@Serializable
+enum class ActivatedModelAccountFramework {
+    @SerialName("claude-code") CLAUDE_CODE,
+    @SerialName("codex") CODEX,
+}
+
+@Serializable
+data class ActivatedModelAccountSubscriptionUsageFiveHour(
+    val `usedPercent`: Double?,
+    val `remainingPercent`: Double?,
+    val `resetAt`: String?,
+    val `windowSeconds`: Double?,
+)
+
+@Serializable
+data class ActivatedModelAccountSubscriptionUsageWeekly(
+    val `usedPercent`: Double?,
+    val `remainingPercent`: Double?,
+    val `resetAt`: String?,
+    val `windowSeconds`: Double?,
+)
+
+@Serializable
+data class ActivatedModelAccountSubscriptionUsage(
+    val `fiveHour`: ActivatedModelAccountSubscriptionUsageFiveHour?,
+    val `weekly`: ActivatedModelAccountSubscriptionUsageWeekly?,
+)
+
+@Serializable
+data class ActivatedModelAccountSubscriptionCredits(
+    val `balance`: Double?,
+    val `unlimited`: Boolean,
+)
+
+@Serializable
+data class ActivatedModelAccount(
+    val `id`: String,
+    val `modelProviderId`: String? = null,
+    val `isActive`: Boolean? = null,
+    val `type`: ActivatedModelAccountType,
+    val `framework`: ActivatedModelAccountFramework,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+    val `accountEmail`: String? = null,
+    val `workspaceName`: String? = null,
+    val `planType`: String? = null,
+    val `subscriptionResetPeriod`: String? = null,
+    val `subscriptionNextResetAt`: String? = null,
+    val `subscriptionUsage`: ActivatedModelAccountSubscriptionUsage? = null,
+    val `subscriptionCredits`: ActivatedModelAccountSubscriptionCredits? = null,
+    val `subscriptionResetSupported`: Boolean? = null,
+    val `subscriptionResetCredits`: Long? = null,
+    val `subscriptionResetCreditsNextExpiresAt`: String? = null,
+    val `needsReconnect`: Boolean,
+    val `lastRefreshErrorCode`: String?,
 )
 
 @Serializable data class ResetSubscriptionRequest(val `idempotencyKey`: String)

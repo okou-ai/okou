@@ -39,6 +39,7 @@ data class PreferenceChange(
     val theme: UserPreferencesTheme? = null,
     val timezone: String? = null,
     val timezoneToReconcile: String? = null,
+    val cloudBrowser: Boolean? = null,
 ) {
     val timezoneToWrite: String?
         get() = timezone ?: timezoneToReconcile
@@ -49,6 +50,7 @@ data class PreferenceChange(
             colorTheme = colorTheme?.let { UpdatePreferencesRequestColorTheme.valueOf(it.name) },
             locale = locale?.let { UpdatePreferencesRequestLocale.valueOf(it.name) },
             theme = theme?.let { UpdatePreferencesRequestTheme.valueOf(it.name) },
+            cloudBrowserEnabledByDefault = cloudBrowser,
         )
 
     fun after(sent: PreferenceChange): PreferenceChange? {
@@ -59,6 +61,7 @@ data class PreferenceChange(
                 theme = theme.takeUnless { it == sent.theme },
                 timezone = timezone.takeUnless { it == writtenTimezone },
                 timezoneToReconcile = timezoneToReconcile.takeIf { writtenTimezone == null },
+                cloudBrowser = cloudBrowser.takeUnless { it == sent.cloudBrowser },
             )
             .takeUnless { it == PreferenceChange() }
     }
@@ -72,7 +75,13 @@ data class PreferenceChange(
 }
 
 private fun UserPreferences.asChoice() =
-    PreferenceChange(colorTheme = colorTheme, locale = locale, theme = theme, timezone = timezone)
+    PreferenceChange(
+        colorTheme = colorTheme,
+        locale = locale,
+        theme = theme,
+        timezone = timezone,
+        cloudBrowser = cloudBrowserEnabledByDefault,
+    )
 
 data class MemberPreferencesState(
     val confirmed: UserPreferences,
@@ -91,6 +100,9 @@ data class MemberPreferencesState(
 
     val timezone: String
         get() = pending?.timezone ?: checkNotNull(confirmed.timezone)
+
+    val cloudBrowser: Boolean
+        get() = pending?.cloudBrowser ?: confirmed.cloudBrowserEnabledByDefault
 
     val supportedLocales: List<UserPreferencesLocale>
         get() = confirmed.supportedLocales.map { UserPreferencesLocale.valueOf(it.name) }
@@ -115,6 +127,8 @@ private fun MemberPreferencesState.afterTimezoneConflict(
                 locale = sent.locale ?: confirmed.locale,
                 theme = sent.theme ?: confirmed.theme,
                 timezone = timezone,
+                cloudBrowserEnabledByDefault =
+                    sent.cloudBrowser ?: confirmed.cloudBrowserEnabledByDefault,
             ),
         pending = remaining.copy(timezoneToReconcile = timezone),
     )
@@ -186,6 +200,13 @@ class MemberPreferencesModel(
         val state = mutable.value
         if (state.timezone != value)
             select((state.pending ?: PreferenceChange()).copy(timezone = value))
+    }
+
+    fun setCloudBrowser(enabled: Boolean) {
+        val state = mutable.value
+        if (state.cloudBrowser != enabled) {
+            select((state.pending ?: PreferenceChange()).copy(cloudBrowser = enabled))
+        }
     }
 
     private fun select(change: PreferenceChange) {

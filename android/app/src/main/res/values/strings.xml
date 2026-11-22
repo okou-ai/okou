@@ -49,7 +49,6 @@
     <string name="auth_workspace">Current workspace</string>
     <string name="auth_switch_workspace">Switch workspace</string>
     <string name="auth_browser_unavailable">Install a browser to open workspace setup.</string>
-    <string name="preferences_title">Appearance and region</string>
     <string name="preference_save_failed">Could not save your preferences. Your selections are still in use.</string>
     <string name="preference_refresh_failed">Could not refresh preferences. Try again.</string>
     <string name="preference_color_theme">Color theme</string>
@@ -159,7 +158,6 @@
     <string name="updates_waiting_to_download">Waiting to download</string>
     <string name="instructions_placeholder">What would you like Okou to keep in mind?</string>
     <string name="instructions_save_when_online">Connect to save your changes.</string>
-    <string name="settings_conversation">Conversation</string>
     <string name="settings_timezone">Time zone</string>
     <string name="settings_timezone_hint">Default time zone for new scheduled tasks.</string>
     <string name="settings_timezone_utc">Coordinated Universal Time (UTC)</string>

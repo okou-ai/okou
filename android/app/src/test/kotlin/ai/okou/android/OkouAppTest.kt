@@ -244,7 +244,9 @@ class OkouAppTest {
                                 projectExpansion = null,
                                 settingsContent = { _, _, _ ->
                                     SettingsScreen(
-                                        conversation = {},
+                                        models = {},
+                                        tools = {},
+                                        myOkou = {},
                                         workspacePreferences = {
                                             MemberPreferencesSettings(models.second)
                                         },
