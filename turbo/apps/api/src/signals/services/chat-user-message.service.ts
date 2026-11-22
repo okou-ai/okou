@@ -579,7 +579,9 @@ export function projectUserMessage(
       hasTextContent ||= part.text.trim().length > 0;
       continue;
     }
-    if (isChatRunReference(part)) continue;
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "chat_thread") {
       const serialized = serializeChatThreadMention(
         part.threadId,

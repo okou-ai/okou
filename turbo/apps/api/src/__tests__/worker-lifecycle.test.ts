@@ -129,30 +129,32 @@ function caller(gcpMtls?: {
   };
 }
 
-async function createAgent(name: string) {
+async function createThread(title: string) {
   const http = caller();
-  const response = await http.request("/api/agents", {
+  const response = await http.request("/api/chat-threads", {
     method: "POST",
-    body: JSON.stringify({ displayName: name, visibility: "private" }),
+    body: JSON.stringify({ title }),
   });
   expect(response.status).toBe(201);
-  const body = object({ agentId: string(), displayName: string() }).parse(
+  const body = object({ id: string(), title: string() }).parse(
     await response.json(),
   );
-  expect(body).toMatchObject({ displayName: name });
+  expect(body).toMatchObject({ title });
   await expect(http.settle()).resolves.toStrictEqual([]);
   return body;
 }
 
 test("serves DB-backed foreground writes through response EOF and a subsequent Worker request", async () => {
   actor();
-  const created = await createAgent("Worker foreground");
+  const created = await createThread("Worker foreground");
   const http = caller();
-  const response = await http.request(`/api/agents/${created.agentId}`);
+  const response = await http.request(
+    `/api/chat-threads/${created.id}/metadata`,
+  );
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({
-    agentId: created.agentId,
-    displayName: "Worker foreground",
+    id: created.id,
+    title: "Worker foreground",
   });
   await expect(http.settle()).resolves.toStrictEqual([]);
 });
@@ -161,7 +163,7 @@ test.each(["eof", "cancel"] as const)(
   "continues admitted export DB work after response %s while a concurrent request finishes",
   async (completion) => {
     actor();
-    await createAgent(`Export via ${completion}`);
+    await createThread(`Export via ${completion}`);
     const entered = latch();
     const release = latch();
     context.signal.addEventListener(
@@ -207,7 +209,7 @@ test.each(["eof", "cancel"] as const)(
       await response.body!.cancel("caller stopped reading");
     }
     // Finishing an independent request must not dispose the blocked owner's DB.
-    await createAgent("Concurrent foreground");
+    await createThread("Concurrent foreground");
     release.resolve();
     await expect(owner.settle()).resolves.toStrictEqual([]);
     const observer = caller();
@@ -273,7 +275,7 @@ test("completes admitted foreground upload after the HTTP caller disconnects", a
   });
   await entered.promise;
   controller.abort(new DOMException("Caller disconnected", "AbortError"));
-  await createAgent("Surviving foreground");
+  await createThread("Surviving foreground");
   release.resolve();
   const completed = await response;
   expect(completed.status).toBe(200);
@@ -286,7 +288,7 @@ test("completes admitted foreground upload after the HTTP caller disconnects", a
 
 test("retains the publicly accepted export job after a background provider receipt fails", async () => {
   actor();
-  await createAgent("Export with uncertain provider receipt");
+  await createThread("Export with uncertain provider receipt");
   const entered = latch();
   const release = latch();
   context.signal.addEventListener(
