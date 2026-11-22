@@ -1,13 +1,10 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.TestOkouApplication
-import ai.okou.android.api.generated.AgentsItem
-import ai.okou.android.api.generated.AgentsItemVisibility
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ProjectArchive
@@ -67,23 +64,6 @@ class ChatCacheStoreTest {
         )
     }
 
-    private fun navigation() =
-        CachedChatNavigation(
-            agents =
-                listOf(
-                    AgentsItem(
-                        CHAT_AGENT,
-                        true,
-                        "user-a",
-                        null,
-                        "My Okou",
-                        null,
-                        null,
-                        AgentsItemVisibility.PRIVATE,
-                    )
-                )
-        )
-
     @Test
     fun startupPreparationIsScopedAndDoesNotReplaceTheActiveLease() = runTest {
         val store = cache(temporary.newFolder())
@@ -92,7 +72,7 @@ class ChatCacheStoreTest {
             .open(identity) { true }
             .use { lease ->
                 assertNull(store.prepareChatList(identity, Dispatchers.Default))
-                lease.save(checkpoint, 1234, navigation())
+                lease.save(checkpoint, 1234)
 
                 val prepared = checkNotNull(store.prepareChatList(identity, Dispatchers.Default))
                 assertEquals(identity, prepared.identity)
@@ -116,7 +96,6 @@ class ChatCacheStoreTest {
     fun upgradingVersionTwoPreservesChatAndProjectCache() = runTest {
         val root = temporary.newFolder()
         val original = checkpoint()
-        val agents = navigation()
         val projects =
             ProjectCheckpoint(
                 ProjectArchive(
@@ -129,7 +108,7 @@ class ChatCacheStoreTest {
         store
             .open(identity) { true }
             .use {
-                it.save(original, 1234, agents)
+                it.save(original, 1234)
                 it.saveProjects(projects, 2345)
             }
         store.close()
@@ -140,6 +119,10 @@ class ChatCacheStoreTest {
             it.execSQL(
                 "ALTER TABLE chat_scopes ADD COLUMN projectsEnabled INTEGER NOT NULL DEFAULT 0"
             )
+            it.execSQL("ALTER TABLE chat_scopes ADD COLUMN hasAgents INTEGER NOT NULL DEFAULT 0")
+            it.execSQL(
+                "CREATE TABLE chat_agents (scope TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (scope, id), FOREIGN KEY (scope) REFERENCES chat_scopes(scope) ON DELETE CASCADE)"
+            )
             it.execSQL("PRAGMA user_version = 2")
         }
 
@@ -149,20 +132,12 @@ class ChatCacheStoreTest {
             .use {
                 val chats = checkNotNull(it.load())
                 assertEquals(original, chats.checkpoint)
-                assertEquals(agents, chats.navigation)
                 assertEquals(1234L, chats.confirmedAt)
                 val savedProjects = checkNotNull(it.loadProjects())
                 assertEquals(projects, savedProjects.checkpoint)
                 assertEquals(2345L, savedProjects.confirmedAt)
             }
         upgraded.close()
-        driver.open(database.path).use { connection ->
-            connection
-                .prepare(
-                    "SELECT name FROM pragma_table_info('chat_scopes') WHERE name = 'projectsEnabled'"
-                )
-                .use { assertFalse(it.step()) }
-        }
     }
 
     @Test
@@ -266,7 +241,7 @@ class ChatCacheStoreTest {
             checkpoint(
                 chatEventWire(kind = "project_updated", extra = ",\"projectId\":\"$CHAT_PROJECT\"")
             )
-        first.open(identity) { true }.use { it.save(deferred, 1234, navigation()) }
+        first.open(identity) { true }.use { it.save(deferred, 1234) }
         first.close()
         val reopened = cache(root)
         reopened
@@ -275,7 +250,6 @@ class ChatCacheStoreTest {
                 val saved = checkNotNull(lease.load())
                 assertEquals(deferred.cursor, saved.checkpoint.cursor)
                 assertEquals(1234L, saved.confirmedAt)
-                assertEquals(navigation(), saved.navigation)
                 ChatListApiFixture().use { fixture ->
                     fixture.events = {
                         jsonResponse(
@@ -286,7 +260,7 @@ class ChatCacheStoreTest {
                         ChatListSync(fixture.service).synchronize(saved.checkpoint).checkpoint
                     assertEquals(CHAT_PROJECT, replayChats(confirmed).single().projectId)
                     assertEquals(CHAT_PERSONAL, replayChats(confirmed).single().id)
-                    lease.save(confirmed, 2345, saved.navigation)
+                    lease.save(confirmed, 2345)
                 }
             }
         reopened.close()
@@ -389,7 +363,7 @@ class ChatCacheStoreTest {
         val root = temporary.newFolder()
         val store = cache(root)
         val original = checkpoint()
-        store.open(identity) { true }.use { it.save(original, 1234, navigation()) }
+        store.open(identity) { true }.use { it.save(original, 1234) }
         store.close()
         // Fault at the real disk boundary after the transaction has begun replacing its snapshot.
         SQLiteDatabase.openDatabase(
@@ -421,7 +395,6 @@ class ChatCacheStoreTest {
                 val saved = checkNotNull(lease.load())
                 assertEquals(original, saved.checkpoint)
                 assertEquals(1234L, saved.confirmedAt)
-                assertEquals(navigation(), saved.navigation)
             }
     }
 

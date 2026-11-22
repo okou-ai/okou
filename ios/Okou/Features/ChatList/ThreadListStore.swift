@@ -15,7 +15,7 @@ final class ThreadListStore {
     isClosed: { [weak self] in self?.closed != false },
     isBlocked: { [weak self] in self?.blocked != false },
     setBlocked: { [weak self] in self?.blocked = $0 },
-    isMarkingRead: { [weak self] in self?.markingAgentRead != false },
+    isMarkingRead: { [weak self] in self?.markingAllRead != false },
     canMute: { [weak self] in self?.canMute($0) == true },
     didProject: { [weak self] in self?.publishThreads($0) },
     refreshList: { [weak self] wait, indicators in
@@ -48,7 +48,7 @@ final class ThreadListStore {
   }
   var agents: [AgentRecord] { navigation.agents }
   private(set) var unreadAgentIDs: Set<String> = []
-  private(set) var markingAgentRead = false
+  private(set) var markingAllRead = false
   private var readRevision = 0
   var actionError: String? { actions.actionError }
 
@@ -307,7 +307,7 @@ final class ThreadListStore {
 
   func setRead(_ thread: ChatThread, read: Bool) async -> Bool {
     guard updateTasks[thread.id] == nil, !updatingThreads.contains(thread.id), !closed, !blocked,
-      !markingAgentRead,
+      !markingAllRead,
       !Task.isCancelled
     else {
       return false
@@ -343,15 +343,15 @@ final class ThreadListStore {
     return succeeded && !closed && !Task.isCancelled
   }
 
-  func markAgentRead(_ agentID: String) async {
-    guard !closed, !blocked, !markingAgentRead, updatingThreads.isEmpty, !Task.isCancelled else {
+  func markAllRead() async {
+    guard !closed, !blocked, !markingAllRead, updatingThreads.isEmpty, !Task.isCancelled else {
       return
     }
-    markingAgentRead = true
+    markingAllRead = true
     readRevision += 1
-    defer { markingAgentRead = false }
-    await actions.updateThread("agent-read", includingIndicators: true) { [self, commands] in
-      try await commands.markAgentRead(agentID: agentID)
+    defer { markingAllRead = false }
+    await actions.updateThread("mark-all-read", includingIndicators: true) { [self, commands] in
+      try await commands.markAllRead()
       try Task.checkCancellation()
       didChangeReadState()
       readRevision += 1

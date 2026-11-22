@@ -148,7 +148,7 @@ struct UserMessageInlineText: View {
             text[start..<end].link = url
           }
         }
-      case "chat_thread", "agent", "project", "template":
+      case "chat_thread", "project", "template":
         // The muted chip marks a mention; its text stays ink.
         text.foregroundColor = OkouColor.foreground
         text.font = .okou(.body).weight(.medium)
@@ -158,8 +158,6 @@ struct UserMessageInlineText: View {
           path = "chats/\(id)"
         } else if part.type == "project", let id = part.projectId, UUID(uuidString: id) != nil {
           path = "projects/\(id)"
-        } else if part.type == "agent", let id = part.agentId, UUID(uuidString: id) != nil {
-          path = "agents/\(id)/chat"
         } else {
           path = nil
         }

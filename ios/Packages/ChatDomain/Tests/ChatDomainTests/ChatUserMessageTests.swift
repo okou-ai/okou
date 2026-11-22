@@ -21,7 +21,7 @@ final class ChatUserMessageTests: XCTestCase {
   func testVisiblePartsKeepTheirInlineOrderAndSnapshotsWithoutPrivateContext() throws {
     let document = ChatUserMessage(parts: [
       .init(type: "text", text: "Ask "),
-      .init(type: "agent", nameSnapshot: "Release Scout", agentId: identity(20)),
+      .init(type: "project", nameSnapshot: "Release Scout", projectId: identity(20)),
       .init(type: "text", text: " about "),
       .init(type: "chat_thread", titleSnapshot: "The release", threadId: identity(21)),
       .init(type: "text", text: " using "),

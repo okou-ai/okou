@@ -63,7 +63,6 @@ final class SearchUnreadFixture: Sendable {
   struct State {
     var unread: Set<Int> = [1, 2, 3, 5]
     var marker = SearchUnreadFixture.timestamp
-    var bulkAgent: String?
     var failWrites = false
     var failNextRead = false
     var omitThreadIndicators = false
@@ -147,15 +146,11 @@ final class SearchUnreadFixture: Sendable {
           return gate
         }
         if let gate { await gate.wait() }
-        let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
         return state.value.withLock { value in
           if value.failWrites {
             return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
           }
-          value.bulkAgent = body["agentId"]
-          value.unread = value.unread.filter {
-            ($0.isMultiple(of: 2) ? Self.otherAgent : Self.agent) != body["agentId"]
-          }
+          value.unread.formIntersection([3])
           return ChatHTTPResponse(status: 204, body: "")
         }
       default:
