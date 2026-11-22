@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">Izin tidak dapat dimuat.</string>
     <string name="connector_impact_failed">Penggunaan akun ini tidak dapat diperiksa.</string>
     <string name="connector_offline">Offline</string>
-    <string name="connector_offline_action">Sambungkan ke internet untuk mengelola akun.</string>
+    <string name="connector_network_failed">Tidak dapat terhubung ke Okou. Periksa koneksi Anda dan coba lagi.</string>
     <string name="connector_account_unavailable">Akun ini tidak lagi tersedia.</string>
     <string name="connector_unavailable">Otorisasi tidak tersedia untuk akun ini.</string>
     <string name="connector_no_method">Penyiapan akun untuk layanan ini tidak tersedia di sini.</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">Periksa otorisasi</string>
     <string name="connector_browser_unavailable">Tidak ada browser yang dapat membuka halaman otorisasi.</string>
     <string name="connector_incomplete">Penyedia belum mengonfirmasi otorisasi.</string>
-    <string name="connector_verify_pending">Hasil belum dikonfirmasi. Okou akan memeriksa ulang akun.</string>
+    <string name="connector_verify_pending">Hasil belum dikonfirmasi.</string>
+    <string name="connector_verify_network">Hasil belum dikonfirmasi. Periksa koneksi Anda.</string>
+    <string name="connector_authorization_unconfirmed">Otorisasi belum dikonfirmasi. Periksa akun layanan sebelum mencoba lagi.</string>
+    <string name="connector_submitting">Mengirim…</string>
+    <string name="connector_waiting_provider">Menunggu penyedia mengonfirmasi otorisasi…</string>
     <string name="connector_change_failed">Tindakan ini belum selesai. Periksa akun dan coba lagi.</string>
     <string name="connector_device_code">Masukkan kode ini di halaman penyedia</string>
     <string name="connector_external_code">Kode otorisasi</string>

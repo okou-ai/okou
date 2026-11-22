@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">暂时无法读取权限。</string>
     <string name="connector_impact_failed">暂时无法检查此账号的使用情况。</string>
     <string name="connector_offline">离线</string>
-    <string name="connector_offline_action">联网后可以管理账号。</string>
+    <string name="connector_network_failed">暂时无法连接 Okou。请检查网络后重试。</string>
     <string name="connector_account_unavailable">此账号已不可用。</string>
     <string name="connector_unavailable">此账号暂时无法授权。</string>
     <string name="connector_no_method">此服务暂未提供账号连接操作。</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">检查授权状态</string>
     <string name="connector_browser_unavailable">没有可打开授权页面的浏览器。</string>
     <string name="connector_incomplete">服务方尚未确认授权。</string>
-    <string name="connector_verify_pending">结果尚未确认。Okou 会再次核对账号。</string>
+    <string name="connector_verify_pending">结果尚未确认。</string>
+    <string name="connector_verify_network">结果尚未确认。请检查网络连接。</string>
+    <string name="connector_authorization_unconfirmed">授权结果尚未确认。请先检查此服务的账号。</string>
+    <string name="connector_submitting">正在提交…</string>
+    <string name="connector_waiting_provider">正在等待服务方完成授权…</string>
     <string name="connector_change_failed">操作未完成。请核对账号后重试。</string>
     <string name="connector_device_code">在服务方页面输入此代码</string>
     <string name="connector_external_code">授权码</string>

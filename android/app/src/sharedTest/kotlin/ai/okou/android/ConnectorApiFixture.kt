@@ -1,9 +1,12 @@
 package ai.okou.android
 
 import ai.okou.android.api.ApiClient
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.connectors.ConnectorService
 import java.io.Closeable
+import java.net.ConnectException
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -25,8 +28,11 @@ internal const val CONNECTOR_SLACK_ACCOUNT = "10000000-0000-4000-8000-0000000000
 internal const val CONNECTOR_GMAIL_ACCOUNT = "10000000-0000-4000-8000-000000000004"
 internal const val CONNECTOR_OAUTH_ATTEMPT = "20000000-0000-4000-8000-000000000001"
 internal const val CONNECTOR_AUTHORIZATION_URL = "https://provider.example/authorize?fixture=one"
+internal const val CONNECTOR_DEVICE_EXAMPLE = "device-example"
+internal const val CONNECTOR_MANUAL_EXAMPLE = "manual-example"
+internal const val CONNECTOR_EXAMPLE_DEVICE_CODE = "ABCD-1234"
 
-internal class ConnectorApiFixture : Closeable {
+internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Closeable {
     private val https = FixtureHttpsServer()
     private val api: ApiClient
     val service: ConnectorService
@@ -40,6 +46,10 @@ internal class ConnectorApiFixture : Closeable {
     @Volatile var renameReplyGate: CountDownLatch? = null
     @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
+    @Volatile var rejectConnection = false
+    @Volatile var loseManualReply = false
+    val renameRequests = AtomicInteger()
+    val manualRequests = AtomicInteger()
     private val entries = buildList {
         add(
             CatalogEntry(
@@ -50,6 +60,28 @@ internal class ConnectorApiFixture : Closeable {
                 0,
             )
         )
+        if (includeGrantExamples) {
+            add(
+                CatalogEntry(
+                    CONNECTOR_DEVICE_EXAMPLE,
+                    "Device authorization sample",
+                    "Connect using a code supplied by the service.",
+                    "developer-tools",
+                    null,
+                    grantKind = "device-auth",
+                )
+            )
+            add(
+                CatalogEntry(
+                    CONNECTOR_MANUAL_EXAMPLE,
+                    "Manual setup sample",
+                    "Set up a sample workspace account.",
+                    "developer-tools",
+                    null,
+                    grantKind = "manual",
+                )
+            )
+        }
         add(CatalogEntry("gmail", "Gmail", "查找邮件、整理往来记录和起草回复。", "email", 1))
         add(CatalogEntry("slack", "Slack", "查找团队消息、读取频道并起草更新。", "communication-collaboration", 2))
         add(
@@ -142,7 +174,15 @@ internal class ConnectorApiFixture : Closeable {
                     return response
                 }
             }
-        api = ApiClient(https.server.url("/"), { "connector-test" })
+        api =
+            ApiClient(
+                https.server.url("/"),
+                {
+                    if (rejectConnection)
+                        throw ApiFailure.Network(ConnectException("Fixture connection refused"))
+                    "connector-test"
+                },
+            )
         service = ConnectorService(api)
     }
 
@@ -187,7 +227,7 @@ internal class ConnectorApiFixture : Closeable {
                                                         "isDefault",
                                                         id == CONNECTOR_CALENDAR_PRIMARY,
                                                     )
-                                                    put("authMethod", "oauth")
+                                                    put("authMethod", account.authMethod)
                                                     put(
                                                         "externalId",
                                                         Json.parseToJsonElement("null"),
@@ -330,6 +370,38 @@ internal class ConnectorApiFixture : Closeable {
                     """{"authorizationUrl":"$CONNECTOR_AUTHORIZATION_URL","oauthAttemptId":"$CONNECTOR_OAUTH_ATTEMPT"}"""
                 )
             }
+            path == "/api/connectors/$CONNECTOR_DEVICE_EXAMPLE/oauth/device/sessions" &&
+                request.method == "POST" -> {
+                if (body(request)["authMethod"]?.jsonPrimitive?.content != "device-auth")
+                    return rejected(400)
+                jsonResponse(
+                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":900,"interval":5}"""
+                )
+            }
+            path == "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant" &&
+                request.method == "POST" -> {
+                val requestBody = body(request)
+                if (
+                    requestBody["authMethod"]?.jsonPrimitive?.content != "manual" ||
+                        requestBody["values"]
+                            ?.jsonObject
+                            ?.get("workspace")
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            .isNullOrBlank()
+                )
+                    return rejected(400)
+                manualRequests.incrementAndGet()
+                val id = "10000000-0000-4000-8000-000000000005"
+                accounts[id] =
+                    FixtureAccount(
+                        CONNECTOR_MANUAL_EXAMPLE,
+                        "Example workspace",
+                        "example@sample.test",
+                        authMethod = "manual",
+                    )
+                if (loseManualReply) rejected(503) else jsonResponse("""{"connectionId":"$id"}""")
+            }
             parts.getOrNull(1) == "connector-accounts" && parts.size >= 3 -> {
                 val id = parts[2]
                 val account = accounts[id] ?: return rejected(404)
@@ -345,6 +417,7 @@ internal class ConnectorApiFixture : Closeable {
                     "PATCH" -> {
                         val requestBody = body(request)
                         if (requestBody["target"] != target(account.slug)) return rejected(400)
+                        renameRequests.incrementAndGet()
                         account.name = requestBody["displayName"]?.jsonPrimitive?.contentOrNull
                         if (loseRenameReply) rejected(503) else json(account.row(id))
                     }
@@ -374,11 +447,35 @@ internal class ConnectorApiFixture : Closeable {
         val description: String,
         val category: String,
         val rank: Int?,
+        val grantKind: String = "auth-code",
     ) {
-        fun body() =
-            Json.parseToJsonElement(
-                """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"oauth","label":"OAuth","description":null,"supportsRefresh":true,"grantKind":"auth-code","manualFields":[],"startOptions":[]}],"singleAuthCodeAuthMethodId":"oauth","permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}"""
-            )
+        fun body(): JsonObject {
+            val method = if (grantKind == "auth-code") "oauth" else grantKind
+            val methodLabel = if (grantKind == "auth-code") "OAuth" else method
+            val singleAuth = if (grantKind == "auth-code") "\"oauth\"" else "null"
+            val fields =
+                if (grantKind == "manual") {
+                    listOf(
+                            "Workspace",
+                            "Region",
+                            "Endpoint",
+                            "Account ID",
+                            "Access key",
+                            "Label",
+                            "Notes",
+                        )
+                        .mapIndexed { index, name ->
+                            val id = name.lowercase().replace(' ', '-')
+                            val type = if (name == "Access key") "password" else "text"
+                            """{"id":"$id","label":"$name","required":${index == 0},"placeholder":null,"inputType":"$type"}"""
+                        }
+                        .joinToString(",", "[", "]")
+                } else "[]"
+            return Json.parseToJsonElement(
+                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":[]}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}"""
+                )
+                .jsonObject
+        }
     }
 
     private data class FixtureAccount(
@@ -388,11 +485,12 @@ internal class ConnectorApiFixture : Closeable {
         var enabled: Boolean = false,
         val scopeMismatch: Boolean = false,
         val expired: Boolean = false,
+        val authMethod: String = "oauth",
     ) {
         fun row(id: String) = buildJsonObject {
             put("id", id)
             put("target", target(slug))
-            put("authMethod", "oauth")
+            put("authMethod", authMethod)
             put("displayName", name)
             put("isDefault", id == CONNECTOR_CALENDAR_PRIMARY)
             put("externalId", Json.parseToJsonElement("null"))
