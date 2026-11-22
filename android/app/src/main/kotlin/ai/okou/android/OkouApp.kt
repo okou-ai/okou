@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.artifacts.ArtifactsRoute
+import ai.okou.android.artifacts.ChatArtifactResources
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatComposerField
@@ -105,6 +106,7 @@ internal fun OkouApp(
         (SettingsDestination, open: (SettingsDestination) -> Unit, close: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     artifacts: ArtifactCatalogModel? = null,
+    chatArtifacts: ArtifactCatalogModel? = null,
     workspaceAvatar: @Composable (() -> Unit)? = null,
     workspaceName: String? = null,
     updateToolbarAction: UpdateToolbarAction? = null,
@@ -120,6 +122,9 @@ internal fun OkouApp(
             )
     var navigation by rememberWorkspaceNavigation()
     val artifactPageState = rememberArtifactPageHolder()
+    val resourcesPageState = rememberArtifactPageHolder()
+    val resourcesFocus = remember { FocusRequester() }
+    var restoreResourcesFocus by remember { mutableStateOf(false) }
     val artifactEntryFocus = remember { FocusRequester() }
     var restoreArtifactEntryFocus by remember { mutableStateOf(false) }
     val artifactsOpen = navigation.artifacts != null
@@ -154,13 +159,27 @@ internal fun OkouApp(
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = currentWindowSizeDp()
     val listWidth = workspaceListPaneWidth(window.width, window.height)
+    val thread =
+        (target as? WorkspaceTarget.Chat)?.let { chat ->
+            list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
+        }
+    val resourcesId =
+        thread?.id?.takeIf {
+            chatArtifacts != null &&
+                settings == null &&
+                !showArtifacts &&
+                navigation.chatResourcesId == it
+        }
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && !artifactsOpen && navigation.search == SearchRoute.Open
     var composerFocused by
-        remember(target, settings, searchActive, showArtifacts) { mutableStateOf(false) }
+        remember(target, settings, searchActive, showArtifacts, resourcesId) {
+            mutableStateOf(false)
+        }
     val editing =
         showArtifacts ||
+            resourcesId != null ||
             searchActive ||
             settings == SettingsDestination.Instructions ||
             (settings == null && (target is WorkspaceTarget.NewChat || composerFocused))
@@ -203,7 +222,16 @@ internal fun OkouApp(
         artifactPageState.removeState("artifacts")
     }
 
+    fun closeResources(returnToActions: Boolean = false) {
+        if (navigation.chatResourcesId == null) return
+        if (!returnToActions) restoreResourcesFocus = false
+        navigation = navigation.copy(chatResourcesId = null)
+        chatArtifacts?.select(null)
+        resourcesPageState.removeState("chat-resources")
+    }
+
     fun openArtifacts() {
+        closeResources()
         focus.clearFocus()
         keyboard?.hide()
         navigation = navigation.copy(artifacts = ArtifactsDestination())
@@ -222,6 +250,7 @@ internal fun OkouApp(
     }
 
     fun openSearch() {
+        closeResources()
         if (artifactSource != null) closeArtifacts(restoreFocus = false)
         restoreSearchFocus = searchEntryFocused
         searchState.reset()
@@ -230,6 +259,7 @@ internal fun OkouApp(
     }
 
     fun returnToList() {
+        closeResources()
         val search =
             when (navigation.search) {
                 SearchRoute.Open -> SearchRoute.Open
@@ -242,11 +272,6 @@ internal fun OkouApp(
         }
         navigation = navigation.copy(target = WorkspaceTarget.List, search = search)
     }
-
-    val thread =
-        (target as? WorkspaceTarget.Chat)?.let { chat ->
-            list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
-        }
 
     val showConversationFeedback = settings == null && !showChatList && thread != null
     val showRowFeedback = showChatList || showConversationFeedback
@@ -304,6 +329,7 @@ internal fun OkouApp(
         }
 
     fun openConversation(threadId: String, destination: WorkspaceTarget, fromSearch: Boolean) {
+        closeResources()
         if (artifactSource != null) closeArtifacts(restoreFocus = false)
         val search =
             when {
@@ -345,6 +371,7 @@ internal fun OkouApp(
 
     fun startNewChat(projectId: String?) {
         val activeComposer = composer?.takeIf { workspaceReady } ?: return
+        closeResources()
         if (artifactSource != null) closeArtifacts(restoreFocus = false)
         activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
@@ -584,6 +611,18 @@ internal fun OkouApp(
                 thread = thread,
                 onRowAction = ::rowAction,
                 onRename = { id, title -> chats?.renameThread(id, title) },
+                openResources =
+                    thread
+                        ?.id
+                        ?.takeIf { chatArtifacts != null }
+                        ?.let { id ->
+                            { restore ->
+                                restoreResourcesFocus = restore
+                                focus.clearFocus()
+                                keyboard?.hide()
+                                navigation = navigation.copy(chatResourcesId = id)
+                            }
+                        },
                 openSettings =
                     if (!workspaceReady || listWidth != null) null
                     else {
@@ -594,12 +633,16 @@ internal fun OkouApp(
                             navigation = navigation.copy(settings = SettingsDestination.Overview)
                         }
                     },
-                settingsFocus = settingsFocus.takeIf { listWidth == null },
+                settingsFocus = if (listWidth == null) settingsFocus else resourcesFocus,
             )
             LaunchedEffect(Unit) {
                 if (listWidth == null && restoreSettingsFocus) {
                     restoreSettingsFocus = false
                     settingsFocus.requestFocus()
+                }
+                if (restoreResourcesFocus && thread != null) {
+                    restoreResourcesFocus = false
+                    (if (listWidth == null) settingsFocus else resourcesFocus).requestFocus()
                 }
             }
         }
@@ -737,7 +780,9 @@ internal fun OkouApp(
         topBar = {
             if (settings == null && listWidth == null && showList && !searchActive) {
                 Box(Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets)) { listToolbar() }
-            } else if (settings != null || listWidth == null && !searchActive) {
+            } else if (
+                settings != null || listWidth == null && !searchActive && resourcesId == null
+            ) {
                 detailBar()
             }
         },
@@ -821,7 +866,18 @@ internal fun OkouApp(
                         Column(
                             Modifier.weight(1f).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
+                        ) pane@{
+                            if (resourcesId != null && chatArtifacts != null) {
+                                resourcesPageState.SaveableStateProvider("chat-resources") {
+                                    ChatArtifactResources(
+                                        chatArtifacts,
+                                        resourcesId,
+                                        listWidth != null,
+                                        onClose = { closeResources(returnToActions = true) },
+                                    )
+                                }
+                                return@pane
+                            }
                             if (
                                 listWidth != null && (target != WorkspaceTarget.List || wideWelcome)
                             ) {

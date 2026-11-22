@@ -2,12 +2,14 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.state.ArtifactPageState
 import ai.okou.android.state.rememberArtifactPageState
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,26 +61,8 @@ internal fun ArtifactsRoute(
     val keyboard = LocalSoftwareKeyboardController.current
     val input = rememberTextFieldState()
     val page = rememberArtifactPageState()
+    val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val selectedId = page.selectedId
-    var pickerFailed by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val picker =
-        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result
-            ->
-            val id = page.pickerArtifactId
-            page.pickerArtifactId = null
-            val destination = result.data?.data
-            if (
-                id != null &&
-                    result.resultCode == Activity.RESULT_OK &&
-                    destination?.scheme == "content"
-            ) {
-                model.save(id) {
-                    context.contentResolver.openOutputStream(destination, "wt")
-                        ?: throw IOException("Document provider did not open its destination")
-                }
-            }
-        }
 
     LifecycleStartEffect(model) {
         model.setActive(true, ArtifactQuery(page.filter, input.text.toString().trim()))
@@ -139,7 +123,6 @@ internal fun ArtifactsRoute(
                 onSelect = { item ->
                     focus.clearFocus()
                     keyboard?.hide()
-                    pickerFailed = false
                     page.selectedId = item.id
                     model.select(item.id, item)
                 },
@@ -158,52 +141,16 @@ internal fun ArtifactsRoute(
             Column(Modifier.weight(1f)) {
                 if (!wide)
                     ArtifactToolbar(R.string.artifact_title, R.string.artifact_return_list, ::back)
-                key(selectedId) {
-                    val id = selectedId
-                    val preview = state.preview?.takeIf { it.id == id }
-                    val source =
-                        preview?.info?.sourceChatId?.let { sourceId ->
-                            threads.firstOrNull { it.id == sourceId && it.hidden != true }
-                        }
-                    ArtifactPreview(
-                        preview,
-                        rememberScrollState(),
-                        wide,
-                        state.offline,
-                        source,
-                        restoreSourceFocus = page.restoreSource,
-                        onSourceFocusRestored = { page.restoreSource = false },
-                        onSource = {
-                            page.restoreSource = true
-                            onSource(it)
-                        },
-                        saveEnabled = !state.saving && page.pickerArtifactId == null,
-                        onSave = { file ->
-                            if (page.pickerArtifactId == null && !model.state.value.saving) {
-                                page.pickerArtifactId = id
-                                pickerFailed = false
-                                try {
-                                    picker.launch(
-                                        Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                                            addCategory(Intent.CATEGORY_OPENABLE)
-                                            type =
-                                                file.contentType.substringBefore(';').takeIf {
-                                                    '/' in it
-                                                } ?: "application/octet-stream"
-                                            putExtra(Intent.EXTRA_TITLE, file.filename)
-                                        }
-                                    )
-                                } catch (_: ActivityNotFoundException) {
-                                    page.pickerArtifactId = null
-                                    pickerFailed = true
-                                }
-                            }
-                        },
-                        saveResult =
-                            if (pickerFailed) ArtifactSaveResult.Failed
-                            else state.saveResult?.takeIf { it.first == id }?.second,
-                    )
-                }
+                ArtifactSelectionPreview(
+                    model,
+                    state,
+                    page,
+                    selectedId,
+                    wide,
+                    saveLauncher,
+                    threads,
+                    onSource,
+                )
             }
         } else if (wide) {
             Box(
@@ -218,5 +165,89 @@ internal fun ArtifactsRoute(
                 )
             }
         }
+    }
+}
+
+/** Register with the route so a document result can arrive after a preview closes. */
+@Composable
+internal fun rememberArtifactSaveLauncher(
+    model: ArtifactCatalogModel,
+    page: ArtifactPageState,
+): ActivityResultLauncher<Intent> {
+    val context = LocalContext.current
+    return rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        result ->
+        val id = page.pickerArtifactId
+        page.pickerArtifactId = null
+        val destination = result.data?.data
+        if (
+            id != null &&
+                result.resultCode == Activity.RESULT_OK &&
+                destination?.scheme == "content"
+        ) {
+            model.save(id) {
+                context.contentResolver.openOutputStream(destination, "wt")
+                    ?: throw IOException("Document provider did not open its destination")
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ArtifactSelectionPreview(
+    model: ArtifactCatalogModel,
+    state: ArtifactCatalogState,
+    page: ArtifactPageState,
+    selectedId: String,
+    wide: Boolean,
+    saveLauncher: ActivityResultLauncher<Intent>,
+    threads: List<ConfirmedChat> = emptyList(),
+    onSource: (ConfirmedChat) -> Unit = {},
+) {
+    var pickerFailed by remember(selectedId) { mutableStateOf(false) }
+    key(selectedId) {
+        val id = selectedId
+        val preview = state.preview?.takeIf { it.id == id }
+        val source =
+            preview?.info?.sourceChatId?.let { sourceId ->
+                threads.firstOrNull { it.id == sourceId && it.hidden != true }
+            }
+        ArtifactPreview(
+            preview,
+            rememberScrollState(),
+            wide,
+            state.offline,
+            source,
+            restoreSourceFocus = page.restoreSource,
+            onSourceFocusRestored = { page.restoreSource = false },
+            onSource = {
+                page.restoreSource = true
+                onSource(it)
+            },
+            saveEnabled = !state.saving && page.pickerArtifactId == null,
+            onSave = { file ->
+                if (page.pickerArtifactId == null && !model.state.value.saving) {
+                    page.pickerArtifactId = id
+                    pickerFailed = false
+                    try {
+                        saveLauncher.launch(
+                            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type =
+                                    file.contentType.substringBefore(';').takeIf { '/' in it }
+                                        ?: "application/octet-stream"
+                                putExtra(Intent.EXTRA_TITLE, file.filename)
+                            }
+                        )
+                    } catch (_: ActivityNotFoundException) {
+                        page.pickerArtifactId = null
+                        pickerFailed = true
+                    }
+                }
+            },
+            saveResult =
+                if (pickerFailed) ArtifactSaveResult.Failed
+                else state.saveResult?.takeIf { it.first == id }?.second,
+        )
     }
 }

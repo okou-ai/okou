@@ -274,8 +274,8 @@ internal constructor(
     }
 
     private fun cachedResults(query: ArtifactQuery): ArtifactPage? {
-        val byType = catalogs[ArtifactQuery(query.filter)]
-        val all = catalogs[ArtifactQuery()]
+        val byType = catalogs[query.copy(keyword = "")]
+        val all = catalogs[ArtifactQuery(chatThreadId = query.chatThreadId)]
         if (byType == null && all == null) return null
         val confirmed = (byType?.items.orEmpty() + all?.items.orEmpty()).distinctBy { it.id }
         val matching =
