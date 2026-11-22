@@ -90,14 +90,18 @@ class PoolGeneration:
         self.retired = False
         self._idle: list[_IdleConnection] = []
 
+    def _detach_idle(self, idle: _IdleConnection) -> None:
+        """Withdraw a known entry and cancel its expiry before releasing ownership."""
+        self._idle.remove(idle)
+        if idle.expiry is not None:
+            idle.expiry.cancel()
+
     def _discard(self, idle: _IdleConnection) -> None:
         # The idle reader and expiry callback may both become ready before
         # either observes borrowing or retirement.
         if idle not in self._idle:
             return
-        self._idle.remove(idle)
-        if idle.expiry is not None:
-            idle.expiry.cancel()
+        self._detach_idle(idle)
         idle.connection.close(self.loop)
 
     def _probe_finished(self, idle: _IdleConnection) -> None:
@@ -114,9 +118,7 @@ class PoolGeneration:
         for idle in reversed(self._idle):
             if idle.key != key:
                 continue
-            self._idle.remove(idle)
-            if idle.expiry is not None:
-                idle.expiry.cancel()
+            self._detach_idle(idle)
             connection = idle.connection
             idle.probe.cancel()
             try:
