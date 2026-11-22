@@ -26,6 +26,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
@@ -684,7 +685,8 @@ class WorkflowRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h800dp")
-    fun sourceChatClosesFindBeforeReturningToWorkflowHistory() {
+    fun sourceChatBackClosesFindThenReturnsThroughTheLinkToWorkflowHistory() {
+        app.fixture.chats.historyReply = "[Project handoff](/chats/$CHAT_IN_PROJECT)"
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_history").performClick()
         val source = hasText(app.fixture.ruleTitle) and hasClickAction()
@@ -692,12 +694,23 @@ class WorkflowRootTest {
         compose.onNode(source).performClick()
         waitForTag("conversation")
 
+        val link = hasText("Project handoff", substring = true)
+        compose.waitUntil(10_000) { compose.onAllNodes(link).fetchSemanticsNodes().size == 1 }
+        compose.onNode(link).performFirstLinkClick()
+        val inSidebar = hasAnyAncestor(hasTestTag("chat_list"))
+        val linkedChat = hasText("Project chat") and !inSidebar
+        compose.waitUntil(10_000) { compose.onAllNodes(linkedChat).fetchSemanticsNodes().size == 1 }
+        compose.onNode(linkedChat).assertIsDisplayed()
+
         compose.onNodeWithContentDescription("Chat actions").performClick()
         compose.onNodeWithText("Find messages").performClick()
         compose.onNodeWithTag("conversation_find").assertIsDisplayed()
         back()
         compose.onNodeWithTag("conversation_find").assertDoesNotExist()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
+
+        back()
+        compose.onNode(hasText("Personal chat") and !inSidebar).assertIsDisplayed()
 
         back()
         compose.onNodeWithTag("workflow_tab_history").assertIsSelected()

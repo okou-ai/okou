@@ -25,4 +25,6 @@
         <item quantity="other">%d matching messages</item>
     </plurals>
     <string name="conversation_find_attachment">Attachment</string>
+    <string name="conversation_link_unavailable">This conversation link is unavailable</string>
+    <string name="conversation_link_no_browser">No browser can open this link</string>
 </resources>

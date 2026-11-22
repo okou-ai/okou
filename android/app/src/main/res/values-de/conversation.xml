@@ -25,4 +25,6 @@
         <item quantity="one">%d passende Nachricht</item>
         <item quantity="other">%d passende Nachrichten</item>
     </plurals>
+    <string name="conversation_link_unavailable">Dieser Unterhaltungslink ist nicht verfügbar</string>
+    <string name="conversation_link_no_browser">Kein Browser kann diesen Link öffnen</string>
 </resources>

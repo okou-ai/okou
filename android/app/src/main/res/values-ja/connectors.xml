@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">権限を読み込めませんでした。</string>
     <string name="connector_impact_failed">このアカウントの利用先を確認できませんでした。</string>
     <string name="connector_offline">オフライン</string>
-    <string name="connector_offline_action">アカウントを管理するにはインターネットに接続してください。</string>
+    <string name="connector_network_failed">Okou に接続できませんでした。ネットワーク接続を確認して再試行してください。</string>
     <string name="connector_account_unavailable">このアカウントは利用できなくなりました。</string>
     <string name="connector_unavailable">このアカウントは認証できません。</string>
     <string name="connector_no_method">このサービスのアカウント設定はここでは利用できません。</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">認証を確認</string>
     <string name="connector_browser_unavailable">認証ページを開けるブラウザがありませんでした。</string>
     <string name="connector_incomplete">提供元からの認証確認がまだ届いていません。</string>
-    <string name="connector_verify_pending">結果は未確認です。Okou がアカウントを再確認します。</string>
+    <string name="connector_verify_pending">結果はまだ確認できていません。</string>
+    <string name="connector_verify_network">結果はまだ確認できていません。ネットワーク接続を確認してください。</string>
+    <string name="connector_authorization_unconfirmed">認可の結果は確認できていません。再試行する前にサービスのアカウントを確認してください。</string>
+    <string name="connector_submitting">送信中…</string>
+    <string name="connector_waiting_provider">サービスによる認可の確認を待っています…</string>
     <string name="connector_change_failed">操作を完了できませんでした。アカウントを確認してもう一度お試しください。</string>
     <string name="connector_device_code">このコードを提供元のページに入力します</string>
     <string name="connector_external_code">認証コード</string>

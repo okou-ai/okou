@@ -24,4 +24,6 @@
         <item quantity="other">%d 則符合的訊息</item>
     </plurals>
     <string name="conversation_find_attachment">附件</string>
+    <string name="conversation_link_unavailable">這個對話連結暫時無法使用</string>
+    <string name="conversation_link_no_browser">沒有可開啟此連結的瀏覽器</string>
 </resources>

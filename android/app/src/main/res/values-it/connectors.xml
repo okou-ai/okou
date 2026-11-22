@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">Impossibile caricare le autorizzazioni.</string>
     <string name="connector_impact_failed">Impossibile verificare dove viene usato l’account.</string>
     <string name="connector_offline">Offline</string>
-    <string name="connector_offline_action">Collegati a Internet per gestire gli account.</string>
+    <string name="connector_network_failed">Impossibile raggiungere Okou. Controlla la connessione e riprova.</string>
     <string name="connector_account_unavailable">Questo account non è più disponibile.</string>
     <string name="connector_unavailable">L’autorizzazione per questo account non è disponibile.</string>
     <string name="connector_no_method">Qui non è disponibile la configurazione dell’account per questo servizio.</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">Verifica autorizzazione</string>
     <string name="connector_browser_unavailable">Nessun browser è riuscito ad aprire la pagina di autorizzazione.</string>
     <string name="connector_incomplete">Il fornitore non ha ancora confermato l’autorizzazione.</string>
-    <string name="connector_verify_pending">L’esito non è confermato. Okou verificherà di nuovo l’account.</string>
+    <string name="connector_verify_pending">L’esito non è ancora confermato.</string>
+    <string name="connector_verify_network">L’esito non è ancora confermato. Controlla la connessione.</string>
+    <string name="connector_authorization_unconfirmed">L’autorizzazione non è ancora confermata. Controlla gli account del servizio prima di riprovare.</string>
+    <string name="connector_submitting">Invio in corso…</string>
+    <string name="connector_waiting_provider">In attesa della conferma dell’autorizzazione da parte del provider…</string>
     <string name="connector_change_failed">Impossibile completare l’azione. Verifica l’account e riprova.</string>
     <string name="connector_device_code">Inserisci questo codice nella pagina del fornitore</string>
     <string name="connector_external_code">Codice di autorizzazione</string>

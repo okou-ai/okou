@@ -144,7 +144,11 @@ internal class ConversationFindVisit(
     }
 }
 
-internal class ConversationFindTarget(val id: String, val markdownBlock: Int?) {
+internal class ConversationFindTarget(
+    val id: String,
+    val markdownBlock: Int?,
+    val isRun: Boolean = false,
+) {
     var positioned by mutableStateOf(false)
         private set
 

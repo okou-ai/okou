@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">권한을 불러오지 못했습니다.</string>
     <string name="connector_impact_failed">이 계정의 사용 위치를 확인하지 못했습니다.</string>
     <string name="connector_offline">오프라인</string>
-    <string name="connector_offline_action">인터넷에 연결하여 계정을 관리하세요.</string>
+    <string name="connector_network_failed">Okou에 연결할 수 없습니다. 네트워크 연결을 확인한 후 다시 시도하세요.</string>
     <string name="connector_account_unavailable">이 계정은 더 이상 사용할 수 없습니다.</string>
     <string name="connector_unavailable">이 계정을 승인할 수 없습니다.</string>
     <string name="connector_no_method">여기에서 이 서비스의 계정을 설정할 수 없습니다.</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">승인 상태 확인</string>
     <string name="connector_browser_unavailable">승인 페이지를 열 브라우저가 없습니다.</string>
     <string name="connector_incomplete">서비스 제공업체에서 아직 승인을 확인하지 않았습니다.</string>
-    <string name="connector_verify_pending">결과가 확인되지 않았습니다. Okou가 계정을 다시 확인합니다.</string>
+    <string name="connector_verify_pending">결과가 아직 확인되지 않았습니다.</string>
+    <string name="connector_verify_network">결과가 아직 확인되지 않았습니다. 네트워크 연결을 확인하세요.</string>
+    <string name="connector_authorization_unconfirmed">인증 결과가 확인되지 않았습니다. 다시 시도하기 전에 서비스 계정을 확인하세요.</string>
+    <string name="connector_submitting">제출 중…</string>
+    <string name="connector_waiting_provider">서비스 제공자의 인증 확인을 기다리는 중…</string>
     <string name="connector_change_failed">작업을 완료하지 못했습니다. 계정을 확인한 후 다시 시도하세요.</string>
     <string name="connector_device_code">서비스 제공업체 페이지에 이 코드를 입력하세요</string>
     <string name="connector_external_code">승인 코드</string>

@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">Não foi possível carregar as permissões.</string>
     <string name="connector_impact_failed">Não foi possível verificar onde esta conta é usada.</string>
     <string name="connector_offline">Sem conexão</string>
-    <string name="connector_offline_action">Conecte-se à internet para gerenciar as contas.</string>
+    <string name="connector_network_failed">Não foi possível acessar o Okou. Verifique a conexão e tente novamente.</string>
     <string name="connector_account_unavailable">Esta conta não está mais disponível.</string>
     <string name="connector_unavailable">A autorização não está disponível para esta conta.</string>
     <string name="connector_no_method">Não há uma opção de configuração de conta para este serviço aqui.</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">Verificar autorização</string>
     <string name="connector_browser_unavailable">Nenhum navegador conseguiu abrir a página de autorização.</string>
     <string name="connector_incomplete">O provedor ainda não confirmou a autorização.</string>
-    <string name="connector_verify_pending">O resultado ainda não foi confirmado. O Okou verificará a conta novamente.</string>
+    <string name="connector_verify_pending">O resultado ainda não foi confirmado.</string>
+    <string name="connector_verify_network">O resultado ainda não foi confirmado. Verifique a conexão.</string>
+    <string name="connector_authorization_unconfirmed">A autorização ainda não foi confirmada. Verifique as contas do serviço antes de tentar novamente.</string>
+    <string name="connector_submitting">Enviando…</string>
+    <string name="connector_waiting_provider">Aguardando a confirmação da autorização pelo provedor…</string>
     <string name="connector_change_failed">Não foi possível concluir a ação. Verifique a conta e tente novamente.</string>
     <string name="connector_device_code">Digite este código na página do provedor</string>
     <string name="connector_external_code">Código de autorização</string>

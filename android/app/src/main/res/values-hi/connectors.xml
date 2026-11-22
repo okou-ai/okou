@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">अनुमतियाँ लोड नहीं हो सकीं।</string>
     <string name="connector_impact_failed">यह नहीं जाँचा जा सका कि इस खाते का इस्तेमाल कहाँ हो रहा है।</string>
     <string name="connector_offline">ऑफ़लाइन</string>
-    <string name="connector_offline_action">खातों को प्रबंधित करने के लिए इंटरनेट से कनेक्ट करें।</string>
+    <string name="connector_network_failed">Okou से जुड़ नहीं सके। अपना कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="connector_account_unavailable">यह खाता अब उपलब्ध नहीं है।</string>
     <string name="connector_unavailable">इस खाते को अनुमति नहीं दी जा सकती।</string>
     <string name="connector_no_method">इस सेवा का खाता यहाँ सेट अप नहीं किया जा सकता।</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">अनुमति की स्थिति जाँचें</string>
     <string name="connector_browser_unavailable">कोई ब्राउज़र अनुमति वाला पेज नहीं खोल सका।</string>
     <string name="connector_incomplete">सेवा प्रदाता ने अभी तक अनुमति की पुष्टि नहीं की है।</string>
-    <string name="connector_verify_pending">नतीजे की पुष्टि नहीं हुई है। Okou खाते की फिर से जाँच करेगा।</string>
+    <string name="connector_verify_pending">नतीजे की पुष्टि अभी नहीं हुई है।</string>
+    <string name="connector_verify_network">नतीजे की पुष्टि अभी नहीं हुई है। अपना कनेक्शन जाँचें।</string>
+    <string name="connector_authorization_unconfirmed">अनुमति की पुष्टि नहीं हुई है। दोबारा कोशिश करने से पहले सेवा के खाते जाँचें।</string>
+    <string name="connector_submitting">सबमिट किया जा रहा है…</string>
+    <string name="connector_waiting_provider">सेवा प्रदाता से अनुमति की पुष्टि का इंतज़ार है…</string>
     <string name="connector_change_failed">यह कार्रवाई पूरी नहीं हो सकी। खाता जाँचें और फिर कोशिश करें।</string>
     <string name="connector_device_code">यह कोड सेवा प्रदाता के पेज पर डालें</string>
     <string name="connector_external_code">अनुमति का कोड</string>
