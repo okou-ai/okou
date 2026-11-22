@@ -28,12 +28,15 @@ import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.conversationRunControls
+import ai.okou.android.connectors.ConnectorModel
+import ai.okou.android.connectors.ConnectorsPage
 import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberArtifactPageHolder
 import ai.okou.android.state.rememberChatSearchState
+import ai.okou.android.state.rememberConnectorsOpen
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
@@ -115,6 +118,7 @@ internal fun OkouApp(
     onUpdateEditingChanged: (Boolean) -> Unit = {},
     startupRecovery: @Composable (() -> Unit)? = null,
     workspaceReady: Boolean = composer != null,
+    connectors: ConnectorModel? = null,
 ) {
     val list =
         chats?.uiState?.collectAsStateWithLifecycle()?.value
@@ -133,6 +137,9 @@ internal fun OkouApp(
     val artifactsOpen = navigation.artifacts != null
     val artifactSource = navigation.artifacts?.sourceId.takeIf { artifacts != null }
     val showArtifacts = artifactsOpen && artifacts != null && artifactSource == null
+    var connectorsOpen by rememberConnectorsOpen()
+    val canOpenConnectors = connectors != null && workspaceReady
+    val showingConnectors = canOpenConnectors && connectorsOpen
     val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
     val settings =
         when {
@@ -193,6 +200,7 @@ internal fun OkouApp(
         showArtifacts ||
             inlineArtifactLink != null ||
             resourcesId != null ||
+            showingConnectors ||
             searchActive ||
             settings == SettingsDestination.Instructions ||
             (settings == null && (target is WorkspaceTarget.NewChat || composerFocused))
@@ -201,7 +209,8 @@ internal fun OkouApp(
         onDispose { onUpdateEditingChanged(false) }
     }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
-    val showChatList = settings == null && showList && !searchActive && !showArtifacts
+    val showChatList =
+        settings == null && showList && !searchActive && !showArtifacts && !showingConnectors
     val showWorkspaceBack =
         artifactSource != null ||
             listWidth == null && !searchActive && target != WorkspaceTarget.List
@@ -224,9 +233,12 @@ internal fun OkouApp(
     val keyboard = LocalSoftwareKeyboardController.current
     val settingsFocus = remember { FocusRequester() }
     val searchEntryFocus = remember { FocusRequester() }
+    val connectorEntryFocus = remember { FocusRequester() }
     var searchEntryFocused by remember { mutableStateOf(false) }
     var restoreSearchFocus by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
+    var connectorEntryFocused by remember { mutableStateOf(false) }
+    var restoreConnectorFocus by remember { mutableStateOf(false) }
 
     fun closeArtifacts(restoreFocus: Boolean) {
         restoreArtifactEntryFocus = restoreFocus
@@ -298,7 +310,8 @@ internal fun OkouApp(
         navigation = navigation.copy(target = WorkspaceTarget.List, search = search)
     }
 
-    val showConversationFeedback = settings == null && !showChatList && thread != null
+    val showConversationFeedback =
+        settings == null && !showChatList && !showingConnectors && thread != null
     val showRowFeedback = showChatList || showConversationFeedback
     LaunchedEffect(chats, showChatList) { if (!showChatList) chats?.clearRowUndo() }
     if (showRowFeedback && chats != null) ChatUndoFeedback(chats, list, snackbar)
@@ -481,7 +494,8 @@ internal fun OkouApp(
     val provisionalChat =
         provisionalId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
     val needsChatList =
-        settings == null &&
+        !showingConnectors &&
+            settings == null &&
             (showArtifacts ||
                 showList ||
                 (provisionalId != null && provisionalChat == null) ||
@@ -519,9 +533,16 @@ internal fun OkouApp(
     }
 
     BackHandler(
-        !showArtifacts && (settings != null || showWorkspaceBack || searchActive),
+        !showArtifacts &&
+            !showingConnectors &&
+            (settings != null || showWorkspaceBack || searchActive),
         onBack = ::back,
     )
+
+    if (showingConnectors) {
+        ConnectorsPage(connectors, listWidth) { connectorsOpen = false }
+        return
+    }
 
     if (showArtifacts) {
         artifactPageState.SaveableStateProvider("artifacts") {
@@ -716,7 +737,24 @@ internal fun OkouApp(
                 WorkspaceToolEntries(
                     openArtifacts = if (artifacts == null) null else ::openArtifacts,
                     artifactFocus = artifactEntryFocus,
+                    connectorFocus = connectorEntryFocus,
+                    onConnectorFocusChanged = { connectorEntryFocused = it },
+                    openConnectors =
+                        if (canOpenConnectors) {
+                            {
+                                restoreConnectorFocus = connectorEntryFocused
+                                focus.clearFocus()
+                                keyboard?.hide()
+                                connectorsOpen = true
+                            }
+                        } else null,
                 )
+                LaunchedEffect(canOpenConnectors) {
+                    if (canOpenConnectors && restoreConnectorFocus) {
+                        restoreConnectorFocus = false
+                        connectorEntryFocus.requestFocus()
+                    }
+                }
             }
             LaunchedEffect(Unit) {
                 if (restoreSearchFocus) {

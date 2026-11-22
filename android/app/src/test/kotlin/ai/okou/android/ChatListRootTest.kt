@@ -251,6 +251,26 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w280dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun connectorLabelFitsOnTheNarrowChatList() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val connectorLabel = "Connectors"
+        val connectorLayouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(connectorLabel, useUnmergedTree = true).performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult
+        ) {
+            it(connectorLayouts)
+        }
+        val connectorLayout = connectorLayouts.single()
+        assertEquals(1, connectorLayout.lineCount)
+        assertEquals(connectorLabel.length, connectorLayout.getLineEnd(0, visibleEnd = true))
+        assertTrue(connectorLayout.size.width >= connectorLayout.multiParagraph.maxIntrinsicWidth)
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun titleSearchRestoresTheQueryAfterOpeningAnArchivedChatAndRecreating() {
         val app = compose.activity.application as ChatListApplication

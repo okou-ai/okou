@@ -1,7 +1,7 @@
 package ai.okou.android.instructions
 
+import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
-import ai.okou.android.SettingsConfirmation
 import ai.okou.android.SettingsSheet
 import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.state.rememberSettingsFlag
@@ -327,10 +327,9 @@ internal fun PersonalInstructionsSettings(
         }
     }
     if (confirmDiscard) {
-        SettingsConfirmation(
+        OkouConfirmationDialog(
             onDismiss = { confirmDiscard = false },
             title = stringResource(R.string.instructions_discard),
-            message = stringResource(R.string.instructions_unsaved),
             confirm = stringResource(R.string.instructions_discard),
             onConfirm = {
                 closeAfterSave = false
@@ -338,7 +337,9 @@ internal fun PersonalInstructionsSettings(
                 model.discard()
                 dismiss()
             },
-        )
+        ) {
+            Text(stringResource(R.string.instructions_unsaved))
+        }
     }
 }
 
