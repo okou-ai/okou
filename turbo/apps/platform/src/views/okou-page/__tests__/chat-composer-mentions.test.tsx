@@ -6,7 +6,6 @@ import {
   agentsMainContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import type { ChatThreadSnapshotProjection } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
 import {
@@ -103,15 +102,6 @@ function menuButton(name: string): HTMLElement {
   return button;
 }
 
-function agentMention(
-  composer: HTMLElement,
-  agentId: string,
-): HTMLElement | null {
-  return composer.querySelector<HTMLElement>(
-    `[data-agent-mention="${agentId}"]`,
-  );
-}
-
 function threadMention(
   composer: HTMLElement,
   threadId: string,
@@ -121,27 +111,11 @@ function threadMention(
   );
 }
 
-function withAgent(
-  thread: ChatThreadSnapshotProjection,
-  agentId: string,
-): ChatThreadSnapshotProjection {
-  return { ...thread, agentId };
-}
-
 async function setupMentionSearch(newChat: boolean) {
-  const current = withAgent(
-    continuityThread(61, 1, "Current mention chat"),
-    AGENT_ID,
-  );
-  const projectBeta = withAgent(
-    continuityThread(61, 2, "Project Beta"),
-    AGENT_ID,
-  );
-  const projectBetaFollowUp = withAgent(
-    continuityThread(61, 4, "Project Beta follow-up"),
-    AGENT_ID,
-  );
-  const untitled = withAgent(continuityThread(61, 3, "Untitled"), AGENT_ID);
+  const current = continuityThread(61, 1, "Current mention chat");
+  const projectBeta = continuityThread(61, 2, "Project Beta");
+  const projectBetaFollowUp = continuityThread(61, 4, "Project Beta follow-up");
+  const untitled = continuityThread(61, 3, "Untitled");
   const untitledThread = { ...untitled, title: null };
   const workspace = installContinuityWorkspace(context, {
     caseId: 61,
@@ -199,14 +173,11 @@ test.each([false, true])(
 );
 
 test("Keep archived chats in @ mention suggestions when archiving is enabled", async () => {
-  const current = withAgent(
-    continuityThread(64, 1, "Current mention chat"),
-    AGENT_ID,
-  );
-  const archived = withAgent(
-    { ...continuityThread(64, 2, "Archived mention context"), archived: true },
-    AGENT_ID,
-  );
+  const current = continuityThread(64, 1, "Current mention chat");
+  const archived = {
+    ...continuityThread(64, 2, "Archived mention context"),
+    archived: true,
+  };
   const workspace = installContinuityWorkspace(context, {
     caseId: 64,
     threads: [current, archived],
@@ -232,18 +203,9 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
 });
 
 async function openAgentMentionWorkspace(newChat = false) {
-  const current = withAgent(
-    continuityThread(62, 1, "Scout planning"),
-    AGENT_ID,
-  );
-  const matchingThread = withAgent(
-    continuityThread(62, 2, "Zeta launch notes"),
-    REVIEWER_ID,
-  );
-  const savedMentionThread = withAgent(
-    continuityThread(62, 3, "Saved Zeta mention"),
-    AGENT_ID,
-  );
+  const current = continuityThread(62, 1, "Scout planning");
+  const matchingThread = continuityThread(62, 2, "Zeta launch notes");
+  const savedMentionThread = continuityThread(62, 3, "Saved Zeta mention");
   const agents = [
     agent(AGENT_ID, "Scout", SCOUT_AVATAR),
     agent(REVIEWER_ID, "Reviewer", REVIEWER_AVATAR),
@@ -548,25 +510,19 @@ test.each([false, true])(
   },
 );
 
-test("A previously saved Agent mention can still be opened in a retained chat", async () => {
+test("A saved mention keeps its name when the draft reopens", async () => {
   const { savedMentionThread } = await openAgentMentionWorkspace();
   await openConversation(savedMentionThread.id);
   await waitFor(() => {
-    expect(
-      agentMention(screen.getByRole("textbox", { name: "Message" }), ZETA_ID),
-    ).toHaveTextContent("Zeta Agent");
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "Zeta Agent",
+    );
   });
 });
 
 test("Mention a chat thread from any agent", async () => {
-  const projectAlpha = withAgent(
-    continuityThread(63, 1, "Project Alpha"),
-    AGENT_ID,
-  );
-  const otherAlpha = withAgent(
-    continuityThread(63, 2, "Other Alpha"),
-    REVIEWER_ID,
-  );
+  const projectAlpha = continuityThread(63, 1, "Project Alpha");
+  const otherAlpha = continuityThread(63, 2, "Other Alpha");
   const workspace = installContinuityWorkspace(context, {
     caseId: 63,
     threads: [projectAlpha, otherAlpha],

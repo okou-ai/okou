@@ -1,3 +1,5 @@
+import { visibleAgentIdentityCondition } from "../services/agent-data.service";
+import { executionAgentId } from "../services/execution-agent";
 import {
   normalizeSkillImportName,
   SKILL_IMPORT_BINARY_CODE,
@@ -18,15 +20,14 @@ import {
   type WorkflowAttachmentFile,
 } from "@okouai/core/workflow-attachment-bundle";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { randomUUID } from "node:crypto";
 import { win32 } from "node:path";
 import { command, computed } from "ccstate";
-import { and, asc, count, eq, isNull, or } from "drizzle-orm";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage } from "../../lib/error";
 import { webUrl } from "../../lib/web-url";
 import type { SkillImportAuth } from "../../types/auth";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -40,7 +41,10 @@ import { waitUntil } from "../context/wait-until";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
 import { recordSkillImportFact } from "../services/skill-import-telemetry";
-import { workflowSummary } from "../services/workflow-data.service";
+import {
+  workflowExecutionProfileColumns,
+  workflowSummary,
+} from "../services/workflow-data.service";
 import { WorkflowAttachmentError } from "../services/workflow-attachments.service";
 import type { RouteEntry } from "../route-entry";
 import { safeSync, settle } from "../utils";
@@ -105,34 +109,10 @@ const createSessionInner$ = command(
       return bodyResult.response;
     }
 
-    const [selectedAgent] = await get(db$)
-      .select({ agentId: agents.id })
-      .from(orgMetadata)
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, orgMetadata.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(orgMetadata.orgId, auth.orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, auth.userId)),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    const agentId = selectedAgent?.agentId ?? null;
-    if (!agentId) {
-      return notFound("This organization has no default agent to import into");
-    }
-
     const sessionId = randomUUID();
     const session = generateSkillImportToken(
       auth.userId,
       auth.orgId,
-      agentId,
       bodyResult.data.provider,
       sessionId,
     );
@@ -171,7 +151,6 @@ const listSessionSkillsInner$ = computed(async (get) => {
     .select({
       workflow: {
         id: workflows.id,
-        agentId: workflows.agentId,
         name: workflows.name,
         visibility: workflows.visibility,
         ownerUserId: workflows.ownerUserId,
@@ -182,18 +161,12 @@ const listSessionSkillsInner$ = computed(async (get) => {
         importSource: workflows.importSource,
         createdAt: workflows.createdAt,
       },
-      agent: {
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        name: agents.name,
-        displayName: agents.displayName,
-      },
+      agent: workflowExecutionProfileColumns(),
     })
     .from(workflows)
-    .innerJoin(
+    .leftJoin(
       agents,
-      and(eq(agents.id, workflows.agentId), eq(agents.orgId, workflows.orgId)),
+      eq(agents.id, executionAgentId(workflows.orgId, auth.userId)),
     )
     .where(
       and(
@@ -202,7 +175,6 @@ const listSessionSkillsInner$ = computed(async (get) => {
         eq(workflows.ownerUserId, auth.userId),
         eq(workflows.createdBy, auth.userId),
         isNull(workflows.officialDefinitionName),
-        or(eq(agents.visibility, "public"), eq(agents.owner, auth.userId)),
       ),
     )
     .orderBy(asc(workflows.createdAt), asc(workflows.id));
@@ -390,6 +362,27 @@ const createImportedSkill$ = command(
   },
 );
 
+// Tokens issued by the previous API carried an additional executor restriction.
+function importTargetVisible(session: SkillImportAuth) {
+  return computed(async (get) => {
+    if (session.agentId === undefined) {
+      return true;
+    }
+    const [target] = await get(db$)
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        visibleAgentIdentityCondition({
+          orgId: session.orgId,
+          userId: session.userId,
+          agentId: session.agentId,
+        }),
+      )
+      .limit(1);
+    return target !== undefined;
+  });
+}
+
 const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const session = resolveSession(get(authorization$));
   if (!session) {
@@ -398,6 +391,13 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
+  const visible = await get(importTargetVisible(session));
+  signal.throwIfAborted();
+  if (!visible) {
+    return sessionInvalid(
+      "Skill import session is no longer valid; request a new import link",
+    );
+  }
   const payloadError = await set(validatePayloadBytes$, signal);
   if (payloadError) {
     return payloadError;
@@ -438,7 +438,7 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .from(workflows)
     .where(
       and(
-        eq(workflows.agentId, session.agentId),
+        eq(workflows.orgId, session.orgId),
         eq(workflows.createdBy, session.userId),
         eq(workflows.importSessionId, session.sessionId),
         isNull(workflows.officialDefinitionName),
@@ -460,7 +460,7 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(workflows.orgId, session.orgId),
-        eq(workflows.agentId, session.agentId),
+
         eq(workflows.ownerUserId, session.userId),
         eq(workflows.name, name),
         eq(workflows.visibility, "private"),
@@ -490,7 +490,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       member: { userId: session.userId, role: "member" },
       body: {
         ...body,
-        agentId: session.agentId,
         name,
         files,
       },

@@ -15,10 +15,8 @@ import {
   type ConnectorDiagnosticRequest,
 } from "../../lib/api/domains/connectors";
 import { getPlatformOrigin } from "../../lib/platform-url";
-import {
-  CALLBACK_PROMPT_PLACEHOLDER,
-  connectorActionCallbackAvailable,
-} from "./action-url";
+import { CALLBACK_PROMPT_PLACEHOLDER } from "./action-url";
+import { currentPermissionCallbackThread } from "./permission-action-url";
 import {
   AWS_INCOMPLETE_CONTEXT_GUIDANCE,
   connectorCheckDiagnosticError,
@@ -147,7 +145,7 @@ function permissionActions(
       {
         kind: "command",
         command,
-        ...(connectorActionCallbackAvailable()
+        ...(currentPermissionCallbackThread()
           ? {
               callbackCommand: `${command} --callback-prompt "${CALLBACK_PROMPT_PLACEHOLDER}"`,
             }

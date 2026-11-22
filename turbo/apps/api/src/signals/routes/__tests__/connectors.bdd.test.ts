@@ -2363,7 +2363,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       ready: true,
       configuredFieldKeys: [],
     });
-    const agent = await own(() => {
+    await own(() => {
       return bdd.createAgent(admin, {
         displayName: "BDD No Auth Agent",
       });
@@ -2442,9 +2442,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     await own(() => {
       return connectorsApi.deleteCustomConnector(admin, mcp.id);
-    });
-    await own(() => {
-      return bdd.deleteAgent(admin, agent.agentId);
     });
   });
 
@@ -3302,7 +3299,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       orgId: admin.orgId,
       orgRole: "org:member",
     });
-    const agent = await bdd.createAgent(member, {
+    await bdd.createAgent(member, {
       displayName: "BDD MCP OAuth Agent",
     });
     const clientSecret = "bdd-mcp-oauth-client-secret";
@@ -3397,7 +3394,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
     await connectorsApi.deleteDefaultCustomConnectorAccount(member, created.id);
     await connectorsApi.deleteCustomConnector(admin, created.id);
-    await bdd.deleteAgent(member, agent.agentId);
   });
 
   it("connects an Automatic MCP OAuth account through Okou CIMD", async () => {
@@ -3416,7 +3412,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     const bdd = createBddApi(context);
     const admin = bdd.user({ orgRole: "org:admin" });
-    const agent = await bdd.createAgent(admin, {
+    await bdd.createAgent(admin, {
       displayName: "BDD Automatic OAuth Agent",
     });
     const connector = await connectorsApi.createCustomConnector(admin, {
@@ -3487,7 +3483,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
 
     await connectorsApi.deleteCustomConnector(admin, connector.id);
-    await bdd.deleteAgent(admin, agent.agentId);
   });
 
   it("keeps an Automatic MCP OAuth account unnamed for an invalid ID token", async () => {
@@ -3548,7 +3543,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     const bdd = createBddApi(context);
     const { actor: admin, run: own } = createPublicConnectorActor(context);
-    const agent = await own(() => {
+    await own(() => {
       return bdd.createAgent(admin, {
         displayName: "BDD Automatic auth Agent",
       });
@@ -3688,9 +3683,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
     await own(() => {
       return connectorsApi.deleteCustomConnector(admin, connector.id);
-    });
-    await own(() => {
-      return bdd.deleteAgent(admin, agent.agentId);
     });
   });
 
@@ -4869,7 +4861,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       ready: true,
     });
 
-    const agent = await bdd.createAgent(admin, {
+    await bdd.createAgent(admin, {
       displayName: "BDD Connector Agent",
     });
 
@@ -4918,7 +4910,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).toBeUndefined();
 
     await connectorsApi.deleteCustomConnector(otherAdmin, otherConnector.id);
-    await bdd.deleteAgent(admin, agent.agentId);
   });
 
   it("lets an admin agent with an okou-scoped token create a manual definition that Connect can configure", async () => {
@@ -5901,23 +5892,15 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
   it("saves a connector proposal before required values are configured", async () => {
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
-    let createdAgentId: string | undefined;
-    const owner = createPublicConnectorActor(context, {
-      beforeWorkspaceCleanup: async (): Promise<void> => {
-        if (createdAgentId) {
-          await bdd.deleteAgent(admin, createdAgentId);
-        }
-      },
-    });
+    const owner = createPublicConnectorActor(context);
     const admin = owner.actor;
     const own = owner.run;
     await own(async () => {
-      const agent = await own(() => {
+      await own(() => {
         return bdd.createAgent(admin, {
           displayName: "BDD Missing Proposal Value Agent",
         });
       });
-      createdAgentId = agent.agentId;
       const rand = randomUUID().replace(/-/g, "").slice(0, 8);
 
       const saved = await own(() => {
@@ -6488,7 +6471,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       "Manual custom connector injections must reference a declared secret or variable field",
     );
 
-    const agent = await bdd.createAgent(admin, {
+    await bdd.createAgent(admin, {
       displayName: "BDD MCP Management Agent",
     });
     const created = await connectorsApi.createCustomConnector(
@@ -6578,7 +6561,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       { ready: false },
     );
     await connectorsApi.deleteCustomConnector(admin, created.id);
-    await bdd.deleteAgent(admin, agent.agentId);
   });
 
   it("rejects unsafe MCP endpoints and protected transport headers", async () => {
@@ -8177,7 +8159,6 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
 
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
-    let createdAgentId: string | undefined;
     const owner = createPublicConnectorActor(context, {
       optionalEnvironmentNames: [
         "GH_OAUTH_CLIENT_ID",
@@ -8188,11 +8169,6 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
         "GITHUB_APP_CLIENT_ID",
         "GITHUB_APP_CLIENT_SECRET",
       ],
-      beforeWorkspaceCleanup: async (): Promise<void> => {
-        if (createdAgentId) {
-          await bdd.deleteAgent(admin, createdAgentId);
-        }
-      },
     });
     const admin = owner.actor;
     const own = owner.run;
@@ -8203,7 +8179,6 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
         });
       });
 
-      createdAgentId = agent.agentId;
       await own(() => {
         return connectorsApi.installGithubAppViaApi(
           admin,

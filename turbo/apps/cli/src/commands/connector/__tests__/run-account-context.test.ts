@@ -87,7 +87,6 @@ describe("run connector account inspection", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
     listCommand.setOptionValue("json", false);
     statusCommand.setOptionValue("json", false);

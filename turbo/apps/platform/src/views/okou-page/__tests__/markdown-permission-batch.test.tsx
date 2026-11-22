@@ -3,7 +3,6 @@ import {
   connectorPermissionsResponse,
   type ConnectorPermissionFixture,
 } from "../../../__tests__/connector-permissions.ts";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
 
@@ -21,7 +20,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
 
 const defaultItems = [
   { connectorSlug: "slack", permission: "files:read" },
@@ -32,9 +30,9 @@ const defaultItems = [
 function batchUrl(
   items: readonly UserPermissionGrantBatchItem[] = defaultItems,
 ): URL {
-  const url = new URL(
-    `https://app.okou.ai/agents/${AGENT_ID}/permissions/batch`,
-  );
+  const url = new URL("https://app.okou.ai/connectors/permissions/batch");
+  url.searchParams.set("orgId", "org_default");
+  url.searchParams.set("userId", "test-user-123");
   url.searchParams.set("action", "allow");
   url.searchParams.set("items", JSON.stringify(items));
   return url;
@@ -49,18 +47,6 @@ async function openMarkdown(source: string, enabled: boolean) {
         chat.runCompleted({ seqId: 2 }),
       ];
     },
-  });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return respond(200, {
-      isDefaultAgent: false,
-      agentId: params.id,
-      ownerId: "test-user-123",
-      displayName: "Markdown Agent",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    });
   });
   await setupPage({
     context,

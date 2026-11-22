@@ -4,7 +4,7 @@ import {
   type MarketingHandoffManifest,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -461,13 +461,13 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
   };
   const draftUpdates: unknown[] = [];
   context.mocks.data.availableRunModels([]);
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: savedDraft,
       draftAttachments: null,
     });
   });
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
     draftUpdates.push(body);
     return respond(204);
   });

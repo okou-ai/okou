@@ -86,7 +86,6 @@
           "title": "提供方暫時不可用"
         }
       },
-      "fallbackAgent": "智能體",
       "fields": {
         "duration": "時長",
         "model": "模型",
@@ -378,7 +377,6 @@
         "openAutomations": "開啟自動化面板"
       },
       "navigation": {
-        "agents": "智能體",
         "artifacts": "成果",
         "connectors": "連接器",
         "settings": "設定",
@@ -1811,7 +1809,7 @@
       "repair": "修復",
       "repairRequired": "{{institution}} 需要修復",
       "revoke": "撤銷",
-      "revokeConfirm": "撤銷這個智能體的銀行訪問權限？",
+      "revokeConfirm": "撤銷此工作區的銀行存取權限？",
       "selectAccounts": "選擇帳戶",
       "sevenDays": "7 天",
       "thirtyDays": "30 天",
@@ -2277,7 +2275,9 @@
       "agent": "[智能體：{{name}}]",
       "chatThread": "[聊天會話：{{title}}]",
       "file": "[檔案：{{filename}}]",
-      "template": "[模板：{{title}}]"
+      "template": "[模板：{{title}}]",
+      "voice": "語音訊息",
+      "voiceClip": "第 {{index}} 段語音"
     },
     "newChat": "新建聊天",
     "origins": {
@@ -2786,7 +2786,6 @@
       "noEmojiFound": "沒有找到表情",
       "notFound": "找不到該聊天會話",
       "openBrowser": "開啟瀏覽器",
-      "openNamedAgent": "開啟智能體 {{name}}",
       "openNamedChat": "開啟聊天 {{title}}",
       "pickEmoji": "選擇表情",
       "scrollToBottom": "滾動到底部",
@@ -4799,7 +4798,6 @@
     "create": "创建 Project",
     "delete": "删除",
     "deleteChoiceDescription": "可以只刪除 Project 並保留聊天，也可以同時刪除其中的聊天。",
-    "deleteDescription": "僅刪除 Project，聊天及其歷史記錄會保留。",
     "deleteError": "无法删除 Project",
     "deleteProjectAndThreads_other": "刪除 Project 和 {{count}} 個聊天…",
     "deleteProjectOnly": "僅刪除 Project",

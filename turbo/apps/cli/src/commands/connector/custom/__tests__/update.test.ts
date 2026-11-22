@@ -435,7 +435,7 @@ describe("okou connector custom update", () => {
         ]),
       ).rejects.toThrow("process.exit called");
       expect(error.mock.calls.flat().join("\n")).toContain(
-        "Custom connector update is not enabled for this agent run",
+        "Custom connector update is not enabled for this Run",
       );
       expect(mockConsoleLog).not.toHaveBeenCalled();
     } finally {

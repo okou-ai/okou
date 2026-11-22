@@ -20,7 +20,6 @@ export interface HeaderWorkflowAutomationEntry {
   readonly chatThreadId: string;
   readonly enabled: boolean;
   readonly workflowId: string;
-  readonly workflowAgentId: string;
   readonly workflowName: string;
   readonly workflowDisplayName: string | null;
   readonly summary: string;
@@ -206,7 +205,6 @@ export function createHeaderAutomationSignals<Editor>(
           chatThreadId: automation.chatThreadId,
           enabled: automation.enabled,
           workflowId: automation.workflow.id,
-          workflowAgentId: automation.workflow.agentId,
           workflowName: automation.workflow.name,
           workflowDisplayName: automation.workflow.displayName,
           summary: workflowAutomationSummary(automation),

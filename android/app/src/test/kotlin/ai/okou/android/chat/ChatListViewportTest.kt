@@ -35,6 +35,7 @@ class ChatListViewportTest {
     @Test
     fun aReaderAtTheEndFollowsNewRowsAndViewportChanges() {
         val height = mutableStateOf(480.dp)
+        val projectCount = mutableStateOf(0)
         val rowCount = mutableStateOf(30)
         compose.setContent {
             OkouTheme {
@@ -42,7 +43,7 @@ class ChatListViewportTest {
                 ChatListViewport(
                     Modifier.fillMaxWidth().height(height.value),
                     listState,
-                    lastContentKey = "chat_${rowCount.value - 1}",
+                    contentChangeKey = projectCount.value to "chat_${rowCount.value - 1}",
                     status = ChatListStatus.Offline,
                     newChatEnabled = true,
                     newChat = {},
@@ -53,6 +54,9 @@ class ChatListViewportTest {
                         state = listState,
                         contentPadding = PaddingValues(bottom = bottomSpace),
                     ) {
+                        items(projectCount.value, key = { "project_$it" }) { index ->
+                            Box(Modifier.fillMaxWidth().height(52.dp)) { Text("Project $index") }
+                        }
                         items(rowCount.value, key = { it }) { index ->
                             Box(Modifier.fillMaxWidth().height(52.dp).testTag("chat_$index")) {
                                 Text("Chat $index")
@@ -71,13 +75,16 @@ class ChatListViewportTest {
         val lastRow = compose.onNodeWithTag("chat_31")
         lastRow.assertIsDisplayed()
 
+        compose.runOnIdle { projectCount.value = 160 }
+        lastRow.assertIsDisplayed()
+
         compose.runOnIdle { height.value = 280.dp }
 
         lastRow.assertIsDisplayed()
         val action = compose.onNodeWithText("New chat").getUnclippedBoundsInRoot()
         assertTrue(lastRow.getUnclippedBoundsInRoot().bottom < action.top)
 
-        rows.performScrollToIndex(8)
+        rows.performScrollToIndex(projectCount.value + 8)
         val visibleRow = compose.onNodeWithTag("chat_8")
         val position = visibleRow.getUnclippedBoundsInRoot().top
 

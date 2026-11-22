@@ -20,9 +20,8 @@ import {
   chatThreadPinOrderContract,
   chatThreadDraftContract,
 } from "../contracts/chat-threads";
-import { agentDraftContract } from "../contracts/agent-draft";
+import { composerDraftContract } from "../contracts/agent-draft";
 import { chatEventRowSchema } from "../contracts/chat-event-rows";
-import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { instructionsContract } from "../contracts/instructions";
@@ -77,7 +76,6 @@ const chatReadBindings = [
     response: "Indicators",
     route: chatThreadsContract.indicators,
   },
-  { name: "agents", response: "Agents", route: agentsMainContract.list },
   {
     name: "projectSnapshot",
     response: "ProjectSnapshot",
@@ -175,9 +173,9 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: workflowAutomationsContract.disable,
   },
   {
-    name: "agentDraft",
+    name: "workspaceDraft",
     response: "ComposerDraft",
-    route: agentDraftContract.get,
+    route: composerDraftContract.get,
   },
   {
     name: "threadDraft",
@@ -185,10 +183,10 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadDraftContract.get,
   },
   {
-    name: "saveAgentDraft",
-    request: "SaveAgentDraft",
+    name: "saveWorkspaceDraft",
+    request: "SaveWorkspaceDraft",
     response: "Unit",
-    route: agentDraftContract.patch,
+    route: composerDraftContract.patch,
   },
   {
     name: "saveThreadDraft",
@@ -351,6 +349,8 @@ export interface KotlinTypeBinding {
   readonly name: string;
   readonly schema: ZodType;
   readonly direction: "input" | "output";
+  /** Fields consumed by the Android reader when the server also serves older clients. */
+  readonly readSchema?: ZodType;
   /** Raw transport/cache envelopes retain all JSON members; their consumer owns decoding. */
   readonly representation?: "raw-object";
   /** Reuse precisely this output shape when the same schema appears inside another DTO. */
@@ -447,13 +447,13 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   },
   {
     name: "ComposerDraft",
-    schema: agentDraftContract.get.responses[200],
+    schema: composerDraftContract.get.responses[200],
     direction: "output",
     representation: "raw-object",
   },
   {
-    name: "SaveAgentDraft",
-    schema: agentDraftContract.patch.body,
+    name: "SaveWorkspaceDraft",
+    schema: composerDraftContract.patch.body,
     direction: "input",
   },
   {
@@ -547,6 +547,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "OnboardingStatus",
     schema: onboardingStatusContract.getStatus.responses[200],
+    readSchema: onboardingStatusContract.getStatus.responses[200].omit({
+      hasDefaultAgent: true,
+      defaultAgentId: true,
+      defaultAgentMetadata: true,
+    }),
     direction: "output",
   },
   {
@@ -567,6 +572,9 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "UserPreferences",
     schema: userPreferencesContract.get.responses[200],
+    readSchema: userPreferencesContract.get.responses[200].omit({
+      pinnedAgentIds: true,
+    }),
     direction: "output",
   },
   {

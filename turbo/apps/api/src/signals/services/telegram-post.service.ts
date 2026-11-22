@@ -1,3 +1,4 @@
+import { selectedExecutionAgent } from "./execution-agent";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -10,7 +11,6 @@ import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   telegramMessages,
   type TelegramMessageEntity,
@@ -1757,11 +1757,9 @@ const processOfficialWebhookMessage$ = command(
 
     const composeId = await (async () => {
       const [metadata] = await db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, userLink.orgId))
-        .limit(1);
-      return metadata?.defaultAgentId ?? null;
+        .select()
+        .from(selectedExecutionAgent(userLink.orgId, userLink.userId));
+      return metadata?.id ?? null;
     })();
     signal.throwIfAborted();
     if (!composeId) {

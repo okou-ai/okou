@@ -17,7 +17,7 @@ const context = testContext();
 const { installMessageExperienceChat } =
   createMessageExperienceHelpers(context);
 
-test("Loading older messages restores agent references and attachment navigation", async () => {
+test("Loading older messages restores mention names and attachment navigation", async () => {
   const firstImageUrl = "https://example.com/history-first.png";
   const secondImageUrl = "https://example.com/history-second.png";
   const historicalDocument = {
@@ -39,7 +39,7 @@ test("Loading older messages restores agent references and attachment navigation
       },
     ],
   } satisfies UserMessageDocument;
-  const chatEvents = Array.from({ length: 12 }, (_, index) => {
+  const chatEvents = Array.from({ length: 9 }, (_, index) => {
     const turn = index + 1;
     const runId = `history-resource-run-${turn.toString()}`;
     const minute = turn.toString().padStart(2, "0");
@@ -81,9 +81,8 @@ test("Loading older messages restores agent references and attachment navigation
   await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   await expect(
-    screen.findByText("History answer 12"),
+    screen.findByText("History answer 9"),
   ).resolves.toBeInTheDocument();
-  expect(queryFastControl("link", "Open agent Ada")).toBeNull();
   expect(queryFastControl("link", "Preview history-first.png")).toBeNull();
   const container = document.querySelector<HTMLElement>(
     `[data-chat-thread-container-id="${context.resourceId}"] [data-scroll-container]`,
@@ -98,12 +97,7 @@ test("Loading older messages restores agent references and attachment navigation
   });
   fireEvent.scroll(container);
 
-  const mention = await findFastControl("link", "Open agent Ada");
-  expect(mention).toHaveAttribute("href", `/agents/${ADA_AGENT_ID}/chat`);
-  expect(mention.querySelector("img")).toHaveAttribute(
-    "src",
-    "https://cdn.vm7.io/avatars/ada.png",
-  );
+  await screen.findByText("Ada");
   const preview = await findFastControl("link", "Preview history-first.png");
   click(preview);
 

@@ -7,7 +7,7 @@ const context = testContext();
 const api = createBddApi(context);
 
 describe("AGENT-01: agent lifecycle through public API", () => {
-  it("creates, reads, lists, updates, deletes, and verifies removal through API-visible state", async () => {
+  it("creates, reads, lists, and updates through API-visible state", async () => {
     const admin = api.user();
     api.acceptAgentStorageWrites();
 
@@ -73,12 +73,6 @@ describe("AGENT-01: agent lifecycle through public API", () => {
       avatarUrl: "preset:3",
       visibility: "public",
     });
-
-    await api.deleteAgent(admin, created.agentId);
-
-    const missing = await api.requestReadAgent(admin, created.agentId, [404]);
-    expectApiError(missing.body);
-    expect(missing.body.error.code).toBe("NOT_FOUND");
   });
 
   it("returns an API error when a caller creates an agent without authentication", async () => {

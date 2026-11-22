@@ -49,7 +49,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import postgres from "postgres";
-import { array, literal, number, object, string } from "zod";
+import { array, literal, object, string } from "zod";
+import { migrationTimestamp } from "./migration-timestamp";
 import { applyPendingMigrations } from "./migration-runner";
 import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
@@ -88,6 +89,7 @@ import { validateCustomConnectorCloudflareStorage } from "./test-custom-connecto
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
+import { validateWorkspaceWorkflowIdentity } from "./test-workspace-workflow-identity";
 import { validatePermanentWorkflowNameScopes } from "./test-workflow-name-scopes-permanent";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -169,24 +171,6 @@ async function runMigrations(dbUrl: string): Promise<void> {
     env: { DATABASE_URL: dbUrl },
     cwd: PACKAGE_DIR,
   });
-}
-
-async function migrationTimestamp(tag: string): Promise<number> {
-  const journal = object({
-    entries: array(object({ tag: string(), when: number() })),
-  }).parse(
-    JSON.parse(
-      await fs.readFile(
-        path.join(MIGRATIONS_DIR, "meta/_journal.json"),
-        "utf8",
-      ),
-    ),
-  );
-  const migration = journal.entries.find((entry) => {
-    return entry.tag === tag;
-  });
-  assert.ok(migration, `Missing migration ${tag}`);
-  return migration.when;
 }
 
 /** Replay 1477's unchanged transition under the schema it actually precedes. */
@@ -470,29 +454,20 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
-  const agentId = "00000000-0000-4000-8000-000000074401";
+  const historicalExecutorId = "00000000-0000-4000-8000-000000074401";
   let threadId: string | undefined;
 
   try {
-    await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, 'append-only-test-org', 'append-only-test-user',
-         'append-only-migration-test')`,
-      [agentId],
-    );
-
     const thread = await client.query<{ id: string }>(
       `
         INSERT INTO "chat_threads" (
           "user_id",
           "org_id",
-          "agent_id",
           "title"
         )
-        VALUES ('append-only-test-user', 'append-only-test-org', $1, 'append-only migration test')
+        VALUES ('append-only-test-user', 'append-only-test-org', 'append-only migration test')
         RETURNING "id"
       `,
-      [agentId],
     );
     threadId = thread.rows[0]?.id;
     if (!threadId) {
@@ -519,7 +494,7 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, agentId],
+      [threadId, historicalExecutorId],
     );
     const eventId = event.rows[0]?.id;
     if (!eventId) {
@@ -557,7 +532,7 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, agentId],
+      [threadId, historicalExecutorId],
     );
     const nextEventId = nextEvent.rows[0]?.id;
     if (!nextEventId) {
@@ -610,7 +585,11 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
           AND "org_id" = 'append-only-test-org'
       `,
     );
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    if (threadId !== undefined) {
+      await client.query(`DELETE FROM "chat_threads" WHERE "id" = $1`, [
+        threadId,
+      ]);
+    }
     await client.end();
   }
 }
@@ -622,7 +601,6 @@ async function validateChatEventContextPointerConstraints(
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
-  const agentId = "00000000-0000-4000-8000-000000074501";
   const threadId = "00000000-0000-4000-8000-000000074502";
 
   try {
@@ -660,30 +638,20 @@ async function validateChatEventContextPointerConstraints(
     ]);
     await client.query(
       `
-        INSERT INTO "agents" ("id", "org_id", "owner", "name")
-        VALUES ($1, 'context-pointer-test-org', 'context-pointer-test-user',
-          'context-pointer-test')
-      `,
-      [agentId],
-    );
-    await client.query(
-      `
         INSERT INTO "chat_threads" (
           "id",
           "user_id",
           "org_id",
-          "agent_id",
           "title"
         )
         VALUES (
           $1,
           'context-pointer-test-user',
           'context-pointer-test-org',
-          $2,
           'context pointer test'
         )
       `,
-      [threadId, agentId],
+      [threadId],
     );
 
     await client.query(
@@ -883,7 +851,9 @@ async function validateChatEventContextPointerConstraints(
       "   ✅ Chat event contexts require input discriminators, including rejected inputs\n",
     );
   } finally {
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    await client.query(`DELETE FROM "chat_threads" WHERE "id" = $1`, [
+      threadId,
+    ]);
     await client.end();
   }
 }
@@ -1046,14 +1016,6 @@ async function generateFreshMigrations(): Promise<void> {
   await fs.appendFile(
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${agentMetadata}`,
-  );
-  const agentDeletion = await fs.readFile(
-    path.join(PACKAGE_DIR, "src/functions/delete-agent-rows.sql"),
-    "utf-8",
-  );
-  await fs.appendFile(
-    path.join(MIGRATIONS_DIR, finalSql),
-    `\n--> statement-breakpoint\n${agentDeletion}`,
   );
   const workflowDeletion = await fs.readFile(
     path.join(PACKAGE_DIR, "src/functions/delete-workflow-rows.sql"),
@@ -1427,18 +1389,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "80d63df57c2cf7e352b6f691c40d30f8",
-  },
-  {
-    schemaName: "public",
-    functionName: "delete_agent_rows",
-    identityArguments:
-      "p_agent_id uuid, p_org_id text, p_member_user_id text, p_is_org_admin boolean",
-    kind: "f",
-    volatility: "v",
-    securityDefiner: false,
-    parallel: "u",
-    bodyHash: "e1afcce07ecfa041ebf00a63550f2a19",
+    bodyHash: "ab54d46da8f18943c84251db98afb734",
   },
   {
     schemaName: "public",
@@ -1449,7 +1400,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "276d29ce4338e19f10fae30624787723",
+    bodyHash: "92c17b395a82669b0ed147c68a59ae5e",
   },
   {
     schemaName: "public",
@@ -3005,6 +2956,7 @@ async function main(): Promise<void> {
     await validateInactiveWorkflowAttachmentDeletion(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
+    await validateWorkspaceWorkflowIdentity(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
     await validateOfficialAutomationBindingSchema(dbUrl1);
     await validateCanonicalChatEventTypes(dbUrl1);

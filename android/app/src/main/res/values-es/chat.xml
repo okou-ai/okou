@@ -51,6 +51,7 @@
     <string name="chat_unarchive">Desarchivar chat</string>
     <string name="chat_row_action_pending">Actualizando el chat…</string>
     <string name="chat_row_action_failed">No se pudo confirmar el cambio en el chat.</string>
+    <string name="chat_row_action_rejected">No se pudo completar el cambio en el chat.</string>
     <string name="chat_rename">Renombrar chat</string>
     <string name="chat_pin">Fijar chat</string>
     <string name="chat_unpin">Desfijar chat</string>

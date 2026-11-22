@@ -143,7 +143,6 @@ function hasModel(
 }
 
 const currentSelection = Object.freeze({
-  agentId: chatThreads.agentId,
   modelSettings: chatThreads.modelSettings,
   codexServiceTier: chatThreads.codexServiceTier,
   threadId: chatThreads.id,
@@ -452,7 +451,6 @@ const commitMetadata$ = command(
       )
       .returning({
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
         title: chatThreads.title,
         selectedModel: chatThreads.selectedModel,
         modelSettings: chatThreads.modelSettings,
@@ -476,7 +474,6 @@ const commitMetadata$ = command(
 // Preserve real column decoding; annotations do not decode driver values.
 const metadataCommitRowSchema = object({
   threadId: uuid(),
-  agentId: uuid().nullable(),
   title: string().nullable(),
   titleTruncated: boolean(),
   selectedModel: string().nullable(),
@@ -538,7 +535,6 @@ const commitTitleMetadata$ = command(
       selectedModel: chatThreads.selectedModel,
       codexServiceTier: chatThreads.codexServiceTier,
       updatedAt: chatThreads.updatedAt,
-      agentId: chatThreads.agentId,
     });
     const [state] = parseRawRows(
       titleMetadataStateSchema,
@@ -556,7 +552,6 @@ const commitTitleMetadata$ = command(
           {
             cte: sql`updated AS (${updated.getSQL()})`,
             gate: sql`EXISTS (SELECT 1 FROM updated)`,
-            agentId: sql`(SELECT agent_id FROM updated)`,
             result: sql`SELECT id AS "threadId", left(title, 500) AS title,
         COALESCE(length(title) > 500, false) AS "titleTruncated",
         selected_model AS "selectedModel", codex_service_tier AS "codexServiceTier",

@@ -45,7 +45,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   __subagent_loop__: null,
   subagent: null,
   instructions: ["instructions:read", "instructions:write"],
-  workflow: "agent:read",
+  workflow: null,
   connector: ["connector:read", "connector:write"],
   "remote-control": ["connector:read", "connector:write"],
   mcp: "connector:read",
@@ -252,6 +252,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
+    name: "transcribe",
+    description:
+      "Transcribe ordered private audio clips with a multimodal model",
+    load: async () => {
+      return (await import("./commands/transcribe")).transcribeCommand;
+    },
+  },
+  {
     name: "credit",
     description: "View or buy credits",
     load: async () => {
@@ -364,7 +372,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "project",
-    description: "Manage private cross-agent Projects",
+    description: "Manage your private Projects",
     load: async () => {
       return (await import("./commands/project")).projectCommand;
     },
@@ -385,7 +393,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "whoami",
-    description: "Show agent identity, run ID, and capabilities",
+    description: "Show user, workspace, Run ID, and capabilities",
     load: async () => {
       return (await import("./commands/whoami")).whoamiCommand;
     },

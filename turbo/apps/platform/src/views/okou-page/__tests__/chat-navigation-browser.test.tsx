@@ -515,12 +515,9 @@ test.each(["event", "snapshot"] as const)(
           : event;
       }),
     });
-    const agentId = "c0000000-0000-4000-a000-000000000001";
     const stream = installChatListStream(context, {
       caseId: 5313,
-      snapshot: [
-        chatListThread(1, "Browser grant", { id: THREAD_ID, agentId }),
-      ],
+      snapshot: [chatListThread(1, "Browser grant", { id: THREAD_ID })],
     });
     context.mocks.api(remotesContract.overview, ({ respond }) => {
       return respond(200, {
@@ -546,7 +543,6 @@ test.each(["event", "snapshot"] as const)(
             chatThreads: [
               chatListThread(1, "Browser grant", {
                 id: THREAD_ID,
-                agentId,
                 cloudBrowserEnabled: committed,
               }),
             ],
@@ -601,7 +597,6 @@ test.each(["event", "snapshot"] as const)(
         events.push(
           chatListEvent(5313, 2, "computer_use_host_updated", THREAD_ID, {
             id: body.eventId,
-            agentId,
             cloudBrowserEnabled: true,
           }),
         );
@@ -657,7 +652,6 @@ test.each(["event", "snapshot"] as const)(
     revoked = true;
     events.push(
       chatListEvent(5313, 3, "computer_use_host_updated", THREAD_ID, {
-        agentId,
         cloudBrowserEnabled: false,
       }),
     );
@@ -689,13 +683,11 @@ test.each(["event", "snapshot"] as const)(
       threadId: THREAD_ID,
       cloudBrowserEnabled: true,
     });
-    const agentId = "c0000000-0000-4000-a000-000000000001";
     const stream = installChatListStream(context, {
       caseId: 5314,
       snapshot: [
         chatListThread(1, "Browser enabled", {
           id: THREAD_ID,
-          agentId,
           cloudBrowserEnabled: true,
         }),
       ],
@@ -724,7 +716,6 @@ test.each(["event", "snapshot"] as const)(
             chatThreads: [
               chatListThread(1, "Browser enabled", {
                 id: THREAD_ID,
-                agentId,
                 cloudBrowserEnabled: !committed,
               }),
             ],
@@ -782,11 +773,9 @@ test.each(["event", "snapshot"] as const)(
         events.push(
           chatListEvent(5314, 2, "computer_use_host_updated", THREAD_ID, {
             id: body.eventId,
-            agentId,
             cloudBrowserEnabled: false,
           }),
           chatListEvent(5314, 3, "renamed", THREAD_ID, {
-            agentId,
             title: "Browser disabled",
           }),
         );
@@ -829,11 +818,9 @@ test.each(["event", "snapshot"] as const)(
     restoring = true;
     events.push(
       chatListEvent(5314, 4, "computer_use_host_updated", THREAD_ID, {
-        agentId,
         cloudBrowserEnabled: true,
       }),
       chatListEvent(5314, 5, "renamed", THREAD_ID, {
-        agentId,
         title: "Browser enabled again",
       }),
     );

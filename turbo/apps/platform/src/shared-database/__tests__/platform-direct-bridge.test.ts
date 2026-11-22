@@ -90,7 +90,6 @@ test("Preserve exact UTF-8 snapshot bytes across the worker protocol", async () 
   // invariant here; counts, empty results, measurement, and reset use page tests.
   const snapshotThread: ChatThreadSnapshotProjection = {
     id: crypto.randomUUID(),
-    agentId: crypto.randomUUID(),
     title: "Snapshot 文 😀",
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -108,7 +107,7 @@ test("Preserve exact UTF-8 snapshot bytes across the worker protocol", async () 
     latestSeqId: 1,
   };
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
     return respond(200, mockChatThreadSnapshotResponse(context, snapshot));
@@ -159,7 +158,7 @@ test("Show cached chat data before catching up live", async () => {
   let availableRows: readonly ChatEventRow[] = [caughtUpRow];
   const requestedSeqIds: number[] = [];
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
     return respond(200, {
@@ -276,7 +275,6 @@ test("Cache incoming chat messages before the conversation is opened", async () 
   const batchedThreadIds: string[] = [];
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: { [unopenedThreadId]: "unread" },
       unreadAt: {},
     });
@@ -361,7 +359,6 @@ test("Preserve every message during a burst of realtime notifications", async ()
   const prewarmedThreadIds: string[] = [];
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: { [unopenedThreadId]: "unread" },
       unreadAt: {},
     });
@@ -459,7 +456,7 @@ test("Preserve every message during a burst of realtime notifications", async ()
 
 test("Subscribe shared chat data through the worker", async () => {
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
 
   await setupPage({
@@ -491,11 +488,9 @@ test("Subscribe shared chat data through the worker", async () => {
 
 test("Keep the chat list current with realtime thread changes", async () => {
   const threadId = crypto.randomUUID();
-  const agentId = crypto.randomUUID();
   const snapshotEventId = crypto.randomUUID();
   const snapshotThread: ChatThreadSnapshotProjection = {
     id: threadId,
-    agentId,
     title: "Snapshot title",
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -513,7 +508,6 @@ test("Keep the chat list current with realtime thread changes", async () => {
       seqId,
       kind: "renamed",
       chatThreadId: threadId,
-      agentId,
       title,
       selectedModel: null,
       serviceTier: null,
@@ -526,7 +520,7 @@ test("Keep the chat list current with realtime thread changes", async () => {
   let availableEvents: readonly ChatThreadEvent[] = [firstRename];
 
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
     return respond(

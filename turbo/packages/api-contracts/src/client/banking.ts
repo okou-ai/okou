@@ -5,6 +5,7 @@ import type {
   bankingContract as OriginalBankingContract,
   bankingPublicContract as OriginalBankingPublicContract,
   bankingUserContract as OriginalBankingUserContract,
+  bankingWorkspaceContract as OriginalBankingWorkspaceContract,
 } from "../contracts/banking";
 import type { ClientDescriptor } from "./types";
 
@@ -115,6 +116,63 @@ export const bankingUserContract: ClientDescriptor<
   revokeAgentGrant: {
     method: "POST",
     path: "/api/banking/agent-grants/revoke",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+      502: true,
+      503: true,
+    },
+  },
+};
+
+export const bankingWorkspaceContract: ClientDescriptor<
+  typeof OriginalBankingWorkspaceContract
+> = {
+  accessRequestStatus: {
+    method: "GET",
+    path: "/api/banking/access-requests/current",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
+  createConnectSession: {
+    method: "POST",
+    path: "/api/banking/workspace/connect-sessions",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+      502: true,
+      503: true,
+    },
+  },
+  saveGrant: {
+    method: "POST",
+    path: "/api/banking/workspace/grant",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+      502: true,
+      503: true,
+    },
+  },
+  revokeGrant: {
+    method: "POST",
+    path: "/api/banking/workspace/grant/revoke",
     statuses: {
       200: true,
       400: true,

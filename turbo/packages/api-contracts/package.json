@@ -1,6 +1,6 @@
 {
   "name": "@okouai/api-contracts",
-  "version": "2.98.1",
+  "version": "2.99.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -58,8 +58,8 @@
     "eslint": "^9.34.0",
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }

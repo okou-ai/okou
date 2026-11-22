@@ -214,7 +214,6 @@ const threads$ = computed(async (get) => {
         eq(chatThreads.hidden, false),
         chatThreadOrganizationPredicate(owner.orgId),
         q.after ? gt(chatThreads.id, q.after) : undefined,
-        q.agentId ? eq(chatThreads.agentId, q.agentId) : undefined,
         q.archived === "all"
           ? undefined
           : eq(chatThreads.archived, q.archived === "true"),
@@ -225,7 +224,6 @@ const threads$ = computed(async (get) => {
   const threads = rows.slice(0, q.limit).map((t) => {
     return chatThreadSnapshotProjectionSchema.parse({
       ...t,
-      agentId: t.agentId ?? undefined,
       sortAt: t.lastMessageAt.toISOString(),
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),

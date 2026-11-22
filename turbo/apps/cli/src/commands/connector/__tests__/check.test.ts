@@ -1994,6 +1994,7 @@ describe("okou connector check command", () => {
     );
 
     it("renders multiple matched URL permissions from final server outcomes", async () => {
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "20000000-0000-4000-8000-000000000001");
       stubDiagnostic(
         resolvedUrl({
           permission: {
@@ -2029,6 +2030,32 @@ describe("okou connector check command", () => {
       expect(getOutput()).toContain(
         "okou connector permission-request 'github' --permission 'metadata:read' --url 'https://api.github.com/repos/okou-ai/okou' --method 'GET'",
       );
+      expect(getOutput()).toContain(
+        '--callback-prompt "SOMETHING_AGENT_WANT_TO_BE_CALLBACK"',
+      );
+      mockConsoleLog.mockClear();
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--url",
+        "https://api.github.com/repos/okou-ai/okou",
+        "--json",
+      ]);
+      expect(getOutput()).toContain('"callbackCommand"');
+
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "invalid-chat");
+      for (const flags of [[], ["--json"]]) {
+        mockConsoleLog.mockClear();
+        await checkConnectorCommand.parseAsync([
+          "node",
+          "cli",
+          "--url",
+          "https://api.github.com/repos/okou-ai/okou",
+          ...flags,
+        ]);
+        expect(getOutput()).toContain("okou connector permission-request");
+        expect(getOutput()).not.toContain("--callback-prompt");
+      }
     });
 
     interface UnknownPolicyCase {

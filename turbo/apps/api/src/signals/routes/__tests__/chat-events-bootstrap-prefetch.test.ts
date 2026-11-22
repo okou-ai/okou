@@ -567,7 +567,7 @@ describe("chat agent bootstrap prefetch", () => {
   it.each(["web", "cli"] as const)(
     "preserves the queued input and claimable run through %s",
     async (entry) => {
-      const { actor, defaultAgentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
       const clientEventId = randomUUID();
       const body = { prompt: "prepare my agent", clientEventId };
       const sent =
@@ -595,7 +595,7 @@ describe("chat agent bootstrap prefetch", () => {
       const run = await api.readRun(actor, associated.runId);
       expect(run).toMatchObject({ prompt: "prepare my agent" });
       const metadata = await chat.readThreadMetadata(actor, sent.body.threadId);
-      expect(metadata.agentId).toBe(defaultAgentId);
+      expect(metadata.id).toBe(sent.body.threadId);
       const execution = await runExecution(associated.runId);
       expect(execution.execution.platformEnvironment).toHaveProperty(
         "OKOU_TOKEN",

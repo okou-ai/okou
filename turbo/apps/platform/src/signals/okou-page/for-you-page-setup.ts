@@ -2,8 +2,7 @@ import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
 import { ForYouPage } from "../../views/okou-page/for-you-page.tsx";
-import { defaultAgentId$ } from "../agent.ts";
-import { setChatAgentId$ } from "../agent-chat.ts";
+
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { resetProjectUi$ } from "../projects/project-ui.ts";
@@ -24,12 +23,10 @@ export const setupForYouPage$ = command(
       await set(navigateTo$, ROUTES.home, { replace: true }, signal);
       return;
     }
-    const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
     set(setupForYouPagination$, signal);
     set(setupForYouPageKeyboardShortcuts$, signal);
     set(resetProjectUi$);
-    set(setChatAgentId$, agentId);
     const loading = set(enterSuggestionSession$, signal);
     set(updatePage$, createElement(ForYouPage), "sidebar");
     set(

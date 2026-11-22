@@ -88,7 +88,6 @@
           "title": "Provedor temporariamente indisponível"
         }
       },
-      "fallbackAgent": "Agente",
       "fields": {
         "duration": "Duração",
         "model": "Modelo",
@@ -392,7 +391,6 @@
         "openAutomations": "Abrir automações no celular"
       },
       "navigation": {
-        "agents": "Agentes",
         "artifacts": "Artefatos",
         "connectors": "Conectores",
         "settings": "Configurações",
@@ -1847,7 +1845,7 @@
       "repair": "Reparar",
       "repairRequired": "{{institution}} precisa de reparo",
       "revoke": "Revogar",
-      "revokeConfirm": "Revogar o acesso bancário deste Agente?",
+      "revokeConfirm": "Revogar o acesso bancário deste espaço de trabalho?",
       "selectAccounts": "Selecionar contas",
       "sevenDays": "7 dias",
       "thirtyDays": "30 dias",
@@ -2322,7 +2320,9 @@
       "agent": "[Agente: {{name}}]",
       "chatThread": "[Conversa: {{title}}]",
       "file": "[Arquivo: {{filename}}]",
-      "template": "[Modelo: {{title}}]"
+      "template": "[Modelo: {{title}}]",
+      "voice": "Mensagem de voz",
+      "voiceClip": "Trecho de áudio {{index}}"
     },
     "newChat": "Nova conversa",
     "origins": {
@@ -2851,7 +2851,6 @@
       "noEmojiFound": "Nenhum emoji encontrado",
       "notFound": "Conversa não encontrada",
       "openBrowser": "Abrir navegador",
-      "openNamedAgent": "Abrir agente {{name}}",
       "openNamedChat": "Abrir conversa {{title}}",
       "pickEmoji": "Escolha um emoji",
       "scrollToBottom": "Rolar até o final",
@@ -4881,7 +4880,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
     "deleteProjectAndThreads_many": "Delete project and {{count}} threads…",

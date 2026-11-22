@@ -101,8 +101,7 @@ internal class ChatComposerOwner(
                 mutable.value.context != ComposerContext.Ready ||
                     connections.none { it !== connection && it.current() }
             )
-                mutable.value =
-                    mutable.value.copy(context = ComposerContext.Idle, defaultAgentId = null)
+                mutable.value = mutable.value.copy(context = ComposerContext.Idle)
         }
         operations.values
             .filter { it.connection === connection }
@@ -132,7 +131,6 @@ internal class ChatComposerOwner(
 
     private fun replace(
         journal: ComposerJournal,
-        readyAgent: String? = null,
         receiptMessages: Map<String, ComposerMessagePreview> = mutable.value.receiptMessages,
     ) {
         val ticket = ++revision
@@ -145,8 +143,6 @@ internal class ChatComposerOwner(
             mutable.value.copy(
                 journal = value,
                 persistence = ComposerPersistence.Pending,
-                defaultAgentId = readyAgent ?: mutable.value.defaultAgentId,
-                context = if (readyAgent != null) ComposerContext.Ready else mutable.value.context,
                 receiptMessages = receiptMessages,
             )
         localScope.launch {
@@ -204,7 +200,7 @@ internal class ChatComposerOwner(
                                 if (saved.durable) ComposerPersistence.Durable
                                 else ComposerPersistence.Failed,
                         )
-                    if (restored != saved.journal && saved.journal.entries.isNotEmpty())
+                    if (restored != saved.journal && saved.journal != ComposerJournal())
                         replace(restored)
                     val accepted = restored.acceptedNewChats()
                     connections
@@ -228,17 +224,16 @@ internal class ChatComposerOwner(
             contextJob =
                 connection.scope.launch {
                     try {
-                        val agent = connection.service.newChatAgent()
+                        val ready = connection.service.newChatReady()
                         currentCoroutineContext().ensureActive()
                         restoring?.join()
                         if (connection.current()) {
-                            if (agent != null) selectAgent(agent)
-                            else
-                                mutable.value =
-                                    mutable.value.copy(
-                                        defaultAgentId = null,
-                                        context = ComposerContext.Unavailable,
-                                    )
+                            mutable.value =
+                                mutable.value.copy(
+                                    context =
+                                        if (ready) ComposerContext.Ready
+                                        else ComposerContext.Unavailable
+                                )
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -255,25 +250,18 @@ internal class ChatComposerOwner(
             if (target.threadId == null) contextJob?.join()
             if (connection.current() && mutable.value.journal != null) {
                 val server =
-                    if (target.threadId != null) ServerDraftTarget(target.threadId, true)
-                    else
-                        mutable.value.defaultAgentId
-                            ?.takeIf { mutable.value.context == ComposerContext.Ready }
-                            ?.let { ServerDraftTarget(it, false) }
+                    if (target.threadId != null || mutable.value.context == ComposerContext.Ready)
+                        ServerDraftTarget(target.threadId)
+                    else null
                 server?.let { synchronize(connection, it, refresh = true)?.join() }
             }
         }
     }
 
-    suspend fun prefillNew(
-        connection: Connection,
-        prefix: String,
-        expectedAgent: String?,
-    ): Boolean {
+    suspend fun prefillNew(connection: Connection, prefix: String): Boolean {
         val target = ComposerTarget()
         open(connection, target)?.join() ?: return false
-        val agentId = mutable.value.defaultAgentId ?: return false
-        val key = "agent:$agentId"
+        val key = ServerDraftTarget().key
         // Joining a draft read can also start a follow-up refresh queued while it was in flight.
         while (true) {
             val job = draftWork[key]?.job ?: break
@@ -283,8 +271,6 @@ internal class ChatComposerOwner(
         if (
             !connection.current() ||
                 state.context != ComposerContext.Ready ||
-                state.defaultAgentId != agentId ||
-                expectedAgent != null && expectedAgent != agentId ||
                 state.journal == null ||
                 state.entry(target).pending != null ||
                 target.key in state.busy ||
@@ -300,41 +286,6 @@ internal class ChatComposerOwner(
                 (existing.length == command.length || existing[command.length].isWhitespace())
         if (!alreadyPrefilled) edit(connection, target, prefix + text)
         return true
-    }
-
-    private fun selectAgent(agent: String) {
-        val journal = mutable.value.journal
-        if (journal == null) {
-            mutable.value =
-                mutable.value.copy(defaultAgentId = agent, context = ComposerContext.Ready)
-            return
-        }
-        val key = "agent:$agent"
-        val provisional = journal.drafts["new:"]
-        var drafts = journal.drafts - "new:"
-        var retained = journal.retainedDrafts
-        if (provisional != null) {
-            if (drafts[key]?.text?.isNotEmpty() == true)
-                retained = retained + ("new:" to provisional.text)
-            else drafts = drafts + (key to provisional)
-        }
-        if (journal.defaultAgentId != null && journal.defaultAgentId != agent) {
-            val previous = "agent:${journal.defaultAgentId}"
-            drafts[previous]
-                ?.text
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { retained = retained + (previous to it) }
-            draftWork.remove(previous)?.job?.cancel()
-            readableDrafts.remove(previous)
-        }
-        if (journal.defaultAgentId != agent || provisional != null)
-            replace(
-                journal.copy(defaultAgentId = agent, drafts = drafts, retainedDrafts = retained),
-                readyAgent = agent,
-            )
-        else
-            mutable.value =
-                mutable.value.copy(defaultAgentId = agent, context = ComposerContext.Ready)
     }
 
     fun edit(connection: Connection, target: ComposerTarget, text: String) {
@@ -390,8 +341,8 @@ internal class ChatComposerOwner(
 
     private fun serverTarget(key: String): ServerDraftTarget? =
         when {
-            key.startsWith("thread:") -> ServerDraftTarget(key.removePrefix("thread:"), true)
-            key.startsWith("agent:") -> ServerDraftTarget(key.removePrefix("agent:"), false)
+            key.startsWith("thread:") -> ServerDraftTarget(key.removePrefix("thread:"))
+            key == "new:" -> ServerDraftTarget()
             else -> null
         }
 
@@ -411,9 +362,7 @@ internal class ChatComposerOwner(
     ): Job? {
         if (
             !connection.current() ||
-                !target.thread &&
-                    (mutable.value.context != ComposerContext.Ready ||
-                        mutable.value.defaultAgentId != target.id)
+                target.threadId == null && mutable.value.context != ComposerContext.Ready
         )
             return null
         draftWork[target.key]?.let {
@@ -656,9 +605,7 @@ internal class ChatComposerOwner(
         val recovery = connection.recovery ?: return
         val selected =
             recovery.selection()?.takeIf {
-                it.failureId == failureId &&
-                    it.threadId == target.threadId &&
-                    it.agentId == target.agentId
+                it.failureId == failureId && it.threadId == target.threadId
             } ?: return
         val state = mutable.value
         if (
@@ -963,8 +910,8 @@ internal class ChatComposerOwner(
         if (pending.create != null)
             entries = entries + (op.key to ComposerEntry(createdThreadId = pending.threadId))
         var drafts = journal.drafts
-        if (pending.create != null && journal.defaultAgentId != null) {
-            val source = "agent:${journal.defaultAgentId}"
+        if (pending.create != null) {
+            val source = "new:"
             val draft = drafts[source]
             if (draft != null && draft.source == op.key && draft.text.isNotEmpty()) {
                 drafts =
@@ -986,8 +933,8 @@ internal class ChatComposerOwner(
                 else receiptMessages + (pending.eventId to pending.preview(disposition)),
         )
         if (pending.create != null) {
-            journal.defaultAgentId?.let { synchronize(op.connection, ServerDraftTarget(it, false)) }
-            synchronize(op.connection, ServerDraftTarget(pending.threadId, true))
+            synchronize(op.connection, ServerDraftTarget())
+            synchronize(op.connection, ServerDraftTarget(pending.threadId))
         }
         val list = op.connection.chatList
         val create = pending.create

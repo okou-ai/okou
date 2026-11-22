@@ -50,6 +50,7 @@
     <string name="chat_unarchive">Unarchive chat</string>
     <string name="chat_row_action_pending">Updating chat…</string>
     <string name="chat_row_action_failed">Could not confirm the chat change.</string>
+    <string name="chat_row_action_rejected">Could not finish changing the chat.</string>
     <string name="chat_rename">Rename chat</string>
     <string name="chat_pin">Pin chat</string>
     <string name="chat_unpin">Unpin chat</string>

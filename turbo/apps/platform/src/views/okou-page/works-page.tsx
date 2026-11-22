@@ -53,7 +53,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui/components/ui/select";
-import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
 import { assistantName$, brandName$ } from "../../signals/branding.ts";
 import {
   slackOrgData$,
@@ -1516,11 +1515,6 @@ export function WorksPage() {
   const larkEnabled =
     (features?.[FeatureSwitchKey.LarkIntegration] ?? false) ||
     (features?.[FeatureSwitchKey.LarkOfficialBot] ?? false);
-  const displayNameLoadable = useLoadable(currentChatAgentDisplayName$);
-  const displayName =
-    displayNameLoadable.state === "hasData"
-      ? (displayNameLoadable.data ?? assistantName)
-      : assistantName;
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
@@ -1531,7 +1525,7 @@ export function WorksPage() {
               ($) => {
                 return $.works.header.title;
               },
-              { displayName },
+              { displayName: assistantName },
             )}
           </h1>
           <p className="hidden md:block mt-0.5 text-sm text-muted-foreground">
@@ -1539,7 +1533,7 @@ export function WorksPage() {
               ($) => {
                 return $.works.header.description;
               },
-              { displayName },
+              { displayName: assistantName },
             )}
           </p>
         </div>
@@ -1553,8 +1547,8 @@ export function WorksPage() {
               : "mx-auto max-w-[900px] flex flex-col gap-4"
           }
         >
-          <SlackCard displayName={displayName} />
-          <TeamsCard displayName={displayName} />
+          <SlackCard displayName={assistantName} />
+          <TeamsCard displayName={assistantName} />
           <DiscordCard />
           <GithubCard />
           {features?.[FeatureSwitchKey.FeishuIntegration] ? (

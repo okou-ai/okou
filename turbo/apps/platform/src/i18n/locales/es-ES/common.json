@@ -88,7 +88,6 @@
           "title": "Proveedor temporalmente no disponible"
         }
       },
-      "fallbackAgent": "Agente",
       "fields": {
         "duration": "Duración",
         "model": "Modelo",
@@ -392,7 +391,6 @@
         "openAutomations": "Abrir automatizaciones en móvil"
       },
       "navigation": {
-        "agents": "Agentes",
         "artifacts": "Artefactos",
         "connectors": "Conectores",
         "settings": "Configuración",
@@ -1847,7 +1845,7 @@
       "repair": "Reparar",
       "repairRequired": "{{institution}} necesita reparación",
       "revoke": "Revocar",
-      "revokeConfirm": "¿Revocar el acceso bancario de este Agente?",
+      "revokeConfirm": "¿Revocar el acceso bancario de este espacio de trabajo?",
       "selectAccounts": "Seleccionar cuentas",
       "sevenDays": "7 días",
       "thirtyDays": "30 días",
@@ -2322,7 +2320,9 @@
       "agent": "[Agente: {{name}}]",
       "chatThread": "[Hilo de chat: {{title}}]",
       "file": "[Archivo: {{filename}}]",
-      "template": "[Plantilla: {{title}}]"
+      "template": "[Plantilla: {{title}}]",
+      "voice": "Mensaje de voz",
+      "voiceClip": "Clip de voz {{index}}"
     },
     "newChat": "Nuevo chat",
     "origins": {
@@ -2851,7 +2851,6 @@
       "noEmojiFound": "No se ha encontrado ningún emoji",
       "notFound": "Hilo de chat no encontrado",
       "openBrowser": "Abrir navegador",
-      "openNamedAgent": "Abrir agente {{name}}",
       "openNamedChat": "Abrir chat {{title}}",
       "pickEmoji": "Elige un emoji",
       "scrollToBottom": "Desplázate hasta abajo",
@@ -4881,7 +4880,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
     "deleteProjectAndThreads_many": "Delete project and {{count}} threads…",

@@ -76,18 +76,6 @@ export const agentsByIdContract: ClientDescriptor<
       409: true,
     },
   },
-  delete: {
-    method: "DELETE",
-    path: "/api/agents/:id",
-    statuses: {
-      204: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      409: true,
-    },
-  },
 };
 
 export const agentsMainContract: ClientDescriptor<

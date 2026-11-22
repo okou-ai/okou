@@ -86,7 +86,6 @@
           "title": "モデルプロバイダーが一時的に利用できません"
         }
       },
-      "fallbackAgent": "エージェント",
       "fields": {
         "duration": "期間",
         "model": "モデル",
@@ -378,7 +377,6 @@
         "openAutomations": "モバイルでオートメーションを開く"
       },
       "navigation": {
-        "agents": "エージェント",
         "artifacts": "アーティファクト",
         "connectors": "コネクター",
         "settings": "設定",
@@ -1811,7 +1809,7 @@
       "repair": "修復",
       "repairRequired": "{{institution}}は修復が必要です",
       "revoke": "取り消す",
-      "revokeConfirm": "このエージェントの銀行アクセスを取り消しますか？",
+      "revokeConfirm": "このワークスペースの銀行アクセスを取り消しますか？",
       "selectAccounts": "口座を選択",
       "sevenDays": "7日間",
       "thirtyDays": "30日間",
@@ -2277,7 +2275,9 @@
       "agent": "[エージェント: {{name}}]",
       "chatThread": "[チャット スレッド: {{title}}]",
       "file": "[ファイル: {{filename}}]",
-      "template": "[テンプレート: {{title}}]"
+      "template": "[テンプレート: {{title}}]",
+      "voice": "音声メッセージ",
+      "voiceClip": "音声クリップ {{index}}"
     },
     "newChat": "新しいチャット",
     "origins": {
@@ -2786,7 +2786,6 @@
       "noEmojiFound": "絵文字が見つかりませんでした",
       "notFound": "チャットスレッドが見つかりません",
       "openBrowser": "ブラウザを開く",
-      "openNamedAgent": "エージェント {{name}} を開く",
       "openNamedChat": "チャットを開く {{title}}",
       "pickEmoji": "絵文字を選択",
       "scrollToBottom": "一番下までスクロール",
@@ -4799,7 +4798,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
     "deleteProjectOnly": "Delete project only",

@@ -32,7 +32,6 @@ const context = testContext();
 const SNAPSHOT_URL = "https://r2.example.com/shared-worker-chat-events.ndjson";
 const CREATED_AT = "2026-08-14T08:00:00.000Z";
 const WORKER_APP_VERSION = "shared-worker-store-version";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000920";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000920";
 
 function identity(
@@ -76,7 +75,6 @@ function chatEventRow(threadId: string, seqId: number): ChatEventRow {
 function snapshotThread(title: string): ChatThreadSnapshotProjection {
   return {
     id: THREAD_ID,
-    agentId: AGENT_ID,
     title,
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -96,7 +94,6 @@ function renamedThreadEvent(seqId: number, title: string): ChatThreadEvent {
     seqId,
     kind: "renamed",
     chatThreadId: THREAD_ID,
-    agentId: AGENT_ID,
     title,
     selectedModel: null,
     serviceTier: null,

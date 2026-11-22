@@ -1,6 +1,5 @@
 package ai.okou.android
 
-import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
@@ -71,9 +70,7 @@ open class TestChatService : ChatListService {
 
     override suspend fun chatEvents(since: Long?) = ChatEvents(emptyList(), false)
 
-    override suspend fun indicators() = Indicators(emptyMap(), emptyMap(), emptyMap())
-
-    override suspend fun agents(): Agents = emptyList()
+    override suspend fun indicators() = Indicators(emptyMap(), emptyMap())
 
     override suspend fun projectSnapshot() =
         Json.decodeFromString<ProjectSnapshot>(

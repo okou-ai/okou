@@ -7,7 +7,6 @@ import {
   builtinConnectorsMainContract,
   builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
@@ -44,22 +43,12 @@ describe("builtin MCP account surfaces", () => {
     return setupApp({ context, routes })(connectorCatalogContract);
   }
   const createdAccounts: string[] = [];
-  const createdAgents: string[] = [];
 
   function authenticate() {
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
   }
 
   afterEach(async () => {
-    for (const id of createdAgents.splice(0)) {
-      await accept(
-        setupApp({ context, routes })(agentsByIdContract).delete({
-          headers,
-          params: { id },
-        }),
-        [204],
-      );
-    }
     for (const connectionId of createdAccounts.splice(0)) {
       await accept(
         accounts().delete({
@@ -236,10 +225,9 @@ describe("builtin MCP account surfaces", () => {
     bdd.acceptAgentStorageWrites();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Scoped MCP selections",
     });
-    createdAgents.push(agent.agentId);
     const connected = await accept(
       setupApp({ context, routes })(
         builtinConnectorNoAuthGrantContract,

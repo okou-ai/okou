@@ -555,7 +555,7 @@ describe("okou chat messages command", () => {
 
       const stderr = mockConsoleError.mock.calls.flat().join("\n");
       expect(stderr).toContain(
-        `is inside the agent memory directory ${memoryRoot}`,
+        `is inside the personal Memory directory ${memoryRoot}`,
       );
       expect(stderr).toContain(
         "okou chat messages --output-dir /tmp/okou-chat-history",
@@ -577,7 +577,7 @@ describe("okou chat messages command", () => {
 
     const stderr = mockConsoleError.mock.calls.flat().join("\n");
     expect(stderr).toContain(
-      `is inside the agent memory directory ${CANONICAL_CLAUDE_MEMORY_MOUNT_PATH}`,
+      `is inside the personal Memory directory ${CANONICAL_CLAUDE_MEMORY_MOUNT_PATH}`,
     );
     expect(mockExit).toHaveBeenCalledWith(1);
   });

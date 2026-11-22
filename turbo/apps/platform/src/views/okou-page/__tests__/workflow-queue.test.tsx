@@ -108,7 +108,6 @@ function installWorkflowQueueFixture(
   testContextValue.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(200, {
       id: threadId,
-      agentId: AGENT_ID,
       title: "Workflow queue",
       selectedModel: "claude-sonnet-5",
       modelSettings: {},

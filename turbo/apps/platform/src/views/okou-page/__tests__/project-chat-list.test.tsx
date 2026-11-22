@@ -7,7 +7,7 @@ import {
   chatThreadDraftContract,
   chatThreadPinOrderContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   queryAllByRoleFast,
@@ -18,7 +18,10 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import { chatListThread } from "./chat-list-test-helpers.ts";
+import {
+  CHAT_LIST_AGENT_ID,
+  chatListThread,
+} from "./chat-list-test-helpers.ts";
 import { menuItemByText } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
@@ -116,13 +119,13 @@ function installProjects(
   context.mocks.api(projectsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
   context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {
@@ -137,7 +140,7 @@ async function openChatList(
 ) {
   const workspace = installContinuityWorkspace(context, { caseId, threads });
   installProjects();
-  context.mocks.data.onboardingStatus({ defaultAgentId: threads[0].agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   await setupPage({
     context,
     path,
@@ -217,7 +220,7 @@ test.each([false, true])(
       threads: [archived],
     });
     installProjects([]);
-    context.mocks.data.onboardingStatus({ defaultAgentId: archived.agentId });
+    context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
     await setupPage({
       context,
       path: "/",
@@ -388,7 +391,7 @@ test("Clicking an expanded, unselected Project title folds its chats and keeps t
     projectId: launchId,
   };
   // A Project page lists the default Agent's chats, so these belong to it.
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   await openChatList(306, [ordinary, member], `/chats/${ordinary.id}`);
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 

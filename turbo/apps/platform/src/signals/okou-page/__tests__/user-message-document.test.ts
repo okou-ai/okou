@@ -27,16 +27,6 @@ function createEditorSchema(): Schema {
       paragraph: { content: "inline*", group: "block" },
       text: { group: "inline" },
       hardBreak: { group: "inline", inline: true },
-      agentMention: {
-        atom: true,
-        attrs: {
-          agentId: { default: null },
-          avatarUrl: { default: null },
-          name: { default: null },
-        },
-        group: "inline",
-        inline: true,
-      },
       projectMention: {
         atom: true,
         attrs: { projectId: { default: null }, name: { default: null } },
@@ -220,13 +210,7 @@ test("Complex composer content survives saving and restoring", () => {
         threadId: CHAT_THREAD_ID,
         titleSnapshot: "Launch decisions",
       },
-      { type: "text", text: " with " },
-      {
-        type: "agent",
-        agentId: AGENT_ID,
-        nameSnapshot: "Release Scout",
-      },
-      { type: "text", text: " closing notes." },
+      { type: "text", text: " with Release Scout closing notes." },
     ],
   };
 

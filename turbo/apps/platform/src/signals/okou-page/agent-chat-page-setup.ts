@@ -16,12 +16,10 @@ import {
   detachedNavigateTo$,
 } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { defaultAgentId$, agents$ } from "../agent.ts";
-import { setChatAgentId$ } from "../agent-chat.ts";
+
 import { setTalkDraft$, talkDraft$ } from "./chat-draft.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import {
-  releaseChatGreetingVisit$,
   resetChatPageModelSelection$,
   startChatGreetingVisit$,
 } from "./chat-page.ts";
@@ -83,19 +81,18 @@ const restoreMarketingAgentDraft$ = command(
   },
 );
 
-const setupChatPageForAgent$ = command(
-  async ({ get, set }, agentId: string, signal: AbortSignal) => {
+export const setupHomeChatPage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const agentDraft: EnsuredAgentDraft = await set(ensureAgentDraft$, signal);
     set(resetProjectUi$);
-    set(setChatAgentId$, agentId);
     set(
       setPwaAgentComposeRequested$,
       isPwaAgentComposeRequested(get(searchParams$)),
     );
-    const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
-    set(setAgentComposerContext$, { agentId, agentDraft });
+    set(setAgentComposerContext$, { agentDraft });
     set(get(agentChatComposerSignals$).setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
-    const firstGreetingVisit = set(startChatGreetingVisit$);
+    set(startChatGreetingVisit$);
     set(resetChatPageModelSelection$);
     set(setAgentPhoneConnectDialogOpen$, false);
     set(updatePage$, createElement(AgentChatPage), "sidebar");
@@ -111,31 +108,11 @@ const setupChatPageForAgent$ = command(
 
     await set(hideAppSkeleton$, signal);
 
-    const agents = await get(agents$);
-    signal.throwIfAborted();
-    const agent = agents.find((candidate) => {
-      return candidate.agentId === agentId;
-    });
-    if (!agent) {
-      if (firstGreetingVisit) {
-        set(releaseChatGreetingVisit$);
-      }
-      // My Okou's only chat page is this one, so another agent's chat would
-      // route straight back here; its settings page is the usable surface.
-
-      set(detachedNavigateTo$, ROUTES.connectors, {
-        searchParams: new URLSearchParams({ settings: "my-okou" }),
-        replace: true,
-      });
-      return;
-    }
-
     set(
       updateDocumentTitle$,
-      agent.displayName ??
-        i18n.t(($) => {
-          return $.chat.documentTitle;
-        }),
+      i18n.t(($) => {
+        return $.chat.documentTitle;
+      }),
     );
     set(setupAgentChatKeyboardShortcuts$, signal);
     await set(hydrateProjects$, signal);
@@ -187,19 +164,3 @@ export const setupAgentChatPage$ = command(({ get, set }) => {
     replace: true,
   });
 });
-
-/** My Okou's chat page lives at `/` and always chats with the default agent. */
-export const setupHomeChatPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const defaultAgentId = await get(defaultAgentId$);
-    signal.throwIfAborted();
-    if (!defaultAgentId) {
-      set(detachedNavigateTo$, ROUTES.connectors, {
-        searchParams: new URLSearchParams({ settings: "my-okou" }),
-        replace: true,
-      });
-      return;
-    }
-    await set(setupChatPageForAgent$, defaultAgentId, signal);
-  },
-);

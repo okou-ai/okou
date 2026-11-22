@@ -451,11 +451,11 @@ describe("private cross-Agent Projects", () => {
     ).body.threads;
     expect(
       members
-        .map((t) => {
-          return t.agentId;
+        .map((thread) => {
+          return thread.id;
         })
         .sort(),
-    ).toStrictEqual([undefined, undefined]);
+    ).toStrictEqual([first.id, second.id].sort());
     expect(
       members.find((t) => {
         return t.id === first.id;

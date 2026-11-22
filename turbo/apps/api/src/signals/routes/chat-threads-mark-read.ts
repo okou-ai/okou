@@ -34,7 +34,7 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Chat thread not found");
   }
 
-  const { threadId, userId, agentId, orgId, watermark } = prepared;
+  const { threadId, userId, orgId, watermark } = prepared;
   const advanced =
     watermark !== undefined &&
     (prepared.lastReadAt === null || watermark > prepared.lastReadAt) &&
@@ -57,7 +57,7 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
     await publishChatThreadReadCursorUpdatedSafely(
       { userId, orgId },
-      { threadId, agentId, lastReadAt },
+      { threadId, lastReadAt },
     );
     signal.throwIfAborted();
   }

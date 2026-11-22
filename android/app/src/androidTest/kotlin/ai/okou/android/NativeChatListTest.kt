@@ -406,6 +406,7 @@ class NativeChatListTest {
                 }
                 val toolbarBack = By.pkg(app.packageName).desc(app.getString(R.string.back))
                 assertTrue(device.wait(Until.gone(toolbarBack), 10_000))
+                takeScreenshot().writeToTestStorage("android-list-home-two-pane")
                 val filter = app.getString(R.string.chat_filter)
                 val archived = app.getString(R.string.chat_archived)
                 val inbox = By.pkg(app.packageName).text(app.getString(R.string.chat_inbox))

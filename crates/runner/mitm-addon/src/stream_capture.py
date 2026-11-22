@@ -1,11 +1,14 @@
-"""Shared captured stream-body writes, metadata access, validation and release."""
+"""Shared HTTP stream capture, metadata access, and callback release."""
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from mitmproxy import http
 
 import flow_metadata_keys as metadata_keys
+
+type StreamCallback = Callable[[bytes], bytes | Iterable[bytes]]
 
 
 class CapturedStreamBody(NamedTuple):
@@ -54,3 +57,18 @@ def clear_response_capture_state(flow: http.HTTPFlow) -> None:
     """Remove byte accounting and optional body capture, leaving callbacks to their owners."""
     flow.metadata.pop(metadata_keys.RESPONSE_STREAM_STATE, None)
     flow.metadata.pop(metadata_keys.RESPONSE_STREAM_CAPTURE, None)
+
+
+def replace_owned_stream(
+    message: http.Message | None,
+    expected_callback: object,
+    *,
+    replacement: StreamCallback | None = None,
+) -> None:
+    """Disable or restore a message stream only if its caller still owns the slot."""
+    if (
+        message is not None
+        and expected_callback is not None
+        and message.stream is expected_callback
+    ):
+        message.stream = replacement or False

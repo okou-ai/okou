@@ -4,7 +4,7 @@
 export const clientDescriptorManifest = [
   {
     module: "agent-draft",
-    contracts: ["agentDraftContract"],
+    contracts: ["agentDraftContract", "composerDraftContract"],
   },
   {
     module: "agent-setup-prompts",
@@ -60,6 +60,7 @@ export const clientDescriptorManifest = [
       "bankingContract",
       "bankingPublicContract",
       "bankingUserContract",
+      "bankingWorkspaceContract",
     ],
   },
   {
@@ -519,7 +520,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "mcp-chat-search",
-    contracts: ["mcpChatSearchContract", "mcpProjectChatSearchContract"],
+    contracts: ["mcpProjectChatSearchContract"],
   },
   {
     module: "mcp-chat-snapshots",
@@ -761,6 +762,10 @@ export const clientDescriptorManifest = [
   {
     module: "third-party-subscriptions",
     contracts: ["thirdPartySubscriptionsMainContract"],
+  },
+  {
+    module: "transcribe",
+    contracts: ["transcribeContract"],
   },
   {
     module: "uploads",

@@ -866,11 +866,9 @@ function mockWorkflowApis(
     return respond(200, { displayName: "Test User", imageUrl: null });
   });
   context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
-    const visible = query.agentId
-      ? workflows.filter((workflow) => {
-          return workflow.agentId === query.agentId;
-        })
-      : workflows;
+    const visible = workflows.filter((workflow) => {
+      return workflow.agentId === (query.agentId ?? AGENT_ID);
+    });
     return respond(200, visible.map(summary));
   });
   context.mocks.api(workflowsDetailContract.get, ({ params, respond }) => {
@@ -4184,7 +4182,7 @@ test("Make private copy uses the workspace default without a destination or remo
     workflowsDetailContract.copy,
     ({ body, params, respond }) => {
       expect(params.workflowId).toBe(SALES_WORKFLOW_ID);
-      expect(body.toAgentId).toBe(AGENT_ID);
+      expect(body).toStrictEqual({});
       const personal: WorkflowDetailResponse = {
         ...shared,
         id: COPIED_WORKFLOW_ID,

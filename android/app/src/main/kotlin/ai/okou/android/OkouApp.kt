@@ -266,26 +266,33 @@ internal fun OkouApp(
     if (showChatList && chats != null) ChatUndoFeedback(chats, list, snackbar)
     list.failedRowAction
         ?.takeIf { list.rowUndo == null }
-        ?.let { action ->
+        ?.let { failure ->
+            val action = failure.action
             val message =
                 stringResource(
-                    if (action.updatesChat) R.string.chat_row_action_failed
-                    else R.string.chat_read_action_failed
+                    when {
+                        failure.rejected -> R.string.chat_row_action_rejected
+                        action.updatesChat -> R.string.chat_row_action_failed
+                        else -> R.string.chat_read_action_failed
+                    }
                 )
-            val refreshLabel = stringResource(R.string.chat_refresh)
-            LaunchedEffect(chats, action, message, showChatList) {
+            val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
+            LaunchedEffect(chats, failure, message, showChatList) {
                 if (
                     showChatList &&
                         snackbar.showSnackbar(
                             message,
                             actionLabel = refreshLabel,
-                            duration = SnackbarDuration.Indefinite,
+                            withDismissAction = !failure.rejected,
+                            duration =
+                                if (failure.rejected) SnackbarDuration.Short
+                                else SnackbarDuration.Indefinite,
                         ) == SnackbarResult.ActionPerformed
                 ) {
                     if (action.updatesChat) chats?.reloadAfterRowActionFailure()
                     else chats?.refreshIndicators()
                 }
-                chats?.dismissRowActionFailure(action)
+                chats?.dismissRowActionFailure(failure)
             }
         }
     list.markAllReadResult
@@ -359,7 +366,7 @@ internal fun OkouApp(
         navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId), search = search)
     }
 
-    fun workflowDraft(prefix: String, workflowAgent: String? = null) {
+    fun workflowDraft(prefix: String) {
         val activeComposer = composer ?: return
         if (handoffPending) return
         handoffPending = true
@@ -367,7 +374,7 @@ internal fun OkouApp(
         handoff =
             scope.launch {
                 try {
-                    if (activeComposer.prefillNew(prefix, workflowAgent)) {
+                    if (activeComposer.prefillNew(prefix)) {
                         focus.clearFocus()
                         keyboard?.hide()
                         conversations.open(ComposerTarget().key)
@@ -504,7 +511,7 @@ internal fun OkouApp(
             handoffFailed = workflowHandoffFailed,
             onClose = ::closeWorkflows,
             onCreate = { workflowDraft("$creation\n\n") },
-            onUse = { workflowDraft("/${it.name} ", it.agentId) },
+            onUse = { workflowDraft("/${it.name} ") },
             sourceChatAvailable = { id -> list.threads.any { it.id == id && it.hidden != true } },
             onOpenChat = { id ->
                 list.threads
@@ -865,9 +872,8 @@ internal fun OkouApp(
                                             ) {
                                                 val composerTarget =
                                                     ComposerTarget(
-                                                        thread.id,
-                                                        thread.agentId,
-                                                        thread.projectId,
+                                                        threadId = thread.id,
+                                                        projectId = thread.projectId,
                                                     )
                                                 RunControlsPanel(controls, chats.history, thread.id)
                                                 recovery?.let {

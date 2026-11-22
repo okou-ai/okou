@@ -9,8 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
 import { chatCommand } from "../index";
 
-const AGENT_ID = "00000000-0000-4000-8000-000000000101";
-const OTHER_AGENT_ID = "00000000-0000-4000-8000-000000000102";
 const THREAD_ID = "00000000-0000-4000-8000-000000000201";
 const SECOND_THREAD_ID = "00000000-0000-4000-8000-000000000202";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000203";
@@ -44,7 +42,6 @@ function okouToken(): string {
 
 function snapshotThread(options: {
   readonly id: string;
-  readonly agentId: string;
   readonly title: string;
   readonly sortAt: string;
   readonly archived?: boolean;
@@ -66,7 +63,6 @@ function event(options: {
   readonly seqId: number;
   readonly kind: "renamed" | "sort_touched";
   readonly chatThreadId: string;
-  readonly agentId: string;
   readonly title: string | null;
   readonly createdAt: string;
 }) {
@@ -129,7 +125,6 @@ describe("okou chat list command", () => {
     cacheDirectory = await mkdtemp(join(tmpdir(), "chat-list-"));
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", okouToken());
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("XDG_CACHE_HOME", cacheDirectory);
   });
 
@@ -138,7 +133,6 @@ describe("okou chat list command", () => {
     const threads = [
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Project planning",
         sortAt: "2026-11-02T00:00:00.000Z",
       }),
@@ -164,7 +158,6 @@ describe("okou chat list command", () => {
                     kind: "project_updated",
                     projectId,
                     chatThreadId: THREAD_ID,
-                    agentId: AGENT_ID,
                     title: null,
                     createdAt: "2026-11-02T01:00:00.000Z",
                   },
@@ -200,13 +193,11 @@ describe("okou chat list command", () => {
     mockStableThreadSnapshot([
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Visible chat",
         sortAt: "2026-11-02T00:00:00.000Z",
       }),
       snapshotThread({
         id: SECOND_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Hidden Learning chat",
         sortAt: "2026-11-02T01:00:00.000Z",
         hidden: true,
@@ -262,20 +253,17 @@ describe("okou chat list command", () => {
             chatThreads: [
               snapshotThread({
                 id: THREAD_ID,
-                agentId: AGENT_ID,
                 title: "Initial title",
                 sortAt: "2026-07-24T03:00:00.000Z",
               }),
               snapshotThread({
                 id: SECOND_THREAD_ID,
-                agentId: AGENT_ID,
                 title: "Second title",
                 sortAt: "2026-07-24T02:00:00.000Z",
               }),
               snapshotThread({
                 id: OTHER_THREAD_ID,
-                agentId: OTHER_AGENT_ID,
-                title: "Other agent",
+                title: "Another thread",
                 sortAt: "2026-07-24T04:00:00.000Z",
               }),
             ],
@@ -296,7 +284,6 @@ describe("okou chat list command", () => {
                 seqId: RENAME_SEQ_ID,
                 kind: "renamed",
                 chatThreadId: THREAD_ID,
-                agentId: AGENT_ID,
                 title: "Renamed title",
                 createdAt: "2026-07-24T03:30:00.000Z",
               }),
@@ -313,7 +300,6 @@ describe("okou chat list command", () => {
               seqId: SORT_SEQ_ID,
               kind: "sort_touched",
               chatThreadId: SECOND_THREAD_ID,
-              agentId: AGENT_ID,
               title: null,
               createdAt: "2026-07-24T05:00:00.000Z",
             }),
@@ -338,7 +324,7 @@ describe("okou chat list command", () => {
         threads: [
           expect.objectContaining({
             id: OTHER_THREAD_ID,
-            title: "Other agent",
+            title: "Another thread",
           }),
         ],
       },
@@ -372,7 +358,6 @@ describe("okou chat list command", () => {
             chatThreads: [
               snapshotThread({
                 id: THREAD_ID,
-                agentId: AGENT_ID,
                 title:
                   snapshotRequests === 1 ? "Cached title" : "Refreshed title",
                 sortAt: "2026-07-24T03:00:00.000Z",
@@ -424,26 +409,22 @@ describe("okou chat list command", () => {
     mockStableThreadSnapshot([
       snapshotThread({
         id: THIRD_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Newest but read",
         sortAt: "2026-07-24T07:00:00.000Z",
       }),
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Unread one",
         sortAt: "2026-07-24T03:00:00.000Z",
       }),
       snapshotThread({
         id: SECOND_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Unread two",
         sortAt: "2026-07-24T02:00:00.000Z",
       }),
       snapshotThread({
         id: OTHER_THREAD_ID,
-        agentId: OTHER_AGENT_ID,
-        title: "Other agent unread",
+        title: "Another thread unread",
         sortAt: "2026-07-24T08:00:00.000Z",
       }),
     ]);
@@ -453,7 +434,7 @@ describe("okou chat list command", () => {
         indicatorRequests++;
         expect(new URL(request.url).searchParams.size).toBe(0);
         return HttpResponse.json({
-          agents: { [AGENT_ID]: "unread", [OTHER_AGENT_ID]: "unread" },
+          agents: {},
           threads: {
             [THREAD_ID]: "unread",
             [SECOND_THREAD_ID]: "unread",
@@ -509,14 +490,10 @@ describe("okou chat list command", () => {
   });
 
   it("lists unread threads in the workspace with one indicators request", async () => {
-    const agentIds = Array.from({ length: 6 }, (_, index) => {
-      return `00000000-0000-4000-8000-${String(110 + index).padStart(12, "0")}`;
-    });
-    const threads = agentIds.map((agentId, index) => {
+    const threads = Array.from({ length: 6 }, (_, index) => {
       return snapshotThread({
         id: `00000000-0000-4000-8000-${String(210 + index).padStart(12, "0")}`,
-        agentId,
-        title: `Agent ${index}`,
+        title: `Thread ${index}`,
         sortAt: new Date(
           Date.parse("2026-07-24T01:00:00.000Z") + index * 1000,
         ).toISOString(),
@@ -528,11 +505,7 @@ describe("okou chat list command", () => {
       http.get(INDICATORS_URL, () => {
         requestCount += 1;
         return HttpResponse.json({
-          agents: Object.fromEntries(
-            agentIds.map((id) => {
-              return [id, "unread"];
-            }),
-          ),
+          agents: {},
           threads: Object.fromEntries(
             threads.map((thread) => {
               return [thread.id, "unread"];
@@ -553,7 +526,6 @@ describe("okou chat list command", () => {
       readonly total: number;
       readonly threads: readonly {
         readonly id: string;
-        readonly agentId: string;
         readonly unreadAt: string;
       }[];
     };
@@ -569,7 +541,6 @@ describe("okou chat list command", () => {
     mockStableThreadSnapshot([
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "Existing human row",
         sortAt: "2026-07-24T03:00:00.000Z",
       }),
@@ -586,7 +557,6 @@ describe("okou chat list command", () => {
     expect(existingOutput).toContain("SORTED");
     expect(existingOutput).toContain("PINNED");
     expect(existingOutput).not.toContain("UNREAD AT");
-    expect(existingOutput).not.toContain("AGENT ID");
 
     mockConsoleLog.mockClear();
     await chatCommand.parseAsync(["node", "cli", "list", "--unread"]);
@@ -597,13 +567,11 @@ describe("okou chat list command", () => {
     mockStableThreadSnapshot([
       snapshotThread({
         id: THREAD_ID,
-        agentId: AGENT_ID,
         title: "✅ Active row",
         sortAt: "2026-07-24T03:00:00.000Z",
       }),
       snapshotThread({
         id: OTHER_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Archived row",
         sortAt: "2026-07-24T04:00:00.000Z",
         archived: true,
@@ -657,7 +625,6 @@ describe("okou chat list command", () => {
       return {
         ...snapshotThread({
           id: `00000000-0000-4000-8000-${String(1000 + index).padStart(12, "0")}`,
-          agentId: index % 2 ? OTHER_AGENT_ID : AGENT_ID,
           title: `Related ${index}`,
           sortAt: "2026-11-02T00:00:00.000Z",
           archived: index === 100,
@@ -668,7 +635,6 @@ describe("okou chat list command", () => {
     all.unshift({
       ...snapshotThread({
         id: OTHER_THREAD_ID,
-        agentId: AGENT_ID,
         title: "Hidden Project chat",
         sortAt: "2026-11-02T01:00:00.000Z",
         hidden: true,

@@ -2,8 +2,6 @@ package ai.okou.android
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
-import ai.okou.android.api.generated.AgentsItem
-import ai.okou.android.api.generated.AgentsItemVisibility
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.HistorySnapshot
@@ -16,7 +14,6 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.auth.scopeHash
-import ai.okou.android.chat.CachedChatNavigation
 import ai.okou.android.chat.ChatCheckpoint
 import ai.okou.android.chat.ChatCursor
 import ai.okou.android.chat.ChatListSource
@@ -64,22 +61,8 @@ class PendingWorkspaceApplication : TestOkouApplication() {
     @Volatile private var editTail = ChatEvents(emptyList(), false)
 
     override fun onCreate() {
-        val agents =
-            listOf(
-                AgentsItem(
-                    CHAT_AGENT,
-                    true,
-                    "user-a",
-                    null,
-                    "My Okou",
-                    null,
-                    null,
-                    AgentsItemVisibility.PRIVATE,
-                )
-            )
         chatService =
             object : TestChatService() {
-                override suspend fun agents() = agents
 
                 override suspend fun chatEvents(since: Long?): ChatEvents {
                     listResponse.await()
@@ -152,7 +135,6 @@ class PendingWorkspaceApplication : TestOkouApplication() {
                             events.events.single().cursor(),
                         ),
                         System.currentTimeMillis(),
-                        CachedChatNavigation(agents),
                     )
                 }
         }

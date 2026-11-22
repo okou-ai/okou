@@ -32,9 +32,9 @@ async function prepareRunCreation(...actors: readonly ApiTestUser[]) {
   return group;
 }
 
-describe("DELETE /api/agents/:id lifecycle cleanup", () => {
+describe("DELETE /api/agents/:id retirement", () => {
   it.each(["pending", "running"] as const)(
-    "deletes a legacy Agent and preserves the member Run while it is %s",
+    "rejects legacy Agent deletion and preserves the member Run while it is %s",
     async (status) => {
       const actor = bdd.user();
       await prepareRunCreation(actor);
@@ -71,7 +71,7 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
       const targetRun = { runId };
       const input =
         status === "running" ? await api.executionInput(runId) : null;
-      await bdd.requestDeleteAgent(actor, target.agentId, [204]);
+      await bdd.expectAgentDeleteUnavailable(actor, target.agentId);
       const targetRunRead = await api.readRun(actor, targetRun.runId);
       expect(targetRunRead).toMatchObject({
         runId: targetRun.runId,

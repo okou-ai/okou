@@ -861,7 +861,6 @@ export function mockChatLifecycle(
       activeThreadIds.add(threadId);
     }
     return respond(200, {
-      agents: {},
       threads: Object.fromEntries(
         [...activeThreadIds]
           .filter((id) => {
@@ -944,8 +943,6 @@ export function mockChatLifecycle(
     return respond(200, {
       id: "a0000000-0000-4000-a000-000000000001",
       sessionId: "session-1",
-      agentId: "zero",
-      displayName: null,
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,

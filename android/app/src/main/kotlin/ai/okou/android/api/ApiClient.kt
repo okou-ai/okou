@@ -1,7 +1,6 @@
 package ai.okou.android.api
 
 import ai.okou.android.BuildConfig
-import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.AndroidUpgradeRequired
 import ai.okou.android.api.generated.ApiError
 import ai.okou.android.api.generated.ApiHeaders
@@ -25,8 +24,8 @@ import ai.okou.android.api.generated.RealtimeTokenRequest
 import ai.okou.android.api.generated.RenameProjectRequest
 import ai.okou.android.api.generated.RenameThreadRequest
 import ai.okou.android.api.generated.ReorderPinnedThreadRequest
-import ai.okou.android.api.generated.SaveAgentDraft
 import ai.okou.android.api.generated.SaveThreadDraft
+import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
@@ -34,7 +33,6 @@ import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.WorkflowsQuery
-import ai.okou.android.api.generated.WorkflowsQueryScope
 import ai.okou.android.api.generated.historyRows
 import ai.okou.android.api.generated.workflows
 import ai.okou.android.chat.HistoryCursor
@@ -165,9 +163,7 @@ class ApiClient(
     suspend fun workflowsEnabled(): Boolean =
         execute { reads.featureSwitches(it) }.effectiveSwitches["androidWorkspaceWorkflows"] == true
 
-    suspend fun workflows() = execute {
-        reads.workflows(it, WorkflowsQuery(scope = WorkflowsQueryScope.WORKSPACE))
-    }
+    suspend fun workflows() = execute { reads.workflows(it, WorkflowsQuery()) }
 
     suspend fun workflow(id: String) = execute { reads.workflow(it, id) }
 
@@ -213,8 +209,6 @@ class ApiClient(
         reads.indicators(it, queryIncludeActiveUnread = "true")
     }
 
-    suspend fun agents(): Agents = execute { reads.agents(it) }
-
     suspend fun createThread(body: CreateThreadRequest) =
         execute(201) { api.createThread(it, body) }
 
@@ -227,19 +221,20 @@ class ApiClient(
     suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
 
     suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = execute {
-        if (target.thread) reads.threadDraft(it, target.id) else reads.agentDraft(it, target.id)
+        if (target.threadId != null) reads.threadDraft(it, target.threadId)
+        else reads.workspaceDraft(it)
     }
 
     suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) {
         val body = plainDraftDocument(text)
         executeResponse(204) {
-            if (target.thread)
+            if (target.threadId != null)
                 api.saveThreadDraft(
                     it,
-                    target.id,
+                    target.threadId,
                     json.decodeFromJsonElement<SaveThreadDraft>(body),
                 )
-            else api.saveAgentDraft(it, target.id, json.decodeFromJsonElement<SaveAgentDraft>(body))
+            else api.saveWorkspaceDraft(it, json.decodeFromJsonElement<SaveWorkspaceDraft>(body))
         }
     }
 

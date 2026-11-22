@@ -28,8 +28,6 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 export const NAVIGATION_ARTIFACT_THREAD_ID =
   "b0000000-0000-4000-a000-000000000920";
-export const NAVIGATION_ARTIFACT_AGENT_ID =
-  "c0000000-0000-4000-a000-000000000001";
 export const NAVIGATION_ARTIFACT_RUN_ID = "navigation-artifact-run";
 const GOOGLE_DRIVE_CONNECTION_ID = "d0000000-0000-4000-a000-000000000921";
 

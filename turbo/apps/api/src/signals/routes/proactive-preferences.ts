@@ -56,9 +56,6 @@ const readProactivePreference$ = command(
               );
             }),
           ),
-          eligibility.agentId === null
-            ? undefined
-            : eq(workflows.agentId, eligibility.agentId),
         ),
       );
     signal.throwIfAborted();

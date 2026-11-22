@@ -2322,9 +2322,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       [200],
     );
     const chatThreadCreated = threadEvents.body.events.find((event) => {
-      return (
-        event.kind === "created" && event.agentId === defaultAgent.body.agentId
-      );
+      return event.kind === "created";
     });
     if (!chatThreadCreated) {
       throw new Error("Expected the canonical Teams file chat thread");
@@ -3560,7 +3558,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         expect.objectContaining({
           id: runId,
           prompt: "continue this private task",
-          agentId: null,
         }),
       );
       await runsApi.heartbeatRunner(runnerGroup);

@@ -179,10 +179,7 @@ impl Operations {
             .and_then(|operation| operation.pending_controls.get(&request_seq))
             .is_some_and(|pending| pending.route_id == request_route_id);
         if request_matches {
-            self.control_targets.remove(&request_seq);
-            if let Some(operation) = self.get_mut(target_route_id) {
-                operation.pending_controls.remove(&request_seq);
-            }
+            self.take_pending_control(request_seq);
         }
     }
 

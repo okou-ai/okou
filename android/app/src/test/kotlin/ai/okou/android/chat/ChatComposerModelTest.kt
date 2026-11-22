@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
@@ -44,15 +43,14 @@ import org.robolectric.annotation.Config
 class ChatComposerModelTest {
     @get:Rule val temporary = TemporaryFolder()
     private val identity = WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
-    private val existing = ComposerTarget(CHAT_PERSONAL, CHAT_AGENT)
+    private val existing = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Service : ChatComposerService {
         val requests = mutableListOf<SendRequestVariant1>()
         val creates = mutableListOf<CreateThreadRequest>()
         val accepted = mutableMapOf<String, SendRequestVariant1>()
         val gates = mutableListOf<CompletableDeferred<Unit>>()
-        var agent: String? = CHAT_AGENT
-        var agentFailure: Exception? = null
+        var readinessFailure: Exception? = null
         val drafts = mutableMapOf<ServerDraftTarget, ai.okou.android.api.generated.ComposerDraft>()
         val saves = mutableListOf<Pair<ServerDraftTarget, String>>()
         var draftRead: suspend (ServerDraftTarget) -> ai.okou.android.api.generated.ComposerDraft =
@@ -80,9 +78,9 @@ class ChatComposerModelTest {
             InputObservation(thread, event, if (event in accepted) TextDisposition.Queued else null)
         }
 
-        override suspend fun newChatAgent(): String? {
-            agentFailure?.let { throw it }
-            return agent
+        override suspend fun newChatReady(): Boolean {
+            readinessFailure?.let { throw it }
+            return true
         }
 
         override suspend fun composerDraft(target: ServerDraftTarget) = draftRead(target)
@@ -150,7 +148,7 @@ class ChatComposerModelTest {
     fun heldHydrationKeepsEditsAndDebouncesTheCanonicalFullValue() =
         check { service, store, create ->
             val gate = service.gate()
-            val remote = ServerDraftTarget(CHAT_PERSONAL, true)
+            val remote = ServerDraftTarget(CHAT_PERSONAL)
             service.draftRead = {
                 gate.await()
                 plainDraftDocument("Web draft")
@@ -191,13 +189,13 @@ class ChatComposerModelTest {
         advanceUntilIdle()
         assertTrue(service.requests.isEmpty())
         assertEquals(whitespace, store.load(identity).journal.drafts[existing.key]!!.text)
-        assertEquals("", service.drafts[ServerDraftTarget(CHAT_PERSONAL, true)]!!.plainText())
+        assertEquals("", service.drafts[ServerDraftTarget(CHAT_PERSONAL)]!!.plainText())
     }
 
     @Test
     fun newerEditsAndClearWaitForOlderPatchWithoutLosingTheirIntent() =
         check { service, _, create ->
-            val remote = ServerDraftTarget(CHAT_PERSONAL, true)
+            val remote = ServerDraftTarget(CHAT_PERSONAL)
             val gate = service.gate()
             service.draftWrite = { target, text ->
                 if (text == "older") gate.await()
@@ -219,7 +217,7 @@ class ChatComposerModelTest {
         }
 
     @Test
-    fun workflowPrefillWaitsForTheQueuedReadAndRequiresACurrentAgent() =
+    fun workflowPrefillWaitsForTheQueuedReadAndRequiresAReadyWorkspace() =
         check { service, _, create ->
             val target = ComposerTarget()
             val initial = CompletableDeferred<Unit>()
@@ -240,7 +238,7 @@ class ChatComposerModelTest {
             val model = create(false, identity)
             model.open(target)
             runCurrent()
-            val prefill = async { model.prefillNew("/release-review ", CHAT_AGENT) }
+            val prefill = async { model.prefillNew("/release-review ") }
             runCurrent()
             initial.complete(Unit)
             runCurrent()
@@ -253,8 +251,9 @@ class ChatComposerModelTest {
             advanceTimeBy(500)
             runCurrent()
 
-            service.agentFailure = ApiFailure.Network(IOException("Could not read default agent"))
-            val failed = async { model.prefillNew("/another-workflow ", CHAT_AGENT) }
+            service.readinessFailure =
+                ApiFailure.Network(IOException("Could not check workspace readiness"))
+            val failed = async { model.prefillNew("/another-workflow ") }
             runCurrent()
             assertFalse(failed.await())
             assertEquals("/release-review Current draft", model.uiState.value.entry(target).text)
@@ -294,7 +293,7 @@ class ChatComposerModelTest {
         val personal = ComposerTarget()
         val project = ComposerTarget(projectId = CHAT_PROJECT)
         val model = create(false, identity)
-        service.drafts[ServerDraftTarget(CHAT_AGENT, false)] = plainDraftDocument("From Web")
+        service.drafts[ServerDraftTarget()] = plainDraftDocument("From Web")
         model.open(personal)
         runCurrent()
         assertEquals("From Web", model.uiState.value.entry(project).text)
@@ -304,7 +303,7 @@ class ChatComposerModelTest {
         advanceUntilIdle()
         assertEquals(CHAT_PROJECT, service.creates.single().projectId)
         assertEquals("Same shared draft", service.requests.single().prompt)
-        assertEquals("", service.drafts[ServerDraftTarget(CHAT_AGENT, false)]!!.plainText())
+        assertEquals("", service.drafts[ServerDraftTarget()]!!.plainText())
     }
 
     @Test
@@ -387,14 +386,14 @@ class ChatComposerModelTest {
             advanceUntilIdle()
             assertEquals(
                 "Retry this exact editable input",
-                service.drafts[ServerDraftTarget(CHAT_PERSONAL, true)]!!.plainText(),
+                service.drafts[ServerDraftTarget(CHAT_PERSONAL)]!!.plainText(),
             )
             assertFalse(store.load(identity).journal.drafts[existing.key]!!.dirty)
             assertTrue(service.requests.isEmpty())
         }
 
     @Test
-    fun remainingControllerKeepsConfirmedAgentAndSavesAfterTheReaderRetires() =
+    fun remainingControllerKeepsWorkspaceDraftAndSavesAfterTheReaderRetires() =
         check { service, _, create ->
             val remaining = create(false, identity)
             val retiring = create(false, identity)
@@ -412,38 +411,9 @@ class ChatComposerModelTest {
             assertEquals(ComposerSync.Saved, remaining.uiState.value.sync(target))
             assertEquals(
                 "Shared input survives its fetching window",
-                service.drafts[ServerDraftTarget(CHAT_AGENT, false)]!!.plainText(),
+                service.drafts[ServerDraftTarget()]!!.plainText(),
             )
         }
-
-    @Test
-    fun changedDefaultAgentRetainsOldInputUntilExplicitRestoration() = check { service, _, create ->
-        val model = create(false, identity)
-        val target = ComposerTarget()
-        val gate = service.gate()
-        service.draftRead = { draft ->
-            if (draft.id == CHAT_AGENT) gate.await()
-            plainDraftDocument("")
-        }
-        model.open(target)
-        runCurrent()
-        model.edit(target, "Input for the old default agent")
-        service.agent = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-        model.open(target)
-        runCurrent()
-        model.retryLocal()
-        advanceUntilIdle()
-        assertEquals("", model.uiState.value.entry(target).text)
-        assertEquals(
-            "Input for the old default agent",
-            model.uiState.value.journal!!.retainedDrafts["agent:$CHAT_AGENT"],
-        )
-        assertTrue(service.saves.isEmpty())
-        model.restoreDraft(target, "agent:$CHAT_AGENT")
-        advanceUntilIdle()
-        assertEquals(service.agent, service.saves.single().first.id)
-        assertEquals("Input for the old default agent", service.saves.single().second)
-    }
 
     @Test
     fun olderProjectSendCannotConsumeAnotherNewChatEditorsInput() = check { service, _, create ->
@@ -466,13 +436,11 @@ class ChatComposerModelTest {
         assertEquals("A different new conversation draft", model.uiState.value.entry(personal).text)
         assertEquals(
             "",
-            model.uiState.value
-                .entry(ComposerTarget(service.creates.single().clientThreadId, CHAT_AGENT))
-                .text,
+            model.uiState.value.entry(ComposerTarget(service.creates.single().clientThreadId)).text,
         )
         assertEquals(
             "A different new conversation draft",
-            service.drafts[ServerDraftTarget(CHAT_AGENT, false)]!!.plainText(),
+            service.drafts[ServerDraftTarget()]!!.plainText(),
         )
     }
 
@@ -515,7 +483,7 @@ class ChatComposerModelTest {
             assertEquals("原始 **text** 👋\nsecond line", service.requests.single().prompt)
             gate.complete(Unit)
             runCurrent()
-            val real = ComposerTarget(service.requests.single().threadId, CHAT_AGENT, CHAT_PROJECT)
+            val real = ComposerTarget(service.requests.single().threadId, CHAT_PROJECT)
             assertEquals("Newer input stays editable", second.uiState.value.entry(real).text)
             assertNull(second.uiState.value.entry(real).pending)
             assertEquals(
@@ -739,7 +707,7 @@ class ChatComposerModelTest {
             runCurrent()
             assertEquals(
                 "Typed while navigation catches up",
-                model.uiState.value.entry(ComposerTarget(bId, CHAT_AGENT)).text,
+                model.uiState.value.entry(ComposerTarget(bId)).text,
             )
             model.acknowledge(checkNotNull(bId))
             runCurrent()

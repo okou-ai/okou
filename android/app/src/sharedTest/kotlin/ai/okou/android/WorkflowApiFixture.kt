@@ -8,7 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 
 internal const val WORKFLOW_RELEASE = "a1111111-1111-4111-8111-111111111111"
 internal const val WORKFLOW_SHARED = "a2222222-2222-4222-8222-222222222222"
@@ -48,7 +48,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             "/api/connectors/connected" ->
                 jsonResponse("""{"builtinConnectors":[],"customConnectors":[]}""")
             "/api/workflows" -> {
-                assertEquals("workspace", request.requestUrl?.queryParameter("scope"))
+                assertNull(request.requestUrl?.query)
                 beforeCatalog()
                 jsonResponse("[${release()},${shared()},${feedback()}]")
             }
@@ -77,9 +77,9 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             }
             "/api/onboarding/status" ->
                 jsonResponse(
-                    """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true,"hasDefaultAgent":true,"defaultAgentId":"$CHAT_AGENT","defaultAgentMetadata":null}"""
+                    """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}"""
                 )
-            "/api/agents/$CHAT_AGENT/draft" -> {
+            "/api/chat-drafts/composer" -> {
                 if (request.method == "GET")
                     jsonResponse(plainDraftDocument(previousDraft).toString())
                 else {
@@ -133,7 +133,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         visibility: String = "private",
         manage: Boolean = true,
     ) =
-        """{"id":"$id","agentId":"$CHAT_AGENT","agentName":null,"agentDisplayName":null,"name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"user-a","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
+        """{"id":"$id","agentId":null,"agentName":null,"agentDisplayName":null,"name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"user-a","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
 
     private fun detail(summary: String, instruction: String, automations: String) =
         summary.dropLast(1) +

@@ -68,7 +68,13 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const { threadId, projectId, prompt, model } = body.data;
+  const {
+    threadId,
+    projectId,
+    prompt = "(see message parts)",
+    model,
+    userMessage,
+  } = body.data;
   const eventId = randomUUID();
   const response = await set(
     sendValidatedChatEvent$,
@@ -80,7 +86,10 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
         prompt,
         model,
         clientEventId: eventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        userMessage: userMessage ?? {
+          version: 1,
+          parts: [{ type: "text", text: prompt }],
+        },
         hasTextContent: true,
       },
     },
@@ -138,11 +147,9 @@ const mcpThreadSnapshot$ = command(async ({ get }, signal: AbortSignal) => {
   return {
     status: 200 as const,
     body: {
-      chatThreads: archive.chatThreads.map(
-        ({ id, agentId: _agentId, ...thread }) => {
-          return { ...thread, threadId: id };
-        },
-      ),
+      chatThreads: archive.chatThreads.map(({ id, ...thread }) => {
+        return { ...thread, threadId: id };
+      }),
       latestEventId: snapshot.latestEventId,
       latestSeqId: snapshot.latestSeqId,
     },

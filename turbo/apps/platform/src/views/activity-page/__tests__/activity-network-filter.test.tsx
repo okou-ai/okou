@@ -55,8 +55,7 @@ async function openNetworkActivity() {
     return respond(200, {
       id: RUN_ID,
       sessionId: "session-network-filter",
-      agentId: "c0000000-0000-4000-a000-000000000001",
-      displayName: "Network filter activity",
+
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,

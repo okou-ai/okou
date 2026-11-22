@@ -46,6 +46,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.VoiceMessages]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Send voice messages and transcribe their recordings with model credits.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
     displayName: "Refined message sharing",
@@ -126,13 +132,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
-  },
-  [FeatureSwitchKey.ProjectThreadDeletion]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Delete Project threads",
-    description:
-      "Offer permanent deletion of a Project and its threads after a second confirmation.",
-    enabled: true,
   },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",

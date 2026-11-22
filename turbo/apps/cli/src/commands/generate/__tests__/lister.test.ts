@@ -425,7 +425,7 @@ describe("okou generate lister", () => {
     expect(text).toContain("Built-in command:");
     expect(text).toContain("Built-in presentation generation");
     expect(text).toContain(
-      "Returns authoring instructions for the calling agent.",
+      "Returns authoring instructions for the current Run.",
     );
     expect(text).toContain("Use: okou generate presentation -h");
   });
@@ -440,7 +440,7 @@ describe("okou generate lister", () => {
     expect(text).toContain("Built-in command:");
     expect(text).toContain("Built-in website generation");
     expect(text).toContain(
-      "Returns authoring instructions for the calling agent.",
+      "Returns authoring instructions for the current Run.",
     );
     expect(text).toContain("Use: okou generate website -h");
     expect(text).toContain("Context:");
@@ -478,7 +478,7 @@ describe("okou generate lister", () => {
     expect(text).toContain("Built-in command:");
     expect(text).toContain(commandLabel);
     expect(text).toContain(
-      "Returns authoring instructions for the calling agent.",
+      "Returns authoring instructions for the current Run.",
     );
     expect(text).toContain(`Use: okou generate ${type} -h`);
   });

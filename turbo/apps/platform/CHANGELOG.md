@@ -13,6 +13,94 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1163.0](https://github.com/okou-ai/okou/compare/app-v0.1162.6...app-v0.1163.0) (2026-11-22)
+
+
+### Features
+
+* transcribe ordered voice messages with model credits ([#49901](https://github.com/okou-ai/okou/issues/49901)) ([10fb53e](https://github.com/okou-ai/okou/commit/10fb53e67b9ae25cd3bcb984e8dca394e5682a94))
+
+
+### Bug Fixes
+
+* bound message preparation and rendering in long conversations ([#49882](https://github.com/okou-ai/okou/issues/49882)) ([075a292](https://github.com/okou-ai/okou/commit/075a292be95df156fb4434243b7c4b302956ba1b))
+* **platform:** restore native scrolling for permission and connector flows ([#49896](https://github.com/okou-ai/okou/issues/49896)) ([c12849b](https://github.com/okou-ai/okou/commit/c12849b5ee95b2ce691de781df23517c4d978504))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.99.0
+    * @okouai/core bumped to 8.859.0
+    * @okouai/ui bumped to 1.21.87
+
+## [0.1162.6](https://github.com/okou-ai/okou/compare/app-v0.1162.5...app-v0.1162.6) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.5
+    * @okouai/core bumped to 8.858.10
+    * @okouai/ui bumped to 1.21.86
+
+## [0.1162.5](https://github.com/okou-ai/okou/compare/app-v0.1162.4...app-v0.1162.5) (2026-11-22)
+
+
+### Bug Fixes
+
+* **mobile:** prepare native clients for workspace apis without agent ids ([#49889](https://github.com/okou-ai/okou/issues/49889)) ([acc1180](https://github.com/okou-ai/okou/commit/acc1180b74cc5401511eb40984f43c64db058604))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.4
+    * @okouai/core bumped to 8.858.9
+    * @okouai/ui bumped to 1.21.85
+
+## [0.1162.4](https://github.com/okou-ai/okou/compare/app-v0.1162.3...app-v0.1162.4) (2026-11-21)
+
+
+### Bug Fixes
+
+* **app:** shorten long url labels in chat ([#49870](https://github.com/okou-ai/okou/issues/49870)) ([e67322a](https://github.com/okou-ai/okou/commit/e67322a09416baaad1b15eb0bed206bd4518365d))
+
+
+### Refactoring
+
+* contract legacy chat and run agent storage ([#49868](https://github.com/okou-ai/okou/issues/49868)) ([abbf9f8](https://github.com/okou-ai/okou/commit/abbf9f8e672ac56f0f98583cfb0b536e9225e905))
+* remove project thread deletion feature switch ([#49871](https://github.com/okou-ai/okou/issues/49871)) ([87a5dd0](https://github.com/okou-ai/okou/commit/87a5dd02dd9f35ce5a9fcc6775d63cf11547eaef))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.3
+    * @okouai/core bumped to 8.858.8
+    * @okouai/ui bumped to 1.21.84
+
+## [0.1162.3](https://github.com/okou-ai/okou/compare/app-v0.1162.2...app-v0.1162.3) (2026-11-21)
+
+
+### Refactoring
+
+* **app:** retire legacy agent management and chat action ids ([#49838](https://github.com/okou-ai/okou/issues/49838)) ([c83928a](https://github.com/okou-ai/okou/commit/c83928ad6fc787a648fa6f2a71fbf5d98b3001cc))
+* stage retirement of chat and run agent identity ([#49839](https://github.com/okou-ai/okou/issues/49839)) ([01b34f9](https://github.com/okou-ai/okou/commit/01b34f9b9f1a7f7b117739ad834931fa646a1b8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.2
+    * @okouai/core bumped to 8.858.7
+    * @okouai/ui bumped to 1.21.83
+
 ## [0.1162.2](https://github.com/okou-ai/okou/compare/app-v0.1162.1...app-v0.1162.2) (2026-11-21)
 
 

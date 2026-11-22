@@ -16,19 +16,10 @@ setup() {
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
     require_runner_api_credentials
     runner_e2e_setup_live_test
-
-    RUNNER_AGENT_ID="$(create_runner_agent \
-        "e2e-auto-steer-${TEST_ID}")"
-    set_runner_agent_instructions \
-        "$RUNNER_AGENT_ID" \
-        "Auto steer test instructions."
 }
 
 teardown() {
     runner_e2e_teardown_test
-    if [[ -n "${RUNNER_AGENT_ID:-}" ]]; then
-        delete_runner_agent_for_stage0_teardown "$RUNNER_AGENT_ID"
-    fi
 }
 
 run_auto_steer() {
@@ -40,7 +31,7 @@ run_auto_steer() {
     local successor_run_id successor_output
 
     steer_result="$(runner_chat_steer \
-        "$RUNNER_AGENT_ID" \
+        "" \
         "$initial_prompt" \
         "$steer_prompt" \
         "auto" \
@@ -53,7 +44,7 @@ run_auto_steer() {
         "$run_id" \
         45)" || return 1
     successor_result="$(runner_chat_send_after_completion \
-        "$RUNNER_AGENT_ID" \
+        "" \
         "$thread_id" \
         "$run_id" \
         "Now reply with a different word: $after_complete_prompt" \

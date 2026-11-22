@@ -47,7 +47,6 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
 function mockAccounts(read: () => readonly ConnectorAccountConnection[]) {
   context.mocks.api(
@@ -472,7 +471,7 @@ test("Connect a manual MCP connector from a directed link", async () => {
 
   await setupPage({
     context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${connector.slug}/connect`,
   });
 
   const heading = await screen.findByText("Okou needs DeepWiki to proceed");
@@ -545,7 +544,7 @@ test("Let an MCP server discover authentication from a directed connection", asy
 
   await setupPage({
     context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${connector.slug}/connect`,
   });
 
   await expect(
@@ -611,7 +610,7 @@ test("Reconnect the exact manual custom-connector account", async () => {
 
   await setupPage({
     context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${connector.slug}/connect`,
   });
 
   await screen.findByText("Acme Configured API connected");
@@ -702,7 +701,7 @@ test("Connect a custom OAuth connector from a directed link", async () => {
 
   await setupPage({
     context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${connector.slug}/connect`,
   });
 
   const heading = await screen.findByText("Okou needs Acme OAuth to proceed");
@@ -790,7 +789,7 @@ test("Reconnect the exact custom OAuth account", async () => {
 
   await setupPage({
     context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${connector.slug}/connect`,
   });
 
   await screen.findByText("Acme OAuth Reconnect connected");
@@ -842,7 +841,7 @@ test("Start public OAuth from a directed connection link", async () => {
 
   await setupPage({
     context,
-    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/github/connect`,
   });
 
   await waitFor(() => {
@@ -903,7 +902,7 @@ test("Continue from an existing connector authorization link using the saved acc
   });
   await setupPage({
     context,
-    path: `/connectors/stripe/authorize?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+    path: `/connectors/stripe/authorize?threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
   });
 
   click(
@@ -1035,7 +1034,7 @@ test("Complete OpenID and continue the originating chat", async () => {
 
   await setupPage({
     context,
-    path: `/connectors/steam/connect?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+    path: `/connectors/steam/connect?threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
   });
 
   await waitFor(() => {
@@ -1112,7 +1111,7 @@ test.each(["configuration_incomplete", "configuration_invalid"] as const)(
 
     await setupPage({
       context,
-      path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+      path: `/connectors/github/connect`,
     });
     await expect(
       screen.findByText("Okou needs Public GitHub to proceed"),
@@ -1217,7 +1216,7 @@ test("Reconnect the expired public OAuth account", async () => {
 
   await setupPage({
     context,
-    path: `/connectors/github/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/github/connect`,
   });
 
   await screen.findByText("Okou needs Public GitHub to proceed");
@@ -1316,7 +1315,7 @@ test("Reconnect the exact account and continue the originating chat only after s
   });
   await setupPage({
     context,
-    path: `/connectors/axiom/reconnect/${connectionId}?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+    path: `/connectors/axiom/reconnect/${connectionId}?threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
   });
 
   await waitFor(() => {
@@ -1386,7 +1385,7 @@ test("Connect a manual grant and continue the originating chat", async () => {
   });
   await setupPage({
     context,
-    path: `/connectors/axiom/connect?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+    path: `/connectors/axiom/connect?threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
   });
 
   await waitFor(() => {

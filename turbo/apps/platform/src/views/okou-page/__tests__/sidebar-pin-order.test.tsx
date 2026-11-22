@@ -236,14 +236,10 @@ test("a member pin move survives a legacy agent reassignment", async () => {
   if (!movedThread) {
     throw new Error("Expected the moved thread");
   }
-  const newAgentId = "c7000000-0000-4000-a000-000000000002";
   // The canonical stream has not echoed the optimistic move's event ID.
   // The thread stays in the member sidebar while its pin acknowledgement is pending.
   stream.setEvents([
-    chatListEvent(caseId, 2, "sort_touched", movedThread.id, {
-      agentId: newAgentId,
-      reassignedAgentId: newAgentId,
-    }),
+    chatListEvent(caseId, 2, "sort_touched", movedThread.id, {}),
   ]);
   changeChatThreadList();
   await waitFor(() => {

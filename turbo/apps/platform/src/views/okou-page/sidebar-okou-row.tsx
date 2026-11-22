@@ -2,8 +2,10 @@ import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Edit, HandHeart } from "lucide-react";
 import { cn, getShortcutLabel } from "@okouai/ui";
-import { defaultAgentChatPageActive$ } from "../../signals/agent.ts";
-import { activeRoute$ } from "../../signals/active-route.ts";
+import {
+  activeRoute$,
+  agentChatPageActive$,
+} from "../../signals/active-route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import {
   followForYouFeedOnRef$,
@@ -51,7 +53,7 @@ function RestingShortcutHint({ label }: { label: string | null }) {
 /** New chat leads the conversation list; suggestions have their own entry. */
 export function OkouChatListRow() {
   const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
-  const active = useLastResolved(defaultAgentChatPageActive$) === true;
+  const active = useGet(agentChatPageActive$);
   const { t } = useTranslation();
 
   const newChat = GLOBAL_KEYBOARD_SHORTCUTS.newChat;

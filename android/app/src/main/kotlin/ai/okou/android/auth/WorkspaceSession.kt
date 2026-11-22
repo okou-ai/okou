@@ -174,13 +174,9 @@ class CanonicalWorkspaceSession(
 
     override suspend fun indicators() = api.indicators()
 
-    override suspend fun agents() = api.agents()
-
-    override suspend fun newChatAgent(): String? {
+    override suspend fun newChatReady(): Boolean {
         val status = api.onboardingStatus()
-        return status.defaultAgentId?.takeIf {
-            status.hasOrg && status.hasDefaultAgent && status.onboardingComplete
-        }
+        return status.hasOrg && !status.needsOnboarding
     }
 
     override suspend fun createThread(request: CreateThreadRequest) = api.createThread(request)

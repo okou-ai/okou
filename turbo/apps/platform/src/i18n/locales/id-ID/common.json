@@ -86,7 +86,6 @@
           "title": "Provider sementara tidak tersedia"
         }
       },
-      "fallbackAgent": "Agen",
       "fields": {
         "duration": "Durasi",
         "model": "Model",
@@ -378,7 +377,6 @@
         "openAutomations": "Buka otomatisasi mobile"
       },
       "navigation": {
-        "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
         "settings": "Pengaturan",
@@ -1811,7 +1809,7 @@
       "repair": "Perbaiki",
       "repairRequired": "{{institution}} perlu diperbaiki",
       "revoke": "Cabut",
-      "revokeConfirm": "Cabut akses perbankan Agen ini?",
+      "revokeConfirm": "Cabut akses perbankan untuk ruang kerja ini?",
       "selectAccounts": "Pilih rekening",
       "sevenDays": "7 hari",
       "thirtyDays": "30 hari",
@@ -2277,7 +2275,9 @@
       "agent": "[Agen: {{name}}]",
       "chatThread": "[Thread chat: {{title}}]",
       "file": "[File: {{filename}}]",
-      "template": "[Template: {{title}}]"
+      "template": "[Template: {{title}}]",
+      "voice": "Pesan suara",
+      "voiceClip": "Klip suara {{index}}"
     },
     "newChat": "Chat baru",
     "origins": {
@@ -2786,7 +2786,6 @@
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
       "openBrowser": "Buka browser",
-      "openNamedAgent": "Buka agen {{name}}",
       "openNamedChat": "Buka chat {{title}}",
       "pickEmoji": "Pilih emoji",
       "scrollToBottom": "Gulir ke bawah",
@@ -4799,7 +4798,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
     "deleteProjectOnly": "Delete project only",

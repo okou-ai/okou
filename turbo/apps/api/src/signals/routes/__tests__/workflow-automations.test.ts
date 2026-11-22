@@ -3619,7 +3619,7 @@ describe("okou workflow automations", () => {
     });
   });
 
-  it("preserves Gmail watches after deleting a workflow or a legacy agent", async () => {
+  it("preserves Gmail watches after deleting a workflow or rejecting Agent deletion", async () => {
     const workflowScenario = await setupFixture();
     await connectGmail(
       workflowScenario,
@@ -3670,7 +3670,10 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-    await bdd.deleteAgent(agentScenario.actor, legacyAgent.agentId);
+    await bdd.expectAgentDeleteUnavailable(
+      agentScenario.actor,
+      legacyAgent.agentId,
+    );
     expect(watch.calls).toBe(2);
     expect(stop.calls).toBe(0);
   });
@@ -4401,7 +4404,6 @@ describe("okou workflow automations", () => {
       ).toStrictEqual([
         expect.objectContaining({
           chatThreadId: threadId,
-          agentId: owned.agentId,
           title: "Lazy workflow destination",
           selectedModel: "claude-fable-5-1",
           modelSettings: {},
@@ -4548,7 +4550,10 @@ describe("okou workflow automations", () => {
           [201],
         );
         expect(automation.body.chatThreadId).toBeNull();
-        return await runAutomationNow(automation.body.id);
+        return {
+          ...(await runAutomationNow(automation.body.id)),
+          automationId: automation.body.id,
+        };
       };
       const first = await createAndRun(workflowId);
       const second = await createAndRun(secondWorkflowId);
@@ -4577,6 +4582,17 @@ describe("okou workflow automations", () => {
         await bdd.readOnboardingStatus(member);
         await bdd.completeOnboarding(member);
         await runs.ensurePersonalSubscriptionModel(member);
+        const personal = await bdd.createAgent(member, {
+          visibility: "private",
+        });
+        const visible = await accept(
+          detailClient().get({
+            headers: authHeaders(),
+            params: { workflowId },
+          }),
+          [200],
+        );
+        expect(visible.body.agentId).toBe(personal.agentId);
         const memberRun = await createAndRun(workflowId);
         expect(memberRun.chatThreadId).not.toBe(first.chatThreadId);
         const memberEvents = await readThreadLifecycleEvents();
@@ -4596,6 +4612,15 @@ describe("okou workflow automations", () => {
           ).get({
             headers: authHeaders(),
             params: { id: first.chatThreadId },
+          }),
+          [404],
+        );
+        await wf.demoteWorkflow(owned.actor, workflowId);
+        mocks.clerk.session(member.userId, member.orgId, member.orgRole);
+        await accept(
+          automationsClient().run({
+            headers: authHeaders(),
+            params: { id: memberRun.automationId },
           }),
           [404],
         );

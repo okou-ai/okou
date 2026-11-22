@@ -133,7 +133,7 @@ preview_prepare_step = find_step(
     preview_job, "Prepare standalone app Worker preview"
 )
 build_step = find_step(preview_job, "Build canonical app artifact")
-preview_publish_step = find_step(preview_job, "Publish immutable app assets to R2")
+preview_publish_step = find_step(preview_job, "Publish app artifact and immutable assets to R2")
 preview_deploy_step = find_step(preview_job, "Deploy standalone app Worker preview")
 preview_verify_step = find_step(preview_job, "Verify public app preview ingress")
 preview_deploy_env = preview_deploy_step["env"]
@@ -194,8 +194,7 @@ if preview_publish_step.get("env", {}).get("CANONICAL_ASSETS") != (
     raise RuntimeError("static publication must consume the prepared canonical assets")
 preview_steps = preview_job["steps"]
 if not (
-    preview_steps.index(find_step(preview_job, "Upload canonical app artifact"))
-    < preview_steps.index(preview_prepare_step)
+    preview_steps.index(preview_prepare_step)
     < preview_steps.index(preview_publish_step)
     < preview_steps.index(preview_deploy_step)
     < preview_steps.index(preview_verify_step)
@@ -225,12 +224,47 @@ with tempfile.TemporaryDirectory() as directory:
             "R2_ACCOUNT_ID": "test-account",
             "R2_BUCKET_NAME": "test-bucket",
             "CANONICAL_ASSETS": str(assets),
+            "ARTIFACT_EXISTS": "true",
         },
         capture_output=True,
         text=True,
     )
     assert result.returncode != 0, result.stdout
     assert "storage publication failed" in result.stderr, result.stderr
+
+# Both fresh-build writers must start before either completes. Exercise the
+# workflow shell with independent failures and rendezvous at both boundaries.
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    for side, script in [
+        ("archive", "artifacts/upload-okou-app-artifact.sh"),
+        ("assets", "release/publish-okou-app-assets.sh"),
+    ]:
+        stub = root / ".github/scripts" / script
+        stub.parent.mkdir(parents=True, exist_ok=True)
+        peer = "assets" if side == "archive" else "archive"
+        stub.write_text(f"""
+touch {side}.started
+for i in {{1..100}}; do
+  [[ -f {peer}.started ]] && break
+  sleep 0.02
+done
+[[ -f {peer}.started ]] || exit 3
+touch {side}.finished
+[[ "$FAIL" != "{side}" ]]
+""")
+    for fail in ("", "archive", "assets"):
+        for marker in [*root.glob("*.started"), *root.glob("*.finished")]:
+            marker.unlink()
+        result = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", preview_publish_step["run"]],
+            cwd=root,
+            env={**os.environ, "ARTIFACT_EXISTS": "false", "R2_ACCOUNT_ID": "test",
+                 "R2_BUCKET_NAME": "test", "CANONICAL_ASSETS": "dist/assets", "FAIL": fail},
+            timeout=10,
+        )
+        assert (result.returncode == 0) == (fail == ""), fail
+        assert all((root / f"{side}.finished").exists() for side in ("archive", "assets"))
 
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)

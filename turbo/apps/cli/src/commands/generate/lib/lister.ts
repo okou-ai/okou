@@ -45,37 +45,37 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   presentation: {
     label: "Built-in presentation generation",
     command: "okou generate presentation -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   report: {
     label: "Built-in report generation",
     command: "okou generate report -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   "docs-design": {
     label: "Built-in docs design generation",
     command: "okou generate docs-design -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   poster: {
     label: "Built-in poster generation",
     command: "okou generate poster -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   "dashboard-design": {
     label: "Built-in dashboard design generation",
     command: "okou generate dashboard-design -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   "mobile-app-design": {
     label: "Built-in mobile app design generation",
     command: "okou generate mobile-app-design -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   website: {
     label: "Built-in website generation",
     command: "okou generate website -h",
-    description: "Returns authoring instructions for the calling agent.",
+    description: "Returns authoring instructions for the current Run.",
   },
   sprite: {
     label: "Built-in sprite asset generation",

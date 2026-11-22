@@ -1,6 +1,5 @@
 package ai.okou.android.workflows
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.CanonicalOptional
@@ -122,7 +121,7 @@ class WorkflowModelTest {
         val summary =
             WorkflowSummary(
                 id = "a1111111-1111-4111-8111-111111111111",
-                agentId = CHAT_AGENT,
+                agentId = null,
                 agentName = null,
                 agentDisplayName = null,
                 name = "release-review",

@@ -1,6 +1,6 @@
 import { CONNECTOR_PERMISSION_PATHS } from "@okouai/core/integration-routes";
 import {
-  permissionActionOwner,
+  memberPermissionOwner,
   type PermissionActionOwner,
 } from "./permission-action-owner.ts";
 import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
@@ -35,10 +35,7 @@ export interface PermissionActionDescriptor {
 export function permissionActionResourceKey(
   descriptor: PermissionActionDescriptor,
 ): string {
-  const path =
-    descriptor.owner.kind === "agent"
-      ? `/agents/${encodeURIComponent(descriptor.owner.agentId)}/permissions`
-      : CONNECTOR_PERMISSION_PATHS.single;
+  const path = CONNECTOR_PERMISSION_PATHS.single;
   return descriptor.search ? `${path}?${descriptor.search}` : path;
 }
 
@@ -55,8 +52,7 @@ export function parsePermissionActionUrl(
     return { status: "unrelated" };
   }
 
-  const legacy = url.pathname.match(/^\/agents\/([^/]+)\/permissions$/u);
-  if (!legacy && url.pathname !== CONNECTOR_PERMISSION_PATHS.single) {
+  if (url.pathname !== CONNECTOR_PERMISSION_PATHS.single) {
     return { status: "unrelated" };
   }
   // Historical permission links may use ref from before CLI 9.270.1.
@@ -75,7 +71,7 @@ export function parsePermissionActionUrl(
     ? chatActionCallbackFromUrl(url, context)
     : null;
 
-  const owner = context && permissionActionOwner(url, legacy?.[1], context);
+  const owner = context && memberPermissionOwner(url.searchParams);
   if (
     !owner ||
     !connectorSlug ||

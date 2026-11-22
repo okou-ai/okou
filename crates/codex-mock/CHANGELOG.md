@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.92](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.91...codex-mock-v0.12.92) (2026-11-22)
+
+
+### Refactoring
+
+* **codex-mock:** share terminal turn notification construction ([#49903](https://github.com/okou-ai/okou/issues/49903)) ([e14aa4d](https://github.com/okou-ai/okou/commit/e14aa4d6b51ad8b3548e073ee9ee0e0cfb326a7e))
+
+## [0.12.91](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.90...codex-mock-v0.12.91) (2026-11-21)
+
+
+### Refactoring
+
+* **codex-mock:** bind item notifications to their timestamp fields ([#49873](https://github.com/okou-ai/okou/issues/49873)) ([3ca3ade](https://github.com/okou-ai/okou/commit/3ca3adef7bcf246ab1e5e0576a81c36fc533bb31))
+
 ## [0.12.90](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.89...codex-mock-v0.12.90) (2026-11-21)
 
 

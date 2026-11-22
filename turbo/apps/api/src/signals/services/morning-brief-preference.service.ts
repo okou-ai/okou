@@ -97,7 +97,6 @@ const loadUnavailableReason$ = command(
   async (
     { set },
     args: MorningBriefPreferenceArgs,
-    installationAgentId: string | undefined,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResponse["unavailableReason"]> => {
     const owner = morningBriefOwner(args);
@@ -110,9 +109,7 @@ const loadUnavailableReason$ = command(
       return "missing-timezone";
     }
 
-    const agentId =
-      installationAgentId ??
-      (await set(loadMorningBriefDefaultAgentId$, owner, signal));
+    const agentId = await set(loadMorningBriefDefaultAgentId$, owner, signal);
     if (agentId === null) {
       return "missing-default-agent";
     }
@@ -125,15 +122,9 @@ const loadPendingPreference$ = command(
     { set },
     args: MorningBriefPreferenceArgs,
     enrollment: typeof morningBriefEnrollments.$inferSelect | undefined,
-    installationAgentId: string | undefined,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    const unavailableReason = await set(
-      loadUnavailableReason$,
-      args,
-      installationAgentId,
-      signal,
-    );
+    const unavailableReason = await set(loadUnavailableReason$, args, signal);
     return {
       kind: "ok",
       preference: {
@@ -167,23 +158,11 @@ const projectInstalledPreference$ = command(
     MorningBriefPreferenceResult & { readonly workflowId?: string }
   > => {
     if (state.kind === "absent") {
-      return await set(
-        loadPendingPreference$,
-        args,
-        state.enrollment,
-        undefined,
-        signal,
-      );
+      return await set(loadPendingPreference$, args, state.enrollment, signal);
     }
     if (state.kind === "pending") {
       return state.enrollment !== undefined
-        ? await set(
-            loadPendingPreference$,
-            args,
-            state.enrollment,
-            state.installation.agentId,
-            signal,
-          )
+        ? await set(loadPendingPreference$, args, state.enrollment, signal)
         : conflict(
             "MORNING_BRIEF_STATE_CONFLICT",
             "Morning Brief installation is not ready. Retry after installation completes.",
@@ -289,12 +268,7 @@ const createMorningBriefFromPreference$ = command(
     if (!args.enabled) {
       return await set(loadInstalledPreference$, args, signal);
     }
-    const unavailableReason = await set(
-      loadUnavailableReason$,
-      args,
-      undefined,
-      signal,
-    );
+    const unavailableReason = await set(loadUnavailableReason$, args, signal);
     signal.throwIfAborted();
     if (unavailableReason !== null) {
       return await set(loadInstalledPreference$, args, signal);
@@ -321,7 +295,6 @@ const createMorningBriefFromPreference$ = command(
       {
         orgId: args.orgId,
         member: args.member,
-        agentId,
         definitionName,
         blueprints: [
           {

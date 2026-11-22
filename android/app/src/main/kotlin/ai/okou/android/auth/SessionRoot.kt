@@ -7,7 +7,6 @@ import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.SettingsConfirmation
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
-import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsScreen
 import ai.okou.android.SettingsSection
@@ -131,11 +130,12 @@ internal fun SessionRoot(
                                     MemberPreferencesSettings(ready.preferences)
                                 },
                                 workspace = { WorkspaceSettings(state, switchWorkspace) },
+                                conversation = {
+                                    InstructionsSetting(instructionsOpen, openInstructions)
+                                },
                                 account = {
                                     AccountSettings(
                                         account?.takeIf { it.userId == ready.identity.userId },
-                                        instructionsOpen,
-                                        openInstructions,
                                         signOut,
                                     )
                                 },
@@ -323,26 +323,25 @@ private fun OkouAuthLogo() {
 @Composable
 private fun WorkspaceSettings(state: SessionUiState, chooseWorkspace: (String) -> Unit) {
     val organization = checkNotNull(state.ready).organization
-    SettingsSection(stringResource(R.string.auth_workspace)) {
-        SettingsGroup {
-            SettingsPickerRow(
-                organization.name,
-                leading = { WorkspaceLogo(organization.id, Modifier.size(20.dp)) },
-                value = stringResource(R.string.settings_switch),
-            ) { dismiss ->
+    SettingsGroup {
+        SettingsTrigger(
+            content = { dismiss ->
                 WorkspaceChooser(organization.id, state.memberships, chooseWorkspace, dismiss)
             }
+        ) { modifier, open ->
+            SettingsRow(
+                organization.name,
+                leading = { WorkspaceLogo(organization.id, Modifier.size(40.dp)) },
+                modifier = modifier,
+                supportingText = stringResource(R.string.auth_workspace),
+                onClick = open,
+            )
         }
     }
 }
 
 @Composable
-private fun AccountSettings(
-    account: NativeAccount?,
-    instructionsOpen: Boolean,
-    openInstructions: () -> Unit,
-    signOut: () -> Unit,
-) {
+private fun InstructionsSetting(instructionsOpen: Boolean, openInstructions: () -> Unit) {
     val instructionsFocus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     var restoreFocus by rememberSettingsFlag()
@@ -352,26 +351,26 @@ private fun AccountSettings(
             instructionsFocus.requestFocus()
         }
     }
+    SettingsRow(
+        stringResource(R.string.instructions_title),
+        leading = { SettingsIcon(R.drawable.ic_edit) },
+        modifier =
+            Modifier.focusRequester(instructionsFocus).onFocusChanged { focused = it.isFocused },
+        onClick = {
+            restoreFocus = focused
+            openInstructions()
+        },
+    )
+}
+
+@Composable
+private fun AccountSettings(account: NativeAccount?, signOut: () -> Unit) {
     SettingsSection(stringResource(R.string.settings_account)) {
         SettingsGroup {
             if (account != null) {
                 SettingsRow(account.email, leading = { SettingsIcon(R.drawable.ic_account_circle) })
                 HorizontalDivider()
             }
-            SettingsRow(
-                stringResource(R.string.instructions_title),
-                leading = { SettingsIcon(R.drawable.ic_settings) },
-                modifier =
-                    Modifier.focusRequester(instructionsFocus).onFocusChanged {
-                        focused = it.isFocused
-                    },
-                value = stringResource(R.string.settings_view),
-                onClick = {
-                    restoreFocus = focused
-                    openInstructions()
-                },
-            )
-            HorizontalDivider()
             SettingsTrigger(
                 content = { dismiss ->
                     SettingsConfirmation(
