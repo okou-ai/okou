@@ -582,7 +582,7 @@ private fun ConnectorAccountSheet(
     } else if (defaultEnabled != null) {
         Row(
             Modifier.fillMaxWidth()
-                .heightIn(min = 52.dp)
+                .heightIn(min = 56.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .toggleable(
                     defaultEnabled,

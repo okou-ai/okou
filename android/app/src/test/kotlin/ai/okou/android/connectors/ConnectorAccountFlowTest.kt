@@ -8,6 +8,7 @@ import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -43,7 +45,7 @@ class ConnectorAccountFlowTest {
     fun changingTheDefaultSwitchUpdatesTheAccountRow() = withCalendar { _, _ ->
         compose.onNodeWithText("工作日历").performClick()
         val toggleLabel = "Enable by default"
-        compose.onNodeWithText(toggleLabel).assertIsOn().performClick()
+        compose.onNodeWithText(toggleLabel).assertHeightIsAtLeast(56.dp).assertIsOn().performClick()
         compose.waitUntilAtLeastOneExists(hasText(toggleLabel) and isOff(), 10_000)
         compose
             .onNode(
