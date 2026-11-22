@@ -48,6 +48,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -59,6 +61,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -77,6 +80,9 @@ internal class ConversationFindVisit(
     private val messages: List<HistoryMessage>,
     private val rows: List<HistoryEvent>,
 ) {
+    val hasLoadedMessages: Boolean
+        get() = messages.isNotEmpty()
+
     val position = LazyListState()
     val input = TextFieldState()
     var index by mutableStateOf<List<FindMessage>?>(null)
@@ -400,31 +406,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                                 ),
                                 style = titleStyle,
                             )
-                            val excerptStart = result.passage?.start ?: 0
-                            val excerptEnd = result.passage?.end ?: message.text.length
-                            val start = (result.match - 24).coerceAtLeast(excerptStart)
-                            val end = result.match + keyword.length
-                            val endOfSnippet = (end + 160).coerceAtMost(excerptEnd)
-                            Text(
-                                buildAnnotatedString {
-                                    if (start > excerptStart) append("…")
-                                    append(message.text, start, result.match)
-                                    withStyle(
-                                        SpanStyle(
-                                            color = colors.onSurface,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    ) {
-                                        append(message.text, result.match, end)
-                                    }
-                                    append(message.text, end, endOfSnippet)
-                                    if (endOfSnippet < excerptEnd) append("…")
-                                },
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                style = summaryStyle,
-                                color = colors.onSurfaceVariant,
-                            )
+                            FindExcerpt(result, keyword.length, summaryStyle)
                         }
                     }
                     if (restoreFocus) LaunchedEffect(message.id) { resultFocus.requestFocus() }
@@ -433,3 +415,52 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
         }
     }
 }
+
+@Composable
+private fun FindExcerpt(result: FindResult, matchLength: Int, style: TextStyle) {
+    val colors = MaterialTheme.colorScheme
+    val width = LocalConfiguration.current.screenWidthDp
+    val density = LocalDensity.current
+    var startAtMatch by remember(result, matchLength, width, density) { mutableStateOf(false) }
+    val text = result.message.text
+    val excerptStart = result.passage?.start ?: 0
+    val excerptEnd = result.passage?.end ?: text.length
+    val start =
+        if (startAtMatch) result.match
+        else text.codePointBoundary((result.match - 24).coerceAtLeast(excerptStart))
+    val end = result.match + matchLength
+    val endOfSnippet = text.codePointBoundary(end + minOf(160, excerptEnd - end))
+    val ellipsis = !startAtMatch && start > excerptStart
+    val snippet = buildAnnotatedString {
+        if (ellipsis) append("…")
+        append(text, start, result.match)
+        withStyle(SpanStyle(color = colors.onSurface, fontWeight = FontWeight.Bold)) {
+            append(text, result.match, end)
+        }
+        append(text, end, endOfSnippet)
+        if (endOfSnippet < excerptEnd) append("…")
+    }
+    val matchEndInSnippet = end - start + if (ellipsis) 1 else 0
+    Text(
+        snippet,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        style = style,
+        color = colors.onSurfaceVariant,
+        onTextLayout = { layout ->
+            if (
+                !startAtMatch &&
+                    start < result.match &&
+                    layout.lineCount > 0 &&
+                    layout.getLineEnd(layout.lineCount - 1, visibleEnd = true) < matchEndInSnippet
+            ) {
+                startAtMatch = true
+            }
+        },
+    )
+}
+
+private fun String.codePointBoundary(offset: Int): Int =
+    if (offset in 1 until length && Character.isSurrogatePair(this[offset - 1], this[offset]))
+        offset - 1
+    else offset
