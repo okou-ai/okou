@@ -975,7 +975,7 @@ test("A Project page moves down into its chats when unfolded and past them when 
   const activeEntries = () => {
     return [...rail.querySelectorAll('nav a[aria-current="page"]')];
   };
-  expect(activeEntries()).toEqual([chatEntry]);
+  expect(activeEntries()).toStrictEqual([chatEntry]);
   await waitFor(() => {
     expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
   });
@@ -998,7 +998,7 @@ test("A Project page moves down into its chats when unfolded and past them when 
     expect(location.pathname).toBe(`/chats/${a1.id}`);
   });
   expect(threadLink(a1.id)).toHaveAttribute("aria-current", "page");
-  expect(activeEntries()).toEqual([chatEntry]);
+  expect(activeEntries()).toStrictEqual([chatEntry]);
 });
 function pressProjectFold(direction: "ArrowLeft" | "ArrowRight") {
   return userEvent
