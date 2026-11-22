@@ -355,7 +355,7 @@ private fun MessageBody(
         else typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 28.sp, letterSpacing = 0.sp)
     SelectionContainer {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (block in message.blocks) {
+            for ((index, block) in message.blocks.withIndex()) {
                 when (block.kind) {
                     HistoryBlockKind.Unsupported ->
                         ConversationMeta(stringResource(R.string.history_unsupported))
@@ -364,7 +364,7 @@ private fun MessageBody(
                     else -> Unit
                 }
                 if (block.kind == HistoryBlockKind.Text && message.role == HistoryRole.Assistant)
-                    HistoryMarkdown(block.text, style, artifactActions, message.id)
+                    HistoryMarkdown(block.text, style, artifactActions, "${message.id}/$index")
                 else Text(block.text, style = style, color = MaterialTheme.colorScheme.onSurface)
             }
         }

@@ -341,16 +341,23 @@ private val hostedArtifactHost =
     Regex("[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.(?:okou\\.app|sites\\.vm[07]\\.io)")
 
 internal fun messageArtifactLink(value: String): String? {
-    if (artifactReferencePath.matches(value)) return value
+    val path = value.substringBefore('#')
+    if (artifactReferencePath.matches(path)) return path
     val url = artifactHttpsUrl(value) ?: return null
     if (
         messageArtifactOrigins.any { it.host == url.host && it.port == url.port } &&
+            url.query == null &&
             artifactReferencePath.matches(url.encodedPath)
     )
         return url.encodedPath
     return url.takeIf {
             it.port == 443 && it.host != "files.sites.vm7.io" && hostedArtifactHost.matches(it.host)
         }
+        ?.newBuilder()
+        ?.encodedPath("/")
+        ?.query(null)
+        ?.fragment(null)
+        ?.build()
         ?.toString()
 }
 

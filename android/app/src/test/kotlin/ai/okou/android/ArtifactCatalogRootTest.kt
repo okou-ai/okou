@@ -8,6 +8,7 @@ import android.os.Looper
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -245,6 +246,7 @@ class ArtifactCatalogRootTest {
         assertTrue(fixture.catalogScopes.isEmpty())
         compose.onNodeWithContentDescription("Back").performClick()
         awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
     }
 
     @Test
