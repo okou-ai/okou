@@ -374,3 +374,356 @@ Each row below links the individual frozen registration and rewritten source. In
 - Observed Moving Other into the selected tab’s window starts a held membership check and disables input. Example stays selected. After release, Other appears unselected, remote input is enabled and Address remains at https://example.com.
 - Write-after-GWT comparison. The proof is held on the original target while Other changes windows. The two tab-selection states are checked after the fence.
 - Vitest `browser-viewer-interaction-038 A tab admitted from a different window leaves Example selected`.
+
+## Batch 72 evidence
+
+Opening branch `978e7afc8158cc54e4d9b4781b47790a53e4bfd9`; synchronized main `61df0086f9d6672a46ceaf8ec4eaaf70009a7fdf`. The domain and viewer files retain their complete frozen BDD. 29 nominees and substitute browser-viewer-interaction-048 earned first acceptance. Viewer 002/003/015/021/028/031/038 passed as whole-file regressions. Historical 1,370 → 1,400/2,681; current 1,353 → 1,383/2,681. The 233 open files now hold 520 covered selections out of 1,813. Closed files remain 252. Withdrawal cohort 420 historical and 413 current out of 506. Outside it 980 historical and 970 current out of 2,175. Original withdrawal dispositions (86), historical losses (17) and independent upstream selections (68) retain their owners.
+
+[Full GWT/expanded-row crosswalk](https://app.okou.ai/artifacts/8pk1flcx37.tsv) · [Restored mutation diffs, failed assertions and gap probes](https://app.okou.ai/artifacts/tdblqkx1cm.md)
+
+### Batch 72 verification
+
+Real Router, user actions, native browser geometry, history, MSW and local CDP. The page uses its normal worker bootstrap and page/worker lifetimes. Source guidance: [repository guidelines](../../../AGENTS.md), [testing](../../../docs/testing.md), [App testing](../../../docs/app/app-testing.md), [async ownership](../../../docs/app/platform-ccstate.md), [geometry events](../../../docs/app/resize-observer.md). The two-stage remote-close fixture holds the effect itself; a held receipt elsewhere can mean the native effect has already occurred. The address busy state acknowledges navigation handling. Window-close diagnostics are checked at the real Sentry boundary. The active number of sockets in 011 verifies closure. Neither measurement substitutes for an application request count.
+
+Post-sync targeted 30/30; whole files 37/37; shuffle seed 72043: 170 passing rows across 20 files, including 140 existing rows. Platform production, test and build-config types; applicable ESLint; oxlint and type-aware oxlint; changed-file formatting and repository size checks passed. No App row came from the Android-only main sync.
+
+### Batch 72 historical comparison
+
+After authorship, normalized four-line windows from the changed portions of the tests and external fixture were compared across 1,793 unique historical blobs and 757 paths. The search included test files, renamed paths and helper/fixture files. 12 windows matched. The matches comprise shared imports/Router setup, the release–visible failure–wait sequence, and existing CDP native receipt-key classification extracted from the socket callback so it can also hold a specific target attachment. The failure helper identifies the actual created target, moves it to a distinct window and waits for the restored original recipient. No earlier scenario body was placed in a helper. The CDP fixture adds an external document-navigation entry and an independent control over the arrival and completion of a close for a particular target.
+
+[before-zero-page-rename](https://github.com/okou-ai/okou/tree/8924f63dade934b3caa6d5629013447a6c70fc3c) · [after-zero-page-rename](https://github.com/okou-ai/okou/tree/0f0ded9b208cbeb41998c04f43db70ac1cf11d22) · [freeze](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32) · [before-first-withdrawal](https://github.com/okou-ai/okou/tree/5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b) · [restored](https://github.com/okou-ai/okou/tree/b666cd050364ef31821b71fee4e14802a9e8476b) · [before-second-withdrawal](https://github.com/okou-ai/okou/tree/a445586e0483bb7e2440e60200a8deed30aa3df9) · [opening](https://github.com/okou-ai/okou/tree/978e7afc8158cc54e4d9b4781b47790a53e4bfd9) · [upstream](https://github.com/okou-ai/okou/tree/61df0086f9d6672a46ceaf8ec4eaaf70009a7fdf)
+
+### Batch 72 evidence gaps
+
+- **browser-viewer-interaction-010.** With the creation receipt held, the identified target moved to window 42. The action-failed message appeared and Example regained usable input. Submitting retained.example/path kept the focused draft and left Example at https://example.com. After leaving the field (probed by Tab and separately by clicking remote input), replacing it with after-failure.example/path and pressing Enter did not navigate Example to http://after-failure.example/path. The frozen implementation also reset the refocused editor with Escape, an additional prerequisite absent from 010. The distinct Escape contract is covered by 011.
+- Browser-session-page 010/014/024/025/034/035/036 retain their batch 71 probes. Chat-activity-summary-002 retains its late-response completion gap. The earlier address, shortcut, double-tab and billing gaps remain under their original IDs.
+
+### browser-domain-initialization-001
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L6) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L133) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L67)
+
+- Given The viewer is connecting its Inspector and Page domains, with the Inspector response arriving first.
+- When The Inspector response arrives while the Page response is still pending, then the Page response arrives.
+- Then Input stays disabled until both responses arrive, then becomes enabled. The user can enter text that reaches the remote browser.
+- Observed Both external domain requests reach the browser. After Inspector replies, the disabled control cannot send x. Only after Page replies can p reach Report; neither Other nor the foreign tab receives it.
+- Write-after-GWT review: freeze L133, before-first-withdrawal original registration absent, before-second-withdrawal absent, upstream L133. The largest same-registration token similarity was 0.175. Cross-file sequences and helper matches are described above.
+- Vitest `browser-domain-initialization-001 Input waits for Page after Inspector succeeds`.
+
+### browser-domain-initialization-003
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L22) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L150) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L77)
+
+- Given The Inspector domain enable request fails while the Page response is held pending.
+- When The Inspector failure arrives, followed by the late Page response.
+- Then The browser view is unavailable, the original page attachment is retired, input remains disabled, and no input is sent.
+- Observed The held Inspector failure produces the unavailable message and retires the actual original attachment at the remote boundary. A late Page reply followed by a typing attempt leaves input disabled and the browser input stream empty.
+- Write-after-GWT review: freeze L150, before-first-withdrawal original registration absent, before-second-withdrawal absent, upstream L150. The largest same-registration token similarity was 0.448. Cross-file sequences and helper matches are described above.
+- Vitest `browser-domain-initialization-003 Inspector failure retires the attachment before the late Page reply`.
+
+### browser-domain-initialization-005
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L173) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L107)
+
+- Given The initial tab is selected while the Inspector domain enable request is pending.
+- When The user selects the “Other” tab before that request responds.
+- Then The “Other” tab remains selected and usable after the late response; the original attachment is retired, the successor remains attached, and entered text reaches the remote browser.
+- Observed Clicking Other while Inspector is pending retires the original attachment. Other remains selected with its own live attachment, and only Other receives s after the late Inspector reply.
+- Write-after-GWT review: freeze L173, before-first-withdrawal original registration absent, before-second-withdrawal absent, upstream L173. The largest same-registration token similarity was 0.256. Cross-file sequences and helper matches are described above.
+- Vitest `browser-domain-initialization-005 Selecting Other retires the pending attachment and routes text to Other`.
+
+### browser-domain-initialization-007
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L54) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L192) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L118)
+
+- Given The first owned tab is selected while Inspector enable is pending, and another owned tab survives.
+- When The first target is destroyed before the pending response arrives.
+- Then The surviving owned tab is selected and usable after the late response. The destroyed tab is absent and entered text reaches the remote browser.
+- Observed Destroying the original target while Inspector is pending selects the surviving owned Other. After the late reply, s reaches only Other on the still-attached successor, and Report is absent.
+- Write-after-GWT review: freeze L192, before-first-withdrawal original registration absent, before-second-withdrawal absent, upstream L192. The largest same-registration token similarity was 0.216. Cross-file sequences and helper matches are described above.
+- Vitest `browser-domain-initialization-007 Destroying Report during setup leaves Other selected and usable`.
+
+### browser-domain-initialization-009
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L70) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L212) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L125)
+
+- Given Inspector enable is pending for a viewer with two owned tabs and a sibling tab in another window.
+- When The owned window is removed, then the pending response arrives.
+- Then The viewer reports “Browser disconnected”; input stays disabled, the sibling tab is not exposed, and no input is sent.
+- Observed An owned-window removal event produces Browser disconnected. Delivering the outstanding Inspector reply and attempting text input leaves input disabled, the foreign tab absent and the external input stream empty.
+- Write-after-GWT review: freeze L212, before-first-withdrawal original registration absent, before-second-withdrawal absent, upstream L212. The largest same-registration token similarity was 0.288. Cross-file sequences and helper matches are described above.
+- Vitest `browser-domain-initialization-009 Window removal blocks input and isolates the sibling after a late enable`.
+
+### browser-domain-initialization-011
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L233) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L137)
+
+- Given Inspector enable is pending while the viewer is mounted.
+- When The viewer is unmounted before the response arrives.
+- Then All connections close despite the late response, and no remote-browser input remains in the document.
+- Observed Browser Back leaves the viewer through the real Router. At the home route all browser sockets have closed and the remote input has unmounted. Delivery of the old reply to that closed boundary leaves both conditions intact.
+- Write-after-GWT review: freeze L233, before-first-withdrawal original registration absent, before-second-withdrawal absent, upstream L233. The largest same-registration token similarity was 0.331. Cross-file sequences and helper matches are described above.
+- Vitest `browser-domain-initialization-011 Leaving the viewer closes its transport before a late Inspector reply`.
+
+### browser-domain-initialization-013
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L251) · [Passing registration](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L153)
+
+- Given Inspector enable is pending in the current connection mode.
+- When The user switches to “Separate image connection” before the response arrives.
+- Then The new session remains attached after the old response arrives, input is usable, and entered text reaches the remote browser.
+- Observed Switching to Separate image connection during Inspector enable produces a distinct active attachment. The old reply leaves that successor attached and usable, and z reaches the correct remote target.
+- Write-after-GWT review: freeze L251, before-first-withdrawal L238, before-second-withdrawal absent, upstream L251. The largest same-registration token similarity was 0.376. Cross-file sequences and helper matches are described above.
+- Vitest `browser-domain-initialization-013 A transport change retains its new session after the old enable replies`.
+
+### browser-viewer-interaction-005
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L271) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L296)
+
+- Given The user has replaced the address with discarded.example/path.
+- When The user presses Escape, then the document navigates to https://background.example/ while the address remains focused.
+- Then Escape restores and selects the full original address, https://example.com. The document update does not replace it while focused; after the user blurs the field, it shows https://background.example/.
+- Observed Escape selects offsets 0 through 19 of the restored URL. The selected tab displays the background hostname while Address still has focus and the old value. Clicking the remote input reveals the background URL.
+- Write-after-GWT review: freeze L271, before-first-withdrawal L200, before-second-withdrawal absent, upstream L271. The largest same-registration token similarity was 0.420. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-005 Escape selects the restored address through a background navigation`.
+
+### browser-viewer-interaction-008
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L62) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L322) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L313)
+
+- Given A new-tab creation is pending, and the user has focused the blank address editor without changing its text.
+- When The creation fails after the new target moves to another window.
+- Then The existing page is restored without navigation, while the blank address remains focused. The browser input is usable, and the user can subsequently navigate to http://after-failure.example/path.
+- Observed The native creation receipt is held. Clicking the empty editor preserves focus and empty text through the actual failure alert and restoration of usable Example. A subsequent edit reaches the main target at http://after-failure.example/path.
+- Write-after-GWT review: freeze L322, before-first-withdrawal L251, before-second-withdrawal absent, upstream L322. The largest same-registration token similarity was 0.132. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-008 The focused empty editor survives a moved creation`.
+
+### browser-viewer-interaction-011
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L385) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L324)
+
+- Given A new-tab creation is pending from a page at https://example.com.
+- When The user enters retained.example/path, the creation fails after its target moves to another window, and the user submits the retained draft.
+- Then The draft remains focused and visible, and the restored page stays at https://example.com. Escape restores the page address; a subsequent chosen.example/path submission navigates to http://chosen.example/path.
+- Observed The retained draft is submitted after the moved-target failure alert. It stays focused and Example keeps its initial URL. Escape restores the original value and the replacement submission reaches main at http://chosen.example/path.
+- Write-after-GWT review: freeze L385, before-first-withdrawal L316, before-second-withdrawal absent, upstream L385. The largest same-registration token similarity was 0.336. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-011 Escape from a failed creation lets the user address Example again`.
+
+### browser-viewer-interaction-012
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L94) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L419) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L342)
+
+- Given The window has no open tabs, and a new-tab creation is pending.
+- When The user enters failed-intent.example/path, the creation fails, and a different tab arrives in the window.
+- Then The arriving https://other.example.com tab is selected, but the failed draft remains visible and cannot navigate that tab. Escape restores the arriving tab's address.
+- Observed No tabs open precedes the failed creation. The failure alert completes before the Other target enters. It becomes selected and usable while its external URL survives the refused submission. Escape shows the URL of Other.
+- Write-after-GWT review: freeze L419, before-first-withdrawal L350, before-second-withdrawal absent, upstream L419. The largest same-registration token similarity was 0.388. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-012 A failed draft cannot navigate the first subsequently admitted tab`.
+
+### browser-viewer-interaction-013
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L453) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L370)
+
+- Given A viewer is open with an existing page in window 0 and a new-tab creation can be delayed.
+- When The user creates a tab, enters draft.example/path and submits before creation is ready, waits for the blank tab's first image, then closes that tab.
+- Then The new tab stays blank at about:blank in window 0; early submission reports that the browser is not ready and does not discard the draft. Once ready, the draft remains visible. Closing the blank tab selects the existing Example tab, and no created target remains.
+- Observed In window 0 the not-ready message appears before the held create receipt is delivered. After the held first image is released, the draft is intact, the same target is blank in window 0, and closing it restores Example and the original two-target inventory.
+- Write-after-GWT review: freeze L453, before-first-withdrawal L384, before-second-withdrawal absent, upstream L453. The largest same-registration token similarity was 0.262. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-013 An early address stays with the new blank in window 0`.
+
+### browser-viewer-interaction-014
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L453) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L370)
+
+- Given A viewer is open with an existing page in window 1 and a new-tab creation can be delayed.
+- When The user creates a tab, enters draft.example/path and submits before creation is ready, waits for the blank tab's first image, then closes that tab.
+- Then The new tab stays blank at about:blank in window 1; early submission reports that the browser is not ready and does not discard the draft. Once ready, the draft remains visible. Closing the blank tab selects the existing Other tab, and no created target remains.
+- Observed In window 1, Other is the original page. The early submit displays the readiness notice, the draft survives its blank target’s first image, and closing it restores Other. The remote inventory contains neither an extra target nor a changed Example.
+- Write-after-GWT review: freeze L453, before-first-withdrawal L384, before-second-withdrawal absent, upstream L453. The largest same-registration token similarity was 0.262. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-014 An early address stays with the new blank in window 1`.
+
+### browser-viewer-interaction-017
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L569) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L597)
+
+- Given The Example page is the established tab in window 0, and a separate new-tab creation is pending.
+- When The user closes Example, then closes the confirmed blank replacement before the pending creation finishes.
+- Then The confirmed replacement keeps the window usable without relying on the pending creation. When that creation completes, its target is removed, leaving one usable blank tab with an empty address.
+- Observed The independent creation receipt remains held while Example closes. The confirmed replacement is identified by its actual target ID and closed by its own control. Releasing the older receipt removes that specific target and leaves a single local usable blank.
+- Write-after-GWT review: freeze L569, before-first-withdrawal L500, before-second-withdrawal absent, upstream L569. The largest same-registration token similarity was 0.246. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-017 Closing two established tabs never adopts the abandoned creation`.
+
+### browser-viewer-interaction-018
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L142) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L604) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L402)
+
+- Given Example is the last tab in its window.
+- When The user closes it while navigation preparing its blank replacement is pending.
+- Then Example remains open and its close control is disabled until replacement preparation completes. Afterwards, one selected blank tab remains and browser input is enabled.
+- Observed While the replacement navigation receipt is withheld, the original remote target is still present and Close Example is disabled. Completion leaves the sibling and exactly one selected, usable local blank.
+- Write-after-GWT review: freeze L604, before-first-withdrawal L535, before-second-withdrawal absent, upstream L604. The largest same-registration token similarity was 0.521. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-018 The last page stays open until its replacement navigation finishes`.
+
+### browser-viewer-interaction-019
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L150) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L623) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L640)
+
+- Given Example and Other are both in window 0.
+- When The user starts closing both tabs before either remote close completes.
+- Then The window retains exactly one blank tab at about:blank. Once the closes finish, that tab is selected and browser input is enabled.
+- Observed Both targeted close requests arrive before either remote effect occurs. Both original targets and a prepared blank coexist. Completing the closes in reverse order leaves only the usable selected blank in window 0.
+- Write-after-GWT review: freeze L623, before-first-withdrawal L554, before-second-withdrawal absent, upstream L623. The largest same-registration token similarity was 0.360. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-019 Concurrent closes leave one usable blank in the original window`.
+
+### browser-viewer-interaction-022
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L174) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L709) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L417)
+
+- Given A new-tab creation is pending while the Example page is selected.
+- When The user selects Other, edits its address to later-choice.example/draft, and then the creation completes.
+- Then Other stays selected; the delayed creation does not restore the blank presentation or replace the user's focused draft. No unavailable-browser presentation appears.
+- Observed Choosing Other and editing its address precedes release of the old creation. Actual removal of that specific remote target establishes cleanup. Selection, focus and draft still belong to Other without an unavailable message.
+- Write-after-GWT review: freeze L709, before-first-withdrawal L618, before-second-withdrawal absent, upstream L709. The largest same-registration token similarity was 0.309. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-022 Selecting Other during creation preserves its focused draft`.
+
+### browser-viewer-interaction-023
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L182) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L747) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L437)
+
+- Given A new-tab creation is pending and the user opens and dismisses Browser settings.
+- When The creation completes and the new tab's first image arrives.
+- Then The new tab becomes selected and browser controls become enabled, but Browser settings retains focus rather than focus moving to the address field.
+- Observed The user opens and dismisses settings while creation is pending. The settings control retains focus after the created target’s first image, selected blank, enabled remote input and enabled New tab action.
+- Write-after-GWT review: freeze L747, before-first-withdrawal L656, before-second-withdrawal absent, upstream L747. The largest same-registration token similarity was 0.430. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-023 Dismissing settings keeps its focus when the first new-tab frame arrives`.
+
+### browser-viewer-interaction-026
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L206) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L838) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L456)
+
+- Given A new-tab creation is pending, and the user has not interacted with the automatically focused blank address.
+- When The creation completes and the new tab's document navigates first to https://first.example/ and then https://second.example/.
+- Then Each navigation updates the focused address to the latest URL, including https://second.example/. After the user leaves the field, it still shows the latest URL.
+- Observed The automatically focused address is untouched. Two real document notifications on the created target change its selected tab title. Address tracks each URL while focused and retains the second after focus leaves.
+- Write-after-GWT review: freeze L838, before-first-withdrawal L688, before-second-withdrawal absent, upstream L838. The largest same-registration token similarity was 0.225. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-026 Focused new-tab address tracks documents according to user interaction (false)`.
+
+### browser-viewer-interaction-027
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L214) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L838) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L456)
+
+- Given A new-tab creation is pending, and the user has interacted with the automatically focused blank address before creation completes.
+- When The creation completes and the new tab's document navigates first to https://first.example/ and then https://second.example/.
+- Then Both document updates leave the focused address empty. After the user leaves the field, it shows https://second.example/.
+- Observed A click marks the focused blank editor as touched. Both new document titles become selected, while the address remains focused and empty. Clicking the remote input exposes the second URL.
+- Write-after-GWT review: freeze L838, before-first-withdrawal L688, before-second-withdrawal absent, upstream L838. The largest same-registration token similarity was 0.225. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-027 Focused new-tab address tracks documents according to user interaction (true)`.
+
+### browser-viewer-interaction-030
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L238) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L919) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L724)
+
+- Given The user creates a new tab, and the created blank tab's first image is delayed.
+- When The first image fails, then connection recovery runs.
+- Then The app reconnects and retries the image without creating another tab. Recovery leaves exactly the Example and blank New tab entries; the blank tab is selected with an empty address and browser input enabled.
+- Observed The first held image carries invalid base64. The page reports Reconnecting, then a fresh screencast reaches the same created target. Input stays disabled until its image is released. Recovery ends with the same remote pages, Example and New tab in the strip, a selected blank and an empty address. A separate socket probe observed transport reuse.
+- Write-after-GWT review: freeze L919, before-first-withdrawal L769, before-second-withdrawal absent, upstream L919. The largest same-registration token similarity was 0.298. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-030 Recovery retries the first image on the original blank target`.
+
+### browser-viewer-interaction-032
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L254) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L984) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
+
+- Given The user has submitted submitted.example/path, and page navigation is still pending.
+- When The user uses the keyboard to move the caret after the second character before navigation completes.
+- Then The focused address retains submitted.example/path and its caret position after navigation completes. After the user leaves the field, the address becomes http://submitted.example/path and the page is navigated there.
+- Observed The navigation receipt is held while the busy address receives Home then two Right presses. Once aria-busy clears, the local draft retains focus and selection [2,2]. Leaving it shows the normalized URL also found on the actual target.
+- Write-after-GWT review: freeze L984, before-first-withdrawal L834, before-second-withdrawal absent, upstream L984. The largest same-registration token similarity was 0.400. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-032 Editing the caret while a navigation receipt is held preserves the local draft`.
+
+### browser-viewer-interaction-034
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L270) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L984) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
+
+- Given The user has submitted submitted.example/path, and page navigation is still pending.
+- When The user starts text composition with the caret after the second character before navigation completes.
+- Then The focused address retains submitted.example/path and its caret position after navigation completes. After composition ends and the user leaves the field, the address becomes http://submitted.example/path and the page is navigated there.
+- Observed Composition begins with the caret at offset 2 of the submitted draft while the address is busy. The busy state clears after receipt delivery with focus, text and caret intact. Ending composition and leaving exposes the actual normalized URL.
+- Write-after-GWT review: freeze L984, before-first-withdrawal L834, before-second-withdrawal absent, upstream L984. The largest same-registration token similarity was 0.400. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-034 Editing the caret while a navigation receipt is held preserves the local draft`.
+
+### browser-viewer-interaction-035
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L278) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1031) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L480)
+
+- Given The user has submitted submitted.example/path, and page navigation is still pending.
+- When The user moves focus to Browser settings, dismisses it, refocuses the address, and places the caret after the second character before navigation completes.
+- Then The focused address retains submitted.example/path and its caret position after navigation completes. After the user leaves the field, the address becomes http://submitted.example/path and the page is navigated there.
+- Observed While the address is busy, settings opens and dismisses and the user refocuses the editor and places the caret at 2. After the receipt is processed the focused draft and caret survive, and blur shows the normalized remote address.
+- Write-after-GWT review: freeze L1031, before-first-withdrawal L883, before-second-withdrawal absent, upstream L1031. The largest same-registration token similarity was 0.438. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-035 Editing the caret while a navigation receipt is held preserves the local draft`.
+
+### browser-viewer-interaction-037
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L294) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1089) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L524)
+
+- Given A first address navigation has been sent but its receipt is still pending.
+- When The user submits a second address, then the first navigation receipt arrives and the user retries.
+- Then The second submission is initially rejected with a still-opening message and the first URL remains active. After the receipt, the alert clears, the second address remains focused and can be submitted, and the remote page reaches its normalized URL.
+- Observed The second submission raises a still-opening message while the first URL is active on the remote target. The alert clears after the held receipt. The focused second draft then reaches the intended target on retry.
+- Write-after-GWT review: freeze L1089, before-first-withdrawal L912, before-second-withdrawal absent, upstream L1089. The largest same-registration token similarity was 0.466. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-037 A held receipt rejects the second submit until its alert clears`.
+
+### browser-viewer-interaction-042
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L334) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1233) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L663)
+
+- Given Other is selected for attachment, and its attachment response is pending when it moves out of the assigned window.
+- When The native connection closes, then the late attachment response arrives.
+- Then The viewer reconnects and reports zero pending requests and one cancelled request. The late response does not restore usable input.
+- Observed Other is selected with its attachment receipt outstanding, then leaves the owned window. On native close the actual Sentry breadcrumb reports 0 pending and 1 cancelled awaiting response. A new socket begins connecting. Delivering the old receipt to the closed peer leaves input disabled and no typed text reaches Other.
+- Write-after-GWT review: freeze L1233, before-first-withdrawal L970, before-second-withdrawal absent, upstream L1233. The largest same-registration token similarity was 0.356. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-042 A late Other attachment cannot enable the disconnected viewer`.
+
+### browser-viewer-interaction-043
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L342) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1276) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L544)
+
+- Given The assigned browser window has no open tabs.
+- When The user creates a new tab.
+- Then The new blank tab is created in the assigned window, input becomes enabled, the empty address receives focus, and its value is empty.
+- Observed From the owned window’s empty state, creating a tab focuses the empty address and enables input. The actual blank target belongs to window 0, while the pre-existing foreign target remains in window 1.
+- Write-after-GWT review: freeze L1276, before-first-withdrawal L1013, before-second-withdrawal absent, upstream L1276. The largest same-registration token similarity was 0.242. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-043 The first tab belongs to the empty assigned window`.
+
+### browser-viewer-interaction-048
+
+[Substitute GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L382) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1409) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L713)
+
+- Given A new-tab creation receipt is pending.
+- When Another caller moves the created page to a different window before the receipt is released.
+- Then Creation reports that the browser action could not be completed, but the page remains in the other window; the existing page remains active and its address is https://example.com.
+- Observed The local boundary moves the identified created page to window 42 while its receipt is held. After the action-failed message, that target still exists in window 42, Example remains selected and its original URL is ready.
+- Write-after-GWT review: freeze L1409, before-first-withdrawal L1092, before-second-withdrawal absent, upstream L1409. The largest same-registration token similarity was 0.137. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-048 The moved target survives a rejected create receipt`.
+
+### browser-viewer-interaction-165
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1318) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4951) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L555)
+
+- Given The browser viewer is open with image format settings available.
+- When The user selects PNG as the image format.
+- Then The remote browser capture uses PNG. Lossless is disabled, and remote input remains enabled.
+- Observed Selecting PNG causes a PNG capture on the external CDP browser. The Lossless quality item is disabled and remote input stays enabled.
+- Write-after-GWT review: freeze L4951, before-first-withdrawal L3488, before-second-withdrawal absent, upstream L4951. The largest same-registration token similarity was 0.554. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-165 Selecting PNG changes capture and disables Lossless quality`.
+
+### browser-viewer-interaction-166
+
+[Nominee GWT](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1326) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4975) · [Passing registration](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L575)
+
+- Given The browser viewer is open and the panel display area measures 900 by 600 pixels.
+- When The panel is followed by the remote browser.
+- Then The remote browser viewport becomes 900 by 600 pixels; input remains enabled and the address stays https://example.com.
+- Observed The native viewport begins at 1440×900 and the panel measures 900×600. The opened Window size menu identifies Follow panel as the checked mode. The remote viewport actually becomes 900×600 with usable input and the original address.
+- Write-after-GWT review: freeze L4975, before-first-withdrawal L3512, before-second-withdrawal absent, upstream L4975. The largest same-registration token similarity was 0.347. Cross-file sequences and helper matches are described above.
+- Vitest `browser-viewer-interaction-166 The remote viewport follows the measured 900 by 600 panel`.

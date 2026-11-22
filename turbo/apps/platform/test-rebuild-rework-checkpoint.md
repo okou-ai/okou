@@ -2915,3 +2915,7 @@ The initial file-size check flagged table padding in this checkpoint. The regist
 ## Batch 71 evidence
 
 [Batch 71 registrations, probes, controls and verification](test-rebuild-rework-checkpoint-continued.md#batch-71-evidence).
+
+## Batch 72 evidence
+
+[Batch 72 registrations, probe results and verification](test-rebuild-rework-checkpoint-continued.md#batch-72-evidence).

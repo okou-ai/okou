@@ -103,6 +103,7 @@ export function mockBrowserCdp(
   let frameAcksHeld = false;
   const crashedTargets = new Set(options.crashedTargets);
   const captures: unknown[] = [];
+  const heldCloses = new Map<string, (complete: () => void) => void>();
   const heldReplies = new Map<string, (response: ProtocolReply) => void>();
   const heldFrames = new Map<string, (sessionId: string) => void>();
   const nextResponses = new Map<
@@ -562,20 +563,20 @@ export function mockBrowserCdp(
     return {};
   }
 
-  function navigate(request: BrowserRequest, url: string) {
-    const target = targetForSession(request.sessionId);
+  function navigate(sessionId: string | undefined, url: string) {
+    const target = targetForSession(sessionId);
     target.url = url;
     delete target.pendingUrl;
     target.title = url === "about:blank" ? url : new URL(url).hostname;
     event(
       "Page.frameNavigated",
       { frame: { id: "example-frame", loaderId: "navigated-loader", url } },
-      request.sessionId,
+      sessionId,
     );
     event("Target.targetInfoChanged", {
       targetInfo: { ...target, type: "page" },
     });
-    event("Page.loadEventFired", { timestamp: 2 }, request.sessionId);
+    event("Page.loadEventFired", { timestamp: 2 }, sessionId);
     return { frameId: "example-frame" };
   }
 
@@ -584,7 +585,7 @@ export function mockBrowserCdp(
       case "Page.reload": {
         const target = targetForSession(request.sessionId);
         if (crashedTargets.delete(target.targetId)) {
-          navigate(request, target.url);
+          navigate(request.sessionId, target.url);
         }
         return {};
       }
@@ -593,7 +594,7 @@ export function mockBrowserCdp(
       }
       case "Page.navigate": {
         const { url } = object({ url: string() }).parse(request.params);
-        return navigate(request, url);
+        return navigate(request.sessionId, url);
       }
       case "Page.startScreencast": {
         captures.push(request.params);
@@ -751,6 +752,33 @@ export function mockBrowserCdp(
     return { result: {} };
   }
 
+  function heldReplyKey(request: BrowserRequest) {
+    let receiptKey = request.method;
+    if (request.method === "Runtime.evaluate") {
+      const { expression } = object({ expression: string() }).parse(
+        request.params,
+      );
+      if (expression.startsWith("globalThis.__okouBrowser?.invoke(")) {
+        const raw = expression.slice(expression.indexOf(".invoke(") + 8, -1);
+        const { method } = object({ method: string() }).parse(JSON.parse(raw));
+        if (heldReplies.has(`native:${method}`)) {
+          receiptKey = `native:${method}`;
+        }
+      }
+    } else if (
+      request.method === "Browser.getWindowForTarget" &&
+      heldReplies.has(`membership:${request.params?.targetId}`)
+    ) {
+      receiptKey = `membership:${request.params?.targetId}`;
+    }
+    const targeted =
+      request.params?.targetId && `${receiptKey}:${request.params.targetId}`;
+    if (targeted && heldReplies.has(targeted)) {
+      receiptKey = targeted;
+    }
+    return receiptKey;
+  }
+
   const socketOptions = {
     autoOpen: options.autoOpen,
     onConnecting: options.onConnecting,
@@ -771,29 +799,25 @@ export function mockBrowserCdp(
     if (request.id === undefined) {
       return null;
     }
+    if (request.method === "Target.closeTarget" && request.params?.targetId) {
+      const targetId = request.params.targetId;
+      const hold = heldCloses.get(targetId);
+      if (hold) {
+        heldCloses.delete(targetId);
+        hold(() =>
+          peer.receive(
+            JSON.stringify({ id: request.id, ...respond(request, peer) }),
+          ),
+        );
+        return null;
+      }
+    }
     // Native effects and notifications precede a held protocol receipt.
     const response = JSON.stringify({
       id: request.id,
       ...respond(request, peer),
     });
-    let receiptKey = request.method;
-    if (request.method === "Runtime.evaluate") {
-      const { expression } = object({ expression: string() }).parse(
-        request.params,
-      );
-      if (expression.startsWith("globalThis.__okouBrowser?.invoke(")) {
-        const raw = expression.slice(expression.indexOf(".invoke(") + 8, -1);
-        const { method } = object({ method: string() }).parse(JSON.parse(raw));
-        if (heldReplies.has(`native:${method}`)) {
-          receiptKey = `native:${method}`;
-        }
-      }
-    } else if (
-      request.method === "Browser.getWindowForTarget" &&
-      heldReplies.has(`membership:${request.params?.targetId}`)
-    ) {
-      receiptKey = `membership:${request.params?.targetId}`;
-    }
+    const receiptKey = heldReplyKey(request);
     const held = heldReplies.get(receiptKey);
     if (
       held &&
@@ -829,6 +853,7 @@ export function mockBrowserCdp(
 
   return {
     event,
+    navigate,
     canvas,
     crash(
       targetId: string,
@@ -940,7 +965,7 @@ export function mockBrowserCdp(
     },
     redirectNextNavigation(url: string) {
       nextResponses.set("Page.navigate", (request) => {
-        return { result: navigate(request, url) };
+        return { result: navigate(request.sessionId, url) };
       });
     },
     holdFrames,
@@ -949,6 +974,14 @@ export function mockBrowserCdp(
     },
     requests,
     nativeEvent,
+    closeWindow(windowId: number) {
+      const closing = targets.filter(
+        (page) => (page.windowId ?? 0) === windowId,
+      );
+      for (const page of closing) {
+        removeTarget(targets.indexOf(page));
+      }
+    },
     resetWorker() {
       nativeEpoch = "replacement-worker";
       nativeEvent("tab-updated");
@@ -997,6 +1030,17 @@ export function mockBrowserCdp(
         },
       };
     },
+    holdClose(targetId: string) {
+      const arrival = context.mocks.deferred<() => void>();
+      heldCloses.set(targetId, arrival.resolve);
+      return {
+        received: arrival.promise,
+        async release() {
+          const complete = await arrival.promise;
+          complete();
+        },
+      };
+    },
     holdNextDetach(sessionId: string) {
       const response = context.mocks.deferred<ProtocolReply>();
       heldReplies.set(`detach:${sessionId}`, response.resolve);
@@ -1033,9 +1077,12 @@ export function mockBrowserCdp(
         },
       };
     },
-    holdNext(method: string) {
+    holdNext(method: string, targetId?: string) {
       const response = context.mocks.deferred<ProtocolReply>();
-      heldReplies.set(method, response.resolve);
+      heldReplies.set(
+        targetId === undefined ? method : `${method}:${targetId}`,
+        response.resolve,
+      );
       return {
         get received() {
           return response.promise.then((reply) => reply.message);
