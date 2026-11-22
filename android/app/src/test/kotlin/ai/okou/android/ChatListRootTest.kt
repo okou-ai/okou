@@ -390,6 +390,60 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun workspaceMessageSearchReportsMissingChatListAndShowsTheHitAfterRetry() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val chatEvents = fixture.events
+        fixture.events = { MockResponse().setResponseCode(400) }
+        fixture.searchMessages = {
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
+                    "content":"Native history reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":7,"end":14}]}]}
+                """
+            )
+        }
+        app.responseGate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("history")
+
+        val results = hasAnyAncestor(hasTestTag("chat_search_results"))
+        val unavailable = hasText(app.getString(R.string.chat_list_first_load_failed)) and results
+        compose.waitUntilExactlyOneExists(unavailable, 5_000)
+        compose.onNodeWithText("No matching messages").assertDoesNotExist()
+
+        val retry = hasText(app.getString(R.string.retry)) and results
+        val enabledRetry = retry and isEnabled()
+        compose.waitUntilExactlyOneExists(enabledRetry, 5_000)
+        val readStarted = CountDownLatch(1)
+        val finishRead = CountDownLatch(1)
+        fixture.events = { request ->
+            readStarted.countDown()
+            finishRead.await()
+            chatEvents(request)
+        }
+        try {
+            compose.onNode(enabledRetry).performClick()
+            compose.waitUntil(5_000) { readStarted.count == 0L }
+            compose.onNode(retry).assertIsNotEnabled()
+            compose.mainClock.advanceTimeBy(160)
+            compose.onNode(unavailable).assertIsDisplayed()
+            compose
+                .onNode(hasContentDescription(app.getString(R.string.chat_loading)) and results)
+                .assertDoesNotExist()
+        } finally {
+            finishRead.countDown()
+        }
+        val hit = hasText("Native history reply") and results
+        compose.waitUntilExactlyOneExists(hit, 5_000)
+        compose.onNode(hit).assertIsDisplayed()
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
     fun workspaceMessageSearchCatchesUpAnAlreadyOpenHistoryBeforeRevealingTheHit() {
         val app = compose.activity.application as ChatListApplication

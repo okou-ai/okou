@@ -37,7 +37,6 @@ internal enum class WorkspaceSearchType {
 data class SearchMessageHit(
     val threadId: String,
     val seqId: Long,
-    val agentName: String,
     val content: String,
     val ranges: List<IntRange>,
 ) {

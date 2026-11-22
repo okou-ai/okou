@@ -14,8 +14,10 @@ internal const val WORKFLOW_RELEASE = "a1111111-1111-4111-8111-111111111111"
 internal const val WORKFLOW_SHARED = "a2222222-2222-4222-8222-222222222222"
 private const val WORKFLOW_FEEDBACK = "a3333333-3333-4333-8333-333333333333"
 
-internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCloseable {
-    val chats = ChatListApiFixture()
+internal class WorkflowApiFixture(
+    private val chinese: Boolean = false,
+    val chats: ChatListApiFixture = ChatListApiFixture(),
+) : AutoCloseable {
     val service = chats.service
     val requests = CopyOnWriteArrayList<RecordedRequest>()
     val active = AtomicBoolean(false)
@@ -35,7 +37,8 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     val ruleTitle = if (chinese) "工作日 09:00" else "Weekdays at 09:00"
 
     init {
-        chats.commandResponse = ::respond
+        val composerResponse = chats.commandResponse
+        chats.commandResponse = { request -> respond(request) ?: composerResponse(request) }
     }
 
     private fun respond(request: RecordedRequest): MockResponse? {

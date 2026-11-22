@@ -41,7 +41,7 @@ class WorkflowRootApplication : TestOkouApplication() {
     val gate = CountDownLatch(1)
 
     override fun onCreate() {
-        fixture = WorkflowApiFixture()
+        fixture = WorkflowApiFixture(chats = ComposerApiFixture().chats)
         fixture.beforeCatalog = { gate.await() }
         chatService = fixture.service
         composerService = fixture.service
@@ -207,6 +207,28 @@ class WorkflowRootTest {
             app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/feature-switches" }
         )
         assertFalse(app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/workflows" })
+    }
+
+    @Test
+    fun workspaceSearchKeepsItsReturnPathWhenTheWorkflowDraftBecomesAChat() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        waitFor("Add to new chat draft")
+        compose.onNodeWithText("Add to new chat draft").performClick()
+        waitForTag("message_input")
+        compose.onNodeWithContentDescription("Send").performClick()
+
+        waitFor("New conversation")
+        back()
+        query.assertTextContains("launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(app.fixture.releaseTitle).assertIsDisplayed()
     }
 
     @Test

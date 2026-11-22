@@ -169,7 +169,6 @@ class CanonicalWorkspaceSession(
             SearchMessageHit(
                 match.chatThreadId,
                 match.seqId,
-                result.agentName,
                 match.content,
                 result.matchedRanges.mapNotNull { range ->
                     if (

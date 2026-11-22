@@ -67,7 +67,7 @@ class WorkspaceSearchModelTest {
                     }
                 },
             )[WorkspaceSearchModel::class.java]
-        val hit = SearchMessageHit("thread", 23, "Okou", "current", listOf(0..6))
+        val hit = SearchMessageHit("thread", 23, "current", listOf(0..6))
         try {
             model.update("older", WorkspaceSearchType.All, connected = true)
             advanceTimeBy(300)

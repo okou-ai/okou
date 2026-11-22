@@ -415,8 +415,9 @@ internal fun OkouApp(
         val search =
             when {
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
-                !fromSearch && navigation.search == SearchRoute.Open -> SearchRoute.Open
-                else -> SearchRoute.Closed
+                fromSearch || navigation.search == SearchRoute.ReturnOnBack && listWidth != null ->
+                    SearchRoute.Closed
+                else -> navigation.search
             }
         if (fromSearch) releaseSearchFocus()
         if (search == SearchRoute.Closed) searchState.reset()
@@ -446,11 +447,7 @@ internal fun OkouApp(
         val result =
             activeChats.uiState.value.threads.firstOrNull {
                 it.id == hit.threadId && it.hidden != true
-            }
-        if (result == null) {
-            scope.launch { snackbar.showSnackbar(missingChat, duration = SnackbarDuration.Short) }
-            return
-        }
+            } ?: return
         openConversation(
             result.id,
             WorkspaceTarget.Chat(result.id),
@@ -980,22 +977,6 @@ internal fun OkouApp(
                                         ?.recentlyOpened
                                         ?.collectAsStateWithLifecycle()
                                         ?.value
-                                val messageThreads =
-                                    remember(remote?.messages) {
-                                        (remote?.messages as? SearchRead.Ready)
-                                            ?.rows
-                                            .orEmpty()
-                                            .mapTo(hashSetOf()) { it.threadId }
-                                    }
-                                LaunchedEffect(messageThreads) {
-                                    if (
-                                        messageThreads.any { id ->
-                                            list.threads.none { it.id == id }
-                                        }
-                                    ) {
-                                        chats.refreshList()
-                                    }
-                                }
                                 WorkspaceSearchScreen(
                                     state = list,
                                     search = searchState,
@@ -1006,6 +987,7 @@ internal fun OkouApp(
                                     onFocused = { focusSearch = false },
                                     onClose = ::closeSearch,
                                     retry = chats::retryList,
+                                    refreshChats = chats::refreshList,
                                     onOpen = { openChat(it, fromSearch = true) },
                                     remote = remote,
                                     recentlyOpened = recents.orEmpty(),

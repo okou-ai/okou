@@ -91,6 +91,7 @@ internal fun WorkspaceSearchScreen(
     onClose: () -> Unit,
     onOpen: (ConfirmedChat) -> Unit,
     retry: () -> Unit,
+    refreshChats: () -> Unit = {},
     remote: WorkspaceSearchResults? = null,
     recentlyOpened: List<String> = emptyList(),
     onOpenMessage: (SearchMessageHit) -> Unit = {},
@@ -224,6 +225,7 @@ internal fun WorkspaceSearchScreen(
             onOpenArtifact,
             onMoreArtifacts,
             retry,
+            refreshChats,
             restoreResultFocus,
             onSelectType = ::selectType,
             onBroaden = {
@@ -321,7 +323,7 @@ private sealed interface SearchItem {
             get() = chat.id
     }
 
-    data class Message(val message: SearchMessageHit) : SearchItem {
+    data class Message(val message: SearchMessageHit, val chat: ConfirmedChat) : SearchItem {
         override val key
             get() = message.key
     }
@@ -364,6 +366,7 @@ private fun SearchResults(
     onOpenArtifact: ((SearchArtifactHit) -> Unit)?,
     onMoreArtifacts: (String, String) -> Unit,
     retry: () -> Unit,
+    refreshChats: () -> Unit,
     restoreResultFocus: Boolean,
     onSelectType: (WorkspaceSearchType) -> Unit,
     onBroaden: () -> Unit,
@@ -374,11 +377,13 @@ private fun SearchResults(
     val archived = stringResource(R.string.chat_archived)
     val visibleChats =
         remember(list.threadsByRecency) { list.threadsByRecency.filter { it.hidden != true } }
-    val chatsById = remember(visibleChats) { visibleChats.associateBy { it.id } }
+    val chatsById = remember(list.threadsByRecency) { list.threadsByRecency.associateBy { it.id } }
     val projectNames = remember(list.projects) { list.projects.associate { it.id to it.name } }
     val recent =
-        remember(visibleChats, chatsById, recentlyOpened) {
-            recentlyOpened.mapNotNull { id -> chatsById[id]?.takeUnless { it.archived } }
+        remember(chatsById, recentlyOpened) {
+            recentlyOpened.mapNotNull { id ->
+                chatsById[id]?.takeUnless { it.hidden == true || it.archived }
+            }
         }
     val showChats = type.includes(WorkspaceSearchType.Chats)
     val grouped = type == WorkspaceSearchType.All && keyword.isNotEmpty()
@@ -416,12 +421,18 @@ private fun SearchResults(
             remoteActive && onOpenArtifact != null && type.includes(WorkspaceSearchType.Artifacts)
         }
     val reads = listOf(messageRead, workflowRead, artifactRead)
+    val messageHits = (messageRead as? SearchRead.Ready)?.rows.orEmpty()
     val messages =
-        remember(messageRead, visibleChats) {
-            (messageRead as? SearchRead.Ready)?.rows.orEmpty().filter {
-                chatsById.containsKey(it.threadId)
+        remember(messageHits, chatsById) {
+            messageHits.mapNotNull { hit ->
+                chatsById[hit.threadId]
+                    ?.takeUnless { it.hidden == true }
+                    ?.let { SearchItem.Message(hit, it) }
             }
         }
+    val needsMessageChats =
+        remember(messageHits, chatsById) { messageHits.any { it.threadId !in chatsById } }
+    LaunchedEffect(keyword, messageRead) { if (needsMessageChats) refreshChats() }
     val workflows = (workflowRead as? SearchRead.Ready)?.rows.orEmpty()
     val artifactPage = artifactRead as? SearchRead.Ready
     val artifacts = artifactPage?.rows.orEmpty()
@@ -457,7 +468,7 @@ private fun SearchResults(
                     R.string.chat_search_messages,
                     messages,
                     grouped,
-                    item = { SearchItem.Message(it) },
+                    item = { it },
                 )
                 addGroup(
                     WorkspaceSearchType.Workflows,
@@ -477,13 +488,13 @@ private fun SearchResults(
             }
         }
     val listFailure = list.listReadFailure
-    val canRetryList = showChats && !list.offline && listFailure == ChatListReadFailure.NeedsRetry
-    val pending =
-        (showChats || messageRead is SearchRead.Ready && messageRead.rows.isNotEmpty()) &&
-            list.confirmedAt == null &&
-            !list.offline &&
-            listFailure == null || SearchRead.Loading in reads
-    val showSkeleton = rememberChatWaitIndicator(pending && items.isEmpty())
+    val needsChatList = showChats || needsMessageChats
+    val canRetryList =
+        needsChatList && !list.offline && listFailure == ChatListReadFailure.NeedsRetry
+    val waitingForList =
+        needsChatList && list.confirmedAt == null && !list.offline && listFailure == null ||
+            needsMessageChats && list.listPhase == ChatReadPhase.Loading
+    val pending = waitingForList || SearchRead.Loading in reads
     val unavailableType =
         type == WorkspaceSearchType.Artifacts && onOpenArtifact == null ||
             type == WorkspaceSearchType.Workflows && onOpenWorkflow == null
@@ -494,15 +505,18 @@ private fun SearchResults(
             unavailableType && keyword.isNotEmpty() -> R.string.chat_search_unavailable
             showChats && list.confirmedAt == null && list.offline ->
                 R.string.chat_list_load_when_online
-            showChats && list.confirmedAt == null && listFailure != null ->
+            needsChatList && list.confirmedAt == null && listFailure != null ->
                 R.string.chat_list_first_load_failed
             SearchRead.Failed in reads ||
                 moreArtifactsFailed && type == WorkspaceSearchType.Artifacts ->
                 R.string.chat_search_unavailable
-            showChats && (list.sustainedRefreshFailure || canRetryList) ->
+            needsChatList && (list.sustainedRefreshFailure || canRetryList) ->
                 R.string.chat_list_refresh_failed
+            needsMessageChats && (listFailure != null || !waitingForList) ->
+                R.string.chat_search_unavailable
             else -> null
         }
+    val showSkeleton = rememberChatWaitIndicator(pending && items.isEmpty() && status == null)
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
     LaunchedEffect(anchor, items, pending) {
@@ -556,11 +570,11 @@ private fun SearchResults(
                 }
                 is SearchItem.Message -> {
                     val hit = row.message
-                    val chat = chatsById[hit.threadId]
+                    val chat = row.chat
                     val metadata =
                         listOfNotNull(
-                                projectNames[chat?.projectId],
-                                archived.takeIf { chat?.archived == true },
+                                projectNames[chat.projectId],
+                                archived.takeIf { chat.archived },
                             )
                             .joinToString(" · ")
                             .ifEmpty { null }
@@ -568,10 +582,7 @@ private fun SearchResults(
                         search,
                         row.key,
                         restoreResultFocus,
-                        highlightedSearchTitle(
-                            chat?.searchTitle(untitled) ?: hit.agentName,
-                            keyword,
-                        ),
+                        highlightedSearchTitle(chat.searchTitle(untitled), keyword),
                         snippet = messageSnippet(hit),
                         metadata = metadata,
                     ) {
