@@ -46,7 +46,6 @@
             tools:replace="android:exported" />
         <activity
             android:name=".MainActivity"
-            android:enableOnBackInvokedCallback="true"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

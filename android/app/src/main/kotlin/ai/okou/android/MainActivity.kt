@@ -74,7 +74,23 @@ class MainActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         val handled = super.dispatchKeyEvent(event)
         if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
-            android.util.Log.i("LinkBack", "dispatchKeyEvent action=${event.action} handled=$handled")
+            android.util.Log.i("LinkBack", "dispatchKeyEvent action=${event.action} handled=$handled flags=${event.flags} tracking=${event.isTracking} canceled=${event.isCanceled} focus=${window.decorView.findFocus()?.javaClass?.simpleName}")
+        }
+        return handled
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        val handled = super.onKeyDown(keyCode, event)
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            android.util.Log.i("LinkBack", "onKeyDown handled=$handled flags=${event.flags}")
+        }
+        return handled
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        val handled = super.onKeyUp(keyCode, event)
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            android.util.Log.i("LinkBack", "onKeyUp handled=$handled tracking=${event.isTracking} canceled=${event.isCanceled}")
         }
         return handled
     }

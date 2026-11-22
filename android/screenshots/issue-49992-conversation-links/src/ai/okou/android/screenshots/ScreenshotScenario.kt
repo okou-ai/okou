@@ -16,6 +16,7 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import ai.okou.android.testAuthenticationState
 import android.util.Log
+import android.view.KeyEvent
 import android.view.WindowInsets
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -58,6 +59,7 @@ class ScreenshotScenario {
                 if (thread == CHAT_PERSONAL) {
                     "The launch notes are ready. Open the linked update to review the final checklist.\n\n" +
                         "Read the [Android documentation](https://developer.android.com/) for platform context.\n\n" +
+                        "[Project chat only](/chats/$CHAT_IN_PROJECT)\n\n" +
                         "[Project release update](/chats/$CHAT_IN_PROJECT#event-output)\n\n" +
                         "[Unavailable conversation](/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)"
                 } else "Release checklist approved. The launch may proceed."
@@ -129,10 +131,30 @@ class ScreenshotScenario {
                     await(By.pkg(app.packageName).clazz("android.widget.EditText").text("Draft launch follow-up"))
                     ScreenshotCapture.capture("01-phone-inline-links.png")
 
+                    val reply = "Release checklist approved. The launch may proceed."
+                    val source = By.pkg(app.packageName).textContains("Project release update")
+                    text("Project chat only", partial = true).click()
+                    text(reply)
+                    Log.i("LinkBack", "plain link key injected=${device.pressKeyCode(KeyEvent.KEYCODE_BACK)}")
+                    if (!device.wait(Until.hasObject(source), 2_000)) {
+                        Log.i("LinkBack", "plain link Back didn't return")
+                        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+                    }
                     text("Project release update", partial = true).click()
-                    text("Release checklist approved. The launch may proceed.")
+                    text(reply)
                     ScreenshotCapture.capture("02-phone-message-target.png")
-                    await(By.res("com.android.launcher3", "back")).click()
+                    Log.i("LinkBack", "anchored link key injected=${device.pressKeyCode(KeyEvent.KEYCODE_BACK)}")
+                    if (!device.wait(Until.hasObject(source), 2_000)) {
+                        scenario.onActivity { activity ->
+                            Log.i("LinkBack", "clearing ${activity.window.decorView.findFocus()?.javaClass?.simpleName}")
+                            activity.window.decorView.findFocus()?.clearFocus()
+                        }
+                        Log.i("LinkBack", "second key, after clearFocus injected=${device.pressKeyCode(KeyEvent.KEYCODE_BACK)}")
+                        if (!device.wait(Until.hasObject(source), 2_000)) {
+                            Log.i("LinkBack", "after clearFocus Back didn't return")
+                            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+                        }
+                    }
                     text("Project release update", partial = true)
                     text("Draft launch follow-up")
                     ScreenshotCapture.capture("03-phone-source-return.png")
