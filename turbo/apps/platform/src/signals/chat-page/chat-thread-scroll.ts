@@ -3,7 +3,7 @@ import { logger } from "../log.ts";
 import {
   onDomEventFn,
   onRef,
-  waitForBrowserPaint,
+  waitForAnimationFrame,
   waitLoopUntil,
 } from "../utils.ts";
 import type { ChatEventSignals } from "./chat-event-signals.ts";
@@ -570,55 +570,59 @@ function createRenderScrollSignals(
       const request = Symbol();
       runtime.pendingScroll = request;
       runtime.hasMeasuredPosition = false;
-      async function alignAfterPaint() {
+      // Return the tail viewport only when this request still owns its position.
+      function align(): HTMLElement | null {
+        signal.throwIfAborted();
+        const container = get(scroll.scrollContainer$);
+        if (
+          runtime.pendingScroll !== request ||
+          runtime.hiddenLayout ||
+          !container?.querySelector(`[${SCROLL_ANCHOR_ATTRIBUTE}]`)
+        ) {
+          return null;
+        }
+        if (
+          position &&
+          !get(events.queuedEvents$).some((event) => {
+            return event.id === position.targetEventId;
+          })
+        ) {
+          if (scrollToPosition(runtime, container, position, behavior)) {
+            runtime.initialized = true;
+          }
+          return null;
+        }
+        applyScrollTop(runtime, container, container.scrollHeight, behavior);
+        runtime.initialized = true;
+        return container;
+      }
+      async function alignAcrossFrames() {
         await set(scroll.setThreadScrollPosition$, position, signal);
         if (runtime.hiddenLayout || !get(events.chatEvents$).length) {
           return;
         }
         do {
-          await waitForBrowserPaint(signal);
-          signal.throwIfAborted();
-          const container = get(scroll.scrollContainer$);
-          if (
-            runtime.pendingScroll !== request ||
-            runtime.hiddenLayout ||
-            !container ||
-            !scrollAnchors(container).length
-          ) {
+          align();
+          await waitForAnimationFrame(signal);
+          align();
+          await waitForAnimationFrame(signal);
+          const tail = align();
+          if (!tail) {
             return;
           }
-          const atTail =
-            !position ||
-            get(events.queuedEvents$).some((event) => {
-              return event.id === position.targetEventId;
-            });
-          if (atTail) {
-            applyScrollTop(
-              runtime,
-              container,
-              container.scrollHeight,
-              behavior,
-            );
-          } else if (
-            !scrollToPosition(runtime, container, position, behavior)
-          ) {
-            return;
-          }
-          runtime.initialized = true;
-          if (atTail && position) {
+          if (position) {
             await set(scroll.setThreadScrollPosition$, null, signal);
           }
           if (
-            !atTail ||
-            container.clientHeight <= 0 ||
-            container.scrollHeight > container.clientHeight ||
+            tail.clientHeight <= 0 ||
+            tail.scrollHeight > tail.clientHeight ||
             runtime.pendingScroll !== request
           ) {
             return;
           }
         } while (await set(loadEarlierGroups$, signal));
       }
-      await alignAfterPaint().finally(() => {
+      await alignAcrossFrames().finally(() => {
         if (runtime.pendingScroll === request) {
           runtime.pendingScroll = null;
         }

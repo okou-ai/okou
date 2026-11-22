@@ -1470,6 +1470,26 @@ test.each(["layout", "tap"])(
   },
 );
 
+test("Follow the tail before and during both render frames as the layout changes", async () => {
+  const id = THREAD_IDS.incomingLatest;
+  const conversation = mockMutableConversation(id, completedHistoryEvents(7));
+  const container = await openConversation(id, "History answer 7");
+  const geometry = installChatScrollGeometry(container);
+  const frames = controlRevealFrames();
+  geometry.growBeforeMessages(40);
+  await conversation.publish(completedTurn(8));
+  await screen.findByText("History answer 8");
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+  for (const growth of [55, 70]) {
+    geometry.growBeforeMessages(growth);
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop() - growth);
+    await frames.paint();
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  }
+});
+
 test("A reader who scrolls between paints keeps their new position", async () => {
   const id = THREAD_IDS.incomingLatest;
   const conversation = mockMutableConversation(id, completedHistoryEvents(7));
