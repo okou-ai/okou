@@ -10,6 +10,10 @@ import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.ReadState
 import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.auth.Authentication
+import ai.okou.android.auth.MembershipAccess
 import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.WorkspaceIdentity
@@ -23,6 +27,7 @@ import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.cursor
+import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.updates.ControlledUpdates
 import ai.okou.android.updates.UpdateCheck
 import ai.okou.android.updates.updateRelease
@@ -59,11 +64,20 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /** External responses are controllable, with the real Activity and disk cache. */
-class PendingWorkspaceApplication : TestOkouApplication() {
+open class PendingWorkspaceApplication : TestOkouApplication() {
+    protected open val selectedAccess: MembershipAccess? = null
+    protected open val seedChats = true
+    val authorizationResponse = CompletableDeferred<Unit>()
     var organizationResponse = CompletableDeferred<Unit>()
     @Volatile var listResponse = CompletableDeferred<Unit>()
     var preferencesResponse = CompletableDeferred<Unit>()
     @Volatile private var editTail = ChatEvents(emptyList(), false)
+
+    override fun createAuthentication(): Authentication {
+        val access = selectedAccess ?: return super.createAuthentication()
+        return TestAuthentication(testAuthenticationState().copy(membershipAccess = listOf(access)))
+            .apply { refreshAction = { authorizationResponse.await() } }
+    }
 
     override fun onCreate() {
         chatService =
@@ -71,7 +85,9 @@ class PendingWorkspaceApplication : TestOkouApplication() {
 
                 override suspend fun chatEvents(since: Long?): ChatEvents {
                     listResponse.await()
-                    return editTail
+                    val tail = editTail
+                    return if (since == null) tail
+                    else tail.copy(events = tail.events.filter { it.cursor().seqId > since })
                 }
 
                 override suspend fun setPinned(
@@ -124,24 +140,33 @@ class PendingWorkspaceApplication : TestOkouApplication() {
             WorkspaceIdentity(
                 BuildConfig.API_ORIGIN,
                 "user-a",
-                "session-a",
+                "previous-session",
                 "org-a",
-                scopeHash(listOf("org:member")),
+                if (selectedAccess == null) scopeHash(listOf("org:member"))
+                else scopeHash(listOf("org:member", "org:member", "known")),
             )
         runBlocking {
-            chatCache
-                .open(identity) { true }
-                .use { cache ->
-                    cache.save(
-                        ChatCheckpoint(
-                            ChatArchive(emptyList()),
-                            ChatCursor(),
-                            events.events,
-                            events.events.single().cursor(),
-                        ),
-                        System.currentTimeMillis(),
-                    )
-                }
+            if (seedChats) {
+                chatCache
+                    .open(identity) { true }
+                    .use { cache ->
+                        cache.save(
+                            ChatCheckpoint(
+                                ChatArchive(emptyList()),
+                                ChatCursor(),
+                                events.events,
+                                events.events.single().cursor(),
+                            ),
+                            System.currentTimeMillis(),
+                        )
+                    }
+            }
+            if (selectedAccess != null) {
+                memberAppearanceCache.save(
+                    identity,
+                    MemberAppearance(UserPreferencesTheme.DARK, UserPreferencesColorTheme.DAYDREAM),
+                )
+            }
         }
         super.onCreate()
     }
@@ -149,6 +174,16 @@ class PendingWorkspaceApplication : TestOkouApplication() {
     private fun recordEdit(event: String) {
         editTail = Json.decodeFromString("""{"events":[$event],"hasMore":false}""")
     }
+
+    fun renameOnServer(title: String) =
+        recordEdit(
+            chatEventWire(
+                id = "77777777-7777-4777-8777-777777777777",
+                seq = 18,
+                kind = "renamed",
+                title = title,
+            )
+        )
 
     override fun createWorkspaceSession(
         identity: WorkspaceIdentity,
@@ -169,6 +204,14 @@ class PendingWorkspaceApplication : TestOkouApplication() {
     }
 }
 
+open class FreshWorkspaceAccessApplication : PendingWorkspaceApplication() {
+    override val selectedAccess = MembershipAccess("org-a", "org:member", emptyList())
+}
+
+class UncachedWorkspaceApplication : FreshWorkspaceAccessApplication() {
+    override val seedChats = false
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [35],
@@ -186,11 +229,94 @@ class PendingWorkspaceRootTest {
         try {
             compose.activityRule.scenario.close()
         } finally {
+            application.authorizationResponse.complete(Unit)
             application.organizationResponse.complete(Unit)
             application.preferencesResponse.complete(Unit)
             application.listResponse.complete(Unit)
             runBlocking { application.chatCache.close() }
         }
+    }
+
+    @Test
+    @Config(application = FreshWorkspaceAccessApplication::class)
+    fun coldStartShowsLocalControlsAndCachedContentBeforeWorkspaceReads() {
+        val avatar = compose.onNodeWithContentDescription("Switch workspace", substring = true)
+        val filter = compose.onNodeWithContentDescription("Filter")
+        val settings = compose.onNodeWithContentDescription("Settings")
+        val search = compose.onNodeWithTag("workspace_search_entry")
+        avatar.assertIsDisplayed().assertIsNotEnabled()
+        filter.assertIsDisplayed().assertIsNotEnabled()
+        settings.assertIsDisplayed().assertIsNotEnabled()
+        val searchBounds = search.getUnclippedBoundsInRoot()
+        val avatarBounds = avatar.getUnclippedBoundsInRoot()
+        compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
+
+        compose.runOnIdle { app.authorizationResponse.complete(Unit) }
+        awaitCachedRow()
+        compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
+        assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
+        assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
+        filter.assertIsEnabled().performClick()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
+        filter.performClick()
+        compose.onNodeWithText("Inbox").performClick()
+        compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
+
+        settings.assertIsEnabled().performClick()
+        compose.onNodeWithText("Display mode").assertIsNotEnabled()
+        compose.onNodeWithText("Dark").assertExists()
+        compose.onNodeWithText("Daydream").assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
+
+        compose.runOnIdle {
+            app.renameOnServer("Synced startup chat")
+            app.listResponse.complete(Unit)
+        }
+        compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
+        compose.onNodeWithText("Synced startup chat").assertIsDisplayed()
+        compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
+        settings.performClick()
+        compose.runOnIdle { app.organizationResponse.complete(Unit) }
+        compose.onNodeWithText("Dark").assertExists()
+        compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+        compose.onNodeWithText("Display mode").assertIsEnabled()
+        compose.onNodeWithText("Follow system").assertExists()
+    }
+
+    @Test
+    @Config(application = UncachedWorkspaceApplication::class)
+    fun cacheMissWaitsForChatsInTheIdentifiedWorkspaceShell() {
+        compose.runOnIdle { app.authorizationResponse.complete(Unit) }
+        compose.waitUntil(10_000) { listState()?.listPhase == ChatReadPhase.Loading }
+        compose.mainClock.advanceTimeBy(120)
+        compose.onNodeWithContentDescription("Loading chats…").assertExists()
+        val empty = compose.onNodeWithText(compose.activity.getString(R.string.chat_empty))
+        empty.assertDoesNotExist()
+        compose.onNodeWithContentDescription("Filter").assertIsEnabled()
+        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
+
+        compose.runOnIdle { app.listResponse.complete(Unit) }
+        compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
+        empty.assertExists()
+        compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(application = FreshWorkspaceAccessApplication::class)
+    fun lateOrganizationDenialRetiresTheVisibleCachedWorkspace() {
+        compose.runOnIdle { app.authorizationResponse.complete(Unit) }
+        awaitCachedRow()
+        compose.runOnIdle {
+            app.organizationResponse.completeExceptionally(ApiFailure.Http(403, null, null, null))
+        }
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.auth_access_removed))
+            .assertIsDisplayed()
+        compose.onNodeWithTag("chat_list").assertDoesNotExist()
+        compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
     }
 
     @Test
@@ -220,7 +346,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("message_input").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("chat_search_query").performTextReplacement("startup")
         compose.onNodeWithText(CACHED_CHAT).performClick()
@@ -302,7 +428,7 @@ class PendingWorkspaceRootTest {
                 "Muted, Updating chat…",
             )
         )
-        compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
         row.performClick()
         compose.onNodeWithTag("conversation").assertExists()

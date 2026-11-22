@@ -77,7 +77,8 @@ sealed interface OpeningWorkspace {
 
     data class Authorized(
         override val identity: WorkspaceIdentity,
-        val organization: Organization,
+        val role: String,
+        val organization: Organization?,
         val chats: ChatListModel,
         val projectExpansion: ProjectExpansionModel,
         val composer: ChatComposerModel,
@@ -278,7 +279,8 @@ class SessionModel(
                             },
                         )
                     workspace = owner
-                    val organization = owner.organization()
+                    // Fresh selected permissions authorize the scoped list while metadata loads.
+                    val organization = if (fastAccess == null) owner.organization() else null
                     currentCoroutineContext().ensureActive()
                     requireCurrent(ticket, snapshot)
                     val store = ViewModelStore()
@@ -343,6 +345,7 @@ class SessionModel(
                     val opened =
                         OpeningWorkspace.Authorized(
                             identity,
+                            role,
                             organization,
                             chats,
                             projectExpansion,
@@ -355,16 +358,9 @@ class SessionModel(
                                 }
                             },
                         )
-                    val knownMemberships =
-                        if (fastAccess == null) memberships
-                        else
-                            listOf(
-                                WorkspaceMembership(identity.workspaceId, organization.name, role)
-                            )
-                    mutable.value =
-                        mutable.value.copy(memberships = knownMemberships, opening = opened)
+                    mutable.value = mutable.value.copy(memberships = memberships, opening = opened)
                     preparation?.let(chats::restoreStartupCache)
-                    // After handoff, a preferences failure must not cancel chat restoration.
+                    // The list owns restoration after handoff, including during bootstrap retries.
                     preparation = null
                     chats.refresh()
                     loadRemainingMemberships(ticket, snapshot)
@@ -452,8 +448,27 @@ class SessionModel(
         requireCurrent(ticket, snapshot)
         val owner = checkNotNull(workspace)
         val store = checkNotNull(presentation)
+        val organization: Organization
         val initial =
             try {
+                organization =
+                    opened.organization
+                        ?: owner.organization().also { resolved ->
+                            currentCoroutineContext().ensureActive()
+                            requireCurrent(ticket, snapshot)
+                            val state = mutable.value
+                            val memberships =
+                                if (membershipsComplete) state.memberships
+                                else
+                                    listOf(
+                                        WorkspaceMembership(resolved.id, resolved.name, opened.role)
+                                    )
+                            mutable.value =
+                                state.copy(
+                                    memberships = memberships,
+                                    opening = opened.copy(organization = resolved),
+                                )
+                        }
                 owner.preferences()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -492,7 +507,7 @@ class SessionModel(
             store.workspaceModel {
                 WorkspaceSettingsModel(
                     owner,
-                    opened.organization.role == OrganizationRole.ADMIN,
+                    organization.role == OrganizationRole.ADMIN,
                     { current(ticket, snapshot) },
                     { workspaceFailure(ticket, snapshot, it) },
                     connectivity,
@@ -504,7 +519,7 @@ class SessionModel(
                 ready =
                     ReadyWorkspace(
                         opened.identity,
-                        opened.organization,
+                        organization,
                         preferences,
                         opened.chats,
                         opened.projectExpansion,

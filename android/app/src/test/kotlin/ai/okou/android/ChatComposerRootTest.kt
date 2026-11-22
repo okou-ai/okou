@@ -375,7 +375,7 @@ class ChatComposerRootTest {
             fresh.onActivity { activity = it }
             captureOwners(checkNotNull(activity))
             compose.onNodeWithTag(row).assertIsDisplayed()
-            compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Settings").assertIsEnabled()
             compose.runOnIdle {
                 app.preferencesResponse.completeExceptionally(
                     ApiFailure.Http(503, null, null, null)
@@ -411,7 +411,7 @@ class ChatComposerRootTest {
             messageText(pending.eventId, prompt).assertIsDisplayed()
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithTag(row).assertIsDisplayed()
-            compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Settings").assertIsEnabled()
         } finally {
             create.countDown()
             list.countDown()

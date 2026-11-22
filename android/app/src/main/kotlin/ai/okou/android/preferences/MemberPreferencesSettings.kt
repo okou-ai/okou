@@ -52,24 +52,34 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
 
 @Composable
-internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
-    val state by model.uiState.collectAsStateWithLifecycle()
-    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val active = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
-    DisposableEffect(model, active) {
-        model.settingsVisibilityChanged(active)
-        onDispose { model.settingsVisibilityChanged(false) }
+internal fun MemberPreferencesSettings(
+    model: MemberPreferencesModel?,
+    cachedAppearance: MemberAppearance? = null,
+) {
+    val state = model?.uiState?.collectAsStateWithLifecycle()?.value
+    if (model != null) {
+        val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+        val active = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+        DisposableEffect(model, active) {
+            model.settingsVisibilityChanged(active)
+            onDispose { model.settingsVisibilityChanged(false) }
+        }
     }
-    val dark = state.theme.resolveDark(isSystemInDarkTheme())
+    val theme = state?.theme ?: cachedAppearance?.theme
+    val colorTheme = state?.colorTheme ?: cachedAppearance?.colorTheme
+    val systemDark = isSystemInDarkTheme()
+    val dark = theme?.resolveDark(systemDark) ?: systemDark
     SettingsSection(stringResource(R.string.settings_appearance_group)) {
         SettingsGroup {
             val appearanceTitle = stringResource(R.string.appearance)
             val colorTitle = stringResource(R.string.preference_color_theme)
             SettingsPickerRow(
                 appearanceTitle,
-                value = stringResource(appearanceLabel(state.theme)),
+                value = theme?.let { stringResource(appearanceLabel(it)) },
                 leading = { SettingsIcon(R.drawable.ic_brightness_6) },
+                enabled = state != null,
             ) { dismiss ->
+                if (state == null || model == null) return@SettingsPickerRow
                 SettingsSheet(appearanceTitle, dismiss) {
                     SettingsRadioOptions(
                         options = UserPreferencesTheme.entries,
@@ -85,9 +95,11 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
             HorizontalDivider()
             SettingsPickerRow(
                 colorTitle,
-                value = stringResource(paletteLabel(state.colorTheme)),
+                value = colorTheme?.let { stringResource(paletteLabel(it)) },
                 leading = { SettingsIcon(R.drawable.ic_palette) },
+                enabled = state != null,
             ) { dismiss ->
+                if (state == null || model == null) return@SettingsPickerRow
                 SettingsSheet(colorTitle, dismiss) {
                     PaletteOptions(state.colorTheme, dark) { palette ->
                         dismiss()
@@ -102,10 +114,11 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
             val languageTitle = stringResource(R.string.preference_language)
             SettingsPickerRow(
                 languageTitle,
-                value = stringResource(languageLabel(state.locale)),
+                value = state?.let { stringResource(languageLabel(it.locale)) },
                 leading = { SettingsIcon(R.drawable.ic_translate) },
-                enabled = state.supportedLocales.size > 1,
+                enabled = state != null && state.supportedLocales.size > 1,
             ) { dismiss ->
+                if (state == null || model == null) return@SettingsPickerRow
                 SettingsSheet(languageTitle, dismiss) {
                     SettingsRadioOptions(
                         options = state.supportedLocales,
@@ -119,9 +132,11 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
                 }
             }
             HorizontalDivider()
-            TimezonePicker(state.timezone, model::selectTimezone)
+            TimezonePicker(state?.timezone, model?.let { it::selectTimezone })
         }
-        if (state.pending?.cloudBrowser == null) PreferenceFeedback(state, model::retry)
+        if (model != null && state != null && state.pending?.cloudBrowser == null) {
+            PreferenceFeedback(state, model::retry)
+        }
     }
 }
 
@@ -152,7 +167,7 @@ private val commonTimezones =
     )
 
 @Composable
-private fun TimezonePicker(current: String, onSelect: (String) -> Unit) {
+private fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
     val title = stringResource(R.string.settings_timezone)
     val utc = stringResource(R.string.settings_timezone_utc)
     val locale = LocalConfiguration.current.locales[0]
@@ -165,9 +180,11 @@ private fun TimezonePicker(current: String, onSelect: (String) -> Unit) {
         }
     SettingsPickerRow(
         title,
-        value = label(current),
+        value = current?.let(::label),
         leading = { SettingsIcon(R.drawable.ic_schedule) },
+        enabled = current != null && onSelect != null,
     ) { dismiss ->
+        if (current == null || onSelect == null) return@SettingsPickerRow
         SettingsSheet(title, dismiss) {
             Text(
                 stringResource(R.string.settings_timezone_hint),

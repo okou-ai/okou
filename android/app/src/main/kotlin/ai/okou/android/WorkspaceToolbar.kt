@@ -39,6 +39,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
@@ -336,7 +337,7 @@ private fun WorkspaceToolEntry(
 internal fun WorkspaceToolbarActions(
     showFilter: Boolean,
     list: ChatListUiState,
-    selectFilter: (ChatListFilter) -> Unit,
+    selectFilter: ((ChatListFilter) -> Unit)?,
     markAllRead: () -> Unit,
     update: UpdateToolbarAction?,
     settingsFocus: FocusRequester,
@@ -379,6 +380,7 @@ internal fun WorkspaceToolbarActions(
                                 WorkspaceMenuItem(
                                     stringResource(R.string.chat_filter),
                                     R.drawable.ic_filter_list,
+                                    enabled = selectFilter != null,
                                 ) {
                                     menu = WorkspaceMenuPage.Filter
                                 }
@@ -412,7 +414,7 @@ internal fun WorkspaceToolbarActions(
                                     stringResource(choice.label()),
                                     selected = list.filter == choice,
                                 ) {
-                                    selectFilter(choice)
+                                    selectFilter?.invoke(choice)
                                     closeMenu()
                                 }
                             )
@@ -437,6 +439,8 @@ internal fun WorkspaceToolbarActions(
             Box {
                 IconButton(
                     onClick = { menu = WorkspaceMenuPage.Filter },
+                    enabled = selectFilter != null,
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = filterTint),
                     modifier =
                         Modifier.focusRequester(filterFocus).then(filterTreatment).semantics {
                             stateDescription = currentFilter
@@ -445,22 +449,18 @@ internal fun WorkspaceToolbarActions(
                     Icon(
                         painterResource(R.drawable.ic_filter_list),
                         stringResource(R.string.chat_filter),
-                        tint = filterTint,
                     )
                 }
                 menuContent()
             }
         }
-        if (openSettings != null) {
-            IconButton(modifier = settingsAnchor, onClick = { openSettings(anchorFocused) }) {
-                Icon(
-                    painterResource(R.drawable.ic_settings),
-                    stringResource(R.string.settings),
-                    tint = colors.onSurface,
-                )
-            }
-        } else if (showFilter) {
-            Spacer(Modifier.size(48.dp))
+        IconButton(
+            modifier = settingsAnchor,
+            onClick = { openSettings?.invoke(anchorFocused) },
+            enabled = openSettings != null,
+            colors = IconButtonDefaults.iconButtonColors(contentColor = colors.onSurface),
+        ) {
+            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
         UpdateToolbarButton(update)
