@@ -75,4 +75,17 @@
     <string name="chat_project_rename_rejected">프로젝트 이름을 변경할 수 없습니다.</string>
     <string name="chat_project_rename_save">저장</string>
     <string name="chat_project_rename_pending">프로젝트 이름 변경 중…</string>
+    <string name="chat_move_project">채팅 이동</string>
+    <string name="chat_move_project_outside">프로젝트 밖으로 이동</string>
+    <string name="chat_move_project_named">%1$s(으)로 이동</string>
+    <string name="chat_project_outside">프로젝트 외부</string>
+    <string name="chat_project_moved_named">%1$s(으)로 이동했어요</string>
+    <string name="chat_project_moved_outside">프로젝트 밖으로 이동했어요</string>
+    <string name="chat_project_delete">프로젝트 삭제</string>
+    <string name="chat_project_delete_title">‘%1$s’을(를) 삭제할까요?</string>
+    <string name="chat_project_delete_description">이 프로젝트의 채팅은 프로젝트 밖으로 이동합니다. 실행 중인 작업은 계속됩니다.</string>
+    <string name="chat_project_delete_pending">프로젝트 삭제 중…</string>
+    <string name="chat_project_deleted">프로젝트를 삭제하고 채팅을 프로젝트 밖으로 이동했어요.</string>
+    <string name="chat_project_delete_rejected">프로젝트를 삭제할 수 없어요.</string>
+    <string name="chat_project_delete_unconfirmed">프로젝트 삭제를 확인할 수 없어요.</string>
 </resources>

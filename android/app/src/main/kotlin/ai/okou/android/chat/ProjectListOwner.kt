@@ -14,17 +14,37 @@ import kotlinx.coroutines.withContext
 
 data class ProjectRenameRejection internal constructor(val projectId: String, val eventId: String)
 
+enum class ProjectDeleteStatus {
+    Confirmed,
+    Rejected,
+    Unconfirmed,
+}
+
+@ConsistentCopyVisibility
+data class ProjectDeleteFeedback
+internal constructor(val projectId: String, val eventId: String, val status: ProjectDeleteStatus)
+
 data class ProjectListUiState(
     val rows: List<ConfirmedProject> = emptyList(),
     val phase: ChatReadPhase = ChatReadPhase.Idle,
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
     val renamingId: String? = null,
+    val deletingId: String? = null,
     val unconfirmedRenames: Set<String> = emptySet(),
     internal val renameRejection: ProjectRenameRejection? = null,
+    internal val deleteFeedback: ProjectDeleteFeedback? = null,
 ) {
     internal fun canRename(offline: Boolean): Boolean =
-        source != null && !offline && renamingId == null
+        source != null && !offline && renamingId == null && deletingId == null
+}
+
+internal fun newProjectOperationId(wallMillis: Long): String {
+    val random = UUID.randomUUID()
+    // The Project API uses the UUIDv7 timestamp to bound receipt retries.
+    val timestamp = wallMillis shl 16
+    val versionAndRandom = 0x7000L or (random.mostSignificantBits and 0x0fffL)
+    return UUID(timestamp or versionAndRandom, random.leastSignificantBits).toString()
 }
 
 /** Project synchronization and writes share the authorized workspace lifetime. */
@@ -37,6 +57,7 @@ internal class ProjectListOwner(
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher,
     private val wallMillis: () -> Long,
+    private val syncChatsAfterDelete: suspend () -> Unit,
     private val readState: () -> ProjectListUiState,
     private val publish: (ProjectListUiState) -> Unit,
 ) {
@@ -48,6 +69,7 @@ internal class ProjectListOwner(
     private var confirmedProjects: ConfirmedProjects? = null
     private var projectRename: ProjectRename? = null
     private val retryableProjectRenames = mutableMapOf<String, ProjectRename>()
+    private val retryableProjectDeletes = mutableMapOf<String, String>()
     private var projectsRestoreJob: Job? = null
     private var projectsJob: Job? = null
     private val projectSync = ProjectSync(service, dispatcher)
@@ -123,15 +145,7 @@ internal class ProjectListOwner(
         val name = input.trim()
         if (name.length !in 1..120 || confirmedRows().none { it.id == id && it.name != name })
             return
-        submitProjectRename(ProjectRename(id, name, newProjectOperationId()))
-    }
-
-    private fun newProjectOperationId(): String {
-        val random = UUID.randomUUID()
-        // The Project API uses the UUIDv7 timestamp to bound receipt retries.
-        val timestamp = wallMillis() shl 16
-        val versionAndRandom = 0x7000L or (random.mostSignificantBits and 0x0fffL)
-        return UUID(timestamp or versionAndRandom, random.leastSignificantBits).toString()
+        submitProjectRename(ProjectRename(id, name, newProjectOperationId(wallMillis())))
     }
 
     internal fun retryProjectRename(id: String) {
@@ -142,6 +156,62 @@ internal class ProjectListOwner(
         if (current() && state.renameRejection == rejection) {
             state = state.copy(renameRejection = null)
         }
+    }
+
+    fun deleteProject(id: String) {
+        if (!current() || !state.canRename(offline()) || confirmedRows().none { it.id == id })
+            return
+        val eventId = retryableProjectDeletes[id] ?: newProjectOperationId(wallMillis())
+        state = state.copy(deletingId = id, deleteFeedback = null)
+        scope.launch {
+            try {
+                val rejected =
+                    try {
+                        service.deleteProject(id, eventId)
+                        false
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        requireCurrent()
+                        if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+                        error.rejectsProjectMutation()
+                    }
+                requireCurrent()
+                // Reconcile the chats first so the folder can disappear with its contents
+                // already in the outside group. Project and chat feeds are independent.
+                if (!rejected) syncChatsAfterDelete()
+                requireCurrent()
+                val readBack = refreshAfterWrite()
+                val confirmed =
+                    hasProjectReceipt(eventId) || (readBack && confirmedRows().none { it.id == id })
+                if (confirmed && rejected) syncChatsAfterDelete()
+                requireCurrent()
+                val outcome =
+                    when {
+                        confirmed || hasProjectReceipt(eventId) -> ProjectDeleteStatus.Confirmed
+                        rejected -> ProjectDeleteStatus.Rejected
+                        else -> ProjectDeleteStatus.Unconfirmed
+                    }
+                if (outcome == ProjectDeleteStatus.Unconfirmed)
+                    retryableProjectDeletes[id] = eventId
+                else retryableProjectDeletes.remove(id)
+                state = state.copy(deleteFeedback = ProjectDeleteFeedback(id, eventId, outcome))
+            } finally {
+                if (current()) state = state.copy(deletingId = null)
+            }
+        }
+    }
+
+    fun retryProjectDelete(feedback: ProjectDeleteFeedback) {
+        if (
+            state.deleteFeedback == feedback && feedback.status == ProjectDeleteStatus.Unconfirmed
+        ) {
+            deleteProject(feedback.projectId)
+        }
+    }
+
+    fun dismissProjectDeleteFeedback(feedback: ProjectDeleteFeedback) {
+        if (current() && state.deleteFeedback == feedback) state = state.copy(deleteFeedback = null)
     }
 
     private fun hasProjectReceipt(
@@ -197,29 +267,13 @@ internal class ProjectListOwner(
                 } catch (error: Exception) {
                     requireCurrent()
                     if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-                    rejected =
-                        when (error) {
-                            is ApiFailure.Unauthenticated,
-                            is ApiFailure.UpdateRequired -> true
-                            is ApiFailure.Http -> error.status in setOf(400, 401, 403, 404, 409)
-                            else -> false
-                        }
+                    rejected = error.rejectsProjectMutation()
                     if (rejected) return@launch
                 }
                 requireCurrent()
-                // Wait out a read that could have started before the write.
-                while (projectsJob?.isCompleted == false) projectsJob?.join()
-                requireCurrent()
-                val previousRead = projectsJob
-                refresh()
-                val readBack = projectsJob
-                readBack?.join()
-                requireCurrent()
+                val readBack = refreshAfterWrite()
                 val confirmedName = confirmedRows().firstOrNull { it.id == rename.id }?.name
-                val observedName =
-                    readBack !== previousRead &&
-                        state.phase == ChatReadPhase.Ready &&
-                        confirmedName == rename.name
+                val observedName = readBack && confirmedName == rename.name
                 // The stream can deliver the receipt before the write response is lost.
                 if (!observedName && !hasProjectReceipt(rename.eventId) && confirmedName != null) {
                     // The server deduplicates retries by this Project event ID.
@@ -240,6 +294,18 @@ internal class ProjectListOwner(
                 }
             }
         }
+    }
+
+    private suspend fun refreshAfterWrite(): Boolean {
+        // Wait out a read that could have started before the write.
+        while (projectsJob?.isCompleted == false) projectsJob?.join()
+        requireCurrent()
+        val previousRead = projectsJob
+        refresh()
+        val readBack = projectsJob
+        readBack?.join()
+        requireCurrent()
+        return readBack !== previousRead && state.phase == ChatReadPhase.Ready
     }
 
     fun refresh() {
@@ -265,6 +331,10 @@ internal class ProjectListOwner(
                             else replayConfirmedProjects(saved)
                         requireCurrent()
                         confirmedProjects = selected
+                        if (retryableProjectDeletes.isNotEmpty()) {
+                            val ids = selected.rows.mapTo(hashSetOf()) { it.id }
+                            retryableProjectDeletes.keys.retainAll(ids)
+                        }
                         if (retryableProjectRenames.isNotEmpty()) {
                             val names = selected.rows.associate { it.id to it.name }
                             val appliedEvents =
@@ -289,6 +359,12 @@ internal class ProjectListOwner(
                                 phase = ChatReadPhase.Ready,
                                 source = ChatListSource.Network,
                                 renameRejection = renameRejection,
+                                deleteFeedback =
+                                    snapshot.deleteFeedback?.let { feedback ->
+                                        if (selected.rows.none { it.id == feedback.projectId })
+                                            feedback.copy(status = ProjectDeleteStatus.Confirmed)
+                                        else feedback
+                                    },
                             )
                         )
                     } catch (cancelled: CancellationException) {
@@ -321,3 +397,11 @@ internal class ProjectListOwner(
         projectInvalidations.close()
     }
 }
+
+private fun Exception.rejectsProjectMutation(): Boolean =
+    when (this) {
+        is ApiFailure.Unauthenticated,
+        is ApiFailure.UpdateRequired -> true
+        is ApiFailure.Http -> status in setOf(400, 401, 403, 404, 409)
+        else -> false
+    }

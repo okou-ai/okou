@@ -76,4 +76,17 @@
     <string name="chat_project_rename_rejected">Could not rename the Project.</string>
     <string name="chat_project_rename_save">Save</string>
     <string name="chat_project_rename_pending">Renaming Project…</string>
+    <string name="chat_move_project">Move chat</string>
+    <string name="chat_move_project_outside">Move outside Projects</string>
+    <string name="chat_move_project_named">Move to %1$s</string>
+    <string name="chat_project_outside">Outside Projects</string>
+    <string name="chat_project_moved_named">Moved to %1$s</string>
+    <string name="chat_project_moved_outside">Moved outside Projects</string>
+    <string name="chat_project_delete">Delete Project</string>
+    <string name="chat_project_delete_title">Delete “%1$s”?</string>
+    <string name="chat_project_delete_description">Chats in this Project will move outside Projects. Running tasks will continue.</string>
+    <string name="chat_project_delete_pending">Deleting Project…</string>
+    <string name="chat_project_deleted">Project deleted and its chats moved outside Projects.</string>
+    <string name="chat_project_delete_rejected">Could not delete the Project.</string>
+    <string name="chat_project_delete_unconfirmed">Could not confirm Project deletion.</string>
 </resources>

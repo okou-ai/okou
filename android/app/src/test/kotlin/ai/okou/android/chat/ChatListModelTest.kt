@@ -38,6 +38,7 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
@@ -2982,6 +2983,227 @@ class ChatListModelTest {
             val afterMatchingReceipt = model.uiState.value
             assertEquals("After", afterMatchingReceipt.projects.single().name)
             assertNull(afterMatchingReceipt.projectRenameRejection)
+        }
+    }
+
+    @Test
+    fun projectMoveShowsTheDestinationImmediatelyAndSettlesALostResponseFromTheExactEvent() =
+        runTest {
+            val source = ProjectOrganizationService()
+            val response = CompletableDeferred<Unit>()
+            source.moveResponse = { thread, project, event ->
+                response.await()
+                source.publishMembership(thread, project, event)
+                throw ApiFailure.Network(IOException("Response lost after commit"))
+            }
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                runCurrent()
+                val before = model.uiState.value.threads.single { it.id == CHAT_PERSONAL }
+                assertFalse(model.moveThreadToProject(CHAT_PERSONAL, CHAT_IN_PROJECT))
+                assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+                runCurrent()
+                val pending = model.uiState.value
+                assertEquals(
+                    listOf(CHAT_PERSONAL, CHAT_IN_PROJECT),
+                    chatListGroups(pending).first().threads.map { it.id },
+                )
+                assertEquals(
+                    before.copy(projectId = CHAT_PROJECT),
+                    pending.threads.single { it.id == CHAT_PERSONAL },
+                )
+                assertFalse(model.moveThreadToProject(CHAT_PERSONAL, null))
+                assertEquals(7, UUID.fromString(source.moveIds.single()).version())
+                response.complete(Unit)
+                runCurrent()
+                val confirmed = model.uiState.value
+                assertEquals(
+                    CHAT_PROJECT,
+                    confirmed.threads.single { it.id == CHAT_PERSONAL }.projectId,
+                )
+                assertEquals(
+                    before.pinOrder,
+                    confirmed.threads.single { it.id == CHAT_PERSONAL }.pinOrder,
+                )
+                assertEquals("Research", confirmed.chatMoveNotice?.projectName)
+                assertNull(confirmed.failedRowAction)
+            }
+        }
+
+    @Test
+    fun rejectedProjectMoveRestoresTheSourceScopeAndPinRank() = runTest {
+        val source = ProjectOrganizationService()
+        source.moveResponse = { _, _, _ -> throw ApiFailure.Http(409, null, null, null) }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+            runCurrent()
+            val state = model.uiState.value
+            assertEquals(ChatRowAction.MoveProject, state.failedRowAction?.action)
+            assertTrue(checkNotNull(state.failedRowAction).rejected)
+            val chat = state.threads.single { it.id == CHAT_PERSONAL }
+            assertNull(chat.projectId)
+            assertEquals("a0", chat.pinOrder)
+            assertNull(state.chatMoveNotice)
+        }
+    }
+
+    @Test
+    fun projectDeleteKeepsChatsUntilConfirmedAndRetriesWithTheOriginalOperationIdentity() =
+        runTest {
+            val source = ProjectOrganizationService()
+            val response = CompletableDeferred<Unit>()
+            source.deleteResponse = {
+                throw ApiFailure.Network(IOException("Response unavailable"))
+            }
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                runCurrent()
+                val original = model.uiState.value.threads.associateBy { it.id }
+                model.deleteProject(CHAT_PROJECT)
+                runCurrent()
+                val feedback = checkNotNull(model.uiState.value.projectList.deleteFeedback)
+                assertEquals(ProjectDeleteStatus.Unconfirmed, feedback.status)
+                assertEquals(7, UUID.fromString(source.deleteIds.single()).version())
+                assertEquals(listOf("Research"), model.uiState.value.projects.map { it.name })
+                assertEquals(original, model.uiState.value.threads.associateBy { it.id })
+
+                source.deleteResponse = { id ->
+                    response.await()
+                    source.publishDeletion(id)
+                    throw ApiFailure.Network(IOException("Response lost after commit"))
+                }
+                model.retryProjectDelete(feedback)
+                runCurrent()
+                assertEquals(CHAT_PROJECT, model.uiState.value.projectList.deletingId)
+                assertEquals(original, model.uiState.value.threads.associateBy { it.id })
+                model.deleteProject(CHAT_PROJECT)
+                runCurrent()
+                assertEquals(listOf(feedback.eventId, feedback.eventId), source.deleteIds)
+                response.complete(Unit)
+                runCurrent()
+
+                val confirmed = model.uiState.value
+                assertTrue(confirmed.projects.isEmpty())
+                assertNull(confirmed.projectList.deletingId)
+                assertEquals(
+                    ProjectDeleteStatus.Confirmed,
+                    confirmed.projectList.deleteFeedback?.status,
+                )
+                assertEquals(
+                    listOf(CHAT_PERSONAL, CHAT_IN_PROJECT),
+                    chatListGroups(confirmed).single().threads.map { it.id },
+                )
+                assertEquals(
+                    original[CHAT_IN_PROJECT]?.pinOrder,
+                    confirmed.threads.single { it.id == CHAT_IN_PROJECT }.pinOrder,
+                )
+                assertEquals(
+                    IndicatorsThreadsValue.ACTIVE,
+                    confirmed.indicators?.threads?.get(CHAT_IN_PROJECT),
+                )
+            }
+        }
+
+    private inner class ProjectOrganizationService : Service() {
+        private val events =
+            mutableListOf(
+                17L to chatEventWire(),
+                18L to
+                    chatEventWire(
+                        id = "00000018-0000-4000-8000-000000000000",
+                        seq = 18,
+                        thread = CHAT_IN_PROJECT,
+                        extra = ",\"projectId\":\"$CHAT_PROJECT\"",
+                    ),
+                19L to
+                    chatEventWire(
+                        id = "00000019-0000-4000-8000-000000000000",
+                        seq = 19,
+                        kind = "pinned",
+                        extra = ",\"pinOrder\":\"a0\"",
+                    ),
+                20L to
+                    chatEventWire(
+                        id = "00000020-0000-4000-8000-000000000000",
+                        seq = 20,
+                        thread = CHAT_IN_PROJECT,
+                        kind = "pinned",
+                        extra = ",\"pinOrder\":\"a2\"",
+                    ),
+            )
+        private var deleted: ProjectEventsEventsItem? = null
+        val moveIds = mutableListOf<String>()
+        val deleteIds = mutableListOf<String>()
+        var moveResponse: suspend (String, String?, String) -> Unit = { _, _, _ ->
+            error("Unexpected move")
+        }
+        var deleteResponse: suspend (String) -> Unit = { error("Unexpected deletion") }
+
+        override suspend fun indicators() =
+            Indicators(mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE), emptyMap())
+
+        override suspend fun chatEvents(since: Long?) =
+            page(events.filter { it.first > (since ?: 0) }.map { it.second })
+
+        override suspend fun projectSnapshot() =
+            ProjectSnapshotVariant1(
+                listOf(
+                    ProjectSnapshotVariant1ProjectsItem(
+                        CHAT_PROJECT,
+                        "Research",
+                        CHAT_DATE,
+                        CHAT_DATE,
+                    )
+                ),
+                null,
+                0,
+            )
+
+        override suspend fun projectEvents(since: Long) =
+            ProjectEvents(listOfNotNull(deleted?.takeIf { it.seqId > since }), false)
+
+        override suspend fun moveThreadToProject(
+            threadId: String,
+            projectId: String?,
+            eventId: String,
+        ) {
+            moveIds += eventId
+            moveResponse(threadId, projectId, eventId)
+        }
+
+        override suspend fun deleteProject(projectId: String, eventId: String) {
+            assertEquals(CHAT_PROJECT, projectId)
+            deleteIds += eventId
+            deleteResponse(eventId)
+        }
+
+        fun publishMembership(thread: String, project: String?, event: String) {
+            val sequence = events.last().first + 1
+            val target = project?.let { "\"$it\"" } ?: "null"
+            events +=
+                sequence to
+                    chatEventWire(
+                        id = event,
+                        seq = sequence,
+                        thread = thread,
+                        kind = "project_updated",
+                        extra = ",\"projectId\":$target",
+                    )
+        }
+
+        fun publishDeletion(event: String) {
+            deleted =
+                ProjectEventsEventsItem(
+                    id = event,
+                    seqId = 1,
+                    projectId = CHAT_PROJECT,
+                    kind = ProjectEventsEventsItemKind.DELETED,
+                    name = null,
+                    createdAt = CHAT_DATE,
+                )
+            publishMembership(CHAT_IN_PROJECT, null, "00000021-0000-4000-8000-000000000000")
         }
     }
 

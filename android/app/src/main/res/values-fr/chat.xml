@@ -77,4 +77,17 @@
     <string name="chat_project_rename_rejected">Impossible de renommer le projet.</string>
     <string name="chat_project_rename_save">Enregistrer</string>
     <string name="chat_project_rename_pending">Renommage du projet…</string>
+    <string name="chat_move_project">Déplacer la conversation</string>
+    <string name="chat_move_project_outside">Déplacer hors des projets</string>
+    <string name="chat_move_project_named">Déplacer vers %1$s</string>
+    <string name="chat_project_outside">Hors des projets</string>
+    <string name="chat_project_moved_named">Déplacée vers %1$s</string>
+    <string name="chat_project_moved_outside">Déplacée hors des projets</string>
+    <string name="chat_project_delete">Supprimer le projet</string>
+    <string name="chat_project_delete_title">Supprimer « %1$s » ?</string>
+    <string name="chat_project_delete_description">Les conversations de ce projet seront déplacées hors des projets. Les tâches en cours continueront.</string>
+    <string name="chat_project_delete_pending">Suppression du projet…</string>
+    <string name="chat_project_deleted">Le projet a été supprimé et ses conversations ont été déplacées hors des projets.</string>
+    <string name="chat_project_delete_rejected">Impossible de supprimer le projet.</string>
+    <string name="chat_project_delete_unconfirmed">Impossible de confirmer la suppression du projet.</string>
 </resources>

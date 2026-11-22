@@ -108,11 +108,17 @@ enum class ChatRowAction(
     Unarchive,
     Delete,
     Rename(updatesIndicators = false),
+    MoveProject(updatesIndicators = false),
     Pin(updatesIndicators = false, changesPinOrder = true),
     Unpin(updatesIndicators = false, changesPinOrder = true),
     MovePinUp(updatesIndicators = false, changesPinOrder = true),
     MovePinDown(updatesIndicators = false, changesPinOrder = true),
 }
+
+internal data class ChatProjectDestination(val id: String?, val name: String?)
+
+@ConsistentCopyVisibility
+data class ChatMoveNotice internal constructor(val eventId: String, val projectName: String?)
 
 class ChatRowActionFailure
 internal constructor(
@@ -156,6 +162,7 @@ data class ChatListUiState(
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
     val projectList: ProjectListUiState = ProjectListUiState(),
+    internal val chatMoveNotice: ChatMoveNotice? = null,
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Inbox,
@@ -193,6 +200,20 @@ data class ChatListUiState(
 
 internal val ChatListUiState.canRenameProject: Boolean
     get() = projectList.canRename(offline)
+
+internal val ChatListUiState.canDeleteProject: Boolean
+    get() =
+        projectList.canRename(offline) &&
+            pendingRowActions.values.none { it == ChatRowAction.MoveProject }
+
+internal fun ChatListUiState.projectDestinations(
+    thread: ConfirmedChat
+): List<ChatProjectDestination> = buildList {
+    if (thread.projectId != null) add(ChatProjectDestination(null, null))
+    projects.forEach { project ->
+        if (project.id != thread.projectId) add(ChatProjectDestination(project.id, project.name))
+    }
+}
 
 internal val ChatListUiState.displayUnreadAt: Map<String, String>?
     get() = indicators?.unreadAt ?: cachedUnread?.unreadAt
@@ -242,6 +263,13 @@ internal fun ChatListUiState.rowActions(
     }
     if (source != null) {
         add(ChatRowAction.Rename)
+        if (
+            !offline &&
+                projectsSource != null &&
+                projectList.deletingId == null &&
+                (thread.projectId != null || projects.isNotEmpty())
+        )
+            add(ChatRowAction.MoveProject)
         add(if (thread.muted == true) ChatRowAction.Unmute else ChatRowAction.Mute)
         add(if (thread.archived) ChatRowAction.Unarchive else ChatRowAction.Archive)
         add(ChatRowAction.Delete)
@@ -302,6 +330,7 @@ class ChatListModel(
             service,
             projection,
             dispatcher,
+            wallMillis,
             requireCurrent = ::requireCurrent,
             onFailure = onFailure,
             publishRows = { publishRows() },
@@ -317,6 +346,7 @@ class ChatListModel(
             onFailure = onFailure,
             dispatcher = dispatcher,
             wallMillis = wallMillis,
+            syncChatsAfterDelete = { awaitListRead { true } },
             readState = { mutable.value.projectList },
             publish = { mutable.value = mutable.value.copy(projectList = it) },
         )
@@ -651,7 +681,7 @@ class ChatListModel(
             return
         if (
             state.undoTarget(undo) == null ||
-                !performRowAction(undo.threadId, undo.inverse, title = null, undoRequest = undo)
+                !performRowAction(undo.threadId, undo.inverse, value = null, undoRequest = undo)
         ) {
             mutable.value = state.copy(rowUndo = undo.copy(phase = ChatUndoPhase.Failed))
         }
@@ -715,16 +745,19 @@ class ChatListModel(
     }
 
     internal fun performRowAction(threadId: String, action: ChatRowAction): Boolean =
-        performRowAction(threadId, action, title = null)
+        action != ChatRowAction.MoveProject && performRowAction(threadId, action, value = null)
 
     internal fun renameThread(threadId: String, title: String) {
         performRowAction(threadId, ChatRowAction.Rename, title.trim())
     }
 
+    internal fun moveThreadToProject(threadId: String, projectId: String?): Boolean =
+        performRowAction(threadId, ChatRowAction.MoveProject, projectId)
+
     private fun performRowAction(
         threadId: String,
         action: ChatRowAction,
-        title: String?,
+        value: String?,
         undoRequest: ChatRowUndo? = null,
     ): Boolean {
         if (!current()) return false
@@ -734,9 +767,14 @@ class ChatListModel(
         if (threadId in state.pendingRowActions) return false
         if (
             action == ChatRowAction.Rename &&
-                (title.isNullOrBlank() || title == thread.title?.trim())
+                (value.isNullOrBlank() || value == thread.title?.trim())
         )
             return false
+        val destination =
+            if (action == ChatRowAction.MoveProject) {
+                if (state.offline) return false
+                state.projectDestinations(thread).firstOrNull { it.id == value } ?: return false
+            } else null
         val pinGroup =
             if (action.changesPinOrder) chatListGroups(state).firstOrNull { thread in it.threads }
             else null
@@ -779,7 +817,7 @@ class ChatListModel(
                             rowMutations.prepareEdits(
                                 threadId,
                                 action,
-                                title,
+                                value,
                                 pinGroup,
                                 index,
                                 state,
@@ -859,7 +897,10 @@ class ChatListModel(
                                 failedRowAction = ChatRowActionFailure(action, rejected = true)
                             )
                     )
-                    if (rollback == ChatRowMutationOwner.Rollback.MissingTarget) refreshList()
+                    if (rollback == ChatRowMutationOwner.Rollback.MissingTarget) {
+                        refreshList()
+                        if (destination != null) refreshMetadata()
+                    }
                 }
                 val confirmedRead = confirmation?.receiptCoversIntent
                 val settledRead = intent != null && (confirmation == null || confirmedRead == true)
@@ -883,7 +924,14 @@ class ChatListModel(
                     if (undoRequest == null) {
                         if (failure != null)
                             mutable.value = mutable.value.copy(failedRowAction = failure)
-                        else if (!rolledBack) recordConfirmedUndo(threadId, undo)
+                        else if (!rolledBack) {
+                            recordConfirmedUndo(threadId, undo)
+                            if (destination != null) {
+                                val notice =
+                                    ChatMoveNotice(edits.single().eventId, destination.name)
+                                mutable.value = mutable.value.copy(chatMoveNotice = notice)
+                            }
+                        }
                     }
                     failure == null
                 }
@@ -995,6 +1043,12 @@ class ChatListModel(
     internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
         if (current() && mutable.value.failedRowAction === failure) {
             mutable.value = mutable.value.copy(failedRowAction = null)
+        }
+    }
+
+    internal fun dismissChatMoveNotice(notice: ChatMoveNotice) {
+        if (current() && mutable.value.chatMoveNotice == notice) {
+            mutable.value = mutable.value.copy(chatMoveNotice = null)
         }
     }
 
@@ -1417,6 +1471,17 @@ class ChatListModel(
 
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) =
         projectOwner.dismissProjectRenameRejection(rejection)
+
+    internal fun deleteProject(id: String) {
+        if (mutable.value.canDeleteProject) projectOwner.deleteProject(id)
+    }
+
+    internal fun retryProjectDelete(feedback: ProjectDeleteFeedback) {
+        if (mutable.value.canDeleteProject) projectOwner.retryProjectDelete(feedback)
+    }
+
+    internal fun dismissProjectDeleteFeedback(feedback: ProjectDeleteFeedback) =
+        projectOwner.dismissProjectDeleteFeedback(feedback)
 
     private fun invalidateIndicators() {
         requestIndicators(immediate = true)

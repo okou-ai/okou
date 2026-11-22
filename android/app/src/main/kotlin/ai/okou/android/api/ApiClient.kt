@@ -13,11 +13,13 @@ import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ComposerDraft
 import ai.okou.android.api.generated.CreateThreadRequest
+import ai.okou.android.api.generated.DeleteProjectRequest
 import ai.okou.android.api.generated.HistoryCatchUpRequestItem
 import ai.okou.android.api.generated.HistoryRowsQueryVariant1
 import ai.okou.android.api.generated.HistoryRowsQueryVariant2
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.InitializePreferencesRequest
+import ai.okou.android.api.generated.MoveThreadToProjectRequest
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
@@ -306,6 +308,18 @@ class ApiClient(
         execute {
             api.renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
         }
+    }
+
+    suspend fun moveThreadToProject(threadId: String, projectId: String?, eventId: String) {
+        val membership = execute {
+            api.moveThreadToProject(it, threadId, MoveThreadToProjectRequest(eventId, projectId))
+        }
+        if (membership.threadId != threadId || membership.projectId != projectId)
+            throw ApiFailure.IncompatibleResponse()
+    }
+
+    suspend fun deleteProject(projectId: String, eventId: String) {
+        executeResponse(204) { api.deleteProject(it, projectId, DeleteProjectRequest(eventId)) }
     }
 
     suspend fun renameThread(threadId: String, title: String, eventId: String) {

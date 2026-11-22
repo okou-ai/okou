@@ -115,8 +115,11 @@ internal fun ChatListScreen(
     provisionalChats: List<ProvisionalChat>,
     openProvisional: (ProvisionalChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
+    requestMove: (String) -> Unit,
     renameThread: (String, String) -> Unit,
     renameProject: (String, String) -> Unit,
+    requestDeleteProject: (String) -> Unit,
+    confirmingProjectDelete: String?,
     retryProjectRename: (String) -> Unit,
     projectExpansion: ProjectExpansionModel?,
     listState: LazyListState,
@@ -448,9 +451,25 @@ internal fun ChatListScreen(
                                 rename = { renamingProjectId = project.id },
                                 canRename = canRenameProject,
                                 renaming = state.renamingProjectId == project.id,
+                                delete = { requestDeleteProject(project.id) },
+                                canDelete = state.canDeleteProject,
+                                deleteDialogOpen = confirmingProjectDelete == project.id,
                             )
                         }
-                        if (renameRejection != null && renameRejection.projectId == project.id) {
+                        if (
+                            project.id == state.projectList.deletingId &&
+                                project.id != confirmingProjectDelete
+                        ) {
+                            item(key = "project_deleting_${project.id}") {
+                                ChatNotice(
+                                    R.string.chat_project_delete_pending,
+                                    Modifier.animateItem(null, placement, null)
+                                        .projectChildIndent(outline),
+                                )
+                            }
+                        } else if (
+                            renameRejection != null && renameRejection.projectId == project.id
+                        ) {
                             item(key = "project_rename_${project.id}") {
                                 ProjectRenameRejectionNotice(
                                     Modifier.animateItem(null, placement, null)
@@ -553,10 +572,18 @@ internal fun ChatListScreen(
                                             ?.let { state.rowActions(it, group, threadIndex) }
                                             .orEmpty(),
                                     pendingAction = state.pendingRowActions[id],
+                                    moveLabel = {
+                                        projectMoveLabel(
+                                            thread?.let {
+                                                state.projectDestinations(it).singleOrNull()
+                                            }
+                                        )
+                                    },
                                     performAction = { action ->
                                         when (action) {
                                             ChatRowAction.Rename -> renamingId = id
                                             ChatRowAction.Delete -> deletingId = id
+                                            ChatRowAction.MoveProject -> requestMove(id)
                                             else -> performRowAction(id, action)
                                         }
                                     },
@@ -727,6 +754,58 @@ internal fun RenameListItemDialog(
 
 @Composable
 internal fun DeleteChatDialog(enabled: Boolean, dismiss: () -> Unit, confirm: () -> Unit) {
+    DeleteOrganizationDialog(
+        title = stringResource(R.string.chat_delete_title),
+        description = stringResource(R.string.chat_delete_description),
+        confirmRes = R.string.chat_delete_confirm,
+        enabled = enabled,
+        dismiss = dismiss,
+        confirm = confirm,
+    )
+}
+
+@Composable
+internal fun DeleteProjectDialog(
+    projectName: String,
+    pending: Boolean,
+    status: ProjectDeleteStatus?,
+    enabled: Boolean,
+    dismiss: () -> Unit,
+    confirm: () -> Unit,
+) {
+    DeleteOrganizationDialog(
+        title = stringResource(R.string.chat_project_delete_title, projectName),
+        description = stringResource(R.string.chat_project_delete_description),
+        confirmRes =
+            when {
+                pending -> R.string.chat_project_delete_pending
+                status == ProjectDeleteStatus.Unconfirmed -> R.string.retry
+                else -> R.string.chat_project_delete
+            },
+        enabled = enabled,
+        dismiss = dismiss,
+        confirm = confirm,
+        pending = pending,
+        failureRes =
+            when (status) {
+                ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
+                ProjectDeleteStatus.Unconfirmed -> R.string.chat_project_delete_unconfirmed
+                else -> null
+            },
+    )
+}
+
+@Composable
+private fun DeleteOrganizationDialog(
+    title: String,
+    description: String,
+    @StringRes confirmRes: Int,
+    enabled: Boolean,
+    dismiss: () -> Unit,
+    confirm: () -> Unit,
+    pending: Boolean = false,
+    @StringRes failureRes: Int? = null,
+) {
     AlertDialog(
         onDismissRequest = dismiss,
         modifier = Modifier.padding(horizontal = 24.dp).widthIn(max = 360.dp).fillMaxWidth(),
@@ -734,14 +813,21 @@ internal fun DeleteChatDialog(enabled: Boolean, dismiss: () -> Unit, confirm: ()
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-        title = {
-            Text(stringResource(R.string.chat_delete_title), fontWeight = FontWeight.SemiBold)
-        },
+        title = { Text(title, fontWeight = FontWeight.SemiBold) },
         text = {
-            Text(
-                stringResource(R.string.chat_delete_description),
+            Column(
                 Modifier.verticalScroll(rememberScrollState()),
-            )
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(description)
+                if (failureRes != null) {
+                    Text(
+                        stringResource(failureRes),
+                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         },
         confirmButton = {
             TextButton(
@@ -750,10 +836,11 @@ internal fun DeleteChatDialog(enabled: Boolean, dismiss: () -> Unit, confirm: ()
                 colors =
                     ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
-                Text(stringResource(R.string.chat_delete_confirm))
+                Text(stringResource(confirmRes))
             }
         },
-        dismissButton = { ChatAction(R.string.chat_rename_cancel, dismiss) },
+        dismissButton =
+            if (pending) null else ({ ChatAction(R.string.chat_rename_cancel, dismiss) }),
     )
 }
 
@@ -771,6 +858,9 @@ private fun ProjectRow(
     rename: () -> Unit,
     canRename: Boolean,
     renaming: Boolean,
+    delete: () -> Unit,
+    canDelete: Boolean,
+    deleteDialogOpen: Boolean,
 ) {
     val collapsed = activity != null
     val status = activity?.status ?: ChatRowStatus.None
@@ -790,14 +880,14 @@ private fun ProjectRow(
     var rowFocused by remember { mutableStateOf(false) }
     var restoreMenuFocus by remember { mutableStateOf(false) }
     val openMenu: (() -> Unit)? =
-        if (newChat == null && !canRename) null
+        if (newChat == null && !canRename && !canDelete) null
         else
             ({
                 restoreMenuFocus = rowFocused
                 menuOpen = true
             })
-    LaunchedEffect(menuOpen) {
-        if (!menuOpen && restoreMenuFocus) {
+    LaunchedEffect(menuOpen, deleteDialogOpen) {
+        if (!menuOpen && !deleteDialogOpen && restoreMenuFocus) {
             restoreMenuFocus = false
             rowFocus.requestFocus()
         }
@@ -894,6 +984,17 @@ private fun ProjectRow(
                         rename()
                     }
                 )
+                add(
+                    WorkspaceMenuItem(
+                        stringResource(R.string.chat_project_delete),
+                        R.drawable.ic_delete,
+                        enabled = canDelete,
+                        destructive = true,
+                    ) {
+                        menuOpen = false
+                        delete()
+                    }
+                )
             }
             WorkspaceMenu(items, close = { menuOpen = false })
         }
@@ -939,6 +1040,7 @@ private fun ChatRow(
     row: Int,
     actions: List<ChatRowAction>,
     pendingAction: ChatRowAction?,
+    moveLabel: @Composable () -> String,
     performAction: (ChatRowAction) -> Unit,
     open: () -> Unit,
 ) {
@@ -1021,7 +1123,8 @@ private fun ChatRow(
                 items =
                     actions.map { action ->
                         WorkspaceMenuItem(
-                            stringResource(action.label()),
+                            if (action == ChatRowAction.MoveProject) moveLabel()
+                            else stringResource(action.label()),
                             action.icon(),
                             destructive = action == ChatRowAction.Delete,
                         ) {
@@ -1058,6 +1161,7 @@ internal fun ChatRowAction.label(short: Boolean = false): Int =
             if (short) R.string.chat_swipe_restore else R.string.chat_unarchive
         ChatRowAction.Delete -> R.string.chat_delete
         ChatRowAction.Rename -> R.string.chat_rename
+        ChatRowAction.MoveProject -> R.string.chat_move_project
         ChatRowAction.Pin -> R.string.chat_pin
         ChatRowAction.Unpin -> R.string.chat_unpin
         ChatRowAction.MovePinUp -> R.string.chat_move_pin_up
@@ -1075,6 +1179,7 @@ internal fun ChatRowAction.icon(): Int =
         ChatRowAction.Unarchive -> R.drawable.ic_unarchive
         ChatRowAction.Delete -> R.drawable.ic_delete
         ChatRowAction.Rename -> R.drawable.ic_edit
+        ChatRowAction.MoveProject -> R.drawable.ic_folder_open
         ChatRowAction.Pin -> R.drawable.ic_keep
         ChatRowAction.Unpin -> R.drawable.ic_keep_off
         ChatRowAction.MovePinUp -> R.drawable.ic_arrow_upward

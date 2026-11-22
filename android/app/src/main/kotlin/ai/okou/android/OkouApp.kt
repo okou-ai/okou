@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListReadFailure
 import ai.okou.android.chat.ChatListScreen
+import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRowAction
@@ -20,12 +21,18 @@ import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.ConversationStatus
 import ai.okou.android.chat.ConversationToolbarActions
+import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.NewConversationWelcome
+import ai.okou.android.chat.ProjectDeleteStatus
 import ai.okou.android.chat.ProjectExpansionModel
+import ai.okou.android.chat.ProjectMovePicker
 import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
+import ai.okou.android.chat.canDeleteProject
 import ai.okou.android.chat.conversationRunControls
+import ai.okou.android.chat.projectDestinations
+import ai.okou.android.chat.rowActions
 import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
@@ -275,8 +282,74 @@ internal fun OkouApp(
 
     val showConversationFeedback = settings == null && !showChatList && thread != null
     val showRowFeedback = showChatList || showConversationFeedback
+    var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
+    val deleteFeedback = list.projectList.deleteFeedback
+    val deleteProject = list.projects.firstOrNull { it.id == confirmingProjectDelete }
+    if (deleteProject != null && showChatList) {
+        val feedback = deleteFeedback?.takeIf { it.projectId == deleteProject.id }
+        DeleteProjectDialog(
+            projectName = deleteProject.name,
+            pending = list.projectList.deletingId == deleteProject.id,
+            status = feedback?.status,
+            enabled = list.canDeleteProject,
+            dismiss = {
+                confirmingProjectDelete = null
+                if (feedback?.status == ProjectDeleteStatus.Rejected)
+                    chats?.dismissProjectDeleteFeedback(feedback)
+            },
+            confirm = {
+                if (feedback?.status == ProjectDeleteStatus.Unconfirmed)
+                    chats?.retryProjectDelete(feedback)
+                else chats?.deleteProject(deleteProject.id)
+            },
+        )
+    } else if (confirmingProjectDelete != null && list.projectsPhase == ChatReadPhase.Ready) {
+        LaunchedEffect(confirmingProjectDelete) { confirmingProjectDelete = null }
+    }
     LaunchedEffect(chats, showChatList) { if (!showChatList) chats?.clearRowUndo() }
     if (showRowFeedback && chats != null) ChatUndoFeedback(chats, list, snackbar)
+    if (showRowFeedback && list.rowUndo == null) {
+        list.chatMoveNotice?.let { notice ->
+            val message =
+                notice.projectName?.let { stringResource(R.string.chat_project_moved_named, it) }
+                    ?: stringResource(R.string.chat_project_moved_outside)
+            LaunchedEffect(chats, notice, message) {
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Short)
+                chats?.dismissChatMoveNotice(notice)
+            }
+        }
+        deleteFeedback
+            ?.takeUnless { it.projectId == deleteProject?.id }
+            ?.let { feedback ->
+                val unconfirmed = feedback.status == ProjectDeleteStatus.Unconfirmed
+                val message =
+                    stringResource(
+                        when (feedback.status) {
+                            ProjectDeleteStatus.Confirmed -> R.string.chat_project_deleted
+                            ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
+                            ProjectDeleteStatus.Unconfirmed ->
+                                R.string.chat_project_delete_unconfirmed
+                        }
+                    )
+                val retry =
+                    if (unconfirmed && list.canDeleteProject) stringResource(R.string.retry)
+                    else null
+                LaunchedEffect(chats, feedback, message, retry) {
+                    val result =
+                        snackbar.showSnackbar(
+                            message,
+                            actionLabel = retry,
+                            withDismissAction = unconfirmed,
+                            duration =
+                                if (unconfirmed) SnackbarDuration.Indefinite
+                                else SnackbarDuration.Short,
+                        )
+                    if (result == SnackbarResult.ActionPerformed)
+                        chats?.retryProjectDelete(feedback)
+                    else chats?.dismissProjectDeleteFeedback(feedback)
+                }
+            }
+    }
     list.failedRowAction
         ?.takeIf { list.rowUndo == null }
         ?.let { failure ->
@@ -453,6 +526,25 @@ internal fun OkouApp(
         }
     val (pendingId, createdId) = submission ?: (null to null)
     val provisionalId = pendingId ?: createdId
+    val deletedNewChatProject =
+        newChat?.projectId?.takeIf { id ->
+            list.projectsSource == ChatListSource.Network &&
+                list.projectsPhase == ChatReadPhase.Ready &&
+                list.projects.none { it.id == id }
+        }
+    val composerRestored = composerInput?.value?.journal != null
+    LaunchedEffect(newChat, deletedNewChatProject, provisionalId, composerRestored) {
+        if (
+            deletedNewChatProject != null &&
+                provisionalId == null &&
+                composerRestored &&
+                navigation.target == newChat
+        ) {
+            // Project-scoped new chats share the workspace draft. An already submitted send
+            // keeps its original target until the composer confirms its own outcome.
+            navigation = navigation.copy(target = WorkspaceTarget.NewChat(null))
+        }
+    }
     val provisionalChat =
         provisionalId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
     val needsChatList =
@@ -603,6 +695,31 @@ internal fun OkouApp(
         )
             returnToList()
     }
+    var moveChatId by remember(chats) { mutableStateOf<String?>(null) }
+    fun requestMove(id: String) {
+        val chat = list.threads.firstOrNull { it.id == id && it.hidden != true } ?: return
+        if (ChatRowAction.MoveProject !in list.rowActions(chat) || id in list.pendingRowActions)
+            return
+        val destinations = list.projectDestinations(chat)
+        if (destinations.size == 1) chats?.moveThreadToProject(id, destinations[0].id)
+        else if (destinations.isNotEmpty()) moveChatId = id
+    }
+    moveChatId?.let { id ->
+        val chat = list.threads.firstOrNull { it.id == id && it.hidden != true }
+        if (
+            chat != null &&
+                ChatRowAction.MoveProject in list.rowActions(chat) &&
+                id !in list.pendingRowActions
+        ) {
+            ProjectMovePicker(list.projectDestinations(chat), dismiss = { moveChatId = null }) {
+                destination ->
+                moveChatId = null
+                chats?.moveThreadToProject(id, destination)
+            }
+        } else {
+            LaunchedEffect(id) { moveChatId = null }
+        }
+    }
     val detailActions =
         @Composable {
             if (shortConversation) ConversationStatus(list.offline, runActions, short = true)
@@ -610,6 +727,7 @@ internal fun OkouApp(
                 state = list,
                 thread = thread,
                 onRowAction = ::rowAction,
+                onMove = ::requestMove,
                 onRename = { id, title -> chats?.renameThread(id, title) },
                 openResources =
                     thread
@@ -831,8 +949,11 @@ internal fun OkouApp(
                                     provisionalChats,
                                     ::openProvisionalChat,
                                     ::rowAction,
+                                    ::requestMove,
                                     { id, title -> chats?.renameThread(id, title) },
                                     { id, name -> chats?.renameProject(id, name) },
+                                    { id -> confirmingProjectDelete = id },
+                                    confirmingProjectDelete,
                                     { id -> chats?.retryProjectRename(id) },
                                     projectExpansion,
                                     listPositions[list.filter.ordinal],

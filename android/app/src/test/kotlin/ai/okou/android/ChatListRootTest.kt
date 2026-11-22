@@ -1248,6 +1248,41 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun rejectedProjectDeletionStaysInItsOriginalConfirmation() {
+        val app = compose.activity.application as ChatListApplication
+        val deletes = AtomicInteger()
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method == "DELETE" &&
+                    request.requestUrl?.encodedPath == "/api/projects/$CHAT_PROJECT"
+            ) {
+                deletes.incrementAndGet()
+                MockResponse().setResponseCode(409)
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Research").performTouchInput { longClick() }
+        compose.onNodeWithText("Delete Project").performClick()
+        compose.onNodeWithText("Delete “Research”?").assertIsDisplayed()
+        assertEquals(0, deletes.get())
+        compose.onNodeWithText("Delete Project").performClick()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Could not delete the Project.")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithText("Delete “Research”?").assertIsDisplayed()
+        compose.onNodeWithText("Delete Project").assertIsEnabled()
+        assertEquals(1, deletes.get())
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Delete “Research”?").assertDoesNotExist()
+        compose.onNodeWithText("Research").assertIsDisplayed()
+    }
+
+    @Test
     fun muteConfirmsAnUncertainWriteAndUnmuteRequiresAcknowledgement() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture

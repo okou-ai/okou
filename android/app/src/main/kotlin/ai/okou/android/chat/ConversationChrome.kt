@@ -42,6 +42,7 @@ internal fun ConversationToolbarActions(
     state: ChatListUiState,
     thread: ConfirmedChat?,
     onRowAction: (String, ChatRowAction) -> Unit,
+    onMove: (String) -> Unit,
     onRename: (String, String) -> Unit,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
     openResources: ((restoreFocus: Boolean) -> Unit)? = null,
@@ -90,7 +91,11 @@ internal fun ConversationToolbarActions(
                         ) +
                             actions.map { action ->
                                 WorkspaceMenuItem(
-                                    stringResource(action.label()),
+                                    if (action == ChatRowAction.MoveProject)
+                                        projectMoveLabel(
+                                            state.projectDestinations(checkNotNull(thread)).singleOrNull()
+                                        )
+                                    else stringResource(action.label()),
                                     action.icon(),
                                     enabled = !busy,
                                     destructive = action == ChatRowAction.Delete,
@@ -99,6 +104,7 @@ internal fun ConversationToolbarActions(
                                     when (action) {
                                         ChatRowAction.Rename -> rename = true
                                         ChatRowAction.Delete -> delete = true
+                                        ChatRowAction.MoveProject -> onMove(checkNotNull(thread).id)
                                         else -> onRowAction(checkNotNull(thread).id, action)
                                     }
                                 }
