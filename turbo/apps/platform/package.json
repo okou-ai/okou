@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.1163.5",
+  "version": "0.1163.6",
   "private": true,
   "type": "module",
   "scripts": {

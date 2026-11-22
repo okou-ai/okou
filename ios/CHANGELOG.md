@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.1](https://github.com/okou-ai/okou/compare/ios-v0.53.0...ios-v0.53.1) (2026-11-22)
+
+
+### CI
+
+* **ios:** compile app tests while the pr simulator starts ([#49964](https://github.com/okou-ai/okou/issues/49964)) ([1e43c55](https://github.com/okou-ai/okou/commit/1e43c5505f2ac5b0c8e33406c3439c7bc1041f6d))
+
 ## [0.53.0](https://github.com/okou-ai/okou/compare/ios-v0.52.1...ios-v0.53.0) (2026-11-22)
 
 

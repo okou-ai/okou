@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.249.98](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.97...runner-rs-v0.249.98) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** centralize platform http socket aborts ([#50008](https://github.com/okou-ai/okou/issues/50008)) ([0c216eb](https://github.com/okou-ai/okou/commit/0c216ebfc97f5a93bfc36ea7bf344fd8ba5afa6d))
+* **runner:** share native transition receipt validation ([#49980](https://github.com/okou-ai/okou/issues/49980)) ([23ab7ea](https://github.com/okou-ai/okou/commit/23ab7eaa5b83e240afe58f51d0917dc0de5b0440))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.97](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.96...runner-rs-v0.249.97) (2026-11-22)
 
 
