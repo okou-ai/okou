@@ -365,17 +365,21 @@ test fingerprints, so the merge group must produce fresh matching evidence.
 The App build uses the system Git provider for locked package resolution and
 reports build timings. Formatting includes both package manifests, sources,
 and tests. Swift packages must match `Package.resolved`; CI checks that it
-remains unchanged. Explicit locked resolution and compilation finish before
-simulator startup, keeping post-boot system initialization out of compilation.
-CI reports dependency, compilation, simulator, and test durations separately.
-Total preparation sums dependency and simulator setup; startup before tests also
-includes compilation. Cache hits still validate
-current inputs and never replace test execution.
-Standalone package tests run on a separate macOS runner from the App build and
-simulator suite. Both package and App results are required by the gate. App
-build/tests retain a 30-minute limit; package tests and device archive builds
-retain 15-minute limits. Measure the complete required workflow when assessing
-performance.
+remains unchanged.
+
+On an initial or full iOS pull request run, the package runner compiles the
+App for testing while the simulator runner boots the iPhone. The package runner
+uploads the complete Xcode products and runs the standalone ChatDomain and
+ChatData suites. The simulator runner verifies the artifact digest, run,
+checkout, package lock and toolchain, then uses the transferred `.xctestrun` to
+execute the full App suite. Both test results are required. A failed-job rerun
+can rebuild the App on the simulator runner without waiting for the package job.
+
+Manual runs and merge groups compile on the simulator runner before booting,
+with package tests on their own runner. App tests retain a 30-minute limit,
+and the package and device archive jobs each retain a 15-minute limit. Measure
+from the first required job to the gate: compilation and simulator startup may
+overlap, and a build-cache hit still runs the tests.
 Release-only merge groups can reuse App test evidence only when exact input fingerprints match
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).

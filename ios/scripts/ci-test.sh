@@ -13,9 +13,8 @@ cd "$repo_root"
 build_root="$RUNNER_TEMP/okou-ios-ci"
 mkdir -p "$build_root"
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-# CI resolves dependencies and compiles before simulator startup, then runs tests.
+# The simulator can execute products compiled on another runner with the same inputs.
 # Prepare/compile/run phases belong to CI; build retains the combined build entry.
-# Package CI has its own runner.
 # With no phase argument, supported manual callers still run every suite.
 ios_test_phase=${1:-all}
 case "$ios_test_phase" in
@@ -68,15 +67,16 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase
   fi
 fi
 
-# Keep the caller's Git configuration and add only this job's locked sources.
-git_config_index=${GIT_CONFIG_COUNT:-0}
-export "GIT_CONFIG_KEY_${git_config_index}=include.path"
-export "GIT_CONFIG_VALUE_${git_config_index}=$build_root/package-sources.gitconfig"
-export GIT_CONFIG_COUNT=$((git_config_index + 1))
+# Only package resolution and compilation need the producer's local mirrors.
+if [[ "$ios_test_phase" != run ]]; then
+  git_config_index=${GIT_CONFIG_COUNT:-0}
+  export "GIT_CONFIG_KEY_${git_config_index}=include.path"
+  export "GIT_CONFIG_VALUE_${git_config_index}=$build_root/package-sources.gitconfig"
+  export GIT_CONFIG_COUNT=$((git_config_index + 1))
+fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
-  # Resolve the locked graph before CI starts CoreSimulator so both cold
-  # initializations do not compete. Compilation still waits for system readiness.
+  # Resolve against the locked graph before invoking the compiler.
   xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
   cmp "$resolved" "$build_root/Package.resolved.before"
   for repository in "$build_root"/SourcePackages/repositories/*; do
