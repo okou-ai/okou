@@ -6,7 +6,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
   createComposerConnectorHelpers,
-  SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
@@ -88,9 +87,7 @@ test.each([false, true])(
     mockRemoteChoices(context);
     await setupPage({
       context,
-      path: existing
-        ? `/chats/${SCOUT_THREAD_ID}`
-        : `/agents/${SCOUT_AGENT_ID}/chat`,
+      path: existing ? `/chats/${SCOUT_THREAD_ID}` : `/`,
     });
     click(await findFastControl("button", "Connectors"));
     const computers = await screen.findByRole("group", {

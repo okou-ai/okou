@@ -328,14 +328,14 @@ final class WorkspaceChatActions {
   func startFork(_ selection: ChatFeedbackSelection, from conversation: ConversationStore) {
     guard let workspace else { return }
     guard !closed, !needsUpgrade, fork == nil,
-      workspace.selectedConversation === conversation, let agentID = workspace.defaultAgentID,
+      workspace.selectedConversation === conversation,
       let message = conversation.messages.first(where: { $0.id == selection.eventID }),
       message.role == .assistant, !message.isError, !message.isQueued,
       message.text.utf16.elementsEqual(selection.text.utf16), let runID = message.runID
     else { return }
     fork = ChatForkStore(
       selection: selection, sourceRunID: runID, projectID: conversation.thread.projectId,
-      agentID: agentID, commands: commands, models: workspace.modelStore,
+      agentID: nil, commands: commands, models: workspace.modelStore,
       workflowSource: workspace.composerWorkflows,
       lifecycleTasks: lifecycleTasks,
       didCreate: { [weak self] thread in self?.workspace?.list.insertCreated(thread) },

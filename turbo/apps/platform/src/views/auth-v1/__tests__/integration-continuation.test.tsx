@@ -159,7 +159,7 @@ test.each(ENTRIES)(
   },
 );
 
-test.each(["/works", "/works?discord=unknown", "/agents"])(
+test.each(["/works", "/works?discord=unknown", "/"])(
   "Organization selection does not add a new return flow for %s",
   async (path) => {
     await startPage({
@@ -231,8 +231,7 @@ test("A sanitized Discord return after login or actor change reports interrupted
       guildId: null,
       guildName: null,
       discordUserId: null,
-      defaultAgentId: null,
-      defaultAgentName: null,
+
       onboarding: "oauth",
       dmSelectionConnectionId: null,
       dmBindings: [],

@@ -25,11 +25,6 @@ import {
   chatThreadByIdContract,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  agentsMainContract,
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -53,7 +48,6 @@ import { nowDate } from "../../../lib/time.ts";
 import { forYouCovers } from "../../../lib/for-you-artwork.ts";
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
-const agentId = "c0000000-0000-4000-a000-000000000001";
 const threadId = "b0000000-0000-4000-a000-000000000811";
 function makeSuggestion(): Suggestion {
   const timestamp = nowDate().toISOString();
@@ -319,7 +313,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
 const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
 } as const;
-// Suggestions live independently of the default Agent's new-chat draft.
+// Suggestions live independently of the workspace new-chat draft.
 const suggestionPath = "/for-you";
 const homePath = "/";
 async function openSuggestions(): Promise<void> {
@@ -971,36 +965,10 @@ test("A deleted target shows its unavailable page and preserves the home draft",
   });
 });
 test("Suggestion options start a member chat after visiting a legacy Agent", async () => {
-  const secondary = "c0000000-0000-4000-a000-000000000002";
-  const agents: AgentResponse[] = [agentId, secondary].map((id) => {
-    return {
-      agentId: id,
-      isDefaultAgent: id === agentId,
-      ownerId: "user_mock",
-      displayName: id === agentId ? "Okou" : "Secondary",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    };
-  });
-  context.mocks.api(agentsMainContract.list, ({ respond }) => {
-    return respond(200, agents);
-  });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const found = agents.find((agent) => {
-      return agent.agentId === params.id;
-    });
-    if (!found) {
-      throw new Error("Missing mocked Agent");
-    }
-    return respond(200, found);
-  });
   mockPool();
   mockChatLifecycle(context);
   const sender = context.mocks.deferred<string>();
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    expect(body).not.toHaveProperty("agentId");
     if (!sender.settled()) {
       sender.resolve(body.threadId ?? threadId);
     }
@@ -1011,7 +979,7 @@ test("Suggestion options start a member chat after visiting a legacy Agent", asy
   });
   await setupPage({
     context,
-    path: `/agents/${secondary}/chat`,
+    path: `/`,
     featureSwitches: features,
   });
   expect(screen.getByRole("region", { name: "Workflow" })).toBeInTheDocument();

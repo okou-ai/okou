@@ -222,7 +222,7 @@ async function responseFixture() {
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   const sentTexts: string[] = [];
   server.use(
     http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
@@ -330,21 +330,12 @@ describe("WeChat reply presentation and processing status", () => {
     );
     await flushWaitUntilForTest();
     const chat = createChatFilesBddApi(context);
-    const lifecycle = await chat.requestThreadEvents(fixture.actor, {}, [200]);
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected the Web conversation");
-    }
-    const thread = lifecycle.body.events.find((event) => {
-      return event.kind === "created";
-    });
-    if (!thread) {
-      throw new Error("Expected the WeChat conversation");
-    }
+    const threadId = uuid().parse(run.platformEnvironment.OKOU_CHAT_THREAD_ID);
     expect(fixture.sentTexts.at(-1)).toContain(
-      `Switch this conversation's model in Okou: https://app.okou.ai/chats/${thread.chatThreadId}`,
+      `Switch this conversation's model in Okou: https://app.okou.ai/chats/${threadId}`,
     );
     await expect(
-      chat.listThreadEvents(fixture.actor, thread.chatThreadId),
+      chat.listThreadEvents(fixture.actor, threadId),
     ).resolves.toMatchObject({
       events: expect.arrayContaining([
         expect.objectContaining({ eventType: "run.failed", runId: run.runId }),
@@ -1258,7 +1249,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   const sends: unknown[] = [];
   const delivered = createDeferredPromise<void>(context.signal);
   let extraItems: NonNullable<WechatMessage["item_list"]> = [];
@@ -2547,7 +2538,7 @@ describe("WeChat system notices", () => {
     await runs.grantProEntitlement(owner.actor);
     await runs.ensurePersonalSubscriptionModel(owner.actor);
     await runs.updateUserModelPreference(owner.actor, "claude-fable-5-1");
-    await bdd.readOnboardingStatus(owner.actor);
+    await bdd.provisionWorkspace(owner.actor);
     const message = ownerMessage(owner.actor.userId);
     let attempts = 0;
     const messages = setupApp({
@@ -3055,7 +3046,7 @@ test("a restored transport ignores provider backlog and accepts only newly creat
   await runs.grantProEntitlement(owner.actor);
   await runs.ensurePersonalSubscriptionModel(owner.actor);
   await runs.updateUserModelPreference(owner.actor, "claude-fable-5-1");
-  await bdd.readOnboardingStatus(owner.actor);
+  await bdd.provisionWorkspace(owner.actor);
   const oldMessage = {
     ...ownerMessage(owner.actor.userId),
     create_time_ms: now() - 60_000,

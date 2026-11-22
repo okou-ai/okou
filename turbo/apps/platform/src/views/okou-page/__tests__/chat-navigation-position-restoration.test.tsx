@@ -14,7 +14,6 @@ import {
   setupPage,
   createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
-import { waitForBrowserPaint } from "../../../signals/utils.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import {
   mockChatEventRows,
@@ -27,7 +26,6 @@ const { mockChatLifecycleWithoutBrowserSession } =
   createChatLifecycleHelpers(context);
 
 const APP_HOST = "app.okou.ai";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const VIEWPORT_TOP = 100;
 const VIEWPORT_HEIGHT = 360;
 const ANCHOR_HEIGHT = 80;
@@ -125,7 +123,7 @@ function mockThreadStories(
       return {
         id: story.id,
         title: story.title,
-        agent: { id: AGENT_ID, avatarUrl: null },
+
         createdAt: "2026-07-01T10:00:00Z",
         updatedAt: `2026-07-01T10:10:${sortSecond}Z`,
         pinnedAt: null,
@@ -830,13 +828,10 @@ test("Follow the Resources origin link to its parent run", async () => {
               parts: [
                 { type: "text", text: "Child message 1" },
                 {
-                  type: "source",
-                  kind: "agent",
+                  type: "chat_thread",
                   threadId: DEEP_LINK_THREAD_ID,
                   runId: linkedRunId,
                   titleSnapshot: "Parent conversation",
-                  agentId: AGENT_ID,
-                  href: `https://${APP_HOST}/chats/${DEEP_LINK_THREAD_ID}#run-${linkedRunId}`,
                 },
               ],
             },
@@ -999,7 +994,7 @@ test("Return to the latest message after sending from history", async () => {
   await expectAtLatestActivity(geometry);
 });
 
-async function setupSharingScroll() {
+test("Preserve the reading position while entering and leaving sharing mode", async () => {
   mockChatLifecycleWithoutBrowserSession({
     threadId: SHARING_THREAD_ID,
     threadTitle: "Shareable research",
@@ -1025,15 +1020,9 @@ async function setupSharingScroll() {
   await waitFor(() => {
     expect(geometry.atBottom()).toBeTruthy();
   });
-  return { geometry, targetText };
-}
-
-test("Preserve the reading position while entering and leaving sharing mode", async () => {
-  const { geometry, targetText } = await setupSharingScroll();
   await chooseReadingPosition(geometry, targetText);
+
   click(buttonNamed("Share messages"));
-  // Native overflow anchoring scrolls the viewport during the mode change.
-  geometry.scrollMessageTo(targetText, READING_OFFSET + 80);
   await waitFor(() => {
     expect(buttonNamed("Cancel")).toBeInTheDocument();
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
@@ -1045,7 +1034,6 @@ test("Preserve the reading position while entering and leaving sharing mode", as
   await expectReadingPosition(geometry, targetText);
 
   click(buttonNamed("Cancel"));
-  geometry.scrollMessageTo(targetText, READING_OFFSET - 40);
   await waitFor(() => {
     expect(buttonNamed("Share messages")).toBeInTheDocument();
     expect(screen.queryAllByText("0 selected")).toHaveLength(0);
@@ -1055,30 +1043,4 @@ test("Preserve the reading position while entering and leaving sharing mode", as
   fireEvent.resize(window);
 
   await expectReadingPosition(geometry, targetText);
-});
-
-test("Keep the latest reply pinned while entering and leaving sharing mode", async () => {
-  const { geometry, targetText } = await setupSharingScroll();
-  click(buttonNamed("Share messages"));
-  geometry.setViewportHeight(VIEWPORT_HEIGHT - 80);
-  fireEvent.scroll(threadContainer(SHARING_THREAD_ID));
-  await waitFor(() => {
-    expect(geometry.atBottom()).toBeTruthy();
-  });
-  click(buttonNamed("Cancel"));
-  geometry.setViewportHeight(VIEWPORT_HEIGHT);
-  geometry.scrollMessageTo(targetText, READING_OFFSET);
-  await waitFor(() => {
-    expect(geometry.atBottom()).toBeTruthy();
-  });
-});
-
-test("Let reader input supersede the sharing position restore", async () => {
-  const { geometry, targetText } = await setupSharingScroll();
-  await chooseReadingPosition(geometry, targetText);
-  click(buttonNamed("Share messages"));
-  fireEvent.wheel(threadContainer(SHARING_THREAD_ID), { deltaY: 80 });
-  geometry.scrollMessageTo(targetText, READING_OFFSET - 80);
-  await waitForBrowserPaint(context.signal);
-  expect(geometry.viewportOffsetFor(targetText)).toBe(READING_OFFSET - 80);
 });

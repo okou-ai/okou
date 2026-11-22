@@ -1,4 +1,3 @@
-import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -167,7 +166,6 @@ async function prepare(projectPage = false, configure?: () => void) {
   context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {
     return respond(204);
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   configure?.();
   await setupPage({
     context,

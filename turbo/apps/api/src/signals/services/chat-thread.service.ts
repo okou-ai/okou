@@ -1,3 +1,4 @@
+import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
 import { normalChatInputInsertSql } from "./normal-chat-input-publication-sql";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -253,7 +254,7 @@ export function chatThreadDraft(args: {
       )
       .limit(1);
     return {
-      draftUserMessage: draft?.draftUserMessage ?? null,
+      draftUserMessage: readStoredDraftMessage(draft?.draftUserMessage),
       draftAttachments: persistedAttachmentSchema
         .array()
         .nullable()

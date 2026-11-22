@@ -12,7 +12,6 @@ import {
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
-  AGENT_ID,
   expectInlineTemplate,
   sendComposerMessage,
   templatePart,
@@ -65,7 +64,7 @@ test("Preview a website template and return to its picker", async () => {
   });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
   const inline = await expectInlineTemplate(template.title);
@@ -114,7 +113,7 @@ test("Select and send a website template", async () => {
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?templatePicker=website`,
+    path: `/?templatePicker=website`,
     host: "app.okou.ai",
   });
   const picker = await screen.findByRole("dialog");

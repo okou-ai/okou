@@ -10,7 +10,6 @@ import { HttpResponse } from "msw";
 import { expect } from "vitest";
 
 import {
-  AGENT_ID,
   THREAD_ID,
   tabByText,
   createChatComposerHelpers,
@@ -19,7 +18,7 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import { click } from "../../../__tests__/page-helper.ts";
 
-export { AGENT_ID, THREAD_ID };
+export { THREAD_ID };
 
 interface TemplateChatCapture {
   readonly sentMessages: UserMessageDocument[];
@@ -104,7 +103,7 @@ export async function expectInlineTemplate(
 }
 
 export function createTemplateGalleryHelpers(context: TestContext) {
-  const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+  const { mockBillingCapabilities, mockPersonalModelRoutes } =
     createChatComposerHelpers(context);
   function mockTemplateChat(options?: {
     readonly threadId?: string;
@@ -118,7 +117,6 @@ export function createTemplateGalleryHelpers(context: TestContext) {
     const runClientThreadIds: (string | undefined)[] = [];
     const threadCreates: string[] = [];
 
-    mockAgent();
     mockPersonalModelRoutes();
     context.mocks.api(browserContract.get, ({ respond }) => {
       return respond(404, {

@@ -104,13 +104,11 @@ final class ChatConnectorAccessTests: XCTestCase {
     let fixture = makeFixture()
     let client = fixture.http.client
     let service = ChatPermissions(client: client)
-    let action = try XCTUnwrap(
-      ChatPermissionAction(
-        url: URL(
-          string:
-            "https://app.okou.ai/agents/\(FixtureData.agentID)/permissions?connectorSlug=slack&permission=read"
-        )!,
-        agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+    let link =
+      "/connectors/permissions?orgId=\(ChatHTTPFixture.workspaceID)&userId=\(ChatHTTPFixture.userID)"
+      + "&connectorSlug=slack&permission=read"
+    let url = try XCTUnwrap(ChatPermissionAction.trustedURL(link, webURL: fixture.http.baseURL))
+    let action = try XCTUnwrap(ChatPermissionAction(url: url, threadID: FixtureData.threadID))
     let reviewed = try await service.load(action)
     let receipt = try await service.apply(action, duration: .day, reviewing: reviewed)
     let saved = try await service.load(action)

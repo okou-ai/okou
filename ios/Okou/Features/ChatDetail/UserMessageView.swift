@@ -33,7 +33,7 @@ struct UserMessageView: View {
           VStack(alignment: .leading, spacing: OkouSpace.ten) {
             UserMessageBody(
               parts: document.bodyParts, webURL: webURL,
-              sourceTitle: document.annotation?.kind == "agent"
+              sourceTitle: document.annotation?.isForwardedChat == true
                 ? document.annotation?.titleSnapshot : nil)
             if let error = message.inputError {
               Label(error, okouSymbol: "circle-alert")
@@ -175,6 +175,7 @@ private struct UserMessageAnnotation: View {
   @Environment(\.openChatSource) private var openChatSource
 
   private var kind: String {
+    if part.isForwardedChat { return "chat" }
     if part.type == "automation" { return "automation" }
     if part.kind == "feishu", part.href?.hasPrefix("https://applink.larksuite.com/") == true {
       return "lark"
@@ -185,7 +186,7 @@ private struct UserMessageAnnotation: View {
   private var title: String? {
     switch kind {
     case "automation": part.workflowName
-    case "agent": part.titleSnapshot
+    case "chat": part.titleSnapshot
     case "mcp": part.clientName ?? "MCP"
     case "slack": "Slack"
     case "discord": "Discord"
@@ -203,7 +204,7 @@ private struct UserMessageAnnotation: View {
   private var symbol: String {
     switch kind {
     case "automation": "workflow"
-    case "agent": "circle-user-round"
+    case "chat": "circle-user-round"
     case "mcp": "puzzle"
     case "github": "code"
     default: "messages-square"
@@ -214,7 +215,7 @@ private struct UserMessageAnnotation: View {
     if kind == "automation", let id = part.workflowId, UUID(uuidString: id) != nil {
       return webURL.appending(path: "workflows/\(id)/automations")
     }
-    if kind == "agent", let thread = part.threadId, let run = part.runId,
+    if kind == "chat", let thread = part.threadId, let run = part.runId,
       UUID(uuidString: thread) != nil, UUID(uuidString: run) != nil
     {
       var url = URLComponents(
@@ -260,7 +261,7 @@ private struct UserMessageAnnotation: View {
     .accessibilityIdentifier("user-message-origin-\(kind)")
   }
 
-  private var opensChat: Bool { kind == "automation" || kind == "agent" }
+  private var opensChat: Bool { kind == "automation" || kind == "chat" }
 
   private func label(_ title: String) -> some View {
     HStack(spacing: OkouSpace.six) {

@@ -1,4 +1,3 @@
-import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import { cleanup, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
@@ -33,7 +32,6 @@ function installWorkspace() {
     caseId: 121,
     threads: [thread],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });

@@ -14,7 +14,6 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000811";
 const UPLOAD_ID = "b0000000-0000-4000-a000-000000000812";
 const ACTIVE_RUN_ID = "d0000000-0000-4000-a000-000000000811";
@@ -142,7 +141,7 @@ test("A new message keeps its attachment, text, and selected model together", as
   });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
 

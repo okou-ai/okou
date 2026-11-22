@@ -17,7 +17,6 @@ import {
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   THREAD_ID,
   openTemplatePicker,
   createTemplateGalleryHelpers,
@@ -207,7 +206,7 @@ async function openCustomPanel(
   const capture = mockTemplateChat();
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   const dialog = await openTemplatePicker(user);
   if (category !== "Presentation") {

@@ -65,54 +65,6 @@ test("starts off, enables hourly checks independently of Morning Brief, and pres
   ).resolves.not.toBeChecked();
 });
 
-test("keeps a pending opt-in cancellable when the primary Agent is unavailable", async () => {
-  let preference: ProactiveSuggestionsPreference = {
-    enabled: true,
-    status: "preparing",
-    unavailableReason: "missing-default-agent",
-  };
-  context.mocks.api(feedContract.sources, ({ respond }) => {
-    return respond(200, {
-      suggestions: preference.enabled,
-      whatsNew: true,
-      offers: true,
-      systemUpdates: true,
-    });
-  });
-  context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
-    return respond(200, preference);
-  });
-  context.mocks.api(
-    proactiveSuggestionsContract.updateWithFeed,
-    ({ body, respond }) => {
-      preference = { ...preference, enabled: body.enabled, status: "paused" };
-      return respond(200, preference);
-    },
-  );
-  await setupPage({
-    context,
-    path: "/?settings=my-okou",
-    featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    },
-  });
-  const card = await screen.findByTestId("proactive-suggestions-preference");
-  await expect(
-    within(card).findByText(
-      "Okou is unavailable in this workspace. Contact a workspace administrator.",
-    ),
-  ).resolves.toBeInTheDocument();
-  const toggle = within(card).getByRole("switch", {
-    name: "Suggestions",
-  });
-  expect(toggle).toBeChecked();
-  expect(toggle).toBeEnabled();
-  click(toggle);
-  await waitFor(() => {
-    return expect(toggle).not.toBeChecked();
-  });
-});
-
 test("a failed opt-out preserves the current preference", async () => {
   const preference: ProactiveSuggestionsPreference = {
     enabled: true,

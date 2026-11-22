@@ -1,9 +1,7 @@
-import { executionAgentId } from "./execution-agent";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -13,9 +11,9 @@ export interface ProactiveWorkflowOwner {
   readonly userId: string;
 }
 
-export const loadProactiveWorkflowsEligibility$ = command(
+export const loadProactivePreferences$ = command(
   async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
-    const [features, [preference], [agent]] = await Promise.all([
+    const [features, [preference]] = await Promise.all([
       set(loadUserFeatureSwitchContext$, owner.orgId, owner.userId, signal),
       get(db$)
         .select({
@@ -29,11 +27,6 @@ export const loadProactiveWorkflowsEligibility$ = command(
             eq(orgMembersMetadata.userId, owner.userId),
           ),
         )
-        .limit(1),
-      get(db$)
-        .select({ id: agents.id })
-        .from(agents)
-        .where(eq(agents.id, executionAgentId(owner.orgId, owner.userId)))
         .limit(1),
     ]);
     signal.throwIfAborted();
@@ -55,7 +48,6 @@ export const loadProactiveWorkflowsEligibility$ = command(
         active: suggestionsAvailable && suggestionsEnabled && timezone !== null,
       },
       timezone,
-      agentId: agent?.id ?? null,
     };
   },
 );

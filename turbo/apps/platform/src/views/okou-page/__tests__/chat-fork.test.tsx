@@ -9,7 +9,6 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   createChatCapabilityHelpers,
   FIRST_CAPABILITY_RUN_ID,
@@ -34,7 +33,7 @@ function installProjectConversation(projectId: string | null) {
   const source = {
     ...continuityThread(331, 1, "Launch planning"),
     id: RUN_THREAD_ID,
-    agentId: CAPABILITY_AGENT_ID,
+
     projectId,
   };
   const threads = [source];

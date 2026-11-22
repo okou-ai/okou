@@ -14,11 +14,9 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   composerInlineTemplates,
   THREAD_ID,
-  createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent } = createChatComposerHelpers(context);
 
 test("Replacing an inline template preserves a previously sent reference", async () => {
   const first = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
@@ -26,7 +24,6 @@ test("Replacing an inline template preserves a previously sent reference", async
   if (!first || !replacement) {
     throw new Error("Expected presentation templates to insert and replace");
   }
-  mockAgent();
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "My thread",

@@ -129,7 +129,7 @@ function createSuggestionEntry(item: Suggestion) {
     return result;
   });
   // A chosen action is sent from this card's own unsaved draft, so the
-  // default Agent's composer is neither read nor replaced.
+  // workspace composer is neither read nor replaced.
   const optionDraft = createDraftSignals();
   // The chosen action's send, whose progress and failure its sent row shows.
   const sending$ = state<Promise<void> | undefined>(undefined);

@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "Fechar"
+  },
   "activity": {
     "codex": {
       "codexError": "Erro do Codex",
@@ -1005,8 +1008,8 @@
         "twentyFourHours": "24 horas"
       },
       "errors": {
-        "loadAgent": "Não foi possível carregar o agente",
         "loadGrants": "Não foi possível carregar as concessões de permissão",
+        "loadMember": "Não foi possível carregar o membro do espaço de trabalho.",
         "loadMetadata": "Não foi possível carregar os metadados de permissão",
         "missingPermission": "A permissão não está nos parâmetros da URL",
         "unknownAction": "Ação de permissão desconhecida: {{action}}",
@@ -2317,7 +2320,6 @@
       "unavailable": "Este e-mail não está mais disponível."
     },
     "messageDocument": {
-      "agent": "[Agente: {{name}}]",
       "chatThread": "[Conversa: {{title}}]",
       "file": "[Arquivo: {{filename}}]",
       "template": "[Modelo: {{title}}]",
@@ -2350,7 +2352,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "Agente não encontrado",
       "allow": "Permitir",
       "alreadyAllowed": "Já permitido",
       "alreadyDenied": "Já negado",
@@ -2367,6 +2368,7 @@
       "expiresInHours_many": "Expira em {{count}} horas",
       "expiresInHours_other": "Expira em {{count}} horas",
       "loadFailed": "Não foi possível carregar o status da permissão",
+      "memberNotFound": "Membro do espaço de trabalho indisponível.",
       "otherEndpoints": "outros endpoints",
       "unknown": "Permissão desconhecida",
       "updated": "Permissões atualizadas",
@@ -3305,7 +3307,7 @@
         "tokenUrl": "URL do token"
       },
       "delete": {
-        "description": "Isso remove o conector e o segredo armazenado de cada membro. Os agentes autorizados para este conector perderão o acesso imediatamente. Esta ação não pode ser desfeita.",
+        "description": "Excluir este conector remove imediatamente o acesso e os segredos salvos por todos os membros do espaço de trabalho. Esta ação é irreversível.",
         "title": "Excluir {{connector}}?"
       },
       "edit": {
@@ -3416,13 +3418,13 @@
       },
       "github": {
         "accountFallback": "esta conta do GitHub",
-        "alreadyDescription": "Você já está conectado como {{account}}. Mencione seu agente em issues ou pull requests do GitHub para começar a conversar.",
+        "alreadyDescription": "Você está conectado como {{account}}. Mencione o Okou em uma issue ou pull request do GitHub para conversar.",
         "alreadyTitle": "Já conectado ao GitHub",
         "back": "Voltar para fluxos de trabalho",
         "checkingConnectionDescription": "Aguarde enquanto verificamos sua conexão com o GitHub.",
         "checkingConnectionTitle": "Verificando a conexão...",
         "checkingSession": "Aguarde enquanto verificamos sua sessão do {{brandName}}.",
-        "connectDescription": "Vincule sua conta do {{brandName}} a {{account}} para que menções no GitHub possam executar seus agentes em issues e pull requests.",
+        "connectDescription": "Vincule sua conta do {{brandName}} a {{account}} para iniciar conversas pelo GitHub.",
         "connectTitle": "Conectar ao GitHub",
         "errorFallback": "Não foi possível conectar o GitHub. Tente novamente pelo GitHub.",
         "invalidInstallation": "A instalação do GitHub neste link não é válida.",
@@ -3440,7 +3442,7 @@
         "signInCheckFailed": "Não foi possível verificar o login",
         "signInDescription": "Entre com sua conta do {{brandName}} antes de conectar este usuário do GitHub.",
         "signInTitle": "Entre para continuar",
-        "successDescription": "Você está conectado como {{account}}. Mencione seu agente em issues ou pull requests do GitHub para começar a conversar.",
+        "successDescription": "Você está conectado como {{account}}. Mencione o Okou em uma issue ou pull request do GitHub para conversar.",
         "successTitle": "Conectado ao GitHub!",
         "wrongOrganizationDescription": "Sua organização ativa não corresponde a esta instalação do GitHub. Mude para a organização correta e abra o link novamente.",
         "wrongOrganizationTitle": "Mudar de organização"
@@ -3455,7 +3457,7 @@
         "accountMismatchDescriptionWorkspace": "Sua conta do Okou usa atualmente a conta do Slack {{currentAccount}} em {{workspace}}. Deseja mudar para {{requestedAccount}}, a conta que abriu este link?",
         "accountMismatchTitle": "Trocar conta do Slack?",
         "authorizationFailed": "A autorização do Slack não foi concluída. Sua conexão atual aparece abaixo. Você pode tentar novamente.",
-        "connectDescription": "Vincule sua conta a este workspace do Slack para interagir com seu agente diretamente pelo Slack.",
+        "connectDescription": "Vincule sua conta para conversar com o Okou no Slack.",
         "connectTitle": "Conectar ao Slack",
         "currentConnection": "Slack está conectado",
         "errorFallback": "Não foi possível verificar ou iniciar a conexão com o Slack.",
@@ -3473,7 +3475,7 @@
       },
       "teams": {
         "authorize": "Autorizar Microsoft Teams",
-        "connectDescription": "Vincule sua conta do Teams para interagir com seu agente diretamente pelo Microsoft Teams.",
+        "connectDescription": "Vincule sua conta para conversar com o Okou no Microsoft Teams.",
         "connectedDescription": "Sua conta do Teams está conectada.",
         "connectTitle": "Conectar o Microsoft Teams",
         "identityMismatch": "A conta ou o espaço de trabalho do Teams solicitado não corresponde à conexão atual.",
@@ -3494,7 +3496,7 @@
         "checkingConnectionTitle": "Verificando a conexão...",
         "conflictDescription": "Você está conectado como {{current}}, mas este link solicita {{requested}}. Mantenha sua conexão ou gerencie-a explicitamente antes de tentar novamente.",
         "conflictTitle": "Outra conta do Telegram está conectada",
-        "connectDescription": "Vincule sua conta a este bot do Telegram para interagir com seu agente diretamente pelo Telegram.",
+        "connectDescription": "Vincule sua conta para conversar com o Okou no Telegram.",
         "connectionCheckFailed": "Não foi possível acessar o Telegram para verificar a conexão.",
         "connectTitle": "Conectar ao Telegram",
         "continue": "Continuar com o Telegram",
@@ -3549,7 +3551,6 @@
         "addBot": "Adicionar bot",
         "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Feishu.",
         "addDialogTitle": "Adicionar um bot do Feishu",
-        "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
         "botFallback": "Bot do Feishu",
         "botIconAlt": "Ícone do bot {{bot}}",
@@ -3576,12 +3577,9 @@
           "imageAlt": "Resultado da criação do app do Feishu mostrando onde encontrar o App ID e o App Secret",
           "title": "Adicionar as credenciais do app"
         },
-        "defaultAgent": "Agente padrão",
-        "defaultAgentAria": "Agente padrão para {{appId}}",
         "developerConsole": "console de desenvolvedor do Feishu",
         "dialogAdminRequired": "Um administrador da organização deve configurar o app. Você poderá conectar sua própria conta pela lista de bots do Feishu após a conclusão da configuração.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Adicione um app personalizado para encaminhar mensagens do Feishu a um agente.",
         "emptyMember": "Peça a um administrador da organização para adicionar um bot do Feishu.",
         "emptyTitle": "Ainda não há bots do Feishu",
         "events": {
@@ -3639,8 +3637,6 @@
         "reviewGuide": "Revisar guia",
         "reviewGuideDescription": "Revise as etapas concluídas da configuração deste bot do Feishu.",
         "reviewGuideTitle": "Guia de revisão do Feishu",
-        "routeDescription": "Encaminhe mensagens do Feishu para agentes",
-        "selectAgent": "Selecionar um agente",
         "setupIncomplete": "Configuração incompleta",
         "steps": {
           "back": "Voltar",
@@ -3681,7 +3677,6 @@
         "addBot": "Adicionar bot",
         "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Lark.",
         "addDialogTitle": "Adicionar um bot do Lark",
-        "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
         "botFallback": "Bot do Lark",
         "botIconAlt": "Ícone do bot {{bot}}",
@@ -3708,12 +3703,9 @@
           "imageAlt": "Resultado da criação do app do Feishu mostrando onde encontrar o App ID e o App Secret",
           "title": "Adicionar as credenciais do app"
         },
-        "defaultAgent": "Agente padrão",
-        "defaultAgentAria": "Agente padrão para {{appId}}",
         "developerConsole": "console de desenvolvedor do Lark",
         "dialogAdminRequired": "Um administrador da organização deve configurar o app. Você poderá conectar sua própria conta pela lista de bots do Lark após a conclusão da configuração.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Adicione um app personalizado para encaminhar mensagens do Lark a um agente.",
         "emptyMember": "Peça a um administrador da organização para adicionar um bot do Lark.",
         "emptyTitle": "Ainda não há bots do Lark",
         "events": {
@@ -3776,8 +3768,6 @@
         "reviewGuide": "Revisar guia",
         "reviewGuideDescription": "Revise as etapas concluídas da configuração deste bot do Lark.",
         "reviewGuideTitle": "Guia de revisão do Lark",
-        "routeDescription": "Encaminhe mensagens do Lark para agentes",
-        "selectAgent": "Selecionar um agente",
         "setupIncomplete": "Configuração incompleta",
         "steps": {
           "back": "Voltar",
@@ -4007,6 +3997,364 @@
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Falha na solicitação"
     }
+  },
+  "ideation": {
+    "all": "Todos",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Otimize e transforme imagens em lote",
+            "title": "Otimizador de mídia do Cloudinary"
+          },
+          "fal-ai-image-generation": {
+            "description": "Gere imagens de produtos a partir de descrições no Notion",
+            "title": "Geração de imagens com Fal AI"
+          }
+        },
+        "title": "Criação"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Cole uma lista e o {{assistantName}} abre as issues para você",
+            "title": "Criar issues em lote"
+          },
+          "browserbase-web-testing": {
+            "description": "Testes automatizados de navegador para seu aplicativo web",
+            "title": "Testes web com Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Resumo semanal de tráfego e eventos de segurança no Slack",
+            "title": "Relatório de tráfego e segurança do Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "Forneça uma URL e o {{assistantName}} rastreia o bug pelo repositório",
+            "title": "Investigação da base de código"
+          },
+          "daily-standup-report": {
+            "description": "Métricas da manhã viram uma apresentação publicada no Slack",
+            "title": "Relatório diário de standup"
+          },
+          "deep-research-code-analysis": {
+            "description": "Explica como um subsistema funciona na sua base de código",
+            "title": "Análise aprofundada de código"
+          },
+          "github-pr-summarizer": {
+            "description": "Resumos de pull requests mesclados no Notion, com publicações opcionais no Slack",
+            "title": "Resumidor de PRs do GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "Atividade semanal do repositório resumida por funcionalidade",
+            "title": "Progresso semanal do GitHub"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Espelha issues e merge requests do GitLab no GitHub",
+            "title": "Assistente de migração do GitLab para o GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "Mantém tickets do Jira e issues do GitHub sincronizados",
+            "title": "Sincronização de issues entre Jira e GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "Crie cenários de várias etapas no Make a partir de uma descrição",
+            "title": "Criador de cenários do Make"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Alertas semanais de segurança e dependências do GitHub",
+            "title": "Resumo de alertas de segurança e dependências"
+          },
+          "sentry-issue-digest": {
+            "description": "Resumo matinal de issues agrupadas por gravidade",
+            "title": "Resumo de issues do Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "Vincula cada deploy ao commit e alerta no Slack quando há falha",
+            "title": "Resumo de deploys da Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Recrie seus workflows do Zapier no {{brandName}}",
+            "title": "Migração do Zapier para o {{brandName}}"
+          }
+        },
+        "title": "Engenharia"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Abre uma página no navegador e retorna uma captura de tela",
+            "title": "Capturas de tela do navegador"
+          },
+          "calendar-optimizer": {
+            "description": "Ajuda com conflitos, excesso de reuniões e tempo de foco",
+            "title": "Otimizador de calendário"
+          },
+          "calendly-booking-sync": {
+            "description": "Novos agendamentos no calendário com aviso no Slack",
+            "title": "Sincronização de agendamentos do Calendly"
+          },
+          "email-assistant": {
+            "description": "Resumo matinal da caixa de entrada com próximos passos sugeridos",
+            "title": "Assistente de e-mail"
+          },
+          "granola-notes-to-notion": {
+            "description": "Notas de reuniões do Granola sincronizadas com um banco de dados do Notion",
+            "title": "Notas do Granola no Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Encaminha mensagens entre Lark e Slack nos dois sentidos",
+            "title": "Retransmissão de mensagens entre Lark e Slack"
+          },
+          "line-message-relay": {
+            "description": "Encaminha mensagens do LINE para o Slack e vice-versa",
+            "title": "Retransmissão de mensagens do LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Notas do Fireflies no Notion com acompanhamentos no Slack",
+            "title": "Pipeline de notas de reuniões"
+          },
+          "morning-brief": {
+            "description": "E-mail, calendário e notas transformados em um plano diário curto",
+            "title": "Resumo matinal"
+          },
+          "perplexity-deep-research": {
+            "description": "Resumos de pesquisa com IA salvos no Notion",
+            "title": "Pesquisa aprofundada com Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull requests, e-mail e calendário em uma única atualização no Slack",
+            "title": "Resumo semanal pessoal"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Publica comunicados para a equipe no Slack por você",
+            "title": "Enviar mensagens em seu nome"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Resumo semanal das atividades da equipe publicado no Slack",
+            "title": "Resumo de atividades da equipe no Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Pesquise na web e compile os resultados no Notion",
+            "title": "Pipeline de pesquisa web com Tavily"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Gravações de reuniões resumidas no Notion com itens de ação",
+            "title": "Resumo de reuniões do tl;dv"
+          }
+        },
+        "title": "Para todos"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "O Apify extrai sites para linhas estruturadas no Google Sheets",
+            "title": "Extração web do Apify para o Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Sequências automáticas de e-mail a partir de eventos do CRM",
+            "title": "Sequência de nutrição por e-mail no Brevo"
+          },
+          "competitive-intel-scraper": {
+            "description": "O Firecrawl monitora sites de concorrentes e registra mudanças no Notion",
+            "title": "Coletor de inteligência competitiva"
+          },
+          "competitor-research-to-notion": {
+            "description": "Pesquisas no X salvas como notas estruturadas no Notion",
+            "title": "Pesquisa de concorrentes no Notion"
+          },
+          "content-planner": {
+            "description": "Explore temas e estruture um calendário editorial",
+            "title": "Planejador de conteúdo"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Publica posts do Notion no Dev.to e divulga os links no X",
+            "title": "Publicação automática no Dev.to"
+          },
+          "discord-community-insights": {
+            "description": "Feedback do Discord no Notion com resumo semanal no Slack",
+            "title": "Insights da comunidade do Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Engajamento no Sheets com resumos semanais no Slack",
+            "title": "Monitor de engajamento do Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "Crie e envie e-mails transacionais pelo Loops",
+            "title": "Campanha de e-mail no Loops"
+          },
+          "marketing-content-planning": {
+            "description": "Planeja histórias de lançamento com base no Slack, entrevistas e concorrentes",
+            "title": "Planejamento de conteúdo de marketing"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Encontra abordagens de onboarding no Slack e em entrevistas",
+            "title": "Casos de uso para e-mails de onboarding"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Monitore semanalmente o ranking de palavras-chave e registre no Sheets",
+            "title": "Monitor de palavras-chave com SerpAPI"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Comparativos de tráfego com concorrentes salvos no Notion",
+            "title": "Comparação de tráfego com SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "Transforma um calendário do Sheets em posts para cada rede",
+            "title": "Calendário de conteúdo para redes sociais"
+          },
+          "x-brand-monitor": {
+            "description": "Menções à marca no X salvas no Notion com alertas para a equipe",
+            "title": "Monitor de marca no X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Quando um novo vídeo é publicado no YouTube, gera um resumo no Notion e uma thread no X",
+            "title": "Reaproveitamento de vídeos do YouTube em threads no X"
+          }
+        },
+        "title": "Marketing"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Crie e gerencie caixas de entrada com a API do AgentMail",
+            "title": "Caixa de entrada do AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "Tarefas diárias do ClickUp publicadas como standup no Slack",
+            "title": "Standups do ClickUp no Slack"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Lotes de Google Docs no Notion com o layout preservado",
+            "title": "Migrador do Google Docs para o Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "Novos arquivos organizados automaticamente em pastas",
+            "title": "Organizador de arquivos do Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Respostas de formulários no Notion com notificações no Slack",
+            "title": "Formulários do Jotform no Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Progresso semanal dos quadros do Monday.com no Slack",
+            "title": "Resumo semanal do Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "Campos de contratos no Notion com lembretes antes do vencimento",
+            "title": "Processador de contratos em PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Métricas de assinaturas no Sheets com alertas de churn no Slack",
+            "title": "Resumo de assinaturas do RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Tarefas do Todoist espelhadas no Notion para a equipe",
+            "title": "Sincronização de tarefas do Todoist com o Notion"
+          },
+          "wrike-project-reporter": {
+            "description": "Resumos semanais do progresso no Wrike publicados no Slack",
+            "title": "Relatório de projetos do Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "Lucro e fluxo de caixa semanais do Xero no Slack",
+            "title": "Resumo financeiro do Xero"
+          }
+        },
+        "title": "Operações"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Marcos e tarefas do Asana espelhados no Notion",
+            "title": "Sincronização de projetos do Asana com o Notion"
+          },
+          "feedback-router": {
+            "description": "Feedback do Slack encaminhado ao lugar certo pelas suas regras",
+            "title": "Roteador de feedback"
+          },
+          "linear-prd-implementer": {
+            "description": "Especificações do Notion viram projetos e issues no Linear",
+            "title": "Implementador de PRDs no Linear"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Capturas de dashboards publicadas automaticamente no Slack",
+            "title": "Resumo de dashboards do Metabase"
+          },
+          "pricing-analysis": {
+            "description": "Analise estratégias de preços dos concorrentes e compare com produtos semelhantes",
+            "title": "Análise de preços"
+          },
+          "product-copy-naming": {
+            "description": "Nomes mais amigáveis para termos técnicos do produto",
+            "title": "Textos e nomenclatura do produto"
+          }
+        },
+        "title": "Produto"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Negócios sincronizados com o Sheets e avisos no Slack quando são fechados",
+            "title": "Monitor de negócios do Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Novos leads do Bitrix recebem tarefas de acompanhamento e avisos no Slack",
+            "title": "Nutrição de leads no Bitrix24"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Resumos semanais do HubSpot salvos como relatórios estruturados",
+            "title": "Relatório de vendas do HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Novos leads viram tarefas no HubSpot com alertas no Slack",
+            "title": "Pipeline de acompanhamento de leads"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Atualizações semanais de oportunidades do Salesforce no Slack",
+            "title": "Resumo do pipeline do Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "Estatísticas semanais do pipeline de CRM do Gmail no Slack",
+            "title": "Relatório de pipeline do Streak"
+          },
+          "win-loss-reporter": {
+            "description": "Tendências de ganhos e perdas do pipeline no Slack",
+            "title": "Relatório de ganhos e perdas"
+          }
+        },
+        "title": "Vendas"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Conversas com clientes registradas e categorizadas no Notion",
+            "title": "Registro de suporte do Chatwoot no Notion"
+          },
+          "customer-support-bot": {
+            "description": "Responde com base na central de conhecimento e cria tarefas para lacunas",
+            "title": "Bot de suporte ao cliente"
+          },
+          "intercom-conversation-triager": {
+            "description": "Conversas do Intercom viram tarefas priorizadas no Notion",
+            "title": "Triagem de conversas do Intercom"
+          },
+          "support-ticket-router": {
+            "description": "Tickets vão para o Notion e os urgentes geram avisos no Slack",
+            "title": "Roteador de tickets de suporte"
+          }
+        },
+        "title": "Suporte"
+      }
+    },
+    "categoryFilter": "Filtrar por categoria",
+    "chat": "Conversar",
+    "description": "Clique em qualquer cartão para iniciar uma conversa. Ela pode virar uma tarefa sob demanda, um workflow recorrente ou um subagente.",
+    "search": {
+      "accessibilityLabel": "Buscar casos de uso",
+      "empty": "Nenhum caso de uso corresponde à sua busca.",
+      "placeholder": "Buscar"
+    },
+    "title": "Ideias e casos de uso"
   },
   "invitationRedirect": {
     "accountMismatch": {
@@ -4892,7 +5240,7 @@
     "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
     "deletingThreads": "Deleting…",
-    "description": "Keep related chats together across Agents",
+    "description": "Agrupe conversas relacionadas.",
     "empty": "No chats here yet",
     "expand": "Expandir",
     "fromChat": "Create a Project from this chat",
@@ -4956,15 +5304,14 @@
       "pro": "Pro",
       "team": "Team"
     },
-    "title": "Fila e simultaneidade",
+    "title": "Sua solicitação está na fila",
     "upgrade": {
       "action": "Fazer upgrade para {{plan}}",
       "features": {
         "creditsPerMonth": "{{credits}} créditos por mês",
         "emailSupport": "Suporte por e-mail",
         "payAsYouGo": "Créditos pagos conforme o uso",
-        "prioritySupport": "Suporte prioritário",
-        "unlimitedAgents": "Agentes ilimitados"
+        "prioritySupport": "Suporte prioritário"
       },
       "proDescription": "Para quem cria com o {{assistantName}}.",
       "recommended": "Recomendado",
@@ -5773,7 +6120,6 @@
         "conflict": "O Morning Brief está temporariamente indisponível porque o estado da instalação está inconsistente.",
         "description": "Prioridades diárias até as 7h no seu fuso horário.",
         "errorMessage": "Não foi possível carregar ou atualizar as configurações do Morning Brief.",
-        "missingDefaultAgent": "O Okou está indisponível neste espaço de trabalho. Entre em contato com um administrador.",
         "missingTimezone": "Defina um fuso horário válido antes de ativar o Morning Brief.",
         "preparationFailed": "Temporariamente indisponível.",
         "preparing": "Preparando seu primeiro resumo matinal. Você pode desativá-lo a qualquer momento.",
@@ -5782,7 +6128,6 @@
       "proactiveSuggestions": {
         "description": "Verifique suas fontes conectadas a cada hora, atualize seu perfil diariamente e receba sugestões úteis de próximos passos.",
         "errorMessage": "Não foi possível carregar ou atualizar as configurações.",
-        "missingDefaultAgent": "O Okou está indisponível neste espaço de trabalho. Entre em contato com um administrador.",
         "missingTimezone": "Defina seu fuso horário nas Preferências.",
         "preparationFailed": "Temporariamente indisponível.",
         "preparing": "Preparando sugestões por hora. Você pode desativá-las a qualquer momento.",
@@ -5797,7 +6142,7 @@
       },
       "timezone": {
         "description": "Horários exibidos para você e usados nas execuções de automações.",
-        "rowDescription": "Seus agentes usarão este fuso horário durante as execuções",
+        "rowDescription": "O Okou usa este fuso horário durante as execuções.",
         "rowTitle": "Fuso horário",
         "sectionTitle": "Fuso horário",
         "zones": {
@@ -5851,7 +6196,7 @@
         "title": "Seus cartões no Link"
       },
       "connect": "Conectar",
-      "description": "Seus agentes podem solicitar compras e consultar transações do Link. Você aprova cada compra.",
+      "description": "Permita que o Okou solicite compras e consulte transações do Link. Você aprova cada compra.",
       "disconnect": "Desconectar",
       "loadError": "Não foi possível carregar sua carteira.",
       "scope": "Permita que o Okou faça compras e consulte sua atividade no Link.",
@@ -6070,6 +6415,23 @@
     "signUp": "Criar conta",
     "tryItYourself": "Experimente você mesmo"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "Todos",
+    "markAllRead": "Marcar tudo como lido",
+    "noResults": "Nenhum resultado encontrado",
+    "resultCount_one": "{{count}} resultado",
+    "resultCount_many": "{{count}} resultados",
+    "resultCount_other": "{{count}} resultados",
+    "searching": "Pesquisando...",
+    "searchWorkspace": "Pesquisar no espaço de trabalho...",
+    "sections": {
+      "artifacts": "Artefatos",
+      "chats": "Conversas",
+      "messages": "Mensagens",
+      "workflows": "Fluxos de trabalho"
+    }
+  },
   "ssh": {
     "add": "Adicionar host",
     "cancel": "Cancelar",
@@ -6117,8 +6479,8 @@
       "summary_other": "{{count}} credenciais configuradas",
       "unused": "Nenhum host utiliza esta credencial"
     },
-    "deleteHelp": "Excluir este host? A credencial será mantida. Os Agents não o verão mais no inventário.",
-    "description": "Configure hosts SSH para seus agentes executarem comandos remotos.",
+    "deleteHelp": "Excluir este host? A credencial será mantida. O Okou perderá o acesso ao host.",
+    "description": "Permita que o Okou execute comandos em computadores remotos.",
     "edit": "Editar host",
     "editHelp": "Selecionar outra credencial altera apenas este host. Alterações no destino direto apagam a chave de host aprendida; alterações envolvendo Cloudflare Access a preservam.",
     "errors": {
@@ -6164,7 +6526,7 @@
     },
     "tailscale": {
       "authenticationFailed": "A autenticação do Tailscale SSH falhou. Verifique o nome de usuário do sistema, ative o Tailscale SSH no destino com tag e permita este login na política SSH accept da tailnet.",
-      "deleteHelp": "Excluir este host? Os agentes não verão mais este host no inventário em tempo real.",
+      "deleteHelp": "Excluir este host? O Okou perderá o acesso.",
       "sshDocs": "Documentação do Tailscale SSH",
       "sshHelp": "Usa a identidade da rede Tailscale selecionada, sem senha SSH nem chave privada. Ative o Tailscale SSH em um dispositivo de destino com tag e permita este nome de usuário do sistema em uma política SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -6199,6 +6561,9 @@
     },
     "title": "Acesso SSH",
     "unavailable": "Esta solicitação está indisponível. Solicite uma nova."
+  },
+  "status": {
+    "unread": "Não lido"
   },
   "tailscale": {
     "changed": "Esta rede Tailscale mudou. Suas alterações não foram salvas; seu rascunho foi preservado.",
@@ -6367,7 +6732,7 @@
       "usernamePasswordMethod": "Nome de usuário e senha"
     },
     "deleteHelp": "Excluir este host salvo? Sua credencial reutilizável será mantida.",
-    "description": "Permita que seus agentes vejam e controlem seus desktops remotos.",
+    "description": "Permita que o Okou visualize e controle áreas de trabalho remotas.",
     "edit": "Editar host",
     "editHelp": "As alterações se aplicam a este host e invalidam sua configuração de conexão atual.",
     "errors": {
@@ -6988,8 +7353,6 @@
     },
     "createDialog": {
       "addAutomation": "Adicionar automação",
-      "chooseAgentAutomation": "Escolha o agente para esta automação",
-      "chooseAgentWorkflow": "Escolha o agente para este fluxo de trabalho.",
       "chooseWorkflow": "Escolha um fluxo de trabalho para automatizar ou crie um no chat.",
       "createAutomation": "Criar automação",
       "createInChat": "Criar no chat",
@@ -7020,11 +7383,9 @@
         "uploadAria": "Enviar arquivos do fluxo de trabalho"
       },
       "metadata": {
-        "agent": "Agente",
-        "agentDescription": "Este fluxo de trabalho pertence a este agente.",
         "aria": "Metadados do fluxo de trabalho",
         "description": "Descrição",
-        "descriptionHelp": "Informe ao agente quando usar este fluxo de trabalho.",
+        "descriptionHelp": "Descreva quando o Okou deve usar este fluxo de trabalho.",
         "name": "Nome",
         "nameHelp": "Exibido nas listas e ao escolher um fluxo de trabalho.",
         "namePlaceholder": "Nome do fluxo de trabalho",
@@ -7050,8 +7411,8 @@
     },
     "editor": {
       "aria": "Editor de instruções",
-      "footer": "Edite as instruções diretamente para personalizar o comportamento do seu agente.",
-      "placeholder": "Escreva instruções para seu agente...",
+      "footer": "Edite as instruções deste fluxo de trabalho.",
+      "placeholder": "Escreva instruções para este fluxo de trabalho…",
       "toolbar": {
         "blockquote": "Citação",
         "bold": "Negrito",
@@ -7158,7 +7519,7 @@
       "authorizationError": "Não foi possível concluir a autorização do Discord.",
       "cancelled": "A autorização do Discord foi cancelada.",
       "chooseWorkspace": "Escolha um espaço de trabalho",
-      "connectDescription": "Conecte sua conta do Discord para conversar com seu agente.",
+      "connectDescription": "Vincule sua conta para conversar com o Okou no Discord.",
       "connectedTitle": "Conectado ao Discord",
       "connectTitle": "Conectar ao Discord",
       "defaultWorkspace": "Espaço de trabalho padrão para o Discord",
@@ -7236,17 +7597,16 @@
       "uninstallTitle": "Desinstalar a integração com o Microsoft Teams?"
     },
     "telegram": {
-      "description": "Encaminhe mensagens do Telegram para agentes",
+      "description": "Conecte o Telegram ao Okou.",
       "title": "Telegram"
     },
     "wechat": {
       "accountLabel": "Conta",
-      "agentLabel": "Agente",
       "code": "Código de verificação",
       "connect": "Conectar",
       "connected": "Conectado",
       "creating": "Criando código QR…",
-      "description": "Converse com seu agente no WeChat.",
+      "description": "Converse com o Okou no WeChat.",
       "disconnect": "Desconectar",
       "expired": "Este código QR expirou. Crie um novo.",
       "failed": "Não foi possível conectar ao WeChat.",
@@ -7260,7 +7620,7 @@
       "restoreDescription": "Reconecte o WeChat à conta e ao espaço de trabalho abaixo.",
       "returnToWechat": "Volte ao WeChat e envie uma mensagem para começar a conversar.",
       "scanned": "Código lido. Confirme no seu celular.",
-      "scope": "Apenas suas mensagens diretas para este agente são conectadas. Mensagens de texto são aceitas.",
+      "scope": "Somente suas mensagens diretas para o Okou são conectadas. Há suporte para mensagens de texto.",
       "title": "Conectar WeChat",
       "unavailable": "A conexão ainda não foi configurada.",
       "verification_blocked": "Muitas tentativas. Crie um novo código QR.",
@@ -7272,7 +7632,7 @@
     "whatsapp": {
       "codeError": "Não foi possível criar um código de conexão. Tente novamente.",
       "connect": "Conectar WhatsApp",
-      "connectDescription": "Conecte sua conta do WhatsApp ao {{brandName}} para conversar com seu agente.",
+      "connectDescription": "Vincule sua conta do WhatsApp ao {{brandName}} para conversar com o Okou.",
       "connected": "WhatsApp conectado",
       "description": "Converse com o Okou diretamente pelo WhatsApp",
       "disconnected": "WhatsApp desconectado",

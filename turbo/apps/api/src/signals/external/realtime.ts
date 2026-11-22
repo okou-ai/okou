@@ -535,30 +535,10 @@ export async function publishChatIndicatorsChangedSafely(target: {
   await publishChatDatabaseSignal(target, "chatIndicatorsChanged");
 }
 
-type ChatThreadReadCursorUpdatedPayload =
-  | {
-      readonly agentId?: string;
-      readonly threadId: string;
-      readonly lastReadAt: string | null;
-    }
-  | {
-      readonly agentId: string;
-      readonly threadIds: readonly string[];
-    }
-  | {
-      /**
-       * More cursors moved under this Agent than one payload carries, so the
-       * exact list is deliberately empty and `scope` states what changed. The
-       * SharedWorker reloads authoritative chat indicators on every event of
-       * this topic before it forwards the payload, and the only payload a tab
-       * interprets is the single-thread `lastReadAt: null` optimistic-mark
-       * clear, so this stays a complete invalidation rather than a silently
-       * truncated list.
-       */
-      readonly agentId: string;
-      readonly threadIds: readonly [];
-      readonly scope: "agent";
-    };
+interface ChatThreadReadCursorUpdatedPayload {
+  readonly threadId: string;
+  readonly lastReadAt: string | null;
+}
 
 /**
  * Notify every tab for one user-org that authoritative chat read state changed.

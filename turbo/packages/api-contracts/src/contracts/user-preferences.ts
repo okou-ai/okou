@@ -40,9 +40,6 @@ export const userPreferencesResponseSchema = object({
   timezone: string().nullable(),
   locale: userLocaleSchema.nullable(),
   supportedLocales: array(userLocaleSchema),
-  // Pinned agents are exposed as membership only. The API returns a stable
-  // canonical order and ignores client-provided order on writes.
-  pinnedAgentIds: array(string()),
   sendMode: sendModeSchema,
   cloudBrowserEnabledByDefault: boolean(),
   // Retired: always false. The web client floor excludes the Apps that read
@@ -72,8 +69,6 @@ export type InitializedUserPreferencesResponse = Omit<
 export const updateUserPreferencesRequestSchema = object({
   timezone: string().min(1).optional(),
   locale: userLocaleSchema.optional(),
-  // Membership update only; request order is not used for display ordering.
-  pinnedAgentIds: array(string()).optional(),
   sendMode: sendModeSchema.optional(),
   cloudBrowserEnabledByDefault: boolean().optional(),
   theme: themePreferenceSchema.optional(),
@@ -84,7 +79,6 @@ export const updateUserPreferencesRequestSchema = object({
     return (
       data.timezone !== undefined ||
       data.locale !== undefined ||
-      data.pinnedAgentIds !== undefined ||
       data.sendMode !== undefined ||
       data.cloudBrowserEnabledByDefault !== undefined ||
       data.theme !== undefined ||
@@ -101,12 +95,6 @@ export type UpdateUserPreferencesRequest = zInfer<
   typeof updateUserPreferencesRequestSchema
 >;
 
-/**
- * User preferences contract for /api/user-preferences
- *
- * GET: Get current user's preferences
- * POST: Update user preferences
- */
 export const userPreferencesContract = c.router({
   initialize: {
     method: "POST",

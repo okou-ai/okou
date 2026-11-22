@@ -121,9 +121,6 @@ class WorkflowModelTest {
         val summary =
             WorkflowSummary(
                 id = "a1111111-1111-4111-8111-111111111111",
-                agentId = null,
-                agentName = null,
-                agentDisplayName = null,
                 name = "release-review",
                 displayName = "Release review",
                 description = null,
@@ -138,9 +135,6 @@ class WorkflowModelTest {
         private var detail =
             WorkflowDetail(
                 id = summary.id,
-                agentId = summary.agentId,
-                agentName = null,
-                agentDisplayName = null,
                 name = summary.name,
                 displayName = summary.displayName,
                 description = null,

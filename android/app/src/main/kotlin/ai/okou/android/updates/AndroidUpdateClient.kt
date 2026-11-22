@@ -44,6 +44,7 @@ class AndroidUpdateClient(
     private val artifactOrigin: HttpUrl = "https://static.okou.io/".toHttpUrl(),
 ) : UpdateService {
     private val json = Json { ignoreUnknownKeys = true }
+    private val apkFileName = Regex("[a-f0-9]{64}\\.apk")
     private val sessionId = UUID.randomUUID().toString()
     private val transfers = SignedTransferClient(dispatcher, 10.minutes)
     private val http =
@@ -128,7 +129,7 @@ class AndroidUpdateClient(
             throw UpdateException(UpdateProblem.Check)
     }
 
-    override suspend fun initialize() =
+    override suspend fun initialize(retainedRelease: AndroidUpdatesRelease?) =
         withContext(dispatcher) {
             ensureDirectory()
             val files = directory.listFiles() ?: throw IOException("Cannot list update files")
@@ -136,7 +137,14 @@ class AndroidUpdateClient(
                 if (Regex("[a-f0-9-]{36}\\.part").matches(file.name) && !file.delete())
                     throw IOException("Cannot remove an interrupted update")
             }
+            deleteOtherApks(files, retainedRelease?.let { "${it.sha256}.apk" })
         }
+
+    private fun deleteOtherApks(files: Array<File>, retainedName: String?) {
+        files
+            .filter { it.name != retainedName && apkFileName.matches(it.name) }
+            .forEach { it.delete() }
+    }
 
     override suspend fun recover(release: AndroidUpdatesRelease): File? =
         withContext(dispatcher) {
@@ -187,10 +195,7 @@ class AndroidUpdateClient(
                 active.ensureActive()
                 if (!temporary.renameTo(destination))
                     throw IOException("Cannot commit downloaded update")
-                directory
-                    .listFiles()
-                    ?.filter { it != destination && Regex("[a-f0-9]{64}\\.apk").matches(it.name) }
-                    ?.forEach { it.delete() }
+                directory.listFiles()?.let { deleteOtherApks(it, destination.name) }
                 destination
             } finally {
                 temporary.delete()

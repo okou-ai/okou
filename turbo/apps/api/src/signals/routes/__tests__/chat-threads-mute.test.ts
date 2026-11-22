@@ -12,7 +12,7 @@ const chat = createChatFilesBddApi(context);
 async function fixture() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   await bdd.createAgent(actor, {
     displayName: "Mute test",
     visibility: "private",
@@ -100,7 +100,6 @@ describe("chat thread muting", () => {
       bdd.user({ orgId: actor.orgId }),
       bdd.user({ userId: actor.userId }),
     ]) {
-      await bdd.readOnboardingStatus(outsider);
       await chat.requestSetThreadMuted(outsider, thread.id, true, [404]);
       await chat.requestSetThreadMuted(outsider, thread.id, false, [404]);
     }

@@ -571,7 +571,7 @@ async function setupFixture(
   }
 
   bdd.acceptAgentStorageWrites();
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "BDD Gmail Webhook Owner",
   });
@@ -581,7 +581,6 @@ async function setupFixture(
   const { defaultAgentId: agentId } = await runsApi.grantProEntitlement(actor);
   const workflow = await miscApi.createWorkflow(
     actor,
-    agentId,
     WORKFLOW_NAME,
     { content: "Handle Gmail webhook events." },
     [201],

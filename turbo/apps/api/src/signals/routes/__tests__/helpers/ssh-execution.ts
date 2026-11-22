@@ -46,7 +46,7 @@ export function createSshExecutionApi(
     if (!paidOrganizations.has(owner.orgId)) {
       const bootstrapActor = bdd.user({ ...owner, orgRole: "org:admin" });
       await runs.grantProEntitlement(bootstrapActor);
-      await bdd.readOnboardingStatus(bootstrapActor);
+      await bdd.provisionWorkspace(bootstrapActor);
       paidOrganizations.add(owner.orgId);
     }
     const actor = bdd.user({ ...owner, orgRole: "org:member" });

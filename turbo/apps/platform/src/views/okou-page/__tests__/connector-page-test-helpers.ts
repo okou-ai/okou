@@ -7,7 +7,6 @@ import {
   httpConnectorFixture,
   mcpConnectorFixture,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import {
   type ConnectorAccountConnection,
   connectorAccountsContract,
@@ -141,23 +140,6 @@ export function getConnectorIcon(label: string): HTMLImageElement {
     throw new Error(`Expected connector icon "${label}"`);
   }
   return icon;
-}
-
-export function listAgent(
-  agentId: string,
-  displayName: string,
-  avatarUrl: string | null = null,
-): AgentResponse {
-  return {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: "test-user-123",
-    displayName,
-    description: null,
-    sound: null,
-    avatarUrl,
-    visibility: "public",
-  };
 }
 
 export function mockConnectors(

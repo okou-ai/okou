@@ -1227,7 +1227,7 @@ function MarkAllReadMenuItem({
   disabled: boolean;
   onSelect: () => void;
 }) {
-  const { t } = useTranslation("agents");
+  const { t } = useTranslation("common");
 
   return (
     <DropdownMenuItem onClick={onSelect} disabled={disabled}>

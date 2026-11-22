@@ -21,7 +21,6 @@ import {
   httpConnector,
   ACME_CONNECTOR_ID,
   SCOUT_THREAD_ID,
-  SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
   findComposer,
@@ -72,9 +71,7 @@ async function setup(
 ) {
   await setupPage({
     context,
-    path: draft
-      ? `/agents/${SCOUT_AGENT_ID}/chat`
-      : `/chats/${SCOUT_THREAD_ID}`,
+    path: draft ? `/` : `/chats/${SCOUT_THREAD_ID}`,
     locale: "en-US",
     sharedWorkerTestTransport,
     featureSwitches: {},

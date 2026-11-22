@@ -242,7 +242,6 @@ describe("Connector Skill bundle delivery", () => {
             workflows.create({
               headers: { authorization: "Bearer clerk-session" },
               body: {
-                agentId: owner.agentId,
                 name,
                 instruction: `Workflow overrides ${name}`,
               },

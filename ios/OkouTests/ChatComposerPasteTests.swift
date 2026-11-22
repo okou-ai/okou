@@ -191,7 +191,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let fixture = AttachmentFlowFixture()
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     let created = await workspace.createChat()
     let thread = try XCTUnwrap(created)
     workspace.startNewChat()

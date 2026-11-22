@@ -1,6 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import {
   chatThreadMetadataContract,
   chatThreadsContract,
@@ -15,13 +14,11 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
   chatListAuth,
   chatListEvent,
   chatListThread,
   fastButton,
-  installChatListAgent,
   installChatListStream,
   sidebarThreadLinks,
   sidebarThreadTitles,
@@ -43,11 +40,10 @@ test("Cached conversations appear before remote synchronization", async () => {
     events: [rename],
     remoteGate: remote.promise,
   });
-  installChatListAgent(context, agents.promise);
 
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(1, [cached], [rename]),
   });
@@ -69,11 +65,10 @@ test("A complete cached conversation list remains navigable", async () => {
     snapshot: cached,
     remoteGate: remote.promise,
   });
-  installChatListAgent(context);
 
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(3, cached),
   });
@@ -106,7 +101,7 @@ test("Rename dialog uses the latest cached title", async () => {
     events: [rename],
     remoteGate: remote.promise,
   });
-  installChatListAgent(context);
+
   context.mocks.api(chatThreadMetadataContract.get, async ({ respond }) => {
     await detail.promise;
     return respond(404, {
@@ -119,7 +114,7 @@ test("Rename dialog uses the latest cached title", async () => {
 
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(11, [cached], [rename]),
   });
@@ -152,7 +147,6 @@ test("Signed-out pages do not sync private conversations", async () => {
   let snapshotRequested = false;
   let eventsRequested = false;
   let indicatorsRequested = false;
-  let agentsRequested = false;
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
     snapshotRequested = true;
     return respond(401, {
@@ -171,12 +165,6 @@ test("Signed-out pages do not sync private conversations", async () => {
       error: { code: "UNAUTHORIZED", message: "Authentication required" },
     });
   });
-  context.mocks.api(agentsMainContract.list, ({ respond }) => {
-    agentsRequested = true;
-    return respond(401, {
-      error: { code: "UNAUTHORIZED", message: "Authentication required" },
-    });
-  });
 
   await setupPage({ context, path: "/sign-in", auth: null });
 
@@ -186,7 +174,6 @@ test("Signed-out pages do not sync private conversations", async () => {
   expect(snapshotRequested).toBeFalsy();
   expect(eventsRequested).toBeFalsy();
   expect(indicatorsRequested).toBeFalsy();
-  expect(agentsRequested).toBeFalsy();
 });
 
 test("The unread filter applies to cached conversations", async () => {
@@ -199,7 +186,7 @@ test("The unread filter applies to cached conversations", async () => {
     snapshot: [unread, read],
     remoteGate: remote.promise,
   });
-  installChatListAgent(context);
+
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
       threads: { [unread.id]: "unread" },
@@ -209,7 +196,7 @@ test("The unread filter applies to cached conversations", async () => {
 
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(16, [unread, read]),
   });

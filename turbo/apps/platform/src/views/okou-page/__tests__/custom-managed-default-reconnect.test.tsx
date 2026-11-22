@@ -17,7 +17,6 @@ import {
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
 async function reconnectManagedAccount(
   brand: "feishu" | "lark",
@@ -90,7 +89,7 @@ async function reconnectManagedAccount(
   context.mocks.browser.open(authWindow);
   await setupPage({
     context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${connector.slug}/connect`,
   });
   await screen.findByText("Managed workspace connected");
   click(getConnectorAction("button", "Reconnect"));

@@ -7,7 +7,6 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockPrivateUrlSequence } from "./chat-attachment-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
-  ADA_AGENT_ID,
   findFastControl,
   queryFastControl,
   createMessageExperienceHelpers,
@@ -17,14 +16,13 @@ const context = testContext();
 const { installMessageExperienceChat } =
   createMessageExperienceHelpers(context);
 
-test("Loading older messages restores mention names and attachment navigation", async () => {
+test("Loading older messages restores attachment navigation", async () => {
   const firstImageUrl = "https://example.com/history-first.png";
   const secondImageUrl = "https://example.com/history-second.png";
   const historicalDocument = {
     version: 1,
     parts: [
-      { type: "text", text: "Historical launch notes for " },
-      { type: "agent", agentId: ADA_AGENT_ID, nameSnapshot: "Ada" },
+      { type: "text", text: "Historical launch notes" },
       {
         type: "file",
         fileId: "history-first",
@@ -39,7 +37,7 @@ test("Loading older messages restores mention names and attachment navigation", 
       },
     ],
   } satisfies UserMessageDocument;
-  const chatEvents = Array.from({ length: 9 }, (_, index) => {
+  const chatEvents = Array.from({ length: 12 }, (_, index) => {
     const turn = index + 1;
     const runId = `history-resource-run-${turn.toString()}`;
     const minute = turn.toString().padStart(2, "0");
@@ -81,7 +79,7 @@ test("Loading older messages restores mention names and attachment navigation", 
   await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   await expect(
-    screen.findByText("History answer 9"),
+    screen.findByText("History answer 12"),
   ).resolves.toBeInTheDocument();
   expect(queryFastControl("link", "Preview history-first.png")).toBeNull();
   const container = document.querySelector<HTMLElement>(
@@ -97,7 +95,6 @@ test("Loading older messages restores mention names and attachment navigation", 
   });
   fireEvent.scroll(container);
 
-  await screen.findByText("Ada");
   const preview = await findFastControl("link", "Preview history-first.png");
   click(preview);
 

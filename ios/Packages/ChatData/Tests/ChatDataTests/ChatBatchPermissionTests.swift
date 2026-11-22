@@ -1,4 +1,5 @@
 import ChatDataTestSupport
+import ChatDomain
 import Foundation
 import XCTest
 
@@ -21,7 +22,7 @@ final class ChatBatchPermissionTests: XCTestCase {
       XCTAssertNotNil(
         ChatPermissionBatchAction(
           value: origin + source, webURL: URL(string: "https://app.okou.ai")!,
-          agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+          threadID: FixtureData.threadID))
     }
   }
 
@@ -29,12 +30,16 @@ final class ChatBatchPermissionTests: XCTestCase {
     let valid = FixtureData.actionURL()
     let rejected = [
       "https://evil.invalid" + valid,
+      valid.replacingOccurrences(
+        of: "/connectors/permissions", with: "/agents/\(FixtureData.threadID)/permissions"),
       "https://app.okou.ai.evil.invalid" + valid,
       "https://user@app.okou.ai" + valid,
       valid + "#extra", valid + "&action=allow", valid + "&ref=gmail",
       valid + "&expiresIn=invalid", valid + "&expiresIn", valid + "&extra=%FF",
       valid.replacingOccurrences(of: "action=allow", with: "action=deny"),
-      valid.replacingOccurrences(of: FixtureData.agentID, with: UUID().uuidString),
+      valid.replacingOccurrences(of: "orgId=", with: "unrecognized="),
+      valid.replacingOccurrences(of: ChatHTTPFixture.userID, with: "%20"),
+      valid + "&userId=another",
       valid.replacingOccurrences(of: FixtureData.threadID, with: UUID().uuidString),
       valid.replacingOccurrences(of: "callbackPrompt=", with: "unexpected="),
       " " + valid, valid + "\n"
@@ -43,7 +48,7 @@ final class ChatBatchPermissionTests: XCTestCase {
       XCTAssertNil(
         ChatPermissionBatchAction(
           value: value, webURL: URL(string: "https://app.okou.ai")!,
-          agentID: FixtureData.agentID, threadID: FixtureData.threadID), value)
+          threadID: FixtureData.threadID), value)
     }
   }
 
@@ -62,13 +67,12 @@ final class ChatBatchPermissionTests: XCTestCase {
       XCTAssertNil(
         ChatPermissionBatchAction(
           value: FixtureData.actionURL(items: rows), webURL: URL(string: "https://app.okou.ai")!,
-          agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+          threadID: FixtureData.threadID))
     }
     XCTAssertNil(
       ChatPermissionBatchAction(
         value: FixtureData.actionURL() + "&callbackPrompt=" + String(repeating: "x", count: 8192),
-        webURL: URL(string: "https://app.okou.ai")!, agentID: FixtureData.agentID,
-        threadID: FixtureData.threadID))
+        webURL: URL(string: "https://app.okou.ai")!, threadID: FixtureData.threadID))
   }
 
   func testBatchApplyUsesWriteReceiptsAndPreservesGrantsMadeAfterReview() async throws {
@@ -135,6 +139,27 @@ final class ChatBatchPermissionTests: XCTestCase {
     }
   }
 
+  func testBatchOwnerMustMatchBeforeReviewAndAgainAtConfirmation() async throws {
+    let fixture = fixture()
+    let service = ChatBatchPermissions(client: fixture.http.client)
+    let own = try action()
+    let reviewed = try await service.load(own)
+    let count = fixture.state.withLock { $0.requests.count }
+    for id in [ChatHTTPFixture.workspaceID, ChatHTTPFixture.userID] {
+      let other = try action(
+        FixtureData.actionURL().replacingOccurrences(of: id, with: id + "_other"))
+      do {
+        _ = try await service.load(other)
+        XCTFail("A foreign batch cannot be reviewed")
+      } catch ChatError.invalidContract {}
+      do {
+        _ = try await service.apply(other, duration: .hour, reviewing: reviewed)
+        XCTFail("A foreign batch cannot be confirmed")
+      } catch ChatError.invalidContract {}
+    }
+    XCTAssertEqual(fixture.state.withLock { $0.requests.count }, count)
+  }
+
   func testCatalogAuthorizationAndServiceFailuresAreNotMissingMetadata() async throws {
     for status in [403, 503] {
       var state = FixtureData.State()
@@ -159,6 +184,6 @@ final class ChatBatchPermissionTests: XCTestCase {
     try XCTUnwrap(
       ChatPermissionBatchAction(
         value: source, webURL: URL(string: "https://app.okou.ai")!,
-        agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+        threadID: FixtureData.threadID))
   }
 }

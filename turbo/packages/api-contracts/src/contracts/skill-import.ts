@@ -165,9 +165,8 @@ export const skillImportSessionsContract = c.router({
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
-      404: apiErrorSchema,
     },
-    summary: "Open a skill import session for the org's default agent",
+    summary: "Open a skill import session for the workspace member",
   },
   listSkills: {
     method: "GET",

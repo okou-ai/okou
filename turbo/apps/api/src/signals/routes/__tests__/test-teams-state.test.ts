@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+import { uuid } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -213,21 +214,9 @@ describe("Teams message launch context", () => {
       );
 
       const chat = createChatFilesBddApi(context);
-      const threads = await chat.requestThreadEvents(owned.actor, {}, [200]);
-      if (threads.status !== 200) {
-        throw new Error("Expected public Teams thread events");
-      }
-      const thread = threads.body.events.find((event) => {
-        return event.kind === "created";
-      });
-      if (!thread) {
-        throw new Error(
-          "Expected the Teams Run to use a canonical chat thread",
-        );
-      }
       const page = await chat.listThreadEvents(
         owned.actor,
-        thread.chatThreadId,
+        uuid().parse(execution.platformEnvironment.OKOU_CHAT_THREAD_ID),
       );
       const input = page.events.find((event) => {
         return (
@@ -341,7 +330,7 @@ describe("Teams webhook dispatch", () => {
     );
   });
 
-  it("does not enqueue runs for unlinked users or missing default agents", async () => {
+  it("rejects unlinked users and dispatches for a connected member without an Agent row", async () => {
     const scenario = createPublicTeamsDispatchFixture(context);
     await scenario.run(async () => {
       const unlinked = await scenario.create({ withDefaultAgent: true });
@@ -378,18 +367,17 @@ describe("Teams webhook dispatch", () => {
         tenantId: missingDefault.installation.teamsTenantId,
       });
       await scenario.dispatch(missingDefault, "missing default teams");
-      expect(missingDefault.notices).toContain(
-        "No agent is configured for this org. Please ask your org admin to set a default agent.",
+      const chat = createChatFilesBddApi(context);
+      const events = await chat.requestThreadEvents(
+        missingDefault.actor,
+        {},
+        [200],
       );
-      expect(
-        (
-          await reads.requestListLogs(
-            missingDefault.actor,
-            { limit: 50 },
-            [200],
-          )
-        ).body.data,
-      ).toStrictEqual([]);
+      expect(events.body).toMatchObject({
+        events: expect.arrayContaining([
+          expect.objectContaining({ kind: "created" }),
+        ]),
+      });
     });
   });
 });

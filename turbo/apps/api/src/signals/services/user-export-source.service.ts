@@ -1,3 +1,4 @@
+import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
 import { instructions } from "@okouai/db/schema/instructions";
 import { command } from "ccstate";
 import {
@@ -26,7 +27,6 @@ import {
 import {
   array,
   iso,
-  literal,
   number,
   object,
   string,
@@ -35,7 +35,6 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -46,14 +45,12 @@ import {
 } from "@okouai/db/schema/member-memory";
 import { workflows } from "@okouai/db/schema/workflow";
 
-import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import {
   nullableDriverValueDecoder,
   pgIntegerDecoder,
   pgInt8ToBigIntDecoder,
   pgInt8ToSafeIntegerDecoder,
-  pgNullDecoder,
 } from "../../lib/db-structured-result";
 import {
   USER_EXPORT_RESTORE_SCRIPT,
@@ -62,21 +59,18 @@ import {
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
 import { db$ } from "../external/db";
-import { readUserExportAgentInstructions$ } from "./user-export-agent-instructions.service";
 import { rawChatEventRowFromDbRow } from "./chat-event-row-read.service";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
 } from "./official-workflow-catalog-read.service";
-import { settle } from "../utils";
 import {
   discordExportKindSchema,
   nextDiscordUserExportKind,
   readDiscordUserExportPage$,
 } from "./user-export-discord.service";
 
-const log = logger("service:user-export-source");
 const CHAT_PAGE_SIZE = 100;
 const CHAT_PAGE_ESTIMATED_BYTES = 2 * 1024 * 1024;
 const CHAT_ROW_MAX_PAYLOAD_BYTES = 32 * 1024 * 1024;
@@ -85,7 +79,7 @@ const checkpointSchema = object({
     "init",
     "threads",
     "messages",
-    "agents",
+    "instructions",
     "workflows",
     "memory",
     "discord",
@@ -94,7 +88,6 @@ const checkpointSchema = object({
   startedAt: iso.datetime().optional(),
   orgIds: array(string()).default([]),
   cursor: string().optional(),
-  collectingInstructions: literal(true).optional(),
   instructionsCursor: string().optional(),
   discordKind: discordExportKindSchema.optional(),
   thread: object({
@@ -160,7 +153,6 @@ function nextPhase(
     ...checkpoint,
     phase,
     cursor: undefined,
-    collectingInstructions: undefined,
     instructionsCursor: undefined,
     thread: undefined,
     discordKind: undefined,
@@ -224,7 +216,11 @@ function threadSourceStep<T extends { readonly id: string }>(
   const entries = [
     jsonEntry(
       `chat-threads/${thread.id}.json`,
-      { ...thread, ...draftValues },
+      {
+        ...thread,
+        draftUserMessage: readStoredDraftMessage(draftValues.draftUserMessage),
+        draftAttachments: draftValues.draftAttachments,
+      },
       {
         sourceKind: "chat-thread",
         threadId: thread.id,
@@ -348,7 +344,6 @@ const collectThread$ = command(
           id: threadRoot.id,
           userId: threadRoot.userId,
           title: threadRoot.title,
-          agentId: sql`NULL::uuid`.mapWith(pgNullDecoder),
           orgId: threadRoot.orgId,
           sourceScheduleRunId: threadRoot.sourceScheduleRunId,
           createdAt: threadRoot.createdAt,
@@ -383,7 +378,7 @@ const collectThread$ = command(
       .leftJoinLateral(lastEvent, sql`true`);
     signal.throwIfAborted();
     if (!result) {
-      return nextPhase(checkpoint, "agents");
+      return nextPhase(checkpoint, "instructions");
     }
     return threadSourceStep(
       result.thread,
@@ -750,89 +745,6 @@ const collectMessages$ = command(
   },
 );
 
-const collectAgent$ = command(
-  async (
-    { get, set },
-    args: SourceArgs,
-    checkpoint: SourceCheckpoint,
-    signal: AbortSignal,
-  ) => {
-    if (checkpoint.collectingInstructions || checkpoint.orgIds.length === 0) {
-      return await set(collectInstructions$, args, checkpoint, signal);
-    }
-    const [agent] = await get(db$)
-      .select({
-        id: agents.id,
-        orgId: agents.orgId,
-        name: agents.name,
-        displayName: agents.displayName,
-        visibility: agents.visibility,
-        updatedAt: agents.updatedAt,
-      })
-      .from(agents)
-      .where(
-        and(
-          inArray(agents.orgId, checkpoint.orgIds),
-          // A subject data export carries the subject's own records. A public
-          // agent authored by a colleague is their content, not this user's.
-          eq(agents.owner, args.userId),
-          lte(agents.createdAt, startedBefore(checkpoint)),
-          checkpoint.cursor ? gt(agents.id, checkpoint.cursor) : undefined,
-        ),
-      )
-      .orderBy(asc(agents.id))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      return await set(collectInstructions$, args, checkpoint, signal);
-    }
-    // One unreadable instruction document must not strand the whole export.
-    // The committed checkpoint resumes before this agent, so a hard throw here
-    // reselects it on every retry until the job exhausts its failure budget.
-    const instructions = await settle(
-      set(
-        readUserExportAgentInstructions$,
-        {
-          agentId: agent.id,
-          orgId: agent.orgId,
-          userId: args.userId,
-        },
-        signal,
-      ),
-      signal,
-    );
-    signal.throwIfAborted();
-    const unreadable = instructions.ok
-      ? undefined
-      : instructions.error instanceof Error
-        ? instructions.error.message
-        : "Agent instructions could not be read";
-    if (unreadable) {
-      log.warn("Agent instructions are unreadable and were exported empty", {
-        agentId: agent.id,
-        orgId: agent.orgId,
-        error: unreadable,
-      });
-    }
-    return step({ ...checkpoint, cursor: agent.id }, [
-      jsonEntry(
-        `agents/${agent.id}.json`,
-        {
-          ...agent,
-          instructions: instructions.ok ? instructions.value : null,
-          instructionsUnavailableReason: unreadable ?? null,
-        },
-        {
-          sourceKind: "agent",
-          agentId: agent.id,
-          orgId: agent.orgId,
-          instructionsUnavailable: Boolean(unreadable),
-        },
-      ),
-    ]);
-  },
-);
-
 const collectInstructions$ = command(
   async (
     { get },
@@ -871,7 +783,6 @@ const collectInstructions$ = command(
     return step(
       {
         ...checkpoint,
-        collectingInstructions: true,
         instructionsCursor: row.orgId,
       },
       [
@@ -912,7 +823,7 @@ const collectWorkflow$ = command(
       .where(
         and(
           inArray(workflows.orgId, checkpoint.orgIds),
-          // Owned only, for the same reason as agents. The installation guard
+          // Export only workflows owned by the requester. The installation guard
           // stays: a half-installed official workflow has no readable revision.
           eq(workflows.ownerUserId, args.userId),
           or(
@@ -1149,8 +1060,8 @@ export const collectUserExportSourceStep$ = command(
       case "messages": {
         return await set(collectMessages$, args, checkpoint, signal);
       }
-      case "agents": {
-        return await set(collectAgent$, args, checkpoint, signal);
+      case "instructions": {
+        return await set(collectInstructions$, args, checkpoint, signal);
       }
       case "workflows": {
         return await set(collectWorkflow$, args, checkpoint, signal);

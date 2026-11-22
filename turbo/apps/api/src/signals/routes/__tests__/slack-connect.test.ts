@@ -75,7 +75,6 @@ describe("GET /api/integrations/slack/connect", () => {
       isConnected: true,
       isAdmin: true,
       workspaceName: fixture.slackWorkspaceName,
-      defaultAgentName: null,
     });
   });
 
@@ -128,7 +127,6 @@ describe("GET /api/integrations/slack/connect", () => {
       isConnected: true,
       isAdmin: true,
       workspaceName: current.slackWorkspaceName,
-      defaultAgentName: null,
       linkStatus: {
         kind: "slack_account_mismatch",
         currentSlackUserId: current.slackUserId,
@@ -160,7 +158,6 @@ describe("GET /api/integrations/slack/connect", () => {
       isConnected: true,
       isAdmin: true,
       workspaceName: fixture.slackWorkspaceName,
-      defaultAgentName: null,
       linkStatus: {
         kind: "slack_account_mismatch",
         currentSlackUserId: fixture.slackUserId,
@@ -247,7 +244,6 @@ describe("GET /api/integrations/slack/connect", () => {
       isConnected: true,
       isAdmin: true,
       workspaceName: current.slackWorkspaceName,
-      defaultAgentName: null,
       linkStatus: {
         kind: "slack_account_mismatch",
         currentSlackUserId: current.slackUserId,

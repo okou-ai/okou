@@ -7,10 +7,7 @@ import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { composerInlineTemplates } from "./chat-composer-test-helpers.ts";
-import {
-  AGENT_ID,
-  createTemplateGalleryHelpers,
-} from "./chat-composer-template-gallery-test-helpers.ts";
+import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   openSavedPresentationPicker,
   savedPresentationDraft,
@@ -43,7 +40,7 @@ async function openBuiltInTitleHint() {
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
   const picker = await openSavedPresentationPicker(selected.title);

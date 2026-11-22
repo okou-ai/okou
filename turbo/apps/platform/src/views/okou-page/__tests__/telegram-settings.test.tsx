@@ -15,14 +15,12 @@ const bot = Object.freeze({
   kind: "official" as const,
   username: "support_bot",
   avatarUrl: null,
-  agent: { id: "compose_1", name: "Support" },
   isOwner: false,
   isConnected: false,
   connectedUser: null,
   tokenStatus: "valid" as const,
   official: {
     configured: true,
-    usesDefaultAgent: true,
     linkedTelegramUserId: null,
   },
   domainConfigured: true,
@@ -265,31 +263,10 @@ test.each(["focus", "visibilitychange"])(
   },
 );
 
-test("A member without a default agent sees the administrator prerequisite with the link intact", async () => {
-  setConnection(false);
-  context.mocks.data.onboardingStatus({
-    hasDefaultAgent: false,
-    defaultAgentId: null,
-    isAdmin: false,
-    needsOnboarding: true,
-    onboardingComplete: false,
-  });
-  await setupPage({ context, path: `/settings/telegram?${proof}` });
-  await expect(
-    screen.findByText(/Ask a workspace administrator/u),
-  ).resolves.toBeInTheDocument();
-  expect(queryAction("link", "Open setup")).not.toBeInTheDocument();
-  expect(queryAction("button", "Connect")).not.toBeInTheDocument();
-  expect({
-    value: new URLSearchParams(window.location.search).has("sig"),
-  }).toStrictEqual({ value: true });
-});
-
 test("Returning from setup restores signed confirmation without copying or consuming proof", async () => {
   setConnection(false);
   context.mocks.data.onboardingStatus({
-    hasDefaultAgent: false,
-    defaultAgentId: null,
+    hasOrg: false,
     needsOnboarding: true,
     onboardingComplete: false,
   });
@@ -304,8 +281,7 @@ test("Returning from setup restores signed confirmation without copying or consu
   expect(setup).toHaveAttribute("href", "/onboarding");
   expect(setup).toHaveAttribute("rel", "noopener noreferrer");
   context.mocks.data.onboardingStatus({
-    hasDefaultAgent: true,
-    defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+    hasOrg: true,
     needsOnboarding: false,
     onboardingComplete: true,
   });

@@ -19,7 +19,7 @@ test.each(["3.21.0", null])(
     });
     await setupPage({
       context,
-      path: "/agents?settings=debug",
+      path: "/?settings=debug",
       featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
     });
     const catalog = within(

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.19](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.18...ably-subscriber-v2.0.19) (2026-11-22)
+
+
+### Refactoring
+
+* **ably:** resolve connected resume key before updating state ([#49922](https://github.com/okou-ai/okou/issues/49922)) ([d98192c](https://github.com/okou-ai/okou/commit/d98192cb611cd6b21635ad06faa767562e94a118))
+
 ## [2.0.18](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.17...ably-subscriber-v2.0.18) (2026-11-18)
 
 ## [2.0.17](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.16...ably-subscriber-v2.0.17) (2026-11-17)

@@ -16,7 +16,6 @@ import {
   findComposerEditor,
 } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   createTemplateGalleryHelpers,
   templatePart,
 } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -64,7 +63,7 @@ async function openShelf() {
   });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
   const editor = await findComposerEditor();

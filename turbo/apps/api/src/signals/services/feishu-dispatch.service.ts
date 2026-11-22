@@ -1,15 +1,13 @@
-import { executionAgentId } from "./execution-agent";
 import { feishuCommandDisconnectSql } from "./feishu-disconnect-plan";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { command } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   CONVERSATION_GUIDANCE,
   THREAD_CONTEXT_PRIORITY,
@@ -61,12 +59,6 @@ export interface FeishuInboundMessage {
   readonly files: readonly FeishuPromptFile[];
 }
 
-interface FeishuAgent {
-  readonly id: string;
-  readonly name: string;
-  readonly displayName: string | null;
-}
-
 export interface FeishuDispatchInstallation {
   readonly platform: FeishuPlatform;
   readonly orgId: string;
@@ -94,12 +86,6 @@ interface ConnectedCommandArgs {
 }
 
 type ConnectedDispatchArgs = Omit<ConnectedCommandArgs, "command">;
-
-type EffectiveAgentResolution =
-  | { readonly status: "resolved"; readonly agent: FeishuAgent }
-  | {
-      readonly status: "not_accessible" | "not_found";
-    };
 
 function parseFeishuCommand(text: string): FeishuCommand | null {
   const match = /^\/(\S+)(?:\s+.+)?$/u.exec(text.trim());
@@ -212,74 +198,6 @@ export const replyToUnconnectedFeishuMessage$ = command(
           platform: args.message.platform,
           connectUrl,
         }),
-      },
-      signal,
-    );
-  },
-);
-
-export function feishuEffectiveAgentReadPlan(args: {
-  readonly installation: FeishuDispatchInstallation;
-  readonly connection: FeishuDispatchConnection;
-}) {
-  const composeId = executionAgentId(
-    args.installation.orgId,
-    args.connection.userId,
-  );
-  return {
-    visibleColumns: {
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    },
-    visibleCondition: and(
-      eq(agents.id, composeId),
-      eq(agents.orgId, args.installation.orgId),
-      or(
-        eq(agents.visibility, "public"),
-        eq(agents.owner, args.connection.userId),
-      ),
-    ),
-    existingColumns: { id: agents.id },
-    existingCondition: and(
-      eq(agents.id, composeId),
-      eq(agents.orgId, args.installation.orgId),
-    ),
-  };
-}
-
-export function feishuEffectiveAgentFromRows(
-  agent: FeishuAgent | undefined,
-  existing: { readonly id: string } | undefined,
-): EffectiveAgentResolution {
-  if (agent) {
-    return { status: "resolved", agent };
-  }
-  return { status: existing ? "not_accessible" : "not_found" };
-}
-
-export const replyFeishuAgentUnavailable$ = command(
-  async (
-    { set },
-    args: {
-      readonly message: FeishuInboundMessage;
-      readonly status: "not_accessible" | "not_found";
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const providerName =
-      FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name;
-    const text =
-      args.status === "not_accessible"
-        ? `The configured agent is not available to your ${providerName} account. Ask an admin to update the organization default agent.`
-        : `The configured ${providerName} agent could not be found. Ask an admin to select another agent.`;
-    await set(
-      replyNotice$,
-      {
-        message: args.message,
-        title: "Agent unavailable",
-        text,
-        kind: "error",
       },
       signal,
     );

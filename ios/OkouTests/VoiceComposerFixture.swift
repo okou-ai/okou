@@ -93,7 +93,7 @@ final class VoiceComposerFixture: Sendable {
     self.state = state
     http = ChatHTTPFixture { request in
       switch request.url?.path {
-      case let path? where path.hasPrefix("/api/agents/") && path.hasSuffix("/draft"):
+      case "/api/chat-drafts/composer":
         if request.httpMethod == "PATCH" {
           let remote = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
           state.value.withLock { $0.remote = remote }

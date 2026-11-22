@@ -6,7 +6,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
+const SESSION_ID = "c0000000-0000-4000-a000-000000000071";
 const REASON = "Review quarterly subscription expenses";
 
 test("Duplicate banking cards update together on events and recover after a continuity gap", async () => {
@@ -20,11 +20,10 @@ test("Duplicate banking cards update together on events and recover after a cont
     bankingWorkspaceContract.accessRequestStatus,
     ({ respond }) => {
       return respond(200, {
-        agent: { id: AGENT_ID, name: "Okou" },
         connection: null,
         session: pending
           ? {
-              id: AGENT_ID,
+              id: SESSION_ID,
               mode: "connect",
               status: "pending",
               institutionLoginId: null,

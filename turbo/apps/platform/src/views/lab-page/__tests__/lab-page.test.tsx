@@ -9,7 +9,6 @@ import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const PINNED_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 function featureSwitchRow(feature: FeatureSwitchKey): HTMLElement {
   const label = getFeatureSwitchMetadata()[feature].displayName ?? feature;
@@ -41,13 +40,6 @@ test("Lab remains available while onboarding is required", async () => {
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  context.mocks.data.agents([
-    {
-      agentId: PINNED_AGENT_ID,
-      displayName: "Pinned Agent",
-      visibility: "private",
-    },
-  ]);
 
   await setupPage({
     context,

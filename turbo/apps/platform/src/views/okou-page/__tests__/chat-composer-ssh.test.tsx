@@ -14,10 +14,8 @@ import {
 } from "./chat-message-experience-test-helpers.ts";
 import {
   builtinConnector,
-  SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   OTHER_THREAD_ID,
-  OTHER_AGENT_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 
@@ -631,7 +629,7 @@ async function prepareDraftHostChoices() {
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat?compose=1`,
+    path: `/?compose=1`,
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
@@ -730,8 +728,8 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   installComposerConnectorFixture({
     threadId: SCOUT_THREAD_ID,
     threads: [
-      { id: SCOUT_THREAD_ID, title: "Scout chat", agentId: SCOUT_AGENT_ID },
-      { id: OTHER_THREAD_ID, title: "Other chat", agentId: OTHER_AGENT_ID },
+      { id: SCOUT_THREAD_ID, title: "Scout chat" },
+      { id: OTHER_THREAD_ID, title: "Other chat" },
     ],
   });
   const host = (threadId: string) => {

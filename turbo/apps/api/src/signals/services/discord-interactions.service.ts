@@ -9,7 +9,6 @@ import { delay } from "signal-timers";
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { discordConnectMessage } from "../../lib/discord-connect-message";
 import {
-  discordAccountLabel,
   discordAccountMessage,
   discordAccountPicker,
   type DiscordAccountMessage,
@@ -41,7 +40,6 @@ import { handleDiscordModelRecovery$ } from "./discord-model-recovery.service";
 import {
   disconnectDiscordBinding$,
   readDiscordDmBinding$,
-  readDiscordEffectiveAgent$,
   readDiscordSenderBindings$,
   selectDiscordDmBinding$,
   type DiscordVerifiedBinding,
@@ -106,22 +104,13 @@ const discordChannelFailure$ = command(
   },
 );
 
-const discordConnectionStatus$ = command(
-  async (
-    { set },
-    binding: DiscordVerifiedBinding,
-    signal: AbortSignal,
-  ): Promise<DiscordAccountMessage> => {
-    const agent = await set(readDiscordEffectiveAgent$, binding);
-    signal.throwIfAborted();
-    const agentStatus = agent
-      ? `Workspace agent: ${discordAccountLabel(agent.displayName || agent.name)}.`
-      : "No workspace agent available. Ask a workspace admin to set one in Okou.";
-    return discordAccountMessage(
-      `✅ You are already connected to Okou.\nMention <@${binding.botUserId}> in a channel or send a DM to start chatting with your agent.\n\n${agentStatus}`,
-    );
-  },
-);
+function discordConnectionStatus(
+  binding: DiscordVerifiedBinding,
+): DiscordAccountMessage {
+  return discordAccountMessage(
+    `✅ You are already connected to Okou.\nMention <@${binding.botUserId}> in a channel or send a DM to start chatting.`,
+  );
+}
 
 const discordOrgPicker$ = command(
   async (
@@ -154,7 +143,7 @@ const discordOrgPicker$ = command(
         args.actor,
         signal,
       );
-      return channelFailure ?? set(discordConnectionStatus$, binding, signal);
+      return channelFailure ?? discordConnectionStatus(binding);
     }
     if (args.selection !== undefined) {
       const selected = bindings.find((binding) => {
@@ -225,7 +214,7 @@ const discordBoundAccountAction$ = command(
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
     if (args.action === "connect") {
-      return set(discordConnectionStatus$, args.binding, signal);
+      return discordConnectionStatus(args.binding);
     }
     if (args.action === "disconnect") {
       const disconnected = await set(

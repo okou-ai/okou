@@ -12,7 +12,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { AGENT_ID } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 
@@ -31,7 +30,7 @@ function button(name: string, container: ParentNode = document.body) {
 async function setupPeopleSearch() {
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   const people = await screen.findByRole("region", { name: "Find people" });
   click(button("Explore", people));

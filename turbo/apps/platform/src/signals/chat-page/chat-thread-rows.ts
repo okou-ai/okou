@@ -166,12 +166,11 @@ function statusRowGroupId(
 function buildChatThreadRowDrafts(
   renderedGroups: readonly ChatEventGroup[],
   locale: string,
-  includesTail: boolean,
 ): ChatThreadRowDraft[] {
   const { activeGroups } =
     splitQueuedEventsForThinkingIndicator(renderedGroups);
   const modelChanges = modelChangesByEventId(activeGroups);
-  const runWorkFolding = buildRunWorkFolding(activeGroups, includesTail);
+  const runWorkFolding = buildRunWorkFolding(activeGroups);
   const groups = runWorkFolding.visibleGroups;
   const sections = groups.map((group) => {
     return runWorkSectionForGroup(runWorkFolding, group);
@@ -189,9 +188,7 @@ function buildChatThreadRowDrafts(
   });
   const dateDividers = chatThreadDateDividers(timelineEvents, locale);
   const keys = chatEventGroupKeys(groups, runWorkFolding);
-  const statusRowOwnerId = includesTail
-    ? statusRowGroupId(groups, runWorkFolding)
-    : null;
+  const statusRowOwnerId = statusRowGroupId(groups, runWorkFolding);
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
@@ -417,23 +414,18 @@ function createChatThreadRow(
  * or reordered, and each row changes only when its own content does.
  *
  * The render window syncs after every write that changes it or its prepared
- * resources. Retained rows keep their identity when the window slides.
+ * resources. Rows keep the identity they were created with while the pane
+ * keeps this panel.
  */
 export function createChatThreadRows({
-  includesTail$,
   renderedGroups$,
   threadScrollPosition$,
 }: {
-  readonly includesTail$: Computed<boolean>;
   readonly renderedGroups$: Computed<readonly ChatEventGroup[]>;
   readonly threadScrollPosition$: Computed<ThreadScrollPosition | null>;
 }) {
   const rowDrafts$ = computed((get): ChatThreadRowDraft[] => {
-    return buildChatThreadRowDrafts(
-      get(renderedGroups$),
-      get(locale$),
-      get(includesTail$),
-    );
+    return buildChatThreadRowDrafts(get(renderedGroups$), get(locale$));
   });
   const scrollTargetEventId$ = computed((get): string | null => {
     return get(threadScrollPosition$)?.targetEventId ?? null;
@@ -472,7 +464,7 @@ export function createChatThreadRows({
             sameRunModelChange,
           );
     const rowsByKey = get(internalRowsByKey$);
-
+    let nextRowsByKey: Map<string, ChatThreadRow> | undefined;
     const rows = drafts.map(({ key, model }) => {
       const draft: ChatThreadRowModel = {
         ...model,
@@ -492,17 +484,14 @@ export function createChatThreadRows({
         reconcileRowModel(undefined, draft, previousEvents),
         scrollTargetEventId$,
       );
+      nextRowsByKey ??= new Map(rowsByKey);
+      nextRowsByKey.set(key, row);
       return row;
     });
+    if (nextRowsByKey) {
+      set(internalRowsByKey$, nextRowsByKey);
+    }
     if (!equalArrays(previousRows, rows)) {
-      set(
-        internalRowsByKey$,
-        new Map(
-          drafts.map(({ key }, i) => {
-            return [key, rows[i]!] as const;
-          }),
-        ),
-      );
       set(internalVisibleRows$, rows);
     }
   });

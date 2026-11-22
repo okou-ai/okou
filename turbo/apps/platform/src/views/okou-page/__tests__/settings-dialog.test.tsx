@@ -73,7 +73,6 @@ function createPreferences(
     timezone: "America/Los_Angeles",
     locale,
     supportedLocales,
-    pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: true,
@@ -330,11 +329,8 @@ test("Route members away from administrator-only workspace settings", async () =
 });
 
 async function setupSnapshotMeasurement() {
-  const agentId = crypto.randomUUID();
   const snapshotRequested = context.mocks.deferred<void>();
   const releaseSnapshot = context.mocks.deferred<void>();
-  context.mocks.data.onboardingStatus({ defaultAgentId: agentId });
-  context.mocks.data.agents([{ agentId, isDefaultAgent: true }]);
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     if (!snapshotRequested.settled()) {
       snapshotRequested.resolve();
@@ -347,7 +343,7 @@ async function setupSnapshotMeasurement() {
           (title) => {
             return {
               id: crypto.randomUUID(),
-              agentId,
+
               title,
               sortAt: "2026-09-05T00:00:00Z",
               createdAt: "2026-09-05T00:00:00Z",

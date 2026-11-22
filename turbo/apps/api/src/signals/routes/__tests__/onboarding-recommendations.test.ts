@@ -101,8 +101,8 @@ describe("onboarding recommendations", () => {
       if (!actor.orgId) {
         throw new Error("Expected an organization actor");
       }
-      const onboarding = await bdd.readOnboardingStatus(actor);
-      if (!onboarding.defaultAgentId) {
+      const onboardingAgentId = await bdd.readDefaultAgentId(actor);
+      if (!onboardingAgentId) {
         throw new Error("Expected onboarding to create a default agent");
       }
 

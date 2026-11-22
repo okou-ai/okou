@@ -23,7 +23,6 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const WEEKLY_SYNC_THREAD_ID = "b0000000-0000-4000-a000-000000000091";
 const UNTITLED_THREAD_ID = "b0000000-0000-4000-a000-000000000092";
 const SPECIAL_TITLE_THREAD_ID = "b0000000-0000-4000-a000-000000000093";
@@ -52,12 +51,10 @@ function referencedThread(
   };
 }
 
-function configureAgentDraft(
+function configureWorkspaceDraft(
   draft: UserMessageInputDocument,
   referencedThreads: readonly ChatThreadSnapshotProjection[],
 ): void {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
     selectedModel: "claude-sonnet-5",
     serviceTier: null,
@@ -113,7 +110,7 @@ function getLink(name: string): HTMLElement {
 }
 
 test("A conversation reference renders as a recognizable chip", async () => {
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [
@@ -131,7 +128,7 @@ test("A conversation reference renders as a recognizable chip", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -152,7 +149,7 @@ test("A conversation reference renders as a recognizable chip", async () => {
 
 test("Ordinary links are not mistaken for conversation mentions", async () => {
   const externalLink = "https://example.com/launch-notes";
-  const agentLink = `/agents/${AGENT_ID}/chat`;
+  const agentLink = `/`;
   const invalidConversationLink = "[Broken](/chats/not-a-conversation)";
   const conversationWithoutTitle = `/chats/${UNTITLED_THREAD_ID}`;
   const ordinaryText = [
@@ -162,7 +159,7 @@ test("Ordinary links are not mistaken for conversation mentions", async () => {
     conversationWithoutTitle,
   ].join(" | ");
 
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [
@@ -182,7 +179,7 @@ test("Ordinary links are not mistaken for conversation mentions", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -207,7 +204,7 @@ test("Special characters in a conversation title survive saving and restoring", 
   const specialTitle = String.raw`Release [QA] \ notes`;
   let savedDraft: AgentDraftRequest | undefined;
 
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [
@@ -229,7 +226,7 @@ test("Special characters in a conversation title survive saving and restoring", 
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });

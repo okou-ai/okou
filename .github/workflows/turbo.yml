@@ -1388,6 +1388,18 @@ jobs:
           API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
 
+      - name: Configure Clerk fixture delivery for the isolated API preview
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          JOB_REF: ${{ needs.prepare.outputs.job-ref }}
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
+        run: |
+          node --input-type=module <<'JS'
+          import { configurePreviewClerkWebhook } from "./e2e/scripts/preview-clerk-webhook-key.ts";
+          configurePreviewClerkWebhook(process.env.API_ENV_FILE);
+          JS
+
       # Validate the final rendered environment before deploying either API
       # target. Its decoded record lets their runtimes skip schema validation.
       - name: Validate API runtime environment

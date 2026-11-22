@@ -140,7 +140,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         visibility: String = "private",
         manage: Boolean = true,
     ) =
-        """{"id":"$id","agentId":null,"agentName":null,"agentDisplayName":null,"name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"user-a","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
+        """{"id":"$id","name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"user-a","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
 
     private fun detail(summary: String, instruction: String, automations: String) =
         summary.dropLast(1) +

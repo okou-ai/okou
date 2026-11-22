@@ -9,7 +9,7 @@ import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "@okouai/db/schema/agent";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { usageEvent } from "@okouai/db/runtime/usage-event";
@@ -54,7 +54,6 @@ export interface BuiltProfileRows {
 export interface BuildProfileRowsArgs {
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly threadId: string;
   readonly profile: ThreadProfile;
 }
@@ -198,7 +197,7 @@ function isMainModule(): boolean {
 function usage(): never {
   throw new Error(
     [
-      "Usage: pnpm --filter api db:dev-bench-seed -- <userId> <agentId>",
+      "Usage: pnpm --filter api db:dev-bench-seed -- <userId> <orgId>",
       "",
       "Seeds two prod-shaped chat threads for local chat-thread performance work.",
       `Set ${ALLOW_NON_LOCAL_ENV}=1 only if you intentionally want to run against a non-local database.`,
@@ -585,22 +584,6 @@ async function cleanupExistingBenchThreads(
   return threadIds.length;
 }
 
-async function getAgentOrgId(
-  database: Database,
-  agentId: string,
-): Promise<string> {
-  const [row] = await database
-    .select({ orgId: agents.orgId })
-    .from(agents)
-    .where(eq(agents.id, agentId))
-    .limit(1);
-
-  if (!row) {
-    throw new Error(`Agent ${agentId} does not exist`);
-  }
-  return row.orgId;
-}
-
 function appendRunEvents(
   args: BuildProfileRowsArgs & {
     readonly runIndex: number;
@@ -973,7 +956,6 @@ async function seedProfile(
   args: {
     readonly userId: string;
     readonly orgId: string;
-    readonly agentId: string;
     readonly profile: ThreadProfile;
   },
 ): Promise<{ readonly threadId: string; readonly eventCount: number }> {
@@ -1017,15 +999,24 @@ async function seedProfile(
 
 async function seedDevBench(args: {
   readonly userId: string;
-  readonly agentId: string;
+  readonly orgId: string;
 }): Promise<void> {
   assertLocalDatabase();
   const database = db();
-  const orgId = await getAgentOrgId(database, args.agentId);
-  const removed = await cleanupExistingBenchThreads(database, {
-    ...args,
-    orgId,
-  });
+  const [member] = await database
+    .select({ userId: orgMembersCache.userId })
+    .from(orgMembersCache)
+    .where(
+      and(
+        eq(orgMembersCache.orgId, args.orgId),
+        eq(orgMembersCache.userId, args.userId),
+      ),
+    )
+    .limit(1);
+  if (!member) {
+    throw new Error("The benchmark user must belong to the target workspace");
+  }
+  const removed = await cleanupExistingBenchThreads(database, args);
   if (removed > 0) {
     writeLine(`Removed ${String(removed)} existing dev bench thread(s)`);
   }
@@ -1034,7 +1025,6 @@ async function seedDevBench(args: {
   for (const profile of DEV_BENCH_THREAD_PROFILES) {
     const result = await seedProfile(database, {
       ...args,
-      orgId,
       profile,
     });
     seeded.push({ profile, ...result });
@@ -1052,11 +1042,11 @@ async function seedDevBench(args: {
 }
 
 async function main(): Promise<void> {
-  const [userId, agentId] = process.argv.slice(2);
-  if (!userId || !agentId) {
+  const [userId, orgId] = process.argv.slice(2);
+  if (!userId || !orgId) {
     usage();
   }
-  await onRejection(seedDevBench({ userId, agentId }), closeDbPool);
+  await onRejection(seedDevBench({ userId, orgId }), closeDbPool);
   await closeDbPool();
 }
 

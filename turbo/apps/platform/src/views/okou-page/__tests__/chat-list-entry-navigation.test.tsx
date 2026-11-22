@@ -1,4 +1,3 @@
-import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -88,8 +87,6 @@ async function setupEntryNavigation(
     caseId,
     threads: [older, middle, newest],
   });
-  // My Okou's chat page at `/` chats with the default agent.
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   mockSuggestionPool([suggestion()]);
   await setupPage({
     context,

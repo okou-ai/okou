@@ -1197,7 +1197,6 @@ describe("CHAT-01 chat thread read state", () => {
     expect(orgless.body.error.code).toBe("UNAUTHORIZED");
 
     const peer = bdd.user({ orgId: owner.orgId });
-    await bdd.readOnboardingStatus(peer);
     await bdd.completeOnboarding(peer);
     if (!peer.orgId) {
       throw new Error("Expected an organization-scoped peer");
@@ -1333,7 +1332,6 @@ describe("CHAT-01 chat thread read state", () => {
       runnerGroup,
     } = await entitledChatActor("Active ids owner agent");
     const peer = bdd.user({ orgId: owner.orgId });
-    await bdd.readOnboardingStatus(peer);
     await bdd.completeOnboarding(peer);
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
 
@@ -1520,23 +1518,16 @@ describe("CHAT-01 chat thread read state", () => {
 
     context.mocks.ably.publish.mockClear();
     context.mocks.ably.channelGet.mockClear();
-    await chat.markAgentThreadsRead(owner, agentA);
+    await chat.markAllThreadsRead(owner);
     expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
       [`user-org:${owner.userId}:${owner.orgId}`],
     ]);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "chatThreadReadCursorUpdated",
-      {
-        agentId: agentA,
-        threadIds: expect.arrayContaining([
-          firstRunA.threadId,
-          secondRunA.threadId,
-          runB.threadId,
-        ]),
-      },
+      "chatIndicatorsChanged",
+      null,
     );
     context.mocks.ably.publish.mockClear();
-    await chat.markAgentThreadsRead(owner, agentA);
+    await chat.markAllThreadsRead(owner);
     expect(context.mocks.ably.publish).not.toHaveBeenCalled();
 
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(

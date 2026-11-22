@@ -105,7 +105,7 @@ export async function fillComposer(
 interface ThreadListItem {
   id: string;
   title: string | null;
-  agent: { id: string; avatarUrl: string | null };
+
   createdAt: string;
   updatedAt: string;
   pinnedAt?: string | null;
@@ -124,7 +124,7 @@ export function threadListSnapshot(threads: readonly ThreadListItem[]) {
   return threads.map((thread) => {
     return {
       id: thread.id,
-      agentId: thread.agent.id,
+
       title: thread.title,
       sortAt: thread.updatedAt,
       createdAt: thread.createdAt,
@@ -589,10 +589,7 @@ export function mockChatLifecycle(
       {
         id: threadId,
         title: threadTitle,
-        agent: {
-          id: "c0000000-0000-4000-a000-000000000001",
-          avatarUrl: null,
-        },
+
         createdAt: "2026-03-10T00:00:00Z",
         updatedAt: "2026-03-10T00:00:00Z",
         pinnedAt: null,

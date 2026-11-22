@@ -14,12 +14,10 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
   chatListAuth,
   chatListEvent,
   chatListThread,
-  installChatListAgent,
   installChatListStream,
   sidebarThreadLinks,
   sidebarThreadTitles,
@@ -42,11 +40,11 @@ async function prepare(caseId: number, tied = false) {
     }),
     chatListThread(4, "Regular thread"),
   ];
-  installChatListAgent(context);
+
   const stream = installChatListStream(context, { caseId, snapshot });
   await setupPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
   });
@@ -182,14 +180,14 @@ test.each([
     chatListThread(1, "Last pin", { pinnedAt, pinOrder: "a2" }),
     chatListThread(4, "Regular thread"),
   ];
-  installChatListAgent(context);
+
   installChatListStream(context, { caseId, snapshot });
   context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
     return respond(204);
   });
   await setupPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth: chatListAuth(caseId),
     cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
   });

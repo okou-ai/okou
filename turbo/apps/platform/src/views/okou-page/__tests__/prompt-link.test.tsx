@@ -35,9 +35,6 @@ import { buildRunModel } from "./chat-model-builders.ts";
 
 const context = testContext();
 
-const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-const DESIGN_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
-
 interface PromptLaunchCapture {
   readonly createdThreads: {
     readonly model: string | null | undefined;
@@ -139,28 +136,6 @@ function templatePart(send: ChatEventSendBody): UserMessagePart {
   return part;
 }
 
-test("A prompt link prefills a specific agent's chat", async () => {
-  const user = userEvent.setup();
-  const capture = capturePromptLaunch();
-  context.mocks.data.agents([
-    { agentId: DEFAULT_AGENT_ID, displayName: "General" },
-    { agentId: DESIGN_AGENT_ID, displayName: "Design" },
-  ]);
-  await setupPage({
-    context,
-    path: `/agents/${DESIGN_AGENT_ID}/chat?prompt=Draft%20a%20launch%20brief`,
-  });
-
-  const composer = await waitForDraft("Draft a launch brief");
-  await user.type(composer, " for Friday");
-
-  expect(composer).toHaveTextContent("Draft a launch brief for Friday");
-  expect(pathname()).toBe("/");
-  expect(search()).toBe("");
-  expect(capture.createdThreads).toHaveLength(0);
-  expect(capture.sends).toHaveLength(0);
-});
-
 test("A prompt link prefills a new chat from Home", async () => {
   const user = userEvent.setup();
   const capture = capturePromptLaunch();
@@ -175,40 +150,6 @@ test("A prompt link prefills a new chat from Home", async () => {
   expect(composer).toHaveTextContent(
     "Outline the customer interview questions",
   );
-  expect(pathname()).toBe("/");
-  expect(search()).toBe("");
-  expect(capture.createdThreads).toHaveLength(0);
-  expect(capture.sends).toHaveLength(0);
-});
-
-test("My Okou prefills a prompt link on its chat page at Home", async () => {
-  const capture = capturePromptLaunch();
-  await setupPage({
-    context,
-    path: "/?prompt=Outline%20the%20customer%20interview",
-  });
-
-  await waitForDraft("Outline the customer interview");
-
-  expect(pathname()).toBe("/");
-  expect(search()).toBe("");
-  expect(capture.createdThreads).toHaveLength(0);
-  expect(capture.sends).toHaveLength(0);
-});
-
-test("My Okou moves an agent chat prompt link to Home", async () => {
-  const capture = capturePromptLaunch();
-  context.mocks.data.agents([
-    { agentId: DEFAULT_AGENT_ID, displayName: "General" },
-    { agentId: DESIGN_AGENT_ID, displayName: "Design" },
-  ]);
-  await setupPage({
-    context,
-    path: `/agents/${DESIGN_AGENT_ID}/chat?prompt=Draft%20a%20launch%20brief`,
-  });
-
-  await waitForDraft("Draft a launch brief");
-
   expect(pathname()).toBe("/");
   expect(search()).toBe("");
   expect(capture.createdThreads).toHaveLength(0);
@@ -332,7 +273,7 @@ test("Completing a prompt link preserves a model chosen in a later composer", as
   await waitForPromptLaunch("Finish the linked task", capture);
 
   act(() => {
-    window.history.pushState(null, "", `/agents/${DEFAULT_AGENT_ID}/chat`);
+    window.history.pushState(null, "", `/`);
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
   await expect(

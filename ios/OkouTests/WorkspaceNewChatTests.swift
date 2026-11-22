@@ -31,7 +31,7 @@ final class WorkspaceNewChatTests: XCTestCase {
     }
     let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     XCTAssertEqual(store.currentAgentName, "Okou")
 
@@ -43,7 +43,7 @@ final class WorkspaceNewChatTests: XCTestCase {
     XCTAssertEqual(store.selectedAgentID, otherAgentID)
     XCTAssertEqual(store.selectedThreadID, storeThreadID)
     store.startNewChat()
-    XCTAssertEqual(store.selectedAgentID, storeAgentID)
+    XCTAssertNil(store.selectedAgentID)
     XCTAssertNil(store.selectedThreadID)
   }
 
@@ -56,7 +56,7 @@ final class WorkspaceNewChatTests: XCTestCase {
         return ChatHTTPResponse(
           body:
             "[{\"agentId\":\"\(storeAgentID)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]")
-      case "/api/agents/\(storeAgentID)/draft", "/api/agents/\(otherAgentID)/draft",
+      case "/api/chat-drafts/composer",
         "/api/chat-threads/\(storeThreadID)/draft":
         return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
       case "/api/chat-threads/snapshot":
@@ -104,7 +104,7 @@ final class WorkspaceNewChatTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(storeThreadID)
     XCTAssertEqual(store.selectedAgentID, storeAgentID)
@@ -120,12 +120,12 @@ final class WorkspaceNewChatTests: XCTestCase {
     XCTAssertNil(store.conversation(for: storeThreadID)?.error)
     store.startNewChat()
     XCTAssertNil(store.selectedThreadID)
-    XCTAssertEqual(store.selectedAgentID, storeAgentID)
+    XCTAssertNil(store.selectedAgentID)
 
     // Refreshing an existing thread does not change the new-chat executor.
     store.startNewChat()
     await store.refresh()
-    XCTAssertEqual(store.selectedAgentID, storeAgentID)
+    XCTAssertNil(store.selectedAgentID)
     store.close()
     let reopened = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)

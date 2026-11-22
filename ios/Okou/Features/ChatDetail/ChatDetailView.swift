@@ -4,7 +4,7 @@ import Textual
 
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
-  let agents: ThreadListStore?
+  let workspaceName: String?
   var didSend: (@MainActor () async -> Void)?
   let topContentInset: CGFloat
   let mentionSource: ComposerMentionSource?
@@ -24,7 +24,7 @@ struct ChatDetailView: View {
   private struct UsageDetails: Identifiable { let id: String }
 
   init(
-    conversation: ConversationStore, agents: ThreadListStore? = nil,
+    conversation: ConversationStore, workspaceName: String? = nil,
     didSend: (@MainActor () async -> Void)? = nil,
     topContentInset: CGFloat = 0,
     mentionSource: ComposerMentionSource? = nil,
@@ -32,7 +32,7 @@ struct ChatDetailView: View {
     fork: ((ChatFeedbackSelection) -> Void)? = nil
   ) {
     self.conversation = conversation
-    self.agents = agents
+    self.workspaceName = workspaceName
     self.didSend = didSend
     self.topContentInset = topContentInset
     self.mentionSource = mentionSource
@@ -43,7 +43,7 @@ struct ChatDetailView: View {
 
   private var history: ChatHistory { conversation.history ?? .empty }
   private var agentName: String? {
-    agents?.agents.first(where: { $0.agentId == thread.agentID })?.displayName
+    "Okou"
   }
   private var rows: [ConversationCollectionRow] {
     ConversationRowProjection(conversation: conversation).rows
@@ -76,6 +76,7 @@ struct ChatDetailView: View {
       content: { row, anchor in
         rowContent(row, anchor: anchor).environment(\.openURL, openURL)
           .environment(\.openChatSource, openChatSource)
+          .environment(\.permissionWorkspaceName, workspaceName)
       }
     )
     .ignoresSafeArea(.container, edges: .vertical)
@@ -251,7 +252,8 @@ struct ChatDetailView: View {
     return .init(
       webURL: conversation.webURL,
       action: assistant ? .init(agentID: thread.agentID, threadID: thread.id) : nil,
-      permissionsEnabled: true, artifacts: assistant ? conversation.artifacts : nil)
+      permissionMember: conversation.permissionActions.member,
+      artifacts: assistant ? conversation.artifacts : nil)
   }
 
   @ViewBuilder
@@ -394,7 +396,7 @@ struct ChatDetailView: View {
   }
 
   private var assistantAvatar: some View {
-    ChatAgentAvatar(agents: agents, agentID: thread.agentID)
+    OkouAgentAvatar(avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.message)
       .accessibilityIdentifier("assistant-avatar")
   }
 

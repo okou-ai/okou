@@ -128,7 +128,7 @@ export function createComposerFeedbackModel(): ComposerFeedbackModel {
 // carry a comment, but the reference itself remains meaningful without one.
 export function formatFeedbackPrompt(
   items: readonly Pick<FeedbackItem, "quote" | "note" | "source">[],
-  agentRunSourceTitle?: string,
+  chatRunSourceTitle?: string,
 ): string {
   const firstMailSource = items[0]?.source;
   const commonMailSource =
@@ -167,10 +167,10 @@ export function formatFeedbackPrompt(
       ? `${source}${quoted}`
       : `${source}${quoted}\n\n${note}`;
   });
-  const intro = agentRunSourceTitle
+  const intro = chatRunSourceTitle
     ? items.length === 1
-      ? `The user forwarded this from the chat "${agentRunSourceTitle}":`
-      : `The user forwarded ${items.length} parts from the chat "${agentRunSourceTitle}":`
+      ? `The user forwarded this from the chat "${chatRunSourceTitle}":`
+      : `The user forwarded ${items.length} parts from the chat "${chatRunSourceTitle}":`
     : commonMailSource
       ? items.length === 1
         ? `The user quoted this part of ${mailSourceLabel(commonMailSource)}:`
@@ -181,7 +181,7 @@ export function formatFeedbackPrompt(
           ? "The user quoted this part of your reply:"
           : `The user quoted ${items.length} parts of your reply:`;
   const commonMailContext =
-    agentRunSourceTitle && commonMailSource
+    chatRunSourceTitle && commonMailSource
       ? `Source: ${mailSourceLabel(commonMailSource)}\n\n`
       : "";
   return `${intro}\n\n${commonMailContext}${blocks.join("\n\n---\n\n")}`;
