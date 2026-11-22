@@ -347,9 +347,6 @@ test("Startup onboarding follows the current account and workspace", async () =>
     statusRequested.resolve();
     await statusReady.promise;
     return HttpResponse.json({
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
-      hasDefaultAgent: true,
       hasOrg: true,
       isAdmin: true,
       needsOnboarding: true,

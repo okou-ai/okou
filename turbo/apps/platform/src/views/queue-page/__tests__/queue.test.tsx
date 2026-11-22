@@ -16,19 +16,18 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   billingStatus,
   installQueuePageFixture,
-  QUEUE_AGENT_ID,
   queueResponse,
 } from "./queue-page-test-helpers.ts";
 
 const context = testContext();
 
 function openQueuePath(): string {
-  return `/agents/${QUEUE_AGENT_ID}/chat?queue=1`;
+  return `/?queue=1`;
 }
 
 async function visibleQueueDrawer(): Promise<HTMLElement> {
   return await screen.findByRole("dialog", {
-    name: "Your agent is waiting in line",
+    name: "Your request is queued",
   });
 }
 

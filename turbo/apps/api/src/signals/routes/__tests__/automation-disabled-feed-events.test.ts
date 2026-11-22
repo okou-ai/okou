@@ -85,7 +85,7 @@ async function createScenario(
   } = {},
 ): Promise<Scenario> {
   mockNow(new Date("2030-01-01T12:00:00.000Z"));
-  const { actor, defaultAgentId } = await workflows.setupWorkflowOrg({
+  const { actor } = await workflows.setupWorkflowOrg({
     model: "claude-fable-5-1",
     timezone: "UTC",
   });
@@ -95,7 +95,6 @@ async function createScenario(
   await feedSwitch(actor, options.feedEnabled ?? true);
   const workflowName = `disabled-feed-event-${randomUUID().slice(0, 8)}`;
   const workflowId = await workflows.createWorkflow(actor, {
-    agentId: defaultAgentId,
     name: workflowName,
     description: AUTOMATION_DESCRIPTION,
     visibility: "private",
@@ -268,7 +267,7 @@ describe("recurring automation auto-disable platform feed events", () => {
     if (!event) {
       throw new Error("Expected the disabled automation's platform event");
     }
-    const { defaultAgentId } = await createBddApi(context).readOnboardingStatus(
+    const defaultAgentId = await createBddApi(context).readDefaultAgentId(
       scenario.actor,
     );
     if (!defaultAgentId) {

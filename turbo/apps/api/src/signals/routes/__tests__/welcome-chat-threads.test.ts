@@ -74,12 +74,8 @@ async function fixture(
   } = {},
 ) {
   const actor = bdd.user({ orgId: options.orgId });
-  bdd.acceptAgentStorageWrites();
   await runs.grantProEntitlement(actor, {
     periodEndUnix: Math.floor(now() / 1000) - 90 * 86_400,
-  });
-  await bdd.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Editable agent name must not replace the public brand",
   });
   return { actor };
 }
@@ -141,29 +137,6 @@ describe("POST /api/welcome-chat-threads", () => {
         body: { clientThreadId },
       }),
       [401],
-    );
-    await expect(createdEvents(actor, clientThreadId)).resolves.toStrictEqual(
-      [],
-    );
-  });
-
-  it("reports an unavailable default agent without provisioning or creating a thread", async () => {
-    const actor = bdd.user();
-    const clientThreadId = randomUUID();
-    const unavailable = await accept(
-      welcomeClient().create({
-        headers: headers(actor),
-        body: { clientThreadId },
-      }),
-      [409],
-    );
-    expect(unavailable.body.error.code).toBe("CONFLICT");
-    await accept(
-      metadataClient().get({
-        headers: headers(actor),
-        params: { id: clientThreadId },
-      }),
-      [404],
     );
     await expect(createdEvents(actor, clientThreadId)).resolves.toStrictEqual(
       [],

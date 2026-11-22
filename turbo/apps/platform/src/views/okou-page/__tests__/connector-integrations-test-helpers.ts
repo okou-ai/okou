@@ -131,8 +131,6 @@ export function mockFeishu(
     messageReceived: false,
     tenantKey: null,
     tenantName: null,
-    defaultAgentId: null,
-    defaultAgentName: "Okou",
   };
   context.mocks.api(contract.getStatus, ({ respond }) => {
     return respond(200, { ...defaults, ...overrides });

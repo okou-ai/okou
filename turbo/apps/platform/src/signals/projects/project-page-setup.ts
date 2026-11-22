@@ -8,7 +8,7 @@ import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
 
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { ensureAgentDraft$ } from "../okou-page/agent-draft.ts";
+import { ensureDraft$ } from "../okou-page/workspace-draft.ts";
 import {
   agentChatComposerSignals$,
   setAgentComposerContext$,
@@ -21,21 +21,19 @@ import { selectedProjectId$ } from "./project-navigation.ts";
 import { hydrateProjects$, projects$ } from "./projects.ts";
 
 /**
- * A Project's own page starts new chats inside it, like an Agent's new-chat
- * page. Projects always compose with the default Agent and keep the agent
- * draft for now.
+ * The Project composer opens the workspace draft and starts new chats in this Project.
  */
 export const setupProjectPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const projectId = get(selectedProjectId$);
     signal.throwIfAborted();
     if (!projectId) {
-      throw new Error("A Project page requires a Project and a default Agent");
+      throw new Error("A Project page requires a Project");
     }
-    const agentDraft = await set(ensureAgentDraft$, signal);
-    set(setAgentComposerContext$, { agentDraft, projectId });
+    const workspaceDraft = await set(ensureDraft$, signal);
+    set(setAgentComposerContext$, { workspaceDraft, projectId });
     set(get(agentChatComposerSignals$).setup$, signal);
-    set(setTalkDraft$, agentDraft.draft);
+    set(setTalkDraft$, workspaceDraft.draft);
     set(resetChatPageModelSelection$);
     set(
       updatePage$,
@@ -61,6 +59,6 @@ export const setupProjectPage$ = command(
       return;
     }
     set(updateDocumentTitle$, project.name);
-    await set(agentDraft.load$, signal);
+    await set(workspaceDraft.load$, signal);
   },
 );

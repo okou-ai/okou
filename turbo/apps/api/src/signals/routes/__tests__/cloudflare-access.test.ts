@@ -479,8 +479,7 @@ function useExecutionFixture() {
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
-    const { defaultAgentId: agentId } =
-      await bdd.readOnboardingStatus(bootstrapActor);
+    const agentId = await bdd.readDefaultAgentId(bootstrapActor);
     if (!agentId) {
       throw new Error("Expected onboarding to provide the default Agent");
     }

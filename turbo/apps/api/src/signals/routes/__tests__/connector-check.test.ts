@@ -359,7 +359,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
   it("retains encoded API prefixes during global catalog selection", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await connectReap(actor, "https://prod.api.reap.global/v%31");
     const result = await checkWithSession(actor, {
       mode: "url",
@@ -1475,7 +1475,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     it("requires an explicit identity for shared custom prefixes and retains deletion isolation", async () => {
       const actor = bdd.user();
       bdd.acceptAgentStorageWrites();
-      await bdd.readOnboardingStatus(actor);
+      await bdd.provisionWorkspace(actor);
       const prefix = `https://${randomUUID()}.shared-custom.test/v1/`;
       const definitions = [];
       for (const label of ["First", "Second"]) {

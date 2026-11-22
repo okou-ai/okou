@@ -49,12 +49,8 @@ const WAITING_FOR_SKILLS = "Imported skills appear here as they arrive.";
 /** The token the mocked session hands out, which only the prompt carries. */
 const SESSION_TOKEN = "vm0_skillimport_mock-session-token";
 const SESSION_ID = "b0000000-0000-4000-a000-000000000001";
-const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const SKILL_DISPLAY_NAME = "Weekly report";
 const SKILL_NAME = "weekly-report";
-/** A skill on another agent, which this step is not importing into. */
-const OTHER_AGENT_SKILL = "Someone else's skill";
 
 function mockConnectedSource(): void {
   mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
@@ -62,15 +58,11 @@ function mockConnectedSource(): void {
 
 function workflow(entry: {
   readonly id: string;
-  readonly agentId: string;
   readonly name: string;
   readonly displayName: string;
 }): WorkflowSummary {
   return {
     id: entry.id,
-    agentId: entry.agentId,
-    agentName: null,
-    agentDisplayName: null,
     name: entry.name,
     displayName: entry.displayName,
     description: "What last week looked like",
@@ -87,19 +79,8 @@ function workflow(entry: {
 function importedSkill(): WorkflowSummary {
   return workflow({
     id: "d0000000-0000-4000-a000-000000000011",
-    agentId: DEFAULT_AGENT_ID,
     name: SKILL_NAME,
     displayName: SKILL_DISPLAY_NAME,
-  });
-}
-
-/** A private workflow on an agent this run never imports into. */
-function otherAgentSkill(): WorkflowSummary {
-  return workflow({
-    id: "d0000000-0000-4000-a000-000000000012",
-    agentId: OTHER_AGENT_ID,
-    name: "someone-elses-skill",
-    displayName: OTHER_AGENT_SKILL,
   });
 }
 
@@ -107,28 +88,15 @@ function otherAgentSkill(): WorkflowSummary {
  * The authoritative session results returned to the step: the
  * test decides what the user's own Codex or Claude Code session has written.
  */
-function mockAgentWorkflows(): {
+function mockWorkflows(): {
   readonly write: (workflows: readonly WorkflowSummary[]) => void;
 } {
   let workflows: readonly WorkflowSummary[] = [];
   context.mocks.api(skillImportSessionsContract.listSkills, ({ respond }) => {
-    return respond(
-      200,
-      workflows.filter((entry) => {
-        return entry.agentId === DEFAULT_AGENT_ID;
-      }),
-    );
+    return respond(200, [...workflows]);
   });
-  context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
-    const agentId = query.agentId;
-    return respond(
-      200,
-      agentId === undefined
-        ? [...workflows]
-        : workflows.filter((candidate) => {
-            return candidate.agentId === agentId;
-          }),
-    );
+  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+    return respond(200, [...workflows]);
   });
   return {
     write: (next) => {
@@ -287,7 +255,7 @@ async function openSkillsStep(
 
 test("Mobile import copies the session prompt and continues when a skill arrives", async () => {
   mockSessions();
-  const workflows = mockAgentWorkflows();
+  const workflows = mockWorkflows();
   const clipboard = context.mocks.browser.clipboardWriteText();
   await openSkillsStep("Codex", false, true);
   await waitFor(() => {
@@ -337,7 +305,7 @@ test("Refreshing the skills step restores the chosen tool", async () => {
     isAdmin: true,
   });
   mockConnectedSource();
-  mockAgentWorkflows();
+  mockWorkflows();
   // A fresh browser app starts with storage from the previous app lifetime.
   context.store.set(
     draftStorage.set$,
@@ -409,7 +377,7 @@ test("A saved draft from another user cannot select the current user's tool", as
 test("The step hands over the prompt its session produced, and copies it whole", async () => {
   const posthog = context.mocks.posthog();
   const clipboard = context.mocks.browser.clipboardWriteText();
-  mockAgentWorkflows();
+  mockWorkflows();
   const sessions = mockSessions();
 
   await openSkillsStep();
@@ -462,7 +430,7 @@ test("The step hands over the prompt its session produced, and copies it whole",
 });
 
 test("The skills step names Claude Code when it was selected", async () => {
-  mockAgentWorkflows();
+  mockWorkflows();
   const sessions = mockSessions();
 
   await openSkillsStep("Claude Code");
@@ -488,7 +456,7 @@ test("The skills step names Claude Code when it was selected", async () => {
 });
 
 test("Finishing onboarding sends the industry after a full Codex flow", async () => {
-  mockAgentWorkflows();
+  mockWorkflows();
   const sentIndustry = context.mocks.deferred<string | undefined>();
   context.mocks.api(onboardingCompleteContract.complete, ({ body, never }) => {
     sentIndustry.resolve(body.industry);
@@ -515,7 +483,7 @@ test("Finishing onboarding sends the industry after a full Codex flow", async ()
 });
 
 test("A resumed skills step without a work positioning continues to Slack", async () => {
-  mockAgentWorkflows();
+  mockWorkflows();
   await openSkillsStep();
 
   click(getButtonByName("Not now"));
@@ -528,7 +496,7 @@ test("A resumed skills step without a work positioning continues to Slack", asyn
 
 test("A skill the import writes appears without the step being asked again", async () => {
   const posthog = context.mocks.posthog();
-  const agentWorkflows = mockAgentWorkflows();
+  const workspaceWorkflows = mockWorkflows();
 
   await openSkillsStep(CODEX_CARD, true);
 
@@ -536,7 +504,7 @@ test("A skill the import writes appears without the step being asked again", asy
     screen.findByText(WAITING_FOR_SKILLS),
   ).resolves.toBeInTheDocument();
 
-  agentWorkflows.write([importedSkill(), otherAgentSkill()]);
+  workspaceWorkflows.write([importedSkill()]);
 
   await expect(
     screen.findByText(SKILL_DISPLAY_NAME),
@@ -545,8 +513,6 @@ test("A skill the import writes appears without the step being asked again", asy
     screen.findByRole("heading", { name: SKILLS_ARRIVED_TITLE }),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText(WAITING_FOR_SKILLS)).not.toBeInTheDocument();
-  // The list is the org's default agent, not every workflow the user can see.
-  expect(screen.queryByText(OTHER_AGENT_SKILL)).not.toBeInTheDocument();
   // Skill names and contents remain outside client onboarding telemetry.
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_NAME);
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_DISPLAY_NAME);
@@ -561,7 +527,7 @@ test("A skill the import writes appears without the step being asked again", asy
 
 test("The step can be left with nothing imported", async () => {
   const posthog = context.mocks.posthog();
-  mockAgentWorkflows();
+  mockWorkflows();
 
   await openSkillsStep(CODEX_CARD, true);
 
@@ -581,7 +547,7 @@ test("The step can be left with nothing imported", async () => {
 });
 
 test("Back releases the subscription and returning retains the prompt and server results", async () => {
-  const workflows = mockAgentWorkflows();
+  const workflows = mockWorkflows();
   mockSessions();
   await openSkillsStep();
   const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
@@ -601,26 +567,4 @@ test("Back releases the subscription and returning retains the prompt and server
     original,
   );
   expect(screen.getByText(SKILL_DISPLAY_NAME)).toBeInTheDocument();
-});
-
-test("A session that cannot be opened leaves the step passable", async () => {
-  mockAgentWorkflows();
-  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    return respond(404, {
-      error: {
-        message: "This organization has no default agent to import into",
-        code: "NOT_FOUND",
-      },
-    });
-  });
-
-  await openSkillsStep();
-
-  await expect(
-    screen.findByText("The import session could not be opened."),
-  ).resolves.toBeInTheDocument();
-  // Nothing on this step is required, so a failure never holds the run back:
-  // Not now leaves, while Continue waits for a skill that cannot arrive.
-  expect(getButtonByName("Not now")).toBeEnabled();
-  expect(getButtonByName("Continue")).toBeDisabled();
 });

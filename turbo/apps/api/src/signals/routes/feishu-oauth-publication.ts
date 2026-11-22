@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
@@ -45,7 +44,6 @@ interface FeishuOAuthPublicationInput {
     readonly accountMutation: ConnectorAccountMutationIntent;
   };
   readonly installation: {
-    readonly defaultAgentId: string;
     readonly tenantKey: string | null;
   };
   readonly connector: { readonly id: string; readonly storageVersion: number };
@@ -67,7 +65,6 @@ type TimedFeishuOAuthPublicationInput = FeishuOAuthPublicationInput & {
 };
 
 export const feishuOAuthPublicationRow = object({
-  agent: boolean(),
   credentialContract: boolean(),
   definitionEnabled: boolean(),
   foreignOwner: boolean(),
@@ -100,23 +97,6 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
       )
       .limit(1),
   );
-  const agent = query.$with("oauth_agent").as(
-    query
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, args.installation.defaultAgentId),
-          eq(agents.orgId, args.state.orgId),
-          or(
-            eq(agents.visibility, "public"),
-            eq(agents.owner, args.state.userId),
-          ),
-        ),
-      )
-      .for("update")
-      .limit(1),
-  );
   const definition = query.$with("oauth_definition").as(
     query
       .select({
@@ -138,7 +118,6 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
         and(
           eq(definitions.id, args.connector.id),
           eq(definitions.orgId, args.state.orgId),
-          exists(query.select().from(agent)),
         ),
       )
       .for("update", { of: definitions })
@@ -177,7 +156,7 @@ function feishuOAuthAdmission(args: TimedFeishuOAuthPublicationInput) {
         not(foreign),
       ),
     );
-  return { installation, agent, definition, contract, foreign, eligible };
+  return { installation, definition, contract, foreign, eligible };
 }
 
 function feishuOAuthMember(
@@ -432,7 +411,6 @@ export function feishuOAuthPublicationSql(
   return query
     .with(
       admission.installation,
-      admission.agent,
       admission.definition,
       member.removed,
       member.claimed,
@@ -450,9 +428,6 @@ export function feishuOAuthPublicationSql(
       sourceEvent,
     )
     .select({
-      agent: sql`${exists(query.select().from(admission.agent))}`
-        .mapWith(zodDriverValueDecoder(boolean()))
-        .as("agent"),
       credentialContract: sql`${exists(admission.contract)}`
         .mapWith(zodDriverValueDecoder(boolean()))
         .as("credentialContract"),

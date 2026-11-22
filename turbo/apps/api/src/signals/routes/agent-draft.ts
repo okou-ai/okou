@@ -1,3 +1,4 @@
+import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
 import {
   iosVoiceDraftTransforms,
   androidVoiceDraftTransforms,
@@ -85,7 +86,7 @@ function createAgentDraftReader(
     return {
       status: 200 as const,
       body: {
-        draftUserMessage: draft?.draftUserMessage ?? null,
+        draftUserMessage: readStoredDraftMessage(draft?.draftUserMessage),
         draftAttachments: draft?.draftAttachments ?? null,
       },
     };

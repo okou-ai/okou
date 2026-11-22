@@ -527,8 +527,6 @@ describe("canonical Discord ingress", () => {
       isAvailable: true,
       isConnected: true,
       discordUserId: actor.discordUserId,
-      defaultAgentId: null,
-      defaultAgentName: null,
     });
     expect(status.dmBindings).toStrictEqual([
       {
@@ -1014,7 +1012,6 @@ describe("canonical Discord ingress", () => {
       const actor = await connected();
       const provider = mockDiscordProvider(actor);
       const chat = createChatFilesBddApi(context);
-      const before = await chat.getThreadSnapshot(actor.actor);
       const channelId =
         kind === "dm"
           ? provider.dmChannelId
@@ -1078,7 +1075,7 @@ describe("canonical Discord ingress", () => {
       );
       const lifecycle = await chat.requestThreadEvents(
         actor.actor,
-        before.latestSeqId === null ? {} : { sinceSeqId: before.latestSeqId },
+        { sinceSeqId: actor.sinceSetupSeqId },
         [200],
       );
       if (lifecycle.status !== 200) {
@@ -1129,7 +1126,7 @@ describe("canonical Discord ingress", () => {
       );
       const afterReplay = await chat.requestThreadEvents(
         actor.actor,
-        before.latestSeqId === null ? {} : { sinceSeqId: before.latestSeqId },
+        { sinceSeqId: actor.sinceSetupSeqId },
         [200],
       );
       if (afterReplay.status !== 200) {
@@ -1197,7 +1194,11 @@ describe("canonical Discord ingress", () => {
       type: "text",
       text: "start a new conversation after deletion",
     });
-    const lifecycle = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor.actor,
+      { sinceSeqId: actor.sinceSetupSeqId },
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected DM lifecycle events");
     }
@@ -1486,7 +1487,11 @@ describe("canonical Discord ingress", () => {
       content,
     });
     const chat = createChatFilesBddApi(context);
-    const lifecycle = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor.actor,
+      { sinceSeqId: actor.sinceSetupSeqId },
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected the routed failure's sidebar activity");
     }
@@ -1511,7 +1516,11 @@ describe("canonical Discord ingress", () => {
     await flushWaitUntilForTest();
     await expect(events(actor, thread.id)).resolves.toStrictEqual(original);
     expect(provider.sentMessages).toHaveLength(1);
-    const replayed = await chat.requestThreadEvents(actor.actor, {}, [200]);
+    const replayed = await chat.requestThreadEvents(
+      actor.actor,
+      { sinceSeqId: actor.sinceSetupSeqId },
+      [200],
+    );
     expect(replayed.body).toStrictEqual(lifecycle.body);
   });
 

@@ -23,7 +23,7 @@ import {
   chatThreadConnectorSelectionContract,
   chatThreadDraftContract,
   chatThreadEventsContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
   chatThreadMetadataContract,
@@ -245,8 +245,8 @@ const iosContracts: readonly {
     route: chatThreadEventsContract.snapshot,
   },
   {
-    id: "ios.chatThreadMarkAgentReadContract.markAgentRead",
-    route: chatThreadMarkAgentReadContract.markAgentRead,
+    id: "ios.chatThreadMarkAllReadContract.markAllRead",
+    route: chatThreadMarkAllReadContract.markAllRead,
   },
   {
     id: "ios.chatThreadMarkReadContract.markRead",

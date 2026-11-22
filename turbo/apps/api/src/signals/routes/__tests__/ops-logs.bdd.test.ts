@@ -121,7 +121,7 @@ describe("OPS-01: user data export", () => {
     const misc = createMiscRoutesApi(context);
     const events = createChatEventsFixture(context);
     await fixture.run(async () => {
-      const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+      const defaultAgentId = await bdd.readDefaultAgentId(actor);
       if (!defaultAgentId) {
         throw new Error("Expected a workspace workflow namespace");
       }
@@ -131,7 +131,6 @@ describe("OPS-01: user data export", () => {
       );
       const workflow = await misc.createWorkflow(
         actor,
-        defaultAgentId,
         "bdd-export-workflow",
         { content: "Use the exported workflow instructions." },
         [201],
@@ -145,8 +144,8 @@ describe("OPS-01: user data export", () => {
       await chat.pinThread(actor, thread.id, { pinOrder: "a0" });
 
       const peer = bdd.user({ orgId: actor.orgId });
-      const peerOnboarding = await bdd.readOnboardingStatus(peer);
-      if (!peerOnboarding.defaultAgentId) {
+      const peerOnboardingAgentId = await bdd.readDefaultAgentId(peer);
+      if (!peerOnboardingAgentId) {
         throw new Error("Expected the paid organization to onboard the peer");
       }
       const peerOnboarded = await bdd.completeOnboarding(peer);

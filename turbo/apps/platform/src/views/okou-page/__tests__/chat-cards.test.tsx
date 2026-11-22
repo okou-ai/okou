@@ -22,7 +22,6 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
 const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?threadId=${THREAD_ID}`;
 const PERMISSION_URL = `https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read`;
@@ -384,7 +383,7 @@ test("Incomplete action links are shown as unavailable", async () => {
 });
 
 test("Invalid actions remain unavailable beside valid and external links", async () => {
-  const wrongAgentUrl = CONNECTOR_URL.replace(
+  const mismatchedConnectorUrl = CONNECTOR_URL.replace(
     THREAD_ID,
     "b0000000-0000-4000-a000-000000000099",
   );
@@ -394,7 +393,7 @@ test("Invalid actions remain unavailable beside valid and external links", async
     "app.okou.ai.evil.test",
   );
   await setupChat(
-    `Review [another agent (${wrongAgentUrl})](${wrongAgentUrl}), ${wrongThreadUrl}, [this agent](${CONNECTOR_URL}) and the [external reference](${externalUrl}).`,
+    `Review [another chat (${mismatchedConnectorUrl})](${mismatchedConnectorUrl}), ${wrongThreadUrl}, [this chat](${CONNECTOR_URL}) and the [external reference](${externalUrl}).`,
   );
 
   await screen.findByTestId("connector-action-card");
@@ -407,11 +406,11 @@ test("Invalid actions remain unavailable beside valid and external links", async
   });
   expect(external).toHaveAttribute("href", externalUrl);
   expect(external?.closest("p")).toHaveTextContent(
-    `Review another agent (${wrongAgentUrl}), , this agent and the external reference.`,
+    `Review another chat (${mismatchedConnectorUrl}), , this chat and the external reference.`,
   );
   expect(
     links.some((link) => {
-      return [wrongAgentUrl, wrongThreadUrl, CONNECTOR_URL].includes(
+      return [mismatchedConnectorUrl, wrongThreadUrl, CONNECTOR_URL].includes(
         link.getAttribute("href") ?? "",
       );
     }),
@@ -567,17 +566,17 @@ test("A bare action stops before adjacent Chinese punctuation and prose", async 
 });
 
 test("Action labels stay literal instead of becoming new Markdown links or headings", async () => {
-  const wrongAgentUrl = CONNECTOR_URL.replace(
+  const mismatchedConnectorUrl = CONNECTOR_URL.replace(
     THREAD_ID,
     "b0000000-0000-4000-a000-000000000099",
   );
   await setupChat(
     [
-      `[\\[reference\\]](${wrongAgentUrl}) remains literal.`,
+      `[\\[reference\\]](${mismatchedConnectorUrl}) remains literal.`,
       "",
       `[# Review](${CONNECTOR_URL}) before continuing.`,
       "",
-      `[www.example.com](${wrongAgentUrl}) stays unavailable.`,
+      `[www.example.com](${mismatchedConnectorUrl}) stays unavailable.`,
       "",
       "[reference]: https://example.com/reference",
     ].join("\n"),
@@ -1406,7 +1405,6 @@ async function reviewBankingRequest(entry: "chat" | "direct") {
     bankingWorkspaceContract.accessRequestStatus,
     ({ respond }) => {
       return respond(200, {
-        agent: { id: AGENT_ID, name: "Finance Assistant" },
         connection: null,
         session: null,
         grant: null,

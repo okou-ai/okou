@@ -29,7 +29,6 @@ import {
   getConnectorAction,
   getConnectorCard,
   getConnectorIcon,
-  listAgent,
   mockConnectors,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
@@ -121,9 +120,6 @@ test.each(["none", "oauth"] as const)(
     const authorizationUrl = "https://oauth.test/tools/authorize";
     const oauthAttemptId = crypto.randomUUID();
     mockConnectors(context, []);
-    context.mocks.data.agents([
-      listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    ]);
     const catalogItem = publicStatusItem({
       connectorSlug: slug,
       label: "Partner Tools",
@@ -283,9 +279,6 @@ test("Show Mercury disclosures before connecting an account", async () => {
 
 test("Add an AWS account through external-code authorization", async () => {
   mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000002", "Research Agent"),
-  ]);
   const authWindow = createAuthWindow();
   const browserOpen = context.mocks.browser.open(authWindow);
   context.mocks.api(
@@ -364,10 +357,6 @@ test("Add an account through OpenID", async () => {
   const oauthAttemptId = crypto.randomUUID();
   const slug = "server-authored-steam";
   mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
-  ]);
   const catalogItem = publicStatusItem({
     connectorSlug: slug,
     label: "Partner Steam",
@@ -486,10 +475,6 @@ test("Choose a credential-free method", async () => {
 test("Connect through device authorization", async () => {
   const approval = context.mocks.deferred<void>();
   mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
-  ]);
   mockPublicConnectorStatus(context, [
     publicStatusItem({
       connectorSlug: "base44",
@@ -574,9 +559,6 @@ test.each([
     const label = grantKind === "device-auth" ? "Base44" : "AWS";
     let saved: BuiltinConnectorResponse | null = null;
     mockConnectors(context, []);
-    context.mocks.data.agents([
-      listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
-    ]);
     context.mocks.browser.open(createAuthWindow());
     mockPublicConnectorStatus(context, [
       publicStatusItem({
@@ -675,12 +657,7 @@ test.each([
 );
 
 test("Enable a connector that needs no credentials", async () => {
-  const researchId = "c0000000-0000-4000-a000-000000000002";
   mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
-    listAgent(researchId, "Research Agent"),
-  ]);
   mockPublicConnectorStatus(context, [
     publicStatusItem({
       connectorSlug: "stripe",
@@ -775,12 +752,7 @@ test("Follow provider-authored external-code instructions", async () => {
 test("Complete OAuth only after the current attempt succeeds", async () => {
   const completedAttempts = mockOAuthCompletions(context);
   let oauthAttemptId = crypto.randomUUID();
-  const researchId = "c0000000-0000-4000-a000-000000000002";
   let listed = mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
-    listAgent(researchId, "Research Agent"),
-  ]);
   mockPublicConnectorStatus(context, [
     publicStatusItem({
       connectorSlug: "stripe",

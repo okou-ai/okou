@@ -56,18 +56,11 @@ import {
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
 import { setupActivityInspectPage$ } from "./activity-page/activity-inspect-page-setup.ts";
-import {
-  redirectLegacyAgentDetail$,
-  setupAgentsPage$,
-} from "./agents-page/agents-page-setup.ts";
 import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
-import {
-  setupAgentChatPage$,
-  setupHomeChatPage$,
-} from "./okou-page/agent-chat-page-setup.ts";
+import { setupHomeChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupProjectPage$ } from "./projects/project-page-setup.ts";
 import {
   hydrateProjects$,
@@ -156,15 +149,6 @@ const setupNotFoundPage$ = command(async ({ set }, signal: AbortSignal) => {
   set(updatePage$, createElement(NotFoundPage));
   await set(hideAppSkeleton$, signal);
 });
-
-/**
- * Create a redirect setup command for static routes (no params to forward).
- */
-function redirectTo(target: RoutePath) {
-  return command(({ set }) => {
-    set(detachedNavigateTo$, target, { replace: true });
-  });
-}
 
 /**
  * Create a redirect setup command for parameterized routes.
@@ -392,10 +376,6 @@ const ROUTE_CONFIG = [
     setup: setupPwaMeRoute$,
   },
   {
-    path: "/agents/:id/chat",
-    setup: setupAuthPageWrapper(setupAgentChatPage$),
-  },
-  {
     path: ROUTES.connectorPermissions,
     setup: setupAuthPageWrapper(setupPermissionAllowPage$),
   },
@@ -422,10 +402,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.workflows,
     setup: setupAuthSidebarPageWrapper(setupWorkflowsPage$),
-  },
-  {
-    path: ROUTES.agents,
-    setup: setupAuthSidebarPageWrapper(setupAgentsPage$),
   },
   {
     path: ROUTES.artifacts,
@@ -582,16 +558,6 @@ const ROUTE_CONFIG = [
   },
 
   // --- Redirect routes (backward compatibility) ---
-  { path: "/team", setup: redirectTo(ROUTES.agents) },
-  {
-    path: "/team/:id",
-    setup: setupAuthSidebarPageWrapper(redirectLegacyAgentDetail$),
-  },
-  {
-    path: "/agents/:id",
-    setup: setupAuthSidebarPageWrapper(redirectLegacyAgentDetail$),
-  },
-  { path: "/agents/:id/ideas", setup: redirectTo(ROUTES.ideas) },
   {
     path: "/activity/:id",
     setup: redirectWithId(ROUTES.activityDetail, "activityRunId"),

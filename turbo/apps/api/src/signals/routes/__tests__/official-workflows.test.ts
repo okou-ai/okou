@@ -176,7 +176,6 @@ async function ordinaryDelegationScenario() {
   return await owned.run(async () => {
     await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     const workflowId = await workflowBdd.createWorkflow(owned.actor, {
-      agentId: owned.agentId,
       name: `ordinary-delegation-${randomUUID().slice(0, 8)}`,
     });
     const detail = await accept(
@@ -485,11 +484,10 @@ describe("Workflow schedule recovery", () => {
   it("completes an in-flight user schedule using its edited recurrence", async () => {
     mockNow(new Date("2030-01-01T00:00:00.000Z"));
     const client = automationClient();
-    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+    const { actor } = await workflowBdd.setupWorkflowOrg({
       timezone: "UTC",
     });
     const workflowId = await workflowBdd.createWorkflow(actor, {
-      agentId: defaultAgentId,
       name: "edited-in-flight-schedule",
     });
     const automation = (
@@ -551,11 +549,10 @@ describe("Workflow schedule recovery", () => {
     const startedAt = Date.parse("2030-01-01T00:00:00.000Z");
     mockNow(startedAt);
     const client = automationClient();
-    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+    const { actor } = await workflowBdd.setupWorkflowOrg({
       timezone: "UTC",
     });
     const workflowId = await workflowBdd.createWorkflow(actor, {
-      agentId: defaultAgentId,
       name: "user-managed-schedule",
     });
     let automation = (
@@ -677,7 +674,6 @@ describe("Workflow Run admission", () => {
       const workflowName = `published-${name}-${randomUUID().slice(0, 8)}`;
       const workflowId = await owned.run(() => {
         return workflowBdd.createWorkflow(owned.actor, {
-          agentId: owned.agentId,
           name: workflowName,
           instruction,
         });

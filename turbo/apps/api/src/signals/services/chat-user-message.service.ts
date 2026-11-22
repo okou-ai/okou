@@ -1,3 +1,7 @@
+import {
+  isChatRunReference,
+  type ChatRunReference,
+} from "@okouai/api-contracts/contracts/chat-run-reference";
 import { VOICE_TRANSCRIPTION_MODEL } from "@okouai/api-contracts/contracts/voice-clips";
 import {
   readSuggestionContext,
@@ -71,14 +75,13 @@ type UserMessageNonContentPart = Extract<
   { readonly type: "source" | "automation" }
 >;
 
-export interface ChatAgentRunSourceAnnotation {
+export interface ChatRunSourceAnnotation {
   readonly runId: string;
   readonly threadId: string;
-  readonly agentId?: string;
   readonly titleSnapshot: string;
 }
 
-export function agentRunSourceTitleSnapshot(title: string | null): string {
+export function chatRunSourceTitleSnapshot(title: string | null): string {
   const normalizedTitle = title?.trim();
   if (!normalizedTitle || normalizedTitle.toLowerCase() === "now") {
     return "New thread";
@@ -86,26 +89,19 @@ export function agentRunSourceTitleSnapshot(title: string | null): string {
   return normalizedTitle;
 }
 
-function chatAgentRunSourceHref(
-  source: Pick<ChatAgentRunSourceAnnotation, "runId" | "threadId">,
-): string {
-  return `/chats/${source.threadId}#run-${source.runId}`;
-}
-
 /**
  * Recover the provenance a send route wrote into the persisted document. The
  * annotation is the only place a claimed queue item still carries its source
  * run, because the queue head is read back as a document, not as a send body.
  */
-export function agentRunSourceAnnotation(
+export function chatRunSourceAnnotation(
   document: UserMessageDocument,
-): ChatAgentRunSourceAnnotation | null {
+): ChatRunSourceAnnotation | null {
   for (const part of document.parts) {
-    if (part.type === "source" && part.kind === "agent") {
+    if (isChatRunReference(part)) {
       return {
         runId: part.runId,
         threadId: part.threadId,
-        agentId: part.agentId,
         titleSnapshot: part.titleSnapshot,
       };
     }
@@ -118,10 +114,6 @@ export interface UserMessageReferences {
     readonly projectId: string;
     readonly nameSnapshot: string;
   }[];
-  readonly agents: readonly {
-    readonly agentId: string;
-    readonly nameSnapshot: string;
-  }[];
   readonly chatThreads: readonly {
     readonly threadId: string;
     readonly titleSnapshot: string;
@@ -129,23 +121,23 @@ export interface UserMessageReferences {
 }
 
 /**
- * Agents and chat threads the user linked in the message, including links in
+ * Projects and chat threads the user linked in the message, including links in
  * quoted feedback notes, deduplicated in first-mention order.
  */
 export function userMessageReferences(
   document: UserMessageDocument,
 ): UserMessageReferences {
-  const agents = new Map<string, string>();
   const chatThreads = new Map<string, string>();
   const projects = new Map<string, string>();
   const collect = (part: UserMessagePart | FeedbackNotePart) => {
     if (part.type === "project") {
       projects.set(part.projectId, part.nameSnapshot);
     }
-    if (part.type === "agent" && !agents.has(part.agentId)) {
-      agents.set(part.agentId, part.nameSnapshot);
-    }
-    if (part.type === "chat_thread" && !chatThreads.has(part.threadId)) {
+    if (
+      part.type === "chat_thread" &&
+      !isChatRunReference(part) &&
+      !chatThreads.has(part.threadId)
+    ) {
       chatThreads.set(part.threadId, part.titleSnapshot);
     }
   };
@@ -162,57 +154,56 @@ export function userMessageReferences(
     projects: [...projects].map(([projectId, nameSnapshot]) => {
       return { projectId, nameSnapshot };
     }),
-    agents: [...agents].map(([agentId, nameSnapshot]) => {
-      return { agentId, nameSnapshot };
-    }),
     chatThreads: [...chatThreads].map(([threadId, titleSnapshot]) => {
       return { threadId, titleSnapshot };
     }),
   };
 }
 
-export function hasAgentRunSourceAnnotation(
+export function hasChatRunSourceAnnotation(
   document: UserMessageDocument,
 ): boolean {
-  return agentRunSourceAnnotation(document) !== null;
+  return chatRunSourceAnnotation(document) !== null;
 }
 
 /** Keep the single provenance slot authoritative for server-attributed sends. */
 export function withServerSourceAnnotation(
   document: UserMessageDocument,
-  source: Extract<UserMessagePart, { type: "source" }>,
+  source: Extract<UserMessagePart, { type: "source" }> | ChatRunReference,
 ): UserMessageDocument {
   return {
     version: document.version,
     parts: [
       ...document.parts.filter((part) => {
-        return part.type !== "source" && part.type !== "automation";
+        return (
+          part.type !== "source" &&
+          part.type !== "automation" &&
+          !isChatRunReference(part)
+        );
       }),
       source,
     ],
   };
 }
 
-/** Replace client-owned annotations with authoritative agent-run provenance. */
-export function withAgentRunSourceAnnotation(
+/** Replace client-owned annotations with the verified source conversation. */
+export function withChatRunSourceAnnotation(
   document: UserMessageInputDocument,
-  source: ChatAgentRunSourceAnnotation,
+  source: ChatRunSourceAnnotation,
 ): UserMessageInputDocument;
-export function withAgentRunSourceAnnotation(
+export function withChatRunSourceAnnotation(
   document: UserMessageDocument,
-  source: ChatAgentRunSourceAnnotation,
+  source: ChatRunSourceAnnotation,
 ): UserMessageDocument;
-export function withAgentRunSourceAnnotation(
+export function withChatRunSourceAnnotation(
   document: UserMessageDocument,
-  source: ChatAgentRunSourceAnnotation,
+  source: ChatRunSourceAnnotation,
 ): UserMessageDocument {
   return withServerSourceAnnotation(document, {
-    type: "source",
-    kind: "agent",
+    type: "chat_thread",
     runId: source.runId,
     threadId: source.threadId,
     titleSnapshot: source.titleSnapshot,
-    href: chatAgentRunSourceHref(source),
   });
 }
 
@@ -289,11 +280,6 @@ function serializeChatThreadMention(threadId: string, title: string): string {
   return `[${escapedTitle}](/chats/${threadId})`;
 }
 
-function serializeAgentMention(agentId: string, name: string): string {
-  const escapedName = name.replace(/[\\[\]]/g, String.raw`\$&`);
-  return `[${escapedName}](/agents/${agentId}/chat)`;
-}
-
 export function serializeFeedbackNote(
   parts: readonly FeedbackNotePart[],
   serializeTemplate: (
@@ -307,9 +293,6 @@ export function serializeFeedbackNote(
       }
       if (part.type === "chat_thread") {
         return serializeChatThreadMention(part.threadId, part.titleSnapshot);
-      }
-      if (part.type === "agent") {
-        return serializeAgentMention(part.agentId, part.nameSnapshot);
       }
       if (part.type === "project") {
         return `[${part.nameSnapshot}](/projects/${part.projectId})`;
@@ -409,7 +392,7 @@ function formatFeedbackParts(
   serializeTemplate: (
     part: Extract<FeedbackNotePart, { type: "template" }>,
   ) => string,
-  agentRunSourceTitle: string | undefined,
+  chatRunSourceTitle: string | undefined,
   suggestionBackground = false,
 ): string {
   const firstMailSource = parts[0]?.source;
@@ -460,10 +443,10 @@ function formatFeedbackParts(
   });
   const intro = suggestionBackground
     ? "The user is following up on this suggestion background:"
-    : agentRunSourceTitle
+    : chatRunSourceTitle
       ? parts.length === 1
-        ? `The user forwarded this from the chat "${agentRunSourceTitle}":`
-        : `The user forwarded ${parts.length} parts from the chat "${agentRunSourceTitle}":`
+        ? `The user forwarded this from the chat "${chatRunSourceTitle}":`
+        : `The user forwarded ${parts.length} parts from the chat "${chatRunSourceTitle}":`
       : commonMailSource
         ? parts.length === 1
           ? `The user quoted this part of ${mailSourceLabel(commonMailSource)}:`
@@ -474,7 +457,7 @@ function formatFeedbackParts(
             ? "The user quoted this part of your reply:"
             : `The user quoted ${parts.length} parts of your reply:`;
   const commonMailContext =
-    agentRunSourceTitle && commonMailSource
+    chatRunSourceTitle && commonMailSource
       ? `Source: ${mailSourceLabel(commonMailSource)}\n\n`
       : "";
   return `${intro}\n\n${commonMailContext}${blocks.join("\n\n---\n\n")}`;
@@ -559,7 +542,7 @@ export function projectUserMessage(
   let primaryTemplate: LiveGenerationTemplate | undefined;
   const templates: LiveGenerationTemplate[] = [];
   let hasTextContent = false;
-  const agentRunSourceTitle = agentRunSourceAnnotation(document)?.titleSnapshot;
+  const chatRunSourceTitle = chatRunSourceAnnotation(document)?.titleSnapshot;
 
   const registerInlineTemplate = (part: {
     readonly titleSnapshot: string;
@@ -590,7 +573,7 @@ export function projectUserMessage(
     const projection = projectFeedbackParts(
       feedbackParts,
       registerInlineTemplate,
-      agentRunSourceTitle,
+      chatRunSourceTitle,
       templates.length,
       suggestionContexts,
     );
@@ -627,18 +610,15 @@ export function projectUserMessage(
       hasTextContent ||= part.text.trim().length > 0;
       continue;
     }
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "chat_thread") {
       inlinePrompt += serializeChatThreadMention(
         part.threadId,
         part.titleSnapshot,
       );
       inlineDisplayText += `[Chat thread: ${part.titleSnapshot}]`;
-      hasTextContent = true;
-      continue;
-    }
-    if (part.type === "agent") {
-      inlinePrompt += serializeAgentMention(part.agentId, part.nameSnapshot);
-      inlineDisplayText += `[Agent: ${part.nameSnapshot}]`;
       hasTextContent = true;
       continue;
     }
@@ -692,10 +672,7 @@ export function projectUserMessageForPublicShare(
     version: 1,
     parts: document.parts
       .filter((part) => {
-        return (
-          part.type !== "file" &&
-          !(part.type === "source" && part.kind === "agent")
-        );
+        return part.type !== "file" && !isChatRunReference(part);
       })
       .map((part): UserMessagePart => {
         if (part.type !== "feedback") {
@@ -706,18 +683,15 @@ export function projectUserMessageForPublicShare(
           quote: part.quote,
           note: part.note.map((notePart): FeedbackNotePart => {
             if (notePart.type === "text") {
-              return notePart;
+              return {
+                type: "text",
+                text: notePart.text,
+              };
             }
             if (notePart.type === "chat_thread") {
               return {
                 type: "text",
                 text: `[Chat thread: ${notePart.titleSnapshot}]`,
-              };
-            }
-            if (notePart.type === "agent") {
-              return {
-                type: "text",
-                text: `[Agent: ${notePart.nameSnapshot}]`,
               };
             }
             if (notePart.type === "project") {

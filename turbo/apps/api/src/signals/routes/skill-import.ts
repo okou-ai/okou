@@ -1,5 +1,3 @@
-import { visibleAgentIdentityCondition } from "../services/agent-data.service";
-import { executionAgentId } from "../services/execution-agent";
 import {
   normalizeSkillImportName,
   SKILL_IMPORT_BINARY_CODE,
@@ -19,7 +17,6 @@ import {
   workflowAttachmentPath,
   type WorkflowAttachmentFile,
 } from "@okouai/core/workflow-attachment-bundle";
-import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { randomUUID } from "node:crypto";
 import { win32 } from "node:path";
@@ -41,10 +38,7 @@ import { waitUntil } from "../context/wait-until";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
 import { recordSkillImportFact } from "../services/skill-import-telemetry";
-import {
-  workflowExecutionProfileColumns,
-  workflowSummary,
-} from "../services/workflow-data.service";
+import { workflowSummary } from "../services/workflow-data.service";
 import { WorkflowAttachmentError } from "../services/workflow-attachments.service";
 import type { RouteEntry } from "../route-entry";
 import { safeSync, settle } from "../utils";
@@ -161,13 +155,8 @@ const listSessionSkillsInner$ = computed(async (get) => {
         importSource: workflows.importSource,
         createdAt: workflows.createdAt,
       },
-      agent: workflowExecutionProfileColumns(),
     })
     .from(workflows)
-    .leftJoin(
-      agents,
-      eq(agents.id, executionAgentId(workflows.orgId, auth.userId)),
-    )
     .where(
       and(
         eq(workflows.importSessionId, sessionId),
@@ -180,10 +169,9 @@ const listSessionSkillsInner$ = computed(async (get) => {
     .orderBy(asc(workflows.createdAt), asc(workflows.id));
   return {
     status: 200 as const,
-    body: rows.map(({ workflow, agent }) => {
+    body: rows.map(({ workflow }) => {
       return workflowSummary({
         workflow,
-        agent,
         member: { userId: auth.userId, role: auth.orgRole ?? "member" },
       });
     }),
@@ -362,27 +350,6 @@ const createImportedSkill$ = command(
   },
 );
 
-// Tokens issued by the previous API carried an additional executor restriction.
-function importTargetVisible(session: SkillImportAuth) {
-  return computed(async (get) => {
-    if (session.agentId === undefined) {
-      return true;
-    }
-    const [target] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        visibleAgentIdentityCondition({
-          orgId: session.orgId,
-          userId: session.userId,
-          agentId: session.agentId,
-        }),
-      )
-      .limit(1);
-    return target !== undefined;
-  });
-}
-
 const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const session = resolveSession(get(authorization$));
   if (!session) {
@@ -391,13 +358,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const visible = await get(importTargetVisible(session));
-  signal.throwIfAborted();
-  if (!visible) {
-    return sessionInvalid(
-      "Skill import session is no longer valid; request a new import link",
-    );
-  }
   const payloadError = await set(validatePayloadBytes$, signal);
   if (payloadError) {
     return payloadError;
@@ -438,7 +398,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .from(workflows)
     .where(
       and(
-        eq(workflows.orgId, session.orgId),
         eq(workflows.createdBy, session.userId),
         eq(workflows.importSessionId, session.sessionId),
         isNull(workflows.officialDefinitionName),
@@ -460,7 +419,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(workflows.orgId, session.orgId),
-
         eq(workflows.ownerUserId, session.userId),
         eq(workflows.name, name),
         eq(workflows.visibility, "private"),
@@ -504,8 +462,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (created.response.status === 409) {
       return skillNameTaken(created.response.body.error.message);
     }
-    // The agent this session targets is gone or no longer visible, so the
-    // session itself can no longer be completed.
     return sessionInvalid(
       "Skill import session is no longer valid; request a new import link",
     );

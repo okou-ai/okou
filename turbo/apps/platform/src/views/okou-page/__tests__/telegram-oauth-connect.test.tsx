@@ -34,7 +34,6 @@ function botStatus(connected = false): MockTelegramBotStatus {
     kind: "official",
     username: "support_bot",
     avatarUrl: null,
-    agent: { id: "compose_1", name: "Support" },
     isOwner: false,
     isConnected: connected,
     connectedUser: connected
@@ -47,7 +46,6 @@ function botStatus(connected = false): MockTelegramBotStatus {
     tokenStatus: "valid",
     official: {
       configured: true,
-      usesDefaultAgent: true,
       linkedTelegramUserId: connected ? String(AUTH.id) : null,
     },
     domainConfigured: true,
@@ -164,7 +162,6 @@ test("Works disables Telegram Connect when the official bot is not configured", 
         ...botStatus(),
         official: {
           configured: false,
-          usesDefaultAgent: true,
           linkedTelegramUserId: null,
         },
       },

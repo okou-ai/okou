@@ -16,7 +16,6 @@ import {
   noAuthMethod,
   httpConnector,
   ACME_CONNECTOR_ID,
-  SCOUT_AGENT_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
@@ -44,7 +43,7 @@ test("Show builtin tool service details without HTTP permission controls", async
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
   const dialog = await openDirectory(user);
   await fill(
@@ -125,7 +124,7 @@ test("Offer the catalog for adding, and find a connected connector by name", asy
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   // The composer's connector popover already lists what is connected, so the
@@ -156,7 +155,7 @@ test("Find a connector by a tag that is not in its name", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);
@@ -187,7 +186,7 @@ test("Open connector detail and step back to the list", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);
@@ -278,7 +277,7 @@ test("Close a shelf with the products behind it, and open that category", async 
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);
@@ -312,7 +311,7 @@ test("Show a connector on one shelf only", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);
@@ -331,7 +330,7 @@ test("List the catalog when it is too small for any category to fill a shelf", a
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);
@@ -360,7 +359,7 @@ test("Count the whole category on a chip, not the slice discovery returned", asy
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);
@@ -395,7 +394,7 @@ test("Open full connector categories and switch between them with the keyboard",
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);
@@ -457,7 +456,7 @@ test("Open one provider authorization window from a focused card with Enter", as
   const browserOpen = context.mocks.browser.open(authWindow);
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);
@@ -486,7 +485,7 @@ test("Keep remote access results outside connector action navigation", async () 
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const dialog = await openDirectory(user);

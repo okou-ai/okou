@@ -1165,11 +1165,6 @@ function ClassicFeishuCard({
               return $.connectors.providerSettings[platform].documentTitle;
             })}
           </div>
-          <div className="truncate text-sm text-muted-foreground">
-            {t(($) => {
-              return $.connectors.providerSettings[platform].routeDescription;
-            })}
-          </div>
         </div>
         <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-secondary-foreground">
           <Settings size={14} />
@@ -1511,15 +1506,13 @@ function FeishuBotList({
             return $.connectors.providerSettings[platform].emptyTitle;
           })}
         </div>
-        <div className="mt-1 text-sm text-muted-foreground">
-          {isAdmin
-            ? t(($) => {
-                return $.connectors.providerSettings[platform].emptyAdmin;
-              })
-            : t(($) => {
-                return $.connectors.providerSettings[platform].emptyMember;
-              })}
-        </div>
+        {!isAdmin && (
+          <div className="mt-1 text-sm text-muted-foreground">
+            {t(($) => {
+              return $.connectors.providerSettings[platform].emptyMember;
+            })}
+          </div>
+        )}
       </div>
     );
   }

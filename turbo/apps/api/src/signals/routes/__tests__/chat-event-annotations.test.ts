@@ -186,7 +186,7 @@ describe("chat event annotations", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+    const defaultAgentId = await bdd.readDefaultAgentId(actor);
     if (!defaultAgentId) {
       throw new Error("Expected the paid owner's Agent");
     }

@@ -1,6 +1,4 @@
 import { automationWorkflowJoinCondition } from "./workflow-visibility";
-import { executionAgentId } from "./execution-agent";
-import { agents } from "@okouai/db/schema/agent";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -30,7 +28,6 @@ type RecoveryCandidate = {
   readonly automation: typeof workflowAutomations.$inferSelect &
     WorkflowAutomationSnapshot;
   readonly definitionName: string | null;
-  readonly agentId: string;
 };
 
 const recoverOfficialSchedule$ = command(
@@ -40,7 +37,7 @@ const recoverOfficialSchedule$ = command(
     catalog: AcceptedOfficialWorkflowCatalog,
     signal: AbortSignal,
   ) => {
-    const { automation, definitionName, agentId } = candidate;
+    const { automation, definitionName } = candidate;
     const definition =
       definitionName === null
         ? null
@@ -63,7 +60,6 @@ const recoverOfficialSchedule$ = command(
       workflowAutomationCanFire$,
       {
         automation: { ...automation, enabled: true },
-        agentId,
       },
       signal,
     );
@@ -98,10 +94,10 @@ const recoverOfficialSchedule$ = command(
           // A catalog retirement or replacement wins over this recovery attempt.
           eq(officialWorkflowCatalogState.acceptedReleaseId, catalog.releaseId),
           resume && proactiveKind !== null
-            ? proactiveWorkflowOwnerEnabledSql(
-                { orgId: automation.orgId, userId: automation.ownerUserId },
-                agentId,
-              )
+            ? proactiveWorkflowOwnerEnabledSql({
+                orgId: automation.orgId,
+                userId: automation.ownerUserId,
+              })
             : undefined,
         ),
       )
@@ -154,20 +150,9 @@ export const recoverDueOfficialWorkflowSchedules$ = command(
       .select({
         automation: workflowAutomationColumns(),
         definitionName: workflows.officialDefinitionName,
-        agentId: agents.id,
       })
       .from(workflowAutomations)
       .innerJoin(workflows, automationWorkflowJoinCondition())
-      .innerJoin(
-        agents,
-        eq(
-          agents.id,
-          executionAgentId(
-            workflowAutomations.orgId,
-            workflowAutomations.ownerUserId,
-          ),
-        ),
-      )
       .where(
         and(
           eq(workflowAutomations.enabled, false),

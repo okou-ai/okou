@@ -461,7 +461,6 @@ describe("POST /api/webhooks/notion", () => {
       model: "claude-fable-5-1",
     });
     const workflowId = await wf.createWorkflow(actor, {
-      agentId,
       name: WORKFLOW_NAME,
     });
     const fixture = { orgId: actor.orgId, userId: actor.userId };

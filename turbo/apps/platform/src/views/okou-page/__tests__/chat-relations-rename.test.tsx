@@ -42,12 +42,10 @@ async function setupRelationships({
         parts: [
           { type: "text", text: "Inspect related conversations" },
           {
-            type: "source",
-            kind: "agent",
+            type: "chat_thread",
             threadId: parent.id,
             runId: SOURCE_RUN,
             titleSnapshot: ORIGINAL_TITLE,
-            href: `/chats/${parent.id}#run-${SOURCE_RUN}`,
           },
         ],
       },

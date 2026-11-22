@@ -7,7 +7,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   chatListThread,
   sidebarThreadLinks,
   sidebarThreadTitles,
@@ -49,7 +48,7 @@ async function openNumberShortcutPage() {
   // Exercise cached shortcuts while canonical synchronization is pending.
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     ...workspace.pageOptions,
   });
   await waitFor(() => {

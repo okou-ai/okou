@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "閉じる"
+  },
   "activity": {
     "codex": {
       "codexError": "Codex エラー",
@@ -987,8 +990,8 @@
         "twentyFourHours": "24時間"
       },
       "errors": {
-        "loadAgent": "エージェントの読み込みに失敗しました",
         "loadGrants": "権限付与のロードに失敗しました",
+        "loadMember": "ワークスペースのメンバーを読み込めませんでした。",
         "loadMetadata": "権限メタデータのロードに失敗しました",
         "missingPermission": "URLパラメータに権限がありません",
         "unknownAction": "不明な権限アクション: {{action}}",
@@ -2272,7 +2275,6 @@
       "unavailable": "このメールはもう利用できません。"
     },
     "messageDocument": {
-      "agent": "[エージェント: {{name}}]",
       "chatThread": "[チャット スレッド: {{title}}]",
       "file": "[ファイル: {{filename}}]",
       "template": "[テンプレート: {{title}}]",
@@ -2305,7 +2307,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "エージェントが見つかりません",
       "allow": "許可する",
       "alreadyAllowed": "すでに許可されています",
       "alreadyDenied": "すでに拒否されています",
@@ -2320,6 +2321,7 @@
       "expiresInHours_one": "{{count}} 時間後に期限切れになります",
       "expiresInHours_other": "{{count}} 時間で期限切れになります",
       "loadFailed": "権限ステータスを読み込めませんでした",
+      "memberNotFound": "ワークスペースのメンバーが見つかりません。",
       "otherEndpoints": "その他のエンドポイント",
       "unknown": "不明な権限",
       "updated": "権限が更新されました",
@@ -3233,7 +3235,7 @@
         "tokenUrl": "トークンURL"
       },
       "delete": {
-        "description": "これにより、コネクタと、そのコネクタに対してすべてのメンバーが保存したシークレットが削除されます。このコネクタに対して認可されたエージェントは、すぐにアクセスできなくなります。これを元に戻すことはできません。",
+        "description": "このコネクターを削除すると、ワークスペースのメンバーはすぐにアクセスできなくなり、全員の保存済みシークレットも削除されます。この操作は取り消せません。",
         "title": "{{connector}} を削除しますか?"
       },
       "edit": {
@@ -3341,13 +3343,13 @@
       },
       "github": {
         "accountFallback": "この GitHub アカウント",
-        "alreadyDescription": "すでに {{account}} として接続されています。チャットを開始するには、GitHub のIssueまたはプル リクエストでエージェントに言及してください。",
+        "alreadyDescription": "{{account}} として接続しました。GitHub の Issue やプルリクエストで Okou にメンションするとチャットを開始できます。",
         "alreadyTitle": "すでに GitHub に接続されています",
         "back": "ワークフローに戻る",
         "checkingConnectionDescription": "GitHub 接続を確認するまでお待ちください。",
         "checkingConnectionTitle": "接続を確認しています...",
         "checkingSession": "{{brandName}} セッションを確認するまでお待ちください。",
-        "connectDescription": "{{brandName}} アカウントを {{account}} にリンクすると、GitHub メンションで問題やプル リクエストからエージェントを実行できるようになります。",
+        "connectDescription": "{{brandName}} のアカウントを {{account}} に連携して、GitHub の Issue やプルリクエストからチャットを開始できます。",
         "connectTitle": "GitHub に接続します",
         "errorFallback": "GitHub に接続できませんでした。 GitHub から再試行してください。",
         "invalidInstallation": "このリンク上の GitHub インストールは無効です。",
@@ -3365,7 +3367,7 @@
         "signInCheckFailed": "サインインを確認できませんでした",
         "signInDescription": "この GitHub ユーザーに接続する前に、{{brandName}} アカウントを使用してください。",
         "signInTitle": "続行するにはサインインしてください",
-        "successDescription": "{{account}} として接続されています。チャットを開始するには、GitHub のIssueまたはプル リクエストでエージェントに言及してください。",
+        "successDescription": "{{account}} として接続しました。GitHub の Issue やプルリクエストで Okou にメンションするとチャットを開始できます。",
         "successTitle": "GitHub に接続しました!",
         "wrongOrganizationDescription": "アクティブな組織は、この GitHub インストールと一致しません。正しい組織に切り替えて、リンクを再度開きます。",
         "wrongOrganizationTitle": "組織を切り替える"
@@ -3380,7 +3382,7 @@
         "accountMismatchDescriptionWorkspace": "現在、このOkouアカウントでは{{workspace}}でSlackアカウント{{currentAccount}}を使用しています。このリンクを開いた{{requestedAccount}}に切り替えますか？",
         "accountMismatchTitle": "Slackアカウントを切り替えますか？",
         "authorizationFailed": "Slack の認証は完了していません。現在の接続状態を以下に表示しています。もう一度お試しください。",
-        "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack からエージェントと直接対話できるようになります。",
+        "connectDescription": "アカウントを連携して、Slack で Okou とチャットできます。",
         "connectTitle": "Slack に接続します",
         "currentConnection": "Slack に接続済み",
         "errorFallback": "Slack接続を確認または開始できませんでした。",
@@ -3398,7 +3400,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams を承認",
-        "connectDescription": "Teams アカウントをリンクすると、Microsoft Teams からエージェントと直接対話できるようになります。",
+        "connectDescription": "アカウントを連携して、Microsoft Teams で Okou とチャットできます。",
         "connectedDescription": "Teams アカウントは接続されています。",
         "connectTitle": "Microsoft Teams を接続します",
         "identityMismatch": "指定された Teams アカウントまたはワークスペースは現在の接続と一致しません。",
@@ -3419,7 +3421,7 @@
         "checkingConnectionTitle": "接続を確認しています...",
         "conflictDescription": "現在は {{current}} として接続していますが、このリンクは {{requested}} を指定しています。現在の接続を維持するか、接続を管理してから再試行してください。",
         "conflictTitle": "別の Telegram アカウントが接続されています",
-        "connectDescription": "アカウントをこの Telegram ボットにリンクすると、Telegram からエージェントと直接対話できるようになります。",
+        "connectDescription": "アカウントを連携して、Telegram で Okou とチャットできます。",
         "connectionCheckFailed": "接続を確認するために Telegram にアクセスできませんでした。",
         "connectTitle": "Telegram に接続します",
         "continue": "Telegram に進みます",
@@ -3474,7 +3476,6 @@
         "addBot": "ボットの追加",
         "addDialogDescription": "Agent タイプのエンタープライズアプリを作成し、Feishu 開発者コンソールで次の手順を完了してください。",
         "addDialogTitle": "Feishu ボットを追加する",
-        "agentDescription": "このボットに送信されたメッセージを処理するエージェントを選択します。",
         "backToIntegrations": "統合に戻る",
         "botFallback": "Feishu ボット",
         "botIconAlt": "{{bot}} ボット アイコン",
@@ -3501,12 +3502,9 @@
           "imageAlt": "Feishu アプリ ID とアプリ シークレットの場所を示すアプリ作成結果",
           "title": "アプリの認証情報を追加する"
         },
-        "defaultAgent": "デフォルトエージェント",
-        "defaultAgentAria": "{{appId}} のデフォルト エージェント",
         "developerConsole": "Feishu 開発者コンソール",
         "dialogAdminRequired": "組織管理者はアプリを構成する必要があります。セットアップが完了したら、Feishu ボット リストから自分のアカウントに接続できます。",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Feishu メッセージをエージェントにルーティングするカスタム アプリを追加します。",
         "emptyMember": "Feishu ボットを追加するように組織管理者に依頼します。",
         "emptyTitle": "Feishu ボットはまだありません",
         "events": {
@@ -3564,8 +3562,6 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Feishu ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Feishu レビュー ガイド",
-        "routeDescription": "Feishu メッセージをエージェントにルーティングする",
-        "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
           "back": "戻る",
@@ -3606,7 +3602,6 @@
         "addBot": "ボットの追加",
         "addDialogDescription": "Agent タイプのエンタープライズアプリを作成し、Lark 開発者コンソールで次の手順を完了してください。",
         "addDialogTitle": "Lark ボットを追加する",
-        "agentDescription": "このボットに送信されたメッセージを処理するエージェントを選択します。",
         "backToIntegrations": "統合に戻る",
         "botFallback": "Lark ボット",
         "botIconAlt": "{{bot}} ボット アイコン",
@@ -3633,12 +3628,9 @@
           "imageAlt": "Feishu アプリ ID とアプリ シークレットの場所を示すアプリ作成結果",
           "title": "アプリの認証情報を追加する"
         },
-        "defaultAgent": "デフォルトエージェント",
-        "defaultAgentAria": "{{appId}} のデフォルト エージェント",
         "developerConsole": "Lark 開発者コンソール",
         "dialogAdminRequired": "組織管理者はアプリを構成する必要があります。セットアップが完了したら、Lark ボット リストから自分のアカウントに接続できます。",
         "documentTitle": "Lark",
-        "emptyAdmin": "Lark メッセージをエージェントにルーティングするカスタム アプリを追加します。",
         "emptyMember": "Lark ボットを追加するように組織管理者に依頼します。",
         "emptyTitle": "Lark ボットはまだありません",
         "events": {
@@ -3701,8 +3693,6 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Lark ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Lark レビュー ガイド",
-        "routeDescription": "Lark メッセージをエージェントにルーティングする",
-        "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
           "back": "戻る",
@@ -3931,6 +3921,364 @@
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "リクエストが失敗しました"
     }
+  },
+  "ideation": {
+    "all": "すべて",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "画像を一括で最適化および変換する",
+            "title": "Cloudinary メディア オプティマイザー"
+          },
+          "fal-ai-image-generation": {
+            "description": "Notion の説明から製品画像を生成します",
+            "title": "Fal AI イメージの生成"
+          }
+        },
+        "title": "クリエイティブ"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "リストを貼り付けると、{{assistantName}}がIssueを一括作成します",
+            "title": "Issueを一括作成"
+          },
+          "browserbase-web-testing": {
+            "description": "Web アプリの自動ブラウザ テスト",
+            "title": "Browserbase Web テスト"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "毎週の Slack によるトラフィックとセキュリティ イベントの要約",
+            "title": "Cloudflare トラフィックとセキュリティ レポート"
+          },
+          "codebase-investigation": {
+            "description": "URL を指定すると、{{assistantName}} がリポジトリを通じてバグを追跡します。",
+            "title": "コードベースの調査"
+          },
+          "daily-standup-report": {
+            "description": "朝の指標は、Slack に投稿されるスライドデッキになります",
+            "title": "日次スタンドアップレポート"
+          },
+          "deep-research-code-analysis": {
+            "description": "コードベース内でサブシステムがどのように動作するかを説明します",
+            "title": "徹底的なコード分析"
+          },
+          "github-pr-summarizer": {
+            "description": "Notion のプル リクエストの概要とオプションの Slack の投稿を統合しました",
+            "title": "GitHub PR サマライザー"
+          },
+          "github-progress-weekly": {
+            "description": "機能別にまとめられた週次リポジトリ アクティビティ",
+            "title": "GitHub 毎週の進捗状況"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "GitLabのIssueとマージリクエストをGitHubにミラーリング",
+            "title": "GitLab から GitHub への移行ヘルパー"
+          },
+          "jira-github-issue-sync": {
+            "description": "JiraチケットとGitHub Issueを同期します",
+            "title": "Jira ↔ GitHub Issue同期"
+          },
+          "make-scenario-builder": {
+            "description": "説明から複数ステップの Make シナリオを設計する",
+            "title": "Make シナリオ ビルダー"
+          },
+          "security-dependency-alert-digest": {
+            "description": "GitHub からの毎週のセキュリティと依存関係のアラート",
+            "title": "セキュリティと依存関係のアラート ダイジェスト"
+          },
+          "sentry-issue-digest": {
+            "description": "重大度ごとにグループ化された問題の朝のダイジェスト",
+            "title": "Sentry 問題のダイジェスト"
+          },
+          "vercel-deploy-digest": {
+            "description": "各デプロイメントをそのコミットにリンクし、デプロイメントが失敗した場合に Slack を警告します。",
+            "title": "Vercel デプロイ ダイジェスト"
+          },
+          "zapier-okou-migration": {
+            "description": "Zapier のワークフローを {{brandName}} で再現",
+            "title": "Zapier → {{brandName}} の移行"
+          }
+        },
+        "title": "エンジニアリング"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "ブラウザでページを開き、スクリーンショットを返します",
+            "title": "ブラウザのスクリーンショット"
+          },
+          "calendar-optimizer": {
+            "description": "競合、過負荷、集中時間を軽減します",
+            "title": "カレンダーオプティマイザー"
+          },
+          "calendly-booking-sync": {
+            "description": "Slack ping によるカレンダーの新しい予約",
+            "title": "Calendly 予約同期"
+          },
+          "email-assistant": {
+            "description": "朝の受信トレイの概要と推奨される次のステップ",
+            "title": "メールアシスタント"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola の会議メモが Notion データベースに同期されました",
+            "title": "GranolaのメモをNotionへ"
+          },
+          "lark-slack-message-relay": {
+            "description": "Lark と Slack の間で双方向にメッセージを転送します",
+            "title": "Lark ↔ Slack メッセージリレー"
+          },
+          "line-message-relay": {
+            "description": "LINE メッセージを Slack に転送、またはその逆",
+            "title": "LINE メッセージ リレー"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies は Notion にメモし、Slack でフォローアップします",
+            "title": "会議メモのパイプライン"
+          },
+          "morning-brief": {
+            "description": "メール、カレンダー、メモを短い日次計画に変える",
+            "title": "モーニングブリーフ"
+          },
+          "perplexity-deep-research": {
+            "description": "AI を利用した調査概要は Notion に保存されます",
+            "title": "Perplexityディープリサーチ"
+          },
+          "personal-weekly-digest": {
+            "description": "プルリクエスト、メール、カレンダーを1件のSlack更新にまとめます",
+            "title": "個人的な毎週のダイジェスト"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "チームのお知らせを Slack に投稿します",
+            "title": "あなたに代わってメッセージを送信する"
+          },
+          "strava-team-fitness-digest": {
+            "description": "毎週のチーム活動の概要が Slack に投稿される",
+            "title": "Strava チーム フィットネス ダイジェスト"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Web を検索し、結果を Notion にまとめます",
+            "title": "Tavily ウェブリサーチパイプライン"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Notion に要約された会議の記録とアクションアイテム",
+            "title": "TL;DV 会議の要約"
+          }
+        },
+        "title": "すべて"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify はサイトを構造化された Google Sheets 行にスクレイピングします",
+            "title": "Web スクレイパーをスプレッドシートに適用"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "CRMイベントからの自動メールシーケンス",
+            "title": "Brevo メールナーチャリングシーケンス"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl は競合サイトを監視し、Notion の変更をログに記録します。",
+            "title": "競争力のあるインテル スクレーパー"
+          },
+          "competitor-research-to-notion": {
+            "description": "X に関する研究が構造化メモとして Notion に保存されました",
+            "title": "Notion に対する競合他社の調査"
+          },
+          "content-planner": {
+            "description": "トピックをブレインストーミングし、編集カレンダーの概要を作成する",
+            "title": "コンテンツプランナー"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Notion の投稿を Dev.to に公開し、X にリンクします",
+            "title": "Dev.to自動公開"
+          },
+          "discord-community-insights": {
+            "description": "Notion の Discord フィードバックと毎週の Slack ダイジェスト",
+            "title": "Discord コミュニティのインサイト"
+          },
+          "instagram-engagement-tracker": {
+            "description": "毎週の Slack 概要をスプレッドシートで利用する",
+            "title": "Instagram エンゲージメント トラッカー"
+          },
+          "loops-email-campaign": {
+            "description": "Loops 経由でトランザクションメールを作成して送信する",
+            "title": "ループメールキャンペーン"
+          },
+          "marketing-content-planning": {
+            "description": "Slack の記事、インタビュー、競合他社の記事を公開する予定です",
+            "title": "マーケティングコンテンツの企画"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Slack とインタビューからオンボーディングの視点を見つける",
+            "title": "オンボーディングメールの使用例"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "キーワードランキングを毎週追跡し、スプレッドシートに記録します",
+            "title": "SerpAPI キーワード トラッカー"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Notion に保存されたトラフィック ベンチマークと競合他社",
+            "title": "類似ウェブのトラフィック比較"
+          },
+          "social-media-content-calendar": {
+            "description": "スプレッドシートのカレンダーを各ネットワークの投稿に変える",
+            "title": "ソーシャルメディアコンテンツカレンダー"
+          },
+          "x-brand-monitor": {
+            "description": "Notion に保存された X に関するブランドのメンションとチーム アラート",
+            "title": "Xブランドモニター"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "新しい YouTube ビデオが公開されると、Notion 概要とそれを宣伝する X スレッドを生成します",
+            "title": "YouTube から X スレッドへのリパーパス化"
+          }
+        },
+        "title": "マーケティング"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "AgentMail API を使用して受信トレイを作成および管理する",
+            "title": "AgentMail 受信箱"
+          },
+          "clickup-slack-standups": {
+            "description": "毎日の ClickUp タスクが Slack にスタンドアップとして投稿されました",
+            "title": "ClickUp → Slack スタンドアップ"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google ドキュメントはレイアウトを保持したまま Notion にバッチ化されます",
+            "title": "Google ドキュメント → Notion 移行者"
+          },
+          "google-drive-file-organizer": {
+            "description": "新しいファイルは自動的にフォルダーに分類されます",
+            "title": "Google Drive ファイル オーガナイザー"
+          },
+          "jotform-intake-to-notion": {
+            "description": "フォームの回答は Notion に到達し、Slack 通知が送信されます",
+            "title": "Notion への Jotform インテーク"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Slack の Monday.com からの毎週のボードの進捗状況",
+            "title": "Monday.com の毎週のダイジェスト"
+          },
+          "pdf-contract-processor": {
+            "description": "Notion の契約フィールドと有効期限切れ前のリマインダー",
+            "title": "PDF契約処理者"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Slack の解約アラートを含むスプレッドシートの定期購入指標",
+            "title": "RevenueCat サブスクリプションのダイジェスト"
+          },
+          "todoist-notion-task-sync": {
+            "description": "チームの Notion にミラーリングされた Todoist タスク",
+            "title": "Todoist → Notion タスクの同期"
+          },
+          "wrike-project-reporter": {
+            "description": "Slack の毎週の Wrike 進捗状況サマリー",
+            "title": "Wrikeプロジェクトレポーター"
+          },
+          "xero-financial-summary": {
+            "description": "Slack における Xero からの週間利益とキャッシュ フロー",
+            "title": "Xeroの財務概要"
+          }
+        },
+        "title": "オペレーション"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana のマイルストーンとタスクが Notion にミラーリングされました",
+            "title": "Asana → Notion プロジェクトの同期"
+          },
+          "feedback-router": {
+            "description": "Slack フィードバックはルールによって適切な場所にルーティングされます",
+            "title": "フィードバックルーター"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion 仕様は Linear プロジェクトと問題になります",
+            "title": "Linear PRD 実装者"
+          },
+          "metabase-dashboard-digest": {
+            "description": "ダッシュボードのスナップショットが Slack に自動的に投稿される",
+            "title": "メタベース ダッシュボードのダイジェスト"
+          },
+          "pricing-analysis": {
+            "description": "競合他社の価格戦略を分析し、類似製品と比較します",
+            "title": "価格分析"
+          },
+          "product-copy-naming": {
+            "description": "製品内の専門用語のわかりやすい名前",
+            "title": "商品コピー＆ネーミング"
+          }
+        },
+        "title": "プロダクト"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "取引が終了するとスプレッドシートと Slack に同期されます",
+            "title": "Airtable 取引トラッカー"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "新しい Bitrix リードはフォローアップ タスクと Slack ping を取得します",
+            "title": "Bitrix24 リードナーチャリング"
+          },
+          "hubspot-sales-reporter": {
+            "description": "週次 HubSpot の概要を構造化レポートとして保存",
+            "title": "HubSpot 営業レポーター"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "新しいリードは、Slack アラートを伴う HubSpot タスクになります",
+            "title": "リードフォローアップパイプライン"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Slack での毎週の Salesforce 案件の更新",
+            "title": "Salesforce パイプライン ダイジェスト"
+          },
+          "streak-pipeline-report": {
+            "description": "Slack の Gmail からの毎週の CRM パイプライン統計",
+            "title": "連続パイプラインレポート"
+          },
+          "win-loss-reporter": {
+            "description": "Slack のパイプラインからの勝敗の傾向",
+            "title": "勝敗記者"
+          }
+        },
+        "title": "セールス"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Notion に記録され、分類された顧客の会話",
+            "title": "Chatwoot → Notion サポート ログ"
+          },
+          "customer-support-bot": {
+            "description": "ナレッジベースからの回答とギャップに対するタスク",
+            "title": "カスタマーサポートボット"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom チャットが Notion タスクに優先される",
+            "title": "Intercom 会話トリアージャー"
+          },
+          "support-ticket-router": {
+            "description": "チケットは Notion に送られ、緊急のチケットは Slack に ping されます。",
+            "title": "サポートチケットルーター"
+          }
+        },
+        "title": "サポート"
+      }
+    },
+    "categoryFilter": "カテゴリで絞り込む",
+    "chat": "チャット",
+    "description": "任意のカードをクリックして会話を開始します。これは、オンデマンド タスク、定期的なワークフロー、またはサブエージェントになる可能性があります。",
+    "search": {
+      "accessibilityLabel": "ユースケースの検索",
+      "empty": "検索に一致するユースケースはありません。",
+      "placeholder": "検索"
+    },
+    "title": "アイデアと使用例"
   },
   "invitationRedirect": {
     "accountMismatch": {
@@ -4806,7 +5154,7 @@
     "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
     "deletingThreads": "Deleting…",
-    "description": "Keep related chats together across Agents",
+    "description": "関連するチャットをまとめます。",
     "empty": "No chats here yet",
     "expand": "展開",
     "fromChat": "Create a Project from this chat",
@@ -4867,15 +5215,14 @@
       "pro": "プロ",
       "team": "チーム"
     },
-    "title": "あなたのエージェントが列に並んで待っています",
+    "title": "リクエストは順番待ちです",
     "upgrade": {
       "action": "{{plan}} にアップグレードする",
       "features": {
         "creditsPerMonth": "{{credits}} クレジット / 月",
         "emailSupport": "メールサポート",
         "payAsYouGo": "その後は従量料金を支払う",
-        "prioritySupport": "優先サポート",
-        "unlimitedAgents": "無制限の合計エージェント"
+        "prioritySupport": "優先サポート"
       },
       "proDescription": "複数のタスクを並行して実行し、キューをスキップします。",
       "recommended": "おすすめ",
@@ -5678,7 +6025,6 @@
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。",
         "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "errorMessage": "Morning Brief の設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
@@ -5687,7 +6033,6 @@
       "proactiveSuggestions": {
         "description": "接続済みの情報源を毎時間確認し、ユーザープロフィールを毎日更新して、役立つ次のアクションを提案します。",
         "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
-        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
@@ -5702,7 +6047,7 @@
       },
       "timezone": {
         "description": "表示され、オートメーションの実行に使用される時間。",
-        "rowDescription": "エージェントは実行中にこのタイムゾーンを使用します",
+        "rowDescription": "Okou は実行時にこのタイムゾーンを使用します。",
         "rowTitle": "タイムゾーン",
         "sectionTitle": "タイムゾーン",
         "zones": {
@@ -5756,7 +6101,7 @@
         "title": "Link のカード"
       },
       "connect": "接続",
-      "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
+      "description": "Okou に購入のリクエストと Link の取引履歴の閲覧を許可します。購入は毎回ご自身で承認します。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
       "scope": "Okou が購入を代行し、Link の取引を確認します。",
@@ -5975,6 +6320,21 @@
     "signUp": "新規登録",
     "tryItYourself": "自分で試す"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "すべて",
+    "markAllRead": "すべて既読としてマークする",
+    "noResults": "結果が見つかりませんでした",
+    "resultCount_other": "{{count}} 件の結果",
+    "searching": "検索中...",
+    "searchWorkspace": "ワークスペースを検索...",
+    "sections": {
+      "artifacts": "アーティファクト",
+      "chats": "チャット",
+      "messages": "メッセージ",
+      "workflows": "ワークフロー"
+    }
+  },
   "ssh": {
     "add": "ホストを追加",
     "cancel": "キャンセル",
@@ -6018,8 +6378,8 @@
       "summary_other": "{{count}} 件の認証情報を設定済み",
       "unused": "使用中のホストはありません"
     },
-    "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Agent のホスト一覧には表示されなくなります。",
-    "description": "エージェントがリモートコマンドを実行できる SSH ホストを設定します。",
+    "deleteHelp": "このホストを削除しますか？認証情報は保持され、Okou はホストにアクセスできなくなります。",
+    "description": "Okou にリモートマシンでのコマンド実行を許可します。",
     "edit": "ホストを編集",
     "editHelp": "別の認証情報を選ぶと、このホストだけが変更されます。直接接続先の変更は保存済みホスト鍵を消去します。Cloudflare Access が関係する変更では保持されます。",
     "errors": {
@@ -6065,7 +6425,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH の認証に失敗しました。システムユーザー名を確認し、タグ付きの接続先で Tailscale SSH を有効にして、tailnet の SSH accept ポリシーでこのログインを許可してください。",
-      "deleteHelp": "このホストを削除しますか？エージェントはリアルタイムのインベントリでこのホストを確認できなくなります。",
+      "deleteHelp": "このホストを削除しますか？Okou はホストにアクセスできなくなります。",
       "sshDocs": "Tailscale SSH の公式ドキュメント",
       "sshHelp": "選択した Tailscale ネットワークのマシン ID で認証するため、SSH パスワードや秘密鍵は不要です。タグ付きの接続先で Tailscale SSH を有効にし、SSH の accept ポリシーでこのシステムユーザー名を許可してください。",
       "sshTitle": "Tailscale SSH",
@@ -6100,6 +6460,9 @@
     },
     "title": "SSH アクセス",
     "unavailable": "このリクエストは利用できません。再申請してください。"
+  },
+  "status": {
+    "unread": "未読"
   },
   "tailscale": {
     "changed": "この Tailscale ネットワークが変更されました。変更は保存されていません。下書きは保持されています。",
@@ -6263,7 +6626,7 @@
       "usernamePasswordMethod": "ユーザー名とパスワード"
     },
     "deleteHelp": "このホストを削除しますか？再利用可能な認証情報は保持されます。",
-    "description": "Agent がリモートデスクトップを表示・操作できるようにします。",
+    "description": "Okou にリモートデスクトップの表示と操作を許可します。",
     "edit": "ホストを編集",
     "editHelp": "変更はこのホストに適用され、現在の接続設定は無効になります。",
     "errors": {
@@ -6879,8 +7242,6 @@
     },
     "createDialog": {
       "addAutomation": "オートメーションを追加する",
-      "chooseAgentAutomation": "このオートメーションのエージェントを選択してください",
-      "chooseAgentWorkflow": "このワークフローのエージェントを選択します。",
       "chooseWorkflow": "自動化するワークフローを選択するか、チャットでワークフローを作成します。",
       "createAutomation": "オートメーションの作成",
       "createInChat": "チャットで作成",
@@ -6911,11 +7272,9 @@
         "uploadAria": "ワークフローファイルをアップロードする"
       },
       "metadata": {
-        "agent": "エージェント",
-        "agentDescription": "このワークフローはこのエージェントに属します。",
         "aria": "ワークフローメタデータ",
         "description": "説明",
-        "descriptionHelp": "このワークフローをいつ使用するかをエージェントに伝えます。",
+        "descriptionHelp": "Okou がこのワークフローを使う場面を説明してください。",
         "name": "名前",
         "nameHelp": "ワークフロー リストおよびワークフローの選択時に表示されます。",
         "namePlaceholder": "ワークフロー名",
@@ -6941,8 +7300,8 @@
     },
     "editor": {
       "aria": "指示エディター",
-      "footer": "指示を直接編集して、エージェントの動作をカスタマイズします。",
-      "placeholder": "エージェントへの指示を書きます...",
+      "footer": "このワークフローの指示を編集します。",
+      "placeholder": "このワークフローの指示を入力…",
       "toolbar": {
         "blockquote": "ブロッククォート",
         "bold": "太字",
@@ -7049,7 +7408,7 @@
       "authorizationError": "Discord の認証を完了できませんでした。",
       "cancelled": "Discord の認証はキャンセルされました。",
       "chooseWorkspace": "ワークスペースを選択",
-      "connectDescription": "Discord アカウントを接続して、エージェントとチャットしましょう。",
+      "connectDescription": "アカウントを連携して、Discord で Okou とチャットできます。",
       "connectedTitle": "Discord に接続済み",
       "connectTitle": "Discord に接続",
       "defaultWorkspace": "Discord の既定のワークスペース",
@@ -7127,17 +7486,16 @@
       "uninstallTitle": "Microsoft Teams 統合をアンインストールしますか?"
     },
     "telegram": {
-      "description": "Telegram メッセージをエージェントにルーティングする",
+      "description": "Telegram を Okou に接続します。",
       "title": "Telegram"
     },
     "wechat": {
       "accountLabel": "アカウント",
-      "agentLabel": "エージェント",
       "code": "確認コード",
       "connect": "接続",
       "connected": "接続済み",
       "creating": "QRコードを作成中…",
-      "description": "WeChatでエージェントとチャットできます。",
+      "description": "WeChat で Okou とチャットできます。",
       "disconnect": "接続解除",
       "expired": "このQRコードは期限切れです。新しく作成してください。",
       "failed": "WeChatに接続できませんでした。",
@@ -7151,7 +7509,7 @@
       "restoreDescription": "以下のアカウントとワークスペースに WeChat を再接続します。",
       "returnToWechat": "WeChat に戻り、メッセージを送信して会話を始めましょう。",
       "scanned": "スキャンしました。スマートフォンで確認してください。",
-      "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
+      "scope": "Okou とのダイレクトメッセージだけが接続されます。テキストメッセージに対応しています。",
       "title": "WeChatに接続",
       "unavailable": "接続はまだ設定されていません。",
       "verification_blocked": "試行回数が多すぎます。新しいQRコードを作成してください。",
@@ -7163,7 +7521,7 @@
     "whatsapp": {
       "codeError": "接続コードを作成できませんでした。もう一度お試しください。",
       "connect": "WhatsAppを接続",
-      "connectDescription": "WhatsApp アカウントを {{brandName}} に接続して、エージェントとチャットできます。",
+      "connectDescription": "WhatsApp アカウントを {{brandName}} に連携して Okou とチャットできます。",
       "connected": "WhatsAppに接続しました",
       "description": "WhatsAppから直接Okouとチャット",
       "disconnected": "WhatsAppの接続を解除しました",

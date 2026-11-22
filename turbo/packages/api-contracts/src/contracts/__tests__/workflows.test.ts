@@ -391,9 +391,6 @@ describe("workflow update contract", () => {
 describe("workflow display-profile rollout compatibility", () => {
   const workflow = {
     id: "11111111-1111-4111-8111-111111111111",
-    agentId: "22222222-2222-4222-8222-222222222222",
-    agentName: "agent",
-    agentDisplayName: null,
     name: "workflow",
     displayName: null,
     description: null,

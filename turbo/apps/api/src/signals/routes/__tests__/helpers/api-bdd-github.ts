@@ -472,7 +472,6 @@ export function createGithubBddApi(context: TestContext) {
      */
     async installGithubApp(
       actor: ApiTestUser,
-      composeId: string,
       options: {
         readonly oauthCode?: {
           readonly code: string;
@@ -499,7 +498,6 @@ export function createGithubBddApi(context: TestContext) {
       const installQuery = new URLSearchParams({
         userId: actor.userId,
         orgId: actor.orgId,
-        composeId,
       }).toString();
       const install = await requestInstall(installQuery, {
         origin: "https://api.okou.ai",

@@ -1139,6 +1139,7 @@ export function createChatEventsFixture(context: TestContext) {
       createAgent: bdd.createAgent,
       readMe: bdd.readMe,
       readOnboardingStatus: bdd.readOnboardingStatus,
+      readDefaultAgentId: bdd.readDefaultAgentId,
       updateAgentMetadata: bdd.updateAgentMetadata,
       user: bdd.user,
     },

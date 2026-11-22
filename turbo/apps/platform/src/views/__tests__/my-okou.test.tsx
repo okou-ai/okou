@@ -311,44 +311,6 @@ test("Workspace switching isolates drafts and restores the original workspace dr
   });
 });
 
-test.each([
-  { tab: "profile", suggestions: false },
-  { tab: "instructions", suggestions: false },
-  { tab: "profile", suggestions: true },
-  { tab: "instructions", suggestions: true },
-])(
-  "Default configuration $tab opens personal Instructions with Suggestions set to $suggestions",
-  async ({ tab, suggestions }) => {
-    context.mocks.api(instructionsContract.get, ({ respond }) => {
-      return respond(200, response("Personal value"));
-    });
-    await setupPage({
-      context,
-      path: `/agents/c0000000-0000-4000-a000-000000000001?tab=${tab}`,
-      featureSwitches: {
-        [FeatureSwitchKey.AgentSuggestion]: suggestions,
-      },
-    });
-    const editor = await screen.findByRole("textbox", { name: "Instructions" });
-    expect(editor).toHaveTextContent("Personal value");
-    expect(location.pathname).toBe("/");
-    expect(new URLSearchParams(location.search).get("settings")).toBe(
-      "my-okou",
-    );
-  },
-);
-
-test("The default authorization link still opens account and permission controls", async () => {
-  await setupPage({
-    context,
-    path: "/agents/c0000000-0000-4000-a000-000000000001?tab=authorization",
-  });
-  await waitFor(() => {
-    expect(location.pathname).toBe("/connectors");
-  });
-  await screen.findByRole("heading", { name: "Connectors" });
-});
-
 const proactiveFeatures = {
   [FeatureSwitchKey.AgentSuggestion]: true,
 } as const;
@@ -503,7 +465,7 @@ test("a member with only hourly checks can opt into new cards without showing a 
 test("existing morning brief links open the Proactive tab in My Okou", async () => {
   await setupPage({
     context,
-    path: "/agents?settings=preference&focus=morning-brief",
+    path: "/?settings=preference&focus=morning-brief",
     featureSwitches: proactiveFeatures,
   });
   const panel = await screen.findByRole("tabpanel", { name: "Proactive" });
@@ -520,7 +482,7 @@ test("existing morning brief links open the Proactive tab in My Okou", async () 
 test("the morning brief link opens Preference when the Suggestions feature switch is off", async () => {
   await setupPage({
     context,
-    path: "/agents?settings=preference&focus=morning-brief",
+    path: "/?settings=preference&focus=morning-brief",
     featureSwitches: {
       [FeatureSwitchKey.AgentSuggestion]: false,
     },

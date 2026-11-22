@@ -1,6 +1,4 @@
-import { executionAgentId } from "./execution-agent";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
-import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 import { command } from "ccstate";
@@ -12,7 +10,6 @@ import type {
 
 import { db$ } from "../external/db";
 import {
-  workflowExecutionProfileColumns,
   workflowSummary,
   type WorkflowMember,
   readWorkflowShadowWinner$,
@@ -64,13 +61,8 @@ export const workflowDetail$ = command(
     const [visible] = await db
       .select({
         workflow: workflows,
-        agent: workflowExecutionProfileColumns(),
       })
       .from(workflows)
-      .leftJoin(
-        agents,
-        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
-      )
       .where(
         and(
           eq(workflows.orgId, args.orgId),
@@ -84,7 +76,7 @@ export const workflowDetail$ = command(
     if (!visible) {
       return null;
     }
-    const { workflow, agent } = visible;
+    const { workflow } = visible;
 
     const shadowedBy = await set(
       readWorkflowShadowWinner$,
@@ -115,7 +107,6 @@ export const workflowDetail$ = command(
 
     const baseSummary = workflowSummary({
       workflow,
-      agent,
       member: args.member,
       shadowedBy,
       officialDefinitionLifecycle: officialDefinition?.lifecycle,

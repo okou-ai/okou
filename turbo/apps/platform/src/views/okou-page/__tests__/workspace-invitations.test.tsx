@@ -60,7 +60,7 @@ function completedInvitationPath(ticket: string): string {
     ["__clerk_status", "complete"],
     ["__clerk_ticket", ticket],
   ]);
-  return `/agents?${params.toString()}#private-agents`;
+  return `/?${params.toString()}#private-agents`;
 }
 
 test("An invitation accepted for another account offers account switching", async () => {

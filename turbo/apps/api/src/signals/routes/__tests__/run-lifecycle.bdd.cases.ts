@@ -1462,8 +1462,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           NATIVE_RUNNER_ROUTE,
         );
         const prompt = "storage manifest dimensions should not leak prompt";
-        const { defaultAgentId } =
-          await createBddApi(context).readOnboardingStatus(actor);
+        const defaultAgentId =
+          await createBddApi(context).readDefaultAgentId(actor);
         if (!defaultAgentId) {
           throw new Error("Expected a workspace workflow namespace");
         }
@@ -1471,7 +1471,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
         const workflow = await createMiscRoutesApi(context).createWorkflow(
           actor,
-          defaultAgentId,
           workflowName,
           { content: "# Manifest shape\nUse for manifest tests." },
           [201],
@@ -2690,8 +2689,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
 
-        const onboarding = await bdd.readOnboardingStatus(actor);
-        if (!onboarding.defaultAgentId) {
+        const onboardingAgentId = await bdd.readDefaultAgentId(actor);
+        if (!onboardingAgentId) {
           throw new Error("Expected limited-free bootstrap agent");
         }
         await bdd.completeOnboarding(actor);
@@ -2945,14 +2944,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.ensurePersonalSubscriptionModel(actor);
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
-        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        const defaultAgentId = await bdd.readDefaultAgentId(actor);
         if (!defaultAgentId) {
           throw new Error("Expected the member workflow namespace");
         }
         for (const workflowName of workflowNames) {
           await misc.createWorkflow(
             actor,
-            defaultAgentId,
             workflowName,
             { content: `# ${workflowName}\nUse this workflow for codex runs.` },
             [201],
@@ -8288,7 +8286,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const workflowName = "bdd-context-workflow";
         await misc.createWorkflow(
           actor,
-          (await bdd.readOnboardingStatus(actor)).defaultAgentId!,
           workflowName,
           { content: "# BDD context workflow\nUse the combined run context." },
           [201],
@@ -9063,14 +9060,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const s3 = installWorkflowVolumeS3Fixture(context);
 
-        const { defaultAgentId } =
-          await createBddApi(context).readOnboardingStatus(actor);
+        const defaultAgentId =
+          await createBddApi(context).readDefaultAgentId(actor);
         if (!defaultAgentId) {
           throw new Error("Expected a member workflow namespace");
         }
         const workflowName = `bdd-priority-${randomUUID().slice(0, 8)}`;
         await workflows.createWorkflow(actor, {
-          agentId: defaultAgentId,
           name: workflowName,
           visibility: "public",
           instruction: "Visible public Workflow body.",
@@ -9078,7 +9074,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const privateInstruction =
           "Selected caller-owned private Workflow body.";
         await workflows.createWorkflow(actor, {
-          agentId: defaultAgentId,
           name: workflowName,
           visibility: "private",
           instruction: privateInstruction,
@@ -9088,7 +9083,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           orgRole: "org:member",
         });
         await workflows.createWorkflow(otherActor, {
-          agentId: (await bdd.readOnboardingStatus(otherActor)).defaultAgentId!,
           name: workflowName,
           visibility: "private",
           instruction: "Another caller's private Workflow body.",
@@ -9161,13 +9155,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const workflowName = "bdd-claude-kit";
-        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        const defaultAgentId = await bdd.readDefaultAgentId(actor);
         if (!defaultAgentId) {
           throw new Error("Expected a member workflow namespace");
         }
         await misc.createWorkflow(
           actor,
-          defaultAgentId,
           workflowName,
           { content: "# BDD claude kit\nUse this workflow in claude runs." },
           [201],

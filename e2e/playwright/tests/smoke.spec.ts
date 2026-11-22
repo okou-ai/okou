@@ -6,7 +6,10 @@ import {
   createUser,
   generateTestEmail,
 } from "../lib/clerk-api";
-import { completePromptOnboarding } from "../lib/onboarding";
+import {
+  authHeadersForToken,
+  completePromptOnboarding,
+} from "../lib/onboarding";
 import { deriveAppUrl } from "../playwright.config";
 
 test("receive a reply and compose with an IME", async ({ page }) => {
@@ -20,9 +23,33 @@ test("receive a reply and compose with an IME", async ({ page }) => {
   const apiUrl = resolveApiBackendUrl();
   const appUrl = deriveAppUrl(apiUrl);
 
-  await signInWithClerkEmailCode(page, email, appUrl, {
+  const token = await signInWithClerkEmailCode(page, email, appUrl, {
     activeOrganizationId: orgId,
   });
+
+  await expect
+    .poll(
+      async () => {
+        const billing = await page.request.get(
+          new URL("/api/billing/usage-pack-credits", apiUrl).href,
+          {
+            headers: authHeadersForToken(token),
+          },
+        );
+        if (!billing.ok()) {
+          throw new Error(
+            `Read creator credit balance returned HTTP ${billing.status()}`,
+          );
+        }
+        const balance = await billing.json();
+        return balance.bonusCredits;
+      },
+      {
+        timeout: 60_000,
+        message: "The workspace creator must receive the onboarding bonus",
+      },
+    )
+    .toBeGreaterThan(0);
 
   // The onboarding prompt handoff sends the message as the first chat.
   await completePromptOnboarding(page, {

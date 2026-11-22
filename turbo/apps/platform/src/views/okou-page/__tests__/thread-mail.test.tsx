@@ -184,12 +184,6 @@ async function openChat(
   path = `/chats/${THREAD_ID}`,
   sidebarThreadId?: string,
 ) {
-  context.mocks.data.agents([
-    {
-      agentId: "c0000000-0000-4000-a000-000000000001",
-      displayName: "Email review",
-    },
-  ]);
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(404, {
       error: { code: "BROWSER_NOT_FOUND", message: "No managed browser" },
@@ -228,10 +222,7 @@ async function openChat(
         return {
           id: threadId,
           title: "Email review",
-          agent: {
-            id: "c0000000-0000-4000-a000-000000000001",
-            avatarUrl: null,
-          },
+
           createdAt: "2026-10-20T10:00:00.000Z",
           updatedAt: "2026-10-20T10:00:00.000Z",
           selectedModel: "claude-sonnet-5",

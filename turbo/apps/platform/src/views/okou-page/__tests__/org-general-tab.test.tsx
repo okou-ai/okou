@@ -35,7 +35,7 @@ async function openDeleteDialog(): Promise<HTMLElement> {
 }
 
 async function openGeneralTab(): Promise<void> {
-  await setupPage({ context, path: "/agents?settings=general" });
+  await setupPage({ context, path: "/?settings=general" });
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(

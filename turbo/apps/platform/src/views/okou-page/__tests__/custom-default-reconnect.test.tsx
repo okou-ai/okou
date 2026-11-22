@@ -27,7 +27,6 @@ import {
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 
 function mockAccountReads(
   read: () => readonly ConnectorAccountConnection[],
@@ -75,7 +74,7 @@ async function openConnection(
 ): Promise<HTMLElement> {
   await setupPage({
     context,
-    path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${connector.slug}/connect`,
   });
   await screen.findByText(
     connectorFixtureAccount(connector) !== undefined
@@ -351,7 +350,7 @@ test("Wait for the initial account inventory before offering a custom connection
   flow.startPreflight();
   await setupPage({
     context,
-    path: `/connectors/${flow.connector().slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${flow.connector().slug}/connect`,
   });
   await flow.requested.promise;
   expect(queryConnectorAction("button", "Connect")).toBeNull();
@@ -366,7 +365,7 @@ test("Keep a failed initial account inventory from offering a custom connection"
   flow.startPreflight();
   await setupPage({
     context,
-    path: `/connectors/${flow.connector().slug}/connect?agentId=${AGENT_ID}`,
+    path: `/connectors/${flow.connector().slug}/connect`,
   });
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Account access unavailable",

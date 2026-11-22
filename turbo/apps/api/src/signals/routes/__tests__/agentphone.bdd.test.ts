@@ -52,7 +52,10 @@ import {
   listIntegrationInputFileParts,
 } from "./helpers/integration-input-assets";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  threadEventCursor,
+} from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -72,7 +75,9 @@ beforeEach(() => {
   nativeSessionStore.set(executionNativeSessions$, {});
 });
 interface LinkedAgentPhoneActor {
-  readonly actor: ApiTestUser;
+  readonly actor: ApiTestUser & {
+    readonly phoneHistory: { readonly sinceSeqId?: number };
+  };
   readonly ap: ReturnType<typeof createAgentPhoneBddApi>;
   readonly phone: string;
   readonly runnerGroup: string;
@@ -145,7 +150,15 @@ async function entitledLinkedActor(
     runs.ensurePersonalSubscriptionModel(actor),
     ap.linkViaWebhookConnectPrompt(actor, phone, sends),
   ]);
-  return { actor, ap, phone, runnerGroup, sends, storage };
+  const phoneHistory = { sinceSeqId: await threadEventCursor(context, actor) };
+  return {
+    actor: { ...actor, phoneHistory },
+    ap,
+    phone,
+    runnerGroup,
+    sends,
+    storage,
+  };
 }
 
 async function contactCardConversation() {
@@ -237,7 +250,11 @@ async function modelSessionScenario({
     }
     const sessionId = await waitForRunSessionIdPresent(actor, run.runId);
     const chat = createChatFilesBddApi(context);
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected AgentPhone thread lifecycle events");
     }
@@ -572,7 +589,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       });
       await flushWaitUntilForTest();
       const chat = createChatFilesBddApi(context);
-      const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+      const lifecycle = await chat.requestThreadEvents(
+        actor,
+        actor.phoneHistory,
+        [200],
+      );
       if (lifecycle.status !== 200) {
         throw new Error("Expected the original Web conversation");
       }
@@ -2444,7 +2465,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await waitForTyping(sends, [conversationId]);
 
       if (scenario === "dispatch context") {
-        const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+        const lifecycle = await chat.requestThreadEvents(
+          actor,
+          actor.phoneHistory,
+          [200],
+        );
         if (lifecycle.status !== 200) {
           throw new Error("Expected AgentPhone thread lifecycle events");
         }
@@ -2587,7 +2612,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await typingStarted.promise;
     await expect
       .poll(async () => {
-        const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+        const lifecycle = await chat.requestThreadEvents(
+          actor,
+          actor.phoneHistory,
+          [200],
+        );
         if (lifecycle.status !== 200) {
           throw new Error("Expected Phone thread lifecycle events");
         }
@@ -2848,7 +2877,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         expect(currentSessionId).toBe(sessionId);
       }
     }
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected the phone thread lifecycle");
     }
@@ -2878,7 +2911,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         });
       }),
     );
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected the concurrent phone thread lifecycle");
     }
@@ -2891,7 +2928,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       throw new Error("Expected one published phone thread");
     }
     expect(thread).toMatchObject({
-      seqId: 1,
       selectedModel: "claude-fable-5-1",
       cloudBrowserEnabled: true,
     });
@@ -2926,7 +2962,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await runs.heartbeatRunner(runnerGroup);
     await flushWaitUntilForTest();
     expect(runs.unobservedDispatches(runnerGroup)).toHaveLength(0);
-    const finalLifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const finalLifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (finalLifecycle.status !== 200) {
       throw new Error("Expected the completed phone thread lifecycle");
     }
@@ -3077,7 +3117,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(reply).not.toContain("billingView=plans");
 
       const chat = createChatFilesBddApi(context);
-      const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+      const lifecycle = await chat.requestThreadEvents(
+        actor,
+        actor.phoneHistory,
+        [200],
+      );
       if (lifecycle.status !== 200) {
         throw new Error("Expected AgentPhone thread lifecycle events");
       }
@@ -3288,7 +3332,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       conversationId: uniqueConversationId(),
     });
     const run = await readDispatchedRun(runnerGroup);
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected AgentPhone thread lifecycle events");
     }
@@ -3423,7 +3471,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       phoneRun1.runId,
     );
 
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected AgentPhone thread lifecycle events");
     }
@@ -3483,7 +3535,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(phoneRun2.sandboxToken, phoneRun2.runId, 0);
     await waitForRunSessionId(actor, phoneRun2.runId, sharedSession);
 
-    const finalLifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const finalLifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (finalLifecycle.status !== 200) {
       throw new Error("Expected final AgentPhone thread lifecycle events");
     }
@@ -3593,7 +3649,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(runList.body.data).toStrictEqual([
       expect.objectContaining({ id: activeRun.runId, status: "completed" }),
     ]);
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected AgentPhone thread lifecycle events");
     }
@@ -3710,7 +3770,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     await flushWaitUntilForTest();
 
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected AgentPhone thread lifecycle events");
     }
@@ -5192,7 +5256,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(session).not.toBe(branchSession);
     }
 
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error("Expected iMessage group threads to be listed");
     }
@@ -5259,7 +5327,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await completeSandboxRun(run.sandboxToken, run.runId, 0);
       sessionId = await waitForRunSessionIdPresent(actor, run.runId);
     }
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    const lifecycle = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (lifecycle.status !== 200) {
       throw new Error(
         "Expected the ambient message's reply thread to be listed",
@@ -5313,7 +5385,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       { linked: owner, count: 2 },
       { linked: member, count: 1 },
     ]) {
-      const lifecycle = await chat.requestThreadEvents(linked.actor, {}, [200]);
+      const lifecycle = await chat.requestThreadEvents(
+        linked.actor,
+        linked.actor.phoneHistory,
+        [200],
+      );
       if (lifecycle.status !== 200) {
         throw new Error(
           "Expected the linked sender's own threads to be listed",
@@ -5359,7 +5435,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await waitForTyping(sends, [conversationId]);
     const groupLifecycle = await createChatFilesBddApi(
       context,
-    ).requestThreadEvents(actor, {}, [200]);
+    ).requestThreadEvents(actor, actor.phoneHistory, [200]);
     if (groupLifecycle.status !== 200) {
       throw new Error("Expected AgentPhone thread lifecycle events");
     }
@@ -5772,7 +5848,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     const activeRun = await readDispatchedRun(runnerGroup);
     expect(sends.messages.slice(beforeActive)).toHaveLength(0);
-    const beforeGroup = await chat.requestThreadEvents(actor, {}, [200]);
+    const beforeGroup = await chat.requestThreadEvents(
+      actor,
+      actor.phoneHistory,
+      [200],
+    );
     if (beforeGroup.status !== 200) {
       throw new Error("Expected AgentPhone thread lifecycle events");
     }

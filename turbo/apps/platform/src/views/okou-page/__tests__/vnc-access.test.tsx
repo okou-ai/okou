@@ -7,10 +7,7 @@ import {
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
-import {
-  SCOUT_AGENT_ID,
-  createComposerConnectorHelpers,
-} from "./chat-composer-connectors-test-helpers.ts";
+import { createComposerConnectorHelpers } from "./chat-composer-connectors-test-helpers.ts";
 
 const context = testContext();
 const { installComposerConnectorFixture } =
@@ -23,7 +20,7 @@ test("Chat VNC setup appears and filters", async () => {
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));

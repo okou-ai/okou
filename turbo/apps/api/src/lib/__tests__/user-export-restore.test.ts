@@ -85,10 +85,6 @@ function sources(producer: "guest" | "server" = "guest") {
     ],
     ["chat-messages/thread-a/tail/9.jsonl", jsonLines([event(10)])],
     [
-      "agents/agent-a.json",
-      json({ id: "agent-a", instructions: "Keep these instructions exactly." }),
-    ],
-    [
       "workflows/workflow-a.json",
       json({ id: "workflow-a", instruction: "Workflow instruction." }),
     ],
@@ -105,7 +101,7 @@ function sources(producer: "guest" | "server" = "guest") {
   // Cross the manifest page boundary while keeping fixture content small.
   for (let index = 0; index < 100; index++) {
     files.set(
-      `agents/extra-${index}.json`,
+      `workflows/extra-${index}.json`,
       json({ id: `extra-${index}`, instructions: null }),
     );
   }
@@ -212,9 +208,6 @@ describe("downloaded export recovery tool", () => {
         readFile(join(output, "instructions.jsonl"), "utf8"),
       ).resolves.toContain("Personal Instructions.");
       await expect(
-        readFile(join(output, "agents.jsonl"), "utf8"),
-      ).resolves.toContain("Keep these instructions exactly.");
-      await expect(
         readFile(join(output, "workflows.jsonl"), "utf8"),
       ).resolves.toContain("Workflow instruction.");
       await expect(
@@ -277,15 +270,17 @@ describe("downloaded export recovery tool", () => {
   it("rejects changed source bytes even when their ZIP CRC is internally valid", async () => {
     const zip = exportZip(sources().files, sources().meta);
     zip.updateFile(
-      "agents/agent-a.json",
+      "workflows/workflow-a.json",
       Buffer.from(
-        zip.readAsText("agents/agent-a.json").replace("Keep", "Xeep"),
+        zip
+          .readAsText("workflows/workflow-a.json")
+          .replace("Workflow", "Workfl0w"),
       ),
     );
     const { result, output } = await runRestore(zip);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("SHA-256 mismatch");
-    await expect(readFile(join(output, "agents.jsonl"))).rejects.toThrow(
+    await expect(readFile(join(output, "workflows.jsonl"))).rejects.toThrow(
       "ENOENT",
     );
   });
@@ -297,7 +292,7 @@ describe("downloaded export recovery tool", () => {
     // depend on how many real fixture entries precede the page boundary.
     zip.updateFile(
       "manifest/files-100.jsonl",
-      Buffer.from(original.replace("agents/extra-", "agents/other-")),
+      Buffer.from(original.replace("workflows/extra-", "workflows/other-")),
     );
     const { result } = await runRestore(zip);
     expect(result.status).toBe(1);
@@ -348,9 +343,9 @@ describe("downloaded export recovery tool", () => {
 
   it("refuses ZIP link metadata before processing its contents", async () => {
     const zip = exportZip(sources().files, sources().meta);
-    const entry = zip.getEntry("agents/agent-a.json");
+    const entry = zip.getEntry("workflows/workflow-a.json");
     if (entry === null) {
-      throw new Error("Expected agent fixture entry");
+      throw new Error("Expected workflow fixture entry");
     }
     entry.attr = 0o12_0777 * 65_536;
     const { result } = await runRestore(zip);

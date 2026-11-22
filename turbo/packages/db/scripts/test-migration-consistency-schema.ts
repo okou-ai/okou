@@ -2891,7 +2891,7 @@ async function main(): Promise<void> {
     );
     await validateChatThreadEventExecutorRetirement(
       dbUrl1,
-      await migrationTimestamp("1613_drop_chat_thread_event_executor"),
+      await migrationTimestamp("1614_drop_chat_thread_event_executor"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

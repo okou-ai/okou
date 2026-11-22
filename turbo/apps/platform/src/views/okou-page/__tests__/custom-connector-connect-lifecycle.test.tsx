@@ -11,13 +11,11 @@ import {
   customConnector,
   customConnectorAccount,
   getConnectorAction,
-  listAgent,
   mockCustomConnectorStory,
   mockSavedConnectorAccounts,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
-const RESEARCH_ID = "c0000000-0000-4000-a000-000000000051";
 
 test("Cancel a pending custom connection and connect another account", async () => {
   const connector = customConnector();
@@ -100,7 +98,6 @@ test("Cancel a pending custom connection and connect another account", async () 
 test("Keep a custom connection pending until its account naming continuation is ready", async () => {
   const connector = customConnector();
   mockCustomConnectorStory(context, [{ connector }]);
-  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   let account: ConnectorAccountConnection | undefined;
   mockSavedConnectorAccounts(context, () => {
     return account ? [account] : [];

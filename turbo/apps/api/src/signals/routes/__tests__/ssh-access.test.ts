@@ -118,7 +118,7 @@ describe("live chat SSH Run inventory", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const { defaultAgentId: agentId } = await bdd.readOnboardingStatus(actor);
+    const agentId = await bdd.readDefaultAgentId(actor);
     if (!agentId) {
       throw new Error("Expected onboarding to provide the default Agent");
     }

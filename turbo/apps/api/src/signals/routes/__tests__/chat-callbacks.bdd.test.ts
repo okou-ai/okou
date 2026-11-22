@@ -1844,7 +1844,7 @@ describe("CHAT-02: completed chat callback", () => {
           );
         }),
       ).toHaveLength(0);
-      await chat.markAgentThreadsRead(actor, agentId);
+      await chat.markAllThreadsRead(actor);
       await chat.requestSetThreadMuted(actor, run.threadId, false, [204]);
       expect((await readIndicators()).threads[run.threadId]).toBe("unread");
       await expect(
@@ -5300,7 +5300,7 @@ describe("CHAT-02: push notification gating", () => {
     expect(provider.requests.at(-1)?.payload).toStrictEqual({
       aps: { badge: 1 },
     });
-    await chat.markAgentThreadsRead(actor, agentId);
+    await chat.markAllThreadsRead(actor);
     await flushWaitUntilForTest();
     expect(provider.requests.at(-1)?.payload).toStrictEqual({
       aps: { badge: 0 },

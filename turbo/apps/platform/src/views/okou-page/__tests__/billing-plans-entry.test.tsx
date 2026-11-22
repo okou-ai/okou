@@ -17,8 +17,6 @@ import {
 
 const context = testContext();
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-
 function usagePackCatalogResponse() {
   return {
     supportsFreeMembers: true as const,
@@ -50,17 +48,6 @@ function prepareUpgradeFlow({
   context.mocks.browser.matchMedia((query) => {
     return desktop && query === "(min-width: 48rem)";
   });
-  context.mocks.data.agents([
-    {
-      agentId: AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Nova",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    },
-  ]);
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, usagePackCatalogResponse());
   });
@@ -92,7 +79,7 @@ async function dismissPlansDialog(): Promise<void> {
 test("Dismissing the sidebar upgrade flow returns to the chat screen", async () => {
   prepareUpgradeFlow();
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   await clickUpgradeCard();
   await screen.findByText("Start with Pro");
@@ -150,7 +137,7 @@ test("Delayed eligibility and catalog loading lead to plan selection and configu
     },
   );
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   await clickUpgradeCard();
   const modal = await screen.findByRole("dialog", { name: "Billing" });
   expect(within(modal).getByRole("status")).toBeInTheDocument();
@@ -204,7 +191,7 @@ test("A failed eligibility request does not become a normal plan checkout", asyn
     },
   );
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   await clickUpgradeCard();
   await screen.findByRole("dialog", { name: "Billing" });
   migrationReady.resolve();
@@ -234,7 +221,7 @@ test("Closing pending eligibility does not reopen the modal when the response ar
     },
   );
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   await clickUpgradeCard();
   const modal = await screen.findByRole("dialog", { name: "Billing" });
   click(within(modal).getByLabelText("Close"));
@@ -269,7 +256,7 @@ test.each(["applying", "scheduled"] as const)(
       },
     );
 
-    await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    await setupPage({ context, path: `/` });
     await clickUpgradeCard();
     await screen.findByRole("dialog", { name: "Billing" });
     migrationReady.resolve();
@@ -340,7 +327,7 @@ test("A billing refresh preserves configuration and keyboard focus", async () =>
     });
   });
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   await clickUpgradeCard();
   const modal = await screen.findByRole("dialog", { name: "Choose a plan" });
   const start = await within(modal).findByText("Start with Pro");

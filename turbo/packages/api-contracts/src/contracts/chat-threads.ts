@@ -715,17 +715,15 @@ export const chatThreadMarkUnreadContract = c.router({
 });
 
 /**
- * Mark every unread chat thread under an agent as read.
+ * Mark every unread chat thread for the workspace member as read.
  * Separate sibling route so it cannot collide with the `:id` thread routes.
  */
-export const chatThreadMarkAgentReadContract = c.router({
-  markAgentRead: {
+export const chatThreadMarkAllReadContract = c.router({
+  markAllRead: {
     method: "POST",
     path: "/api/chat-thread-unreads/mark-read",
     headers: authHeadersSchema,
-    body: object({
-      agentId: string().min(1).optional(),
-    }),
+    body: object({}),
     responses: {
       204: c.noBody(),
       400: apiErrorSchema,
@@ -1214,8 +1212,8 @@ export type ChatThreadByIdContract = typeof chatThreadByIdContract;
 export type ChatThreadDraftContract = typeof chatThreadDraftContract;
 export type ChatThreadMarkReadContract = typeof chatThreadMarkReadContract;
 export type ChatThreadMarkUnreadContract = typeof chatThreadMarkUnreadContract;
-export type ChatThreadMarkAgentReadContract =
-  typeof chatThreadMarkAgentReadContract;
+export type ChatThreadMarkAllReadContract =
+  typeof chatThreadMarkAllReadContract;
 export type ChatThreadPinContract = typeof chatThreadPinContract;
 export type ChatThreadPinOrderContract = typeof chatThreadPinOrderContract;
 export type ChatThreadUnpinContract = typeof chatThreadUnpinContract;

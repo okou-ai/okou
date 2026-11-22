@@ -76,7 +76,6 @@ describe("content bundle presigned URL cache", () => {
     installWorkflowVolumeS3Fixture(context);
     const workflow = await misc.createWorkflow(
       actor,
-      agentId,
       `cache-${randomUUID().slice(0, 8)}`,
       {
         content: "# Workflow URL test",

@@ -36,7 +36,7 @@ vi.mock("@axiomhq/js", () => {
 const context = testContext();
 const pageOptions = {
   context,
-  path: "/agents",
+  path: "/",
   host: "app.okou.ai",
   sharedWorkerTestTransport: "browser",
   env: { VITE_AXIOM_CLIENT_TELEMETRY_TOKEN: "test-shared-worker-telemetry" },

@@ -24,7 +24,7 @@ export const setupLegacySettingsRedirect$ = command(({ get, set }) => {
       next.append(name, value);
     }
   }
-  set(detachedNavigateTo$, ROUTES.agents, {
+  set(detachedNavigateTo$, ROUTES.home, {
     searchParams: next,
     replace: true,
   });

@@ -1,5 +1,4 @@
 import {
-  AGENT_ID,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
@@ -11,7 +10,6 @@ import {
   openThreadMenu,
   setupSidebarPage,
   sidebar,
-  SUPPORT_AGENT_ID,
   threadLinkByTitle,
   threadRowByTitle,
 } from "./sidebar-test-helpers.tsx";
@@ -31,18 +29,14 @@ import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const { mockSidebarThreadStory, prepareAgents, prepareDefaultAgent } =
-  createSidebarHelpers(context);
+const { mockSidebarThreadStory } = createSidebarHelpers(context);
 
 test("Open and use workspace search with the keyboard", async () => {
-  prepareAgents();
   mockSidebarThreadStory([
-    createThread(INCIDENT_THREAD_ID, "Support escalation", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
+    createThread(INCIDENT_THREAD_ID, "Support escalation"),
   ]);
 
-  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupSidebarPage({ context, path: `/` });
 
   await waitFor(() => {
     expect(sidebar()).toBeInTheDocument();
@@ -80,7 +74,6 @@ test("Open and use workspace search with the keyboard", async () => {
 });
 
 test("Recognize and pin sidebar conversation states", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory(
     [
       createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -188,11 +181,6 @@ test("Recognize and pin sidebar conversation states", async () => {
 });
 
 test("Refresh the thread unread indicator", async () => {
-  context.mocks.data.agents(
-    prepareAgents().filter((agent) => {
-      return agent.agentId === AGENT_ID;
-    }),
-  );
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Remote unread conversation"),
   ]);
@@ -238,7 +226,6 @@ test.each(["indicator", "read cursor"] as const)(
   "Refresh the running indicator after the %s notification without warming chats",
   async (notification) => {
     mockNow(0, context.signal);
-    prepareDefaultAgent();
     mockSidebarThreadStory([
       createThread(EXISTING_THREAD_ID, "Remote running conversation"),
     ]);
@@ -299,7 +286,6 @@ test.each(["indicator", "read cursor"] as const)(
 test.each([false, true])(
   "Refresh the latest unread state after an indicator burst with a failed leading fetch: %s",
   async (failLeadingRefresh) => {
-    prepareDefaultAgent();
     mockSidebarThreadStory([
       createThread(EXISTING_THREAD_ID, "Burst conversation"),
     ]);
@@ -359,7 +345,6 @@ test.each([false, true])(
 );
 
 test("Open a conversation with double-click and rename it from the sidebar menu", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),

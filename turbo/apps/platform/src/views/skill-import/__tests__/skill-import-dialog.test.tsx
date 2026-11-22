@@ -25,7 +25,6 @@ import { pathname, search } from "../../../signals/location.ts";
 
 const context = testContext();
 
-const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const PROMPT_LABEL = "Skill import prompt";
 const DIALOG_TITLE = "Import your skills";
 const CLAUDE_SESSION_ID = "b0000000-0000-4000-a000-000000000001";
@@ -39,9 +38,6 @@ function workflow(entry: {
 }): WorkflowSummary {
   return {
     id: entry.id,
-    agentId: DEFAULT_AGENT_ID,
-    agentName: null,
-    agentDisplayName: null,
     name: entry.name,
     displayName: entry.displayName,
     description: null,

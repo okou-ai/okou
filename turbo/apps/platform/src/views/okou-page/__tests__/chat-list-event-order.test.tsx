@@ -5,13 +5,11 @@ import { startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
   chatListAuth,
   chatListEvent,
   chatListThread,
   chatListThreadId,
-  installChatListAgent,
   installChatListStream,
   sidebarThreadLinks,
   sidebarThreadTitles,
@@ -24,7 +22,7 @@ test("Conversation lifecycle events produce the current list", async () => {
   const oldThread = chatListThread(31, "Old conversation");
   const newThreadId = chatListThreadId(32);
   const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
+
   installChatListStream(context, {
     caseId: 5,
     snapshot: [oldThread],
@@ -44,7 +42,7 @@ test("Conversation lifecycle events produce the current list", async () => {
 
   const page = await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(5, [oldThread]),
   });
@@ -70,7 +68,7 @@ test("A pinned conversation stays above newer unpinned items", async () => {
   const middle = chatListThread(34, "Middle conversation");
   const newest = chatListThread(35, "Newest conversation");
   const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
+
   installChatListStream(context, {
     caseId: 10,
     snapshot: [oldest, middle, newest],
@@ -80,7 +78,7 @@ test("A pinned conversation stays above newer unpinned items", async () => {
 
   const page = await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(10, [oldest, middle, newest]),
   });
@@ -125,7 +123,7 @@ test("Pinned ordering follows pin time through activity updates", async () => {
   const newer = chatListThread(40, "Newer regular chat");
   const snapshot = [firstPin, secondPin, tiedPin, older, newer];
   const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
+
   installChatListStream(context, {
     caseId,
     snapshot,
@@ -142,7 +140,7 @@ test("Pinned ordering follows pin time through activity updates", async () => {
 
   const page = await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
   });
@@ -183,7 +181,7 @@ test("Unpinning restores activity order and repinning uses the new pin time", as
   const snapshot = [firstPin, secondPin, regular];
   const remote = context.mocks.deferred<void>();
   const unpin = chatListEvent(caseId, 2, "unpinned", firstPin.id);
-  installChatListAgent(context);
+
   const stream = installChatListStream(context, {
     caseId,
     snapshot,
@@ -193,7 +191,7 @@ test("Unpinning restores activity order and repinning uses the new pin time", as
 
   const page = await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
   });
@@ -232,7 +230,7 @@ test("Workflow visibility hides cached chats and restores the same conversation"
   const visible = chatListThread(56, "Visible workflow");
   const hidden = chatListThread(57, "Background workflow", { hidden: true });
   const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
+
   installChatListStream(context, {
     caseId,
     snapshot: [visible, hidden],
@@ -244,7 +242,7 @@ test("Workflow visibility hides cached chats and restores the same conversation"
   });
   const page = await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth: chatListAuth(caseId),
     cachedChatThreadEvents: cachedChatListEvents(caseId, [visible, hidden]),
   });

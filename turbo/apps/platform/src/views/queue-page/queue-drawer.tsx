@@ -142,9 +142,6 @@ function useUpgradePath(tier: string): UpgradePath | undefined {
         },
         { count: base.concurrentRuns },
       ),
-      t(($) => {
-        return $.queue.upgrade.features.unlimitedAgents;
-      }),
       support,
     ],
   };

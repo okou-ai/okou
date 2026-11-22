@@ -538,8 +538,7 @@ export function discordOrgStatus(
       guildId: null,
       guildName: null,
       discordUserId: null,
-      defaultAgentId: null,
-      defaultAgentName: null,
+
       contextMode: "unavailable",
       onboarding: "oauth",
       dmSelectionConnectionId: null,

@@ -12,7 +12,7 @@ async function openDebug(role: "admin" | "member" = "admin", debug = true) {
   context.mocks.data.org({ id: "org_1", name: "Test Org", role });
   await setupPage({
     context,
-    path: "/agents?settings=debug",
+    path: "/?settings=debug",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: debug },
   });
   await screen.findByRole("heading", { name: debug ? "Debug" : "Preference" });

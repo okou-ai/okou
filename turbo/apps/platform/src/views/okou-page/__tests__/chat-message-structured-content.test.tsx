@@ -9,8 +9,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   findFastControl,
-  MESSAGE_EXPERIENCE_AGENT_ID,
-  SOURCE_AGENT_ID,
   createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
 
@@ -125,13 +123,11 @@ test("Delegated work links back to its source run", async () => {
     version: 1,
     parts: [
       {
-        type: "source",
-        kind: "agent",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
-        agentId: SOURCE_AGENT_ID,
+
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
       { type: "text", text: "Prepare the delegated launch analysis." },
     ],
@@ -236,13 +232,11 @@ test("Forwarded feedback names its source chat", async () => {
         note: [],
       },
       {
-        type: "source",
-        kind: "agent",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
-        agentId: SOURCE_AGENT_ID,
+
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
     ],
   } satisfies UserMessageDocument;
@@ -309,13 +303,11 @@ async function openStructuredContextChat() {
     version: 1,
     parts: [
       {
-        type: "source",
-        kind: "agent",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
-        agentId: SOURCE_AGENT_ID,
+
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
       {
         type: "file",
@@ -335,14 +327,14 @@ async function openStructuredContextChat() {
     {
       id: context.resourceId,
       title: "Delegated work",
-      agent: { id: MESSAGE_EXPERIENCE_AGENT_ID, avatarUrl: null },
+
       createdAt: CREATED_AT,
       updatedAt: "2026-08-20T12:02:00.000Z",
     },
     {
       id: SECOND_THREAD_ID,
       title: "Companion chat",
-      agent: { id: MESSAGE_EXPERIENCE_AGENT_ID, avatarUrl: null },
+
       createdAt: CREATED_AT,
       updatedAt: "2026-08-20T12:01:00.000Z",
     },

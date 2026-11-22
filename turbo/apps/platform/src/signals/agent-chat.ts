@@ -69,7 +69,6 @@ function threadIdsOf(threads: readonly EventDrivenChatThread[]) {
   });
 }
 
-// Projects collect chats across Agents, so every Agent list shows them.
 const allProjectThreads$ = computed((get): Promise<EventDrivenChatThread[]> => {
   return Promise.resolve(
     sortChatThreads(

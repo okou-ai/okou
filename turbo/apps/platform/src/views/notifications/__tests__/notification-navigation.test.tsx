@@ -48,7 +48,7 @@ test("An untrusted or non-chat notification does not navigate Platform", async (
   });
   serviceWorker.dispatchMessage({
     type: "NOTIFICATION_CLICK",
-    url: "https://app.okou.ai/agents",
+    url: "https://app.okou.ai/",
   });
 
   expect(pushedUrls()).toHaveLength(navigationCount);

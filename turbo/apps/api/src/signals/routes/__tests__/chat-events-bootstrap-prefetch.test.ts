@@ -233,7 +233,7 @@ describe("chat agent bootstrap prefetch", () => {
   });
 
   it("uses the captured Workflow for the sending pick and the newer version for an independent pick", async () => {
-    const { actor, defaultAgentId: agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const misc = createMiscRoutesApi(context);
     const attachment = await deferAttachmentMetadata(
       actor,
@@ -244,7 +244,6 @@ describe("chat agent bootstrap prefetch", () => {
     });
     const workflow = await misc.createWorkflow(
       actor,
-      agentId,
       `context-${randomUUID().slice(0, 8)}`,
       { content: "# Context storage\nKeep this published skill mounted." },
       [201],

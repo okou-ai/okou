@@ -7,7 +7,6 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockPrivateUrlSequence } from "./chat-attachment-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
-  ADA_AGENT_ID,
   findFastControl,
   queryFastControl,
   createMessageExperienceHelpers,
@@ -17,14 +16,13 @@ const context = testContext();
 const { installMessageExperienceChat } =
   createMessageExperienceHelpers(context);
 
-test("Loading older messages restores mention names and attachment navigation", async () => {
+test("Loading older messages restores attachment navigation", async () => {
   const firstImageUrl = "https://example.com/history-first.png";
   const secondImageUrl = "https://example.com/history-second.png";
   const historicalDocument = {
     version: 1,
     parts: [
-      { type: "text", text: "Historical launch notes for " },
-      { type: "agent", agentId: ADA_AGENT_ID, nameSnapshot: "Ada" },
+      { type: "text", text: "Historical launch notes" },
       {
         type: "file",
         fileId: "history-first",
@@ -97,7 +95,6 @@ test("Loading older messages restores mention names and attachment navigation", 
   });
   fireEvent.scroll(container);
 
-  await screen.findByText("Ada");
   const preview = await findFastControl("link", "Preview history-first.png");
   click(preview);
 

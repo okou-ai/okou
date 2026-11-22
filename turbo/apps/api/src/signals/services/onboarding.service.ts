@@ -1,15 +1,11 @@
-import { sharedExecutorCondition } from "./agent-data.service";
 import { command, computed, type Computed } from "ccstate";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import type {
-  OnboardingIndustry,
   OnboardingStatusResponse,
+  OnboardingIndustry,
 } from "@okouai/api-contracts/contracts/onboarding";
-import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
-import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { isValidTimeZone } from "@okouai/core/timezone";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -24,15 +20,6 @@ import type { WorkflowMember } from "./workflow-data.service";
 import { markOrgOnboardingComplete$ } from "./onboarding-completion.command";
 
 const L = logger("onboarding.service");
-
-interface DefaultAgentInfo {
-  readonly composeId: string;
-  readonly metadata: OnboardingStatusResponse["defaultAgentMetadata"];
-}
-
-type DefaultAgentMetadata = NonNullable<
-  OnboardingStatusResponse["defaultAgentMetadata"]
->;
 
 type CompleteOnboardingResponse = {
   readonly status: 200;
@@ -129,19 +116,6 @@ interface CompleteOnboardingArgs {
   readonly industry?: OnboardingIndustry;
 }
 
-function defaultAgentId(orgId: string): Computed<Promise<string | null>> {
-  return computed(async (get): Promise<string | null> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(sharedExecutorCondition(orgId))
-      .limit(1);
-
-    return row?.id ?? null;
-  });
-}
-
 function onboardingComplete(orgId: string): Computed<Promise<boolean>> {
   return computed(async (get): Promise<boolean> => {
     const db = get(db$);
@@ -202,59 +176,7 @@ export function needsOnboarding(
     : memberNeedsOnboarding(orgId, userId);
 }
 
-function defaultAgentInfo(
-  orgId: string,
-  composeId: string,
-): Computed<Promise<DefaultAgentInfo | null>> {
-  return computed(async (get): Promise<DefaultAgentInfo | null> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        displayName: agents.displayName,
-        description: agents.description,
-        sound: agents.sound,
-        avatarUrl: agents.avatarUrl,
-      })
-      .from(agents)
-      .where(and(eq(agents.id, composeId), eq(agents.orgId, orgId)))
-      .limit(1);
-
-    if (!row) {
-      return null;
-    }
-
-    const metadata: DefaultAgentMetadata = {};
-    if (row.displayName !== null) {
-      metadata.displayName =
-        agentDisplayName({
-          agentId: composeId,
-          defaultAgentId: composeId,
-          displayName: row.displayName,
-        }) ?? row.displayName;
-    }
-    if (row.description !== null) {
-      metadata.description = row.description;
-    }
-    if (row.sound !== null) {
-      metadata.sound = row.sound;
-    }
-    const avatarUrl = agentAvatarUrlForDefaultAgent({
-      agentId: composeId,
-      defaultAgentId: composeId,
-      avatarUrl: row.avatarUrl,
-    });
-    if (avatarUrl !== null) {
-      metadata.avatarUrl = avatarUrl;
-    }
-
-    return {
-      composeId,
-      metadata: Object.keys(metadata).length > 0 ? metadata : null,
-    };
-  });
-}
-
-export function onboardingStatus(
+export function memberOnboardingStatus(
   auth: AuthContext,
 ): Computed<Promise<OnboardingStatusResponse>> {
   return computed(async (get): Promise<OnboardingStatusResponse> => {
@@ -266,18 +188,11 @@ export function onboardingStatus(
         onboardingComplete: complete,
         isAdmin,
         hasOrg: false,
-        hasDefaultAgent: false,
-        defaultAgentId: null,
-        defaultAgentMetadata: null,
       };
     }
 
     const isAdmin = "orgRole" in auth && auth.orgRole === "admin";
-    const agentId = await get(defaultAgentId(auth.orgId));
     const complete = await get(onboardingComplete(auth.orgId));
-    const defaultAgent = agentId
-      ? await get(defaultAgentInfo(auth.orgId, agentId))
-      : null;
     // `onboardingComplete` stays the organization's answer for everyone; only
     // `needsOnboarding` is personal for a member.
     const needsOnboarding = isAdmin
@@ -289,9 +204,6 @@ export function onboardingStatus(
       onboardingComplete: complete,
       isAdmin,
       hasOrg: true,
-      hasDefaultAgent: defaultAgent !== null,
-      defaultAgentId: defaultAgent?.composeId ?? null,
-      defaultAgentMetadata: defaultAgent?.metadata ?? null,
     };
   });
 }

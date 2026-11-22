@@ -14,9 +14,6 @@ import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
 export function createSidebarAccountHelpers(context: TestContext) {
   return {
-    prepareDefaultAgent: (targetContext = context) => {
-      return prepareDefaultAgent(targetContext);
-    },
     setupAddAccountPage: () => {
       return setupAddAccountPage(context);
     },
@@ -35,7 +32,6 @@ export function createSidebarAccountHelpers(context: TestContext) {
   };
 }
 
-export const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 export function connectedPersonalCodexProvider(
   overrides: Partial<ModelProviderResponse> = {},
 ): ModelProviderResponse {
@@ -102,20 +98,6 @@ export function connectedPersonalClaudeCodeProvider(
     updatedAt: "2026-03-20T00:00:00Z",
     ...overrides,
   };
-}
-
-export function prepareDefaultAgent(targetContext: TestContext): void {
-  targetContext.mocks.data.agents([
-    {
-      agentId: AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Nova",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    },
-  ]);
 }
 
 export function buttonByText(
@@ -198,10 +180,9 @@ export async function openAccountMenu(): Promise<HTMLElement> {
 }
 
 export function setupAddAccountPage(context: TestContext): Promise<void> {
-  prepareDefaultAgent(context);
   return setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -280,7 +261,6 @@ export function mockAdminBillingStatus(
 }
 
 export function mockAdminAccountSidebar(context: TestContext): void {
-  prepareDefaultAgent(context);
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
@@ -290,7 +270,6 @@ export function mockAdminAccountSidebar(context: TestContext): void {
 }
 
 export function mockMemberAccountSidebar(context: TestContext): void {
-  prepareDefaultAgent(context);
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",

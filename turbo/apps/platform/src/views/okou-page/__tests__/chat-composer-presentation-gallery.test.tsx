@@ -14,7 +14,6 @@ import {
   type AgentDraftRequest,
 } from "@okouai/api-contracts/contracts/agent-draft";
 import {
-  AGENT_ID,
   expectInlineTemplate,
   openTemplatePicker,
   sendComposerMessage,
@@ -78,7 +77,7 @@ async function openPresentationThemePreview() {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
 
@@ -180,7 +179,7 @@ test("Send a presentation theme restored from a saved draft", async () => {
   mockSavedThemeDraft("color-system:ocean-deep");
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
   await expectInlineTemplate(template.title);
@@ -205,7 +204,7 @@ test("Use a presentation template's default theme", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
 
@@ -233,7 +232,7 @@ test("Navigate every slide in a presentation template", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
 
@@ -284,7 +283,7 @@ async function openThreeSlidePreview() {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
 

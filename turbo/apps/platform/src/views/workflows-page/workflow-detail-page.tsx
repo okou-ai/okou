@@ -341,12 +341,6 @@ function WorkflowDialogFooter({
 
 function workflowMetadataCopy() {
   return {
-    agent: i18n.t(($) => {
-      return $.workflows.detail.metadata.agent;
-    }),
-    agentDescription: i18n.t(($) => {
-      return $.workflows.detail.metadata.agentDescription;
-    }),
     aria: i18n.t(($) => {
       return $.workflows.detail.metadata.aria;
     }),

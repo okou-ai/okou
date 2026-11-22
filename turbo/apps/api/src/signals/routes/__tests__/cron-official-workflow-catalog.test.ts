@@ -49,7 +49,7 @@ import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 
 const context = testContext();
@@ -111,13 +111,6 @@ async function withFeedbackRun<T>(
       { [FeatureSwitchKey.AgentSuggestion]: true },
     );
   });
-  const { defaultAgentId } = await owned.run(() => {
-    return fixture.bdd.readOnboardingStatus(owned.actor);
-  });
-  if (!defaultAgentId) {
-    throw new Error("Expected the owner's default Agent");
-  }
-  mockOptionalEnv("RUNNER_DEFAULT_GROUP", owned.runnerGroup);
   await owned.run(() => {
     return createRunsApi(context).registerDirectRunner(owned.runnerGroup);
   });

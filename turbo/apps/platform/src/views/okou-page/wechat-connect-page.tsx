@@ -98,11 +98,7 @@ function PageContent() {
   }
   if (data.kind === "reconnect") {
     return (
-      <ReconnectContent
-        account={data.account}
-        workspace={data.workspace}
-        agent={data.agent}
-      />
+      <ReconnectContent account={data.account} workspace={data.workspace} />
     );
   }
   const connected = data.data?.status === "active";
@@ -156,11 +152,9 @@ function PageContent() {
 function ReconnectContent({
   account,
   workspace,
-  agent,
 }: {
   readonly account: string;
   readonly workspace: string | undefined;
-  readonly agent: string;
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
@@ -192,14 +186,6 @@ function ReconnectContent({
             })}
           </dt>
           <dd className="break-words">{workspace}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">
-            {t(($) => {
-              return $.works.wechat.agentLabel;
-            })}
-          </dt>
-          <dd className="break-words">{agent}</dd>
         </div>
       </dl>
       <ConnectErrorAlert

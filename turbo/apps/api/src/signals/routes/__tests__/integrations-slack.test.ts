@@ -208,7 +208,6 @@ describe("GET /api/integrations/slack", () => {
     expect(status.isInstalled).toBeTruthy();
     expect(status.workspaceName).toBe(`BDD Slack App ${install.teamId}`);
     // The workspace default agent keeps its locked production name.
-    expect(status.defaultAgentName).toBe("Okou");
     // Admin + connected: scope fields should be present
     expect(status).toHaveProperty("scopeMismatch");
     expect(status).toHaveProperty("reinstallUrl");
@@ -248,7 +247,6 @@ describe("GET /api/integrations/slack", () => {
     expect(status).toHaveProperty("reinstallUrl");
     // Not connected: workspace fields should NOT be present
     expect(status).not.toHaveProperty("workspaceName");
-    expect(status).not.toHaveProperty("defaultAgentName");
   });
 
   it("returns connected workspace and default agent for a connected user", async () => {
@@ -259,7 +257,6 @@ describe("GET /api/integrations/slack", () => {
     expect(status.isInstalled).toBeTruthy();
     expect(status.workspaceName).toBeTruthy();
     // The workspace default agent keeps its locked production name.
-    expect(status.defaultAgentName).toBe("Okou");
   });
 });
 

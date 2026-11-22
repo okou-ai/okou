@@ -13,7 +13,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  AGENT_ID,
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   findComposerEditor,
   createChatComposerHelpers,
@@ -22,7 +21,7 @@ import { buildRunModel } from "./chat-model-builders.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 interface SubmittedMessage {
@@ -51,7 +50,6 @@ function setupModels(): void {
       },
     });
   });
-  mockAgent();
   mockPersonalModelRoutes();
   context.mocks.data.availableRunModels([
     buildRunModel({
@@ -74,7 +72,7 @@ function setupModels(): void {
 async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   return await findComposerEditor();
 }

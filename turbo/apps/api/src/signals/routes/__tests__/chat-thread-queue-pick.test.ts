@@ -137,17 +137,13 @@ function clerkHeaders(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-async function createWebhookAutomation(
-  actor: ApiTestUser,
-  agentId: string,
-): Promise<{
+async function createWebhookAutomation(actor: ApiTestUser): Promise<{
   readonly threadId: string;
   readonly token: string;
   readonly secret: string;
 }> {
   bdd.acceptAgentStorageWrites();
   const workflowId = await wf.createWorkflow(actor, {
-    agentId,
     name: WORKFLOW_NAME,
   });
   const created = await accept(
@@ -354,7 +350,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       defaultAgentId: agentId,
       runnerGroup,
     } = await entitledNativeChatActor({}, "team");
-    const automation = await createWebhookAutomation(actor, agentId);
+    const automation = await createWebhookAutomation(actor);
     const blocker = await sendChatRun(actor, {
       prompt: "occupy the only organization slot",
     });
@@ -464,11 +460,8 @@ describe("CHAT-02: queued chat thread picks", () => {
   }, 90_000);
 
   it("leaves a queued automation event for the pick while steering later prompts", async () => {
-    const { actor, defaultAgentId: agentId } = await entitledNativeChatActor(
-      {},
-      "team",
-    );
-    const automation = await createWebhookAutomation(actor, agentId);
+    const { actor } = await entitledNativeChatActor({}, "team");
+    const automation = await createWebhookAutomation(actor);
     const running = await sendChatRun(actor, {
       threadId: automation.threadId,
       prompt: "the automation thread's running run",

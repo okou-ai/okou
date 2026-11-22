@@ -862,21 +862,13 @@ export function CreateWorkflowAutomationDialog() {
                   })}
           </DialogTitle>
           <DialogDescription className="mt-1 text-sm text-muted-foreground">
-            {!selectingExistingWorkflow
+            {selectingExistingWorkflow
               ? t(($) => {
-                  return $.workflows.workspace.createDescription;
+                  return $.workflows.createDialog.chooseWorkflow;
                 })
-              : selectingExistingWorkflow
-                ? t(($) => {
-                    return $.workflows.createDialog.chooseWorkflow;
-                  })
-                : creatingAutomationInChat
-                  ? t(($) => {
-                      return $.workflows.createDialog.chooseAgentAutomation;
-                    })
-                  : t(($) => {
-                      return $.workflows.createDialog.chooseAgentWorkflow;
-                    })}
+              : t(($) => {
+                  return $.workflows.workspace.createDescription;
+                })}
           </DialogDescription>
         </DialogHeader>
 

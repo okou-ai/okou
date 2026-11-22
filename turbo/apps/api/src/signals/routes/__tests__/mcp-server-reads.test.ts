@@ -140,19 +140,6 @@ describe("thin MCP Web adapters", () => {
       );
       const validator = new AjvJsonSchemaValidator();
       for (const tool of tools) {
-        // Message parts may mention an agent. Tools still expose no agent selector.
-        const inputSchema =
-          tool.name === "send_chat_message"
-            ? {
-                ...tool.inputSchema,
-                properties: {
-                  ...tool.inputSchema.properties,
-                  userMessage: undefined,
-                },
-              }
-            : tool.inputSchema;
-        const schemas = JSON.stringify([inputSchema, tool.outputSchema]);
-        expect(schemas).not.toMatch(/"(?:agentId|reassignedAgentId|agents)":/u);
         expect(() => {
           return validator.getValidator(tool.inputSchema as JsonSchemaType);
         }).not.toThrow();
@@ -328,18 +315,6 @@ describe("thin MCP Web adapters", () => {
       expect(
         validate({ threadId: randomUUID(), sinceSeqId: 3 }).valid,
       ).toBeFalsy();
-      const listed = await sdk.callTool({
-        name: "get_chat_thread_list",
-        arguments: {},
-      });
-      expect(listed.isError).not.toBeTruthy();
-      expect(
-        mcpGetChatThreadOutputSchema.parse(listed.structuredContent),
-      ).toMatchObject({
-        snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
-        events: [],
-        hasMore: false,
-      });
       const contentParts = [
         { type: "text", text: "SDK canonical reference" },
         {

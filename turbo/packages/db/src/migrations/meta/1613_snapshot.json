@@ -1,5 +1,5 @@
 {
-  "id": "b5138b7c-025c-469c-8e13-1f5a2f0729cf",
+  "id": "19635a69-8380-4d04-89ec-ec07769fcd46",
   "prevId": "0ed139fd-2c3d-4cfa-99e9-55a2e5d00d65",
   "version": "7",
   "dialect": "postgresql",
@@ -8251,6 +8251,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "event_executor_id": {
+          "name": "event_executor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "project_id": {
           "name": "project_id",
           "type": "uuid",
@@ -14769,13 +14775,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_type": {
-          "name": "source_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'agent'"
-        },
         "priority": {
           "name": "priority",
           "type": "integer",
@@ -15020,10 +15019,6 @@
         "feed_items_type": {
           "name": "feed_items_type",
           "value": "\"feed_items\".\"type\" IN ('suggestion', 'event')"
-        },
-        "feed_items_source_type": {
-          "name": "feed_items_source_type",
-          "value": "(\"feed_items\".\"type\" = 'suggestion' AND \"feed_items\".\"source_type\" = 'agent') OR (\"feed_items\".\"type\" = 'event' AND \"feed_items\".\"source_type\" = 'platform-event')"
         },
         "feed_items_suggestion_state": {
           "name": "feed_items_suggestion_state",
