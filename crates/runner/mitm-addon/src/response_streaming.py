@@ -332,10 +332,9 @@ def _configure_model_sse_inspection(
             usage_protocol=usage_protocol,
         )
 
-    sse_inspection = response_inspection.CooperativeResponseInspection(
-        lambda chunk: response_inspection.decoded_steps(
-            decode_session.iter_chunks, parser_fn.feed_steps, chunk
-        ),
+    sse_inspection = response_inspection.inspect_decoded_response(
+        decode_session.iter_chunks,
+        parser_fn.feed_steps,
         fail_sse_inspection,
     )
     flow.metadata[_RESPONSE_INSPECTION] = sse_inspection
@@ -423,10 +422,9 @@ def _configure_model_json_inspection(
         )
 
     if decode_session is not None:
-        json_inspection = response_inspection.CooperativeResponseInspection(
-            lambda chunk: response_inspection.decoded_steps(
-                decode_session.iter_chunks, extractor.feed_steps, chunk
-            ),
+        json_inspection = response_inspection.inspect_decoded_response(
+            decode_session.iter_chunks,
+            extractor.feed_steps,
             fail_json_inspection,
         )
     else:
@@ -532,10 +530,9 @@ def _configure_connector_response_inspection(
                     "cooperative response parser requires an inspection failure hook"
                 )
 
-            connector_inspection = response_inspection.CooperativeResponseInspection(
-                lambda chunk: response_inspection.decoded_steps(
-                    decode_session.iter_chunks, feed_steps, chunk
-                ),
+            connector_inspection = response_inspection.inspect_decoded_response(
+                decode_session.iter_chunks,
+                feed_steps,
                 finalizer.interrupt,
             )
             flow.metadata[_RESPONSE_INSPECTION] = connector_inspection

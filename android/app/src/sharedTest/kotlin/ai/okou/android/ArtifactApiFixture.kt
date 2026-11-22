@@ -82,6 +82,7 @@ internal class ArtifactApiFixture(
     var pageSize = 40
     var downloadGranted = true
     val catalogQueries = CopyOnWriteArrayList<Pair<String?, String?>>()
+    val catalogScopes = CopyOnWriteArrayList<Pair<String?, String?>>()
     val requestedDownloads = CopyOnWriteArrayList<String>()
     private val currentDispatcher = api.commandResponse
 
@@ -169,11 +170,14 @@ internal class ArtifactApiFixture(
         val url = checkNotNull(request.requestUrl)
         val keyword = url.queryParameter("keyword")
         val kind = url.queryParameter("kind")
+        val threadId = url.queryParameter("chatThreadId")
+        catalogScopes.add(threadId to url.queryParameter("cursor"))
         val offset = url.queryParameter("cursor")?.toInt() ?: 0
         catalogQueries.add(kind to keyword)
         val items =
             allItems.filter {
-                (kind == null || it.kind == kind) &&
+                (threadId == null || threadId == CHAT_PERSONAL && it != image) &&
+                    (kind == null || it.kind == kind) &&
                     (keyword == null || it.title.contains(keyword, ignoreCase = true))
             }
         val selected = items.drop(offset).take(pageSize)

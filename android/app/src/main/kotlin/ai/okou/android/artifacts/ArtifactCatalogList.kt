@@ -76,6 +76,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
@@ -239,10 +240,15 @@ internal fun ArtifactCatalogList(
 }
 
 @Composable
-internal fun ArtifactToolbar(@StringRes title: Int, @StringRes back: Int, onBack: () -> Unit) {
+internal fun ArtifactToolbar(
+    @StringRes title: Int,
+    @StringRes back: Int,
+    onBack: () -> Unit,
+    horizontalPadding: Dp = 12.dp,
+) {
     val minimum = with(LocalDensity.current) { maxOf(64.dp, 28.sp.toDp() + 16.dp) }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = minimum).padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().heightIn(min = minimum).padding(horizontal = horizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -434,10 +440,12 @@ private fun ArtifactThumbnail(
 }
 
 @Composable
-private fun ArtifactRowSkeleton() {
+internal fun ArtifactRowSkeleton(height: Dp = 80.dp, horizontalPadding: Dp = 12.dp) {
     val fill = MaterialTheme.colorScheme.surfaceVariant
     Row(
-        Modifier.fillMaxWidth().height(80.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth()
+            .height(height)
+            .padding(horizontal = horizontalPadding, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.size(40.dp).background(fill, RoundedCornerShape(12.dp)))
@@ -569,7 +577,7 @@ internal fun ArtifactKind.label(): Int =
         ArtifactKind.SharedConversation -> R.string.artifact_shared_chat
     }
 
-private fun ArtifactKind.icon(): Int =
+internal fun ArtifactKind.icon(): Int =
     when (this) {
         ArtifactKind.File -> R.drawable.ic_description
         ArtifactKind.Website -> R.drawable.ic_language
