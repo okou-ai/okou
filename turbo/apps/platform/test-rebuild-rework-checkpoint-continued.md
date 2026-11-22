@@ -2960,3 +2960,9 @@ Batch 79 file review is complete. All 292 selected IDs across the original 30 ow
 Historical first acceptances: **2,009**. Currently complete: **1,985**. New registrations are reconciled by expanded Vitest title. Previous regressions and the two existing late-evidence gaps retain their prior status.
 
 [All 292 GWT, ID results and controls](https://app.okou.ai/artifacts/rr729ztpcz.tsv). [Remaining IDs by frozen file](https://app.okou.ai/artifacts/9sfnqc4pju.md). [Runnable probes, source and raw results](https://app.okou.ai/artifacts/qukt134c8x.zip). [Next 30 open owners for manager review](https://app.okou.ai/artifacts/ojoskbx5gp.md).
+
+## Batch 80 checkpoint 1
+
+The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts/ojoskbx5gp.md) opened at `a5a95d9bd9`. 13 IDs have their first accepted Vitest row, 0 have an evidenced gap or a changed prerequisite, and 248 await implementation. 4 owners are closed, 0 are partially accepted, and 0 are wholly blocked. Historical first acceptances are 2,022, with 1,998 currently complete. Batch 79 retains its separate 54 open dispositions.
+
+[Full GWT, row names, controls and status by ID](https://app.okou.ai/artifacts/0fry3x2ius.tsv). [Exact remaining IDs by frozen owner](https://app.okou.ai/artifacts/a7gb8hyxi0.md). [Sources, comparison, runnable controls and Vitest records](https://app.okou.ai/artifacts/815hd69r9i.zip).
