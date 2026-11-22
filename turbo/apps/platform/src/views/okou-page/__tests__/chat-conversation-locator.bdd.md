@@ -18,6 +18,7 @@ Original test `first-turn navigation reaches beyond the rendered conversation`. 
 - **Given** An eight-turn conversation has its first question outside the rendered viewport.
 - **When** The user selects the first conversation marker.
 - **Then** The first question is brought into the viewport at its top edge, and its message receives landing feedback.
+- **Upstream change** Use a 30-turn conversation. After selecting the first marker, answers 24 and 30 are outside the mounted transcript. [#49882](https://github.com/okou-ai/okou/pull/49882).
 
 ## chat-conversation-locator-003
 

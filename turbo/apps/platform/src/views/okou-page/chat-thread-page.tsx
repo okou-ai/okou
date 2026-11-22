@@ -24,7 +24,6 @@ import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import { VisualizationPreferencesChip } from "./visualization-preferences-chip.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { Field } from "@base-ui/react/field";
@@ -42,7 +41,6 @@ import {
   useLastResolved,
 } from "ccstate-react";
 import type { TFunction } from "i18next";
-import { equalArrays } from "../../lib/equality.ts";
 import type { ChatDateDivider } from "../../lib/chat-thread-date-dividers.ts";
 import { useTranslation } from "react-i18next";
 import {
@@ -229,7 +227,6 @@ import {
 import {
   idleRunFinished$,
   idleThinkingIndicatorsShown$,
-  splitQueuedEventsForThinkingIndicator,
   type ChatThreadRowSignals,
 } from "../../signals/chat-page/chat-thread-rows.ts";
 import { chatEventRenderKey } from "../../signals/chat-page/chat-event-group-keys.ts";
@@ -2789,95 +2786,11 @@ export function ChatThreadSidebarPane() {
 export function ChatThreadPage() {
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
-  return withChatScrollLayout(
+  return (
     <>
       <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />
       <ChatConnectorActionConnectModal />
-    </>,
-  );
-}
-
-function renderedChatEventKeys(
-  groups: readonly ChatEventGroup[],
-): readonly string[] {
-  return groups.flatMap((group) => {
-    return group.events.map((event) => {
-      return `${event.id}:${event.isQueued ? "queued" : "active"}`;
-    });
-  });
-}
-
-function chatGroupsContainEvent(
-  groups: readonly ChatEventGroup[],
-  eventId: string | undefined,
-): boolean {
-  return groups.some((group) => {
-    return group.events.some((event) => {
-      return event.id === eventId;
-    });
-  });
-}
-
-function ChatThreadScrollCommitMarker({
-  thread,
-}: {
-  thread: ChatPanelSignals;
-}) {
-  const renderedGroups = useLastResolved(thread.visibleRenderedChatGroups$);
-  const readyScrollRequestLoadable = useLoadable(
-    thread.readyScrollAfterRenderRequest$,
-  );
-  const commitScroll = useSet(thread.scrollCommitOnRef$);
-  if (
-    renderedGroups === undefined ||
-    readyScrollRequestLoadable.state !== "hasData" ||
-    readyScrollRequestLoadable.data === null
-  ) {
-    return null;
-  }
-
-  const readyScrollRequest = readyScrollRequestLoadable.data;
-  if (
-    !equalArrays(
-      readyScrollRequest.renderedEventKeys,
-      renderedChatEventKeys(renderedGroups),
-    )
-  ) {
-    return null;
-  }
-
-  const { activeGroups, queuedGroups } =
-    splitQueuedEventsForThinkingIndicator(renderedGroups);
-  const { request } = readyScrollRequest;
-  const targetEventId = request.position?.targetEventId;
-  const activeTargetRendered = chatGroupsContainEvent(
-    activeGroups,
-    targetEventId,
-  );
-  const targetMovedToQueue = chatGroupsContainEvent(
-    queuedGroups,
-    targetEventId,
-  );
-  const activeEventsRendered = activeGroups.some((group) => {
-    return group.events.length > 0;
-  });
-  if (
-    !activeEventsRendered ||
-    (request.position !== null && !activeTargetRendered && !targetMovedToQueue)
-  ) {
-    return null;
-  }
-
-  const commitToTail = request.position === null || targetMovedToQueue;
-  return (
-    <span
-      key={request.revision}
-      ref={commitScroll}
-      data-chat-scroll-commit-revision={request.revision}
-      data-chat-scroll-commit-to-tail={commitToTail ? "" : undefined}
-      aria-hidden
-      className="hidden"
-    />
+    </>
   );
 }
 
@@ -2907,19 +2820,49 @@ function ChatThreadRenderedEventGroups({
   thread: ChatPanelSignals;
 }) {
   const rows = useGet(thread.visibleRows$);
-  return withChatScrollLayout(
+  const layout = useGet(thread.transcriptPages.layout$);
+  const bindPages = useSet(thread.transcriptPages.containerOnRef$);
+  const bindPage = useSet(thread.transcriptPages.pageOnRef$);
+  const renderRow = (row: ChatThreadRowSignals) => {
+    return (
+      <ChatThreadRow key={row.model$.toString()} row={row} thread={thread} />
+    );
+  };
+  return (
     <>
-      {rows.map((row) => {
-        return (
-          <ChatThreadRow
-            key={row.model$.toString()}
-            row={row}
-            thread={thread}
+      {layout ? (
+        <div ref={bindPages}>
+          <div
+            aria-hidden
+            data-transcript-spacer="before"
+            style={{ height: layout.before }}
           />
-        );
-      })}
-      <ChatThreadScrollCommitMarker thread={thread} />
-    </>,
+          {layout.pages.map((page, i) => {
+            return (
+              <div
+                key={page.key}
+                ref={bindPage}
+                data-transcript-page={page.key}
+                className={cn(
+                  "flex flex-col",
+                  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
+                  (i < layout.pages.length - 1 || layout.after > 0) && "pb-6",
+                )}
+              >
+                {layout.rows[i]!.map(renderRow)}
+              </div>
+            );
+          })}
+          <div
+            aria-hidden
+            data-transcript-spacer="after"
+            style={{ height: layout.after }}
+          />
+        </div>
+      ) : (
+        rows.map(renderRow)
+      )}
+    </>
   );
 }
 
@@ -2952,7 +2895,7 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
   const showTranscript = useGet(thread.initialEventsReady$);
   const scrollContentOnRef = useSet(thread.scrollContentOnRef$);
 
-  return withChatScrollLayout(
+  return (
     <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
       <div
         ref={scrollContentOnRef}
@@ -2967,7 +2910,7 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
         <ChatThreadRenderedEventGroups thread={thread} />
         <ChatThreadNextRunModelNotice thread={thread} />
       </div>
-    </main>,
+    </main>
   );
 }
 
@@ -2990,7 +2933,7 @@ function ChatThreadNextRunModelNotice({
     runningSelection === undefined ||
     runningSelection === null
   ) {
-    return withChatScrollLayout(null);
+    return null;
   }
 
   // Selected identity is separate from a Run's immutable captured runtime.
@@ -3037,9 +2980,9 @@ function ChatThreadNextRunModelNotice({
           return $.chat.run.fastModeWillBeOff;
         });
   } else {
-    return withChatScrollLayout(null);
+    return null;
   }
-  return withChatScrollLayout(<RunSectionDividerRow label={label} announce />);
+  return <RunSectionDividerRow label={label} announce />;
 }
 
 function createRunWorkSectionControl(
@@ -3848,19 +3791,17 @@ function ChatThreadBottomBar({
   const phase = useGet(thread.sharing.phase$);
   const refreshed = useChatShareRefresh();
   if (phase === "idle") {
-    return withChatScrollLayout(
+    return (
       <ChatThreadComposer
         thread={thread}
         discoveryInContent={discoveryInContent}
-      />,
+      />
     );
   }
-  return withChatScrollLayout(
-    refreshed ? (
-      <ChatShareFooter thread={thread} />
-    ) : (
-      <LegacyChatShareFooter thread={thread} />
-    ),
+  return refreshed ? (
+    <ChatShareFooter thread={thread} />
+  ) : (
+    <LegacyChatShareFooter thread={thread} />
   );
 }
 
@@ -6004,7 +5945,7 @@ function AssistantNameLine() {
 }
 
 // ---------------------------------------------------------------------------
-// Paged event rendering — renders from visibleRenderedChatGroups$ (flat data,
+// Paged event rendering — renders from prepared row signals (flat data,
 // no signal-based run loops).
 // ---------------------------------------------------------------------------
 
@@ -8104,7 +8045,7 @@ function PagedRunWorkAssistantContent({
       />
     ) : undefined;
 
-  return withChatScrollLayout(
+  return (
     <>
       <PagedAssistantTimeline
         items={timelineItems}
@@ -8131,7 +8072,7 @@ function PagedRunWorkAssistantContent({
           ) : null}
         </div>
       ) : null}
-    </>,
+    </>
   );
 }
 

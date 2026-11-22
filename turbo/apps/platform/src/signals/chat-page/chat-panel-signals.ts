@@ -1,3 +1,4 @@
+import type { TranscriptPages } from "./chat-transcript-pages.ts";
 import type { ChatRunUsageSignals } from "./chat-run-usage.ts";
 import type { ChatRelationSignals } from "./chat-relations.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -24,7 +25,6 @@ import type { BrowserPresenceSignals } from "./browser-presence.ts";
 import type { EditorDocumentSnapshot } from "../okou-page/user-message-document-codec.ts";
 import type {
   createChatThreadScrollSignals,
-  ReadyScrollAfterRenderRequest,
   ThreadScrollPosition,
 } from "./chat-thread-scroll.ts";
 import type { AssistantErrorRecovery } from "./assistant-error-recovery.ts";
@@ -81,12 +81,9 @@ export interface MessageListSignals {
   readonly liveRunId$: Computed<string | null>;
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
-  readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
+  readonly transcriptPages: TranscriptPages;
   readonly visibleRows$: Computed<readonly ChatThreadRowSignals[]>;
   readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
-  readonly readyScrollAfterRenderRequest$: Computed<
-    Promise<ReadyScrollAfterRenderRequest | null>
-  >;
   readonly initialEventsReady$: Computed<boolean>;
   readonly assistantErrorRecovery$: Computed<
     Promise<AssistantErrorRecovery | null>
@@ -168,13 +165,6 @@ export interface ChatPanelSignals {
     (() => void) | undefined,
     [HTMLElement | null]
   >;
-  readonly scrollCommitOnRef$: Command<
-    (() => void) | undefined,
-    [HTMLElement | null]
-  >;
-  readonly readyScrollAfterRenderRequest$: Computed<
-    Promise<ReadyScrollAfterRenderRequest | null>
-  >;
   /** The mounted scroll viewport, for readers that measure it themselves. */
   readonly scrollContainer$: Computed<HTMLElement | null>;
   readonly threadScrollPosition$: Computed<ThreadScrollPosition | null>;
@@ -221,7 +211,7 @@ export interface ChatPanelSignals {
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly initialEventsReady$: Computed<boolean>;
-  readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
+  readonly transcriptPages: TranscriptPages;
   readonly visibleRows$: Computed<readonly ChatThreadRowSignals[]>;
   readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
   readonly imageNavigation: ThreadImageNavigationSignals;

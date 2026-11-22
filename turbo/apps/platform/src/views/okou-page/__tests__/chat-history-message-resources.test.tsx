@@ -18,7 +18,7 @@ const context = testContext();
 const { installMessageExperienceChat } =
   createMessageExperienceHelpers(context);
 const THREAD_ID = "b0000000-0000-4000-a000-000000000e01";
-const REFERENCE_TURN = 6;
+const REFERENCE_TURN = 5;
 const IMAGES = [
   {
     fileId: "e0000000-0000-4000-a000-000000000e11",
@@ -33,7 +33,7 @@ const IMAGES = [
 ] as const;
 
 function conversation(): MockChatEventInput[] {
-  return Array.from({ length: 12 }, (_, turn) => {
+  return Array.from({ length: 9 }, (_, turn) => {
     const runId = `d0000000-0000-4000-a000-0000000e10${String(turn).padStart(2, "0")}`;
     const question = `Question ${turn}`;
     return [
@@ -115,7 +115,7 @@ test("A restored historical turn displays the saved mention name and both resolv
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
-  await expect(screen.findByText("Answer 11")).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Answer 8")).resolves.toBeInTheDocument();
   expect(
     screen.queryByText(`Question ${REFERENCE_TURN}`),
   ).not.toBeInTheDocument();

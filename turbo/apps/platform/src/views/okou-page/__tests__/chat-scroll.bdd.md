@@ -178,6 +178,7 @@ Original test `Follow new messages while reading the latest reply`. [Registratio
 - **Given** The reader is at the tail of a conversation with five completed turns.
 - **When** A sixth completed reply arrives.
 - **Then** The new reply is visible, the transcript stays at the tail, and Scroll to bottom is absent.
+- **Upstream change** Use seven completed turns before the arriving reply under the compact tail. [#49882](https://github.com/okou-ai/okou/pull/49882).
 
 ## chat-scroll-023
 
@@ -186,6 +187,7 @@ Original test `Preserve the reading position when new messages are added`. [Regi
 - **Given** The reader is in history with a visible message anchored in the transcript.
 - **When** Two completed replies arrive in succession.
 - **Then** Both new replies become visible while the original anchor remains at the same screen position.
+- **Upstream change** Use seven completed turns and preserve the anchor while replies eight and nine arrive. [#49882](https://github.com/okou-ai/okou/pull/49882).
 
 ## chat-scroll-024
 
@@ -194,6 +196,7 @@ Original test `Loading older messages preserves the reading position`. [Registra
 - **Given** The reader is near the top of a loaded history window, and the sixth question is not yet displayed.
 - **When** Older messages load as the reader scrolls.
 - **Then** The sixth question becomes visible and the previously visible anchor stays at the same screen position.
+- **Upstream change** With nine turns, question three is initially outside the compact tail. Loading it preserves the existing anchor. [#49882](https://github.com/okou-ai/okou/pull/49882).
 
 ## chat-scroll-025
 
@@ -202,6 +205,7 @@ Original test `Load earlier messages once scrolling stops near the top`. [Regist
 - **Given** The reader is viewing the latest history window, with earlier groups not yet loaded.
 - **When** They scroll near the top, away from it, and stop near the top again.
 - **Then** The sixth question loads once and the original visible anchor stays at the same screen position; the fourth question remains absent.
+- **Upstream change** After the reader settles near the top, question three becomes visible and question one remains absent. [#49882](https://github.com/okou-ai/okou/pull/49882).
 
 ## chat-scroll-026
 
@@ -210,6 +214,7 @@ Original test `Load earlier messages while the latest ones do not fill the viewp
 - **Given** The reader opens a conversation whose six-message initial window is shorter than a 1500-pixel viewport.
 - **When** The conversation loads.
 - **Then** Earlier history loads automatically until “History question 5” is displayed.
+- **Upstream change** With nine turns and a 1500-pixel viewport, the latest answer is nine and automatic loading reveals question two. [#49882](https://github.com/okou-ai/okou/pull/49882).
 
 ## chat-scroll-027
 
