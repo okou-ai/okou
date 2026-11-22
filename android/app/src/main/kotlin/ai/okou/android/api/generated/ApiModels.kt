@@ -5805,6 +5805,8 @@ data class UpdateDefaultModelPreference(
         CanonicalOptional.Absent,
 )
 
+@Serializable data class FeatureSwitches(val `effectiveSwitches`: Map<String, Boolean>)
+
 @Serializable
 enum class RecoverySubscriptionsSubscriptionsItemType {
     @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,

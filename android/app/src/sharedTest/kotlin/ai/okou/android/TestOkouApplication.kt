@@ -151,6 +151,10 @@ open class TestOkouApplication : OkouApplication() {
                 update: ai.okou.android.api.generated.UpdateDefaultModelPreference
             ) = (fixture ?: canonical.value).updateDefaultModelPreference(update)
 
+            override suspend fun featureSwitches() =
+                fixture?.featureSwitches()
+                    ?: ai.okou.android.api.generated.FeatureSwitches(emptyMap())
+
             override suspend fun activateModelAccount(accountId: String) =
                 (fixture ?: canonical.value).activateModelAccount(accountId)
 

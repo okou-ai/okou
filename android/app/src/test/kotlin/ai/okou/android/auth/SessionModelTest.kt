@@ -76,6 +76,8 @@ class SessionModelTest {
 
         override suspend fun defaultModelPreference() = canonical.defaultModelPreference()
 
+        override suspend fun featureSwitches() = canonical.featureSwitches()
+
         override suspend fun updateDefaultModelPreference(
             update: ai.okou.android.api.generated.UpdateDefaultModelPreference
         ) = canonical.updateDefaultModelPreference(update)

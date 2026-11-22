@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,7 +74,7 @@ import java.text.NumberFormat
 internal fun DefaultModelSetting(model: DefaultModelSettings?) {
     val title = stringResource(R.string.settings_default_model)
     if (model == null) {
-        DefaultModelLoadingRow(title)
+        DefaultModelPlaceholder(title)
         return
     }
     val state by model.state.collectAsStateWithLifecycle()
@@ -83,12 +84,23 @@ internal fun DefaultModelSetting(model: DefaultModelSettings?) {
         model.visible(active)
         onDispose { model.visible(false) }
     }
-    if (state.options == null && !state.offline && !state.failed) {
-        DefaultModelLoadingRow(title)
+    val options = state.options
+    if (options == null) {
+        val status =
+            when {
+                state.offline -> stringResource(R.string.chat_list_offline)
+                state.failed -> stringResource(R.string.settings_model_save_unavailable)
+                else -> null
+            }
+        DefaultModelPlaceholder(title, status)
         return
     }
-    val choices = state.options?.choices.orEmpty()
-    if (choices.none { it.canSelect } && state.selected == null) return
+    val selected = state.selected
+    if (options.choices.none { it.canSelect } && selected == null) {
+        if (state.failed)
+            DefaultModelPlaceholder(title, stringResource(R.string.settings_model_save_unavailable))
+        return
+    }
     SettingsTrigger(content = { dismiss -> DefaultModelSheet(title, state, model, dismiss) }) {
         modifier,
         open ->
@@ -96,7 +108,7 @@ internal fun DefaultModelSetting(model: DefaultModelSettings?) {
             title,
             leading = { SettingsIcon(R.drawable.ic_memory) },
             modifier = modifier,
-            value = state.selected?.label ?: stringResource(R.string.settings_auto_model),
+            value = selected?.label ?: stringResource(R.string.settings_auto_model),
             onClick = open,
         )
     }
@@ -104,18 +116,22 @@ internal fun DefaultModelSetting(model: DefaultModelSettings?) {
 }
 
 @Composable
-private fun DefaultModelLoadingRow(title: String) {
+private fun DefaultModelPlaceholder(title: String, status: String? = null) {
+    val placeholder: @Composable () -> Unit = {
+        Box(
+            Modifier.width(64.dp)
+                .height(12.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+        )
+    }
     SettingsRow(
         title,
         leading = { SettingsIcon(R.drawable.ic_memory) },
-        value = "",
-        valueLeading = {
-            Box(
-                Modifier.width(64.dp)
-                    .height(12.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
-            )
-        },
+        modifier =
+            if (status == null) Modifier
+            else Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        value = status.orEmpty(),
+        valueLeading = placeholder.takeIf { status == null },
     )
     HorizontalDivider()
 }
@@ -133,8 +149,9 @@ private fun DefaultModelSheet(
     val size =
         if (fullScreen) Modifier.fillMaxHeight()
         else Modifier.heightIn(max = windowHeight.dp * 0.86f).animateContentSize()
+    val selected = state.selected
     SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
-        val initialModel = remember { state.selected?.takeIf { it.canSelect }?.id }
+        val initialModel = remember { selected?.takeIf { it.canSelect }?.id }
         val reveal = remember { BringIntoViewRequester() }
         val focus = remember { FocusRequester() }
         val inputMode = LocalInputModeManager.current
@@ -198,26 +215,28 @@ private fun DefaultModelSheet(
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
                     ModelOption(
                         stringResource(R.string.settings_auto_model),
-                        selected = state.selected == null,
+                        selected = selected == null,
                         enabled = true,
                         supportingText = stringResource(R.string.settings_auto_model_detail),
                         modifier = if (initialModel == null) initialRow else Modifier,
                         onClick = { model.select(null) },
                     )
                     for (choice in choices) {
-                        ModelOption(
-                            choice.label,
-                            selected = choice == state.selected,
-                            enabled = choice.canSelect,
-                            supportingText =
-                                if (choice.canSelect) null
-                                else stringResource(R.string.settings_model_plan_restricted),
-                            modifier = if (choice.id == initialModel) initialRow else Modifier,
-                            onClick = { model.select(choice.id) },
-                        )
+                        key(choice.id) {
+                            ModelOption(
+                                choice.label,
+                                selected = choice.id == selected?.id,
+                                enabled = choice.canSelect,
+                                supportingText =
+                                    if (choice.canSelect) null
+                                    else stringResource(R.string.settings_model_plan_restricted),
+                                modifier = if (choice.id == initialModel) initialRow else Modifier,
+                                onClick = { model.select(choice.id) },
+                            )
+                        }
                     }
                 }
-                state.selected
+                selected
                     ?.takeIf {
                         it.canSelect && (it.efforts.isNotEmpty() || it.fastMultiplier != null)
                     }
