@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+scenario=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+bash android/scripts/capture-screenshot-scenario.sh "$scenario" \
+  workflows-chat-list-entry.png workflows-chat-list-large-text.png \
+  workflows-phone-list.png workflows-phone-instructions.png workflows-phone-offline.png workflows-phone-edit.png \
+  workflows-phone-automations.png workflows-phone-history.png \
+  workflows-phone-draft.png workflows-wide-automations.png workflows-wide-draft.png \
+  workflows-short-large-text.png workflows-wide-github-automation.png workflows-wide-shared-automation.png \
+  workflows-phone-search-composing.png workflows-phone-edit-name-error.png workflows-phone-discard.png \
+  workflows-phone-automation-needs-connection.png
