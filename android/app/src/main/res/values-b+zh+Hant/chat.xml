@@ -34,7 +34,10 @@
     <string name="chat_archived">已封存</string>
     <string name="chat_muted">已靜音</string>
     <string name="chat_project_empty">此專案尚無聊天。</string>
-    <string name="chat_empty">此檢視尚無聊天。</string>
+    <string name="chat_empty">還沒有聊天</string>
+    <string name="chat_empty_unread">沒有未讀聊天</string>
+    <string name="chat_empty_archived">沒有封存聊天</string>
+    <string name="chat_empty_muted">沒有靜音聊天</string>
     <string name="chat_untitled">未命名聊天</string>
     <string name="chat_pinned">已置頂</string>
     <string name="chat_active">活躍</string>

@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
 import android.os.SystemClock
 import android.util.Log
@@ -12,6 +13,7 @@ import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.StaleObjectException
@@ -27,6 +29,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -35,6 +38,103 @@ import org.junit.runners.model.MultipleFailureException
 
 @RunWith(AndroidJUnit4::class)
 class NativeChatListTest {
+    @Test
+    fun emptyProjectKeepsItsOwnActionAndFilteredEmptyReturnsToInbox() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        val device = UiDevice.getInstance(instrumentation)
+        val auth = app.authentication as TestAuthentication
+        val previousAuth = auth.state.value
+        val previousService = app.chatService
+        val savedPreferences = app.snapshotApiPreferences()
+        val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
+        val fixture = ChatListApiFixture()
+        fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
+        fixture.indicators = { jsonResponse("""{"threads":{},"unreadAt":{}}""") }
+        app.chatService = fixture.service
+        auth.state.value = testAuthenticationState(user = "empty-list-${UUID.randomUUID()}")
+        val failures = mutableListOf<Throwable>()
+        var scenario: ActivityScenario<MainActivity>? = null
+        var chatJob: Job? = null
+        fun await(selector: BySelector) =
+            checkNotNull(device.wait(Until.findObject(selector), 10_000)) { "Missing $selector" }
+        fun text(value: String) = await(By.pkg(app.packageName).text(value))
+
+        try {
+            scenario = ActivityScenario.launch(MainActivity::class.java)
+            device.awaitChatList(app)
+            val projectName = "Research"
+            val projectAction = app.getString(R.string.composer_new_project)
+            val projectUnavailable =
+                By.pkg(app.packageName).text(app.getString(R.string.chat_project_empty))
+            val filterMenu = By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
+            text(projectName).click()
+            text(projectAction)
+            assertTrue(device.wait(Until.gone(projectUnavailable), 10_000))
+            assertFalse(
+                device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.chat_empty)))
+            )
+            takeScreenshot().writeToTestStorage("android-list-empty-project")
+            text(projectAction).click()
+            assertTrue(device.wait(Until.gone(chatListRegion(app)), 10_000))
+            text(projectName)
+            await(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
+            device.awaitChatList(app)
+
+            for ((filter, title) in
+                listOf(
+                    R.string.chat_unread to R.string.chat_empty_unread,
+                    R.string.chat_archived to R.string.chat_empty_archived,
+                    R.string.chat_muted to R.string.chat_empty_muted,
+                )) {
+                await(filterMenu).click()
+                text(app.getString(filter)).click()
+                text(app.getString(title))
+                assertFalse(device.hasObject(By.pkg(app.packageName).text(projectName)))
+                if (filter == R.string.chat_archived) {
+                    takeScreenshot().writeToTestStorage("android-list-empty-archived")
+                }
+                text(app.getString(R.string.chat_back_to_inbox)).click()
+                text(projectAction)
+            }
+        } catch (error: Throwable) {
+            failures.add(error)
+            try {
+                takeScreenshot().writeToTestStorage("android-list-empty-failure")
+            } catch (diagnostic: Throwable) {
+                error.addSuppressed(diagnostic)
+            }
+        } finally {
+            for (cleanup in
+                listOf<() -> Unit>(
+                    {
+                        scenario?.onActivity { activity ->
+                            val state =
+                                ViewModelProvider(activity)[SessionModel::class.java].uiState.value
+                            val chats =
+                                state.ready?.chats
+                                    ?: (state.opening as? OpeningWorkspace.Authorized)?.chats
+                            chatJob = chats?.viewModelScope?.coroutineContext?.get(Job)
+                        }
+                    },
+                    { scenario?.close() },
+                    { runBlocking { withTimeout(10_000) { chatJob?.join() } } },
+                    { fixture.close() },
+                    { savedCache.restore() },
+                    { app.restoreApiPreferences(savedPreferences) },
+                    { app.chatService = previousService },
+                    { auth.state.value = previousAuth },
+                )) {
+                try {
+                    cleanup()
+                } catch (error: Throwable) {
+                    failures.add(error)
+                }
+            }
+        }
+        MultipleFailureException.assertEmpty(failures)
+    }
+
     @Test
     fun cachedUnreadFilterOpensBeforeIndicatorsAndRemainsUsableAfterFailure() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -134,7 +234,7 @@ class NativeChatListTest {
             text("Research")
             fail.set(false)
             text(app.getString(R.string.retry)).click()
-            text(app.getString(R.string.chat_empty))
+            text(app.getString(R.string.chat_empty_unread))
         } catch (error: Throwable) {
             failures.add(error)
             try {
@@ -422,7 +522,7 @@ class NativeChatListTest {
                 assertTrue(device.pressDPadUp())
                 device.awaitKeyboardFocus(By.pkg(app.packageName).text(archived))
                 assertTrue(device.pressDPadCenter())
-                text(app.getString(R.string.chat_empty))
+                text(app.getString(R.string.chat_empty_archived))
                 device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
                 assertTrue(
                     device.wait(

@@ -102,7 +102,7 @@ internal fun OkouApp(
     projectExpansion: ProjectExpansionModel?,
     settingsContent:
         @Composable
-        (SettingsDestination, openInstructions: () -> Unit, closeInstructions: () -> Unit) -> Unit,
+        (SettingsDestination, open: (SettingsDestination) -> Unit, close: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     artifacts: ArtifactCatalogModel? = null,
     workspaceAvatar: @Composable (() -> Unit)? = null,
@@ -170,6 +170,14 @@ internal fun OkouApp(
     val listPositions =
         ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
     val settingsPosition = rememberScrollState()
+    val subpagePosition =
+        if (
+            settings != null &&
+                settings != SettingsDestination.Overview &&
+                settings != SettingsDestination.Instructions
+        )
+            key(settings) { rememberScrollState() }
+        else settingsPosition
     val conversations = rememberConversationUiState()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -436,7 +444,10 @@ internal fun OkouApp(
 
     fun back() {
         when (settings) {
-            SettingsDestination.Instructions ->
+            SettingsDestination.Instructions,
+            SettingsDestination.ModelAccounts,
+            SettingsDestination.CreditBalance,
+            SettingsDestination.Account ->
                 navigation = navigation.copy(settings = SettingsDestination.Overview)
             SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
             null ->
@@ -474,6 +485,9 @@ internal fun OkouApp(
         when (settings) {
             SettingsDestination.Overview,
             SettingsDestination.Instructions -> stringResource(R.string.settings)
+            SettingsDestination.ModelAccounts -> stringResource(R.string.settings_model_accounts)
+            SettingsDestination.CreditBalance -> stringResource(R.string.settings_credit_balance)
+            SettingsDestination.Account -> stringResource(R.string.settings_account_security)
             null ->
                 when (target) {
                     WorkspaceTarget.List ->
@@ -726,13 +740,10 @@ internal fun OkouApp(
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
             if (settings != null) {
-                SettingsPage(settingsPosition) {
+                SettingsPage(subpagePosition) {
                     settingsContent(
                         settings,
-                        {
-                            navigation =
-                                navigation.copy(settings = SettingsDestination.Instructions)
-                        },
+                        { destination -> navigation = navigation.copy(settings = destination) },
                         ::back,
                     )
                 }

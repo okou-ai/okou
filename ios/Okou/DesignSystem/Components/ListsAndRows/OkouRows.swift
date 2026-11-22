@@ -2,24 +2,18 @@ import SwiftUI
 
 /// A chat in the sidebar: its status column, one body line of title and its trailing state.
 /// The status column holds the chat's status emoji or a quiet chat glyph when it has none;
-/// a section without any status leaves the column out so its titles sit flush. While Okou
-/// works the title shimmers (`OkouShimmerText`), so working never competes with the trailing
-/// state; an unread chat's title is medium weight, as on the web, so a finished chat reads
-/// before its dot.
+/// a section without any status leaves the column out so its titles sit flush. The trailing
+/// column draws the first of the chat's `states`, and VoiceOver reads them all. An unread chat's
+/// title is medium weight, as on the web, so a finished chat reads before its dot.
 struct OkouChatRowLabel<Status: View>: View {
   let title: String
-  var isWorking = false
-  var trailing: OkouChatTrailing = .none
+  var states: OkouChatStates = []
   let status: Status?
   @ScaledMetric(relativeTo: .body) private var statusColumn = OkouControl.statusColumn
 
-  init(
-    _ title: String, isWorking: Bool = false, trailing: OkouChatTrailing = .none,
-    @ViewBuilder status: () -> Status
-  ) {
+  init(_ title: String, states: OkouChatStates = [], @ViewBuilder status: () -> Status) {
     self.title = title
-    self.isWorking = isWorking
-    self.trailing = trailing
+    self.states = states
     self.status = status()
   }
 
@@ -29,11 +23,14 @@ struct OkouChatRowLabel<Status: View>: View {
         status.frame(width: statusColumn)
       }
       Text(verbatim: title)
-        .font(.okou(.body).weight(trailing == .unread ? .medium : .regular))
+        .font(.okou(.body).weight(states.contains(.unread) ? .medium : .regular))
         .lineLimit(1)
-        .okouShimmerText(isWorking)
       Spacer(minLength: 0)
-      OkouChatTrailingMark(trailing: trailing)
+      if !states.isEmpty {
+        OkouChatTrailingMark(trailing: states.trailing)
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel(states.accessibilityLabel)
+      }
     }
     .frame(minHeight: OkouControl.listRow)
     .contentShape(Rectangle())
@@ -41,7 +38,7 @@ struct OkouChatRowLabel<Status: View>: View {
 }
 
 /// Shared trailing status for a sidebar chat. Every mark is centred in
-/// one `standard`-wide column, so dots, pencils and pins line up down the list.
+/// one `standard`-wide column, so spinners, dots, pencils and pins line up down the list.
 struct OkouChatTrailingMark: View {
   let trailing: OkouChatTrailing
 
@@ -50,45 +47,88 @@ struct OkouChatTrailingMark: View {
       switch trailing {
       case .none:
         EmptyView()
+      case .working:
+        OkouRunningSpinner()
+      case .muted:
+        OkouIcon("bell-off", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.quietMark)
       case .unread:
         // Amber stays for a primary commit.
         Circle()
           .fill(OkouStatusColor.running)
           .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
-          .frame(width: OkouIconSize.standard)
-          .accessibilityLabel("Unread")
       case .draft:
         OkouIcon("pencil", size: OkouIconSize.standard)
           .foregroundStyle(OkouColor.quietMark)
-          .frame(width: OkouIconSize.standard)
-          .accessibilityElement()
-          .accessibilityLabel("Draft")
       case .pinned:
-        // A pin outlasts the other states, so the row's value announces it, not this mark.
         OkouIcon("pin", size: OkouIconSize.standard)
           .foregroundStyle(OkouColor.quietMark)
-          .frame(width: OkouIconSize.standard)
-          .accessibilityHidden(true)
       }
     }
+    .frame(width: OkouIconSize.standard)
   }
 }
 
 extension OkouChatRowLabel where Status == EmptyView {
   /// A chat in a section where no chat has a status: no status column.
-  init(_ title: String, isWorking: Bool = false, trailing: OkouChatTrailing = .none) {
+  init(_ title: String, states: OkouChatStates = []) {
     self.title = title
-    self.isWorking = isWorking
-    self.trailing = trailing
+    self.states = states
     self.status = nil
   }
 }
 
-/// A chat row's trailing state, one at a time in the web's order: unread, then draft, then the
-/// pin a pinned chat rests with. Working is not one of them: it shimmers the title, so a working
-/// chat keeps its draft in view.
+/// Every state a sidebar chat is in. The trailing column has room for one, so it draws the
+/// first in the web's order: working, muted, unread, draft, then the pin a pinned chat rests
+/// with. VoiceOver reads them all, so a draft or a pin under a working chat is still announced.
+/// A muted chat is never unread, so those two never meet.
+struct OkouChatStates: OptionSet {
+  let rawValue: Int
+
+  /// The agent is running in the chat.
+  static let working = OkouChatStates(rawValue: 1 << 0)
+  /// The chat sends no notifications and shows no unread dot.
+  static let muted = OkouChatStates(rawValue: 1 << 1)
+  /// A run finished (or failed) since the chat was last read.
+  static let unread = OkouChatStates(rawValue: 1 << 2)
+  /// Text or files typed here and not sent yet.
+  static let draft = OkouChatStates(rawValue: 1 << 3)
+  /// The chat leads its list or Project in its manual order.
+  static let pinned = OkouChatStates(rawValue: 1 << 4)
+
+  private struct Entry {
+    let state: OkouChatStates
+    let mark: OkouChatTrailing
+    let label: LocalizedStringResource
+  }
+
+  private static let order = [
+    Entry(state: .working, mark: .working, label: "Working"),
+    Entry(state: .muted, mark: .muted, label: "Muted"),
+    Entry(state: .unread, mark: .unread, label: "Unread"),
+    Entry(state: .draft, mark: .draft, label: "Draft"),
+    Entry(state: .pinned, mark: .pinned, label: "Pinned")
+  ]
+
+  /// The one mark the trailing column draws.
+  var trailing: OkouChatTrailing {
+    Self.order.first { contains($0.state) }?.mark ?? .none
+  }
+
+  /// Every state, in order, as one phrase ("Working, Muted and Pinned").
+  var accessibilityLabel: String {
+    ListFormatter.localizedString(
+      byJoining: Self.order.filter { contains($0.state) }.map { String(localized: $0.label) })
+  }
+}
+
+/// The one mark a chat row's trailing column draws.
 enum OkouChatTrailing: Equatable {
   case none
+  /// `OkouRunningSpinner`: the agent is working.
+  case working
+  /// A quiet `bell-off`: the chat is muted.
+  case muted
   /// The web's 8 px sky-blue dot: a run finished (or failed) since the chat was last read.
   case unread
   /// The web's quiet pencil: text or files typed here and not sent yet.

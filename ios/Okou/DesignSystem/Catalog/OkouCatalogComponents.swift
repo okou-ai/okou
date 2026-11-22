@@ -137,32 +137,39 @@
         }
         OkouCatalogSection("Chat rows") {
           // As the sidebar draws them: status emoji, the quiet glyph and the trailing states in
-          // their order (unread, draft, pinned). A working chat's title shimmers, so it keeps its
-          // trailing state. A folded project with an unread chat leads: the badge on its folder,
-          // its chevron in line with the chats' dots.
+          // their order (working, muted, unread, draft, pinned). A working chat with a draft
+          // shows its spinner; the draft returns once the run ends. Folded projects lead: one
+          // with an unread chat badges its folder with the dot, one with only a working chat
+          // with the spinner, their chevrons in line with the chats' marks.
           VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: OkouSpace.ten) {
-              OkouIcon("folder", size: OkouIconSize.standard)
-                .foregroundStyle(OkouColor.mutedForeground)
-                .modifier(OkouUnreadBadge(isVisible: true))
-                .frame(width: OkouControl.statusColumn, alignment: .leading)
-              Text(verbatim: "Mobile").font(.okou(.body)).lineLimit(1)
-              Spacer(minLength: 0)
-              OkouIcon("chevron-down", size: OkouIconSize.standard)
-                .foregroundStyle(OkouColor.quietMark)
-                .rotationEffect(.degrees(-90))
+            ForEach([("Mobile", true), ("Illustrations", false)], id: \.0) { name, unread in
+              HStack(spacing: OkouSpace.ten) {
+                OkouIcon("folder", size: OkouIconSize.standard)
+                  .foregroundStyle(OkouColor.mutedForeground)
+                  .modifier(OkouUnreadBadge(isVisible: unread))
+                  .modifier(OkouRunningBadge(isVisible: !unread))
+                  .frame(width: OkouControl.statusColumn, alignment: .leading)
+                Text(verbatim: name).font(.okou(.body)).lineLimit(1)
+                Spacer(minLength: 0)
+                OkouIcon("chevron-down", size: OkouIconSize.standard)
+                  .foregroundStyle(OkouColor.quietMark)
+                  .rotationEffect(.degrees(-90))
+              }
+              .frame(minHeight: OkouControl.listRow)
             }
-            .frame(minHeight: OkouControl.listRow)
-            OkouChatRowLabel("Launch checklist", trailing: .pinned) {
+            OkouChatRowLabel("Launch checklist", states: .pinned) {
               OkouChatStatusMark(emoji: nil)
             }
-            OkouChatRowLabel("!36076 Share in two steps", isWorking: true, trailing: .draft) {
+            OkouChatRowLabel("!36076 Share in two steps", states: [.working, .draft]) {
               OkouChatStatusMark(emoji: "✅")
             }
-            OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
+            OkouChatRowLabel("!45375 Sidebar entries open in one tap", states: .unread) {
               OkouChatStatusMark(emoji: "✅")
             }
-            OkouChatRowLabel("Release notes", trailing: .draft) {
+            OkouChatRowLabel("Competitor research", states: .muted) {
+              OkouChatStatusMark(emoji: nil)
+            }
+            OkouChatRowLabel("Release notes", states: .draft) {
               OkouChatStatusMark(emoji: nil)
             }
             OkouChatRowLabel("Design tokens review") {

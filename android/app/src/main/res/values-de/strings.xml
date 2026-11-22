@@ -43,7 +43,6 @@
     <string name="auth_workspace">Aktueller Arbeitsbereich</string>
     <string name="auth_switch_workspace">Arbeitsbereich wechseln</string>
     <string name="auth_browser_unavailable">Installiere einen Browser, um den Arbeitsbereich einzurichten.</string>
-    <string name="preferences_title">Darstellung und Region</string>
     <string name="preference_save_failed">Deine Einstellungen konnten nicht gespeichert werden. Deine Auswahl bleibt aktiv.</string>
     <string name="preference_refresh_failed">Einstellungen konnten nicht aktualisiert werden. Versuche es erneut.</string>
     <string name="preference_color_theme">Farbthema</string>
@@ -100,7 +99,6 @@
     <string name="composer_revoked">Nachricht zurückgenommen</string>
     <string name="updates_title">App-Updates</string>
     <string name="updates_installed">Aktuelle Version: %1$s</string>
-    <string name="updates_available">Update %1$s verfügbar</string>
     <string name="updates_current">Du verwendest die neueste Version</string>
     <string name="updates_preparing">Vorbereitung…</string>
     <string name="updates_installing">Installation…</string>
@@ -109,7 +107,6 @@
     <string name="updates_connect_to_check">Stelle eine Internetverbindung her, um nach Updates zu suchen.</string>
     <string name="updates_connect_to_download">Stelle eine Internetverbindung her, um das Update herunterzuladen.</string>
     <string name="updates_check">Nach Updates suchen</string>
-    <string name="updates_view">Update ansehen</string>
     <string name="updates_toolbar">Update</string>
     <string name="updates_download">Update herunterladen</string>
     <string name="updates_retry_download">Download wiederholen</string>
@@ -153,7 +150,6 @@
     <string name="updates_waiting_to_download">Warten auf Download</string>
     <string name="instructions_placeholder">Was soll Okou berücksichtigen?</string>
     <string name="instructions_save_when_online">Stelle eine Verbindung her, um Änderungen zu speichern.</string>
-    <string name="settings_conversation">Unterhaltung</string>
     <string name="settings_timezone">Zeitzone</string>
     <string name="settings_timezone_hint">Standardzeitzone für neue geplante Aufgaben.</string>
     <string name="settings_timezone_utc">Koordinierte Weltzeit (UTC)</string>

@@ -88,6 +88,18 @@ internal interface CanonicalApi {
     @GET("/api/billing/status")
     suspend fun `recoveryBilling`(@Header("Authorization") token: String): Response<RecoveryBilling>
 
+    @GET("/api/billing/usage-pack-credits")
+    suspend fun `usagePackCredits`(
+        @Header("Authorization") token: String
+    ): Response<UsagePackCredits>
+
+    @POST("/api/me/model-provider-accounts/{id}/activate")
+    suspend fun `activateModelAccount`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: ActivateModelAccountRequest,
+    ): Response<ActivatedModelAccount>
+
     @POST("/api/me/model-provider-accounts/{id}/subscription-reset")
     suspend fun `resetSubscription`(
         @Header("Authorization") token: String,
