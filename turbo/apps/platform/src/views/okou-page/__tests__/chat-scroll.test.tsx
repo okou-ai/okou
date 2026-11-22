@@ -1436,32 +1436,39 @@ test("Keep expanded work history and its duration visible after the run complete
   ).toBe(readingTop);
 });
 
-test("Follow new messages while reading the latest reply", async () => {
-  const conversation = mockMutableConversation(
-    THREAD_IDS.incomingLatest,
-    completedHistoryEvents(5),
-  );
-  const container = await openConversation(
-    THREAD_IDS.incomingLatest,
-    "History answer 5",
-  );
-  const geometry = installChatScrollGeometry(container);
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-
-  // The browser can clamp the offset when the preceding follow-up panel disappears.
-  container.scrollTop -= 80;
-  fireEvent.scroll(container);
-  expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-
-  await conversation.publish(completedTurn(6));
-
-  const incomingAnswer = await screen.findByText("History answer 6");
-  expect(incomingAnswer).toBeVisible();
-  await waitFor(() => {
+test.each(["layout", "tap"])(
+  "Follow new messages after a %s changes the viewport without a reading gesture",
+  async (cause) => {
+    const conversation = mockMutableConversation(
+      THREAD_IDS.incomingLatest,
+      completedHistoryEvents(5),
+    );
+    const container = await openConversation(
+      THREAD_IDS.incomingLatest,
+      "History answer 5",
+    );
+    const geometry = installChatScrollGeometry(container);
     expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-});
+
+    if (cause === "tap") {
+      fireEvent.pointerDown(container);
+      fireEvent.pointerUp(container);
+    }
+    // The browser can clamp the offset when the preceding follow-up panel disappears.
+    container.scrollTop -= 80;
+    fireEvent.scroll(container);
+    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+
+    await conversation.publish(completedTurn(6));
+
+    const incomingAnswer = await screen.findByText("History answer 6");
+    expect(incomingAnswer).toBeVisible();
+    await waitFor(() => {
+      expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+    });
+    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+  },
+);
 
 test("A reader who scrolls between paints keeps their new position", async () => {
   const id = THREAD_IDS.incomingLatest;
