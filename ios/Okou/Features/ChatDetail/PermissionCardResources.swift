@@ -79,7 +79,10 @@ final class PermissionCardResources {
     // The single endpoint loads the connector's entire metadata/grant set, independently
     // of requested permission, duration, explanatory text and continuation identity.
     singles.read(
-      key: Key([action.agentID.lowercased(), action.threadID.lowercased(), action.connectorSlug]),
+      key: Key([
+        action.member.workspaceID, action.member.userID, action.threadID.lowercased(),
+        action.connectorSlug
+      ]),
       didFail: didFail, load: { [commands] in try await commands.permissions.load(action) })
   }
 
@@ -88,7 +91,7 @@ final class PermissionCardResources {
   ) -> PermissionCardRead<ChatPermissionBatchSnapshot> {
     batches.read(
       key: Key(
-        [action.agentID.lowercased(), action.threadID.lowercased()]
+        [action.member.workspaceID, action.member.userID, action.threadID.lowercased()]
           + action.items.flatMap { [$0.connectorSlug, $0.permission] }),
       didFail: didFail, load: { [commands] in try await commands.batchPermissions.load(action) })
   }

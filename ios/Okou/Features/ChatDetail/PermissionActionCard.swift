@@ -148,6 +148,7 @@ private struct PermissionActionDetailsContent: View {
   @Bindable var store: PermissionActionStore
   let phase: Loadable<ChatPermissionSnapshot>
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.permissionWorkspaceName) private var workspaceName
 
   private var isLoading: Bool { phase.state == .loading }
   private var snapshot: ChatPermissionSnapshot? {
@@ -196,7 +197,7 @@ private struct PermissionActionDetailsContent: View {
         VStack(alignment: .leading, spacing: OkouSpace.xs) {
           Text(review.metadata?.label ?? store.action.connectorSlug)
             .font(.okou(.headline)).foregroundStyle(OkouColor.foreground)
-          Text("Requested by \(snapshot?.agentName ?? String(localized: "this Agent"))")
+          Text("Workspace: \(workspaceName ?? store.action.member.workspaceID)")
             .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
         }
       }

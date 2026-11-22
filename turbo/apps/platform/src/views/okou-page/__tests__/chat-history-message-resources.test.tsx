@@ -33,7 +33,7 @@ const IMAGES = [
 ] as const;
 
 function conversation(): MockChatEventInput[] {
-  return Array.from({ length: 9 }, (_, turn) => {
+  return Array.from({ length: 12 }, (_, turn) => {
     const runId = `d0000000-0000-4000-a000-0000000e10${String(turn).padStart(2, "0")}`;
     const question = `Question ${turn}`;
     return [
@@ -115,14 +115,23 @@ test("A restored historical turn displays the saved mention name and both resolv
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
-  await expect(screen.findByText("Answer 8")).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Answer 11")).resolves.toBeInTheDocument();
   expect(
     screen.queryByText(`Question ${REFERENCE_TURN}`),
   ).not.toBeInTheDocument();
 
-  fireEvent.scroll(
-    document.querySelector("[data-scroll-container]") as HTMLElement,
+  const viewport = document.querySelector<HTMLElement>(
+    `[data-chat-thread-container-id="${THREAD_ID}"] [data-scroll-container]`,
   );
+  if (!viewport) {
+    throw new Error("Missing conversation scroll viewport");
+  }
+  Object.defineProperties(viewport, {
+    clientHeight: { configurable: true, value: 360 },
+    scrollHeight: { configurable: true, value: 2800 },
+    scrollTop: { configurable: true, writable: true, value: 60 },
+  });
+  fireEvent.scroll(viewport);
 
   const question = await screen.findByText(`Question ${REFERENCE_TURN}`);
   const turn = question.closest<HTMLElement>(

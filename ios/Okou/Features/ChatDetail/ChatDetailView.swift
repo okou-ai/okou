@@ -5,6 +5,7 @@ import Textual
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
   let agents: ThreadListStore?
+  let workspaceName: String?
   var didSend: (@MainActor () async -> Void)?
   let topContentInset: CGFloat
   let mentionSource: ComposerMentionSource?
@@ -24,7 +25,7 @@ struct ChatDetailView: View {
   private struct UsageDetails: Identifiable { let id: String }
 
   init(
-    conversation: ConversationStore, agents: ThreadListStore? = nil,
+    conversation: ConversationStore, agents: ThreadListStore? = nil, workspaceName: String? = nil,
     didSend: (@MainActor () async -> Void)? = nil,
     topContentInset: CGFloat = 0,
     mentionSource: ComposerMentionSource? = nil,
@@ -33,6 +34,7 @@ struct ChatDetailView: View {
   ) {
     self.conversation = conversation
     self.agents = agents
+    self.workspaceName = workspaceName
     self.didSend = didSend
     self.topContentInset = topContentInset
     self.mentionSource = mentionSource
@@ -76,6 +78,7 @@ struct ChatDetailView: View {
       content: { row, anchor in
         rowContent(row, anchor: anchor).environment(\.openURL, openURL)
           .environment(\.openChatSource, openChatSource)
+          .environment(\.permissionWorkspaceName, workspaceName)
       }
     )
     .ignoresSafeArea(.container, edges: .vertical)
@@ -251,7 +254,8 @@ struct ChatDetailView: View {
     return .init(
       webURL: conversation.webURL,
       action: assistant ? .init(agentID: thread.agentID, threadID: thread.id) : nil,
-      permissionsEnabled: true, artifacts: assistant ? conversation.artifacts : nil)
+      permissionMember: conversation.permissionActions.member,
+      artifacts: assistant ? conversation.artifacts : nil)
   }
 
   @ViewBuilder

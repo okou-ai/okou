@@ -4,6 +4,7 @@ import {
 } from "./chat-share-selection-controls.tsx";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
+import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
@@ -487,7 +488,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const shellRef = useSet(threadSidebarLayoutRootRef$);
   const pwaNavigation = useGet(mobileChatViewport$);
 
-  return (
+  return withChatScrollLayout(
     <div
       ref={shellRef}
       data-slot="app-shell"
@@ -530,7 +531,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
           {children}
         </SidebarWorkspace>
       </WorkspaceSheet>
-    </div>
+    </div>,
   );
 }
 

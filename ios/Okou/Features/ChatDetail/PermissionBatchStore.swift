@@ -142,12 +142,12 @@ final class PermissionBatchStore {
           }
           if !delivered {
             let thread = ChatThread(
-              id: action.threadID, agentID: action.agentID, title: "", createdAt: .now,
+              id: action.threadID, agentID: nil, title: "", createdAt: .now,
               updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
             continuationUncertain = true
             _ = try await commands.send(
               thread: thread, text: prompt, clientEventID: clientEventID,
-              chatThreadSortEventID: sortEventID, expectedAgentID: action.agentID)
+              chatThreadSortEventID: sortEventID)
           }
           try Task.checkCancellation()
           guard !closed, self.generation == generation else { return }
