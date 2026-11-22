@@ -169,8 +169,18 @@ internal fun OkouApp(
     val showWorkflows =
         workflows != null && !showingConnectors && workflowRoute.mode == WorkflowsMode.Directory
     val chatFromWorkflows = workflows != null && workflowRoute.mode == WorkflowsMode.Chat
+    fun syncWorkflowDestination(route: WorkflowsRoute, open: Boolean) {
+        workflows?.let {
+            if (open) it.select(route.id)
+            it.visibilityChanged(open)
+        }
+    }
+    fun changeWorkflowRoute(route: WorkflowsRoute) {
+        syncWorkflowDestination(route, !showingConnectors && route.mode == WorkflowsMode.Directory)
+        workflowRoute = route
+    }
     LaunchedEffect(workflows, workflowRoute.id, showWorkflows) {
-        if (showWorkflows) workflows.select(workflowRoute.id)
+        syncWorkflowDestination(workflowRoute, showWorkflows)
     }
     LaunchedEffect(workflows, list.offline, showWorkflows) {
         if (showWorkflows) workflows.connectivityChanged(list.offline)
@@ -391,14 +401,13 @@ internal fun OkouApp(
         workflowOrigin = navigation
         workflowQuery.reset()
         workflowDraftError = null
-        workflowRoute = WorkflowsRoute(mode = WorkflowsMode.Directory)
+        changeWorkflowRoute(WorkflowsRoute(mode = WorkflowsMode.Directory))
     }
 
     fun closeWorkflows() {
         handoff?.cancel()
         handoff = null
-        workflowRoute = WorkflowsRoute()
-        workflows?.select(null)
+        changeWorkflowRoute(WorkflowsRoute())
     }
 
     fun leaveWorkflowChat() {
@@ -409,7 +418,7 @@ internal fun OkouApp(
 
     fun returnToWorkflows() {
         navigation = workflowOrigin
-        workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Directory)
+        changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Directory))
     }
 
     fun openArtifacts() {
@@ -524,7 +533,7 @@ internal fun OkouApp(
                                     settings = null,
                                     search = SearchRoute.Closed,
                                 )
-                            workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Chat)
+                            changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Chat))
                         }
                         ComposerPrefillResult.NetworkFailed ->
                             workflowDraftError =
@@ -709,7 +718,7 @@ internal fun OkouApp(
             changeRoute = {
                 if (it.id != workflowRoute.id && workflowDraftError?.workflowId != null)
                     workflowDraftError = null
-                workflowRoute = it
+                changeWorkflowRoute(it)
             },
             query = workflowQuery,
             positions = workflowPositions,
@@ -729,7 +738,7 @@ internal fun OkouApp(
                         .firstOrNull { it.id == id && it.hidden != true }
                         ?.let {
                             openChat(it)
-                            workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Chat)
+                            changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Chat))
                         }
                 }
             },

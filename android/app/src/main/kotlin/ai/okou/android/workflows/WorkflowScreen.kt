@@ -138,8 +138,8 @@ internal fun WorkflowScreen(
     onOpenChat: (String) -> Unit,
 ) {
     LifecycleResumeEffect(model) {
-        model.visibilityChanged(true)
-        onPauseOrDispose { model.visibilityChanged(false) }
+        model.foregroundChanged(true)
+        onPauseOrDispose { model.foregroundChanged(false) }
     }
     val wide = listWidth != null
     val focus = LocalFocusManager.current
@@ -224,11 +224,7 @@ internal fun WorkflowScreen(
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
                     state.detailFailure == WorkflowReadFailure.Unavailable ->
                         WorkflowPlaceholder(R.string.workflow_unavailable)
-                    detail == null && state.detailFailure == WorkflowReadFailure.Offline ->
-                        WorkflowPlaceholder(R.string.workflow_offline)
-                    detail == null && state.detailFailure != null ->
-                        WorkflowPlaceholder(R.string.workflow_load_failed)
-                    detail == null -> WorkflowSkeleton(directory = false)
+                    detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
                     editor != null ->
                         WorkflowEditor(detail, editor, state, model, wide, ::exitEditor)
                     else ->
@@ -239,7 +235,14 @@ internal fun WorkflowScreen(
                             position = positions[route.tab.ordinal],
                             wide = wide,
                             timezone = timezone,
-                            onTab = { changeRoute(route.copy(tab = it)) },
+                            onTab = {
+                                if (it != route.tab) {
+                                    changeRoute(route.copy(tab = it))
+                                    model.detailTabOpened(
+                                        checkConnections = it == WorkflowTab.Automations
+                                    )
+                                }
+                            },
                             onEdit = { model.edit(detail.editableInstructions()) },
                             onNewRule = {
                                 model.edit(WorkflowEdit.Rule(null, RuleFields(timezone = timezone)))
@@ -378,7 +381,23 @@ private fun WorkflowDirectory(
     val displayedState =
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) state
         else query.retainWhileComposing(state)
-    val catalog = displayedState.catalog
+    val catalog =
+        remember(displayedState.catalog, state.catalog) {
+            val displayed = displayedState.catalog
+            val current = state.catalog
+            when {
+                current == null -> null
+                displayed == null || displayed === current -> displayed
+                else -> {
+                    // Preserve composition order without restoring rows removed by the current
+                    // catalog.
+                    val visibleIds = current.mapTo(mutableSetOf()) { it.id }
+                    displayed.filter { it.id in visibleIds }
+                }
+            }
+        }
+    val rules = displayedState.rules.takeIf { state.rules != null }
+    val connections = displayedState.connections.takeIf { state.connections != null }
     val rows =
         remember(catalog, route.scope, text) {
             catalog?.filter { it.matches(route.scope, text) }.orEmpty()
@@ -464,9 +483,8 @@ private fun WorkflowDirectory(
                         items(rows, key = { it.id }) { row ->
                             WorkflowRow(
                                 row,
-                                displayedState.rules?.get(row.id)
-                                    ?: displayedState.rules?.let { emptyList() },
-                                displayedState.connections,
+                                rules?.let { it[row.id].orEmpty() },
+                                connections,
                                 row.id == route.id,
                                 canNavigate,
                                 row.id == restoreRow,
@@ -478,7 +496,11 @@ private fun WorkflowDirectory(
             }
         }
         if (catalog != null) {
-            WorkflowReadFeedback(state.catalogFailure)
+            WorkflowReadFeedback(
+                state.catalogFailure.cachedReadFeedback()
+                    ?: state.rulesFailure.cachedReadFeedback()
+                    ?: state.connectionReadFeedback()
+            )
         }
     }
 }
@@ -786,26 +808,60 @@ private fun WorkflowDetailPane(
                 }
             }
         }
-        WorkflowReadFeedback(state.detailFailure)
-        WorkflowDivider()
-        val unavailable = detail.shadowedBy != null || handoffPending || state.writing
-        Column(
-            contentWidth.padding(start = padding, end = padding, top = 8.dp, bottom = 10.dp),
-            horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,
-        ) {
-            when {
-                detail.shadowedBy != null ->
-                    WorkflowNotice(R.string.workflow_shadowed, PaddingValues(bottom = 8.dp))
-                useError != null -> WorkflowNotice(useError, PaddingValues(bottom = 8.dp))
-            }
-            WorkflowAction(
-                stringResource(R.string.workflow_use_in_chat),
-                onUse,
-                enabled = !unavailable,
-                primary = true,
-                modifier = (if (wide) Modifier else Modifier.fillMaxWidth()).testTag("workflow_use"),
+        val connectionFeedback =
+            if (
+                tab == WorkflowTab.Automations &&
+                    detail.automations.any { it.source.connector != null }
             )
+                state.connectionReadFeedback()
+            else null
+        WorkflowReadFeedback(state.detailFailure.cachedReadFeedback() ?: connectionFeedback)
+        WorkflowUseBar(
+            wide = wide,
+            enabled = detail.shadowedBy == null && !handoffPending && !state.writing,
+            notice = if (detail.shadowedBy != null) R.string.workflow_shadowed else useError,
+            onUse = onUse,
+        )
+    }
+}
+
+@Composable
+private fun WorkflowPendingDetail(wide: Boolean, failure: WorkflowReadFailure?) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
+            when (failure) {
+                null -> WorkflowSkeleton(directory = false)
+                WorkflowReadFailure.Offline -> WorkflowPlaceholder(R.string.workflow_offline)
+                else -> WorkflowPlaceholder(R.string.workflow_load_failed)
+            }
         }
+        WorkflowUseBar(wide = wide, enabled = false, onUse = {})
+    }
+}
+
+@Composable
+private fun WorkflowUseBar(
+    wide: Boolean,
+    enabled: Boolean,
+    notice: Int? = null,
+    onUse: () -> Unit,
+) {
+    WorkflowDivider()
+    Column(
+        Modifier.widthIn(max = 730.dp)
+            .fillMaxWidth()
+            .padding(horizontal = if (wide) 32.dp else 20.dp)
+            .padding(top = 8.dp, bottom = 10.dp),
+        horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,
+    ) {
+        if (notice != null) WorkflowNotice(notice, PaddingValues(bottom = 8.dp))
+        WorkflowAction(
+            stringResource(R.string.workflow_use_in_chat),
+            onUse,
+            enabled = enabled,
+            primary = true,
+            modifier = (if (wide) Modifier else Modifier.fillMaxWidth()).testTag("workflow_use"),
+        )
     }
 }
 
@@ -1066,13 +1122,8 @@ private fun WorkflowSkeleton(directory: Boolean) {
 }
 
 @Composable
-private fun WorkflowReadFeedback(failure: WorkflowReadFailure?) {
-    val label =
-        when {
-            failure == WorkflowReadFailure.Offline -> R.string.workflow_offline_cache
-            failure == WorkflowReadFailure.RefreshFailed -> R.string.workflow_refresh_failed
-            else -> return
-        }
+private fun WorkflowReadFeedback(label: Int?) {
+    if (label == null) return
     val shape = RoundedCornerShape(12.dp)
     Text(
         stringResource(label),

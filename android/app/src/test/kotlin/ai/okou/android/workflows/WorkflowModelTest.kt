@@ -41,6 +41,119 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkflowModelTest {
     @Test
+    fun reopeningRevalidatesEachRangeAndOnlyShowsItsUnexpiredCache() = check { service, model ->
+        val rules = CompletableDeferred<WorkspaceWorkflowAutomations>()
+        val connections = CompletableDeferred<Set<String>>()
+        service.rulesRead = { rules.await() }
+        service.connectionsRead = { connections.await() }
+
+        fun reopen() {
+            model.visibilityChanged(false)
+            model.visibilityChanged(true)
+            runCurrent()
+        }
+
+        model.visibilityChanged(true)
+        runCurrent()
+        advanceTimeBy(1_000)
+        rules.complete(emptyList())
+        runCurrent()
+        advanceTimeBy(1_000)
+        connections.complete(setOf("gmail"))
+        runCurrent()
+        advanceTimeBy(1_000)
+        model.select(service.summary.id)
+        runCurrent()
+
+        val refresh = CompletableDeferred<Unit>()
+        service.catalogRead = {
+            refresh.await()
+            listOf(service.summary)
+        }
+        service.rulesRead = {
+            refresh.await()
+            emptyList()
+        }
+        service.connectionsRead = {
+            refresh.await()
+            setOf("gmail")
+        }
+        service.detailRead = {
+            refresh.await()
+            service.detail
+        }
+
+        reopen()
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        assertTrue(model.state.value.rules?.isEmpty() == true)
+        assertEquals(setOf("gmail"), model.state.value.connections)
+        assertEquals(service.detail, model.state.value.detail)
+        assertEquals(2, service.catalogReads)
+        assertEquals(2, service.ruleReads)
+        assertEquals(2, service.connectionReads)
+        assertEquals(2, service.detailReads)
+
+        advanceTimeBy(597_000)
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        reopen()
+        assertNull(model.state.value.catalog)
+        assertTrue(model.state.value.rules?.isEmpty() == true)
+        assertEquals(setOf("gmail"), model.state.value.connections)
+        assertEquals(service.detail, model.state.value.detail)
+
+        advanceTimeBy(1_000)
+        reopen()
+        assertNull(model.state.value.rules)
+        assertEquals(setOf("gmail"), model.state.value.connections)
+        assertEquals(service.detail, model.state.value.detail)
+
+        advanceTimeBy(1_000)
+        reopen()
+        assertNull(model.state.value.connections)
+        assertEquals(service.detail, model.state.value.detail)
+
+        advanceTimeBy(1_000)
+        reopen()
+        assertNull(model.state.value.detail)
+        refresh.complete(Unit)
+        runCurrent()
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        assertEquals(service.detail, model.state.value.detail)
+    }
+
+    @Test
+    fun switchingBackShowsCachedDetailAndReadsTheLatestWhileItIsVisible() =
+        check { service, model ->
+            val first = service.detail
+            val second = first.copy(id = "b2222222-2222-4222-8222-222222222222", name = "other")
+            service.catalogRead = { listOf(service.summary, service.summary.copy(id = second.id)) }
+            service.detailRead = { if (it == first.id) first else second }
+            model.visibilityChanged(true)
+            model.select(first.id)
+            runCurrent()
+            model.select(second.id)
+            runCurrent()
+            assertEquals(second, model.state.value.detail)
+
+            val updated = CompletableDeferred<WorkflowDetail>()
+            service.detailRead = { updated.await() }
+            model.select(first.id)
+            assertEquals(first, model.state.value.detail)
+            runCurrent()
+            assertEquals(3, service.detailReads)
+            assertEquals(first, model.state.value.detail)
+
+            model.detailTabOpened(checkConnections = false)
+            runCurrent()
+            assertEquals(3, service.detailReads)
+
+            val refreshed = first.copy(displayName = "Refreshed")
+            updated.complete(refreshed)
+            runCurrent()
+            assertEquals(refreshed, model.state.value.detail)
+        }
+
+    @Test
     fun openingOfflineAttemptsAReadThenResumesOnReconnect() = check { service, model ->
         var reads = 0
         service.catalogRead = {
@@ -64,6 +177,26 @@ class WorkflowModelTest {
         assertEquals(2, reads)
         assertEquals(listOf(service.summary), model.state.value.catalog)
         assertNull(model.state.value.catalogFailure)
+    }
+
+    @Test
+    fun reconnectDoesNotWaitForTheCurrentBackoff() = check { service, model ->
+        service.catalogRead = {
+            if (service.catalogReads == 1) throw ApiFailure.Network(IOException("Offline"))
+            listOf(service.summary)
+        }
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(WorkflowReadFailure.CouldNotLoad, model.state.value.catalogFailure)
+
+        model.connectivityChanged(true)
+        model.connectivityChanged(false)
+        runCurrent()
+
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        assertNull(model.state.value.catalogFailure)
+        assertEquals(2, service.catalogReads)
+        assertEquals(1, service.connectionReads)
     }
 
     @Test
@@ -95,16 +228,19 @@ class WorkflowModelTest {
             model.visibilityChanged(true)
             runCurrent()
             assertNotNull(model.state.value.catalog)
-            assertNotNull(model.state.value.detail)
+            val opened = checkNotNull(model.state.value.detail).editableInstructions()
+            val editing = opened.copy(value = opened.value.copy(instruction = "Unsaved edit"))
+            model.edit(editing)
 
             val catalogAttempts = mutableListOf<Long>()
             service.catalogRead = {
-                catalogAttempts += testScheduler.currentTime
+                catalogAttempts += testScheduler.currentTime - 600_000
                 if (catalogAttempts.size <= 3) throw ApiFailure.Network(IOException("Offline"))
                 listOf(service.summary)
             }
-            model.visibilityChanged(false)
-            model.visibilityChanged(true)
+            model.foregroundChanged(false)
+            advanceTimeBy(600_000)
+            model.foregroundChanged(true)
             runCurrent()
 
             advanceTimeBy(29_999)
@@ -113,6 +249,7 @@ class WorkflowModelTest {
             assertEquals(listOf(service.summary), model.state.value.catalog)
             assertEquals(WorkflowReadFailure.CouldNotLoad, model.state.value.catalogFailure)
             assertNull(model.state.value.detailFailure)
+            assertEquals(editing, model.state.value.editor)
             assertEquals(2, service.detailReads)
 
             advanceTimeBy(1)
@@ -172,6 +309,8 @@ class WorkflowModelTest {
         model.select(service.summary.id)
         runCurrent()
         assertEquals(listOf(active), model.state.value.detail?.automations)
+        assertEquals(2, service.detailReads)
+        advanceTimeBy(600_000)
         val refreshedDetail = CompletableDeferred<WorkflowDetail>()
         service.detailRead = { refreshedDetail.await() }
         model.connectivityChanged(true)
@@ -193,6 +332,7 @@ class WorkflowModelTest {
 
         val catalog = CompletableDeferred<List<WorkflowSummary>>()
         service.catalogRead = { catalog.await() }
+        advanceTimeBy(600_000)
         model.connectivityChanged(true)
         model.connectivityChanged(false)
         runCurrent()
@@ -218,6 +358,7 @@ class WorkflowModelTest {
         assertEquals(listOf(published), model.state.value.catalog)
 
         model.visibilityChanged(false)
+        advanceTimeBy(600_000)
         model.visibilityChanged(true)
         runCurrent()
         assertEquals(listOf(service.summary), model.state.value.catalog)
@@ -234,6 +375,7 @@ class WorkflowModelTest {
 
         val catalog = CompletableDeferred<List<WorkflowSummary>>()
         service.catalogRead = { catalog.await() }
+        advanceTimeBy(600_000)
         model.connectivityChanged(true)
         model.connectivityChanged(false)
         runCurrent()
@@ -251,29 +393,63 @@ class WorkflowModelTest {
     }
 
     @Test
-    fun successfulSaveRestartsInterruptedCatalogRead() = check { service, model ->
-        var holdCatalog = true
-        service.catalogRead = {
-            if (holdCatalog) awaitCancellation()
-            listOf(service.summary)
-        }
-        model.select(service.summary.id)
+    fun aRefreshedCatalogRemovesAStillFreshDetailThatIsNoLongerVisible() = check { service, model ->
         model.visibilityChanged(true)
         runCurrent()
-        assertNotNull(model.state.value.detail)
-        assertNull(model.state.value.catalog)
-
-        holdCatalog = false
-        val opened = checkNotNull(model.state.value.detail).editableInstructions()
-        val edited = opened.copy(value = opened.value.copy(instruction = "Confirmed"))
-        model.edit(edited)
-        model.save(edited)
+        advanceTimeBy(60_000)
+        model.select(service.summary.id)
         runCurrent()
+        assertEquals(service.detail, model.state.value.detail)
+        model.select(null)
 
-        assertEquals("Confirmed", model.state.value.detail?.instruction)
-        assertEquals(listOf(service.summary), model.state.value.catalog)
-        assertTrue(model.state.value.rules?.isEmpty() == true)
+        service.catalogRead = { emptyList() }
+        model.visibilityChanged(false)
+        advanceTimeBy(540_000)
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(emptyList<WorkflowSummary>(), model.state.value.catalog)
+        assertEquals(1, service.detailReads)
+
+        service.detailRead = { throw ApiFailure.Http(404, null, null, null) }
+        model.select(service.summary.id)
+        assertNull(model.state.value.detail)
+        runCurrent()
+        assertEquals(2, service.detailReads)
+        assertNull(model.state.value.detail)
+        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.detailFailure)
     }
+
+    @Test
+    fun successfulSaveRestartsCatalogWithoutRestartingAnIndependentConnectionRead() =
+        check { service, model ->
+            var holdCatalog = true
+            val connections = CompletableDeferred<Set<String>>()
+            service.catalogRead = {
+                if (holdCatalog) awaitCancellation()
+                listOf(service.summary)
+            }
+            service.connectionsRead = { connections.await() }
+            model.select(service.summary.id)
+            model.visibilityChanged(true)
+            runCurrent()
+            assertNotNull(model.state.value.detail)
+            assertNull(model.state.value.catalog)
+
+            holdCatalog = false
+            val opened = checkNotNull(model.state.value.detail).editableInstructions()
+            val edited = opened.copy(value = opened.value.copy(instruction = "Confirmed"))
+            model.edit(edited)
+            model.save(edited)
+            runCurrent()
+
+            assertEquals("Confirmed", model.state.value.detail?.instruction)
+            assertEquals(listOf(service.summary), model.state.value.catalog)
+            assertTrue(model.state.value.rules?.isEmpty() == true)
+            assertEquals(1, service.connectionReads)
+            connections.complete(setOf("gmail"))
+            runCurrent()
+            assertEquals(setOf("gmail"), model.state.value.connections)
+        }
 
     @Test
     fun instructionSaveUsesTheCurrentEditor() = check { service, model ->
@@ -297,6 +473,30 @@ class WorkflowModelTest {
     }
 
     @Test
+    fun aConfirmedSaveRefreshesTheDetailCacheAge() = check { service, model ->
+        model.select(service.summary.id)
+        model.visibilityChanged(true)
+        runCurrent()
+        advanceTimeBy(590_000)
+        val opened = checkNotNull(model.state.value.detail).editableInstructions()
+        val edited = opened.copy(value = opened.value.copy(instruction = "Confirmed"))
+        model.edit(edited)
+        model.save(edited)
+        runCurrent()
+        assertEquals(1, service.detailReads)
+
+        model.visibilityChanged(false)
+        advanceTimeBy(20_000)
+        service.detailRead = { awaitCancellation() }
+        model.visibilityChanged(true)
+        assertNull(model.state.value.catalog)
+        assertEquals("Confirmed", model.state.value.detail?.instruction)
+        runCurrent()
+        assertEquals(2, service.detailReads)
+        assertEquals("Confirmed", model.state.value.detail?.instruction)
+    }
+
+    @Test
     fun uncertainCreationIgnoresAnotherSaveFromTheSameEditor() = check { service, model ->
         model.select(service.summary.id)
         model.visibilityChanged(true)
@@ -309,6 +509,10 @@ class WorkflowModelTest {
 
         assertEquals(WorkflowWriteFailure.UncertainCreate, model.state.value.issue?.failure)
         assertEquals(editor, model.state.value.editor)
+        assertEquals(2, service.detailReads)
+        assertEquals(1, service.catalogReads)
+        assertEquals(1, service.ruleReads)
+        assertEquals(1, service.connectionReads)
         model.connectivityChanged(false)
         model.save(editor)
         runCurrent()
@@ -329,6 +533,7 @@ class WorkflowModelTest {
                 },
             )[WorkflowModel::class.java]
         try {
+            model.foregroundChanged(true)
             action(service, model)
         } finally {
             store.clear()
@@ -374,25 +579,43 @@ class WorkflowModelTest {
                 automations = emptyList(),
             )
         var catalogRead: suspend () -> List<WorkflowSummary> = { listOf(summary) }
-        var detailRead: suspend () -> WorkflowDetail = { detail }
+        var detailRead: suspend (String) -> WorkflowDetail = { detail }
         var rulesRead: suspend () -> WorkspaceWorkflowAutomations = { emptyList() }
         var connectionsRead: suspend () -> Set<String> = { emptySet() }
         var detailReads = 0
             private set
 
+        var catalogReads = 0
+            private set
+
+        var ruleReads = 0
+            private set
+
+        var connectionReads = 0
+            private set
+
         var createAttempts = 0
             private set
 
-        override suspend fun workflows() = catalogRead()
+        override suspend fun workflows(): List<WorkflowSummary> {
+            catalogReads++
+            return catalogRead()
+        }
 
         override suspend fun workflow(id: String): WorkflowDetail {
             detailReads++
-            return detailRead()
+            return detailRead(id)
         }
 
-        override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations = rulesRead()
+        override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations {
+            ruleReads++
+            return rulesRead()
+        }
 
-        override suspend fun workflowConnections(): Set<String> = connectionsRead()
+        override suspend fun workflowConnections(): Set<String> {
+            connectionReads++
+            return connectionsRead()
+        }
 
         override suspend fun updateWorkflow(
             id: String,

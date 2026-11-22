@@ -6,11 +6,11 @@ import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailVisibility
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -25,6 +25,8 @@ internal data class WorkflowState(
     val connections: Set<String>? = null,
     val detail: WorkflowDetail? = null,
     val catalogFailure: WorkflowReadFailure? = null,
+    val rulesFailure: WorkflowReadFailure? = null,
+    val connectionsFailure: WorkflowReadFailure? = null,
     val detailFailure: WorkflowReadFailure? = null,
     val writing: Boolean = false,
     val issue: WorkflowWriteIssue? = null,
@@ -56,154 +58,306 @@ internal constructor(
     private val service: WorkflowService,
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
-    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val monotonicMillis: () -> Long = SystemClock::elapsedRealtime,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(WorkflowState())
     internal val state = mutable.asStateFlow()
     private var visible = false
+    private var foreground = false
     private var offline = false
     private var selected: String? = null
-    private var catalogLoad: Job? = null
-    // A null update records a workflow that the detail endpoint confirmed is unavailable.
-    private var pendingDirectoryUpdates: MutableMap<String, WorkflowDirectoryUpdate?>? = null
+    private val catalogRead = WorkflowRangeRead()
+    private val rulesRead = WorkflowRangeRead()
+    private val connectionsRead = WorkflowRangeRead()
+    private val details =
+        LinkedHashMap<String, CachedWorkflowDetail>(WORKFLOW_DETAIL_CACHE_CAPACITY, 0.75f, true)
     private var detailLoad: Job? = null
-    private var refreshAfterWrite = false
+    private val readsAfterWrite = mutableSetOf<WorkflowReadScope>()
 
     internal fun connectivityChanged(offline: Boolean) {
         if (this.offline == offline) return
         this.offline = offline
         if (!offline) {
             val current = mutable.value
+            if (current.catalogFailure.canRecheckOnReconnect()) catalogRead.cancel()
+            if (current.rulesFailure.canRecheckOnReconnect()) rulesRead.cancel()
+            if (current.connectionsFailure.canRecheckOnReconnect()) connectionsRead.cancel()
+            if (current.detailFailure.canRecheckOnReconnect()) cancelDetailRead()
             mutable.value =
                 current.copy(
                     catalogFailure =
                         current.catalogFailure.takeUnless { it == WorkflowReadFailure.Offline },
+                    rulesFailure =
+                        current.rulesFailure.takeUnless { it == WorkflowReadFailure.Offline },
+                    connectionsFailure =
+                        current.connectionsFailure.takeUnless { it == WorkflowReadFailure.Offline },
                     detailFailure =
                         current.detailFailure.takeUnless { it == WorkflowReadFailure.Offline },
                     issue = current.issue.takeUnless { it?.failure == WorkflowWriteFailure.Network },
                 )
-            refresh()
+            val now = monotonicMillis()
+            refresh(
+                buildSet {
+                    if (
+                        !catalogRead.readAt.isFresh(now) ||
+                            current.catalogFailure.canRecheckOnReconnect()
+                    )
+                        add(WorkflowReadScope.Catalog)
+                    if (
+                        !rulesRead.readAt.isFresh(now) ||
+                            current.rulesFailure.canRecheckOnReconnect()
+                    )
+                        add(WorkflowReadScope.Rules)
+                    if (
+                        !connectionsRead.readAt.isFresh(now) ||
+                            current.connectionsFailure.canRecheckOnReconnect()
+                    )
+                        add(WorkflowReadScope.Connections)
+                    if (
+                        !selected?.let { details[it]?.readAt }.isFresh(now) ||
+                            current.detailFailure.canRecheckOnReconnect()
+                    )
+                        add(WorkflowReadScope.Detail)
+                }
+            )
         }
     }
 
     internal fun visibilityChanged(open: Boolean) {
         if (visible == open) return
         visible = open
-        if (open) refresh() else stopReads()
+        if (open) {
+            presentCachedRanges()
+            refresh()
+        } else stopReads()
+    }
+
+    internal fun foregroundChanged(resumed: Boolean) {
+        if (foreground == resumed) return
+        foreground = resumed
+        // Foreground changes retain the current visit, including the active editor.
+        if (resumed) refresh() else stopReads()
     }
 
     private fun stopReads() {
-        catalogLoad?.cancel()
+        stopWorkflowReads()
+        connectionsRead.cancel()
+    }
+
+    private fun stopWorkflowReads() {
+        catalogRead.cancel()
+        rulesRead.cancel()
+        cancelDetailRead()
+    }
+
+    private fun cancelDetailRead() {
         detailLoad?.cancel()
-        val current = mutable.value
-        mutable.value =
-            current.copy(
-                catalogFailure =
-                    current.catalogFailure.takeUnless {
-                        it == WorkflowReadFailure.RefreshFailed && current.catalog != null
-                    },
-                detailFailure =
-                    current.detailFailure.takeUnless {
-                        it == WorkflowReadFailure.RefreshFailed && current.detail != null
-                    },
-            )
+        detailLoad = null
     }
 
     internal fun select(id: String?) {
         if (selected == id) return
         selected = id
-        detailLoad?.cancel()
+        cancelDetailRead()
+        val cached = id?.let(details::get)
         mutable.value =
-            mutable.value.copy(detail = null, detailFailure = null, issue = null, editor = null)
-        if (id != null) loadDetail(id)
+            mutable.value.copy(
+                detail = cached?.takeIf { it.readAt.isFresh(monotonicMillis()) }?.detail,
+                detailFailure = null,
+                issue = null,
+                editor = null,
+            )
+        if (id == null) {
+            if (visible) presentCachedRanges()
+            refresh(directoryScopes)
+        } else refresh(setOf(WorkflowReadScope.Detail))
     }
 
-    private fun refresh() {
-        if (!authorized() || !visible) return
+    internal fun detailTabOpened(checkConnections: Boolean) {
+        refresh(
+            if (checkConnections) setOf(WorkflowReadScope.Detail, WorkflowReadScope.Connections)
+            else setOf(WorkflowReadScope.Detail)
+        )
+    }
+
+    private fun presentCachedRanges() {
+        val current = mutable.value
+        val now = monotonicMillis()
+        val catalog = current.catalog.takeIf { catalogRead.readAt.isFresh(now) }
+        val rules = current.rules.takeIf { rulesRead.readAt.isFresh(now) }
+        val connections = current.connections.takeIf { connectionsRead.readAt.isFresh(now) }
+        val detail =
+            selected?.let { details[it]?.takeIf { entry -> entry.readAt.isFresh(now) }?.detail }
+        mutable.value =
+            current.copy(
+                catalog = catalog,
+                rules = rules,
+                connections = connections,
+                detail = detail,
+                catalogFailure = current.catalogFailure.takeIf { catalog != null },
+                rulesFailure = current.rulesFailure.takeIf { rules != null },
+                connectionsFailure = current.connectionsFailure.takeIf { connections != null },
+                detailFailure = current.detailFailure.takeIf { detail != null },
+            )
+    }
+
+    private fun refresh(scopes: Set<WorkflowReadScope> = allReadScopes) {
+        if (!authorized() || !visible || !foreground) return
         if (mutable.value.writing) {
-            refreshAfterWrite = true
+            readsAfterWrite.addAll(scopes)
             return
         }
-        selected?.let(::loadDetail)
-        if (catalogLoad?.isActive == true) return
-        catalogLoad =
+        for (scope in scopes) when (scope) {
+            WorkflowReadScope.Detail -> selected?.let(::loadDetail)
+            WorkflowReadScope.Catalog -> loadCatalog()
+            WorkflowReadScope.Rules -> loadDirectoryRules()
+            WorkflowReadScope.Connections -> loadConnections()
+        }
+    }
+
+    private fun loadCatalog() {
+        refreshRange(
+            catalogRead,
+            fetch = { service.workflows().filter { it.official == null } },
+            receive = ::publishCatalog,
+            denied = ::clearAccess,
+            failure = { mutable.value = mutable.value.copy(catalogFailure = it) },
+        )
+    }
+
+    private fun loadDirectoryRules() {
+        refreshRange(
+            rulesRead,
+            fetch = {
+                service.workflowAutomations().groupBy({ it.workflow.id }, { it.automation })
+            },
+            receive = ::publishDirectoryRules,
+            denied = {
+                mutable.value =
+                    mutable.value.copy(rules = null, rulesFailure = WorkflowReadFailure.Unavailable)
+            },
+            failure = { mutable.value = mutable.value.copy(rulesFailure = it) },
+        )
+    }
+
+    private fun loadConnections() {
+        refreshRange(
+            connectionsRead,
+            fetch = service::workflowConnections,
+            receive = { connections, _ ->
+                mutable.value =
+                    mutable.value.copy(connections = connections, connectionsFailure = null)
+            },
+            denied = {
+                mutable.value =
+                    mutable.value.copy(
+                        connections = null,
+                        connectionsFailure = WorkflowReadFailure.Unavailable,
+                    )
+            },
+            failure = { mutable.value = mutable.value.copy(connectionsFailure = it) },
+        )
+    }
+
+    private fun <T> refreshRange(
+        range: WorkflowRangeRead,
+        fetch: suspend () -> T,
+        receive: (T, Map<String, WorkflowDirectoryUpdate?>) -> Unit,
+        denied: () -> Unit,
+        failure: (WorkflowReadFailure) -> Unit,
+    ) {
+        if (range.job?.isActive == true) return
+        range.job =
             viewModelScope.launch {
-                retryReads(
-                    { mutable.value = mutable.value.copy(catalogFailure = it) },
-                    ::loadCatalog,
-                )
+                retryReads(failure) {
+                    val updates = mutableMapOf<String, WorkflowDirectoryUpdate?>()
+                    range.pendingDetails = updates
+                    val result =
+                        try {
+                            read(fetch)
+                        } finally {
+                            if (range.pendingDetails === updates) range.pendingDetails = null
+                        }
+                    if (!authorized()) return@retryReads null
+                    val error = result.exceptionOrNull()
+                    when {
+                        error.denied() -> {
+                            range.readAt = null
+                            denied()
+                            null
+                        }
+                        error != null -> error
+                        else -> {
+                            range.readAt = monotonicMillis()
+                            receive(result.getOrThrow(), updates)
+                            null
+                        }
+                    }
+                }
             }
     }
 
-    private suspend fun loadCatalog(): Throwable? = coroutineScope {
-        val updates = mutableMapOf<String, WorkflowDirectoryUpdate?>()
-        pendingDirectoryUpdates = updates
-        val catalog = async { read { service.workflows().filter { it.official == null } } }
-        val rules = async {
-            read { service.workflowAutomations().groupBy({ it.workflow.id }, { it.automation }) }
-        }
-        val accounts = async { read { service.workflowConnections() } }
-        val automationRules =
-            try {
-                val workflows = catalog.await()
-                if (!authorized()) return@coroutineScope null
-                val catalogError = workflows.exceptionOrNull()
-                if (catalogError != null) {
-                    rules.cancel()
-                    accounts.cancel()
-                    if (catalogError.denied()) {
-                        clearAccess()
-                        return@coroutineScope null
-                    }
-                    return@coroutineScope catalogError
+    private fun publishCatalog(
+        directory: List<WorkflowSummary>,
+        updates: Map<String, WorkflowDirectoryUpdate?>,
+    ) {
+        val rows =
+            if (updates.isEmpty()) directory
+            else
+                directory.mapNotNull { row ->
+                    if (row.id in updates) updates[row.id]?.applyTo(row) else row
                 }
-                val directory = workflows.getOrThrow()
-                val catalogRows =
-                    if (updates.isEmpty()) directory
-                    else
-                        directory.mapNotNull { row ->
-                            if (row.id in updates) updates[row.id]?.applyTo(row) else row
-                        }
-                mutable.value = mutable.value.copy(catalog = catalogRows)
-                rules.await()
-            } finally {
-                if (pendingDirectoryUpdates === updates) pendingDirectoryUpdates = null
-            }
-        if (!authorized()) return@coroutineScope null
+        val visibleIds = rows.mapTo(mutableSetOf()) { it.id }
         val current = mutable.value
-        val directoryRules = automationRules.getOrNull()
-        if (directoryRules != null) {
-            val rulesByWorkflow = directoryRules.withDirectoryUpdates(updates)
-            // Both endpoints return the caller's automations for each visible workflow.
-            val detail =
-                current.detail?.let { active ->
-                    val confirmed = rulesByWorkflow[active.id].orEmpty()
-                    if (active.automations == confirmed) active
-                    else active.copy(automations = confirmed)
-                }
-            mutable.value = current.copy(rules = rulesByWorkflow, detail = detail)
-        } else if (automationRules.exceptionOrNull().denied()) {
-            mutable.value = current.copy(rules = null)
+        val previouslyKnown = current.catalog.orEmpty().mapTo(mutableSetOf()) { it.id }
+        previouslyKnown.addAll(details.keys)
+        selected?.let(previouslyKnown::add)
+        val removed = previouslyKnown.filter { it !in visibleIds && updates[it] == null }
+        for (id in removed) {
+            details.remove(id)
+            rulesRead.pendingDetails?.set(id, null)
         }
-
-        val connections = accounts.await()
-        if (!authorized()) return@coroutineScope null
-        val failure =
-            listOfNotNull(automationRules.exceptionOrNull(), connections.exceptionOrNull())
-                .maxByOrNull { it.retryAfterMillis() ?: -1L }
-        val latest = mutable.value
+        val lostSelected = selected?.let(removed::contains) == true
+        if (lostSelected) cancelDetailRead()
         mutable.value =
-            latest.copy(
-                connections =
-                    if (connections.exceptionOrNull().denied()) null
-                    else connections.getOrNull() ?: latest.connections,
-                catalogFailure = if (failure == null) null else latest.catalogFailure,
+            current.copy(
+                catalog = rows,
+                catalogFailure = null,
+                rules = if (removed.isEmpty()) current.rules else current.rules?.minus(removed),
+                detail = current.detail.takeUnless { lostSelected },
+                detailFailure =
+                    if (lostSelected) WorkflowReadFailure.Unavailable else current.detailFailure,
+                editor = current.editor.takeUnless { lostSelected },
+                issue = current.issue.takeUnless { lostSelected },
             )
-        failure
+    }
+
+    private fun publishDirectoryRules(
+        directory: Map<String, List<WorkflowAutomation>>,
+        updates: Map<String, WorkflowDirectoryUpdate?>,
+    ) {
+        val confirmed = directory.withDirectoryUpdates(updates)
+        // The detail and directory endpoints include the same caller-owned rules.
+        details.replaceAll { id, cached ->
+            val rules = confirmed[id].orEmpty()
+            if (cached.detail.automations == rules) cached
+            else cached.copy(detail = cached.detail.copy(automations = rules))
+        }
+        val current = mutable.value
+        mutable.value =
+            current.copy(
+                rules = confirmed,
+                rulesFailure = null,
+                detail = current.detail?.let { details[it.id]?.detail },
+            )
     }
 
     private fun clearAccess() {
-        detailLoad?.cancel()
+        catalogRead.invalidate()
+        rulesRead.invalidate()
+        connectionsRead.invalidate()
+        cancelDetailRead()
+        details.clear()
         mutable.value =
             mutable.value.copy(
                 catalog = null,
@@ -211,6 +365,8 @@ internal constructor(
                 connections = null,
                 detail = null,
                 catalogFailure = WorkflowReadFailure.Unavailable,
+                rulesFailure = null,
+                connectionsFailure = null,
                 detailFailure = WorkflowReadFailure.Unavailable,
                 editor = null,
                 issue = null,
@@ -218,8 +374,7 @@ internal constructor(
     }
 
     private fun loadDetail(id: String) {
-        if (!visible || !authorized() || mutable.value.writing || detailLoad?.isActive == true)
-            return
+        if (detailLoad?.isActive == true) return
         detailLoad =
             viewModelScope.launch {
                 retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
@@ -235,7 +390,8 @@ internal constructor(
                         error.denied() ||
                             (error as? ApiFailure.Http)?.status == 404 ||
                             detail?.official != null -> {
-                            pendingDirectoryUpdates?.set(id, null)
+                            recordDetailUpdate(id, null)
+                            details.remove(id)
                             val current = mutable.value
                             mutable.value =
                                 current.copy(
@@ -371,16 +527,18 @@ internal constructor(
     ) {
         val state = mutable.value
         val detail = state.detail ?: return
-        if (!authorized() || !visible || state.writing || detail.id != selected) return
+        if (!authorized() || !visible || !foreground || state.writing || detail.id != selected)
+            return
         if (!detail.canChange(ruleId)) {
             if (ruleId != null)
                 mutable.value =
                     state.copy(issue = WorkflowWriteIssue(WorkflowWriteFailure.Failed, ruleId))
             return
         }
-        refreshAfterWrite = catalogLoad?.isActive == true || detailLoad?.isActive == true
-        catalogLoad?.cancel()
-        detailLoad?.cancel()
+        if (catalogRead.job?.isActive == true) readsAfterWrite.add(WorkflowReadScope.Catalog)
+        if (rulesRead.job?.isActive == true) readsAfterWrite.add(WorkflowReadScope.Rules)
+        if (detailLoad?.isActive == true) readsAfterWrite.add(WorkflowReadScope.Detail)
+        stopWorkflowReads()
         mutable.value = state.copy(writing = true, issue = null)
         viewModelScope.launch {
             try {
@@ -404,24 +562,39 @@ internal constructor(
                             else -> WorkflowWriteFailure.Failed
                         }
                     mutable.value = mutable.value.copy(issue = WorkflowWriteIssue(failure, ruleId))
+                    readsAfterWrite.add(WorkflowReadScope.Detail)
                 }
             } finally {
                 if (authorized()) {
                     mutable.value = mutable.value.copy(writing = false)
-                    val refreshNeeded = refreshAfterWrite || mutable.value.issue != null
-                    refreshAfterWrite = false
-                    if (refreshNeeded) refresh()
+                    val pending = readsAfterWrite.toSet()
+                    readsAfterWrite.clear()
+                    refresh(pending)
                 }
             }
         }
     }
 
-    private fun publishDetail(detail: WorkflowDetail) {
-        if (!authorized() || selected != detail.id) return
+    private fun publishDetail(response: WorkflowDetail) {
+        val id = response.id
+        if (!authorized() || selected != id) return
+        // This screen does not use the attached file bodies returned by GET.
+        val detail =
+            if (response.fileContents == null) response else response.copy(fileContents = null)
+        details[id] = CachedWorkflowDetail(detail, monotonicMillis())
+        if (details.size > WORKFLOW_DETAIL_CACHE_CAPACITY) details.remove(details.keys.first())
         val update = WorkflowDirectoryUpdate(detail)
         // The directory read may complete after the user has left this detail.
-        pendingDirectoryUpdates?.set(detail.id, update)
+        recordDetailUpdate(id, update)
         val current = mutable.value
+        val rules =
+            current.rules?.let { previous ->
+                when {
+                    previous[id].orEmpty() == detail.automations -> previous
+                    detail.automations.isEmpty() -> previous - id
+                    else -> previous + (id to detail.automations)
+                }
+            }
         mutable.value =
             current.copy(
                 detail = detail,
@@ -430,12 +603,17 @@ internal constructor(
                     current.catalog?.map { item ->
                         if (item.id == detail.id) update.applyTo(item) else item
                     },
-                rules = current.rules?.plus(detail.id to detail.automations),
+                rules = rules,
             )
     }
 
     private fun publishRules(detail: WorkflowDetail, rules: List<WorkflowAutomation>) =
         publishDetail(detail.copy(automations = rules))
+
+    private fun recordDetailUpdate(id: String, detail: WorkflowDirectoryUpdate?) {
+        catalogRead.pendingDetails?.set(id, detail)
+        rulesRead.pendingDetails?.set(id, detail)
+    }
 
     private suspend fun <T> read(block: suspend () -> T): Result<T> =
         try {
@@ -459,6 +637,43 @@ internal constructor(
             onFailure(error)
     }
 }
+
+private data class CachedWorkflowDetail(val detail: WorkflowDetail, val readAt: Long)
+
+private enum class WorkflowReadScope {
+    Detail,
+    Catalog,
+    Rules,
+    Connections,
+}
+
+private val directoryScopes =
+    setOf(WorkflowReadScope.Catalog, WorkflowReadScope.Rules, WorkflowReadScope.Connections)
+private val allReadScopes = WorkflowReadScope.entries.toSet()
+
+private class WorkflowRangeRead {
+    var readAt: Long? = null
+    var job: Job? = null
+    // A null update records confirmed unavailability from an overlapping detail read.
+    var pendingDetails: MutableMap<String, WorkflowDirectoryUpdate?>? = null
+
+    fun cancel() {
+        job?.cancel()
+        job = null
+        pendingDetails = null
+    }
+
+    fun invalidate() {
+        cancel()
+        readAt = null
+    }
+}
+
+private const val WORKFLOW_CACHE_TTL_MILLIS = 600_000L
+private const val WORKFLOW_DETAIL_CACHE_CAPACITY = 8
+
+private fun Long?.isFresh(now: Long): Boolean =
+    this != null && now - this in 0 until WORKFLOW_CACHE_TTL_MILLIS
 
 private class WorkflowDirectoryUpdate(detail: WorkflowDetail) {
     private val name = detail.name
@@ -496,6 +711,11 @@ private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
 }
 
 private val workflowRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
+
+private fun WorkflowReadFailure?.canRecheckOnReconnect() =
+    this == WorkflowReadFailure.Offline ||
+        this == WorkflowReadFailure.CouldNotLoad ||
+        this == WorkflowReadFailure.RefreshFailed
 
 private fun Throwable?.denied() =
     this is ApiFailure.Unauthenticated ||

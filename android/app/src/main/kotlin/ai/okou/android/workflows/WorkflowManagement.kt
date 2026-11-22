@@ -332,6 +332,10 @@ internal fun WorkflowEditor(
     var couldNotOpen by remember { mutableStateOf(false) }
     val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
     val showConnectionAction = connectionRequired != null && state.connections != null
+    val connectionFeedback =
+        state.connectionReadFeedback().takeIf {
+            activeRule?.value?.trigger?.source?.connector != null
+        }
     val saveEnabled =
         available &&
             editor.canSave &&
@@ -422,7 +426,12 @@ internal fun WorkflowEditor(
                 WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_write_failed)
                 null -> Unit
             }
-            if (connectionRequired != null) {
+            val readFeedback = state.detailFailure.cachedReadFeedback() ?: connectionFeedback
+            if (readFeedback != null) WorkflowNotice(readFeedback)
+            if (
+                connectionRequired != null &&
+                    (state.connections != null || connectionFeedback == null)
+            ) {
                 WorkflowStatus(
                     stringResource(
                         R.string.workflow_connect_to_save,
@@ -466,6 +475,23 @@ internal fun WorkflowEditor(
         }
     }
 }
+
+internal fun WorkflowReadFailure?.cachedReadFeedback(): Int? =
+    when (this) {
+        WorkflowReadFailure.Offline -> R.string.workflow_offline_cache
+        WorkflowReadFailure.Unavailable,
+        WorkflowReadFailure.RefreshFailed -> R.string.workflow_refresh_failed
+        else -> null
+    }
+
+internal fun WorkflowState.connectionReadFeedback(): Int? =
+    if (connections != null) connectionsFailure.cachedReadFeedback()
+    else
+        when (connectionsFailure) {
+            WorkflowReadFailure.Offline -> R.string.connector_load_when_online
+            null -> null
+            else -> R.string.connector_accounts_failed
+        }
 
 private fun openWorkflowConnections(uriHandler: UriHandler): Boolean =
     try {

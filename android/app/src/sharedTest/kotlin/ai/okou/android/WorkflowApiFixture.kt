@@ -30,6 +30,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     @Volatile var hasSharedSchedule = false
     @Volatile var calendarId: String? = null
     @Volatile var beforeCatalog: () -> Unit = {}
+    @Volatile var beforeReleaseDetailRead: () -> Unit = {}
     @Volatile var beforeConnectionsRead: () -> Unit = {}
     @Volatile var beforeDraftRead: () -> Unit = {}
     @Volatile var beforeInstructionSave: () -> Unit = {}
@@ -74,6 +75,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                 jsonResponse("[${release()},${shared()},${feedback()}]")
             }
             "/api/workflows/$WORKFLOW_RELEASE" -> {
+                if (request.method == "GET") beforeReleaseDetailRead()
                 if (request.method == "PATCH") {
                     beforeInstructionSave()
                     if (disconnectInstructionSave)

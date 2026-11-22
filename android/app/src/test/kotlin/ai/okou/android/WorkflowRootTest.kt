@@ -197,6 +197,50 @@ class WorkflowRootTest {
     }
 
     @Test
+    fun selectingADetailKeepsTheUseButtonInPlaceWhileLoading() {
+        val detail = CountDownLatch(1)
+        app.fixture.beforeReleaseDetailRead = { detail.await() }
+        val use = compose.onNodeWithTag("workflow_use")
+        val pendingBounds =
+            try {
+                compose.onNodeWithContentDescription("Workflows").performClick()
+                app.gate.countDown()
+                waitFor("Release checklist")
+                compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
+                waitForTag("workflow_loading")
+                use.assertIsDisplayed().assertIsNotEnabled().getUnclippedBoundsInRoot()
+            } finally {
+                detail.countDown()
+            }
+
+        waitForTag("workflow_detail_title")
+        assertEquals(pendingBounds, use.assertIsEnabled().getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    fun returningFromWorkflowCreationRechecksTheFreshDirectory() {
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        app.gate.countDown()
+        waitFor("Release checklist")
+
+        fun catalogReads() =
+            app.fixture.requests.count {
+                it.method == "GET" && it.requestUrl?.encodedPath == "/api/workflows"
+            }
+
+        assertEquals(1, catalogReads())
+        compose.onNodeWithTag("workflow_create").performClick()
+        waitForTag("message_input")
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("Help me create a private workflow.", substring = true)
+
+        back()
+        waitFor("Release checklist")
+        compose.waitUntil(10_000) { catalogReads() == 2 }
+    }
+
+    @Test
     fun offlineDetailAttemptsTheDraftReadAndExplainsItsFailureBesideUse() {
         openWorkflowDetail()
         app.connectivity.value = false
