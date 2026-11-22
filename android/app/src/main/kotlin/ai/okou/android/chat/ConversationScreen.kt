@@ -63,6 +63,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -308,21 +309,56 @@ internal fun ConversationRoute(
                     !list.offline
             )
                 return@LaunchedEffect
-            if (foundIndex >= 0) {
-                position.scrollToItem(foundIndex + 1)
-            } else if (index >= 0 && anchor != null) {
-                position.scrollToItem(index + 1, with(density) { anchor.offsetDp.dp.roundToPx() })
+            val row = (if (foundIndex >= 0) foundIndex else index) + 1
+            val offset =
+                if (foundIndex < 0 && index >= 0 && anchor != null)
+                    with(density) { anchor.offsetDp.dp.roundToPx() }
+                else 0
+            if (findTarget == null) {
+                position.scrollToItem(row, offset)
             } else {
-                position.scrollToItem(0)
+                // A reader's gesture can cancel the scroll without cancelling this entry.
+                coroutineScope { launch { position.scrollToItem(row, offset) }.join() }
+                if (foundIndex < 0) findPositioned = true
             }
             positioned = true
         }
         val awaitingFindPosition = foundIndex >= 0 && !findPositioned
+        val findRowKey = timeline.getOrNull(foundIndex)?.key
+        if (positioned && awaitingFindPosition) {
+            LaunchedEffect(position, findRowKey) {
+                // A folded reply may still be laying out when the reader scrolls away.
+                snapshotFlow { position.layoutInfo.visibleItemsInfo.none { it.key == findRowKey } }
+                    .first { it }
+                findPositioned = true
+            }
+        }
+        val revealFindHit: (suspend (LayoutCoordinates) -> Unit)? =
+            if (positioned && awaitingFindPosition) {
+                { hit ->
+                    try {
+                        val viewport =
+                            snapshotFlow { findViewport?.takeIf { it.isAttached } }
+                                .filterNotNull()
+                                .first()
+                        if (hit.isAttached) {
+                            val bounds = viewport.localBoundingBoxOf(hit, clipBounds = false)
+                            val targetTop =
+                                (viewport.size.height - bounds.height).coerceAtLeast(0f) / 2f
+                            // The timeline scrolls in reverse layout order.
+                            position.scrollBy(targetTop - bounds.top)
+                        }
+                    } finally {
+                        findPositioned = true
+                    }
+                }
+            } else null
         val readingReady = positioned && !awaitingFindPosition
         LaunchedEffect(positioned, previewId) {
             // A newly submitted local preview is an action in this chat. A restored preview
             // belongs to the original attempt and should leave the restored reading position.
             if (positioned && previewId != null && previewId != lastPreviewId) {
+                if (findTarget != null) findPositioned = true
                 position.scrollToItem(0)
             }
             lastPreviewId = previewId
@@ -442,36 +478,7 @@ internal fun ConversationRoute(
                             val highlight =
                                 findTarget
                                     ?.takeIf { positioned && entry.includes(it.id) }
-                                    ?.let {
-                                        ConversationFindHighlight(
-                                            it,
-                                            reveal =
-                                                if (awaitingFindPosition) {
-                                                    { hit ->
-                                                        val viewport =
-                                                            snapshotFlow {
-                                                                    findViewport?.takeIf {
-                                                                        it.isAttached
-                                                                    }
-                                                                }
-                                                                .filterNotNull()
-                                                                .first()
-                                                        val bounds =
-                                                            viewport.localBoundingBoxOf(
-                                                                hit,
-                                                                clipBounds = false,
-                                                            )
-                                                        val targetTop =
-                                                            (viewport.size.height - bounds.height)
-                                                                .coerceAtLeast(0f) / 2f
-                                                        // The timeline scrolls in reverse layout
-                                                        // order.
-                                                        position.scrollBy(targetTop - bounds.top)
-                                                        findPositioned = true
-                                                    }
-                                                } else null,
-                                        )
-                                    }
+                                    ?.let { ConversationFindHighlight(it, revealFindHit) }
                             // Keep a message's lower edge independent of a new reply below it.
                             Column(
                                 trackSize.padding(
