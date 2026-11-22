@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.104.0](https://github.com/okou-ai/okou/compare/api-v2.103.7...api-v2.104.0) (2026-11-22)
+
+
+### Features
+
+* **api:** authorize private voice clip playback for zero ([#50024](https://github.com/okou-ai/okou/issues/50024)) ([de960f7](https://github.com/okou-ai/okou/commit/de960f7eba38bd0f32afe65e2555cdae338388df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.104.0
+    * @okouai/core bumped to 8.859.8
+    * @okouai/db bumped to 2.58.9
+    * @okouai/pi-agent-runtime bumped to 1.52.38
+
 ## [2.103.7](https://github.com/okou-ai/okou/compare/api-v2.103.6...api-v2.103.7) (2026-11-22)
 
 
