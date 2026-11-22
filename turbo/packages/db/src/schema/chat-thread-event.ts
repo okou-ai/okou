@@ -64,8 +64,6 @@ export const chatThreadEvents = pgTable(
     /** Strictly increasing position within the owning user/org event stream. */
     seqId: bigint("seq_id", { mode: "number" }).notNull(),
     chatThreadId: uuid("chat_thread_id").notNull(),
-    // Immutable wire payload for replay after thread deletion or reassignment.
-    eventExecutorId: uuid("event_executor_id"),
     projectId: uuid("project_id"),
     kind: chatThreadEventKind("kind").notNull(),
     title: text("title"),
