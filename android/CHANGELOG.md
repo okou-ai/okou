@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.41.0](https://github.com/okou-ai/okou/compare/android-v0.40.0...android-v0.41.0) (2026-11-22)
+
+
+### Features
+
+* **android:** browse artifacts from chat resources ([#49935](https://github.com/okou-ai/okou/issues/49935)) ([244c925](https://github.com/okou-ai/okou/commit/244c9252789612154376d21ddc924fad62830583))
+
+
+### Bug Fixes
+
+* **android:** align chat list motion and swipe feedback ([#49945](https://github.com/okou-ai/okou/issues/49945)) ([415b071](https://github.com/okou-ai/okou/commit/415b071c0d59356639a0e09f43b0fa55095d2946))
+
+
+### Refactoring
+
+* retire product agent apis and use member identity across clients ([#49933](https://github.com/okou-ai/okou/issues/49933)) ([1d34e53](https://github.com/okou-ai/okou/commit/1d34e531ac4c777d6df6236fa871ce6c834f5380))
+
+
+### Performance Improvements
+
+* **android:** show cached chats and workspace controls on startup ([#49919](https://github.com/okou-ai/okou/issues/49919)) ([8eb9218](https://github.com/okou-ai/okou/commit/8eb921883ef475dbafa346a862a9be220d7de83d))
+
 ## [0.40.0](https://github.com/okou-ai/okou/compare/android-v0.39.1...android-v0.40.0) (2026-11-22)
 
 

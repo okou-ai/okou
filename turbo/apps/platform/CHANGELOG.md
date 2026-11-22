@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1163.4](https://github.com/okou-ai/okou/compare/app-v0.1163.3...app-v0.1163.4) (2026-11-22)
+
+
+### Bug Fixes
+
+* **platform:** use defringed take-a-breather illustration ([#49947](https://github.com/okou-ai/okou/issues/49947)) ([d969e75](https://github.com/okou-ai/okou/commit/d969e7590d36c2053258c6d62ec856b2593ab2e8))
+* **platform:** use regenerated for you illustrations without dark-mode fringe ([#49951](https://github.com/okou-ai/okou/issues/49951)) ([8778e1d](https://github.com/okou-ai/okou/commit/8778e1d6623b74e0a566dc0a05d527a35eeb9c65))
+
+
+### Refactoring
+
+* retire product agent apis and use member identity across clients ([#49933](https://github.com/okou-ai/okou/issues/49933)) ([1d34e53](https://github.com/okou-ai/okou/commit/1d34e531ac4c777d6df6236fa871ce6c834f5380))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.101.1
+    * @okouai/core bumped to 8.859.4
+    * @okouai/ui bumped to 1.21.91
+
 ## [0.1163.3](https://github.com/okou-ai/okou/compare/app-v0.1163.2...app-v0.1163.3) (2026-11-22)
 
 
