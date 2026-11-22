@@ -112,7 +112,7 @@ class ScreenshotScenario {
             menu.click()
             text(app.getString(R.string.conversation_find_turns))
             awaitIme(current, true)
-            device.awaitKeyboardFocus(editor)
+            device.awaitKeyboardFocus(By.copy(editor))
             verifyTapHeight(button(desc(R.string.back)), 48, "Find Back button")
             find(editor).text = KEYWORD
             val count = app.resources.getQuantityString(R.plurals.conversation_find_matches, 3, 3)
