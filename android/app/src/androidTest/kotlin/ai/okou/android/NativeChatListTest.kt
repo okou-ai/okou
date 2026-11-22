@@ -614,7 +614,8 @@ class NativeChatListTest {
             val personalChat = By.pkg(app.packageName).text("Personal chat")
             fun captureSwipe(displacement: Int, name: String) {
                 val point = swipePoint(displacement, 0)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
+                // A second sample at the same point lets platform resampling settle at the target.
+                repeat(2) { assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point)) }
                 val targetRight = row.right + point.x - start.x
                 assertTrue(
                     "Chat row failed to follow the $displacement dp swipe",
