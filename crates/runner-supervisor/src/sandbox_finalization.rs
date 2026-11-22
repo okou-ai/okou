@@ -656,6 +656,26 @@ async fn finalize_sandbox_for_completion_inner(
             record_destroy_result(destroy_result.outcome, destroy_bookkeeping);
             break 'finalization BudgetOwnership::active(active_lease);
         };
+        let destroy_parked_and_record_home =
+            async |(payload, budget_lease), reason: &'static str| {
+                let result = destroy_active_owned_idle_payload(
+                    payload,
+                    budget_lease,
+                    reason,
+                    destroy_bookkeeping,
+                )
+                .await;
+                mark_home_cache_snapshot_promoted(
+                    run_id,
+                    &home_cache_snapshot,
+                    home_cache_key.as_deref(),
+                    Some(&reuse_key),
+                    &profile_name,
+                    &completed_at,
+                    result.home_cache_promoted,
+                );
+                result
+            };
         let reuse_key_fingerprint = runner_host::paths::short_digest(&reuse_key);
         let reuse_kind = reuse_key_kind(&reuse_key);
         // Inflate the guest balloon BEFORE acquiring the pool lock —
@@ -849,23 +869,12 @@ async fn finalize_sandbox_for_completion_inner(
                         &network_log_drain,
                     )
                     .await;
-                    let (payload, budget_lease) = rejected.into_active_destroy_parts();
-                    let destroy_result = destroy_active_owned_idle_payload(
-                        payload,
-                        budget_lease,
+                    let destroy_result = destroy_parked_and_record_home(
+                        rejected.into_active_destroy_parts(),
                         reason,
-                        destroy_bookkeeping,
                     )
                     .await;
-                    reuse_state_changed = mark_home_cache_snapshot_promoted(
-                        run_id,
-                        &home_cache_snapshot,
-                        home_cache_key.as_deref(),
-                        Some(&reuse_key),
-                        &profile_name,
-                        &completed_at,
-                        destroy_result.home_cache_promoted,
-                    );
+                    reuse_state_changed = destroy_result.home_cache_promoted;
                     break 'finalization destroy_result.budget;
                 }
                 IdleParkFailureParts::RunningHandoff {
@@ -904,7 +913,7 @@ async fn finalize_sandbox_for_completion_inner(
         if cancel.is_hard_cancelled() {
             telemetry.record_outcome("runner_host_finalization_cancelled", "cancelled");
             telemetry.record_idle_publication(false, Some("cancelled"));
-            let (payload, budget_lease) = candidate.into_active_destroy_parts();
+            let destroy_parts = candidate.into_active_destroy_parts();
             close_network_log_session(run_id, network_log_session.take(), &network_log_drain).await;
             info!(
                 run_id = %run_id,
@@ -912,22 +921,9 @@ async fn finalize_sandbox_for_completion_inner(
                 reuse_key_kind = reuse_kind,
                 "job hard-cancelled while parking, destroying sandbox"
             );
-            let destroy_result = destroy_active_owned_idle_payload(
-                payload,
-                budget_lease,
-                "hard_cancellation",
-                destroy_bookkeeping,
-            )
-            .await;
-            reuse_state_changed |= mark_home_cache_snapshot_promoted(
-                run_id,
-                &home_cache_snapshot,
-                home_cache_key.as_deref(),
-                Some(&reuse_key),
-                &profile_name,
-                &completed_at,
-                destroy_result.home_cache_promoted,
-            );
+            let destroy_result =
+                destroy_parked_and_record_home(destroy_parts, "hard_cancellation").await;
+            reuse_state_changed |= destroy_result.home_cache_promoted;
             destroy_result.budget
         } else if let Some(non_reusable) = non_reusable {
             let reason = non_reusable.reason;
@@ -1010,23 +1006,12 @@ async fn finalize_sandbox_for_completion_inner(
                     );
                 }
             }
-            let (payload, budget_lease) = candidate.into_active_destroy_parts();
-            let destroy_result = destroy_active_owned_idle_payload(
-                payload,
-                budget_lease,
+            let destroy_result = destroy_parked_and_record_home(
+                candidate.into_active_destroy_parts(),
                 reason.as_str(),
-                destroy_bookkeeping,
             )
             .await;
-            reuse_state_changed |= mark_home_cache_snapshot_promoted(
-                run_id,
-                &home_cache_snapshot,
-                home_cache_key.as_deref(),
-                Some(&reuse_key),
-                &profile_name,
-                &completed_at,
-                destroy_result.home_cache_promoted,
-            );
+            reuse_state_changed |= destroy_result.home_cache_promoted;
             destroy_result.budget
         } else {
             close_network_log_session(run_id, network_log_session.take(), &network_log_drain).await;
@@ -1037,23 +1022,12 @@ async fn finalize_sandbox_for_completion_inner(
                     drop(transfer_guard);
                     telemetry.record_outcome("runner_host_finalization_cancelled", "cancelled");
                     telemetry.record_handoff_failed("cancelled", "cancelled");
-                    let (payload, budget_lease) = candidate.into_active_destroy_parts();
-                    let destroy_result = destroy_active_owned_idle_payload(
-                        payload,
-                        budget_lease,
+                    let destroy_result = destroy_parked_and_record_home(
+                        candidate.into_active_destroy_parts(),
                         "hard_cancellation",
-                        destroy_bookkeeping,
                     )
                     .await;
-                    reuse_state_changed = mark_home_cache_snapshot_promoted(
-                        run_id,
-                        &home_cache_snapshot,
-                        home_cache_key.as_deref(),
-                        Some(&reuse_key),
-                        &profile_name,
-                        &completed_at,
-                        destroy_result.home_cache_promoted,
-                    );
+                    reuse_state_changed = destroy_result.home_cache_promoted;
                     break 'finalization destroy_result.budget;
                 }
                 match deliver_exact_handoff(&active_run_reuse, candidate, run_id) {
@@ -1104,23 +1078,12 @@ async fn finalize_sandbox_for_completion_inner(
                         handoff_error = error,
                         "exact handoff unavailable, destroying sandbox"
                     );
-                    let (payload, budget_lease) = candidate.into_active_destroy_parts();
-                    let destroy_result = destroy_active_owned_idle_payload(
-                        payload,
-                        budget_lease,
+                    let destroy_result = destroy_parked_and_record_home(
+                        candidate.into_active_destroy_parts(),
                         "exact_handoff_unavailable",
-                        destroy_bookkeeping,
                     )
                     .await;
-                    reuse_state_changed = mark_home_cache_snapshot_promoted(
-                        run_id,
-                        &home_cache_snapshot,
-                        home_cache_key.as_deref(),
-                        Some(&reuse_key),
-                        &profile_name,
-                        &completed_at,
-                        destroy_result.home_cache_promoted,
-                    );
+                    reuse_state_changed = destroy_result.home_cache_promoted;
                     break 'finalization destroy_result.budget;
                 }
             };
@@ -1145,23 +1108,12 @@ async fn finalize_sandbox_for_completion_inner(
                             "job hard-cancelled before idle pool ownership transfer, destroying sandbox"
                         );
                         drop(transfer_guard);
-                        let (payload, budget_lease) = candidate.into_active_destroy_parts();
-                        let destroy_result = destroy_active_owned_idle_payload(
-                            payload,
-                            budget_lease,
+                        let destroy_result = destroy_parked_and_record_home(
+                            candidate.into_active_destroy_parts(),
                             "hard_cancellation",
-                            destroy_bookkeeping,
                         )
                         .await;
-                        reuse_state_changed = mark_home_cache_snapshot_promoted(
-                            run_id,
-                            &home_cache_snapshot,
-                            home_cache_key.as_deref(),
-                            Some(&reuse_key),
-                            &profile_name,
-                            &completed_at,
-                            destroy_result.home_cache_promoted,
-                        );
+                        reuse_state_changed = destroy_result.home_cache_promoted;
                         break 'finalization destroy_result.budget;
                     }
                     drop(transfer_guard);
@@ -1178,23 +1130,12 @@ async fn finalize_sandbox_for_completion_inner(
                     );
                     drop(transfer_guard);
                     drop(pool);
-                    let (payload, budget_lease) = candidate.into_active_destroy_parts();
-                    let destroy_result = destroy_active_owned_idle_payload(
-                        payload,
-                        budget_lease,
+                    let destroy_result = destroy_parked_and_record_home(
+                        candidate.into_active_destroy_parts(),
                         "hard_cancellation",
-                        destroy_bookkeeping,
                     )
                     .await;
-                    reuse_state_changed = mark_home_cache_snapshot_promoted(
-                        run_id,
-                        &home_cache_snapshot,
-                        home_cache_key.as_deref(),
-                        Some(&reuse_key),
-                        &profile_name,
-                        &completed_at,
-                        destroy_result.home_cache_promoted,
-                    );
+                    reuse_state_changed = destroy_result.home_cache_promoted;
                     break 'finalization destroy_result.budget;
                 }
                 let replacement_cleanup = match pool.park(candidate) {
@@ -1235,23 +1176,12 @@ async fn finalize_sandbox_for_completion_inner(
                         drop(pool);
                         // Pool unchanged: the parked candidate remains active-owned
                         // until destruction completes, without idle publication.
-                        let (payload, lease) = rejected.into_active_destroy_parts();
-                        let destroy_result = destroy_active_owned_idle_payload(
-                            payload,
-                            lease,
+                        let destroy_result = destroy_parked_and_record_home(
+                            rejected.into_active_destroy_parts(),
                             "park_rejected",
-                            destroy_bookkeeping,
                         )
                         .await;
-                        reuse_state_changed |= mark_home_cache_snapshot_promoted(
-                            run_id,
-                            &home_cache_snapshot,
-                            home_cache_key.as_deref(),
-                            Some(&reuse_key),
-                            &profile_name,
-                            &completed_at,
-                            destroy_result.home_cache_promoted,
-                        );
+                        reuse_state_changed |= destroy_result.home_cache_promoted;
                         break destroy_result.budget;
                     }
                 };
