@@ -82,7 +82,6 @@ const READ_ONLY_CONSENT_MARKER = "read-only.";
 export interface WalletOwner {
   readonly orgId: string;
   readonly userId: string;
-  // Initiating-agent provenance for existing chat clients, never wallet ownership.
 }
 interface WalletRunOwner extends WalletOwner {
   readonly runId?: string;

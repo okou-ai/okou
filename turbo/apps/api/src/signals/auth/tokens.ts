@@ -482,6 +482,8 @@ function buildOkouTokenClaims(
     runId,
     orgId,
     capabilities,
+    // Older API rollback targets still require this signed claim.
+    ...(options?.personalExecution === true ? { singleAgent: true } : {}),
     ...phoneUseTokenClaims(capabilities, options),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId

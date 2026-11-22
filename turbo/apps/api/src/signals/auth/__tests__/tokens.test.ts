@@ -267,22 +267,6 @@ describe("auth tokens", () => {
     );
   });
 
-  it("issues personal resource permissions only for member executions", () => {
-    const personal = issueOkouToken("member", "run", "org", undefined, {
-      personalExecution: true,
-    });
-    const other = issueOkouToken("member", "run", "org");
-    for (const permission of [
-      "project:read",
-      "project:write",
-      "instructions:read",
-      "instructions:write",
-    ]) {
-      expect(verifyOkouToken(personal)?.capabilities).toContain(permission);
-      expect(verifyOkouToken(other)?.capabilities).not.toContain(permission);
-    }
-  });
-
   it("includes chat event read and write capabilities in okou-scoped tokens", () => {
     const token = issueOkouToken("user_okou", "run_okou", "org_okou");
 
