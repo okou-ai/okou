@@ -593,7 +593,13 @@ class NativeChatListTest {
                             else 1f
                         this.size = 1f
                     }
-                val eventAt = SystemClock.uptimeMillis()
+                // Diagnostic only: give Android a 10 ms history for extrapolating the first MOVE.
+                val eventAt =
+                    when {
+                        action == MotionEvent.ACTION_DOWN -> downAt
+                        action == MotionEvent.ACTION_MOVE && injected.size == 1 -> downAt + 10L
+                        else -> SystemClock.uptimeMillis()
+                    }
                 val event =
                     MotionEvent.obtain(
                         downAt,
@@ -671,7 +677,7 @@ class NativeChatListTest {
             }
             var released = false
             try {
-                downAt = SystemClock.uptimeMillis()
+                downAt = SystemClock.uptimeMillis() - 30L
                 assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
                 captureSwipe(-36, "android-swipe-archive-icon")
                 captureSwipe(-104, "android-swipe-archive-ready")
