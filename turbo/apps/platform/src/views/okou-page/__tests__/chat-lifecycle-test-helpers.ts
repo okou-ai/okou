@@ -54,14 +54,6 @@ export function buttonByText(
   return button;
 }
 
-export function chatScrollContainer(): HTMLElement {
-  const element = document.querySelector("[data-scroll-container]");
-  if (!(element instanceof HTMLElement)) {
-    throw new Error("Chat scroll container not found");
-  }
-  return element;
-}
-
 export function chatComposerTextarea(): HTMLElement {
   const element = document.querySelector(
     '[data-chat-composer] [contenteditable="true"]',
