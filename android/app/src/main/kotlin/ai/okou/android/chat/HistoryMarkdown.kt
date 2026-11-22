@@ -400,7 +400,7 @@ private fun Node.children(): Sequence<Node> = generateSequence(firstChild) { it.
 
 private fun historyMarkdownRows(
     table: TableBlock,
-    interactiveLinks: Boolean = false,
+    interactiveLinks: Boolean,
 ): List<List<HistoryMarkdownCell>> =
     table
         .children()
@@ -498,8 +498,11 @@ private fun renderHistoryMarkdownNode(
 
             override fun visit(node: org.commonmark.node.CustomBlock) {
                 if (node is TableBlock) {
-                    for (row in historyMarkdownRows(node)) {
-                        append(row.joinToString("\t") { it.text.text })
+                    for (row in historyMarkdownRows(node, interactiveLinks)) {
+                        for ((index, cell) in row.withIndex()) {
+                            if (index > 0) append('\t')
+                            append(cell.text)
+                        }
                         append("\n")
                     }
                     append("\n")

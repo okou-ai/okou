@@ -43,7 +43,11 @@ internal enum class SettingsDestination {
 internal enum class SearchRoute {
     Closed,
     Open,
-    ReturnOnBack,
+    OpenBeforeLink,
+    ReturnOnBack;
+
+    val isOpen: Boolean
+        get() = this == Open || this == OpenBeforeLink
 }
 
 @Composable

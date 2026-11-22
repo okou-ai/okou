@@ -283,10 +283,59 @@ class ChatListRootTest {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun webpageLinkHandsTheUrlToAndroidAndLeavesTheConversationVisible() {
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun systemBackRespectsTheOrderOfWideSearchAndConversationLinks() {
         val app = compose.activity.application as ChatListApplication
-        app.fixture.historyReply = "Read [Release notes](https://example.org/releases?version=2)."
+        app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT)"
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        awaitInlineLink("Project update")
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val query = compose.onNodeWithTag("chat_search_query")
+        query.performTextInput("personal")
+        val detail = !hasAnyAncestor(hasTestTag("chat_list") or hasTestTag("chat_search"))
+        val source = compose.onNode(hasText("Personal chat") and detail)
+        val destination = compose.onNode(hasText("Project chat") and detail)
+        source.assertIsDisplayed()
+        val link = compose.onNodeWithText("Project update", substring = true)
+        link.performFirstLinkClick()
+        destination.assertIsDisplayed()
+        query.assertTextContains("personal")
+
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+        source.assertIsDisplayed()
+        query.assertIsDisplayed().assertTextContains("personal")
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        query.assertDoesNotExist()
+        source.assertIsDisplayed()
+
+        awaitInlineLink("Project update")
+        link.performFirstLinkClick()
+        destination.assertIsDisplayed()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        query.performTextInput("project")
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        query.assertDoesNotExist()
+        destination.assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        source.assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun webpageLinksOpenFromParagraphsAndQuotedTablesWithoutLeavingTheConversation() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply =
+            """
+            Read [Release notes](https://example.org/releases?version=2).
+
+            > | Check | Result |
+            > | --- | --- |
+            > | Build | [Build details](https://example.org/build/42) |
+            """
+                .trimIndent()
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithText("Personal chat").performClick()
@@ -308,6 +357,14 @@ class ChatListRootTest {
         assertEquals(android.content.Intent.ACTION_VIEW, intent.action)
         assertEquals("https://example.org/releases?version=2", intent.dataString)
         text.assertIsDisplayed()
+
+        awaitInlineLink("Build details")
+        val quoted = compose.onNodeWithText("Build details", substring = true)
+        quoted.performFirstLinkClick()
+        val quotedIntent = shadowOf(compose.activity).nextStartedActivity
+        assertEquals(android.content.Intent.ACTION_VIEW, quotedIntent.action)
+        assertEquals("https://example.org/build/42", quotedIntent.dataString)
+        quoted.assertIsDisplayed()
     }
 
     private fun awaitInlineLink(label: String): SemanticsNodeInteraction {
