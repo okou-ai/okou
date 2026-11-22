@@ -24,4 +24,6 @@
     <plurals name="conversation_find_matches">
         <item quantity="other">%d pesan yang cocok</item>
     </plurals>
+    <string name="conversation_link_unavailable">Tautan percakapan ini tidak tersedia</string>
+    <string name="conversation_link_no_browser">Tidak ada browser yang dapat membuka tautan ini</string>
 </resources>

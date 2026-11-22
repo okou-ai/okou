@@ -24,4 +24,6 @@
         <item quantity="other">%d 条匹配消息</item>
     </plurals>
     <string name="conversation_find_attachment">附件</string>
+    <string name="conversation_link_unavailable">这个对话链接暂不可用</string>
+    <string name="conversation_link_no_browser">没有可打开此链接的浏览器</string>
 </resources>
