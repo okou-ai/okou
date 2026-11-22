@@ -1,6 +1,9 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiFailure
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.UnknownHostException
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -9,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal enum class ConnectorReadFailure {
+    Network,
     Recent,
     Sustained,
     Unavailable,
@@ -43,6 +47,7 @@ internal suspend fun <T : Any> retryConnectorRead(
     canRead: () -> Boolean,
     onError: (Exception) -> Unit,
     publish: (ConnectorRead<T>) -> Unit,
+    canRetry: () -> Boolean = canRead,
 ) = coroutineScope {
     var failures = 0
     var failureWindowElapsed = false
@@ -62,25 +67,28 @@ internal suspend fun <T : Any> retryConnectorRead(
                             error is ApiFailure.Http && error.status in 403..404 ->
                                 ConnectorReadFailure.Unavailable
                             failures >= 3 && failureWindowElapsed -> ConnectorReadFailure.Sustained
+                            error.connectionFailed() -> ConnectorReadFailure.Network
                             else -> ConnectorReadFailure.Recent
                         }
                     publish(ConnectorRead(failure = failure))
                     if (
-                        error is ApiFailure.Http &&
-                            error.status in 400..499 &&
-                            error.status != 408 &&
-                            error.status != 429
+                        !canRetry() ||
+                            error is ApiFailure.Http &&
+                                error.status in 400..499 &&
+                                error.status != 408 &&
+                                error.status != 429
                     )
                         return@coroutineScope
                     if (failures == 1) {
                         failureWindow = launch {
                             delay(30.seconds)
                             failureWindowElapsed = true
-                            if (failures >= 3 && canRead())
+                            if (failures >= 3 && canRead() && canRetry())
                                 publish(ConnectorRead(failure = ConnectorReadFailure.Sustained))
                         }
                     }
                     delay(readRetryDelays[failures - 1])
+                    if (!canRetry()) return@coroutineScope
                     continue
                 }
             if (canRead()) publish(ConnectorRead(value))
@@ -90,3 +98,11 @@ internal suspend fun <T : Any> retryConnectorRead(
         failureWindow?.cancel()
     }
 }
+
+// Canonical calls do not retry connections or follow redirects. These failures happen
+// before sending the request. A read timeout or a lost response does not prove that.
+internal fun Exception.connectionFailed(): Boolean =
+    this is ApiFailure.Network &&
+        (cause is UnknownHostException ||
+            cause is ConnectException ||
+            cause is NoRouteToHostException)

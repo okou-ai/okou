@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">Could not load permissions.</string>
     <string name="connector_impact_failed">Could not check where this account is used.</string>
     <string name="connector_offline">Offline</string>
-    <string name="connector_offline_action">Connect to the internet to manage accounts.</string>
+    <string name="connector_network_failed">Could not reach Okou. Check your connection and try again.</string>
     <string name="connector_account_unavailable">This account is no longer available.</string>
     <string name="connector_unavailable">Authorization is unavailable for this account.</string>
     <string name="connector_no_method">This service has no account setup action here.</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">Check authorization</string>
     <string name="connector_browser_unavailable">No browser could open the authorization page.</string>
     <string name="connector_incomplete">The provider has not confirmed authorization yet.</string>
-    <string name="connector_verify_pending">The outcome is unconfirmed. Okou will check the account again.</string>
+    <string name="connector_verify_pending">The outcome is still unconfirmed.</string>
+    <string name="connector_verify_network">The outcome is still unconfirmed. Check your connection.</string>
+    <string name="connector_authorization_unconfirmed">Authorization is unconfirmed. Check the service’s accounts before trying again.</string>
+    <string name="connector_submitting">Submitting…</string>
+    <string name="connector_waiting_provider">Waiting for the provider to confirm authorization…</string>
     <string name="connector_change_failed">Could not complete this action. Check the account and try again.</string>
     <string name="connector_device_code">Enter this code on the provider’s page</string>
     <string name="connector_external_code">Authorization code</string>

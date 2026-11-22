@@ -3,7 +3,10 @@ package ai.okou.android.connectors
 import ai.okou.android.CONNECTOR_AUTHORIZATION_URL
 import ai.okou.android.CONNECTOR_CALENDAR
 import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
+import ai.okou.android.CONNECTOR_DEVICE_EXAMPLE
+import ai.okou.android.CONNECTOR_EXAMPLE_DEVICE_CODE
 import ai.okou.android.CONNECTOR_GMAIL_ACCOUNT
+import ai.okou.android.CONNECTOR_MANUAL_EXAMPLE
 import ai.okou.android.CONNECTOR_SLACK_ACCOUNT
 import ai.okou.android.ConnectorApiFixture
 import androidx.lifecycle.ViewModelProvider
@@ -173,6 +176,147 @@ class ConnectorModelTest {
         }
 
     @Test
+    fun browserStartLaunchAndReceiptCheckUseTheOriginalAttemptWithAnOfflineSignal() {
+        val online = MutableStateFlow(true)
+        withModel("gmail", connectivity = online) { fixture, model ->
+            online.value = false
+            model.await { it.offline }
+
+            model.startAuthorization(null, "oauth", emptyMap())
+            model.await {
+                it.action?.busy == false &&
+                    it.action.authorization is ConnectorAuthorization.Browser
+            }
+            model.openBrowser { url ->
+                assertEquals(CONNECTOR_AUTHORIZATION_URL, url.toString())
+                true
+            }
+            assertTrue(requireNotNull(model.uiState.value.action).browserOpened)
+
+            fixture.authorizeGmail()
+            model.checkAuthorization()
+            val confirmed = model.await { it.action?.result == ConnectorResult.Authorized }
+            assertEquals(CONNECTOR_GMAIL_ACCOUNT, confirmed.action?.target?.connectionId)
+            assertTrue(confirmed.offline)
+        }
+    }
+
+    @Test
+    fun aDeviceCodeAndItsProviderPageRemainUsableAfterConnectivityChanges() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_DEVICE_EXAMPLE, connectivity = online, includeGrantExamples = true) {
+            _,
+            model ->
+            model.startAuthorization(null, "device-auth", emptyMap())
+            val ready =
+                model.await {
+                    it.action?.busy == false &&
+                        it.action.authorization is ConnectorAuthorization.Device
+                }
+            val attempt = ready.action?.authorization as ConnectorAuthorization.Device
+            assertEquals(CONNECTOR_EXAMPLE_DEVICE_CODE, attempt.code)
+
+            online.value = false
+            model.await { it.offline }
+            model.openBrowser { url ->
+                assertEquals(CONNECTOR_AUTHORIZATION_URL, url.toString())
+                true
+            }
+            val opened = requireNotNull(model.uiState.value.action)
+            assertTrue(opened.browserOpened)
+            assertEquals(attempt, opened.authorization)
+        }
+    }
+
+    @Test
+    fun anUnsentRenameRemainsEditableAndReconnectDoesNotSendIt() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->
+            online.value = false
+            model.await { it.offline }
+            fixture.rejectConnection = true
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+            val failed =
+                model.await { it.action?.problem == ConnectorProblem.Network && !it.action.busy }
+            assertTrue(failed.canChangeAccounts)
+            assertEquals(0, fixture.renameRequests.get())
+
+            fixture.rejectConnection = false
+            online.value = true
+            model.await { !it.offline }
+            assertEquals(0, fixture.renameRequests.get())
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+            model.await { it.action?.result == ConnectorResult.Renamed }
+            assertEquals(1, fixture.renameRequests.get())
+        }
+    }
+
+    @Test
+    fun aPossiblyDeliveredRenameWithAnOfflineSignalReconcilesWithoutRepeatingTheWrite() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->
+            online.value = false
+            model.await { it.offline }
+            fixture.loseRenameReply = true
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+            val pending =
+                model.await {
+                    it.action?.problem == ConnectorProblem.VerificationPending && !it.action.busy
+                }
+            assertFalse(pending.canChangeAccounts)
+            assertEquals(1, fixture.renameRequests.get())
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Other name")
+            assertEquals(1, fixture.renameRequests.get())
+
+            online.value = true
+            val confirmed = model.await { it.action?.result == ConnectorResult.Renamed }
+            assertEquals(
+                "Meeting calendar",
+                confirmed
+                    .accountsFor(CONNECTOR_CALENDAR)
+                    .single { it.id == CONNECTOR_CALENDAR_PRIMARY }
+                    .displayName,
+            )
+            assertEquals(1, fixture.renameRequests.get())
+        }
+    }
+
+    @Test
+    fun aDirectAuthorizationWithoutAReceiptRequiresAFreshAccountReadBeforeAnotherAttempt() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_MANUAL_EXAMPLE, connectivity = online, includeGrantExamples = true) {
+            fixture,
+            model ->
+            online.value = false
+            model.await { it.offline }
+            fixture.loseManualReply = true
+            val values = mapOf("workspace" to "example")
+            model.startAuthorization(null, "manual", values)
+            val pending =
+                model.await {
+                    it.action?.problem == ConnectorProblem.AuthorizationUnconfirmed &&
+                        !it.action.busy
+                }
+            assertNull(pending.action?.result)
+            assertFalse(pending.canChangeAccounts)
+            model.startAuthorization(null, "manual", values)
+            model.dismissAction()
+            model.startAuthorization(null, "manual", values)
+            assertNull(model.uiState.value.action)
+            assertEquals(1, fixture.manualRequests.get())
+
+            online.value = true
+            val refreshed = model.await { it.accounts.data?.isNotEmpty() == true }
+            assertEquals(
+                "Example workspace",
+                refreshed.accountsFor(CONNECTOR_MANUAL_EXAMPLE).single().displayName,
+            )
+            assertNull(refreshed.action?.result)
+            assertEquals(1, fixture.manualRequests.get())
+        }
+    }
+
+    @Test
     fun renameWithLostResponseSettlesThroughAccountReadback() =
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
             fixture.loseRenameReply = true
@@ -186,6 +330,54 @@ class ConnectorModelTest {
                     .displayName,
             )
             assertEquals(2, renamed.accountsFor(CONNECTOR_CALENDAR).size)
+        }
+
+    @Test
+    fun renameRemainsUnconfirmedWhenReadbackPrecedesTheCommit() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            fixture.deferRenameCommit = true
+            val originalName =
+                model.uiState.value.accounts.data
+                    ?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }
+                    ?.displayName
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+
+            val firstCheck = model.await { it.action?.problem != null && !it.action.busy }
+            assertEquals(ConnectorProblem.VerificationPending, firstCheck.action?.problem)
+            assertFalse(firstCheck.canChangeAccounts)
+            assertEquals(
+                originalName,
+                firstCheck.accounts.data
+                    ?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }
+                    ?.displayName,
+            )
+
+            fixture.commitDeferredRename()
+            val confirmed = model.await { it.action?.result == ConnectorResult.Renamed }
+            assertEquals(
+                "Meeting calendar",
+                confirmed.accounts.data?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }?.displayName,
+            )
+            assertEquals(1, fixture.renameRequests.get())
+        }
+
+    @Test
+    fun repeatedUnmatchedReadbacksLeaveTheOutcomeUnconfirmedAndRestoreEditing() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            fixture.deferRenameCommit = true
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+            model.await { it.action?.reconciling == true && !it.action.busy }
+
+            repeat(2) {
+                model.resume()
+                model.await { it.action?.busy == false }
+            }
+
+            val unresolved = model.uiState.value
+            assertTrue(unresolved.canChangeAccounts)
+            assertEquals(ConnectorProblem.VerificationPending, unresolved.action?.problem)
+            assertNull(unresolved.action?.result)
+            assertEquals(1, fixture.renameRequests.get())
         }
 
     @Test
@@ -306,9 +498,10 @@ class ConnectorModelTest {
         slug: String,
         configure: (ConnectorApiFixture) -> Unit = {},
         connectivity: Flow<Boolean> = emptyFlow(),
+        includeGrantExamples: Boolean = false,
         exercise: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
     ) = runBlocking {
-        ConnectorApiFixture().use { fixture ->
+        ConnectorApiFixture(includeGrantExamples).use { fixture ->
             configure(fixture)
             Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { main ->
                 Dispatchers.setMain(main)
