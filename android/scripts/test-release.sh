@@ -29,4 +29,4 @@ ANDROID_RELEASE_KEYSTORE_BASE64=$(base64 < "$work/test.p12") \
   bash ../.github/scripts/artifacts/sign-okou-android-apk.sh "$version" "$unsigned" "$signed"
 python3 scripts/verify-release-pair.py "$unsigned" "$mapping" "$signed" \
   app/build/outputs/mapping/release/mapping.txt "$artifacts/pair-identity.json"
-python3 scripts/release-smoke.py "$signed" "$artifacts"
+python3 scripts/release-smoke.py "$signed" "$artifacts" "$version"
