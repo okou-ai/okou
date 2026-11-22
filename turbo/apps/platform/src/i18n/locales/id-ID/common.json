@@ -2272,6 +2272,8 @@
       "unavailable": "Email ini tidak lagi tersedia."
     },
     "messageDocument": {
+      "voice": "Pesan suara",
+      "voiceClip": "Klip suara {{index}}",
       "agent": "[Agen: {{name}}]",
       "chatThread": "[Thread chat: {{title}}]",
       "file": "[File: {{filename}}]",

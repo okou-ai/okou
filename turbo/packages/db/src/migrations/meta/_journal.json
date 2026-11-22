@@ -3732,6 +3732,13 @@
       "when": 1795299232423,
       "tag": "1611_workspace_workflow_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 1612,
+      "version": "7",
+      "when": 1795310579598,
+      "tag": "1612_voice_transcription",
+      "breakpoints": true
     }
   ]
 }

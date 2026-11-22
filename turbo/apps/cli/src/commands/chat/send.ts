@@ -31,6 +31,7 @@ User message JSON (--user-message-file), one version 1 document:
                    "selection": { ... } } }
   file         { "type": "file", "fileId": "...",
                  "filenameSnapshot": "...", "contentType": "..." }
+  voice        { "type": "voice", "clips": [{ "fileId": "<private audio file UUID>" }, ...] }
   feedback     { "type": "feedback", "quote": "...",
                  "note": [ text | chat_thread | template parts ],
                  "source": { "type": "mail", "id": "...",

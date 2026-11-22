@@ -2317,6 +2317,8 @@
       "unavailable": "Cet e-mail n'est plus disponible."
     },
     "messageDocument": {
+      "voice": "Message vocal",
+      "voiceClip": "Extrait audio {{index}}",
       "agent": "[Agent : {{name}}]",
       "chatThread": "[Fil de discussion : {{title}}]",
       "file": "[Fichier : {{filename}}]",

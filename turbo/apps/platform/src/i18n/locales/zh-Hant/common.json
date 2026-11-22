@@ -2272,6 +2272,8 @@
       "unavailable": "這封郵件已不可用。"
     },
     "messageDocument": {
+      "voice": "語音訊息",
+      "voiceClip": "第 {{index}} 段語音",
       "agent": "[智能體：{{name}}]",
       "chatThread": "[聊天會話：{{title}}]",
       "file": "[檔案：{{filename}}]",

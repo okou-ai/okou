@@ -1,3 +1,4 @@
+import { MAX_VOICE_CLIPS } from "../contracts/voice-clips";
 import {
   modelSettingsPatchSchema,
   modelSettingsSchema,
@@ -552,6 +553,12 @@ export const userMessageInputPartSchema = discriminatedUnion("type", [
         message: "Feedback eventId and range must be provided together",
       },
     ),
+  object({
+    type: literal("voice"),
+    clips: array(object({ fileId: uuid() }).strict())
+      .min(1)
+      .max(MAX_VOICE_CLIPS),
+  }).strict(),
 ]);
 
 const userMessageModelPartSchema = object({

@@ -1062,7 +1062,7 @@ interface UserMessagePartRegistries {
 const registerUserMessageRenderPart$ = command(
   (
     { set },
-    part: Exclude<UserMessagePart, { type: "additional_info" }>,
+    part: Exclude<UserMessagePart, { type: "additional_info" | "voice" }>,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderPart => {
     const { artifactCardSignals } = registries;
@@ -1165,6 +1165,25 @@ const registerUserMessageRenderDocument$ = command(
       (part, index) => {
         if (part.type === "additional_info") {
           return [];
+        }
+        if (part.type === "voice") {
+          return part.clips.map(({ fileId }, clipIndex) => {
+            return set(
+              registerUserMessageRenderPart$,
+              {
+                type: "file",
+                fileId,
+                filenameSnapshot: i18n.t(
+                  ($) => {
+                    return $.chat.messageDocument.voiceClip;
+                  },
+                  { index: clipIndex + 1 },
+                ),
+                contentType: "audio/*",
+              },
+              registries,
+            );
+          });
         }
         const rendered = set(registerUserMessageRenderPart$, part, registries);
         const context = readSuggestionContext(

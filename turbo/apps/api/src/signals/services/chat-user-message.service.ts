@@ -1,3 +1,4 @@
+import { VOICE_TRANSCRIPTION_MODEL } from "@okouai/api-contracts/contracts/voice-clips";
 import {
   readSuggestionContext,
   suggestionFeedbacks,
@@ -348,6 +349,26 @@ export function userMessagePhysicalFiles(
   });
 }
 
+function projectAttachment(
+  part: Extract<UserMessagePart, { type: "voice" | "file" }>,
+) {
+  if (part.type === "file") {
+    return {
+      prompt: userMessageFilePrompt(part),
+      label: `[File: ${part.filenameSnapshot}]`,
+    };
+  }
+  const flags = part.clips
+    .map(({ fileId }) => {
+      return `--file-id ${fileId}`;
+    })
+    .join(" ");
+  return {
+    prompt: `[Voice message] Transcribe the recordings in order:\nokou transcribe ${VOICE_TRANSCRIPTION_MODEL} ${flags}`,
+    label: `[Voice message: ${part.clips.length} clips]`,
+  };
+}
+
 function userMessageFilePrompt(part: UserMessageFilePart): string {
   if (!part.annotatedFileId || !part.annotations) {
     return webFilePrompt(part);
@@ -600,11 +621,10 @@ export function projectUserMessage(
       continue;
     }
     if (part.type === "chat_thread") {
-      const serialized = serializeChatThreadMention(
+      inlinePrompt += serializeChatThreadMention(
         part.threadId,
         part.titleSnapshot,
       );
-      inlinePrompt += serialized;
       inlineDisplayText += `[Chat thread: ${part.titleSnapshot}]`;
       hasTextContent = true;
       continue;
@@ -615,10 +635,12 @@ export function projectUserMessage(
       hasTextContent = true;
       continue;
     }
-    if (part.type === "file") {
+    if (part.type === "file" || part.type === "voice") {
       flushInlinePrompt();
-      promptBlocks.push(userMessageFilePrompt(part));
-      displayBlocks.push(`[File: ${part.filenameSnapshot}]`);
+      const attachment = projectAttachment(part);
+      promptBlocks.push(attachment.prompt);
+      displayBlocks.push(attachment.label);
+      hasTextContent ||= part.type === "voice";
       continue;
     }
     if (

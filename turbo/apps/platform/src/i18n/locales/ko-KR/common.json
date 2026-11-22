@@ -2272,6 +2272,8 @@
       "unavailable": "이 이메일은 더 이상 사용할 수 없습니다."
     },
     "messageDocument": {
+      "voice": "음성 메시지",
+      "voiceClip": "음성 클립 {{index}}",
       "agent": "[에이전트: {{name}}]",
       "chatThread": "[채팅 스레드: {{title}}]",
       "file": "[파일: {{filename}}]",

@@ -46,6 +46,10 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.VoiceMessages]: {
+    maintainer: "ethan@okou.ai",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
     displayName: "Refined message sharing",

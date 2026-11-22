@@ -2272,6 +2272,8 @@
       "unavailable": "このメールはもう利用できません。"
     },
     "messageDocument": {
+      "voice": "音声メッセージ",
+      "voiceClip": "音声クリップ {{index}}",
       "agent": "[エージェント: {{name}}]",
       "chatThread": "[チャット スレッド: {{title}}]",
       "file": "[ファイル: {{filename}}]",

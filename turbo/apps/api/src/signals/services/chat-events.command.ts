@@ -1,3 +1,4 @@
+import { resolveVoiceClips$ } from "./voice-clips.service";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -2531,6 +2532,23 @@ const prepareNormalSendContext$ = command(
     );
     if ("status" in prepared) {
       return prepared;
+    }
+    const voiceIds = args.body.userMessage.parts.flatMap((part) => {
+      return part.type === "voice"
+        ? part.clips.map((clip) => {
+            return clip.fileId;
+          })
+        : [];
+    });
+    if (voiceIds.length) {
+      const voice = await set(
+        resolveVoiceClips$,
+        { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
+        signal,
+      );
+      if ("status" in voice) {
+        return voice;
+      }
     }
     const revocation =
       existing && args.body.revokesEventId
