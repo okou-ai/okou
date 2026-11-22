@@ -401,7 +401,13 @@ private fun MessageBody(
                     else -> Unit
                 }
                 if (block.kind == HistoryBlockKind.Text && message.role == HistoryRole.Assistant)
-                    HistoryMarkdown(block.text, style, artifactActions, "${message.id}/$index", markdownHighlight)
+                    HistoryMarkdown(
+                        block.text,
+                        style,
+                        artifactActions,
+                        "${message.id}/$index",
+                        markdownHighlight,
+                    )
                 else Text(block.text, style = style, color = foreground)
             }
         }
