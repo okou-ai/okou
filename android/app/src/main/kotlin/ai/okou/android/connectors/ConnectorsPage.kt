@@ -263,13 +263,15 @@ private fun ConnectorDirectory(
         if (!route.hasPendingSearchInput) state
         else remember(route.connected, filter, query) { state }
     val recommended = !route.connected && filter == null
+    val connected = directory.connected.data
     val filtered =
-        filter?.let { current ->
-            directory.matches?.takeIf { it.filter == current }?.entries ?: ConnectorRead()
-        }
+        filter
+            ?.takeUnless { route.connected && connected?.isEmpty() == true }
+            ?.let { current ->
+                directory.matches?.takeIf { it.filter == current }?.entries ?: ConnectorRead()
+            }
     val catalogRead = filtered ?: directory.browse
     val serviceEntries = catalogRead.data?.entries
-    val connected = directory.connected.data
     val failure =
         if (route.connected)
             listOfNotNull(directory.connected.failure, filtered?.failure).maxOrNull()

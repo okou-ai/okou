@@ -77,6 +77,7 @@ internal fun ConnectorDetails(
     val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
     val hasAccountContent =
         state.accounts.data != null || state.cachedAccounts != null || accounts.isNotEmpty()
+    val showsAddAccount = hasAccountContent && detail?.methods?.isNotEmpty() == true
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
     var restoreAccountFocus by remember { mutableStateOf(false) }
@@ -118,10 +119,10 @@ internal fun ConnectorDetails(
             else -> panel = null
         }
         if (panel == null) {
-            if (previous == ConnectorPanel.Permissions) permissionsFocus.requestFocus()
-            else if (account != null) restoreAccountFocus = true
-            else if (detail != null && detail.methods.isNotEmpty() && state.accounts.data != null)
-                addFocus.requestFocus()
+            if (previous == ConnectorPanel.Permissions) {
+                if (detail?.hasPermissions == true) permissionsFocus.requestFocus()
+            } else if (account != null) restoreAccountFocus = true
+            else if (showsAddAccount && state.accounts.data != null) addFocus.requestFocus()
         }
     }
 
@@ -150,7 +151,7 @@ internal fun ConnectorDetails(
                 if (panel == ConnectorPanel.Account && accountId == action.target.connectionId) {
                     panel = null
                     accountId = null
-                    if (detail?.methods?.isNotEmpty() == true) addFocus.requestFocus()
+                    if (showsAddAccount) addFocus.requestFocus()
                 }
                 model.clearImpact()
                 model.dismissAction()
@@ -163,8 +164,7 @@ internal fun ConnectorDetails(
             ConnectorResult.Authorized -> {
                 if (panel == ConnectorPanel.Authorize) {
                     panel = if (account != null) ConnectorPanel.Account else null
-                    if (panel == null && detail?.methods?.isNotEmpty() == true)
-                        addFocus.requestFocus()
+                    if (panel == null && showsAddAccount) addFocus.requestFocus()
                 }
                 model.dismissAction()
             }
@@ -249,7 +249,7 @@ internal fun ConnectorDetails(
                 }
                 if (detail != null && hasAccountContent) {
                     Spacer(Modifier.height(8.dp))
-                    if (detail.methods.isNotEmpty()) {
+                    if (showsAddAccount) {
                         val label =
                             if (accounts.isEmpty()) R.string.connector_connect
                             else R.string.connector_add
@@ -306,6 +306,9 @@ internal fun ConnectorDetails(
                     when {
                         detail == null && state.detail.failure != null ->
                             ConnectorStatusBanner(R.string.connector_load_failed)
+                        hasAccountContent &&
+                            state.accounts.failure == ConnectorReadFailure.Unavailable ->
+                            ConnectorStatusBanner(R.string.connector_accounts_failed)
                         state.detail.failure == ConnectorReadFailure.Sustained ||
                             hasAccountContent &&
                                 state.accounts.failure == ConnectorReadFailure.Sustained ->
@@ -332,8 +335,17 @@ internal fun ConnectorDetails(
 
     if (panel != null && entry != null) {
         ConnectorSheet(::dismissPanel, dismissible = !busy) {
-            if (panel != ConnectorPanel.Permissions && accountId != null && account == null) {
-                ConnectorStatusBanner(R.string.connector_account_unavailable)
+            val unavailableMessage =
+                when {
+                    panel == ConnectorPanel.Authorize &&
+                        state.detail.failure == ConnectorReadFailure.Unavailable ->
+                        R.string.connector_load_failed
+                    panel != ConnectorPanel.Permissions && accountId != null && account == null ->
+                        R.string.connector_account_unavailable
+                    else -> null
+                }
+            if (unavailableMessage != null) {
+                ConnectorStatusBanner(unavailableMessage)
                 ConnectorActionFeedback(action)
                 ConnectorButton(
                     stringResource(R.string.updates_close),

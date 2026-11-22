@@ -96,6 +96,31 @@ class ConnectorModelTest {
     }
 
     @Test
+    fun unavailableCatalogDetailDiscardsRetainedMetadataAndPermissions() {
+        val online = MutableStateFlow(true)
+        withModel("gmail", connectivity = online) { fixture, model ->
+            model.showPermissions()
+            model.await { it.permissions.data != null }
+            model.select("slack")
+            model.await { it.detail.data?.entry?.slug == "slack" }
+            fixture.unavailableCatalogSlugs = setOf("gmail")
+
+            model.select("gmail")
+            assertEquals("gmail", model.uiState.value.detail.data?.entry?.slug)
+            val unavailable = model.await { it.detail.failure != null }
+            assertNull(unavailable.detail.data)
+            assertNull(unavailable.permissions.data)
+
+            model.select("slack")
+            online.value = false
+            model.await { it.offline }
+            model.select("gmail")
+            assertNull(model.uiState.value.detail.data)
+            assertNull(model.uiState.value.permissions.data)
+        }
+    }
+
+    @Test
     fun browserReturnPublishesOnlyTheConfirmedAccount() =
         withModel("gmail") { fixture, model ->
             model.startAuthorization(null, "oauth", emptyMap())

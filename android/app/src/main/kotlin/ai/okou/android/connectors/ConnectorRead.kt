@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 internal enum class ConnectorReadFailure {
     Recent,
     Sustained,
+    Unavailable,
 }
 
 internal data class ConnectorRead<T>(
@@ -18,7 +19,7 @@ internal data class ConnectorRead<T>(
     val failure: ConnectorReadFailure? = null,
 ) {
     fun retaining(previous: ConnectorRead<T>?): ConnectorRead<T> =
-        if (data != null || previous == null) this
+        if (data != null || previous == null || failure == ConnectorReadFailure.Unavailable) this
         else
             copy(
                 data = previous.data,
@@ -50,8 +51,12 @@ internal suspend fun <T : Any> retryConnectorRead(
                     if (!canRead()) return@coroutineScope
                     failures = (failures + 1).coerceAtMost(readRetryDelays.size)
                     val failure =
-                        if (failures >= 3 && failureWindowElapsed) ConnectorReadFailure.Sustained
-                        else ConnectorReadFailure.Recent
+                        when {
+                            error is ApiFailure.Http && error.status in 403..404 ->
+                                ConnectorReadFailure.Unavailable
+                            failures >= 3 && failureWindowElapsed -> ConnectorReadFailure.Sustained
+                            else -> ConnectorReadFailure.Recent
+                        }
                     publish(ConnectorRead(failure = failure))
                     if (
                         error is ApiFailure.Http &&

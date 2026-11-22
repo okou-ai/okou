@@ -249,7 +249,9 @@ class ConnectorModel(
                 if (selected.keyword != null) delay(250)
                 load({ service.discover(selected.keyword, selected.category) }) { read ->
                     if (filter != selected) return@load
-                    read.data?.let { recentMatches.rememberRead(selected, it) }
+                    if (read.failure == ConnectorReadFailure.Unavailable)
+                        recentMatches.remove(selected)
+                    else read.data?.let { recentMatches.rememberRead(selected, it) }
                     mutableState.update { state ->
                         val previous = state.matches?.takeIf { it.filter == selected }
                         state.copy(
@@ -272,15 +274,14 @@ class ConnectorModel(
                 )
             if (
                 snapshot.detail != null || snapshot.accounts != null || snapshot.permissions != null
-            )
+            ) {
                 recentServices.rememberRead(previousSlug, snapshot)
+            } else recentServices.remove(previousSlug)
         }
         cancelDetailReads()
-        permissionJob?.cancel()
-        permissionJob = null
+        hidePermissions()
         impactJob?.cancel()
         impactJob = null
-        permissionsRequested = false
         val cached = slug?.let(recentServices::get)
         mutableState.update {
             it.copy(
@@ -301,8 +302,18 @@ class ConnectorModel(
             detailJob =
                 viewModelScope.launch {
                     load({ service.detail(slug) }) { read ->
+                        val unavailable = read.failure == ConnectorReadFailure.Unavailable
+                        if (unavailable) {
+                            permissionJob?.cancel()
+                            permissionJob = null
+                        }
                         mutableState.update { state ->
-                            state.copy(detail = read.retaining(state.detail))
+                            state.copy(
+                                detail = read.retaining(state.detail),
+                                permissions =
+                                    if (unavailable) ConnectorRead(failure = read.failure)
+                                    else state.permissions,
+                            )
                         }
                     }
                 }
@@ -314,7 +325,13 @@ class ConnectorModel(
                         if (read.data != null) publishAccounts(slug, read.data)
                         else
                             mutableState.update { state ->
-                                state.copy(accounts = read.retaining(state.accounts))
+                                state.copy(
+                                    accounts = read.retaining(state.accounts),
+                                    cachedAccounts =
+                                        state.cachedAccounts.takeUnless {
+                                            read.failure == ConnectorReadFailure.Unavailable
+                                        },
+                                )
                             }
                     }
                 }

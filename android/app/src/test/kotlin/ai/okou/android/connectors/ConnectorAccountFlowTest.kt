@@ -146,8 +146,17 @@ class ConnectorAccountFlowTest {
             offline.assertIsDisplayed()
             waiting.assertDoesNotExist()
 
+            compose.onNodeWithContentDescription("Filter by service category").performClick()
+            compose.onNodeWithText("Email").performClick()
+            val categoryEmpty = compose.onNodeWithText("No connectors in this category")
+            categoryEmpty.assertIsDisplayed()
+            offline.assertIsDisplayed()
+            waiting.assertDoesNotExist()
+
             compose.runOnIdle { connectivity.value = true }
             compose.waitUntilDoesNotExist(hasText("Offline"), 10_000)
+            categoryEmpty.assertIsDisplayed()
+            compose.onNodeWithText("Clear category filter").performClick()
             compose.onNodeWithText(empty).assertIsDisplayed()
         }
 
@@ -186,6 +195,31 @@ class ConnectorAccountFlowTest {
             awaitText("读取邮件")
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
             offlineAction.assertDoesNotExist()
+        }
+
+    @Test
+    fun unavailableServicePermissionPanelCanCloseAfterItsLaunchControlDisappears() =
+        withDirectory(initiallyOnline = false) { fixture, connectivity ->
+            fixture.authorizeGmail()
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("Gmail")
+            compose.onNodeWithTag("connector-gmail").performClick()
+            awaitText("gmail@example.com")
+            val permissions = "Permissions this service can request"
+            awaitText(permissions)
+            compose.onNodeWithText(permissions).performClick()
+            awaitText("读取邮件")
+
+            compose.runOnIdle { connectivity.value = false }
+            awaitText("Offline")
+            fixture.unavailableCatalogSlugs = setOf("gmail")
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("Could not load permissions.")
+            awaitText("Could not load connectors.")
+            compose.onNodeWithText("读取邮件").assertDoesNotExist()
+            compose.onNodeWithText("Close").performClick()
+            compose.onNodeWithText("gmail@example.com").assertIsDisplayed()
+            compose.onNodeWithText(permissions).assertDoesNotExist()
         }
 
     @Test
