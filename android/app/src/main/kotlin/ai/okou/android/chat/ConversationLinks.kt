@@ -26,6 +26,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -166,7 +167,7 @@ internal fun ConversationLinkText(
                                     SpanStyle(
                                         color =
                                             if (chat) colors.onSecondaryContainer
-                                            else colors.onSurface,
+                                            else Color.Unspecified,
                                         fontWeight = FontWeight.SemiBold,
                                         textDecoration = TextDecoration.Underline,
                                     ),
