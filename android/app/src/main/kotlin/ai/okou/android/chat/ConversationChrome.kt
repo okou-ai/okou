@@ -87,7 +87,16 @@ internal fun ConversationToolbarActions(
                                     menu = false
                                     open(restoreFocus)
                                 }
-                            }
+                            },
+                            openSettings?.let {
+                                WorkspaceMenuItem(
+                                    stringResource(R.string.settings),
+                                    R.drawable.ic_settings,
+                                ) {
+                                    menu = false
+                                    it(restoreFocus)
+                                }
+                            },
                         ) +
                             actions.map { action ->
                                 WorkspaceMenuItem(
@@ -110,18 +119,7 @@ internal fun ConversationToolbarActions(
                                         else -> onRowAction(checkNotNull(thread).id, action)
                                     }
                                 }
-                            } +
-                            listOfNotNull(
-                                openSettings?.let {
-                                    WorkspaceMenuItem(
-                                        stringResource(R.string.settings),
-                                        R.drawable.ic_settings,
-                                    ) {
-                                        menu = false
-                                        it(restoreFocus)
-                                    }
-                                }
-                            ),
+                            },
                     close = { menu = false },
                 )
         }
