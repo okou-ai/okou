@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.859.4](https://github.com/okou-ai/okou/compare/core-v8.859.3...core-v8.859.4) (2026-11-22)
+
+
+### Refactoring
+
+* retire product agent apis and use member identity across clients ([#49933](https://github.com/okou-ai/okou/issues/49933)) ([1d34e53](https://github.com/okou-ai/okou/commit/1d34e531ac4c777d6df6236fa871ce6c834f5380))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.101.1
+
 ## [8.859.3](https://github.com/okou-ai/okou/compare/core-v8.859.2...core-v8.859.3) (2026-11-22)
 
 
