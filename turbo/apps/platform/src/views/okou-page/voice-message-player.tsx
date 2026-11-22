@@ -27,7 +27,14 @@ function ClipMetadata({ track }: { track: VoicePlayer["tracks"][number] }) {
   );
 }
 
-export function VoiceMessagePlayer({ player }: { player: VoicePlayer }) {
+export function VoiceMessagePlayer({
+  player,
+  compact = false,
+}: {
+  player: VoicePlayer;
+  compact?: boolean;
+}) {
+  const bars = compact ? heights.slice(0, 7) : heights;
   const { t } = useTranslation();
   const playback = useGet(player.playback$);
   const elapsed = useGet(player.elapsed$);
@@ -62,21 +69,24 @@ export function VoiceMessagePlayer({ player }: { player: VoicePlayer }) {
         );
       }}
       aria-label={label}
-      className="inline-flex h-12 w-[245px] max-w-full items-center gap-3 self-end rounded-full border border-border bg-muted px-3 text-foreground hover:bg-accent"
+      className={`inline-flex max-w-full shrink-0 items-center border border-border text-foreground hover:bg-accent ${compact ? "h-9 w-26 gap-1 rounded-lg bg-background px-2" : "h-12 w-[245px] gap-3 rounded-full bg-muted px-3"}`}
     >
       <span
         aria-hidden="true"
-        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background"
+        className={`flex shrink-0 items-center justify-center rounded-full bg-foreground text-background ${compact ? "size-5" : "size-8"}`}
       >
-        <Icon size={14} className={failed ? undefined : "fill-current"} />
+        <Icon
+          size={compact ? 10 : 14}
+          className={failed ? undefined : "fill-current"}
+        />
       </span>
       <svg
         aria-hidden="true"
-        className="h-6 min-w-0 flex-1"
-        viewBox="0 0 110 24"
+        className={compact ? "h-4 min-w-0 flex-1" : "h-6 min-w-0 flex-1"}
+        viewBox={`0 0 ${bars.length * 5} 24`}
         preserveAspectRatio="none"
       >
-        {heights.map((height, i) => {
+        {bars.map((height, i) => {
           const x = i * 5;
           return (
             <rect
@@ -87,7 +97,7 @@ export function VoiceMessagePlayer({ player }: { player: VoicePlayer }) {
               height={height}
               rx={1.25}
               className={
-                total && i / heights.length < elapsed / total
+                total && i / bars.length < elapsed / total
                   ? "fill-violet-600"
                   : "fill-muted-foreground/50"
               }
@@ -95,7 +105,9 @@ export function VoiceMessagePlayer({ player }: { player: VoicePlayer }) {
           );
         })}
       </svg>
-      <span className="w-12 shrink-0 text-right text-sm tabular-nums text-muted-foreground">
+      <span
+        className={`shrink-0 text-right tabular-nums text-muted-foreground ${compact ? "w-8 text-xs" : "w-12 text-sm"}`}
+      >
         {time === null
           ? "–:––"
           : `${Math.floor(time / 60)}:${String(Math.floor(time % 60)).padStart(2, "0")}`}

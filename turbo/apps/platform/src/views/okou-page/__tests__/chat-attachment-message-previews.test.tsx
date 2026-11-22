@@ -553,7 +553,8 @@ test("A Lark image stored as a binary object uses a thumbnail and opens its orig
   ).resolves.toHaveAttribute("src", originalUrl);
 });
 
-test("User attachments appear before their message text", async () => {
+test("Media appear above file and voice attachments and their message text", async () => {
+  const voiceId = "aaaaaaaa-1111-4000-8000-111111111111";
   const files = [
     ["ordered-image", "compact.png", "image/png"],
     ["ordered-video", "compact.mp4", "video/mp4"],
@@ -567,6 +568,7 @@ test("User attachments appear before their message text", async () => {
           ...files.map(([id, filename, contentType]) => {
             return filePart(id, filename, contentType);
           }),
+          { type: "voice", clips: [{ fileId: voiceId }] },
           { type: "text", text: "Original message beneath the files" },
         ]),
       ),
@@ -579,14 +581,14 @@ test("User attachments appear before their message text", async () => {
       });
     }),
   });
-  mockPrivateUrlSequence(
-    context,
-    Object.fromEntries(
+  mockPrivateUrlSequence(context, {
+    [voiceId]: ["https://private-files.example/voice.wav"],
+    ...Object.fromEntries(
       files.map(([id, filename]) => {
         return [id, [`https://private-files.example/${filename}`]];
       }),
     ),
-  );
+  });
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
@@ -597,6 +599,7 @@ test("User attachments appear before their message text", async () => {
   }
   const media = screen.getByTestId("message-media-attachments");
   const documents = screen.getByTestId("message-file-attachments");
+  expect(documents).toContainElement(getNamedButton("Play voice message"));
   expect(media).toContainElement(getNamedLink("Preview compact.png"));
   expect(media).toContainElement(getNamedButton("Preview compact.mp4"));
   expect(documents).toContainElement(
@@ -674,6 +677,7 @@ test("One inline voice player pauses, resumes, and advances through the message"
   await waitFor(() => {
     expect(secondTrack).toHaveAttribute("src", secondUrl);
   });
+  expect(screen.queryByTestId("message-file-attachments")).toBeNull();
   expect(queryNamedButtons("Play voice message")).toStrictEqual([button]);
   expect(button).not.toHaveTextContent(/Voice|clip/i);
 

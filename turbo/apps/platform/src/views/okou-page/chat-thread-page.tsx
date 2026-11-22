@@ -6672,13 +6672,15 @@ function UserMessageAttachmentRow({
   attachments,
   onImageClick,
   testId,
+  children,
 }: {
   threadId: string;
   attachments: ResolvedMessageAttachment[];
   onImageClick: OpenMessageImagePreview;
   testId: string;
+  children?: ReactNode;
 }) {
-  if (attachments.length === 0) {
+  if (attachments.length === 0 && !children) {
     return null;
   }
 
@@ -6694,6 +6696,7 @@ function UserMessageAttachmentRow({
           />
         );
       })}
+      {children}
     </div>
   );
 }
@@ -6702,13 +6705,17 @@ function UserMessageAttachments({
   threadId,
   attachments,
   onImageClick,
+  voicePlayer,
+  hasBody,
 }: {
   threadId: string;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
+  voicePlayer: UserMessageRenderDocument["voicePlayer"];
+  hasBody: boolean;
 }) {
-  if (attachments.length === 0) {
-    return null;
+  if (attachments.length === 0 && (!voicePlayer || !hasBody)) {
+    return voicePlayer ? <VoiceMessagePlayer player={voicePlayer} /> : null;
   }
 
   // Keep the gap to the bubble or actions inside the attachment's hover surface.
@@ -6730,7 +6737,11 @@ function UserMessageAttachments({
         })}
         onImageClick={onImageClick}
         testId="message-file-attachments"
-      />
+      >
+        {voicePlayer ? (
+          <VoiceMessagePlayer player={voicePlayer} compact />
+        ) : null}
+      </UserMessageAttachmentRow>
     </div>
   );
 }
@@ -7486,11 +7497,10 @@ function UserMessageContent({
       <UserMessageAttachments
         threadId={threadId}
         attachments={elevatedAttachments}
+        voicePlayer={document.voicePlayer}
+        hasBody={hasBody}
         onImageClick={onImageClick}
       />
-      {document.voicePlayer ? (
-        <VoiceMessagePlayer player={document.voicePlayer} />
-      ) : null}
       {hasBody ? (
         // The bubble gets its own full-width row so `leading` can sit against
         // its left edge while the bubble's `max-w-[85%]` still resolves against
