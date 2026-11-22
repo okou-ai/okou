@@ -2,6 +2,8 @@ package ai.okou.android.state
 
 import ai.okou.android.artifacts.ArtifactFilter
 import ai.okou.android.chat.ConversationAnchor
+import ai.okou.android.chat.ConversationFindTarget
+import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
@@ -323,6 +325,35 @@ internal fun rememberConversationLinkReturns(): MutableState<List<ConversationLi
             )
     ) {
         mutableStateOf(emptyList())
+    }
+
+private const val MAX_SAVED_CONVERSATION_EVENT_ID_CHARS = 36
+
+@Composable
+internal fun rememberConversationLinkPosition(): MutableState<ConversationLinkPosition?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<ConversationLinkPosition?, Any>(
+                save = { position ->
+                    val target = position?.destination
+                    // Chat event and run IDs are UUIDs. Link fragments arrive as text.
+                    if (
+                        target == null ||
+                            target.positioned ||
+                            target.id.length > MAX_SAVED_CONVERSATION_EVENT_ID_CHARS
+                    ) {
+                        emptyList()
+                    } else listOf(target.id, target.isRun)
+                },
+                restore = { (eventId, isRun) ->
+                    ConversationLinkPosition(
+                        destination =
+                            ConversationFindTarget(eventId as String, null, isRun as Boolean)
+                    )
+                },
+            )
+    ) {
+        mutableStateOf(null)
     }
 
 internal class ArtifactPageState(

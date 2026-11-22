@@ -52,6 +52,7 @@ import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberArtifactPageHolder
 import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConnectorsOpen
+import ai.okou.android.state.rememberConversationLinkPosition
 import ai.okou.android.state.rememberConversationLinkReturns
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
@@ -151,7 +152,7 @@ internal fun OkouApp(
     val list by rememberWorkspaceChatNavigation(listState)
     var navigation by rememberWorkspaceNavigation()
     var linkReturns by rememberConversationLinkReturns()
-    var linkPosition by remember(chats) { mutableStateOf<ConversationLinkPosition?>(null) }
+    var linkPosition by rememberConversationLinkPosition()
     var linkFocusKey by remember(chats) { mutableStateOf<String?>(null) }
     val artifactPageState = rememberArtifactPageHolder()
     val resourcesPageState = rememberArtifactPageHolder()
@@ -243,8 +244,9 @@ internal fun OkouApp(
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showChatList =
         settings == null && showList && !searchActive && !showArtifacts && !showingConnectors
+    val linkedFrom = linkReturns.lastOrNull()
     val showWorkspaceBack =
-        linkReturns.isNotEmpty() ||
+        linkedFrom != null ||
             artifactSource != null ||
             listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPositions =
@@ -448,7 +450,7 @@ internal fun OkouApp(
         closeResources()
         linkPosition = ConversationLinkPosition(source = source.source)
         linkFocusKey = source.source.key
-        navigation = source.navigation
+        navigation = source.navigation.copy(settings = navigation.settings)
         list.threads
             .firstOrNull { it.id == source.threadId && it.hidden != true }
             ?.let { chats?.history?.open(it) }
@@ -457,6 +459,12 @@ internal fun OkouApp(
     fun showLinkFailure(message: String) {
         linkSnackbar.currentSnackbarData?.dismiss()
         scope.launch { linkSnackbar.showSnackbar(message) }
+    }
+
+    fun returnFromUnavailableLink(source: ConversationLinkReturn) {
+        if (linkReturns.lastOrNull() !== source) return
+        returnFromLink()
+        showLinkFailure(linkUnavailable)
     }
 
     fun openMessageLink(link: ConversationLink, source: ConversationLinkSource) {
@@ -545,6 +553,7 @@ internal fun OkouApp(
         pendingNewChat,
         awaitingCreatedChat,
         showArtifacts,
+        linkedFrom,
     ) {
         if (target is WorkspaceTarget.Chat && !showArtifacts) {
             val pending = pendingNewChat
@@ -561,9 +570,12 @@ internal fun OkouApp(
                     list.listPhase == ChatReadPhase.Ready &&
                     navigation.target == target
             ) {
-                returnToList()
-                scope.launch {
-                    snackbar.showSnackbar(missingChat, duration = SnackbarDuration.Indefinite)
+                if (linkedFrom != null) returnFromUnavailableLink(linkedFrom)
+                else {
+                    returnToList()
+                    scope.launch {
+                        snackbar.showSnackbar(missingChat, duration = SnackbarDuration.Indefinite)
+                    }
                 }
             }
         }
@@ -1226,12 +1238,8 @@ internal fun OkouApp(
                                                 linkFocusKey = linkFocusKey,
                                                 onLinkFocusRestored = { linkFocusKey = null },
                                                 onLinkUnavailable =
-                                                    if (linkReturns.isEmpty()) null
-                                                    else {
-                                                        {
-                                                            returnFromLink()
-                                                            showLinkFailure(linkUnavailable)
-                                                        }
+                                                    linkedFrom?.let { source ->
+                                                        { returnFromUnavailableLink(source) }
                                                     },
                                             ) { failureId ->
                                                 if (

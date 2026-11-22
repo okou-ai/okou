@@ -235,7 +235,8 @@ internal fun ConversationRoute(
         }
     val window = currentWindowSizeDp()
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
-    val readingTarget = findTarget ?: linkPosition?.destination
+    val linkTarget = linkPosition?.destination
+    val readingTarget = findTarget ?: linkTarget
     val targetMessageId =
         remember(readingTarget, content) {
             when {
@@ -347,13 +348,10 @@ internal fun ConversationRoute(
             positioned = true
         }
         if (onLinkUnavailable != null) {
-            LaunchedEffect(missing, firstReadFailed, positioned, foundIndex, linkPosition) {
-                if (
-                    missing ||
-                        firstReadFailed ||
-                        (positioned && linkPosition?.destination != null && foundIndex < 0)
-                )
-                    onLinkUnavailable()
+            val missingLinkTarget =
+                positioned && linkTarget != null && readingTarget === linkTarget && foundIndex < 0
+            LaunchedEffect(missing, firstReadFailed, missingLinkTarget, linkPosition) {
+                if (missing || firstReadFailed || missingLinkTarget) onLinkUnavailable()
             }
         }
         val awaitingFindPosition = foundIndex >= 0 && pendingFind != null

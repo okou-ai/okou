@@ -128,41 +128,84 @@ class ChatListRootTest {
         app.fixture.historyReply =
             "Read [Project update](/chats/$CHAT_IN_PROJECT#event-output).\n\n" +
                 "[Unavailable conversation](/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)"
+        // Keep background warming from supplying the target before the held read.
+        app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        val destinationRequested = CountDownLatch(1)
+        val destinationResponse = CountDownLatch(1)
+        val historyRows = app.fixture.historyRows
+        app.fixture.historyRows = { request ->
+            if (request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_IN_PROJECT) {
+                destinationRequested.countDown()
+                destinationResponse.await()
+            }
+            historyRows(request)
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            compose.onNodeWithText("Personal chat").performClick()
+            val source = compose.onNodeWithText("Read ", substring = true)
+            val link = awaitInlineLink("Project update")
+            val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
+            editor.performTextInput("Source draft")
+            val sourceBounds = source.getUnclippedBoundsInRoot()
+            link.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            link.performKeyInput { pressKey(Key.Enter) }
+            val destination = hasText("Project chat") and !hasAnyAncestor(hasTestTag("chat_list"))
+            compose.waitUntilExactlyOneExists(destination, 10_000)
+            compose.waitUntil(10_000) { destinationRequested.count == 0L }
+            compose.onNodeWithTag("conversation_find_hit").assertDoesNotExist()
+
+            compose.activityRule.scenario.recreate()
+            compose.waitUntilExactlyOneExists(destination, 10_000)
+            destinationResponse.countDown()
+            compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
+            compose.onNodeWithTag("chat_list").assertIsDisplayed()
+            editor.assert(hasText("Source draft").not())
+
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Source draft").fetchSemanticsNodes().isNotEmpty()
+            }
+            source.assertIsDisplayed()
+            assertEquals(sourceBounds, source.getUnclippedBoundsInRoot())
+            link.assertIsFocused()
+            awaitInlineLink("Unavailable conversation")
+            compose
+                .onNodeWithText("Unavailable conversation", substring = true)
+                .performFirstLinkClick()
+            compose.onNodeWithText("This conversation link is unavailable").assertIsDisplayed()
+            editor.assertTextContains("Source draft")
+        } finally {
+            destinationResponse.countDown()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun linkedConversationReturnsToSourceWhenTheDestinationIsDeletedElsewhere() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT)"
+        val remoteEvents = app.fixture.rowEventTail()
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithText("Personal chat").performClick()
-        val source = compose.onNodeWithText("Read ", substring = true)
-        val link = awaitInlineLink("Project update")
+        awaitInlineLink("Project update")
         val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
         editor.performTextInput("Source draft")
-        val sourceBounds = source.getUnclippedBoundsInRoot()
-        link.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
-        link.performKeyInput { pressKey(Key.Enter) }
+        compose.onNodeWithText("Project update", substring = true).performFirstLinkClick()
+        val detailTitle = !hasAnyAncestor(hasTestTag("chat_list"))
+        compose.waitUntilExactlyOneExists(hasText("Project chat") and detailTitle, 10_000)
+
+        remoteEvents.add(
+            24L to chatEventWire(UUID.randomUUID().toString(), 24, CHAT_IN_PROJECT, "deleted")
+        )
+        reconnectList(app)
         compose.waitUntil(10_000) {
-            compose
-                .onAllNodes(hasTestTag("conversation_find_hit"))
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+            currentList()?.threads?.none { it.id == CHAT_IN_PROJECT } == true
         }
-        compose.onNodeWithTag("chat_list").assertIsDisplayed()
-        compose
-            .onNode(hasText("Project chat") and !hasAnyAncestor(hasTestTag("chat_list")))
-            .assertIsDisplayed()
-        editor.assert(hasText("Source draft").not())
-        compose.activityRule.scenario.recreate()
-        compose.waitUntil(10_000) {
-            compose.onAllNodes(hasContentDescription("Back")).fetchSemanticsNodes().isNotEmpty()
-        }
-        compose.onNodeWithContentDescription("Back").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Source draft").fetchSemanticsNodes().isNotEmpty()
-        }
-        source.assertIsDisplayed()
-        assertEquals(sourceBounds, source.getUnclippedBoundsInRoot())
-        link.assertIsFocused()
-        awaitInlineLink("Unavailable conversation")
-        compose.onNodeWithText("Unavailable conversation", substring = true).performFirstLinkClick()
-        compose.onNodeWithText("This conversation link is unavailable").assertIsDisplayed()
+        compose.waitUntilExactlyOneExists(hasText("This conversation link is unavailable"), 10_000)
+        compose.onNode(hasText("Personal chat") and detailTitle).assertIsDisplayed()
         editor.assertTextContains("Source draft")
     }
 
