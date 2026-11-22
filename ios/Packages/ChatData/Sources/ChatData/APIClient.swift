@@ -54,6 +54,7 @@ public struct APIResponse: Sendable {
 /// Requests are never automatically resubmitted by this client.
 public struct APIClient: Sendable {
   public let baseURL: URL
+  public let member: WorkspaceMemberID?
   private let clientVersion: String
   private let clientSessionId = UUID().uuidString.lowercased()
   private let bearerToken: @Sendable () async throws -> String
@@ -63,9 +64,11 @@ public struct APIClient: Sendable {
     baseURL: URL,
     clientVersion: String,
     session: URLSession = .shared,
+    member: WorkspaceMemberID? = nil,
     bearerToken: @escaping @Sendable () async throws -> String
   ) {
     self.baseURL = baseURL
+    self.member = member
     self.clientVersion = clientVersion
     self.session = session
     self.bearerToken = bearerToken

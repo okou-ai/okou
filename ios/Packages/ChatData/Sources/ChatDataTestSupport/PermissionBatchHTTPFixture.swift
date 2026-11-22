@@ -3,7 +3,6 @@ import Synchronization
 
 /// Isolated grants and chat event HTTP boundaries for batch permission consumers.
 public final class PermissionBatchHTTPFixture: Sendable {
-  public static let agentID = PermissionHTTPFixture.agentID
   public static let threadID = PermissionHTTPFixture.threadID
   public static let items = [
     ["connectorSlug": "gmail", "permission": "mail.read"],
@@ -32,6 +31,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
     public var enabled = true
     public var metadataThreadID = PermissionBatchHTTPFixture.threadID
     public var grants: [Grant] = []
+    public var grantExpiry = "2099-01-01T00:00:00Z"
     public var metadataStatus: [String: Int] = [:]
     public var grantReadStatus = 200
     public var failConnector: String?
@@ -53,15 +53,18 @@ public final class PermissionBatchHTTPFixture: Sendable {
 
   public let state: ServerState
   public let http: ChatHTTPFixture
+  public let link: String
 
   public static func actionURL(
     items: [[String: String]] = PermissionBatchHTTPFixture.items, callback: Bool = true,
     duration: String? = nil
   ) -> String {
     var components = URLComponents()
-    components.path = "/agents/\(agentID)/permissions/batch"
+    components.path = "/connectors/permissions/batch"
     let json = try! JSONSerialization.data(withJSONObject: items, options: [.sortedKeys])
     components.queryItems = [
+      URLQueryItem(name: "orgId", value: ChatHTTPFixture.workspaceID),
+      URLQueryItem(name: "userId", value: ChatHTTPFixture.userID),
       URLQueryItem(name: "items", value: String(data: json, encoding: .utf8)!),
       URLQueryItem(name: "action", value: "allow")
     ]
@@ -78,9 +81,12 @@ public final class PermissionBatchHTTPFixture: Sendable {
   }
 
   public init(
+    items: [[String: String]] = PermissionBatchHTTPFixture.items,
     initial: State = State(), onUnhandledRequest: @escaping @Sendable (String) -> Void,
     beforeRequest: @escaping @Sendable (URLRequest) async -> Void = { _ in }
   ) {
+    let link = Self.actionURL(items: items)
+    self.link = link
     state = ServerState(initial)
     let state = state
     http = ChatHTTPFixture(onUnhandledRequest: onUnhandledRequest) { request in
@@ -97,24 +103,21 @@ public final class PermissionBatchHTTPFixture: Sendable {
             "effectiveSwitches": ["batchConnectorPermissions": value.enabled]
           ])
         }
-        if path == "/api/agents/\(Self.agentID)" {
-          return Self.response(["agentId": Self.agentID, "displayName": "Mail assistant"])
-        }
         if path == threadPath + "/metadata" {
           return Self.response([
-            "id": value.metadataThreadID, "agentId": Self.agentID,
+            "id": value.metadataThreadID,
             "computerUseHostId": NSNull(), "cloudBrowserEnabled": false
           ])
         }
-        for slug in ["gmail", "google-drive"]
+        for (slug, label) in ["gmail": "Gmail", "google-drive": "Google Drive", "neon": "Neon"]
         where path == "/api/connector-catalog/\(slug)/permissions" {
           if let status = value.metadataStatus[slug], status != 200 {
             return Self.error(status)
           }
           return Self.response([
             "permissions": [
-              "connectorSlug": slug, "label": slug == "gmail" ? "Gmail" : "Google Drive",
-              "permissions": Self.items.filter { $0["connectorSlug"] == slug }.map {
+              "connectorSlug": slug, "label": label,
+              "permissions": items.filter { $0["connectorSlug"] == slug }.map {
                 ["name": $0["permission"]!, "description": "Use \($0["permission"]!)"]
               },
               "defaultPolicy": ["permissionDefault": "ask", "unknownPolicy": "ask"]
@@ -134,7 +137,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
         if path == threadPath + "/event-rows" {
           let initial = Self.row(
             id: PermissionHTTPFixture.messageID, sequence: 1, type: "output.message",
-            payload: ["content": Self.actionURL()])
+            payload: ["content": link])
           let rows = [initial] + value.events
           let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
           let since = query?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
@@ -207,7 +210,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
       state.grants.append(
         Grant(
           connectorSlug: slug, permission: edit.permission,
-          expiresAt: edit.expiresIn == "always" ? nil : "2099-01-01T00:00:00Z"))
+          expiresAt: edit.expiresIn == "always" ? nil : state.grantExpiry))
     }
   }
 

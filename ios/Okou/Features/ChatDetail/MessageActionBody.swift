@@ -29,8 +29,8 @@ enum MessageActionBody {
     return nil
   }
   static func blocks(
-    _ content: AttributedString, webURL: URL, agentID: String, threadID: String,
-    permissionsEnabled: Bool = true
+    _ content: AttributedString, webURL: URL, agentID: String?, threadID: String,
+    permissionMember: WorkspaceMemberID?
   )
     -> [Block]
   {
@@ -63,21 +63,11 @@ enum MessageActionBody {
       for (range, value) in candidates {
         guard range.lowerBound >= cursor else { continue }
         let block: Block
-        if let approval = approvalBlock(value, webURL: webURL) {
-          block = approval
-        } else if let action = ChatSSHAuthorizationAction.parse(
-          value, webURL: webURL, threadID: threadID)
+        if let agentID,
+          let action = otherAction(value, webURL: webURL, agentID: agentID, threadID: threadID)
         {
-          block = .sshAuthorization(action)
-        } else if let action = ChatComputerAuthorizationAction.parse(
-          value, webURL: webURL, threadID: threadID)
-        {
-          block = .computerAuthorization(action)
-        } else if let action = ChatConnectorAction.parse(
-          value, webURL: webURL, agentID: agentID, threadID: threadID)
-        {
-          block = .connector(action)
-        } else if permissionsEnabled,
+          block = action
+        } else if let permissionMember,
           let url = ChatPermissionAction.trustedURL(value, webURL: webURL)
             ?? ChatPermissionBatchAction.trustedURL(value, webURL: webURL)
         {
@@ -90,15 +80,17 @@ enum MessageActionBody {
             }
             guard !permissionURLIsInMarkup(String(prefix.characters)) else { continue }
           }
-          if url.path.hasSuffix("/permissions/batch") {
-            block =
-              ChatPermissionBatchAction(
-                value: value, webURL: webURL, agentID: agentID, threadID: threadID
-              ).map(Block.permissionBatch) ?? .unavailablePermission(value)
+          if let batch = ChatPermissionBatchAction(
+            value: value, webURL: webURL, threadID: threadID),
+            batch.member == permissionMember
+          {
+            block = .permissionBatch(batch)
+          } else if let single = ChatPermissionAction(url: url, threadID: threadID),
+            single.member == permissionMember
+          {
+            block = .permission(single)
           } else {
-            block =
-              ChatPermissionAction(url: url, agentID: agentID, threadID: threadID)
-              .map(Block.permission) ?? .unavailablePermission(value)
+            block = .unavailablePermission(value)
           }
         } else {
           continue
@@ -116,6 +108,21 @@ enum MessageActionBody {
     }
     if cursor < content.endIndex { blocks.append(.markdown(AttributedString(content[cursor...]))) }
     return blocks
+  }
+
+  private static func otherAction(_ value: String, webURL: URL, agentID: String, threadID: String)
+    -> Block?
+  {
+    if let approval = approvalBlock(value, webURL: webURL) { return approval }
+    if let action = ChatSSHAuthorizationAction.parse(value, webURL: webURL, threadID: threadID) {
+      return .sshAuthorization(action)
+    }
+    if let action = ChatComputerAuthorizationAction.parse(value, webURL: webURL, threadID: threadID)
+    {
+      return .computerAuthorization(action)
+    }
+    return ChatConnectorAction.parse(value, webURL: webURL, agentID: agentID, threadID: threadID)
+      .map(Block.connector)
   }
 
   private static func permissionURLDelimiter(_ character: Character) -> Bool {

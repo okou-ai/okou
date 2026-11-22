@@ -3,7 +3,6 @@ import Synchronization
 
 /// External API fixture shared by data-boundary and native transcript tests.
 public final class PermissionHTTPFixture: Sendable {
-  public static let agentID = "61000000-0000-4000-8000-000000000001"
   public static let threadID = "61000000-0000-4000-8000-000000000002"
   public static let messageID = "61000000-0000-4000-8000-000000000003"
   public struct State: Sendable {
@@ -34,7 +33,8 @@ public final class PermissionHTTPFixture: Sendable {
     action: String = "allow", permission: String = "mail.send", callback: Bool = true,
     duration: String = "1h"
   ) -> String {
-    "/agents/\(agentID)/permissions?connectorSlug=gmail&permission=\(permission)&action=\(action)&expiresIn=\(duration)"
+    "/connectors/permissions?orgId=\(ChatHTTPFixture.workspaceID)&userId=\(ChatHTTPFixture.userID)"
+      + "&connectorSlug=gmail&permission=\(permission)&action=\(action)&expiresIn=\(duration)"
       + (callback ? "&threadId=\(threadID)&callbackPrompt=Continue%20after%20permission" : "")
   }
 
@@ -65,12 +65,8 @@ public final class PermissionHTTPFixture: Sendable {
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
             body: """
-              {"id":"\(value.metadataThreadID)","agentId":"\(Self.agentID)","computerUseHostId":null,"cloudBrowserEnabled":false}
+              {"id":"\(value.metadataThreadID)","computerUseHostId":null,"cloudBrowserEnabled":false}
               """)
-        }
-        if path == "/api/agents/\(Self.agentID)" {
-          return ChatHTTPResponse(
-            body: "{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Mail assistant\"}")
         }
         if path == "/api/connector-catalog/gmail/permissions" {
           if value.metadataStatus != 200 {
