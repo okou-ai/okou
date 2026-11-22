@@ -1,12 +1,12 @@
 ID	owner	BDD	frozen line	status	observed Then or gap	running source or probe	raw passing invocation	failed controls	full frozen GWT and amendments
-raw-video-thumbnail-001	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.bdd.md	27	pending					"## raw-video-thumbnail-001
+raw-video-thumbnail-001	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.bdd.md	27	first-verified	raw-video-thumbnail-001 A private poster appears only after authorization while the playable source is preserved	turbo/apps/platform/src/views/okou-page/__tests__/playing-videos-in-conversations.test.ts	stage3-new.json	media-gestures-red.json	"## raw-video-thumbnail-001
 
 Original test `Raw video resolves an authorized artifact-reference poster before displaying a thumbnail`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx#L27).
 
 - **Given** A user views a chat containing a raw video with an artifact-reference poster whose authorized URL is not yet available.
 - **When** The poster authorization completes.
 - **Then** Before authorization, the video has no poster but retains its source, controls, and preload=none. Afterward, its poster uses the authorized URL through the image CDN, while the video source remains unchanged."
-raw-video-thumbnail-003	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.bdd.md	88	pending					"## raw-video-thumbnail-003
+raw-video-thumbnail-003	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.bdd.md	88	first-verified	raw-video-thumbnail-003 A signed-out visitor sees the public poster and can play either shared video	turbo/apps/platform/src/views/okou-page/__tests__/playing-videos-in-conversations.test.ts	stage3-new.json	media-gestures-red.json	"## raw-video-thumbnail-003
 
 Original test `Shared raw videos preserve playback with or without public posters`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/raw-video-thumbnail.test.tsx#L88).
 
@@ -740,21 +740,21 @@ Original test `Search, pin, and open an agent from the pin manager`. [Registrati
 - **When** The user searches for “support,” searches for “ops,” clears the search, pins Research Agent, closes the manager, and opens Research Agent from the grid.
 - **Then** The first search shows Support Agent but not Research Agent; “ops” shows no results. Clearing search restores Research Agent. After pinning, the manager offers Unpin, and opening the agent shows “Chats with Research Agent” and “Research kickoff” in the sidebar.
 - **Upstream change** `4e5707de` (#49556) retires pinned agents, the Pin an agent manager, and per-agent chat pages, and removes this upstream test. Retire this scenario."
-sidebar-inline-rename-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.bdd.md	73	pending					"## sidebar-inline-rename-002
+sidebar-inline-rename-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.bdd.md	73	first-verified	sidebar-inline-rename-002 A rename waiting for Clerk survives switching to another conversation	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-conversation-gestures.test.ts	stage3-new.json	media-gestures-red.json	"## sidebar-inline-rename-002
 
 Original test `Opening another chat from the field still sends its title`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx#L73).
 
 - **Given** The sidebar lists “Release plan” and “Incident notes,” with “Incident notes” open.
 - **When** The user double-clicks “Incident notes,” types “Postmortem,” then clicks “Release plan” while the rename request is waiting for authentication.
 - **Then** “Release plan” opens, and the rename request for “Incident notes” still completes with title “Postmortem.” The sidebar shows “Postmortem,” and the rename field closes."
-sidebar-inline-rename-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.bdd.md	152	pending					"## sidebar-inline-rename-004
+sidebar-inline-rename-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.bdd.md	152	first-verified	sidebar-inline-rename-004 Cancelling a title edit and submitting an empty title both restore focus to the unchanged conversation	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-conversation-gestures.test.ts	stage3-new.json	media-gestures-red.json	"## sidebar-inline-rename-004
 
 Original test `Escape or an emptied field keeps the title`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx#L152).
 
 - **Given** The sidebar contains “Incident notes.”
 - **When** The user starts renaming it, types “Discarded,” and presses Escape; then reopens the field, deletes the entire title, and presses Enter.
 - **Then** Both actions close the field and retain the original “Incident notes” title. Focus returns to its conversation link."
-sidebar-inline-rename-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.bdd.md	191	pending					"## sidebar-inline-rename-006
+sidebar-inline-rename-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.bdd.md	191	first-verified	sidebar-inline-rename-006 Only an unmodified double-click opens the existing conversation title for editing	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-conversation-gestures.test.ts	stage3-new.json	media-gestures-red.json	"## sidebar-inline-rename-006
 
 Original test `A modified double-click keeps its browser behavior instead of renaming`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-inline-rename.test.tsx#L191).
 
@@ -814,7 +814,7 @@ Original test `Pinned links preserve the current agent and unread filter for key
 - **When** The user presses Enter on Nova, then focuses Research Agent and presses Enter.
 - **Then** Nova’s chat remains selected after activating Nova, and the URL changes to Research Agent’s chat after activating Research Agent.
 - **Upstream change** `4e5707de` (#49556) retires pinned agents and per-agent chat pages and removes this upstream test. Retire this scenario."
-sidebar-pinned-links-010	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	164	pending					"## sidebar-pinned-links-010
+sidebar-pinned-links-010	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	164	first-verified	sidebar-pinned-links-010 Alt-click opens the other conversation beside the current one	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-conversation-gestures.test.ts	stage3-new.json	media-gestures-red.json	"## sidebar-pinned-links-010
 
 Original test `Alt-click still opens a thread in the sidebar pane`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx#L164).
 
@@ -1054,21 +1054,21 @@ Original test `Cancellation and blur preserve the last valid widths and discard 
 - **Given** The workspace has its default chat list and side panel widths.
 - **When** The user resizes the chat list and cancels the gesture with a different coordinate, then resizes the side panel and blurs the window before reloading.
 - **Then** Cancellation preserves the chat list's last valid width of 340 pixels and later pointer movement does not change it. Blur preserves the side panel's last valid width of 600 pixels; stale pointer-up events do not change it. After reload, both widths remain saved, and each resize overlay and pointer capture is cleared on cancellation or blur."
-unread-only-shortcut-001	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.bdd.md	60	pending					"## unread-only-shortcut-001
+unread-only-shortcut-001	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.bdd.md	60	first-verified	unread-only-shortcut-001 Filtering an empty inbox keeps the current chat and the advertised composer shortcut restores it	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-conversation-gestures.test.ts	stage3-new.json	media-gestures-red.json	"## unread-only-shortcut-001
 
 Original test `Toggle unread-only chats and expose the shortcut`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx#L60).
 
 - **Given** The user is viewing a chat on macOS and the chat list contains “Release plan,” with no unread chats.
 - **When** They select the unread-only filter, then focus the message box and press Meta+Shift+U.
 - **Then** The filter shows “No unread chats” without changing the current chat. The menu advertises Meta+Shift+U and Control+Shift+U and displays ⌘⇧U; the keyboard shortcut is handled and “Release plan” appears again."
-unread-only-shortcut-003	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.bdd.md	112	pending					"## unread-only-shortcut-003
+unread-only-shortcut-003	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.bdd.md	112	first-verified	unread-only-shortcut-003 Meta Shift U activates the first unread conversation	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-conversation-gestures.test.ts	stage3-new.json	media-gestures-red.json	"## unread-only-shortcut-003
 
 Original test `Open the first unread chat from the shortcut`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx#L112).
 
 - **Given** The user is viewing “Release plan” on macOS. The chat list also contains “Incident follow-up,” which is unread.
 - **When** They press Meta+Shift+U.
 - **Then** The app navigates to “Incident follow-up,” the first unread chat."
-unread-only-shortcut-004	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.bdd.md	143	pending					"## unread-only-shortcut-004
+unread-only-shortcut-004	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.bdd.md	143	first-verified	unread-only-shortcut-004 Two consecutive filter shortcuts preserve the original chat and its visible row	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-conversation-gestures.test.ts	stage3-new.json	rapid-toggle-red.json	"## unread-only-shortcut-004
 
 Original test `Only the latest shortcut toggle navigates`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/unread-only-shortcut.test.tsx#L143).
 
@@ -1518,70 +1518,70 @@ Original test `A failed OAuth continuation offers visible recovery`. [Registrati
 - **Given** A signed-out user opens sign-in with a valid consent return URL, but Clerk's OAuth continuation fails.
 - **When** The app attempts the continuation.
 - **Then** A visible alert says “Oops! Something went sideways,” and Clerk's continuation was called once."
-auth-v1-page-001	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	21	pending					"## auth-v1-page-001
+auth-v1-page-001	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	21	first-verified	auth-v1-page-001 An unavailable invitation still opens branded sign-up	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## auth-v1-page-001
 
 Original test `An unavailable invitation link still opens Clerk signup`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx#L21).
 
 - **Given** A signed-out user opens a sign-up page with an invitation code whose referral link is unavailable.
 - **When** The invitation lookup returns 404.
 - **Then** Clerk signup still opens and the page title is “Sign up | Okou”."
-auth-v1-page-002	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	35	pending					"## auth-v1-page-002
+auth-v1-page-002	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	35	first-verified	auth-v1-page-002 Signup retains the return link while setting a secure host-only invitation cookie for thirty days	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## auth-v1-page-002
 
 Original test `Invitation links persist a signed host-only cookie and preserve the signup return`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx#L35).
 
 - **Given** A signed-out user opens sign-up with invitation code A7K2P9 and a return URL of https://app.okou.ai/onboarding?source=friend, followed by #start.
 - **When** The invitation lookup succeeds and returns a signed visit token.
 - **Then** The code is looked up in lowercase, a signed host-only cookie is written for 30 days with Path=/, SameSite=Lax, and Secure, and the signup return URL is preserved. The referral query is removed while the redirect query and #start remain."
-auth-v1-page-003	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	61	pending					"## auth-v1-page-003
+auth-v1-page-003	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	61	first-verified	auth-v1-page-003 The invitation survives Clerk verification and is consumed on the authenticated registered result	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## auth-v1-page-003
 
 Original test `An invitation survives Clerk steps and is consumed after the authenticated registered result`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx#L61).
 
 - **Given** A signed-out user starts signup with an invitation whose lookup returns a signed visit token; Clerk proceeds to email verification, then the user returns as authenticated with registration status registered.
 - **When** The user navigates through the verification step and returns in a new authenticated document on the same app origin.
 - **Then** The invitation cookie remains through the Clerk step, the registration request receives the signed token, and the cookie is consumed after the registered result."
-auth-v1-page-004	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	61	pending					"## auth-v1-page-004
+auth-v1-page-004	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	61	first-verified	auth-v1-page-004 The invitation survives Clerk verification and is consumed on the authenticated ineligible result	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## auth-v1-page-004
 
 Original test `An invitation survives Clerk steps and is consumed after the authenticated ineligible result`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx#L61).
 
 - **Given** A signed-out user starts signup with an invitation whose lookup returns a signed visit token; Clerk proceeds to email verification, then the user returns as authenticated with registration status ineligible.
 - **When** The user navigates through the verification step and returns in a new authenticated document on the same app origin.
 - **Then** The invitation cookie remains through the Clerk step, the registration request receives the signed token, and the cookie is consumed after the ineligible result."
-auth-v1-page-005	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	137	pending					"## auth-v1-page-005
+auth-v1-page-005	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	137	first-verified	auth-v1-page-005 Hosted sign-in exposes both Clerk return targets, One Tap, branding and its loaded UI	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## auth-v1-page-005
 
 Original test `The hosted sign-in form renders with Google One Tap on the base route`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx#L137).
 
 - **Given** A signed-out user visits the base sign-in route with reduced-motion preference off.
 - **When** The hosted auth page loads.
 - **Then** A Clerk sign-in form and Google One Tap render with sign-in and sign-up URLs set to /sign-in and /sign-up and both forced to return to https://app.okou.ai. The Okou wordmark, “Sign in | Okou” title, and hidden bootstrap skeleton are present, and the Clerk UI resource is requested."
-auth-v1-page-007	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	178	pending					"## auth-v1-page-007
+auth-v1-page-007	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.bdd.md	178	first-verified	auth-v1-page-007 Clerk's password step and browser Back preserve both strategy parameters and each fragment	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## auth-v1-page-007
 
 Original test `Clerk sign-in steps use app history and keep every query value`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-page.test.tsx#L178).
 
 - **Given** A signed-out user is on /sign-in?screen=identifier#start.
 - **When** Clerk navigates to /sign-in/factor-one?strategy=password&strategy=passkey#challenge, then the user goes back in browser history.
 - **Then** The sign-in step uses app history without assigning a new document; both strategy values and the challenge hash are retained. Back restores /sign-in with ?screen=identifier and #start, and the sign-in form remains visible during the step."
-integration-continuation-016	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	133	pending					"## integration-continuation-016
+integration-continuation-016	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	133	first-verified	integration-continuation-016 Signing up from a protected /settings/email link preserves its complete public return address	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## integration-continuation-016
 
 Original test `Sign-in and sign-up retain the complete supported continuation for Email`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx#L133).
 
 - **Given** A signed-out visitor opens an Email settings link with signed message context with a public URL fragment.
 - **When** The visitor is directed to sign in and then follows the sign-up link.
 - **Then** Both forms retain the original destination, all supported parameters in repeated-value order, and the public fragment."
-integration-continuation-017	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	133	pending					"## integration-continuation-017
+integration-continuation-017	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	133	first-verified	integration-continuation-017 Signing up from a protected /settings/agentphone link preserves its complete public return address	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## integration-continuation-017
 
 Original test `Sign-in and sign-up retain the complete supported continuation for AgentPhone`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx#L133).
 
 - **Given** A signed-out visitor opens an AgentPhone settings link with signed account context and repeated parameters with a public URL fragment.
 - **When** The visitor is directed to sign in and then follows the sign-up link.
 - **Then** Both forms retain the original destination, all supported parameters in repeated-value order, and the public fragment."
-integration-continuation-018	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	133	pending					"## integration-continuation-018
+integration-continuation-018	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	133	first-verified	integration-continuation-018 Signing up from a protected /connectors/slack/callback link preserves its complete public return address	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## integration-continuation-018
 
 Original test `Sign-in and sign-up retain the complete supported continuation for Slack OAuth completion`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx#L133).
 
 - **Given** A signed-out visitor opens a Slack OAuth completion link with a public URL fragment.
 - **When** The visitor is directed to sign in and then follows the sign-up link.
 - **Then** Both forms retain the original destination, all supported parameters in repeated-value order, and the public fragment."
-integration-continuation-023	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	133	pending					"## integration-continuation-023
+integration-continuation-023	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.bdd.md	133	first-verified	integration-continuation-023 Signing up from a protected /SetTings/TeleGram/ link preserves its complete public return address	turbo/apps/platform/src/views/auth-v1/__tests__/following-a-sign-in-return.test.ts	stage3-new.json	auth-red.json	"## integration-continuation-023
 
 Original test `Sign-in and sign-up retain the complete supported continuation for Telegram with case-insensitive and trai…`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/integration-continuation.test.tsx#L133).
 
