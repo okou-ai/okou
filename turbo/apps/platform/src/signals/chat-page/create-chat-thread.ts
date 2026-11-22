@@ -2351,7 +2351,14 @@ function createEventChangeEffects({
       // A background tab may suspend RAF. Receiving the next batch must not
       // wait for the viewport; a newer scroll request supersedes this one.
       detach(
-        set(scroll.autoScroll$, scrollPosition, "instant", signal),
+        set(
+          scroll.autoScroll$,
+          scrollPosition,
+          // WebKit can clamp scrollTop while replacing transcript rows. Keep
+          // the requested tail through both frames unless the reader moves.
+          scrollPosition === null ? "preserve-layout" : "instant",
+          signal,
+        ),
         Reason.Deferred,
         "align the updated transcript after paint",
       );
