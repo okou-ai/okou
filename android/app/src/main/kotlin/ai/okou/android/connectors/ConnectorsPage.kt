@@ -260,7 +260,7 @@ private fun ConnectorDirectory(
     }
     // Keep the visible directory stable while the input method is composing a word.
     val directory =
-        if (route.query.composition == null) state
+        if (!route.hasPendingSearchInput) state
         else remember(route.connected, filter, query) { state }
     val recommended = !route.connected && filter == null
     val serviceEntries = directory.browse.data?.entries

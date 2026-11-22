@@ -82,6 +82,9 @@ internal class ConnectorDirectoryState(
     var committedQuery by mutableStateOf(query)
         private set
 
+    val hasPendingSearchInput: Boolean
+        get() = query.composition != null && query.text != committedQuery.text
+
     fun editQuery(value: TextFieldValue) {
         query = value
         if (value.composition == null) committedQuery = value
