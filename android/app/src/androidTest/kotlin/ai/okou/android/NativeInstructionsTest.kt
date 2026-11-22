@@ -138,7 +138,7 @@ class NativeInstructionsTest {
                     )
                 )
                 .click()
-            text(app.getString(R.string.appearance))
+            reveal(app.getString(R.string.appearance))
             click(R.string.instructions_title)
             assertTrue(entered.await(10, TimeUnit.SECONDS))
             scenario.onActivity {
