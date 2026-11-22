@@ -123,9 +123,11 @@ class ConversationRouteTest {
         val header = compose.onNodeWithText(compose.activity.getString(R.string.app_name))
         // Start the same pointer handler before this reply receives more content.
         header.performTouchInput { click() }
-        val complete = "First chunk and its continuation"
+        val complete = "First chunk and the [release notes](https://example.org/releases)."
+        val rendered = "First chunk and the release notes (https://example.org/releases)."
         compose.runOnIdle { displayed.value = reply(complete) }
-        compose.onNodeWithText(complete).assertIsDisplayed()
+        compose.waitUntilExactlyOneExists(hasText(rendered), 5_000)
+        compose.onNodeWithText(rendered).assertIsDisplayed()
         header.performTouchInput { longClick() }
         compose
             .onNodeWithText(compose.activity.getString(R.string.conversation_copy_reply))
@@ -133,7 +135,7 @@ class ConversationRouteTest {
         val clipboard =
             checkNotNull(compose.activity.getSystemService(ClipboardManager::class.java))
         compose.waitUntil(5_000) { clipboard.primaryClip != null }
-        assertEquals(complete, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
+        assertEquals(rendered, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
     }
 
     @After
