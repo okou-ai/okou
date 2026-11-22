@@ -2996,3 +2996,11 @@ The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts
 The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts/ojoskbx5gp.md) opened at `a5a95d9bd9`. 119 IDs have their first accepted Vitest row, 6 retain an evidence gap, 12 have a documented upstream disposition, and 124 await implementation. 11 owners are closed, 10 are partially accepted, and 3 are wholly blocked. Historical first acceptances are 2,128, with 2,104 currently complete. Batch 79 retains its separate 54 open dispositions.
 
 [Full GWT, row names, controls and status by ID](https://app.okou.ai/artifacts/i0l3o5w6n4.tsv). [Exact remaining IDs by frozen owner](https://app.okou.ai/artifacts/t4kr5pbtra.md). [Sources, comparison, runnable controls and Vitest records](https://app.okou.ai/artifacts/k1a6ljmpa8.zip).
+
+## Batch 80 checkpoint 7
+
+The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts/ojoskbx5gp.md) opened at `a5a95d9bd9`. 136 IDs have their first accepted Vitest row, 9 retain an evidence gap, 13 have a documented upstream disposition, and 103 await implementation. 12 owners are closed, 11 are partially accepted, and 3 are wholly blocked. Historical first acceptances are 2,145, with 2,121 currently complete. Batch 79 retains its separate 54 open dispositions.
+
+[Full GWT, row names, controls and status by ID](https://app.okou.ai/artifacts/kjtlxewceb.tsv). [Exact remaining IDs by frozen owner](https://app.okou.ai/artifacts/zxmjjlk34g.md). [Sources, comparison, runnable controls and Vitest records](https://app.okou.ai/artifacts/88o99jswc5.zip).
+
+Stage 7 includes merge of main `9ad7e2d29e`. App source and test registrations were unchanged by those upstream commits; the Platform package and changelog advanced. Targeted new rows, whole accepted files, shuffled seed 8007, the three App type projects, applicable formatting, lint and size checks were exercised after synchronization. Unavailable negative observations and upstream member-scope changes remain tied to the original owners. The exact-head CI and the next-run handoff are linked in the [PR description](https://github.com/okou-ai/okou/pull/48906).

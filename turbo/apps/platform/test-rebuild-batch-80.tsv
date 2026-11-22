@@ -412,7 +412,7 @@ Original test `Private network directory waits for the Tailscale list before sho
 - **Given** The Tailscale network list request is still pending and will return no networks.
 - **When** The user opens the private-network directory before the request completes, then the request completes.
 - **Then** While loading, no Add network action, empty-state message, or network group appears. Once loading completes, the empty state and Add network action appear and the loading message is gone."
-remote-control-guided-setup-117	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3705	pending					"## remote-control-guided-setup-117
+remote-control-guided-setup-117	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3705	probe-insufficient	The connected-scope Router showed the initial total of 1. After the user selected Remote control, a second VNC summary did not reach the delayed fixture before the 5s test timeout. The probe cannot establish a retained count during the refreshed read or the later total of 2. A different lifecycle or summary boundary is needed.	remote-directory-refresh-117.ts.txt; remote-count-release.json; no acceptance for the timed-out counterexample			"## remote-control-guided-setup-117
 
 Original test `Remote control keeps its count while entering the scope refreshes connections`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3705).
 
@@ -433,35 +433,35 @@ Original test `cloudflare network details display linked connection names as a r
 - **Given** A Cloudflare Access network has one SSH connection and one VNC connection linked to it.
 - **When** The user opens the network details page directly.
 - **Then** The page shows both connection names in a read-only list with no links or buttons and no Add connection action."
-remote-control-guided-setup-124	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3951	pending					"## remote-control-guided-setup-124
+remote-control-guided-setup-124	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3951	first-verified	remote-control-guided-setup-124 A team-network shell and desktop share one directory list with management links and a working add action	turbo/apps/platform/src/views/okou-page/__tests__/managing-chat-access-from-remote-control.test.ts	stage7-new.json	authorization-defaults-and-window-restore-red.json	"## remote-control-guided-setup-124
 
 Original test `SSH and VNC share one ungrouped connection list regardless of network scope`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3951).
 
 - **Given** A member has one SSH connection using an organization Cloudflare network and one VNC connection.
 - **When** They view Remote control.
 - **Then** Both connection names appear in one ungrouped list with Manage actions, with no empty-state or Remote connections heading and no Only you have access text; Add connection opens the add-connection page."
-remote-control-guided-setup-125	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3995	pending					"## remote-control-guided-setup-125
+remote-control-guided-setup-125	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3995	first-verified	remote-control-guided-setup-125 Changing the ssh chat default persists independently and its detail page shows the enabled permission	turbo/apps/platform/src/views/okou-page/__tests__/managing-chat-access-from-remote-control.test.ts	stage7-new.json	authorization-defaults-and-window-restore-red.json	"## remote-control-guided-setup-125
 
 Original test `The remote directory updates the ssh chat default independently and shares it with details`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3995).
 
 - **Given** The SSH chat default is enabled and the VNC chat default is disabled, and both connections are listed.
 - **When** The user enables SSH as a chat default and opens that connection's details.
 - **Then** The SSH switch changes to enabled, while SSH remains enabled and VNC remains disabled independently; the details page's chat-permissions section also shows SSH enabled."
-remote-control-guided-setup-126	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3995	pending					"## remote-control-guided-setup-126
+remote-control-guided-setup-126	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3995	first-verified	remote-control-guided-setup-126 Changing the vnc chat default persists independently and its detail page shows the enabled permission	turbo/apps/platform/src/views/okou-page/__tests__/managing-chat-access-from-remote-control.test.ts	stage7-new.json	authorization-defaults-and-window-restore-red.json	"## remote-control-guided-setup-126
 
 Original test `The remote directory updates the vnc chat default independently and shares it with details`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3995).
 
 - **Given** The SSH chat default is enabled and the VNC chat default is disabled, and both connections are listed.
 - **When** The user enables VNC as a chat default and opens that connection's details.
 - **Then** The VNC switch changes to enabled, while SSH remains enabled and VNC is enabled independently; the details page's chat-permissions section also shows VNC enabled."
-remote-control-guided-setup-128	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4192	pending					"## remote-control-guided-setup-128
+remote-control-guided-setup-128	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4192	first-verified	remote-control-guided-setup-128 Chat-default failure leaves both remote connections manageable and announces the missing access controls in the shell row	turbo/apps/platform/src/views/okou-page/__tests__/managing-chat-access-from-remote-control.test.ts	stage7-new.json	authorization-defaults-and-window-restore-red.json	"## remote-control-guided-setup-128
 
 Original test `The remote directory keeps connections visible when chat defaults fail`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L4192).
 
 - **Given** SSH and VNC connections are listed, but loading chat defaults fails with a server error.
 - **When** The Remote control directory loads.
 - **Then** Both connections remain visible; the SSH row shows an alert saying Couldn't load remote access. and has no switch, while its Manage link remains available."
-remote-control-guided-setup-129	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4216	pending					"## remote-control-guided-setup-129
+remote-control-guided-setup-129	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4216	first-verified	remote-control-guided-setup-129 A missing desktop default disables only its switch while its connection can still be managed	turbo/apps/platform/src/views/okou-page/__tests__/managing-chat-access-from-remote-control.test.ts	stage7-new.json	authorization-defaults-and-window-restore-red.json	"## remote-control-guided-setup-129
 
 Original test `The remote directory cannot change a host with unavailable chat defaults`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L4216).
 
@@ -761,21 +761,21 @@ Original test `A modified double-click keeps its browser behavior instead of ren
 - **Given** The sidebar contains “Incident notes.”
 - **When** The user double-clicks it with Alt, Control, Meta, or Shift held, then double-clicks it without a modifier.
 - **Then** Each modified double-click retains browser link behavior and does not open the rename field. An unmodified double-click opens the field with “Incident notes.”"
-sidebar-pin-order-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.bdd.md	172	pending					"## sidebar-pin-order-003
+sidebar-pin-order-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.bdd.md	172	first-verified	sidebar-pin-order-003 Moving the last visible pin up crosses the archived rank without revealing the archived conversation	turbo/apps/platform/src/views/okou-page/__tests__/placing-conversations-in-the-pin-list.test.ts	stage7-new.json	resizing-capture-and-rank-red.json	"## sidebar-pin-order-003
 
 Original test `Move up skips a hidden archived pin`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx#L172).
 
 - **Given** “First pin,” an archived hidden pin, and “Last pin” are ordered as pins; only the visible pins and “Regular thread” appear in the sidebar.
 - **When** The user chooses Move up for “Last pin.”
 - **Then** The visible order becomes “Last pin,” “First pin,” and “Regular thread.”"
-sidebar-pin-order-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.bdd.md	215	pending					"## sidebar-pin-order-005
+sidebar-pin-order-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.bdd.md	215	upstream-changed	Upstream 30c1941239 (#49637) changed the expected result to retain the moved member pin after a legacy agent reassignment. 01b34f9b9f (#49839) removed agentId/reassignedAgentId from that canonical event. Current member sidebar and snapshot have no equivalent disappearance by agent. Keep the frozen expectation separately.	pin-upstream-change.txt; original BDD; current 003/006 only exercise member pin order			"## sidebar-pin-order-005
 
 Original test `an unconfirmed optimistic pin move cannot undo an agent reassignment`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx#L215).
 
 - **Given** An authenticated user sees “First pin,” “Second pin,” and “Last pin” pinned in that order, followed by “Regular thread.”
 - **When** The user moves “Last pin” up, then a canonical event reassigns it to another agent before the reorder is confirmed.
 - **Then** The reassigned chat disappears from this agent’s sidebar; the sidebar shows “First pin,” “Second pin,” and “Regular thread,” rather than restoring “Last pin.”"
-sidebar-pin-order-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.bdd.md	258	pending					"## sidebar-pin-order-006
+sidebar-pin-order-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.bdd.md	258	first-verified	sidebar-pin-order-006 Pinning a regular conversation places it ahead of the earliest pin while the server confirmation is withheld	turbo/apps/platform/src/views/okou-page/__tests__/placing-conversations-in-the-pin-list.test.ts	stage7-new.json	resizing-capture-and-rank-red.json	"## sidebar-pin-order-006
 
 Original test `new pins receive a rank ahead of all existing pins`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pin-order.test.tsx#L258).
 
@@ -1019,35 +1019,35 @@ Original test `Workspace search uses a small authorized thumbnail for a private 
 - **Given** A private image artifact is available in the thread, and its authorized thumbnail URL has not yet been resolved.
 - **When** The user opens workspace search, searches for “Private,” and authorization completes.
 - **Then** The search result initially has no thumbnail; afterward it displays the authorized image through the 64-pixel thumbnail transformation."
-unified-chat-workspace-001	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	91	pending					"## unified-chat-workspace-001
+unified-chat-workspace-001	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	91	first-verified	unified-chat-workspace-001 Keyboard changes the visible workspace divider width and Enter restores its default share	turbo/apps/platform/src/views/okou-page/__tests__/resizing-the-conversation-workspace.test.ts	stage7-new.json	resizing-capture-and-rank-red.json	"## unified-chat-workspace-001
 
 Original test `The unified workspace opens the side panel at its share and resizes it from the keyboard`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx#L91).
 
 - **Given** The unified workspace is open with the side panel at its default 55% share of a 1440-pixel workspace.
 - **When** The user presses ArrowLeft, End, and then Enter on the side-panel divider.
 - **Then** ArrowLeft sets the panel width to 808 pixels, End sets it to 1020 pixels, and Enter restores the default 55% width."
-unified-chat-workspace-002	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	108	pending					"## unified-chat-workspace-002
+unified-chat-workspace-002	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	108	first-verified	unified-chat-workspace-002 Dragging the side divider sets a measured width and double-click restores its original share	turbo/apps/platform/src/views/okou-page/__tests__/resizing-the-conversation-workspace.test.ts	stage7-new.json	resizing-capture-and-rank-red.json	"## unified-chat-workspace-002
 
 Original test `Double-clicking the side panel divider restores its default width`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx#L108).
 
 - **Given** The side panel is open at its default width.
 - **When** The user drags its divider to make the panel 540 pixels wide, then double-clicks the divider.
 - **Then** The panel is 540 pixels wide after dragging and returns to its default 55% width after the double-click."
-unified-chat-workspace-003	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	119	pending					"## unified-chat-workspace-003
+unified-chat-workspace-003	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	119	first-verified	unified-chat-workspace-003 The conversation list folds at its minimum and reopens only after the return threshold	turbo/apps/platform/src/views/okou-page/__tests__/resizing-the-conversation-workspace.test.ts	stage7-new.json	resizing-capture-and-rank-red.json	"## unified-chat-workspace-003
 
 Original test `Panel borrowing folds immediately after the list minimum and restores only after 16px of reversal`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx#L119).
 
 - **Given** The chat list is 300 pixels wide in a 1000-pixel workspace, and the side panel is open.
 - **When** The user drags the side-panel divider left until the chat list reaches its minimum, then reverses direction.
 - **Then** The chat list narrows to 260 and then 240 pixels, folds to zero on the next pixel, and remains folded through 15 pixels of reversal. At 16 pixels of reversal it reopens at 256 pixels; subsequent movement resizes it, and release ends pointer capture and removes the resize overlay."
-unified-chat-workspace-005	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	195	pending					"## unified-chat-workspace-005
+unified-chat-workspace-005	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	195	first-verified	unified-chat-workspace-005 Reopening a folded chat list after reload restores both pointer-release widths and preserves the grab offset	turbo/apps/platform/src/views/okou-page/__tests__/resizing-the-conversation-workspace.test.ts	stage7-new.json	resizing-capture-and-rank-red.json	"## unified-chat-workspace-005
 
 Original test `The workspace preserves the grab offset and remembers final pointerup widths after a reload`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx#L195).
 
 - **Given** The workspace has its default chat list and side panel widths, with no saved pointer-resize widths.
 - **When** The user drags the chat-list divider and side-panel divider, hides the chat list, then reloads the workspace and shows the list again.
 - **Then** The chat-list drag preserves the initial grab offset and saves the final pointer-release width of 348 pixels; the side panel saves its final release width of 632 pixels. After reload, the panel remains folded and the saved widths are restored when the list is shown."
-unified-chat-workspace-006	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	237	pending					"## unified-chat-workspace-006
+unified-chat-workspace-006	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.bdd.md	237	first-verified	unified-chat-workspace-006 Cancellation and window blur release both dividers and preserve their last visible widths across reload	turbo/apps/platform/src/views/okou-page/__tests__/resizing-the-conversation-workspace.test.ts	stage7-new.json	resizing-capture-and-rank-red.json	"## unified-chat-workspace-006
 
 Original test `Cancellation and blur preserve the last valid widths and discard stale gesture callbacks`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/unified-chat-workspace.test.tsx#L237).
 
@@ -1152,7 +1152,7 @@ Original test `Editing an Apple IPv6 loopback host preserves its SSH route and c
 - **Given** An Apple screen-sharing host uses IPv6 loopback ::1 on port 5905 through a saved SSH host.
 - **When** The owner opens and saves the edit form without changing its connection details.
 - **Then** The form preserves the host name, ::1 address, port 5905, and SSH route, and the update request retains the Apple screen-sharing security and saved credential."
-vnc-settings-021	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1213	pending					"## vnc-settings-021
+vnc-settings-021	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1213	first-verified	vnc-settings-021 The direct connection step rejects private device addresses and enables Continue for a public IPv4-mapped address	turbo/apps/platform/src/views/okou-page/__tests__/confirming-vnc-device-settings.test.ts	stage7-new.json	vnc-and-destination-validation-red.json	"## vnc-settings-021
 
 Original test `Direct route explains canonical IPv6 loopback and private mapped literals`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1213).
 
@@ -1243,7 +1243,7 @@ Original test `Plain oversized UTF-8 password validation fails before an API wri
 - **Given** I am creating a plain username-and-password credential with otherwise valid details.
 - **When** I enter a password of 342 copies of 界 and save.
 - **Then** The form reports a validation error and sends no credential creation request."
-vnc-settings-047	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2320	pending					"## vnc-settings-047
+vnc-settings-047	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2320	first-verified	vnc-settings-047 A saved connection is deleted only after confirming its displayed host, using the current generation	turbo/apps/platform/src/views/okou-page/__tests__/confirming-vnc-device-settings.test.ts	stage7-new.json	vnc-and-destination-validation-red.json	"## vnc-settings-047
 
 Original test `Deleting a host requires confirmation and uses its displayed generation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2320).
 
@@ -1285,14 +1285,14 @@ Original test `Changing owner while token acquisition is pending cancels the sav
 - **Given** I have reviewed a host-creation draft containing password old-pass, and token acquisition is pending when I save.
 - **When** The signed-in owner changes before the old owner's token resolves.
 - **Then** The draft closes, the secret is cleared, and no host creation request is sent."
-vnc-settings-063	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2680	pending					"## vnc-settings-063
+vnc-settings-063	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2680	first-verified	vnc-settings-063 Importing independently obtained RSA material shows its wire pin and size and leaves the new connection unsaved	turbo/apps/platform/src/views/okou-page/__tests__/confirming-vnc-device-settings.test.ts	stage7-new.json	vnc-and-destination-validation-red.json	"## vnc-settings-063
 
 Original test `Trusted RSA public-key import only fills the pin and does not save or establish provenance`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2680).
 
 - **Given** I am adding an RSA-AES connection and have entered its independently trusted RSA public PEM.
 - **When** I import the public key.
 - **Then** The returned SHA-256 pin and 2048-bit key size are displayed, and the form explains that conversion does not establish identity or save the connection. Only the PEM is sent to the import operation; the form stays open."
-vnc-settings-064	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2722	pending					"## vnc-settings-064
+vnc-settings-064	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2722	first-verified	vnc-settings-064 A late RSA import reports the changed PEM without replacing its current key or trusted pin	turbo/apps/platform/src/views/okou-page/__tests__/confirming-vnc-device-settings.test.ts	stage7-new.json	vnc-and-destination-validation-red.json	"## vnc-settings-064
 
 Original test `A late RSA import cannot associate its old pin with a newer public-key draft`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2722).
 
@@ -1812,21 +1812,21 @@ Original test `Window loss while paused cannot resume a viewer with pending disc
 - **Given** The viewer is paused, and a hidden tab creation leaves discovery pending.
 - **When** The assigned browser window is removed and the page becomes visible again.
 - **Then** The viewer reports that the assigned browser window is unavailable, with browser input and tab creation disabled."
-browser-display-regression-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.bdd.md	279	pending					"## browser-display-regression-007
+browser-display-regression-007	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.bdd.md	279	probe-insufficient	The 900×600 view mounts and the Fit menu accepts the action, but no Browser.setWindowBounds restoration receipt was reached before moving the target. The observed sequence ended with setContentsSize and getWindowForTarget. No verified move-during-restoration or post-move clearing claim.	display-sizing-007-015.ts.txt; resizing-browser-probe.json (5s timeouts); display-normalization2.json; display-geometry-diagnostic.json			"## browser-display-regression-007
 
 Original test `A target moved during restoration cannot authorize further display writes`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx#L279).
 
 - **Given** The viewer is calibrated at 900 by 600 with a foreign window in a separate window. The primary window is maximized and the foreign window is fullscreen.
 - **When** The user starts fitting the window, then the viewed target moves into the foreign window before restoration completes.
 - **Then** Input becomes disabled and the viewer reports “No tabs open.” The foreign window stays fullscreen, and no device-metrics clearing request is sent after the target moves."
-browser-display-regression-013	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.bdd.md	428	pending					"## browser-display-regression-013
+browser-display-regression-013	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.bdd.md	428	first-verified	browser-display-regression-013 Fitting a recovered image normalizes the primary window after a decoded frame precedes its capture receipt	turbo/apps/platform/src/views/browser-session/__tests__/sizing-an-authorized-browser-window.test.ts	stage7-new.json	authorization-defaults-and-window-restore-red.json	"## browser-display-regression-013
 
 Original test `Display synchronization resumes after image recovery with the frame first`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx#L428).
 
 - **Given** The viewer has recovered from a bad image; the target frame arrives before the capture-start receipt.
 - **When** The primary window is maximized at 1280 by 720 and the user selects “Fit window to panel.”
 - **Then** The window becomes normal, the viewport becomes 900 by 600, and input remains enabled."
-browser-display-regression-015	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.bdd.md	486	pending					"## browser-display-regression-015
+browser-display-regression-015	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.bdd.md	486	probe-insufficient	After selecting Follow panel and changing browser geometry, the expected withheld replacement-frame request was not reached; the remote viewport remained 900×600. The probe cannot establish the transient input state or absence of failure through a 720×480 paint.	display-sizing-007-015.ts.txt; resizing-browser-probe.json (5s timeouts); display-normalization2.json; display-geometry-diagnostic.json			"## browser-display-regression-015
 
 Original test `A window resize keeps the accepted picture while capture is pending`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-display-regression.test.tsx#L486).
 
