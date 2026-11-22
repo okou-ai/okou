@@ -22,7 +22,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+private val readRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
+private const val readFailureWindowMillis = 30_000L
 
 internal typealias ModelEffort = UpdateDefaultModelPreferenceModelSettingsPatchEffort
 
@@ -153,6 +158,7 @@ internal class DefaultModelSettings(
     private var refreshRequested = false
     private var needsReadback = false
     private var work: Job? = null
+    private var retryWait: Job? = null
 
     fun visible(active: Boolean) {
         if (visible == active) return
@@ -168,10 +174,17 @@ internal class DefaultModelSettings(
     }
 
     fun online(online: Boolean) {
-        if (mutable.value.offline == !online) return
-        mutable.value = mutable.value.copy(offline = !online)
-        if (!online && mutable.value.pending == null) work?.cancel()
-        if (online && visible) refreshRequested = true
+        val current = mutable.value
+        if (current.offline == !online) return
+        mutable.value =
+            current.copy(
+                offline = !online,
+                failure = current.failure.takeUnless { online && it == DefaultModelFailure.Read },
+            )
+        if (!online) {
+            retryWait?.cancel()
+            if (current.pending == null) work?.cancel()
+        } else if (visible) refreshRequested = true
         synchronize()
     }
 
@@ -228,8 +241,15 @@ internal class DefaultModelSettings(
             return
         val job =
             scope.launch(start = CoroutineStart.LAZY) {
+                var readFailures = 0
+                var readFailureWindow: Job? = null
+                var saveFailures = 0
+                fun resetReadFailures() {
+                    readFailures = 0
+                    readFailureWindow?.cancel()
+                    readFailureWindow = null
+                }
                 try {
-                    var failures = 0
                     while (authorized() && !mutable.value.offline) {
                         val pending = mutable.value.pending
                         if (pending == null && !refreshRequested) break
@@ -238,7 +258,7 @@ internal class DefaultModelSettings(
                             if (pending == null) {
                                 refreshRequested = false
                                 refresh()
-                                failures = 0
+                                resetReadFailures()
                             } else {
                                 val confirmed =
                                     if (readback) service.defaultModelPreference()
@@ -254,7 +274,7 @@ internal class DefaultModelSettings(
                                     else current.pending == pending
                                 needsReadback = false
                                 val awaitingWrite = readback && !fulfilled
-                                if (!awaitingWrite) failures = 0
+                                if (!awaitingWrite) saveFailures = 0
                                 mutable.value =
                                     current.copy(
                                         preference = confirmed,
@@ -285,21 +305,75 @@ internal class DefaultModelSettings(
                                         failure = failure,
                                     )
                                 if (mutable.value.pending == null) break
-                            } else {
-                                failures += 1
-                                if (pending == null) refreshRequested = visible
-                                if (failures >= 2) mutable.value = current.copy(failure = failure)
-                                delay(if (failures == 1) 5_000 else 30_000)
+                                continue
+                            }
+
+                            if (pending == null) refreshRequested = visible
+                            if (current.offline) continue
+                            val retryMillis =
+                                if (pending == null) {
+                                    readFailures =
+                                        (readFailures + 1).coerceAtMost(readRetryDelays.size)
+                                    if (
+                                        current.options == null ||
+                                            readFailures >= 3 &&
+                                                readFailureWindow?.isCompleted == true
+                                    ) {
+                                        showReadFailure()
+                                    } else if (readFailures == 1) {
+                                        readFailureWindow = launch {
+                                            delay(readFailureWindowMillis)
+                                            if (
+                                                readFailures >= 3 &&
+                                                    visible &&
+                                                    !mutable.value.offline &&
+                                                    authorized()
+                                            )
+                                                showReadFailure()
+                                        }
+                                    }
+                                    readRetryDelays[readFailures - 1]
+                                } else {
+                                    saveFailures++
+                                    if (saveFailures >= 2)
+                                        mutable.value = current.copy(failure = failure)
+                                    if (saveFailures == 1) 5_000L else 30_000L
+                                }
+                            if (!waitForRetry(retryMillis, refreshing = pending == null)) {
+                                resetReadFailures()
+                                saveFailures = 0
                             }
                         }
                     }
                 } finally {
+                    readFailureWindow?.cancel()
                     work = null
                     if (authorized()) synchronize()
                 }
             }
         work = job
         job.start()
+    }
+
+    private fun showReadFailure() {
+        val current = mutable.value
+        if (current.failure != DefaultModelFailure.Save) {
+            mutable.value = current.copy(failure = DefaultModelFailure.Read)
+        }
+    }
+
+    private suspend fun CoroutineScope.waitForRetry(millis: Long, refreshing: Boolean): Boolean {
+        val wait = launch {
+            if (refreshing) withTimeoutOrNull(millis) { state.first { it.pending != null } }
+            else delay(millis)
+        }
+        retryWait = wait
+        try {
+            wait.join()
+            return !wait.isCancelled
+        } finally {
+            retryWait = null
+        }
     }
 
     private suspend fun refresh() = coroutineScope {
