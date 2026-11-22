@@ -788,7 +788,9 @@ export function createRunsApi(context: TestContext) {
 
       // Complete onboarding after the paid entitlement is visible.
       const bdd = createBddApi(context);
-      await run(() => bdd.provisionWorkspace(actor));
+      await run(() => {
+        return bdd.provisionWorkspace(actor);
+      });
       const completed = await run(() => {
         return bdd.completeOnboarding(actor);
       });
