@@ -164,27 +164,15 @@ test("production release keeps Worker deployment non-blocking and verifies its d
   };
   const worker = byId("api-worker-deploy");
   const verify = byId("api-worker-verify");
-  const prepare = byId("production-migrations");
-  const retire = productionSteps.find((step) =>
-    step.includes(
-      "name: Drop retired Agent storage after both APIs have switched",
-    ),
-  );
+  const migrations = byId("production-migrations");
   assert.match(
-    field(prepare, "run", 8),
-    /db:migrate --before-agent-retirement/,
+    field(migrations, "run", 8),
+    /^pnpm -F @okouai\/db db:migrate$/m,
   );
   assert.ok(
-    productionSteps.indexOf(prepare) < productionSteps.indexOf(byId("deploy")),
+    productionSteps.indexOf(migrations) <
+      productionSteps.indexOf(byId("deploy")),
   );
-  assert.ok(productionSteps.indexOf(retire) > productionSteps.indexOf(verify));
-  const retirementGuard = field(retire, "if", 8);
-  for (const condition of [
-    "steps.workflow-maintenance.outputs.agent_cutover == 'true'",
-    "steps.deploy.outcome == 'success'",
-    "steps.api-worker-verify.outcome == 'success'",
-  ])
-    assert.ok(retirementGuard.includes(condition));
   assert.equal(field(production, "environment"), "production");
   assert.match(
     production,

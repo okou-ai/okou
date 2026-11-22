@@ -32,9 +32,7 @@ export async function validateChatThreadEventExecutorRetirement(
       await sql`SELECT to_jsonb(e) - 'event_executor_id' AS payload
       FROM chat_thread_events e WHERE id = ${eventId}`;
 
-    await applyPendingMigrations(sql, { beforeMillis: retirementMillis });
-    // The outgoing API can commit a final write before the release drains.
-    // Copy its last committed value in the same transaction that retires storage.
+    // Both retirements run in the same predeploy migration pass.
     await sql`UPDATE agents SET description = 'before cutover' WHERE id = ${executor}`;
     const expectedProfiles =
       await sql`SELECT to_jsonb(a) - 'created_at' AS profile FROM agents a WHERE org_id IN (${org}, ${otherOrg}) ORDER BY id`;

@@ -1645,14 +1645,14 @@ jobs:
                 WHERE table_schema = 'public' AND (table_name, column_name) IN (
                   ('workflows', 'agent_id'), ('feed_items', 'source_type')
                 )
-              ) AS pending, to_regclass('public.agents') IS NOT NULL AS agent_cutover
+              ) AS pending
             `;
             const confirmed = /^[a-f0-9]{40}$/.test(process.env.RELEASE_TARGET) &&
               process.env.QUIESCED_RELEASE === process.env.RELEASE_TARGET;
-            if ((state.pending || state.agent_cutover) && !confirmed) {
+            if (state.pending && !confirmed) {
               throw new Error("Drain the outgoing API and scheduling workers together, then confirm this release SHA in WORKFLOW_MEMBER_SCOPE_QUIESCED_RELEASE.");
             }
-            appendFileSync(process.env.GITHUB_OUTPUT, `required=${confirmed}\nagent_cutover=${state.agent_cutover}\n`);
+            appendFileSync(process.env.GITHUB_OUTPUT, `required=${confirmed}\n`);
           } finally {
             await db.end();
           }
@@ -1664,13 +1664,8 @@ jobs:
         run: |
           echo "Running production migrations on production"
           cd turbo
-          if [ "$AGENT_CUTOVER" = "true" ]; then
-            pnpm -F @okouai/db db:migrate --before-agent-retirement
-          else
-            pnpm -F @okouai/db db:migrate
-          fi
+          pnpm -F @okouai/db db:migrate
         env:
-          AGENT_CUTOVER: ${{ steps.workflow-maintenance.outputs.agent_cutover }}
           DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
@@ -1934,13 +1929,6 @@ jobs:
         run: |
           echo "::error::Keep API traffic and scheduling paused until the API Worker passes health and release SHA verification."
           exit 1
-
-      - name: Drop retired Agent storage after both APIs have switched
-        if: success() && steps.workflow-maintenance.outputs.agent_cutover == 'true' && steps.deploy.outcome == 'success' && steps.api-worker-verify.outcome == 'success'
-        working-directory: turbo
-        env:
-          DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
-        run: pnpm -F @okouai/db db:migrate
 
       - name: Remove temporary API production environment
         if: always()
