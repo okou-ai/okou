@@ -12,6 +12,9 @@ import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.awaitChatList
+import ai.okou.android.chat.ComposerPersistence
+import ai.okou.android.chat.ComposerSync
+import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import ai.okou.android.testAuthenticationState
@@ -24,6 +27,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.util.UUID
@@ -48,6 +52,7 @@ class ScreenshotScenario {
         val auth = app.authentication as TestAuthentication
         val previousAuth = auth.state.value
         val previousService = app.chatService
+        val previousComposer = app.composerService
         val preferences = app.snapshotApiPreferences()
         val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         val size = displayOverride("size")
@@ -113,22 +118,54 @@ class ScreenshotScenario {
             )
         }
         app.chatService = fixture.service
+        app.composerService = fixture.service
         auth.state.value = testAuthenticationState(user = "conversation-links-${UUID.randomUUID()}")
         try {
             device.executeShellCommand("wm size 1080x1920")
             device.executeShellCommand("wm density 420")
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 try {
+                    val draft = "Draft launch follow-up"
+                    val target = ComposerTarget(threadId = CHAT_PERSONAL)
+                    val editor = By.pkg(app.packageName).clazz("android.widget.EditText")
+                    val draftEditor = By.pkg(app.packageName).clazz("android.widget.EditText").text(draft)
+                    fun awaitSavedDraft() {
+                        await(draftEditor)
+                        val saved =
+                            object : Condition<UiDevice, Boolean> {
+                                override fun apply(device: UiDevice): Boolean {
+                                    var ready = false
+                                    scenario.onActivity { activity ->
+                                        val state =
+                                            ViewModelProvider(activity)[SessionModel::class.java]
+                                                .uiState.value.ready?.composer?.uiState?.value
+                                        ready =
+                                            state != null &&
+                                                state.entry(target).text == draft &&
+                                                state.persistence == ComposerPersistence.Durable &&
+                                                state.sync(target) == ComposerSync.Saved
+                                    }
+                                    return ready
+                                }
+                            }
+                        check(device.wait(saved, 12_000)) { "The source draft did not finish syncing" }
+                        for (label in listOf(
+                            R.string.composer_sync_loading,
+                            R.string.composer_saving,
+                            R.string.composer_sync_saving,
+                            R.string.composer_sync_failed,
+                        )) {
+                            val indicator = By.pkg(app.packageName).text(app.getString(label))
+                            check(device.wait(Until.gone(indicator), 12_000))
+                        }
+                    }
                     device.awaitChatList(app)
                     text("Personal chat").click()
                     text("Review the project release")
                     text("The launch notes are ready.", partial = true)
                     text("Android documentation", partial = true)
-                    val draft = "Draft launch follow-up"
-                    val editor = By.pkg(app.packageName).clazz("android.widget.EditText")
-                    val draftEditor = By.pkg(app.packageName).clazz("android.widget.EditText").text(draft)
                     await(editor).setText(draft)
-                    await(draftEditor)
+                    awaitSavedDraft()
                     ScreenshotCapture.capture("01-phone-inline-links.png")
 
                     text("Project release update", partial = true).click()
@@ -138,21 +175,21 @@ class ScreenshotScenario {
                     ScreenshotCapture.capture("02-phone-message-target.png")
                     await(By.res("com.android.launcher3", "back")).click()
                     text("Project release update", partial = true)
-                    await(draftEditor)
+                    awaitSavedDraft()
                     ScreenshotCapture.capture("03-phone-source-return.png")
 
                     device.executeShellCommand("wm size 1120x860")
                     device.executeShellCommand("wm density 160")
                     device.awaitChatList(app)
                     text("Project release update", partial = true)
-                    await(draftEditor)
+                    awaitSavedDraft()
                     ScreenshotCapture.capture("04-wide-inline-links.png")
                     text("Project release update", partial = true).click()
                     text(targetReply)
                     device.awaitChatList(app)
                     ScreenshotCapture.capture("05-wide-message-target.png")
                     await(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
-                    await(draftEditor)
+                    awaitSavedDraft()
                     text("Unavailable conversation", partial = true).click()
                     text(app.getString(R.string.conversation_link_unavailable))
                     await(draftEditor)
@@ -196,6 +233,7 @@ class ScreenshotScenario {
             cache.restore()
             app.restoreApiPreferences(preferences)
             app.chatService = previousService
+            app.composerService = previousComposer
             auth.state.value = previousAuth
         }
     }
