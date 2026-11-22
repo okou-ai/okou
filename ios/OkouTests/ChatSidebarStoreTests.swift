@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class ChatSidebarStoreTests: XCTestCase {
-  func testFiltersKeepCrossAgentProjectsUnknownNamesAndNativeStatusMeaning() async throws {
+  func testFiltersKeepProjectsUnknownNamesAndNativeStatusMeaning() async throws {
     let fixture = SidebarProjectionFixture()
     let workspace = fixture.workspace()
     defer { workspace.close() }
@@ -72,10 +72,10 @@ final class ChatSidebarStoreTests: XCTestCase {
 
     workspace.sidebar.select(.recent)
     workspace.selectChat(SidebarProjectionFixture.id(6))
-    let otherAgent = try snapshot(workspace)
-    XCTAssertEqual(otherAgent.chats.rows.map(\.id), recent.chats.rows.map(\.id))
+    let selected = try snapshot(workspace)
+    XCTAssertEqual(selected.chats.rows.map(\.id), recent.chats.rows.map(\.id))
     XCTAssertEqual(
-      otherAgent.projects.first?.section.rows.map(\.id), [2, 8].map(SidebarProjectionFixture.id))
+      selected.projects.first?.section.rows.map(\.id), [2, 8].map(SidebarProjectionFixture.id))
     workspace.startNewChat()
     workspace.newChatDraft = "Keep this unrelated input"
     XCTAssertEqual(
@@ -149,8 +149,6 @@ private final class SidebarProjectionFixture: Sendable {
     var failProjects = false
   }
 
-  static let agent = "63000000-0000-4000-8000-000000000100"
-  static let otherAgent = "63000000-0000-4000-8000-000000000101"
   static let project = "63000000-0000-4000-8000-000000000200"
   static let timestamp = "2026-11-11T00:00:00Z"
   final class LockedServer: Sendable { let value = Mutex(Server()) }
@@ -183,7 +181,6 @@ private final class SidebarProjectionFixture: Sendable {
         return ChatHTTPResponse(body: Self.projectRecord(Self.project, name: name))
       case "/api/chat-threads/snapshot":
         let rows = (1...8).map { index in
-          let agent = [2, 6].contains(index) ? Self.otherAgent : Self.agent
           let project =
             [2, 4, 7, 8].contains(index) ? Self.project : index == 3 ? Self.id(999) : nil
           let title = index == 1 ? "✅ Active pinned" : "Chat \(index)"

@@ -57,8 +57,6 @@ final class SearchResponseGate: Sendable {
 }
 
 final class SearchUnreadFixture: Sendable {
-  static let agent = "61000000-0000-4000-8000-000000000001"
-  static let otherAgent = "61000000-0000-4000-8000-000000000002"
   static let timestamp = "2026-10-19T12:00:00Z"
   struct State {
     var unread: Set<Int> = [1, 2, 3, 5]
@@ -92,7 +90,7 @@ final class SearchUnreadFixture: Sendable {
       case ("GET", "/api/feature-switches"):
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case ("GET", "/api/chat/search"):
-        return searchResponse(content: "A matching needle in another agent's conversation")
+        return searchResponse(content: "A matching needle in another conversation")
       case ("GET", "/api/chat-threads/snapshot"):
         let threads = (1...40).map { index in
           """
@@ -118,17 +116,12 @@ final class SearchUnreadFixture: Sendable {
           }
           let timestamps = value.unread.sorted().map { "\"\(Self.id($0))\":\"\(value.marker)\"" }
             .joined(separator: ",")
-          let unreadAgents = Set(
-            value.unread.filter { $0 != 3 }.map {
-              $0.isMultiple(of: 2) ? Self.otherAgent : Self.agent
-            })
-          let agents = unreadAgents.sorted().map { "\"\($0)\":\"unread\"" }.joined(separator: ",")
           if value.omitThreadIndicators {
-            return ChatHTTPResponse(body: "{\"agents\":{\(agents)},\"threads\":{},\"unreadAt\":{}}")
+            return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
           }
           return ChatHTTPResponse(
             body:
-              "{\"agents\":{\(agents)},\"threads\":{\((["\"\(Self.id(1))\":\"active\""] + indicators).joined(separator: ","))},\"unreadAt\":{\(timestamps)}}"
+              "{\"threads\":{\((["\"\(Self.id(1))\":\"active\""] + indicators).joined(separator: ","))},\"unreadAt\":{\(timestamps)}}"
           )
         }
       case ("POST", "/api/chat-thread-unreads/mark-read"):

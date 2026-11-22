@@ -627,7 +627,6 @@ final class ComposerConnectorWritebackTests: XCTestCase {
     resume.open()
     await write.value
     XCTAssertEqual(writes.withLock { $0 }, 0)
-    XCTAssertTrue(store.canSend)
   }
 
   func testPartialReadbackCannotConfirmAnUnknownWriteOrReplayIt() async throws {

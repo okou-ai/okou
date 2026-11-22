@@ -463,7 +463,6 @@ extension ChatComputerAuthorizationAction.Kind {
 
 private final class ComputerAuthorizationFixture: Sendable {
   static let threadID = "71000000-0000-4000-8000-000000000001"
-  static let agentID = "71000000-0000-4000-8000-000000000002"
   static let requestID = "71000000-0000-4000-8000-000000000003"
   static let hostID = "71000000-0000-4000-8000-000000000004"
   static let secondHostID = "71000000-0000-4000-8000-000000000005"

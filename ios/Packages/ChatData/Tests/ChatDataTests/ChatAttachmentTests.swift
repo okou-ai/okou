@@ -7,7 +7,6 @@ import XCTest
 @testable import ChatData
 
 private let fileID = "41000000-0000-4000-8000-000000000001"
-private let agentID = "41000000-0000-4000-8000-000000000002"
 private let threadID = "41000000-0000-4000-8000-000000000003"
 
 @MainActor

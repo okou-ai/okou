@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Okou, the default agent: Web's `OkouAvatar`, drawn natively from the same 21-mood rig in a
+/// The native version of Web's `OkouAvatar`, drawn natively from the same 21-mood rig in a
 /// continuous-corner square over the brand texture, with the iOS widget's crop (the bun just
 /// inside the top edge, cut at the collar).
 ///

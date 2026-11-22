@@ -22,17 +22,6 @@ teardown() {
 }
 
 @test "auto reports billable model usage after a successful answer" {
-    run create_runner_agent "e2e-auto-billing-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
-    run set_runner_agent_instructions \
-        "$AGENT_ID" \
-        "Auto billing smoke test instructions."
-    echo "$output"
-    assert_success
-
     # This account has no personal subscription: Auto is the only platform model.
     run runner_api_curl "/api/run-models"
     echo "$output"
@@ -48,7 +37,7 @@ teardown() {
     assert_success
 
     local prompt="Briefly confirm that the Auto runner is responding."
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "auto"
+    run runner_chat_send "$prompt" "" "auto"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -79,7 +68,6 @@ Wait for it to exit before replying. Do not background it; this run will be canc
 EOF
 )
     run runner_chat_send \
-        "$AGENT_ID" \
         "$settlement_prompt" \
         "$THREAD_ID" \
         ""

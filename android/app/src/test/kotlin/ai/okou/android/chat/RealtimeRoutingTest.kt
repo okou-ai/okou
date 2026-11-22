@@ -120,7 +120,7 @@ class RealtimeRoutingTest {
     private fun indicators(api: ChatListApiFixture, stamp: String) {
         api.indicators = {
             jsonResponse(
-                """{"agents":{},"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$stamp"}}"""
+                """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$stamp"}}"""
             )
         }
     }
@@ -518,7 +518,7 @@ class RealtimeRoutingTest {
             api.indicators = {
                 entered.complete(Unit)
                 release.await()
-                jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+                jsonResponse("""{"threads":{},"unreadAt":{}}""")
             }
             try {
                 advanceTimeBy(1_000)
@@ -558,7 +558,7 @@ class RealtimeRoutingTest {
             api.indicators = {
                 entered.countDown()
                 release.await()
-                jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+                jsonResponse("""{"threads":{},"unreadAt":{}}""")
             }
             try {
                 model.refreshIndicators()

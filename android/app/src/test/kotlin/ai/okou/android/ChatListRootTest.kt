@@ -370,9 +370,9 @@ class ChatListRootTest {
             indicatorReads.incrementAndGet()
             if (fixture.readRequests.get() == 0) {
                 jsonResponse(
-                    """{"agents":{},"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
                 )
-            } else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+            } else jsonResponse("""{"threads":{},"unreadAt":{}}""")
         }
         val snapshotResponse = fixture.historySnapshot
         val rowsResponse = fixture.historyRows
@@ -755,10 +755,10 @@ class ChatListRootTest {
         app.fixture.indicators = {
             if (unread.get()) {
                 jsonResponse(
-                    """{"agents":{},"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
                 )
             } else {
-                jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+                jsonResponse("""{"threads":{},"unreadAt":{}}""")
             }
         }
         app.fixture.commandResponse = { request ->
@@ -869,7 +869,7 @@ class ChatListRootTest {
             val markers = unread.entries.joinToString(",") { (id, time) -> "\"$id\":\"$time\"" }
             val personal = if (CHAT_PERSONAL in unread) ",\"$CHAT_PERSONAL\":\"unread\"" else ""
             jsonResponse(
-                """{"agents":{},"threads":{"$running":"active","$CHAT_IN_PROJECT":"active"$personal},"unreadAt":{$markers}}"""
+                """{"threads":{"$running":"active","$CHAT_IN_PROJECT":"active"$personal},"unreadAt":{$markers}}"""
             )
         }
         app.fixture.commandResponse = { request ->
@@ -1142,7 +1142,7 @@ class ChatListRootTest {
             else {
                 val value = if (unread.get()) "\"$CHAT_IN_PROJECT\":\"$CHAT_DATE\"" else ""
                 val status = if (unread.get()) "\"$CHAT_IN_PROJECT\":\"unread\"" else ""
-                jsonResponse("""{"agents":{},"threads":{$status},"unreadAt":{$value}}""")
+                jsonResponse("""{"threads":{$status},"unreadAt":{$value}}""")
             }
         }
         fixture.commandResponse = { request ->
@@ -1259,9 +1259,9 @@ class ChatListRootTest {
         app.fixture.indicators = {
             if (unread.get())
                 jsonResponse(
-                    """{"agents":{},"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"}}"""
                 )
-            else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+            else jsonResponse("""{"threads":{},"unreadAt":{}}""")
         }
         app.fixture.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {

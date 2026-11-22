@@ -3,7 +3,6 @@ import Foundation
 /// Synthetic HTTP examples shared by data, native state and presentation tests.
 public enum ModelHTTPFixtures {
   public static let threadID = "97000000-0000-4000-8000-000000000001"
-  public static let agentID = "97000000-0000-4000-8000-000000000002"
   public static let accountID = "97000000-0000-4000-8000-000000000003"
   public static let preference = """
     {"selectedModel":"codex-model","serviceTier":null,"modelSettings":{"codex-model":{"effort":"ultra"},"claude-model":{"effort":"extra"}},"selectedImageModel":null,"updatedAt":null}

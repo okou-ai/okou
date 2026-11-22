@@ -55,7 +55,7 @@ final class NewChatNavigationTests: XCTestCase {
     }
 
     _ = try await NewChatIntent().perform()
-    // The request arrives before an active workspace or its Agent is available.
+    // The request arrives before the workspace is available.
     XCTAssertFalse(requests.open(in: workspace))
     await workspace.prepareWorkspaceComposer()
     workspace.setPhase(.active)

@@ -10,7 +10,6 @@ import XCTest
 final class ProjectReadingTests: XCTestCase {
   func testProjectMembershipSurvivesHTTPSynchronizationAndReopenedCache() async throws {
     let thread = "30000000-0000-4000-8000-000000000001"
-    let agent = "30000000-0000-4000-8000-000000000002"
     let project = "30000000-0000-4000-8000-000000000071"
     let leave = Mutex(false)
     let fixture = ChatHTTPFixture { request in

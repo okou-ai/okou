@@ -2,7 +2,7 @@ import CCState
 import ChatData
 import Foundation
 
-/// One composer's immutable Agent/thread scope owns the shared overview reads.
+/// One composer's workspace or thread owns the shared overview reads.
 @MainActor
 final class ComposerConnectorResources {
   struct Remote: Sendable {

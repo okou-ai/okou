@@ -269,8 +269,6 @@ final class ComposerConnectorPermissionTests: XCTestCase {
 
 /// The real permission and composer HTTP contracts; no application-owned state is mocked.
 final class PermissionEditorFixture: Sendable {
-  static let agentID = "92000000-0000-4000-8000-000000000001"
-  static let nextAgentID = "92000000-0000-4000-8000-000000000002"
   struct Edit: Codable, Sendable {
     let permission: String
     let action: String

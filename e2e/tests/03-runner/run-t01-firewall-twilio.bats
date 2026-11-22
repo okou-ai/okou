@@ -15,11 +15,6 @@ teardown() {
 }
 
 @test "runner firewall resolves Twilio auth without exposing raw credentials" {
-    run create_runner_agent "runner-firewall-twilio-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local account_sid auth_token values public_surfaces
     printf -v account_sid 'AC%016x%016x' "$RANDOM" "$RANDOM"
     printf -v auth_token '%016x%016x' "$RANDOM" "$RANDOM"
@@ -48,7 +43,7 @@ curl --ipv4 --silent --show-error --max-time 15 \
 printf 'TWILIO_REQUEST_SENT\n'
 EOF
 )
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$prompt"
     echo "$output"
     assert_success
     public_surfaces+="$output"$'\n'

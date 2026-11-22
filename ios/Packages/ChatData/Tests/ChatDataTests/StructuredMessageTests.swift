@@ -9,7 +9,6 @@ import XCTest
 final class StructuredMessageTests: XCTestCase {
   func testSendingTrimsTheCanonicalDocumentWithoutChangingTheDraft() async throws {
     let threadID = "40000000-0000-4000-8000-000000000001"
-    let agentID = "40000000-0000-4000-8000-000000000002"
     let sent = Mutex<Data?>(nil)
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {

@@ -9,7 +9,6 @@ import XCTest
 @MainActor
 final class WorkspaceNewChatTests: XCTestCase {
   func testStartingANewChatClearsTheSelectedThread() async {
-    let otherAgentID = "40000000-0000-4000-8000-000000000006"
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/chat-threads/snapshot":

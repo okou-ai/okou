@@ -75,7 +75,7 @@ final class ChatCommandContractTests: XCTestCase {
       queries.withLock { $0[5] }, [URLQueryItem(name: "eventId", value: unmuteEventID)])
   }
 
-  func testCreateUsesSavedModelWithoutAgentLookup() async throws {
+  func testCreateUsesSavedModel() async throws {
     struct CreatedRequest: Decodable, Sendable {
 
       let model: String

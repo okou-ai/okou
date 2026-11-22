@@ -313,8 +313,8 @@ final class WorkspaceStore {
     composerSyncTask?.cancel()
     let previous = newComposer
     let composer = ComposerDraftStore(
-      target: localDraftID.map(ChatDraftTarget.legacyWorkspace) ?? .workspace, commands: commands,
-      repository: draftRepository, storage: draftStorage,
+      target: .workspace, commands: commands,
+      repository: draftRepository, storage: draftStorage?.restoringWorkspace(localDraftID),
       didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     // Preserve input entered while the on-device draft was loading.

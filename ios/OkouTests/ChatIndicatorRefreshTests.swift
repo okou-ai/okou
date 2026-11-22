@@ -91,13 +91,11 @@ private final class IndicatorListFixture: Sendable {
   }
   let state = State()
   let threadID = UUID().uuidString.lowercased()
-  let agentID = UUID().uuidString.lowercased()
   let http: ChatHTTPFixture
 
   init(beforeRead: @escaping @Sendable (String) async -> Void = { _ in }) {
     let state = state
     let threadID = threadID
-    let agentID = agentID
     http = ChatHTTPFixture { request in
       let path = request.url!.path
       let current = state.values.withLock { value in
@@ -119,7 +117,7 @@ private final class IndicatorListFixture: Sendable {
       case "/api/indicators":
         return ChatHTTPResponse(
           body: """
-            {"agents":{"\(agentID)":"unread"},"threads":{"\(threadID)":"\(current.1)"},\
+            {"threads":{"\(threadID)":"\(current.1)"},\
             "unreadAt":{"\(threadID)":"2026-11-13T00:00:00Z"}}
             """)
       case "/api/chat/events/catch-up":

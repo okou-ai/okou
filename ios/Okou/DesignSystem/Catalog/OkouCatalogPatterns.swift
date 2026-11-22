@@ -336,7 +336,7 @@
               }
               VStack(alignment: .leading, spacing: OkouSpace.two) {
                 Text("Connector").font(.okou(.body).weight(.medium))
-                Text(added ? "Connected" : "What it lets the agent do, in two lines at most.")
+                Text(added ? "Connected" : "What it lets Okou do, in two lines at most.")
                   .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
               }
               Spacer(minLength: 0)

@@ -13,14 +13,15 @@ final class NavigationResourceTests: XCTestCase {
     let cacheDirectory = CacheTestDirectory(owner: self)
     let cache = cacheDirectory.cache(
       scope: ChatCacheScope(apiBaseURL: server.http.baseURL, userID: "user", workspaceID: "org"))
+    let previousID = "43000000-0000-4000-8000-000000000002"
     let previousNavigation = try JSONDecoder().decode(
       LegacyComposerLocation.self,
       from: Data(
         #"""
-        {"agents":[{"agentId":"\#(draftAgentID)","isDefaultAgent":true,"displayName":"Previous profile"}]}
+        {"agents":[{"agentId":"\#(previousID)","isDefaultAgent":true,"displayName":"Previous profile"}]}
         """#.utf8))
     try await cache.saveNavigation(previousNavigation)
-    let oldComposer = server.composer(storage: server.storage())
+    let oldComposer = server.composer(storage: server.storage().restoringWorkspace(previousID))
     oldComposer.text = "Unsent before upgrade"
     oldComposer.close()
 

@@ -24,7 +24,7 @@ final class WorkspaceStartupTests: XCTestCase {
     XCTAssertTrue(store.list.threads.isEmpty)
   }
 
-  func testStartupLoadsChatsAndRealtimeWithoutAgentNavigationAndPreservesTheDraft()
+  func testStartupLoadsChatsAndRealtimeAndPreservesTheDraft()
     async throws
   {
     let realtime = expectation(description: "Realtime starts independently of navigation")

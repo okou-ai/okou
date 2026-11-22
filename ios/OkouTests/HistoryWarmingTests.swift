@@ -222,11 +222,10 @@ private final class HistoryWarmingFixture {
           body: "{\"events\":[\(events.joined(separator: ","))],\"hasMore\":false}")
       case ("GET", "/api/indicators"):
         let unread = state.unread.withLock { $0 }
-        let agents = unread ? "\"\(warmingAgentID)\":\"unread\"" : ""
         let threads = unread ? "\"\(warmingThreadID)\":\"unread\"" : ""
         let unreadAt = unread ? "\"\(warmingThreadID)\":\"2026-10-20T00:00:00Z\"" : ""
         return ChatHTTPResponse(
-          body: "{\"agents\":{\(agents)},\"unreadAt\":{\(unreadAt)},\"threads\":{\(threads)}}")
+          body: "{\"unreadAt\":{\(unreadAt)},\"threads\":{\(threads)}}")
       case ("POST", "/api/chat/events/catch-up"): return try await batch(request)
       default: throw URLError(.unsupportedURL)
       }
@@ -287,4 +286,3 @@ private func warmingListEventID(_ sequence: Int) -> String {
 }
 
 private let warmingThreadID = "73000000-0000-4000-8000-000000000001"
-private let warmingAgentID = "73000000-0000-4000-8000-000000000002"

@@ -5,8 +5,7 @@ import SwiftUI
 
 /// Workspace search in the app's native sheet, with the field focused on opening. Under the
 /// field the web's filter row (`ThreeColumnSearchDialog`): All, Chats, Messages,
-/// Workflows and Artifacts. A chat or message opens its chat; a workflow starts a default
-/// Agent chat with `/name` in the draft; an artifact opens in the app's preview.
+/// Workflows and Artifacts. A chat or message opens its chat; a workflow starts a chat with `/name` in the draft; an artifact opens in the app's preview.
 struct ChatSearchView: View {
   let workspace: WorkspaceStore
   var showsArchived = false

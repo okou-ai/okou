@@ -233,7 +233,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
           status: 503, body: #"{"error":{"message":"Workflows temporarily unavailable"}}"#)
         : ChatHTTPResponse(
           body:
-            #"[{"id":"fresh","name":"fresh","displayName":null,"description":"Current Agent only"}]"#
+            #"[{"id":"fresh","name":"fresh","displayName":null,"description":"Current workspace only"}]"#
         )
     })
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)

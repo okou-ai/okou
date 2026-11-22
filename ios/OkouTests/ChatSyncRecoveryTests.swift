@@ -399,7 +399,6 @@ final class ChatSyncRecoveryTests: XCTestCase {
 
 private final class SyncRecoveryFixture: Sendable {
   static let threadID = "61000000-0000-4000-8000-000000000001"
-  private static let agentID = "61000000-0000-4000-8000-000000000002"
   private static let date = "2026-10-24T00:00:00Z"
 
   struct Values: Sendable {

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A chat in the sidebar: its status column, one body line of title and its trailing state.
 /// The status column holds the chat's status emoji or a quiet chat glyph when it has none;
-/// a section without any status leaves the column out so its titles sit flush. While the agent
+/// a section without any status leaves the column out so its titles sit flush. While Okou
 /// works the title shimmers (`OkouShimmerText`), so working never competes with the trailing
 /// state; an unread chat's title is medium weight, as on the web, so a finished chat reads
 /// before its dot.

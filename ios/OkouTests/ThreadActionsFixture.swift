@@ -23,8 +23,6 @@ final class ThreadActionGate: Sendable {
 final class ThreadActionsFixture: Sendable {
   static let thread = "78000000-0000-4000-8000-000000000001"
   static let createdThread = "78000000-0000-4000-8000-000000000004"
-  static let agent = "78000000-0000-4000-8000-000000000002"
-  static let otherAgent = "78000000-0000-4000-8000-000000000003"
   static let project = "78000000-0000-4000-8000-000000000071"
   static let otherProject = "78000000-0000-4000-8000-000000000072"
   static let date = "2026-10-21T00:00:00Z"
@@ -258,11 +256,8 @@ final class ThreadActionsFixture: Sendable {
       let unread = state.value.withLock { $0.unread }
       let indicator = unread ? "{\"\(Self.thread)\":\"unread\"}" : "{}"
       let unreadAt = unread ? "{\"\(Self.thread)\":\"\(Self.date)\"}" : "{}"
-      let agents =
-        state.value.withLock { $0.unread && !$0.muted && !$0.archived }
-        ? "{\"\(Self.agent)\":\"unread\"}" : "{}"
       return ChatHTTPResponse(
-        body: "{\"agents\":\(agents),\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
+        body: "{\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
     default: throw URLError(.unsupportedURL)
     }
   }

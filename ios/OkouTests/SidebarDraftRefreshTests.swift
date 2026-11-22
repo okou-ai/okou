@@ -160,7 +160,6 @@ private final class SidebarDraftFixture: Sendable {
   let state = State()
   let threadID = UUID().uuidString.lowercased()
   let otherID = UUID().uuidString.lowercased()
-  let agentID = UUID().uuidString.lowercased()
   let http: ChatHTTPFixture
 
   var draftReads: Int { state.values.withLock { $0.draftReads } }
@@ -172,7 +171,6 @@ private final class SidebarDraftFixture: Sendable {
     let state = state
     let threadID = threadID
     let otherID = otherID
-    let agentID = agentID
     if let draft {
       state.values.withLock {
         var document = ChatDraftDocument()

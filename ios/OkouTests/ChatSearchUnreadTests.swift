@@ -442,7 +442,7 @@ final class ChatSearchUnreadTests: XCTestCase {
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
   }
 
-  func testBulkReadUsesAgentIndicatorsWhenThreadResultsAreBounded() async throws {
+  func testBulkReadReachesUnreadThreadsOutsideTheClientSnapshot() async throws {
     let fixture = SearchUnreadFixture()
     fixture.state.value.withLock { $0.omitThreadIndicators = true }
     let store = fixture.workspace()
@@ -454,5 +454,6 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertFalse(fixture.state.value.withLock { $0.unread.contains(1) })
     XCTAssertTrue(fixture.state.value.withLock { $0.unread.contains(5) })
     await store.list.markAllRead()
+    XCTAssertTrue(fixture.state.value.withLock { $0.unread.isEmpty })
   }
 }

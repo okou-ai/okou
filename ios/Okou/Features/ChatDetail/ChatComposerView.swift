@@ -24,7 +24,6 @@ struct ChatComposerView: View {
   var workflowSource: ComposerWorkflowSource?
 
   var sendTransition: ConversationSendTransition?
-  /// "Message <agent>", so the field names who will do the work.
   var placeholder: String?
   var showsTrailingFeedbackInput = true
   var project: ChatProject?

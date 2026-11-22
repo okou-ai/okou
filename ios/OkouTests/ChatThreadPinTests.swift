@@ -280,7 +280,7 @@ final class ChatThreadPinTests: XCTestCase {
     XCTAssertEqual(fixture.writes.count, 2)
   }
 
-  func testAProjectPinRanksAgainstTheProjectsPinsAcrossAgents() async throws {
+  func testAProjectPinRanksAgainstOtherPinsInTheSameProject() async throws {
     let fixture = PinOrderFixture()
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, readRetrySleep: { _ in })
@@ -289,18 +289,18 @@ final class ChatThreadPinTests: XCTestCase {
     await store.list.refresh()
     await store.projects.activate()
     let own = PinOrderFixture.id(4)
-    let otherAgents = PinOrderFixture.id(5)
-    XCTAssertEqual(try projectRows(store), [own, otherAgents])
+    let secondPin = PinOrderFixture.id(5)
+    XCTAssertEqual(try projectRows(store), [own, secondPin])
     let initial = try store.sidebar.stateStore.get(store.sidebar.presentation)
-    let neighbors = try XCTUnwrap(initial.pinNeighbors(of: otherAgents))
+    let neighbors = try XCTUnwrap(initial.pinNeighbors(of: secondPin))
     XCTAssertEqual(neighbors, .init(above: own, below: nil, projectID: PinOrderFixture.project))
 
     await store.list.movePinned(
-      otherAgents, beside: own, placement: .before, projectID: neighbors.projectID)
-    XCTAssertEqual(fixture.writes.map(\.threadID), [otherAgents])
+      secondPin, beside: own, placement: .before, projectID: neighbors.projectID)
+    XCTAssertEqual(fixture.writes.map(\.threadID), [secondPin])
     XCTAssertEqual(fixture.writes.last?.pinOrder, "a4")
     await store.list.refresh(waitForCurrent: true)
-    XCTAssertEqual(try projectRows(store), [otherAgents, own])
+    XCTAssertEqual(try projectRows(store), [secondPin, own])
     // The pins outside the project keep their order.
     XCTAssertEqual(try pinnedRows(store), (1...3).map(PinOrderFixture.id))
     XCTAssertNil(store.list.error)
@@ -317,8 +317,7 @@ final class ChatThreadPinTests: XCTestCase {
   }
 }
 
-/// Three pins of the default Agent outside projects, and a project pinning one chat of that
-/// Agent and one of another; each rank write is confirmed in the event stream.
+/// Workspace and project pins confirm each rank write through the event stream.
 private final class PinOrderFixture: Sendable {
   struct Write: Decodable, Sendable {
     var threadID = ""
@@ -333,8 +332,6 @@ private final class PinOrderFixture: Sendable {
     var events: [String] = []
   }
   final class ServerBox: Sendable { let value = Mutex(Server()) }
-  static let agent = "69000000-0000-4000-8000-000000000100"
-  static let otherAgent = "69000000-0000-4000-8000-000000000101"
   static let project = "69000000-0000-4000-8000-000000000200"
   private let server: ServerBox
   var writes: [Write] { server.value.withLock { $0.writes } }
@@ -342,10 +339,6 @@ private final class PinOrderFixture: Sendable {
 
   static func id(_ value: Int) -> String {
     "69000000-0000-4000-8000-\(String(format: "%012d", value))"
-  }
-
-  static func agentID(of threadID: String) -> String {
-    threadID == id(5) ? otherAgent : agent
   }
 
   init() {
@@ -363,7 +356,7 @@ private final class PinOrderFixture: Sendable {
             "{\"latestEventId\":null,\"latestSeqId\":0,\"projects\":[{\"id\":\"\(Self.project)\",\"name\":\"Launch\",\"createdAt\":\"2026-11-10T00:00:00Z\",\"updatedAt\":\"2026-11-10T00:00:00Z\"}]}"
         )
       case "/api/chat-threads/snapshot":
-        // Chats 4 and 5 are the project's; their ranks sit after the Agent's own pins.
+        // Chats 4 and 5 are the project's; their ranks sit after the workspace pins.
         let rows = (1...5).map { index in
           let project = index > 3 ? "\"\(Self.project)\"" : "null"
           return """
@@ -423,7 +416,6 @@ private final class PinGate: Sendable {
 private final class PinFixture: Sendable {
   static let target = "68000000-0000-4000-8000-000000000001"
   static let peer = "68000000-0000-4000-8000-000000000002"
-  static let agent = "68000000-0000-4000-8000-000000000003"
   struct Write: Sendable {
     let action: String
     let eventID: String

@@ -663,12 +663,11 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
 
   private nonisolated static func indicatorResponse(_ state: String) -> ChatHTTPResponse {
     let thread = ConversationHistoryFixture.threadID
-    let agent = ConversationHistoryFixture.agentID
     let threads = state == "none" ? "{}" : "{\"\(thread)\":\"\(state)\"}"
     let unread = state == "unread"
     return ChatHTTPResponse(
       body: """
-        {"threads":\(threads),"agents":\(unread ? "{\"\(agent)\":\"unread\"}" : "{}"),\
+        {"threads":\(threads),\
         "unreadAt":\(unread ? "{\"\(thread)\":\"2026-11-13T00:00:00Z\"}" : "{}")}
         """)
   }

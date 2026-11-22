@@ -9,7 +9,6 @@ import Synchronization
 /// Mixed variable-height messages served through the real event-decoding and replay boundary.
 final class ConversationHistoryFixture: Sendable {
   static let threadID = "60000000-0000-4000-8000-000000000001"
-  static let agentID = "60000000-0000-4000-8000-000000000002"
   let http: ChatHTTPFixture
   let requests = HistoryRequests()
   private let rows: HistoryRows

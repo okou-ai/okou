@@ -10,7 +10,6 @@ import XCTest
 final class ChatProjectsTests: XCTestCase {
   private static let project = "30000000-0000-4000-8000-000000000071"
   private static let thread = "30000000-0000-4000-8000-000000000001"
-  private static let agent = "30000000-0000-4000-8000-000000000002"
   private static let record = """
     {"id":"30000000-0000-4000-8000-000000000071","name":"Launch","createdAt":"2026-11-09T01:00:00Z","updatedAt":"2026-11-09T01:00:00Z"}
     """
@@ -97,7 +96,6 @@ final class ChatProjectsTests: XCTestCase {
 
   func testTheFirstChatRequestCarriesProjectMembership() async throws {
     let bodies = Mutex<[Data]>([])
-    let agent = Self.agent
     let thread = Self.thread
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {

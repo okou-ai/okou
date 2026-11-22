@@ -81,7 +81,7 @@ final class DraftServer: Sendable {
       directory: directory)
   }
   @MainActor func composer(
-    storage: ChatDraftStorage? = nil, target: ChatDraftTarget = .legacyWorkspace(draftAgentID)
+    storage: ChatDraftStorage? = nil, target: ChatDraftTarget = .workspace
   ) -> ComposerDraftStore {
     ComposerDraftStore(
       target: target,
@@ -96,7 +96,6 @@ final class DraftServerState: Sendable {
   init(remote: ComposerDraft) { value = Mutex(DraftServer.State(remote: remote)) }
 }
 
-let draftAgentID = "43000000-0000-4000-8000-000000000002"
 let draftThreadID = "43000000-0000-4000-8000-000000000003"
 
 final class DraftGate: Sendable {

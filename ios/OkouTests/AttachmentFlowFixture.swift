@@ -10,7 +10,6 @@ import XCTest
 
 final class AttachmentFlowFixture: Sendable {
   static let fileID = "42000000-0000-4000-8000-000000000001"
-  static let agentID = "42000000-0000-4000-8000-000000000002"
   static let threadID = "42000000-0000-4000-8000-000000000003"
   struct State: Sendable {
     var uploads = 0
@@ -18,7 +17,7 @@ final class AttachmentFlowFixture: Sendable {
     var messages: [Data] = []
     var accepted: Data?
     var draft = ComposerDraft()
-    var agentDrafts: [String: ComposerDraft] = [:]
+    var composerDrafts: [String: ComposerDraft] = [:]
   }
   let state = AttachmentFlowState()
   let http: ChatHTTPFixture
@@ -46,7 +45,7 @@ final class AttachmentFlowFixture: Sendable {
           url: "artifact://\(Self.fileID)")
       let metadata = try JSONEncoder().encodeString(file)
       if path == "/api/chat-drafts/composer" {
-        return try Self.agentDraftResponse(request, path: path, state: state)
+        return try Self.composerDraftResponse(request, path: path, state: state)
       }
       if let response = try await Self.settingsResponse(
         request, path: path, connectorSettings: connectorSettings)
@@ -166,15 +165,15 @@ final class AttachmentFlowFixture: Sendable {
     }
   }
 
-  private static func agentDraftResponse(
+  private static func composerDraftResponse(
     _ request: URLRequest, path: String, state: AttachmentFlowState
   ) throws -> ChatHTTPResponse {
     if request.httpMethod == "PATCH" {
       let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
-      state.value.withLock { $0.agentDrafts[path] = draft }
+      state.value.withLock { $0.composerDrafts[path] = draft }
       return ChatHTTPResponse(status: 204, body: "")
     }
-    let draft = state.value.withLock { $0.agentDrafts[path] ?? ComposerDraft() }
+    let draft = state.value.withLock { $0.composerDrafts[path] ?? ComposerDraft() }
     return try ChatHTTPResponse(
       json: draft)
   }

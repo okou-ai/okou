@@ -12,7 +12,6 @@ final class UnreadPersistenceTests: XCTestCase {
     let hasThread = Mutex(false)
     let failing = Mutex(false)
     let threadID = ConversationHistoryFixture.threadID
-    let agentID = ConversationHistoryFixture.agentID
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/chat-threads/snapshot":
@@ -127,6 +126,6 @@ private func unreadPresentation(_ unread: Bool) -> ChatHTTPResponse {
   }
   return ChatHTTPResponse(
     body: """
-      {"agents":{"\(ConversationHistoryFixture.agentID)":"unread"},"threads":{"\(ConversationHistoryFixture.threadID)":"unread"},"unreadAt":{"\(ConversationHistoryFixture.threadID)":"2026-11-09T00:00:00Z"}}
+      {"threads":{"\(ConversationHistoryFixture.threadID)":"unread"},"unreadAt":{"\(ConversationHistoryFixture.threadID)":"2026-11-09T00:00:00Z"}}
       """)
 }

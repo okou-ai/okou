@@ -167,16 +167,16 @@ final class VoiceInputTests: XCTestCase {
     }
     let client = VoiceInputClient(client: fixture.client)
     let original = try VoiceDraftSession(
-      client: client, storage: storage().voiceDraft(for: .legacyWorkspace("one")),
+      client: client, storage: storage().voiceDraft(for: .workspace),
       activityDetection: VoiceActivityFixture())
     let context = VoiceEditorContext(before: "", selected: "", after: "")
     let originalID = try await original.begin(context: context)
     _ = try await original.append(Data(repeating: 1, count: 32_000), recordingID: originalID)
     let others = [
-      storage(origin: "https://two.invalid").voiceDraft(for: .legacyWorkspace("one")),
-      storage(user: "two").voiceDraft(for: .legacyWorkspace("one")),
-      storage(org: "two").voiceDraft(for: .legacyWorkspace("one")),
-      storage().voiceDraft(for: .legacyWorkspace("two")),
+      storage(origin: "https://two.invalid").voiceDraft(for: .workspace),
+      storage(user: "two").voiceDraft(for: .workspace),
+      storage(org: "two").voiceDraft(for: .workspace),
+      storage().voiceDraft(for: .thread("other")),
       storage().voiceDraft(for: .thread("one"))
     ]
     for other in others {
@@ -186,7 +186,7 @@ final class VoiceInputTests: XCTestCase {
       try await independent.discard()
     }
     let reopened = try VoiceDraftSession(
-      client: client, storage: storage().voiceDraft(for: .legacyWorkspace("one")),
+      client: client, storage: storage().voiceDraft(for: .workspace),
       activityDetection: VoiceActivityFixture())
     let text = try await reopened.finish(recordingID: originalID)
     XCTAssertEqual(text, "Owner speech")

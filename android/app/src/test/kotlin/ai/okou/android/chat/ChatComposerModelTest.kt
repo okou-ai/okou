@@ -241,7 +241,7 @@ class ChatComposerModelTest {
     }
 
     @Test
-    fun myOkouAndProjectsShareOneAgentDraftButKeepCreateContext() = check { service, _, create ->
+    fun myOkouAndProjectsShareOneWorkspaceDraftButKeepCreateContext() = check { service, _, create ->
         val personal = ComposerTarget()
         val project = ComposerTarget(projectId = CHAT_PROJECT)
         val model = create(false, identity)

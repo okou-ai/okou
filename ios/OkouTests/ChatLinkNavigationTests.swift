@@ -23,14 +23,14 @@ final class ChatLinkNavigationTests: XCTestCase {
       "https://app.example.invalid.evil/chats/\(ChatLinkFixture.sourceID)",
       "https://app.example.invalid:8443/chats/\(ChatLinkFixture.sourceID)",
       "https://example.slack.com/archives/C1/p1",
-      "https://app.example.invalid/agents/\(ChatLinkFixture.agentID)/chat",
+      "https://app.example.invalid/agents/\(ChatLinkFixture.homeID)/chat",
       "https://app.example.invalid/workflows/\(ChatLinkFixture.workflowID)/automations"
     ] {
       XCTAssertNil(ChatLinkDestination(url: try XCTUnwrap(URL(string: link)), webURL: web))
     }
   }
 
-  func testWorkflowAndCrossAgentRunLinksOpenNativeChatAndRestoreTheOriginalInput() async throws {
+  func testWorkflowAndRunLinksOpenNativeChatAndRestoreTheOriginalInput() async throws {
     let fixture = ChatLinkFixture()
     let store = fixture.workspace()
     defer { store.close() }
@@ -207,8 +207,6 @@ final class ChatLinkNavigationTests: XCTestCase {
 final class ChatLinkFixture: Sendable {
   static let homeID = "74000000-0000-4000-8000-000000000001"
   static let sourceID = "74000000-0000-4000-8000-000000000002"
-  static let agentID = "74000000-0000-4000-8000-000000000003"
-  static let otherAgentID = "74000000-0000-4000-8000-000000000004"
   static let workflowID = "74000000-0000-4000-8000-000000000005"
   let requests = HistoryRequests()
   let http: ChatHTTPFixture

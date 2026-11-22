@@ -1,7 +1,6 @@
 import Foundation
 
 public enum ConnectorHTTPFixtures {
-  public static let agentID = "98000000-0000-4000-8000-000000000001"
   public static let threadID = "98000000-0000-4000-8000-000000000002"
   public static let accountID = "98000000-0000-4000-8000-000000000003"
   public static let siblingID = "98000000-0000-4000-8000-000000000004"

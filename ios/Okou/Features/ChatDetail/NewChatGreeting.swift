@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The new-chat greeting as the web draws it: the agent and a rotating tagline that arrive
+/// The new-chat greeting as the web draws it: the Okou avatar and a rotating tagline that arrive
 /// word by word (opacity, an 8 pt blur and a 14 pt rise over 720 ms, 70 ms apart).
 struct NewChatGreeting: View {
   let text: String
@@ -109,7 +109,7 @@ private struct GreetingWordFlow: Layout {
   }
 }
 
-/// The web's rotating new-chat taglines (chat.agentPage.taglines), in its order.
+/// The web's rotating new-chat taglines, in display order.
 enum NewChatTagline {
   static func text(index: Int, name: String?) -> String {
     guard let name, !name.isEmpty else {

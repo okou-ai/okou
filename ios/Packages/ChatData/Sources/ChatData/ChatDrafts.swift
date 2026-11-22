@@ -5,14 +5,12 @@ import Foundation
 public enum ChatDraftTarget: Equatable, Sendable {
   case unassigned
   case workspace
-  case legacyWorkspace(String)
   case thread(String)
 
   public var key: String {
     switch self {
     case .unassigned: "unassigned"
     case .workspace: "workspace"
-    case .legacyWorkspace(let id): "agent/" + id
     case .thread(let id): "thread/" + id
     }
   }
@@ -74,14 +72,14 @@ public struct ChatDraftRepository: Sendable {
   public func load(_ target: ChatDraftTarget) async throws -> ComposerDraft {
     switch target {
     case .unassigned: throw ChatError.composerUnavailable
-    case .workspace, .legacyWorkspace: return try await client.request("/api/chat-drafts/composer")
+    case .workspace: return try await client.request("/api/chat-drafts/composer")
     case .thread(let id): return try await client.request("/api/chat-threads/\(id)/draft")
     }
   }
   public func save(_ draft: ComposerDraft, to target: ChatDraftTarget) async throws {
     switch target {
     case .unassigned: throw ChatError.composerUnavailable
-    case .workspace, .legacyWorkspace:
+    case .workspace:
       try await client.data(
         "/api/chat-drafts/composer", method: "PATCH", body: JSONEncoder().encode(draft))
     case .thread(let id):
@@ -95,6 +93,7 @@ public struct ChatDraftRepository: Sendable {
 /// process restarts and are scoped to the API origin, user, organization and composer owner.
 public struct ChatDraftStorage: Sendable {
   private let directory: URL
+  private var workspaceKey = ChatDraftTarget.workspace.key
 
   public init(scope: ChatCacheScope, directory: URL? = nil) {
     let root =
@@ -105,6 +104,18 @@ public struct ChatDraftStorage: Sendable {
     self.directory = root.appendingPathComponent(
       "ChatDrafts/" + Self.digest(identity), isDirectory: true)
   }
+  /// Older installations already have a protected draft file and voice directory under this key.
+  public func restoringWorkspace(_ previousID: String?) -> Self {
+    guard let previousID else { return self }
+    var storage = self
+    storage.workspaceKey = "agent/" + previousID
+    return storage
+  }
+
+  private func localKey(_ key: String) -> String {
+    key == ChatDraftTarget.workspace.key ? workspaceKey : key
+  }
+
   public func load<Value: Decodable>(_ key: String, as: Value.Type) throws -> Value? {
     let url = file(key)
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -124,10 +135,10 @@ public struct ChatDraftStorage: Sendable {
   public func voiceDraft(for target: ChatDraftTarget) -> VoiceDraftStorage {
     VoiceDraftStorage(
       directory: directory.appendingPathComponent(
-        Self.digest(target.key + "/voice"), isDirectory: true))
+        Self.digest(localKey(target.key) + "/voice"), isDirectory: true))
   }
   private func file(_ key: String) -> URL {
-    directory.appendingPathComponent(Self.digest(key) + ".json")
+    directory.appendingPathComponent(Self.digest(localKey(key)) + ".json")
   }
   private static func digest(_ key: String) -> String {
     SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()

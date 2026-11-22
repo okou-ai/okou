@@ -69,8 +69,8 @@ private struct MessageAttachmentContent: View {
     attachment.contentType.hasPrefix("image/") || attachment.contentType.hasPrefix("video/")
   }
 
-  /// The attachment in a result's terms, so a file reads the same whether the user or the
-  /// agent added it ("Slides · PPTX · 2 MB").
+  /// The attachment in a result's terms, so a file reads the same whether the user or Okou
+  /// added it ("Slides · PPTX · 2 MB").
   private var result: ChatArtifact {
     ChatArtifact(
       source: .file(attachment.downloadID), filename: attachment.filename,

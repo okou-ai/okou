@@ -12,7 +12,6 @@ import XCTest
 final class ChatProjectStoreTests: XCTestCase {
   private static let project = "30000000-0000-4000-8000-000000000071"
   private static let thread = "30000000-0000-4000-8000-000000000001"
-  private static let agent = "30000000-0000-4000-8000-000000000002"
 
   func testExplicitRenameRetryKeepsItsIdentityAndPublishesTheConfirmedName() async throws {
     struct Server: Sendable {
@@ -72,7 +71,7 @@ final class ChatProjectStoreTests: XCTestCase {
     XCTAssertNil(store.actionError)
   }
 
-  func testProjectsCollectOtherAgentsAndRespectUnreadAndArchiveFilters() async throws {
+  func testProjectsRespectUnreadAndArchiveFilters() async throws {
     let projectID = Self.project
     let fixture = ChatHTTPFixture { request in
       if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
@@ -87,11 +86,11 @@ final class ChatProjectStoreTests: XCTestCase {
       )
     }
     let projects = try await ChatSync(client: fixture.client).projectList()
-    let ordinary = thread("ordinary", agent: Self.agent)
-    var member = thread("member", agent: "another-agent")
+    let ordinary = thread("ordinary")
+    var member = thread("member")
     member.projectId = Self.project
     member.indicator = .unread
-    var archived = thread("archived", agent: Self.agent)
+    var archived = thread("archived")
     archived.projectId = Self.project
     archived.isArchived = true
     let threads = [ordinary, member, archived]
@@ -443,7 +442,7 @@ final class ChatProjectStoreTests: XCTestCase {
     }
   }
 
-  private func thread(_ id: String, agent: String) -> ChatThread {
+  private func thread(_ id: String) -> ChatThread {
     ChatThread(id: id, title: id, createdAt: .now, updatedAt: .now, sortAt: .now)
   }
 
