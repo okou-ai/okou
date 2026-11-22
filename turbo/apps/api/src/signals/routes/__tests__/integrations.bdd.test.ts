@@ -3127,7 +3127,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         type: "message",
         channel_type: "im",
         user: slackUserId,
-        text: "return to the default Slack DM agent",
+        text: "return to the Slack DM conversation",
         ts: returnMessageTs,
         channel: channelId,
       });

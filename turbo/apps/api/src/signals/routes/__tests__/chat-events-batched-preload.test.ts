@@ -28,7 +28,7 @@ const {
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("batched identity preload through chat entry", () => {
-  it("accepts member chat input without Agent metadata and settles the empty preload", async () => {
+  it("accepts member chat input and settles the empty preload", async () => {
     const actor = bdd.user();
     const result = await chat.requestSendEvent(
       actor,

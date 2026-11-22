@@ -1507,115 +1507,6 @@
       "description": "这个操作不属于当前对话，或者已经失效。",
       "title": "操作不可用"
     },
-    "homePage": {
-      "getStarted": {
-        "checkedIn": "已签到",
-        "checkin": {
-          "action": "签到",
-          "description": "每天签到一次，UTC 00:00 重置。",
-          "name": "每日签到",
-          "unit": "每天"
-        },
-        "connector": {
-          "action": "连接",
-          "description": "Gmail、Notion 等 4,000 多个工具",
-          "name": "连接一个工具",
-          "unit": "每个连接器"
-        },
-        "howRewardsWork": "奖励规则说明",
-        "imessage": {
-          "action": "添加",
-          "description": "用 iPhone 给 {{assistantName}} 发消息",
-          "name": "添加到 iMessage"
-        },
-        "inReview": "审核中",
-        "intro": {
-          "connector": {
-            "confirm": "浏览全部连接器",
-            "connected": "已连接",
-            "description": "选一个，{{assistantName}} 就能在里面开始工作。",
-            "notConnected": "未连接",
-            "pickerFailed": "连接器加载失败。",
-            "pickerLoading": "正在加载连接器…",
-            "title": "{{assistantName}} 直接在你已经在用的工具里干活"
-          },
-          "invite": {
-            "confirm": "邀请同事",
-            "description": "把同事邀请到这个工作区。",
-            "note": "你搭好一次的东西，不再只属于你自己。上午刚加入的同事，下午就能直接跑起来，不用再问你怎么用。",
-            "title": "一个人会的，所有人都能跑"
-          },
-          "later": "以后再说",
-          "slack": {
-            "confirm": "添加到 Slack",
-            "description": "把 {{assistantName}} 添加到团队的 Slack 工作区。",
-            "note": "同事不用再先来找你。他们在频道里提一句，结果就回到同一个会话里，所有人都看得到。",
-            "title": "在团队日常沟通的地方和 {{assistantName}} 协作"
-          },
-          "workflow": {
-            "description": "把你反复要做的事，变成团队都能跑的工作流。",
-            "title": "一次跑通，就成了团队长期能用的东西"
-          }
-        },
-        "invite": {
-          "action": "邀请",
-          "description": "每邀请一个人都算",
-          "name": "邀请你的团队",
-          "unit": "每位成员"
-        },
-        "pendingState": "{{amount}} 待发放",
-        "rewardsNote": "任务奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
-        "slack": {
-          "action": "添加",
-          "description": "团队日常办公的地方",
-          "name": "添加到 Slack"
-        },
-        "stepCount": "{{completed}}/{{total}}",
-        "streak": "连续 {{amount}} 天",
-        "title": "获得更多积分",
-        "toGo": "还差 {{amount}}",
-        "workflow": {
-          "action": "搭建",
-          "description": "把重复的任务变成可复用的技能",
-          "name": "搭一个工作流"
-        }
-      },
-      "growth": {
-        "addInSlack": "在 Slack 里添加 {{assistantName}}",
-        "connect": "连接",
-        "credits": "积分",
-        "inSlack": "{{assistantName}} 已在 Slack 里",
-        "inviteMember": "邀请真人 🤝",
-        "otherChannels": "Telegram 和电话"
-      },
-      "taglines": {
-        "anonymous": {
-          "buildSomething": "想做点什么？",
-          "goodToSeeYou": "见到你真好。",
-          "readyToRoll": "准备开始了吗？",
-          "welcomeBack": "欢迎回来。",
-          "whatAreWeWorkingOn": "今天我们做点什么？",
-          "whatsOnYourMind": "在想些什么？",
-          "whatsTheMove": "下一步怎么走？"
-        },
-        "anotherWin": "{{userName}}，今天再赢一局？",
-        "coffeeReady": "咖啡好了，{{userName}}。",
-        "enteredChat": "{{userName}} 上线了。",
-        "goodToSeeYou": "见到你真好，{{userName}}。",
-        "knewYouWouldCome": "就知道你会回来，{{userName}}。",
-        "makeTodayCount": "让今天过得有价值，{{userName}}。",
-        "newIdeas": "今天有什么新想法，{{userName}}？",
-        "readyToBuild": "准备开工了吗，{{userName}}？",
-        "rightOnTime": "来得正好，{{userName}}。",
-        "savedYourSeat": "位置给你留着呢，{{userName}}。",
-        "theUsual": "还是老样子，{{userName}}？",
-        "welcomeBack": "欢迎回来，{{userName}}。",
-        "whatAreWeWorkingOn": "今天我们做点什么，{{userName}}？",
-        "whatsCooking": "在忙什么呢，{{userName}}？",
-        "whatsOnYourMind": "在想些什么，{{userName}}？",
-        "whatsTheMove": "下一步怎么走，{{userName}}？"
-      }
-    },
     "agentSuggestions": {
       "addReason": "补充原因",
       "alreadyDone": "已经处理了",
@@ -2211,6 +2102,115 @@
     "forward": {
       "composerPlaceholder": "添加留言",
       "title": "转发到"
+    },
+    "homePage": {
+      "getStarted": {
+        "checkedIn": "已签到",
+        "checkin": {
+          "action": "签到",
+          "description": "每天签到一次，UTC 00:00 重置。",
+          "name": "每日签到",
+          "unit": "每天"
+        },
+        "connector": {
+          "action": "连接",
+          "description": "Gmail、Notion 等 4,000 多个工具",
+          "name": "连接一个工具",
+          "unit": "每个连接器"
+        },
+        "howRewardsWork": "奖励规则说明",
+        "imessage": {
+          "action": "添加",
+          "description": "用 iPhone 给 {{assistantName}} 发消息",
+          "name": "添加到 iMessage"
+        },
+        "inReview": "审核中",
+        "intro": {
+          "connector": {
+            "confirm": "浏览全部连接器",
+            "connected": "已连接",
+            "description": "选一个，{{assistantName}} 就能在里面开始工作。",
+            "notConnected": "未连接",
+            "pickerFailed": "连接器加载失败。",
+            "pickerLoading": "正在加载连接器…",
+            "title": "{{assistantName}} 直接在你已经在用的工具里干活"
+          },
+          "invite": {
+            "confirm": "邀请同事",
+            "description": "把同事邀请到这个工作区。",
+            "note": "你搭好一次的东西，不再只属于你自己。上午刚加入的同事，下午就能直接跑起来，不用再问你怎么用。",
+            "title": "一个人会的，所有人都能跑"
+          },
+          "later": "以后再说",
+          "slack": {
+            "confirm": "添加到 Slack",
+            "description": "把 {{assistantName}} 添加到团队的 Slack 工作区。",
+            "note": "同事不用再先来找你。他们在频道里提一句，结果就回到同一个会话里，所有人都看得到。",
+            "title": "在团队日常沟通的地方和 {{assistantName}} 协作"
+          },
+          "workflow": {
+            "description": "把你反复要做的事，变成团队都能跑的工作流。",
+            "title": "一次跑通，就成了团队长期能用的东西"
+          }
+        },
+        "invite": {
+          "action": "邀请",
+          "description": "每邀请一个人都算",
+          "name": "邀请你的团队",
+          "unit": "每位成员"
+        },
+        "pendingState": "{{amount}} 待发放",
+        "rewardsNote": "任务奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
+        "slack": {
+          "action": "添加",
+          "description": "团队日常办公的地方",
+          "name": "添加到 Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "streak": "连续 {{amount}} 天",
+        "title": "获得更多积分",
+        "toGo": "还差 {{amount}}",
+        "workflow": {
+          "action": "搭建",
+          "description": "把重复的任务变成可复用的技能",
+          "name": "搭一个工作流"
+        }
+      },
+      "growth": {
+        "addInSlack": "在 Slack 里添加 {{assistantName}}",
+        "connect": "连接",
+        "credits": "积分",
+        "inSlack": "{{assistantName}} 已在 Slack 里",
+        "inviteMember": "邀请真人 🤝",
+        "otherChannels": "Telegram 和电话"
+      },
+      "taglines": {
+        "anonymous": {
+          "buildSomething": "想做点什么？",
+          "goodToSeeYou": "见到你真好。",
+          "readyToRoll": "准备开始了吗？",
+          "welcomeBack": "欢迎回来。",
+          "whatAreWeWorkingOn": "今天我们做点什么？",
+          "whatsOnYourMind": "在想些什么？",
+          "whatsTheMove": "下一步怎么走？"
+        },
+        "anotherWin": "{{userName}}，今天再赢一局？",
+        "coffeeReady": "咖啡好了，{{userName}}。",
+        "enteredChat": "{{userName}} 上线了。",
+        "goodToSeeYou": "见到你真好，{{userName}}。",
+        "knewYouWouldCome": "就知道你会回来，{{userName}}。",
+        "makeTodayCount": "让今天过得有价值，{{userName}}。",
+        "newIdeas": "今天有什么新想法，{{userName}}？",
+        "readyToBuild": "准备开工了吗，{{userName}}？",
+        "rightOnTime": "来得正好，{{userName}}。",
+        "savedYourSeat": "位置给你留着呢，{{userName}}。",
+        "theUsual": "还是老样子，{{userName}}？",
+        "welcomeBack": "欢迎回来，{{userName}}。",
+        "whatAreWeWorkingOn": "今天我们做点什么，{{userName}}？",
+        "whatsCooking": "在忙什么呢，{{userName}}？",
+        "whatsOnYourMind": "在想些什么，{{userName}}？",
+        "whatsTheMove": "下一步怎么走，{{userName}}？"
+      }
     },
     "mail": {
       "bcc": "密送",

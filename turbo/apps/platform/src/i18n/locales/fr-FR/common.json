@@ -1536,115 +1536,6 @@
       "description": "Cette action n’appartient pas à cette discussion ou n’est plus valide.",
       "title": "Action indisponible"
     },
-    "homePage": {
-      "getStarted": {
-        "checkedIn": "Présence validée",
-        "checkin": {
-          "action": "Valider ma présence",
-          "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
-          "name": "Se connecter chaque jour",
-          "unit": "par jour"
-        },
-        "connector": {
-          "action": "Connecter",
-          "description": "Gmail, Notion et plus de 4 000 autres",
-          "name": "Connecter un outil",
-          "unit": "par connecteur"
-        },
-        "howRewardsWork": "Comment fonctionnent les récompenses",
-        "imessage": {
-          "action": "Ajouter",
-          "description": "Écrivez à {{assistantName}} depuis votre iPhone",
-          "name": "Ajouter à iMessage"
-        },
-        "inReview": "En cours d'examen",
-        "intro": {
-          "connector": {
-            "confirm": "Voir tous les connecteurs",
-            "connected": "Connecté",
-            "description": "Choisissez-en un et {{assistantName}} commence à y travailler.",
-            "notConnected": "Non connecté",
-            "pickerFailed": "Impossible de charger les connecteurs.",
-            "pickerLoading": "Chargement des connecteurs…",
-            "title": "{{assistantName}} travaille dans les outils que vous utilisez déjà"
-          },
-          "invite": {
-            "confirm": "Inviter l'équipe",
-            "description": "Invitez vos collègues dans cet espace de travail.",
-            "note": "Ce que vous avez mis en place une fois cesse d'être à vous seul. Quelqu'un arrivé ce matin peut le lancer cet après-midi, sans vous demander comment.",
-            "title": "Ce qu'une personne sait, toute l'équipe peut l'exécuter"
-          },
-          "later": "Plus tard",
-          "slack": {
-            "confirm": "Ajouter à Slack",
-            "description": "Ajoutez {{assistantName}} à l'espace Slack de votre équipe.",
-            "note": "Vos collègues n'ont plus à passer par vous. Ils demandent dans le canal, et le travail revient dans le fil, à la vue de tous.",
-            "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
-          },
-          "workflow": {
-            "description": "Transformez une tâche récurrente en workflow que l'équipe peut lancer.",
-            "title": "Une bonne exécution devient un acquis pour l'équipe"
-          }
-        },
-        "invite": {
-          "action": "Inviter",
-          "description": "Chaque personne ajoutée compte",
-          "name": "Invitez votre équipe",
-          "unit": "par membre"
-        },
-        "pendingState": "{{amount}} en attente",
-        "rewardsNote": "Les récompenses de tâches expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
-        "slack": {
-          "action": "Ajouter",
-          "description": "Là où votre équipe travaille déjà",
-          "name": "Ajouter à Slack"
-        },
-        "stepCount": "{{completed}}/{{total}}",
-        "streak": "{{amount}} jours d’affilée",
-        "title": "Obtenir plus de crédits",
-        "toGo": "Encore {{amount}}",
-        "workflow": {
-          "action": "Créer",
-          "description": "Transformez une tâche répétitive en compétence réutilisable",
-          "name": "Créer un workflow"
-        }
-      },
-      "growth": {
-        "addInSlack": "Ajouter {{assistantName}} dans Slack",
-        "connect": "Connecter",
-        "credits": "Crédits",
-        "inSlack": "{{assistantName}} est dans Slack",
-        "inviteMember": "Inviter des humains 🤝",
-        "otherChannels": "Telegram et téléphone"
-      },
-      "taglines": {
-        "anonymous": {
-          "buildSomething": "Prêt à construire quelque chose ?",
-          "goodToSeeYou": "Content de te voir.",
-          "readyToRoll": "Prêt à y aller ?",
-          "welcomeBack": "Bon retour.",
-          "whatAreWeWorkingOn": "Sur quoi travaillons-nous ?",
-          "whatsOnYourMind": "À quoi penses-tu ?",
-          "whatsTheMove": "Quel est le plan ?"
-        },
-        "anotherWin": "Une autre victoire aujourd'hui, {{userName}} ?",
-        "coffeeReady": "Le café est prêt, {{userName}}.",
-        "enteredChat": "{{userName}} a rejoint la conversation.",
-        "goodToSeeYou": "Content de te voir, {{userName}}.",
-        "knewYouWouldCome": "Je savais que tu reviendrais, {{userName}}.",
-        "makeTodayCount": "Faisons en sorte que cette journée compte, {{userName}}.",
-        "newIdeas": "De nouvelles idées aujourd'hui, {{userName}} ?",
-        "readyToBuild": "Prêt à construire, {{userName}} ?",
-        "rightOnTime": "Juste à l'heure, {{userName}}.",
-        "savedYourSeat": "J'ai gardé ta place, {{userName}}.",
-        "theUsual": "Comme d'habitude, {{userName}} ?",
-        "welcomeBack": "Bon retour, {{userName}}.",
-        "whatAreWeWorkingOn": "Sur quoi travaillons-nous, {{userName}} ?",
-        "whatsCooking": "Qu'est-ce qui se prépare, {{userName}} ?",
-        "whatsOnYourMind": "À quoi penses-tu, {{userName}} ?",
-        "whatsTheMove": "Quel est le plan, {{userName}} ?"
-      }
-    },
     "agentSuggestions": {
       "addReason": "Add a reason",
       "alreadyDone": "Already done",
@@ -2256,6 +2147,115 @@
     "forward": {
       "composerPlaceholder": "Ajouter un message",
       "title": "Transférer vers"
+    },
+    "homePage": {
+      "getStarted": {
+        "checkedIn": "Présence validée",
+        "checkin": {
+          "action": "Valider ma présence",
+          "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
+          "name": "Se connecter chaque jour",
+          "unit": "par jour"
+        },
+        "connector": {
+          "action": "Connecter",
+          "description": "Gmail, Notion et plus de 4 000 autres",
+          "name": "Connecter un outil",
+          "unit": "par connecteur"
+        },
+        "howRewardsWork": "Comment fonctionnent les récompenses",
+        "imessage": {
+          "action": "Ajouter",
+          "description": "Écrivez à {{assistantName}} depuis votre iPhone",
+          "name": "Ajouter à iMessage"
+        },
+        "inReview": "En cours d'examen",
+        "intro": {
+          "connector": {
+            "confirm": "Voir tous les connecteurs",
+            "connected": "Connecté",
+            "description": "Choisissez-en un et {{assistantName}} commence à y travailler.",
+            "notConnected": "Non connecté",
+            "pickerFailed": "Impossible de charger les connecteurs.",
+            "pickerLoading": "Chargement des connecteurs…",
+            "title": "{{assistantName}} travaille dans les outils que vous utilisez déjà"
+          },
+          "invite": {
+            "confirm": "Inviter l'équipe",
+            "description": "Invitez vos collègues dans cet espace de travail.",
+            "note": "Ce que vous avez mis en place une fois cesse d'être à vous seul. Quelqu'un arrivé ce matin peut le lancer cet après-midi, sans vous demander comment.",
+            "title": "Ce qu'une personne sait, toute l'équipe peut l'exécuter"
+          },
+          "later": "Plus tard",
+          "slack": {
+            "confirm": "Ajouter à Slack",
+            "description": "Ajoutez {{assistantName}} à l'espace Slack de votre équipe.",
+            "note": "Vos collègues n'ont plus à passer par vous. Ils demandent dans le canal, et le travail revient dans le fil, à la vue de tous.",
+            "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
+          },
+          "workflow": {
+            "description": "Transformez une tâche récurrente en workflow que l'équipe peut lancer.",
+            "title": "Une bonne exécution devient un acquis pour l'équipe"
+          }
+        },
+        "invite": {
+          "action": "Inviter",
+          "description": "Chaque personne ajoutée compte",
+          "name": "Invitez votre équipe",
+          "unit": "par membre"
+        },
+        "pendingState": "{{amount}} en attente",
+        "rewardsNote": "Les récompenses de tâches expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
+        "slack": {
+          "action": "Ajouter",
+          "description": "Là où votre équipe travaille déjà",
+          "name": "Ajouter à Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "streak": "{{amount}} jours d’affilée",
+        "title": "Obtenir plus de crédits",
+        "toGo": "Encore {{amount}}",
+        "workflow": {
+          "action": "Créer",
+          "description": "Transformez une tâche répétitive en compétence réutilisable",
+          "name": "Créer un workflow"
+        }
+      },
+      "growth": {
+        "addInSlack": "Ajouter {{assistantName}} dans Slack",
+        "connect": "Connecter",
+        "credits": "Crédits",
+        "inSlack": "{{assistantName}} est dans Slack",
+        "inviteMember": "Inviter des humains 🤝",
+        "otherChannels": "Telegram et téléphone"
+      },
+      "taglines": {
+        "anonymous": {
+          "buildSomething": "Prêt à construire quelque chose ?",
+          "goodToSeeYou": "Content de te voir.",
+          "readyToRoll": "Prêt à y aller ?",
+          "welcomeBack": "Bon retour.",
+          "whatAreWeWorkingOn": "Sur quoi travaillons-nous ?",
+          "whatsOnYourMind": "À quoi penses-tu ?",
+          "whatsTheMove": "Quel est le plan ?"
+        },
+        "anotherWin": "Une autre victoire aujourd'hui, {{userName}} ?",
+        "coffeeReady": "Le café est prêt, {{userName}}.",
+        "enteredChat": "{{userName}} a rejoint la conversation.",
+        "goodToSeeYou": "Content de te voir, {{userName}}.",
+        "knewYouWouldCome": "Je savais que tu reviendrais, {{userName}}.",
+        "makeTodayCount": "Faisons en sorte que cette journée compte, {{userName}}.",
+        "newIdeas": "De nouvelles idées aujourd'hui, {{userName}} ?",
+        "readyToBuild": "Prêt à construire, {{userName}} ?",
+        "rightOnTime": "Juste à l'heure, {{userName}}.",
+        "savedYourSeat": "J'ai gardé ta place, {{userName}}.",
+        "theUsual": "Comme d'habitude, {{userName}} ?",
+        "welcomeBack": "Bon retour, {{userName}}.",
+        "whatAreWeWorkingOn": "Sur quoi travaillons-nous, {{userName}} ?",
+        "whatsCooking": "Qu'est-ce qui se prépare, {{userName}} ?",
+        "whatsOnYourMind": "À quoi penses-tu, {{userName}} ?",
+        "whatsTheMove": "Quel est le plan, {{userName}} ?"
+      }
     },
     "mail": {
       "bcc": "bcc",

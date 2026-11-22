@@ -1,5 +1,6 @@
 import ChatDataTestSupport
 import ChatDomain
+import CryptoKit
 import Foundation
 import Synchronization
 import XCTest
@@ -7,6 +8,33 @@ import XCTest
 @testable import ChatData
 
 final class ChatDraftTests: XCTestCase {
+  func testUpgradeRecoversVoiceAlongsideANewerWorkspaceDraftAndCanRetry() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let scope = ChatCacheScope(
+      apiBaseURL: URL(string: "https://api.example.invalid")!, userID: "member", workspaceID: "org")
+    let storage = ChatDraftStorage(scope: scope, directory: root)
+    try storage.save("current draft", key: "workspace")
+    let previousKey = "agent/previous"
+    try storage.save("previous draft", key: previousKey)
+    let currentVoice = storage.voiceDraft(for: .workspace).directory
+    let oldVoiceName = SHA256.hash(data: Data((previousKey + "/voice").utf8))
+      .map { String(format: "%02x", $0) }.joined()
+    let oldVoice = currentVoice.deletingLastPathComponent().appendingPathComponent(oldVoiceName)
+    try FileManager.default.createDirectory(at: oldVoice, withIntermediateDirectories: true)
+    let bytes = Data([0x01, 0x02])
+    try bytes.write(to: oldVoice.appendingPathComponent("samples.pcm"))
+
+    for _ in 0..<2 {
+      let restored = storage.recoveringWorkspace(from: "previous")
+      XCTAssertTrue(restored.migrated)
+      XCTAssertEqual(try restored.storage.load("workspace", as: String.self), "current draft")
+      XCTAssertEqual(
+        try Data(contentsOf: currentVoice.appendingPathComponent("samples.pcm")), bytes)
+    }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: oldVoice.path))
+  }
+
   func testAtomicStorageReopensAndIsolatesOriginUserOrganizationAndThread() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

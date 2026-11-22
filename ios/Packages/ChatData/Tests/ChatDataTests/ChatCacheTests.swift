@@ -1,3 +1,4 @@
+import ChatDataTestSupport
 import Foundation
 import SQLite3
 import XCTest
@@ -32,12 +33,7 @@ final class ChatCacheTests: XCTestCase {
     try await legacy.replaceThreadList(
       snapshot: Data(#"{"chatThreads":[]}"#.utf8),
       cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
-    let navigation = try JSONDecoder().decode(
-      LegacyComposerLocation.self,
-      from: Data(
-        #"{"agents":[{"agentId":"agent-old","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":[]},"featureSwitches":{"effectiveSwitches":{}}}"#
-          .utf8))
-    try await legacy.saveNavigation(navigation)
+    try LegacyComposerFixture.storeLocation("agent-old", in: legacyRoot.url)
     try await legacy.replaceHistory(
       threadID: "chat", rows: [event(1)],
       cursor: ChatCacheCursor(eventID: event(1).id, seqID: 1), schemaVersion: 8)
@@ -53,8 +49,8 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertEqual(newest?.rows, [event(1), event(2)])
     let imported = try await app.loadHistory(threadID: "other")
     XCTAssertEqual(imported?.rows, [event(1)])
-    let restoredNavigation = try await app.loadNavigation()
-    XCTAssertEqual(restoredNavigation?.localID, "agent-old")
+    let restoredNavigation = try await app.previousComposerID()
+    XCTAssertEqual(restoredNavigation, "agent-old")
     let retained = try await legacy.loadHistory(threadID: "chat")
     XCTAssertEqual(retained?.rows, [event(1)])
   }
@@ -117,15 +113,11 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertEqual(sqlite3_exec(handle, "DROP TABLE sidebar_navigation", nil, nil, nil), SQLITE_OK)
 
     let reopened = directory.cache(scope: scope)
-    let navigation = try JSONDecoder().decode(
-      LegacyComposerLocation.self,
-      from: Data(
-        #"{"agents":[{"agentId":"agent-a","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":["agent-a"]},"featureSwitches":{"effectiveSwitches":{"singleAgent":true}}}"#
-          .utf8))
-    try await reopened.saveNavigation(navigation)
+    _ = try await reopened.loadThreadList()
+    try LegacyComposerFixture.storeLocation("agent-a", in: directory.url)
     let persistedNavigation = try await directory.cache(scope: scope)
-      .loadNavigation()
-    XCTAssertEqual(persistedNavigation?.localID, "agent-a")
+      .previousComposerID()
+    XCTAssertEqual(persistedNavigation, "agent-a")
     let loaded = try await reopened.loadThreadList()
     let stored = try XCTUnwrap(loaded)
     XCTAssertEqual(stored.snapshot, snapshot)
@@ -153,9 +145,9 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertNil(foreignUser)
     XCTAssertNil(foreignWorkspace)
     XCTAssertNil(foreignAPI)
-    let foreignUserNavigation = try await otherUser.loadNavigation()
-    let foreignWorkspaceNavigation = try await otherWorkspace.loadNavigation()
-    let foreignAPINavigation = try await otherAPI.loadNavigation()
+    let foreignUserNavigation = try await otherUser.previousComposerID()
+    let foreignWorkspaceNavigation = try await otherWorkspace.previousComposerID()
+    let foreignAPINavigation = try await otherAPI.previousComposerID()
     XCTAssertNil(foreignUserNavigation)
     XCTAssertNil(foreignWorkspaceNavigation)
     XCTAssertNil(foreignAPINavigation)

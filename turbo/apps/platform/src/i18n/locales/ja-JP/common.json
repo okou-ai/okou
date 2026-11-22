@@ -1507,115 +1507,6 @@
       "description": "このアクションはこのチャットのものではないか、無効になっています。",
       "title": "アクションを利用できません"
     },
-    "homePage": {
-      "getStarted": {
-        "checkedIn": "チェックイン済み",
-        "checkin": {
-          "action": "チェックイン",
-          "description": "1日1回チェックイン。UTC 00:00にリセットされます。",
-          "name": "毎日チェックイン",
-          "unit": "1日あたり"
-        },
-        "connector": {
-          "action": "接続",
-          "description": "Gmail、Notion など4,000以上",
-          "name": "ツールを接続",
-          "unit": "コネクタごと"
-        },
-        "howRewardsWork": "報酬の仕組み",
-        "imessage": {
-          "action": "追加",
-          "description": "iPhone から {{assistantName}} にメッセージ",
-          "name": "iMessage に追加"
-        },
-        "inReview": "確認中",
-        "intro": {
-          "connector": {
-            "confirm": "すべてのコネクターを見る",
-            "connected": "接続済み",
-            "description": "1 つ選ぶと、{{assistantName}} がその中で作業を始めます。",
-            "notConnected": "未接続",
-            "pickerFailed": "コネクターを読み込めませんでした。",
-            "pickerLoading": "コネクターを読み込み中…",
-            "title": "{{assistantName}} は、あなたが普段使っているツールの中で働きます"
-          },
-          "invite": {
-            "confirm": "メンバーを招待",
-            "description": "このワークスペースにチームメンバーを招待します。",
-            "note": "一度つくった仕組みが、あなただけのものではなくなります。今朝入ったばかりの人でも、やり方を聞かずに午後には動かせます。",
-            "title": "ひとりが覚えたことを、全員が実行できます"
-          },
-          "later": "後で",
-          "slack": {
-            "confirm": "Slack に追加",
-            "description": "チームの Slack ワークスペースに {{assistantName}} を追加します。",
-            "note": "チームが毎回あなたを経由しなくてよくなります。チャンネルで頼めば、結果はそのスレッドに返ってきて、全員が見られます。",
-            "title": "チームがすでに会話している場所で {{assistantName}} を使う"
-          },
-          "workflow": {
-            "description": "繰り返している仕事を、チームが実行できるワークフローにします。",
-            "title": "うまくいった 1 回が、チームの資産になります"
-          }
-        },
-        "invite": {
-          "action": "招待",
-          "description": "追加した人数だけ加算されます",
-          "name": "チームを招待",
-          "unit": "メンバーごと"
-        },
-        "pendingState": "{{amount}} 件承諾待ち",
-        "rewardsNote": "タスクの報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
-        "slack": {
-          "action": "追加",
-          "description": "チームがすでに使っている場所へ",
-          "name": "Slack に追加"
-        },
-        "stepCount": "{{completed}}/{{total}}",
-        "streak": "{{amount}}日連続",
-        "title": "クレジットをもっと獲得",
-        "toGo": "残り {{amount}}",
-        "workflow": {
-          "action": "作成",
-          "description": "繰り返しの作業を再利用できるスキルに変える",
-          "name": "ワークフローを作る"
-        }
-      },
-      "growth": {
-        "addInSlack": "Slack に {{assistantName}} を追加",
-        "connect": "接続",
-        "credits": "クレジット",
-        "inSlack": "{{assistantName}} は Slack にいます",
-        "inviteMember": "人間を招待 🤝",
-        "otherChannels": "Telegram、電話"
-      },
-      "taglines": {
-        "anonymous": {
-          "buildSomething": "何かを構築する準備はできていますか?",
-          "goodToSeeYou": "会えてうれしいです。",
-          "readyToRoll": "準備はできていますか?",
-          "welcomeBack": "おかえりなさい。",
-          "whatAreWeWorkingOn": "私たちは何に取り組んでいますか?",
-          "whatsOnYourMind": "何を考えていますか?",
-          "whatsTheMove": "どういう動きですか？"
-        },
-        "anotherWin": "今日も勝利しました、{{userName}}?",
-        "coffeeReady": "コーヒーの準備ができました、{{userName}}。",
-        "enteredChat": "{{userName}} がチャットに参加しました。",
-        "goodToSeeYou": "初めまして、{{userName}} さん。",
-        "knewYouWouldCome": "必ず戻ってくると思っていました、{{userName}}。",
-        "makeTodayCount": "今日を有意義に過ごしましょう、{{userName}}。",
-        "newIdeas": "{{userName}} さん、今日は新しいアイデアがありますか?",
-        "readyToBuild": "ビルドする準備はできましたか? {{userName}}?",
-        "rightOnTime": "時間通りです、{{userName}}。",
-        "savedYourSeat": "席を確保しました、{{userName}}。",
-        "theUsual": "いつもの、{{userName}}?",
-        "welcomeBack": "おかえりなさい、{{userName}}。",
-        "whatAreWeWorkingOn": "{{userName}} さん、私たちは何を取り組んでいますか?",
-        "whatsCooking": "{{userName}}、料理は何ですか?",
-        "whatsOnYourMind": "{{userName}} さん、何を考えていますか?",
-        "whatsTheMove": "{{userName}} さん、どうしますか?"
-      }
-    },
     "agentSuggestions": {
       "addReason": "Add a reason",
       "alreadyDone": "Already done",
@@ -2211,6 +2102,115 @@
     "forward": {
       "composerPlaceholder": "メッセージを追加",
       "title": "転送先"
+    },
+    "homePage": {
+      "getStarted": {
+        "checkedIn": "チェックイン済み",
+        "checkin": {
+          "action": "チェックイン",
+          "description": "1日1回チェックイン。UTC 00:00にリセットされます。",
+          "name": "毎日チェックイン",
+          "unit": "1日あたり"
+        },
+        "connector": {
+          "action": "接続",
+          "description": "Gmail、Notion など4,000以上",
+          "name": "ツールを接続",
+          "unit": "コネクタごと"
+        },
+        "howRewardsWork": "報酬の仕組み",
+        "imessage": {
+          "action": "追加",
+          "description": "iPhone から {{assistantName}} にメッセージ",
+          "name": "iMessage に追加"
+        },
+        "inReview": "確認中",
+        "intro": {
+          "connector": {
+            "confirm": "すべてのコネクターを見る",
+            "connected": "接続済み",
+            "description": "1 つ選ぶと、{{assistantName}} がその中で作業を始めます。",
+            "notConnected": "未接続",
+            "pickerFailed": "コネクターを読み込めませんでした。",
+            "pickerLoading": "コネクターを読み込み中…",
+            "title": "{{assistantName}} は、あなたが普段使っているツールの中で働きます"
+          },
+          "invite": {
+            "confirm": "メンバーを招待",
+            "description": "このワークスペースにチームメンバーを招待します。",
+            "note": "一度つくった仕組みが、あなただけのものではなくなります。今朝入ったばかりの人でも、やり方を聞かずに午後には動かせます。",
+            "title": "ひとりが覚えたことを、全員が実行できます"
+          },
+          "later": "後で",
+          "slack": {
+            "confirm": "Slack に追加",
+            "description": "チームの Slack ワークスペースに {{assistantName}} を追加します。",
+            "note": "チームが毎回あなたを経由しなくてよくなります。チャンネルで頼めば、結果はそのスレッドに返ってきて、全員が見られます。",
+            "title": "チームがすでに会話している場所で {{assistantName}} を使う"
+          },
+          "workflow": {
+            "description": "繰り返している仕事を、チームが実行できるワークフローにします。",
+            "title": "うまくいった 1 回が、チームの資産になります"
+          }
+        },
+        "invite": {
+          "action": "招待",
+          "description": "追加した人数だけ加算されます",
+          "name": "チームを招待",
+          "unit": "メンバーごと"
+        },
+        "pendingState": "{{amount}} 件承諾待ち",
+        "rewardsNote": "タスクの報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
+        "slack": {
+          "action": "追加",
+          "description": "チームがすでに使っている場所へ",
+          "name": "Slack に追加"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "streak": "{{amount}}日連続",
+        "title": "クレジットをもっと獲得",
+        "toGo": "残り {{amount}}",
+        "workflow": {
+          "action": "作成",
+          "description": "繰り返しの作業を再利用できるスキルに変える",
+          "name": "ワークフローを作る"
+        }
+      },
+      "growth": {
+        "addInSlack": "Slack に {{assistantName}} を追加",
+        "connect": "接続",
+        "credits": "クレジット",
+        "inSlack": "{{assistantName}} は Slack にいます",
+        "inviteMember": "人間を招待 🤝",
+        "otherChannels": "Telegram、電話"
+      },
+      "taglines": {
+        "anonymous": {
+          "buildSomething": "何かを構築する準備はできていますか?",
+          "goodToSeeYou": "会えてうれしいです。",
+          "readyToRoll": "準備はできていますか?",
+          "welcomeBack": "おかえりなさい。",
+          "whatAreWeWorkingOn": "私たちは何に取り組んでいますか?",
+          "whatsOnYourMind": "何を考えていますか?",
+          "whatsTheMove": "どういう動きですか？"
+        },
+        "anotherWin": "今日も勝利しました、{{userName}}?",
+        "coffeeReady": "コーヒーの準備ができました、{{userName}}。",
+        "enteredChat": "{{userName}} がチャットに参加しました。",
+        "goodToSeeYou": "初めまして、{{userName}} さん。",
+        "knewYouWouldCome": "必ず戻ってくると思っていました、{{userName}}。",
+        "makeTodayCount": "今日を有意義に過ごしましょう、{{userName}}。",
+        "newIdeas": "{{userName}} さん、今日は新しいアイデアがありますか?",
+        "readyToBuild": "ビルドする準備はできましたか? {{userName}}?",
+        "rightOnTime": "時間通りです、{{userName}}。",
+        "savedYourSeat": "席を確保しました、{{userName}}。",
+        "theUsual": "いつもの、{{userName}}?",
+        "welcomeBack": "おかえりなさい、{{userName}}。",
+        "whatAreWeWorkingOn": "{{userName}} さん、私たちは何を取り組んでいますか?",
+        "whatsCooking": "{{userName}}、料理は何ですか?",
+        "whatsOnYourMind": "{{userName}} さん、何を考えていますか?",
+        "whatsTheMove": "{{userName}} さん、どうしますか?"
+      }
     },
     "mail": {
       "bcc": "BCC",

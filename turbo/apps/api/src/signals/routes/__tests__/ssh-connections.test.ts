@@ -91,7 +91,7 @@ describe("SSH connection routes", () => {
     },
   );
 
-  it("notifies only the owner after every successful creation, even without visible Agents", async () => {
+  it("notifies only the owner after every successful connection creation", async () => {
     useSecretKmsProbe();
     const owner = actor("browser-notice");
     authenticate(owner);

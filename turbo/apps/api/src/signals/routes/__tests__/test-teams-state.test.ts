@@ -326,7 +326,7 @@ describe("Teams webhook dispatch", () => {
     );
   });
 
-  it("rejects unlinked users and dispatches for a connected member without an Agent row", async () => {
+  it("rejects unlinked users and dispatches for a connected member", async () => {
     const scenario = createPublicTeamsDispatchFixture(context);
     await scenario.run(async () => {
       const unlinked = await scenario.create({ onboarded: true });

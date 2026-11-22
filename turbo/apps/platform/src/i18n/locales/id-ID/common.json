@@ -1507,115 +1507,6 @@
       "description": "Tindakan ini bukan milik chat ini atau sudah tidak valid.",
       "title": "Tindakan tidak tersedia"
     },
-    "homePage": {
-      "getStarted": {
-        "checkedIn": "Sudah check in",
-        "checkin": {
-          "action": "Check in",
-          "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
-          "name": "Check in setiap hari",
-          "unit": "per hari"
-        },
-        "connector": {
-          "action": "Hubungkan",
-          "description": "Gmail, Notion, dan 4.000+ lainnya",
-          "name": "Hubungkan alat",
-          "unit": "per konektor"
-        },
-        "howRewardsWork": "Cara kerja hadiah",
-        "imessage": {
-          "action": "Tambahkan",
-          "description": "Kirim pesan ke {{assistantName}} dari iPhone kamu",
-          "name": "Tambahkan ke iMessage"
-        },
-        "inReview": "Sedang ditinjau",
-        "intro": {
-          "connector": {
-            "confirm": "Lihat semua konektor",
-            "connected": "Terhubung",
-            "description": "Pilih satu dan {{assistantName}} mulai bekerja di dalamnya.",
-            "notConnected": "Belum terhubung",
-            "pickerFailed": "Konektor gagal dimuat.",
-            "pickerLoading": "Memuat konektor…",
-            "title": "{{assistantName}} bekerja di dalam alat yang sudah Anda pakai"
-          },
-          "invite": {
-            "confirm": "Undang tim",
-            "description": "Undang rekan-rekan Anda ke ruang kerja ini.",
-            "note": "Yang Anda siapkan sekali berhenti jadi milik Anda sendiri. Orang yang bergabung pagi ini bisa menjalankannya sore ini, tanpa bertanya caranya.",
-            "title": "Yang diketahui satu orang bisa dijalankan semua orang"
-          },
-          "later": "Nanti saja",
-          "slack": {
-            "confirm": "Tambahkan ke Slack",
-            "description": "Tambahkan {{assistantName}} ke ruang kerja Slack tim Anda.",
-            "note": "Rekan-rekan tidak perlu lewat Anda dulu. Mereka minta di kanal, dan hasilnya kembali di thread itu, di depan semua orang.",
-            "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
-          },
-          "workflow": {
-            "description": "Ubah pekerjaan yang Anda ulang menjadi alur kerja yang bisa dijalankan tim.",
-            "title": "Satu jalan yang berhasil menjadi milik tim seterusnya"
-          }
-        },
-        "invite": {
-          "action": "Undang",
-          "description": "Setiap orang yang kamu tambahkan dihitung",
-          "name": "Undang tim kamu",
-          "unit": "per anggota"
-        },
-        "pendingState": "{{amount}} tertunda",
-        "rewardsNote": "Hadiah tugas kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
-        "slack": {
-          "action": "Tambahkan",
-          "description": "Tempat tim kamu sudah bekerja",
-          "name": "Tambahkan ke Slack"
-        },
-        "stepCount": "{{completed}}/{{total}}",
-        "streak": "Beruntun {{amount}} hari",
-        "title": "Dapatkan lebih banyak kredit",
-        "toGo": "Kurang {{amount}}",
-        "workflow": {
-          "action": "Buat",
-          "description": "Ubah tugas berulang jadi skill yang bisa dipakai ulang",
-          "name": "Buat workflow"
-        }
-      },
-      "growth": {
-        "addInSlack": "Tambahkan {{assistantName}} di Slack",
-        "connect": "Hubungkan",
-        "credits": "Kredit",
-        "inSlack": "{{assistantName}} ada di Slack",
-        "inviteMember": "Undang manusia 🤝",
-        "otherChannels": "Telegram dan telepon"
-      },
-      "taglines": {
-        "anonymous": {
-          "buildSomething": "Siap membangun sesuatu?",
-          "goodToSeeYou": "Senang bertemu dengan Anda.",
-          "readyToRoll": "Siap mulai?",
-          "welcomeBack": "Selamat datang kembali.",
-          "whatAreWeWorkingOn": "Apa yang sedang kita kerjakan?",
-          "whatsOnYourMind": "Apa yang ada di pikiran Anda?",
-          "whatsTheMove": "Apa langkah selanjutnya?"
-        },
-        "anotherWin": "Satu lagi kemenangan hari ini, {{userName}}?",
-        "coffeeReady": "Kopinya sudah siap, {{userName}}.",
-        "enteredChat": "{{userName}} telah bergabung di chat.",
-        "goodToSeeYou": "Senang bertemu dengan Anda, {{userName}}.",
-        "knewYouWouldCome": "Saya tahu Anda akan kembali, {{userName}}.",
-        "makeTodayCount": "Mari jadikan hari ini berarti, {{userName}}.",
-        "newIdeas": "Ada ide baru hari ini, {{userName}}?",
-        "readyToBuild": "Siap membangun, {{userName}}?",
-        "rightOnTime": "Pas sekali, {{userName}}.",
-        "savedYourSeat": "Sudah saya siapkan tempat Anda, {{userName}}.",
-        "theUsual": "Yang biasa, {{userName}}?",
-        "welcomeBack": "Selamat datang kembali, {{userName}}.",
-        "whatAreWeWorkingOn": "Sedang mengerjakan apa, {{userName}}?",
-        "whatsCooking": "Ada apa, {{userName}}?",
-        "whatsOnYourMind": "Apa yang ada di pikiranmu, {{userName}}?",
-        "whatsTheMove": "Mau ngapain, {{userName}}?"
-      }
-    },
     "agentSuggestions": {
       "addReason": "Add a reason",
       "alreadyDone": "Already done",
@@ -2211,6 +2102,115 @@
     "forward": {
       "composerPlaceholder": "Tambahkan pesan",
       "title": "Teruskan ke"
+    },
+    "homePage": {
+      "getStarted": {
+        "checkedIn": "Sudah check in",
+        "checkin": {
+          "action": "Check in",
+          "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
+          "name": "Check in setiap hari",
+          "unit": "per hari"
+        },
+        "connector": {
+          "action": "Hubungkan",
+          "description": "Gmail, Notion, dan 4.000+ lainnya",
+          "name": "Hubungkan alat",
+          "unit": "per konektor"
+        },
+        "howRewardsWork": "Cara kerja hadiah",
+        "imessage": {
+          "action": "Tambahkan",
+          "description": "Kirim pesan ke {{assistantName}} dari iPhone kamu",
+          "name": "Tambahkan ke iMessage"
+        },
+        "inReview": "Sedang ditinjau",
+        "intro": {
+          "connector": {
+            "confirm": "Lihat semua konektor",
+            "connected": "Terhubung",
+            "description": "Pilih satu dan {{assistantName}} mulai bekerja di dalamnya.",
+            "notConnected": "Belum terhubung",
+            "pickerFailed": "Konektor gagal dimuat.",
+            "pickerLoading": "Memuat konektor…",
+            "title": "{{assistantName}} bekerja di dalam alat yang sudah Anda pakai"
+          },
+          "invite": {
+            "confirm": "Undang tim",
+            "description": "Undang rekan-rekan Anda ke ruang kerja ini.",
+            "note": "Yang Anda siapkan sekali berhenti jadi milik Anda sendiri. Orang yang bergabung pagi ini bisa menjalankannya sore ini, tanpa bertanya caranya.",
+            "title": "Yang diketahui satu orang bisa dijalankan semua orang"
+          },
+          "later": "Nanti saja",
+          "slack": {
+            "confirm": "Tambahkan ke Slack",
+            "description": "Tambahkan {{assistantName}} ke ruang kerja Slack tim Anda.",
+            "note": "Rekan-rekan tidak perlu lewat Anda dulu. Mereka minta di kanal, dan hasilnya kembali di thread itu, di depan semua orang.",
+            "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
+          },
+          "workflow": {
+            "description": "Ubah pekerjaan yang Anda ulang menjadi alur kerja yang bisa dijalankan tim.",
+            "title": "Satu jalan yang berhasil menjadi milik tim seterusnya"
+          }
+        },
+        "invite": {
+          "action": "Undang",
+          "description": "Setiap orang yang kamu tambahkan dihitung",
+          "name": "Undang tim kamu",
+          "unit": "per anggota"
+        },
+        "pendingState": "{{amount}} tertunda",
+        "rewardsNote": "Hadiah tugas kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
+        "slack": {
+          "action": "Tambahkan",
+          "description": "Tempat tim kamu sudah bekerja",
+          "name": "Tambahkan ke Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "streak": "Beruntun {{amount}} hari",
+        "title": "Dapatkan lebih banyak kredit",
+        "toGo": "Kurang {{amount}}",
+        "workflow": {
+          "action": "Buat",
+          "description": "Ubah tugas berulang jadi skill yang bisa dipakai ulang",
+          "name": "Buat workflow"
+        }
+      },
+      "growth": {
+        "addInSlack": "Tambahkan {{assistantName}} di Slack",
+        "connect": "Hubungkan",
+        "credits": "Kredit",
+        "inSlack": "{{assistantName}} ada di Slack",
+        "inviteMember": "Undang manusia 🤝",
+        "otherChannels": "Telegram dan telepon"
+      },
+      "taglines": {
+        "anonymous": {
+          "buildSomething": "Siap membangun sesuatu?",
+          "goodToSeeYou": "Senang bertemu dengan Anda.",
+          "readyToRoll": "Siap mulai?",
+          "welcomeBack": "Selamat datang kembali.",
+          "whatAreWeWorkingOn": "Apa yang sedang kita kerjakan?",
+          "whatsOnYourMind": "Apa yang ada di pikiran Anda?",
+          "whatsTheMove": "Apa langkah selanjutnya?"
+        },
+        "anotherWin": "Satu lagi kemenangan hari ini, {{userName}}?",
+        "coffeeReady": "Kopinya sudah siap, {{userName}}.",
+        "enteredChat": "{{userName}} telah bergabung di chat.",
+        "goodToSeeYou": "Senang bertemu dengan Anda, {{userName}}.",
+        "knewYouWouldCome": "Saya tahu Anda akan kembali, {{userName}}.",
+        "makeTodayCount": "Mari jadikan hari ini berarti, {{userName}}.",
+        "newIdeas": "Ada ide baru hari ini, {{userName}}?",
+        "readyToBuild": "Siap membangun, {{userName}}?",
+        "rightOnTime": "Pas sekali, {{userName}}.",
+        "savedYourSeat": "Sudah saya siapkan tempat Anda, {{userName}}.",
+        "theUsual": "Yang biasa, {{userName}}?",
+        "welcomeBack": "Selamat datang kembali, {{userName}}.",
+        "whatAreWeWorkingOn": "Sedang mengerjakan apa, {{userName}}?",
+        "whatsCooking": "Ada apa, {{userName}}?",
+        "whatsOnYourMind": "Apa yang ada di pikiranmu, {{userName}}?",
+        "whatsTheMove": "Mau ngapain, {{userName}}?"
+      }
     },
     "mail": {
       "bcc": "bcc",

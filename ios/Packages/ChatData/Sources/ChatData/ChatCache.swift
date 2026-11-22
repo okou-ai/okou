@@ -79,23 +79,26 @@ public actor ChatCache {
     connection = nil
   }
 
-  public func loadNavigation() throws -> LegacyComposerLocation? {
+  func previousComposerID() throws -> String? {
     try withDatabase { database in
-      let query = try database.prepare("SELECT snapshot FROM sidebar_navigation WHERE id = 1")
-      guard try query.step() else { return nil }
-      return try JSONDecoder().decode(LegacyComposerLocation.self, from: query.blob(at: 0))
+      let query = try database.prepare(
+        """
+        SELECT json_extract(entry.value, '$.agentId')
+        FROM sidebar_navigation, json_each(CAST(snapshot AS TEXT), '$.agents') AS entry
+        WHERE sidebar_navigation.id = 1 AND json_extract(entry.value, '$.isDefaultAgent') = 1
+        LIMIT 1
+        """)
+      return try query.step() ? query.optionalText(at: 0) : nil
     }
   }
 
-  public func saveNavigation(_ snapshot: LegacyComposerLocation) throws {
-    try Task.checkCancellation()
-    let data = try JSONEncoder().encode(snapshot)
-    try withDatabase { database in
-      let write = try database.prepare(
-        "INSERT OR REPLACE INTO sidebar_navigation (id, snapshot) VALUES (1, ?)")
-      try write.bind(data, at: 1)
-      try write.run()
+  func restoringWorkspaceDraft(_ storage: ChatDraftStorage) throws -> ChatDraftStorage {
+    guard let previousID = try previousComposerID() else { return storage }
+    let recovery = storage.recoveringWorkspace(from: previousID)
+    if recovery.migrated {
+      try withDatabase { try $0.execute("DELETE FROM sidebar_navigation WHERE id = 1") }
     }
+    return recovery.storage
   }
 
   public func loadProjects() throws -> [ChatProject]? {

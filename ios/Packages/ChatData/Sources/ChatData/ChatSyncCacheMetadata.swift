@@ -13,15 +13,16 @@ extension ChatSync {
     try await cache?.acknowledgePrefetchReport(id)
   }
 
-  public func cachedComposerLocation() async -> LegacyComposerLocation? {
+  public func restoringWorkspaceDraft(_ storage: ChatDraftStorage?) async -> ChatDraftStorage? {
+    guard let storage else { return nil }
     do {
-      return try await cache?.loadNavigation()
+      return try await cache?.restoringWorkspaceDraft(storage) ?? storage
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
         .error(
-          "event=chat.cache.navigation.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          "event=chat.draft.migration.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
-      return nil
+      return storage
     }
   }
 

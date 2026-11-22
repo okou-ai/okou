@@ -93,7 +93,8 @@ public struct ChatDraftRepository: Sendable {
 /// process restarts and are scoped to the API origin, user, organization and composer owner.
 public struct ChatDraftStorage: Sendable {
   private let directory: URL
-  private var workspaceKey = ChatDraftTarget.workspace.key
+  private var fallbackDraft: URL?
+  private var fallbackVoice: URL?
 
   public init(scope: ChatCacheScope, directory: URL? = nil) {
     let root =
@@ -104,16 +105,28 @@ public struct ChatDraftStorage: Sendable {
     self.directory = root.appendingPathComponent(
       "ChatDrafts/" + Self.digest(identity), isDirectory: true)
   }
-  /// Older installations already have a protected draft file and voice directory under this key.
-  public func restoringWorkspace(_ previousID: String?) -> Self {
-    guard let previousID else { return self }
+  /// Move the two independent resources before a composer opens them. A protected or busy
+  /// resource stays usable at its old location and is retried on the next launch.
+  func recoveringWorkspace(from previousID: String) -> (storage: Self, migrated: Bool) {
+    let previous = "agent/" + previousID
+    let current = ChatDraftTarget.workspace.key
     var storage = self
-    storage.workspaceKey = "agent/" + previousID
-    return storage
+    storage.fallbackDraft = moveIfNeeded(from: file(previous), to: file(current))
+    storage.fallbackVoice = moveIfNeeded(
+      from: voiceDirectory(previous), to: voiceDirectory(current))
+    return (storage, storage.fallbackDraft == nil && storage.fallbackVoice == nil)
   }
 
-  private func localKey(_ key: String) -> String {
-    key == ChatDraftTarget.workspace.key ? workspaceKey : key
+  private func moveIfNeeded(from previous: URL, to current: URL) -> URL? {
+    let files = FileManager.default
+    guard files.fileExists(atPath: previous.path), !files.fileExists(atPath: current.path)
+    else { return nil }
+    do {
+      try files.moveItem(at: previous, to: current)
+      return nil
+    } catch {
+      return files.fileExists(atPath: current.path) ? nil : previous
+    }
   }
 
   public func load<Value: Decodable>(_ key: String, as: Value.Type) throws -> Value? {
@@ -133,12 +146,16 @@ public struct ChatDraftStorage: Sendable {
       to: file(key), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
   }
   public func voiceDraft(for target: ChatDraftTarget) -> VoiceDraftStorage {
-    VoiceDraftStorage(
-      directory: directory.appendingPathComponent(
-        Self.digest(localKey(target.key) + "/voice"), isDirectory: true))
+    let canonical = voiceDirectory(target.key)
+    return VoiceDraftStorage(
+      directory: target == .workspace ? fallbackVoice ?? canonical : canonical)
+  }
+  private func voiceDirectory(_ key: String) -> URL {
+    directory.appendingPathComponent(Self.digest(key + "/voice"), isDirectory: true)
   }
   private func file(_ key: String) -> URL {
-    directory.appendingPathComponent(Self.digest(localKey(key)) + ".json")
+    if key == ChatDraftTarget.workspace.key, let fallbackDraft { return fallbackDraft }
+    return directory.appendingPathComponent(Self.digest(key) + ".json")
   }
   private static func digest(_ key: String) -> String {
     SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()

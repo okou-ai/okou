@@ -1511,115 +1511,6 @@
       "description": "यह कार्रवाई इस चैट से संबंधित नहीं है या अब मान्य नहीं है।",
       "title": "कार्रवाई उपलब्ध नहीं है"
     },
-    "homePage": {
-      "getStarted": {
-        "checkedIn": "चेक इन हो गया",
-        "checkin": {
-          "action": "चेक इन करें",
-          "description": "दिन में एक बार चेक इन करें। 00:00 UTC पर रीसेट होता है।",
-          "name": "रोज़ चेक इन करें",
-          "unit": "प्रति दिन"
-        },
-        "connector": {
-          "action": "कनेक्ट करें",
-          "description": "Gmail, Notion और 4,000+ अन्य",
-          "name": "एक टूल कनेक्ट करें",
-          "unit": "प्रति कनेक्टर"
-        },
-        "howRewardsWork": "इनाम कैसे काम करते हैं",
-        "imessage": {
-          "action": "जोड़ें",
-          "description": "अपने iPhone से {{assistantName}} को मैसेज करें",
-          "name": "iMessage में जोड़ें"
-        },
-        "inReview": "समीक्षा में",
-        "intro": {
-          "connector": {
-            "confirm": "सभी कनेक्टर देखें",
-            "connected": "कनेक्टेड",
-            "description": "एक चुनें और {{assistantName}} उसी में काम करना शुरू कर देगा।",
-            "notConnected": "कनेक्टेड नहीं",
-            "pickerFailed": "कनेक्टर लोड नहीं हो सके।",
-            "pickerLoading": "कनेक्टर लोड हो रहे हैं…",
-            "title": "{{assistantName}} उन्हीं टूल्स के भीतर काम करता है जो आप पहले से इस्तेमाल करते हैं"
-          },
-          "invite": {
-            "confirm": "टीम को बुलाएँ",
-            "description": "अपने साथियों को इस वर्कस्पेस में बुलाइए।",
-            "note": "जो आपने एक बार बना दिया, वह सिर्फ़ आपका नहीं रहता। आज सुबह जुड़ा साथी दोपहर तक उसे चला सकता है, आपसे तरीका पूछे बिना।",
-            "title": "जो एक व्यक्ति जानता है, वह पूरी टीम चला सकती है"
-          },
-          "later": "बाद में",
-          "slack": {
-            "confirm": "Slack में जोड़ें",
-            "description": "अपनी टीम के Slack वर्कस्पेस में {{assistantName}} को जोड़िए।",
-            "note": "साथियों को हर बार आपके पास आने की ज़रूरत नहीं रहती। वे चैनल में कह देते हैं और काम उसी थ्रेड में लौट आता है, जहाँ सब देख सकते हैं।",
-            "title": "जहाँ आपकी टीम पहले से बात करती है, वहीं {{assistantName}} के साथ काम करें"
-          },
-          "workflow": {
-            "description": "जो काम बार-बार करते हैं उसे ऐसा वर्कफ़्लो बना दीजिए जिसे टीम चला सके।",
-            "title": "एक अच्छा रन टीम की स्थायी पूँजी बन जाता है"
-          }
-        },
-        "invite": {
-          "action": "बुलाएँ",
-          "description": "आप जिसे भी जोड़ेंगे वह गिना जाएगा",
-          "name": "अपनी टीम को बुलाएँ",
-          "unit": "प्रति सदस्य"
-        },
-        "pendingState": "{{amount}} लंबित",
-        "rewardsNote": "टास्क के इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
-        "slack": {
-          "action": "जोड़ें",
-          "description": "जहाँ आपकी टीम पहले से काम करती है",
-          "name": "Slack में जोड़ें"
-        },
-        "stepCount": "{{completed}}/{{total}}",
-        "streak": "{{amount}} दिन लगातार",
-        "title": "और क्रेडिट पाएँ",
-        "toGo": "{{amount}} बाकी",
-        "workflow": {
-          "action": "बनाएँ",
-          "description": "बार-बार होने वाले काम को दोबारा इस्तेमाल होने वाली स्किल बनाएँ",
-          "name": "वर्कफ़्लो बनाएँ"
-        }
-      },
-      "growth": {
-        "addInSlack": "Slack में {{assistantName}} जोड़ें",
-        "connect": "कनेक्ट करें",
-        "credits": "क्रेडिट",
-        "inSlack": "{{assistantName}} Slack में है",
-        "inviteMember": "इंसानों को बुलाएँ 🤝",
-        "otherChannels": "Telegram और फ़ोन"
-      },
-      "taglines": {
-        "anonymous": {
-          "buildSomething": "कुछ बनाने के लिए तैयार हैं?",
-          "goodToSeeYou": "आपको देखकर अच्छा लगा।",
-          "readyToRoll": "रोल करने के लिए तैयार हैं?",
-          "welcomeBack": "वापसी पर स्वागत है।",
-          "whatAreWeWorkingOn": "हम किस पर काम कर रहे हैं?",
-          "whatsOnYourMind": "आपके दिमाग में क्या है?",
-          "whatsTheMove": "क्या चाल है?"
-        },
-        "anotherWin": "आज एक और जीत, {{userName}}?",
-        "coffeeReady": "कॉफ़ी तैयार है, {{userName}}।",
-        "enteredChat": "{{userName}} ने चैट में प्रवेश किया है।",
-        "goodToSeeYou": "आपको देखकर अच्छा लगा, {{userName}}।",
-        "knewYouWouldCome": "जानता था तुम वापस आओगे, {{userName}}।",
-        "makeTodayCount": "आइए आज का दिन गिनें, {{userName}}।",
-        "newIdeas": "आज नये विचार, {{userName}}?",
-        "readyToBuild": "निर्माण के लिए तैयार, {{userName}}?",
-        "rightOnTime": "ठीक समय पर, {{userName}}।",
-        "savedYourSeat": "आपकी सीट बचा ली, {{userName}}।",
-        "theUsual": "सामान्य, {{userName}}?",
-        "welcomeBack": "पुनः स्वागत है, {{userName}}।",
-        "whatAreWeWorkingOn": "हम किस पर काम कर रहे हैं, {{userName}}?",
-        "whatsCooking": "क्या पक रहा है, {{userName}}?",
-        "whatsOnYourMind": "आपके मन में क्या है, {{userName}}?",
-        "whatsTheMove": "क्या चाल है, {{userName}}?"
-      }
-    },
     "agentSuggestions": {
       "addReason": "Add a reason",
       "alreadyDone": "Already done",
@@ -2220,6 +2111,115 @@
     "forward": {
       "composerPlaceholder": "संदेश जोड़ें",
       "title": "फ़ॉरवर्ड करें"
+    },
+    "homePage": {
+      "getStarted": {
+        "checkedIn": "चेक इन हो गया",
+        "checkin": {
+          "action": "चेक इन करें",
+          "description": "दिन में एक बार चेक इन करें। 00:00 UTC पर रीसेट होता है।",
+          "name": "रोज़ चेक इन करें",
+          "unit": "प्रति दिन"
+        },
+        "connector": {
+          "action": "कनेक्ट करें",
+          "description": "Gmail, Notion और 4,000+ अन्य",
+          "name": "एक टूल कनेक्ट करें",
+          "unit": "प्रति कनेक्टर"
+        },
+        "howRewardsWork": "इनाम कैसे काम करते हैं",
+        "imessage": {
+          "action": "जोड़ें",
+          "description": "अपने iPhone से {{assistantName}} को मैसेज करें",
+          "name": "iMessage में जोड़ें"
+        },
+        "inReview": "समीक्षा में",
+        "intro": {
+          "connector": {
+            "confirm": "सभी कनेक्टर देखें",
+            "connected": "कनेक्टेड",
+            "description": "एक चुनें और {{assistantName}} उसी में काम करना शुरू कर देगा।",
+            "notConnected": "कनेक्टेड नहीं",
+            "pickerFailed": "कनेक्टर लोड नहीं हो सके।",
+            "pickerLoading": "कनेक्टर लोड हो रहे हैं…",
+            "title": "{{assistantName}} उन्हीं टूल्स के भीतर काम करता है जो आप पहले से इस्तेमाल करते हैं"
+          },
+          "invite": {
+            "confirm": "टीम को बुलाएँ",
+            "description": "अपने साथियों को इस वर्कस्पेस में बुलाइए।",
+            "note": "जो आपने एक बार बना दिया, वह सिर्फ़ आपका नहीं रहता। आज सुबह जुड़ा साथी दोपहर तक उसे चला सकता है, आपसे तरीका पूछे बिना।",
+            "title": "जो एक व्यक्ति जानता है, वह पूरी टीम चला सकती है"
+          },
+          "later": "बाद में",
+          "slack": {
+            "confirm": "Slack में जोड़ें",
+            "description": "अपनी टीम के Slack वर्कस्पेस में {{assistantName}} को जोड़िए।",
+            "note": "साथियों को हर बार आपके पास आने की ज़रूरत नहीं रहती। वे चैनल में कह देते हैं और काम उसी थ्रेड में लौट आता है, जहाँ सब देख सकते हैं।",
+            "title": "जहाँ आपकी टीम पहले से बात करती है, वहीं {{assistantName}} के साथ काम करें"
+          },
+          "workflow": {
+            "description": "जो काम बार-बार करते हैं उसे ऐसा वर्कफ़्लो बना दीजिए जिसे टीम चला सके।",
+            "title": "एक अच्छा रन टीम की स्थायी पूँजी बन जाता है"
+          }
+        },
+        "invite": {
+          "action": "बुलाएँ",
+          "description": "आप जिसे भी जोड़ेंगे वह गिना जाएगा",
+          "name": "अपनी टीम को बुलाएँ",
+          "unit": "प्रति सदस्य"
+        },
+        "pendingState": "{{amount}} लंबित",
+        "rewardsNote": "टास्क के इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
+        "slack": {
+          "action": "जोड़ें",
+          "description": "जहाँ आपकी टीम पहले से काम करती है",
+          "name": "Slack में जोड़ें"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "streak": "{{amount}} दिन लगातार",
+        "title": "और क्रेडिट पाएँ",
+        "toGo": "{{amount}} बाकी",
+        "workflow": {
+          "action": "बनाएँ",
+          "description": "बार-बार होने वाले काम को दोबारा इस्तेमाल होने वाली स्किल बनाएँ",
+          "name": "वर्कफ़्लो बनाएँ"
+        }
+      },
+      "growth": {
+        "addInSlack": "Slack में {{assistantName}} जोड़ें",
+        "connect": "कनेक्ट करें",
+        "credits": "क्रेडिट",
+        "inSlack": "{{assistantName}} Slack में है",
+        "inviteMember": "इंसानों को बुलाएँ 🤝",
+        "otherChannels": "Telegram और फ़ोन"
+      },
+      "taglines": {
+        "anonymous": {
+          "buildSomething": "कुछ बनाने के लिए तैयार हैं?",
+          "goodToSeeYou": "आपको देखकर अच्छा लगा।",
+          "readyToRoll": "रोल करने के लिए तैयार हैं?",
+          "welcomeBack": "वापसी पर स्वागत है।",
+          "whatAreWeWorkingOn": "हम किस पर काम कर रहे हैं?",
+          "whatsOnYourMind": "आपके दिमाग में क्या है?",
+          "whatsTheMove": "क्या चाल है?"
+        },
+        "anotherWin": "आज एक और जीत, {{userName}}?",
+        "coffeeReady": "कॉफ़ी तैयार है, {{userName}}।",
+        "enteredChat": "{{userName}} ने चैट में प्रवेश किया है।",
+        "goodToSeeYou": "आपको देखकर अच्छा लगा, {{userName}}।",
+        "knewYouWouldCome": "जानता था तुम वापस आओगे, {{userName}}।",
+        "makeTodayCount": "आइए आज का दिन गिनें, {{userName}}।",
+        "newIdeas": "आज नये विचार, {{userName}}?",
+        "readyToBuild": "निर्माण के लिए तैयार, {{userName}}?",
+        "rightOnTime": "ठीक समय पर, {{userName}}।",
+        "savedYourSeat": "आपकी सीट बचा ली, {{userName}}।",
+        "theUsual": "सामान्य, {{userName}}?",
+        "welcomeBack": "पुनः स्वागत है, {{userName}}।",
+        "whatAreWeWorkingOn": "हम किस पर काम कर रहे हैं, {{userName}}?",
+        "whatsCooking": "क्या पक रहा है, {{userName}}?",
+        "whatsOnYourMind": "आपके मन में क्या है, {{userName}}?",
+        "whatsTheMove": "क्या चाल है, {{userName}}?"
+      }
     },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",
