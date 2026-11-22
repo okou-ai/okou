@@ -1,30 +1,30 @@
 import { randomUUID } from "node:crypto";
-import { publishContentBundle$ } from "./content-bundle.service";
-import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
-import { agents } from "@okouai/db/schema/agent";
+import { orgCache } from "@okouai/db/schema/org-cache";
+import { eq } from "drizzle-orm";
+import {
+  SINGLE_AGENT_SEED_INSTRUCTIONS,
+  SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE,
+} from "@okouai/core/seed-instructions";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 import { defaultProfileCondition } from "./agent-data.service";
 import {
   DEFAULT_AGENT_AVATAR_URL,
   DEFAULT_AGENT_DISPLAY_NAME,
-  DEFAULT_AGENT_NAME,
   DEFAULT_AGENT_SOUND,
+  DEFAULT_AGENT_NAME,
 } from "./default-agent-profile";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 
 // Legacy profile-management clients expect a public default profile after workspace creation.
 export const ensureLegacyDefaultAgentProfile$ = command(
-  async (
-    { set },
-    args: { readonly orgId: string; readonly ownerUserId: string },
-    signal: AbortSignal,
-  ): Promise<void> => {
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const findShared = () => {
       return db
-        .select({ id: agents.id })
-        .from(agents)
-        .where(defaultProfileCondition(args.orgId))
+        .select({ id: legacyAgentApiProfiles.id })
+        .from(legacyAgentApiProfiles)
+        .where(defaultProfileCondition(orgId))
         .limit(1);
     };
     const [existing] = await findShared();
@@ -32,33 +32,31 @@ export const ensureLegacyDefaultAgentProfile$ = command(
     if (existing) {
       return;
     }
-    const instructionsBundle = await set(
-      publishContentBundle$,
-      [
-        {
-          path: "instructions.md",
-          content: Buffer.from(SEED_INSTRUCTIONS, "utf8"),
-        },
-      ],
-      signal,
-    );
+    const [workspace] = await db
+      .select({ creator: orgCache.createdBy })
+      .from(orgCache)
+      .where(eq(orgCache.orgId, orgId))
+      .limit(1);
     signal.throwIfAborted();
+    if (!workspace?.creator) {
+      return;
+    }
     const [created] = await db
-      .insert(agents)
+      .insert(legacyAgentApiProfiles)
       .values({
         id: randomUUID(),
-        orgId: args.orgId,
-        owner: args.ownerUserId,
+        orgId,
+        owner: workspace.creator,
         name: DEFAULT_AGENT_NAME,
         visibility: "public",
         displayName: DEFAULT_AGENT_DISPLAY_NAME,
-        instructions: SEED_INSTRUCTIONS,
-        instructionsBundle,
+        instructions: SINGLE_AGENT_SEED_INSTRUCTIONS,
+        instructionsBundle: SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE,
         sound: DEFAULT_AGENT_SOUND,
         avatarUrl: DEFAULT_AGENT_AVATAR_URL,
       })
       .onConflictDoNothing()
-      .returning({ id: agents.id });
+      .returning({ id: legacyAgentApiProfiles.id });
     signal.throwIfAborted();
     if (!created && !(await findShared()).length) {
       throw new Error("Default Agent profile name is already in use");

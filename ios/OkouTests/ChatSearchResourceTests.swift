@@ -13,7 +13,7 @@ final class ChatSearchResourceTests: XCTestCase {
     let fixture = SearchUnreadFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.search.present()
     store.search.updateQuery("  chat  ")

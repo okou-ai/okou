@@ -3,7 +3,7 @@ import { publishContentBundle$ } from "../services/content-bundle.service";
 import { and, eq, or, sql } from "drizzle-orm";
 import { command, computed } from "ccstate";
 import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
-import { agents } from "@okouai/db/schema/agent";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -57,13 +57,13 @@ const updateAgentInstructionsBody$ = bodyResultOf(
 );
 
 const instructionResponseColumns = Object.freeze({
-  agentId: agents.id,
-  owner: agents.owner,
-  displayName: agents.displayName,
-  description: agents.description,
-  sound: agents.sound,
-  avatarUrl: agents.avatarUrl,
-  visibility: agents.visibility,
+  agentId: legacyAgentApiProfiles.id,
+  owner: legacyAgentApiProfiles.owner,
+  displayName: legacyAgentApiProfiles.displayName,
+  description: legacyAgentApiProfiles.description,
+  sound: legacyAgentApiProfiles.sound,
+  avatarUrl: legacyAgentApiProfiles.avatarUrl,
+  visibility: legacyAgentApiProfiles.visibility,
 });
 
 const updateAgentInstructionsInner$ = command(
@@ -79,13 +79,20 @@ const updateAgentInstructionsInner$ = command(
     const db = set(writeDb$);
     const [observed] = await db
       .select({
-        version: sql`${agents}.xmin::text`.mapWith(pgTextDecoder),
-        owner: agents.owner,
-        visibility: agents.visibility,
-        instructions: agents.instructions,
+        version: sql`${legacyAgentApiProfiles}.xmin::text`.mapWith(
+          pgTextDecoder,
+        ),
+        owner: legacyAgentApiProfiles.owner,
+        visibility: legacyAgentApiProfiles.visibility,
+        instructions: legacyAgentApiProfiles.instructions,
       })
-      .from(agents)
-      .where(and(eq(agents.id, params.id), eq(agents.orgId, auth.orgId)))
+      .from(legacyAgentApiProfiles)
+      .where(
+        and(
+          eq(legacyAgentApiProfiles.id, params.id),
+          eq(legacyAgentApiProfiles.orgId, auth.orgId),
+        ),
+      )
       .limit(1);
     signal.throwIfAborted();
     if (!observed) {
@@ -121,17 +128,17 @@ const updateAgentInstructionsInner$ = command(
     const updatedAt = nowDate();
     // Authorization is part of the write predicate, including concurrent visibility changes.
     const [updated] = await db
-      .update(agents)
+      .update(legacyAgentApiProfiles)
       .set({ instructions: body.data.content, instructionsBundle, updatedAt })
       .where(
         and(
-          eq(agents.orgId, auth.orgId),
-          eq(agents.id, params.id),
-          sql`${agents}.xmin::text = ${observed.version}`,
+          eq(legacyAgentApiProfiles.orgId, auth.orgId),
+          eq(legacyAgentApiProfiles.id, params.id),
+          sql`${legacyAgentApiProfiles}.xmin::text = ${observed.version}`,
           or(
-            eq(agents.owner, member.userId),
+            eq(legacyAgentApiProfiles.owner, member.userId),
             member.role === "admin"
-              ? eq(agents.visibility, "public")
+              ? eq(legacyAgentApiProfiles.visibility, "public")
               : undefined,
           ),
         ),
@@ -148,11 +155,16 @@ const updateAgentInstructionsInner$ = command(
     }
     const [current] = await db
       .select({
-        owner: agents.owner,
-        visibility: agents.visibility,
+        owner: legacyAgentApiProfiles.owner,
+        visibility: legacyAgentApiProfiles.visibility,
       })
-      .from(agents)
-      .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
+      .from(legacyAgentApiProfiles)
+      .where(
+        and(
+          eq(legacyAgentApiProfiles.orgId, auth.orgId),
+          eq(legacyAgentApiProfiles.id, params.id),
+        ),
+      )
       .limit(1);
     signal.throwIfAborted();
     if (!current) {

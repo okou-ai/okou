@@ -26,7 +26,7 @@ final class NewChatNavigationTests: XCTestCase {
 
     XCTAssertNil(workspace.selectedThreadID)
     XCTAssertNil(workspace.selectedConversation)
-    XCTAssertEqual(workspace.selectedAgentID, AttachmentFlowFixture.agentID)
+    XCTAssertNil(workspace.selectedAgentID)
     XCTAssertEqual(workspace.newChatDraft, "Keep the next chat's draft")
     XCTAssertEqual(conversation.draft, "Keep this conversation's draft")
 
@@ -59,7 +59,7 @@ final class NewChatNavigationTests: XCTestCase {
     _ = try await NewChatIntent().perform()
     // The request arrives before an active workspace or its Agent is available.
     XCTAssertFalse(requests.open(in: workspace))
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     workspace.setPhase(.active)
     let saved = "保留草稿 🌷"
     workspace.newChatDraft = saved
@@ -97,7 +97,7 @@ final class NewChatNavigationTests: XCTestCase {
     let reopened = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
-    await reopened.refreshNavigation()
+    await reopened.prepareWorkspaceComposer()
     XCTAssertEqual(reopened.newChatDraft, saved + " 继续")
   }
 }

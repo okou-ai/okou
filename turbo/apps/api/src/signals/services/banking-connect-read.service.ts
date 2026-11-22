@@ -1,5 +1,5 @@
 import type { BankingWorkspaceStatus } from "@okouai/api-contracts/contracts/banking";
-import { agents } from "@okouai/db/schema/agent";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 import {
   bankingAccounts,
   bankingAgentEnablements,
@@ -57,12 +57,17 @@ export const findLegacyBankingAgent$ = command(
     const db = get(db$);
     const [agent] = await db
       .select({
-        id: agents.id,
-        name: agents.name,
-        displayName: agents.displayName,
+        id: legacyAgentApiProfiles.id,
+        name: legacyAgentApiProfiles.name,
+        displayName: legacyAgentApiProfiles.displayName,
       })
-      .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.orgId, owner.orgId)))
+      .from(legacyAgentApiProfiles)
+      .where(
+        and(
+          eq(legacyAgentApiProfiles.id, agentId),
+          eq(legacyAgentApiProfiles.orgId, owner.orgId),
+        ),
+      )
       .limit(1);
 
     return agent

@@ -164,6 +164,27 @@ test("production release keeps Worker deployment non-blocking and verifies its d
   };
   const worker = byId("api-worker-deploy");
   const verify = byId("api-worker-verify");
+  const prepare = byId("production-migrations");
+  const retire = productionSteps.find((step) =>
+    step.includes(
+      "name: Drop retired Agent storage after both APIs have switched",
+    ),
+  );
+  assert.match(
+    field(prepare, "run", 8),
+    /db:migrate --before-agent-retirement/,
+  );
+  assert.ok(
+    productionSteps.indexOf(prepare) < productionSteps.indexOf(byId("deploy")),
+  );
+  assert.ok(productionSteps.indexOf(retire) > productionSteps.indexOf(verify));
+  const retirementGuard = field(retire, "if", 8);
+  for (const condition of [
+    "steps.workflow-maintenance.outputs.agent_cutover == 'true'",
+    "steps.deploy.outcome == 'success'",
+    "steps.api-worker-verify.outcome == 'success'",
+  ])
+    assert.ok(retirementGuard.includes(condition));
   assert.equal(field(production, "environment"), "production");
   assert.match(
     production,

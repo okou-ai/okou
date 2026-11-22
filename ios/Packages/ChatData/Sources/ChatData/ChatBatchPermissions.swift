@@ -50,18 +50,9 @@ public struct ChatBatchPermissions: Sendable {
     guard features.effectiveSwitches["batchConnectorPermissions"] == true else {
       return ChatPermissionBatchSnapshot(enabled: false, agentName: nil, groups: [])
     }
-    struct Agent: Decodable, Sendable {
-      let agentId: String
-      let displayName: String?
-    }
-    async let agentRequest: Agent = client.request("/api/agents/\(action.agentID)")
-    async let groups = loadGroups(action)
-    let agent = try await agentRequest
-    guard UUID(uuidString: agent.agentId) == UUID(uuidString: action.agentID) else {
-      throw APIClientError.invalidResponse
-    }
+    try await validateContext(action)
     return try await ChatPermissionBatchSnapshot(
-      enabled: true, agentName: agent.displayName, groups: groups)
+      enabled: true, agentName: nil, groups: loadGroups(action))
   }
 
   private func loadGroups(

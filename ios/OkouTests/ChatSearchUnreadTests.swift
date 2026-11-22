@@ -14,7 +14,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let fixture = SearchUnreadFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     let agent = SearchUnreadFixture.agent
     let otherThread = try XCTUnwrap(
@@ -426,7 +426,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let fixture = SearchUnreadFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.sidebar.select(.unread)
     let agent = SearchUnreadFixture.agent

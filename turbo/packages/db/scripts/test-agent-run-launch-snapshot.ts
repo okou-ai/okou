@@ -4,7 +4,6 @@ import { Client } from "pg";
 const constraintName = "agent_runs_launch_snapshot_check";
 
 interface CanonicalAgentFixture {
-  readonly agentId: string;
   readonly suffix: string;
 }
 
@@ -49,29 +48,10 @@ async function expectConstraintViolation(
   );
 }
 
-async function seedCanonicalAgent(
-  client: Client,
-  fixture: CanonicalAgentFixture,
-): Promise<void> {
-  await client.query(
-    `
-      INSERT INTO "agents" ("id", "org_id", "owner", "name")
-      VALUES ($1, $2, $3, $4)
-    `,
-    [
-      fixture.agentId,
-      `launch-snapshot-${fixture.suffix}-org`,
-      `launch-snapshot-${fixture.suffix}-user`,
-      `launch snapshot ${fixture.suffix}`,
-    ],
-  );
-}
-
 async function seedCanonicalAgentRun(
   client: Client,
   fixture: CanonicalAgentRunFixture,
 ): Promise<void> {
-  await seedCanonicalAgent(client, fixture);
   await client.query(
     `
       INSERT INTO "agent_runs" (
@@ -349,7 +329,6 @@ export async function validateAgentRunLaunchSnapshotSchema(
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   const fixture = {
-    agentId: "00000000-0000-4000-8000-000000093311",
     runId: "00000000-0000-4000-8000-000000093313",
     suffix: "fresh",
   } as const;

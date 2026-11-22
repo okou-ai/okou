@@ -120,9 +120,8 @@ final class MentionNavigationFixture: Sendable {
 
   @MainActor func workspace() async throws -> WorkspaceStore {
     let store = WorkspaceStore(client: http.client, webURL: http.baseURL)
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.list.refresh()
-    _ = try await store.list.stateStore.get(store.list.navigationValue).value
     XCTAssertNil(store.list.error)
     return store
   }

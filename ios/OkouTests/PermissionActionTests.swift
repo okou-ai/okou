@@ -55,7 +55,7 @@ final class PermissionActionTests: XCTestCase {
     let gate = ModelResponseGate()
     let started = expectation(description: "Permission read started")
     let fixture = PermissionHTTPFixture { request in
-      if request.url!.path == "/api/agents/\(PermissionHTTPFixture.agentID)" {
+      if request.url!.path == "/api/chat-threads/\(PermissionHTTPFixture.threadID)/metadata" {
         started.fulfill()
         await gate.wait()
       }
@@ -492,7 +492,7 @@ final class PermissionActionTests: XCTestCase {
   ) {
     let requests = fixture.state.withLock { $0.requests }
     for path in [
-      "/api/agents/\(PermissionHTTPFixture.agentID)", "/api/connector-permissions",
+      "/api/chat-threads/\(PermissionHTTPFixture.threadID)/metadata", "/api/connector-permissions",
       "/api/connector-catalog/gmail/permissions"
     ] {
       XCTAssertEqual(

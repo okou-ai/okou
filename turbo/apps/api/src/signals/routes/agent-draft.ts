@@ -12,7 +12,7 @@ import {
   composerDraftContract,
 } from "@okouai/api-contracts/contracts/agent-draft";
 import { agentDrafts } from "@okouai/db/schema/agent-draft";
-import { agents } from "@okouai/db/schema/agent";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -54,8 +54,8 @@ function createAgentDraftReader(
     if ("pathParams" in contract.get) {
       const { id } = get(pathParamsOf(contract.get));
       const [visibleAgent] = await get(db$)
-        .select({ id: agents.id })
-        .from(agents)
+        .select({ id: legacyAgentApiProfiles.id })
+        .from(legacyAgentApiProfiles)
         .where(
           visibleAgentIdentityCondition({
             orgId: auth.orgId,
@@ -120,8 +120,8 @@ function createAgentDraftRoutes(
       if ("pathParams" in contract.patch) {
         const { id } = get(pathParamsOf(contract.patch));
         const [visibleAgent] = await get(db$)
-          .select({ id: agents.id })
-          .from(agents)
+          .select({ id: legacyAgentApiProfiles.id })
+          .from(legacyAgentApiProfiles)
           .where(
             visibleAgentIdentityCondition({
               orgId: auth.orgId,

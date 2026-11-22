@@ -24,26 +24,16 @@ final class WorkspaceStartupTests: XCTestCase {
     XCTAssertTrue(store.list.threads.isEmpty)
   }
 
-  func testStartupLoadsChatsAndRealtimeDuringSlowNavigationAndPreservesTheDraft()
+  func testStartupLoadsChatsAndRealtimeWithoutAgentNavigationAndPreservesTheDraft()
     async throws
   {
-    let gate = HTTPResponseGate()
-    defer { gate.open() }
-    let navigation = expectation(description: "Agent response is pending")
     let realtime = expectation(description: "Realtime starts independently of navigation")
     let requestedRealtime = Mutex(false)
-    let defaultAgent = "40000000-0000-4000-8000-000000000008"
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/agents":
-        navigation.fulfill()
-        await gate.wait()
-        return ChatHTTPResponse(
-          body: """
-            [{"agentId":"\(defaultAgent)","isDefaultAgent":true,"displayName":"Default assistant"},
-            {"agentId":"\(storeAgentID)","isDefaultAgent":false,"displayName":"Other assistant"}]
-            """)
-
+        XCTFail("Workspace startup requested a retired profile")
+        throw URLError(.unsupportedURL)
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Other agent's chat")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
@@ -68,15 +58,12 @@ final class WorkspaceStartupTests: XCTestCase {
     addTeardownBlock { @MainActor in
       store.close()
       startup.cancel()
-      gate.open()
       await startup.value
     }
-    await fulfillment(of: [navigation, realtime], timeout: 3)
+    await fulfillment(of: [realtime], timeout: 3)
     try await waitForBusinessResult { store.list.threads.first?.title == "Other agent's chat" }
     XCTAssertNil(store.selectedAgentID)
-    gate.open()
     await startup.value
-    XCTAssertEqual(store.selectedAgentID, defaultAgent)
     XCTAssertEqual(store.newChatDraft, "Input entered before navigation finishes")
     XCTAssertNil(store.selectedThreadID)
   }
@@ -86,10 +73,6 @@ final class WorkspaceStartupTests: XCTestCase {
     let archivedID = "40000000-0000-4000-8000-000000000004"
     let projectID = "30000000-0000-4000-8000-000000000071"
     let snapshot = Self.cachedSnapshot(archivedID: archivedID, projectID: projectID)
-    let navigationStarted = expectation(description: "Navigation is being loaded")
-    let holdNavigation = Mutex(false)
-    let releaseNavigation = HTTPResponseGate()
-    defer { releaseNavigation.open() }
     let catchUpStarted = expectation(
       description: "Cached chats are shown before network catch-up")
     let releaseCatchUp = HTTPResponseGate()
@@ -97,15 +80,6 @@ final class WorkspaceStartupTests: XCTestCase {
     let holdCatchUp = Mutex(false)
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
-      case "/api/agents":
-        if holdNavigation.withLock({ $0 }) {
-          navigationStarted.fulfill()
-          await releaseNavigation.wait()
-        }
-        return ChatHTTPResponse(
-          body: """
-            [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
-            """)
       case "/api/chat-threads/snapshot": return snapshot
       case "/api/projects/snapshot":
         return ChatHTTPResponse(
@@ -136,7 +110,7 @@ final class WorkspaceStartupTests: XCTestCase {
     let previous = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL, cache: cache,
       projectDisclosure: ProjectDisclosureStorage(scope: scope, directory: cacheDirectory.url))
-    await previous.refreshNavigation()
+    await previous.prepareWorkspaceComposer()
     await previous.list.refresh()
     await previous.projects.activate()
     await previous.projects.expand(projectID)?.value
@@ -144,7 +118,6 @@ final class WorkspaceStartupTests: XCTestCase {
     await previous.close().value
     await cache.close()
 
-    holdNavigation.withLock { $0 = true }
     holdCatchUp.withLock { $0 = true }
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL, cache: cacheDirectory.cache(scope: scope),
@@ -155,16 +128,12 @@ final class WorkspaceStartupTests: XCTestCase {
     addTeardownBlock { @MainActor in
       let closing = store.close()
       startup.cancel()
-      releaseNavigation.open()
       releaseCatchUp.open()
       await startup.value
       await closing.value
     }
-    await fulfillment(of: [navigationStarted], timeout: 2)
-    try assertCachedProjectSidebar(store, projectID: projectID)
-
-    releaseNavigation.open()
     await fulfillment(of: [catchUpStarted], timeout: 2)
+    try assertCachedProjectSidebar(store, projectID: projectID)
     let expected = ["Recent cached chat"]
     XCTAssertEqual(
       store.list.threads(agentID: storeAgentID, archived: false).map(\.title), expected)
@@ -244,99 +213,19 @@ final class WorkspaceStartupTests: XCTestCase {
     XCTAssertEqual(reader.list.threads.map(\.title), ["Prefetched title"])
   }
 
-  func testStartupRestoresNavigationAndChatsBeforeNetworkAndPersistsFreshNavigation() async throws {
-    let cacheDirectory = CacheTestDirectory(owner: self)
-    let updated = Mutex(false)
-    let started = expectation(description: "Fresh navigation is held after cache restore")
-    let gate = HTTPResponseGate()
-    defer { gate.open() }
-    let otherAgent = "40000000-0000-4000-8000-000000000005"
-    let fixture = ChatHTTPFixture { request in
-      let fresh = updated.withLock { $0 }
-      switch request.url?.path {
-      case "/api/agents":
-        if fresh {
-          started.fulfill()
-          await gate.wait()
-        }
-        return ChatHTTPResponse(
-          body: """
-            [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"\(fresh ? "Fresh assistant" : "Cached assistant")"},
-            {"agentId":"\(otherAgent)","isDefaultAgent":false,"displayName":"Other assistant"}]
-            """)
-      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
-      case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
-      case "/api/realtime/token":
-        return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"No live updates"}}"#)
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let scope = ChatCacheScope(
-      apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace")
-    let previous = WorkspaceStore(
-      client: fixture.client, webURL: fixture.baseURL,
-      cache: cacheDirectory.cache(scope: scope))
-    await previous.start(userID: "user", workspaceID: "workspace")
-    previous.close()
-    updated.withLock { $0 = true }
-    let store = WorkspaceStore(
-      client: fixture.client, webURL: fixture.baseURL,
-      cache: cacheDirectory.cache(scope: scope))
-    defer { store.close() }
-    let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
-    addTeardownBlock {
-      startup.cancel()
-      gate.open()
-      await startup.value
-    }
-    await fulfillment(of: [started], timeout: 3)
-    try await waitForBusinessResult {
-      store.selectedAgentID == storeAgentID
-    }
-    XCTAssertEqual(store.currentAgentName, "Cached assistant")
-    // The cached navigation stays committed while the fresh Agent response is pending.
-    let reader = cacheDirectory.cache(scope: scope)
-    let held = try await reader.loadNavigation()
-    XCTAssertEqual(held?.agents.first?.displayName, "Cached assistant")
-    await reader.close()
-    XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Cached chat"])
-    gate.open()
-    await startup.value
-    XCTAssertEqual(store.currentAgentName, "Fresh assistant")
-    XCTAssertEqual(store.selectedAgentID, storeAgentID)
-    store.close()
-
-    let reopened = WorkspaceStore(
-      client: fixture.client, webURL: fixture.baseURL,
-      cache: cacheDirectory.cache(scope: scope))
-    defer { reopened.close() }
-    await reopened.list.restoreCached()
-    XCTAssertEqual(reopened.list.agents.first?.displayName, "Fresh assistant")
-    XCTAssertEqual(reopened.selectedAgentID, storeAgentID)
-  }
-
-  func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationPublication() async throws {
+  func testClosingOrCancellingStartupKeepsCachedChatsAndStopsCatchUp() async throws {
     for cancelStartup in [false, true] {
       let cacheDirectory = CacheTestDirectory(owner: self)
-      let navigationStarted = expectation(
-        description: "Independent navigation reads start after cached chats")
-      let releaseNavigation = HTTPResponseGate()
-      defer { releaseNavigation.open() }
+      let catchUpStarted = expectation(
+        description: "Thread catch-up starts after cached chats")
+      let releaseCatchUp = HTTPResponseGate()
+      defer { releaseCatchUp.open() }
       let fixture = ChatHTTPFixture { request in
         switch request.url?.path {
-        case "/api/agents":
-          navigationStarted.fulfill()
-          await releaseNavigation.wait()
-          return ChatHTTPResponse(
-            body: """
-              [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
-              """)
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
         case "/api/chat-threads/events":
+          catchUpStarted.fulfill()
+          await releaseCatchUp.wait()
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case "/api/indicators":
           return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
@@ -354,7 +243,7 @@ final class WorkspaceStartupTests: XCTestCase {
         client: fixture.client, webURL: fixture.baseURL, cache: cache)
       defer { store.close() }
       let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
-      await fulfillment(of: [navigationStarted], timeout: 2)
+      await fulfillment(of: [catchUpStarted], timeout: 2)
       XCTAssertEqual(store.list.threads.map(\.title), ["Cached chat"])
 
       if cancelStartup {
@@ -362,11 +251,10 @@ final class WorkspaceStartupTests: XCTestCase {
       } else {
         store.close()
       }
-      releaseNavigation.open()
+      releaseCatchUp.open()
       await startup.value
 
       XCTAssertEqual(store.list.threads.map(\.title), ["Cached chat"])
-      XCTAssertTrue(store.list.agents.isEmpty)
     }
   }
 

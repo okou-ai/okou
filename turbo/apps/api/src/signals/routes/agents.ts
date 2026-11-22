@@ -1,3 +1,5 @@
+import { ensureLegacyDefaultAgentProfile$ } from "../services/legacy-default-agent-profile.service";
+import { DEFAULT_AGENT_NAME } from "../services/default-agent-profile";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
@@ -12,8 +14,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
-import { agents } from "@okouai/db/schema/agent";
-import { DEFAULT_AGENT_NAME } from "../services/default-agent-profile";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -197,7 +198,9 @@ function agentConfigurationUpdateRejection(
   return null;
 }
 
-function agentCreateSelection(values: typeof agents.$inferSelect) {
+function agentCreateSelection(
+  values: typeof legacyAgentApiProfiles.$inferSelect,
+) {
   // Defer text admission until the eligible INSERT row is projected. Binding
   // raw NUL text would reject before the public-count predicate can run.
   const displayName =
@@ -205,7 +208,9 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       ? null
       : Buffer.from(
           pgTextDecoder.mapFromDriverValue(
-            agents.displayName.mapToDriverValue(values.displayName),
+            legacyAgentApiProfiles.displayName.mapToDriverValue(
+              values.displayName,
+            ),
           ),
           "utf8",
         );
@@ -214,7 +219,9 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       ? null
       : Buffer.from(
           pgTextDecoder.mapFromDriverValue(
-            agents.description.mapToDriverValue(values.description),
+            legacyAgentApiProfiles.description.mapToDriverValue(
+              values.description,
+            ),
           ),
           "utf8",
         );
@@ -223,7 +230,7 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       ? null
       : Buffer.from(
           pgTextDecoder.mapFromDriverValue(
-            agents.sound.mapToDriverValue(values.sound),
+            legacyAgentApiProfiles.sound.mapToDriverValue(values.sound),
           ),
           "utf8",
         );
@@ -232,49 +239,53 @@ function agentCreateSelection(values: typeof agents.$inferSelect) {
       ? null
       : Buffer.from(
           pgTextDecoder.mapFromDriverValue(
-            agents.avatarUrl.mapToDriverValue(values.avatarUrl),
+            legacyAgentApiProfiles.avatarUrl.mapToDriverValue(values.avatarUrl),
           ),
           "utf8",
         );
   return {
-    id: sql`${sql.param(values.id, agents.id)}`.mapWith(agents.id).as("id"),
-    orgId: sql`${sql.param(values.orgId, agents.orgId)}`
-      .mapWith(agents.orgId)
+    id: sql`${sql.param(values.id, legacyAgentApiProfiles.id)}`
+      .mapWith(legacyAgentApiProfiles.id)
+      .as("id"),
+    orgId: sql`${sql.param(values.orgId, legacyAgentApiProfiles.orgId)}`
+      .mapWith(legacyAgentApiProfiles.orgId)
       .as("org_id"),
-    owner: sql`${sql.param(values.owner, agents.owner)}`
-      .mapWith(agents.owner)
+    owner: sql`${sql.param(values.owner, legacyAgentApiProfiles.owner)}`
+      .mapWith(legacyAgentApiProfiles.owner)
       .as("owner"),
-    name: sql`${sql.param(values.name, agents.name)}`
-      .mapWith(agents.name)
+    name: sql`${sql.param(values.name, legacyAgentApiProfiles.name)}`
+      .mapWith(legacyAgentApiProfiles.name)
       .as("name"),
-    visibility: sql`${sql.param(values.visibility, agents.visibility)}`
-      .mapWith(agents.visibility)
-      .as("visibility"),
+    visibility:
+      sql`${sql.param(values.visibility, legacyAgentApiProfiles.visibility)}`
+        .mapWith(legacyAgentApiProfiles.visibility)
+        .as("visibility"),
     displayName: sql`convert_from(${sql.param(displayName)}, 'UTF8')`
-      .mapWith(nullableDriverValueDecoder(agents.displayName))
+      .mapWith(nullableDriverValueDecoder(legacyAgentApiProfiles.displayName))
       .as("display_name"),
     description: sql`convert_from(${sql.param(description)}, 'UTF8')`
-      .mapWith(nullableDriverValueDecoder(agents.description))
+      .mapWith(nullableDriverValueDecoder(legacyAgentApiProfiles.description))
       .as("description"),
-    instructions: sql`${sql.param(values.instructions, agents.instructions)}`
-      .mapWith(agents.instructions)
-      .as("instructions"),
+    instructions:
+      sql`${sql.param(values.instructions, legacyAgentApiProfiles.instructions)}`
+        .mapWith(legacyAgentApiProfiles.instructions)
+        .as("instructions"),
     instructionsBundle:
-      sql`${sql.param(values.instructionsBundle, agents.instructionsBundle)}`
-        .mapWith(nullableDriverValueDecoder(agents.instructionsBundle))
+      sql`${sql.param(values.instructionsBundle, legacyAgentApiProfiles.instructionsBundle)}`
+        .mapWith(
+          nullableDriverValueDecoder(legacyAgentApiProfiles.instructionsBundle),
+        )
         .as("instructions_bundle"),
     sound: sql`convert_from(${sql.param(sound)}, 'UTF8')`
-      .mapWith(nullableDriverValueDecoder(agents.sound))
+      .mapWith(nullableDriverValueDecoder(legacyAgentApiProfiles.sound))
       .as("sound"),
     avatarUrl: sql`convert_from(${sql.param(avatarUrl)}, 'UTF8')`
-      .mapWith(nullableDriverValueDecoder(agents.avatarUrl))
+      .mapWith(nullableDriverValueDecoder(legacyAgentApiProfiles.avatarUrl))
       .as("avatar_url"),
-    createdAt: sql`${sql.param(values.createdAt, agents.createdAt)}`
-      .mapWith(agents.createdAt)
-      .as("created_at"),
-    updatedAt: sql`${sql.param(values.updatedAt, agents.updatedAt)}`
-      .mapWith(agents.updatedAt)
-      .as("updated_at"),
+    updatedAt:
+      sql`${sql.param(values.updatedAt, legacyAgentApiProfiles.updatedAt)}`
+        .mapWith(legacyAgentApiProfiles.updatedAt)
+        .as("updated_at"),
   };
 }
 
@@ -282,14 +293,14 @@ const createAgentBody$ = bodyResultOf(agentsMainContract.create);
 
 function createdAgentSelection() {
   return {
-    agentId: agents.id,
+    agentId: legacyAgentApiProfiles.id,
     defaultAgentId: defaultProfileId.as("default_executor_id"),
-    owner: agents.owner,
-    displayName: agents.displayName,
-    description: agents.description,
-    sound: agents.sound,
-    avatarUrl: agents.avatarUrl,
-    visibility: agents.visibility,
+    owner: legacyAgentApiProfiles.owner,
+    displayName: legacyAgentApiProfiles.displayName,
+    description: legacyAgentApiProfiles.description,
+    sound: legacyAgentApiProfiles.sound,
+    avatarUrl: legacyAgentApiProfiles.avatarUrl,
+    visibility: legacyAgentApiProfiles.visibility,
   };
 }
 
@@ -301,12 +312,12 @@ const committedClientAgent$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const [agent] = await get(db$)
     .select(createdAgentSelection())
-    .from(agents)
+    .from(legacyAgentApiProfiles)
     .where(
       and(
-        eq(agents.id, body.data.clientAgentId),
-        eq(agents.orgId, auth.orgId),
-        eq(agents.owner, auth.userId),
+        eq(legacyAgentApiProfiles.id, body.data.clientAgentId),
+        eq(legacyAgentApiProfiles.orgId, auth.orgId),
+        eq(legacyAgentApiProfiles.owner, auth.userId),
       ),
     )
     .limit(1);
@@ -321,6 +332,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
 
+  await set(ensureLegacyDefaultAgentProfile$, auth.orgId, signal);
   const committed = await get(committedClientAgent$);
   signal.throwIfAborted();
   if (committed) {
@@ -336,7 +348,7 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     const countPlan = publicAgentCountReadPlan(auth.orgId);
     const [publicAgentCount] = await writeDb
       .select(countPlan.selection)
-      .from(agents)
+      .from(legacyAgentApiProfiles)
       .where(countPlan.condition);
     signal.throwIfAborted();
     if ((publicAgentCount?.value ?? 0) >= PUBLIC_AGENT_LIMIT) {
@@ -370,21 +382,19 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     ),
     ...metadata,
-    createdAt,
     updatedAt: createdAt,
   };
   let blocked = false;
-  // Concurrent replays can collide on either id or the (orgId, name) index.
-  // The final scoped read resolves the accepted identity after either conflict.
+  // The final scoped read resolves concurrent replays of a client identity.
   if (visibility === "public") {
     const countPlan = publicAgentCountReadPlan(auth.orgId);
     const publicAgentCount = writeDb
       .select({ value: countPlan.selection.value.as("value") })
-      .from(agents)
+      .from(legacyAgentApiProfiles)
       .where(countPlan.condition)
       .as("public_agent_count");
     const inserted = await writeDb
-      .insert(agents)
+      .insert(legacyAgentApiProfiles)
       .select(
         writeDb
           .select(agentCreateSelection(values))
@@ -392,22 +402,25 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           .where(lt(publicAgentCount.value, PUBLIC_AGENT_LIMIT)),
       )
       .onConflictDoNothing()
-      .returning({ id: agents.id });
+      .returning({ id: legacyAgentApiProfiles.id });
     signal.throwIfAborted();
     blocked = inserted.length === 0;
   } else {
-    await writeDb.insert(agents).values(values).onConflictDoNothing();
+    await writeDb
+      .insert(legacyAgentApiProfiles)
+      .values(values)
+      .onConflictDoNothing();
   }
   signal.throwIfAborted();
 
   const [agent] = await writeDb
     .select(createdAgentSelection())
-    .from(agents)
+    .from(legacyAgentApiProfiles)
     .where(
       and(
-        eq(agents.orgId, auth.orgId),
-        eq(agents.owner, auth.userId),
-        eq(agents.id, agentId),
+        eq(legacyAgentApiProfiles.orgId, auth.orgId),
+        eq(legacyAgentApiProfiles.owner, auth.userId),
+        eq(legacyAgentApiProfiles.id, agentId),
       ),
     )
     .limit(1);
@@ -429,12 +442,16 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 201 as const, body: agentResponse(agent) };
 });
 
-const agentListResponse$ = computed(
+const agentListResponse$ = command(
   async (
-    get,
+    { get, set },
+    signal: AbortSignal,
   ): Promise<{ readonly status: 200; readonly body: AgentResponse[] }> => {
     const auth = get(organizationAuthContext$);
+    await set(ensureLegacyDefaultAgentProfile$, auth.orgId, signal);
+    signal.throwIfAborted();
     const agents = await get(agentList(auth.orgId, auth.userId));
+    signal.throwIfAborted();
     return { status: 200 as const, body: [...agents] };
   },
 );
@@ -449,16 +466,16 @@ const getAgentInner$ = computed(async (get) => {
   };
   const [row] = await get(db$)
     .select({
-      agentId: agents.id,
+      agentId: legacyAgentApiProfiles.id,
       defaultAgentId: defaultProfileId.as("default_executor_id"),
-      owner: agents.owner,
-      displayName: agents.displayName,
-      description: agents.description,
-      sound: agents.sound,
-      avatarUrl: agents.avatarUrl,
-      visibility: agents.visibility,
+      owner: legacyAgentApiProfiles.owner,
+      displayName: legacyAgentApiProfiles.displayName,
+      description: legacyAgentApiProfiles.description,
+      sound: legacyAgentApiProfiles.sound,
+      avatarUrl: legacyAgentApiProfiles.avatarUrl,
+      visibility: legacyAgentApiProfiles.visibility,
     })
-    .from(agents)
+    .from(legacyAgentApiProfiles)
     .where(visibleAgentIdentityCondition(agentScope))
     .limit(1);
   const agent = row ? agentResponse(row) : null;
@@ -485,42 +502,47 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const countPlan = publicAgentCountReadPlan(auth.orgId);
   const publicAgentCount = writeDb
     .select(countPlan.selection)
-    .from(agents)
+    .from(legacyAgentApiProfiles)
     .where(countPlan.condition);
   // Retain the existing Agent row lock. Immutable default identity and the
   // documented soft public limit use this statement's snapshot.
   const locked = writeDb.$with("configuration_agent").as(
     writeDb
       .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
+        id: legacyAgentApiProfiles.id,
+        owner: legacyAgentApiProfiles.owner,
+        visibility: legacyAgentApiProfiles.visibility,
         defaultAgentId: defaultProfileId.as("default_executor_id"),
         publicAgentCount: (updateBody.visibility === "public"
-          ? sql`CASE WHEN ${and(eq(agents.visibility, "private"), eq(agents.owner, member.userId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
+          ? sql`CASE WHEN ${and(eq(legacyAgentApiProfiles.visibility, "private"), eq(legacyAgentApiProfiles.owner, member.userId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
           : sql`0::bigint`
         )
           .mapWith(pgInt8ToSafeIntegerDecoder)
           .as("public_agent_count"),
       })
-      .from(agents)
-      .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-      .for("update", { of: agents }),
+      .from(legacyAgentApiProfiles)
+      .where(
+        and(
+          eq(legacyAgentApiProfiles.orgId, auth.orgId),
+          eq(legacyAgentApiProfiles.id, params.id),
+        ),
+      )
+      .for("update", { of: legacyAgentApiProfiles }),
   );
   const updated = writeDb.$with("updated_configuration_agent").as(
     writeDb
-      .update(agents)
+      .update(legacyAgentApiProfiles)
       // The dependent locking CTE completes before this SQL clock is read.
       .set(agentConfigurationUpdateValues(updateBody))
       .from(locked)
       .where(
         and(
-          eq(agents.orgId, auth.orgId),
-          eq(agents.id, locked.id),
+          eq(legacyAgentApiProfiles.orgId, auth.orgId),
+          eq(legacyAgentApiProfiles.id, locked.id),
           agentIdentityUpdateError(true, updateBody)
             ? or(
-                ne(agents.name, DEFAULT_AGENT_NAME),
-                ne(agents.visibility, "public"),
+                ne(legacyAgentApiProfiles.name, DEFAULT_AGENT_NAME),
+                ne(legacyAgentApiProfiles.visibility, "public"),
               )
             : undefined,
           or(
@@ -541,13 +563,13 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         ),
       )
       .returning({
-        agentId: agents.id,
-        owner: agents.owner,
-        displayName: agents.displayName,
-        description: agents.description,
-        sound: agents.sound,
-        avatarUrl: agents.avatarUrl,
-        visibility: agents.visibility,
+        agentId: legacyAgentApiProfiles.id,
+        owner: legacyAgentApiProfiles.owner,
+        displayName: legacyAgentApiProfiles.displayName,
+        description: legacyAgentApiProfiles.description,
+        sound: legacyAgentApiProfiles.sound,
+        avatarUrl: legacyAgentApiProfiles.avatarUrl,
+        visibility: legacyAgentApiProfiles.visibility,
       }),
   );
   const [row] = await writeDb
@@ -662,7 +684,7 @@ const updateAgentMetadataInner$ = command(
     // including default publication by a supported outgoing writer.
     const [result] = parseRawRows(
       agentMetadataUpdateRow,
-      await writeDb.execute(sql`SELECT * FROM public.update_agent_metadata(
+      await writeDb.execute(sql`SELECT * FROM public.update_legacy_agent_api_metadata(
         ${auth.orgId}::text, ${params.id}::uuid, ${member.userId}::text,
         ${member.role === "admin"}::boolean,
         ${agentIdentityUpdateError(true, updateBody) !== null}::boolean,

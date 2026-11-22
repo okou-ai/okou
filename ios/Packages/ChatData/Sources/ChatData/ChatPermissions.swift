@@ -81,25 +81,15 @@ public struct ChatPermissions: Sendable {
   public init(client: APIClient) { self.client = client }
 
   public func load(_ action: ChatPermissionAction) async throws -> ChatPermissionSnapshot {
-    struct Agent: Decodable, Sendable {
-      let agentId: String
-      let displayName: String?
-    }
-    async let agentRequest: Agent = client.request("/api/agents/\(action.agentID)")
-    async let snapshot = connectorPermissions(slug: action.connectorSlug)
-    let (agent, permissions) = try await (agentRequest, snapshot)
-    guard UUID(uuidString: agent.agentId) == UUID(uuidString: action.agentID) else {
-      throw APIClientError.invalidResponse
-    }
-    return ChatPermissionSnapshot(
-      agentName: agent.displayName, metadata: permissions.metadata, grants: permissions.grants)
+    try await validateContext(action)
+    return try await connectorPermissions(slug: action.connectorSlug)
   }
 
   public func apply(
     _ action: ChatPermissionAction, duration: ChatPermissionAction.Duration,
     reviewing current: ChatPermissionSnapshot
   ) async throws -> ChatPermissionSnapshot {
-    // Revalidate before writing: the thread may have moved to another Agent while the sheet was open.
+    // Revalidate before writing: the conversation must still be accessible.
     try await validateContext(action)
     guard let metadata = current.metadata, metadata.connectorSlug == action.connectorSlug,
       metadata.contains(action.permission)

@@ -1,6 +1,5 @@
 import { array } from "zod";
-import { agentDraftContract } from "../contracts/agent-draft";
-import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
+import { composerDraftContract } from "../contracts/agent-draft";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import {
@@ -118,10 +117,8 @@ const iosContracts: readonly {
 }[] = [
   { id: "ios.instructionsContract.get", route: instructionsContract.get },
   { id: "ios.instructionsContract.update", route: instructionsContract.update },
-  { id: "ios.agentDraftContract.get", route: agentDraftContract.get },
-  { id: "ios.agentDraftContract.patch", route: agentDraftContract.patch },
-  { id: "ios.agentsByIdContract.get", route: agentsByIdContract.get },
-  { id: "ios.agentsMainContract.list", route: agentsMainContract.list },
+  { id: "ios.composerDraftContract.get", route: composerDraftContract.get },
+  { id: "ios.composerDraftContract.patch", route: composerDraftContract.patch },
   {
     id: "ios.artifactCatalogContract.list",
     route: artifactCatalogContract.list,

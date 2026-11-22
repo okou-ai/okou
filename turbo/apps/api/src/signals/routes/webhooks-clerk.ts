@@ -16,7 +16,7 @@ import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { settle, tapError } from "../utils";
 import { ensureOrgLimitedFreeBootstrap$ } from "../services/org-limited-free-bootstrap.service";
-import { ensureLegacyDefaultAgentProfile$ } from "../services/legacy-default-agent-profile.service";
+import { isNull } from "drizzle-orm";
 import {
   cleanupClerkBannedUser$,
   cleanupClerkDeletedOrgBilling$,
@@ -377,23 +377,21 @@ const handleOrganizationCreatedWebhook$ = command(
     const creator = { orgId: identity.orgId, ownerUserId: identity.userId };
     await set(ensureOrgLimitedFreeBootstrap$, creator, signal);
     signal.throwIfAborted();
-    await set(ensureLegacyDefaultAgentProfile$, creator, signal);
+    // Preserve the authoritative creator even when a directory read cached the name first.
+    await set(writeDb$)
+      .insert(orgCache)
+      .values({
+        orgId: identity.orgId,
+        name: stringPropertyOf(data, "name") ?? "",
+        createdBy: identity.userId,
+        cachedAt: nowDate(),
+      })
+      .onConflictDoUpdate({
+        target: orgCache.orgId,
+        set: { createdBy: identity.userId },
+        setWhere: isNull(orgCache.createdBy),
+      });
     signal.throwIfAborted();
-
-    const name = stringPropertyOf(data, "name");
-    if (name?.trim()) {
-      await set(writeDb$)
-        .insert(orgCache)
-        .values({
-          orgId: identity.orgId,
-          name,
-          createdBy: identity.userId,
-          cachedAt: nowDate(),
-        })
-        // A duplicate or delayed creation event must not undo a rename.
-        .onConflictDoNothing({ target: orgCache.orgId });
-      signal.throwIfAborted();
-    }
     enqueueWelcomeThreadDelivery({
       trigger: "organization.created",
       orgId: identity.orgId,
