@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 
@@ -69,6 +70,15 @@ def report_selection_failure(destination, runtime, devices, inventory):
         )
 
 
+def run_boot_command(command, udid, *options):
+    started = time.monotonic()
+    print(f"Starting simctl {' '.join((command, *options))}", flush=True)
+    try:
+        subprocess.run(["xcrun", "simctl", command, udid, *options], check=True)
+    finally:
+        print(f"simctl {command} elapsed: {time.monotonic() - started:.3f}s", flush=True)
+
+
 def main():
     destination = dict(
         item.split("=", 1) for item in os.environ["IOS_TEST_DESTINATION"].split(",")
@@ -104,11 +114,15 @@ def main():
         f"Prebooting {device['name']} ({destination['OS']}): {device['udid']}",
         flush=True,
     )
+    options = []
     if device["state"] == "Shutdown":
-        subprocess.run(["xcrun", "simctl", "boot", device["udid"]], check=True)
+        if os.environ.get("IOS_BOOT_WITH_STATUS") == "true":
+            options.append("-b")
+        else:
+            run_boot_command("boot", device["udid"])
     elif device["state"] != "Booted":
         raise ValueError(f"Simulator cannot start from state {device['state']}")
-    subprocess.run(["xcrun", "simctl", "bootstatus", device["udid"]], check=True)
+    run_boot_command("bootstatus", device["udid"], *options)
 
 
 if __name__ == "__main__":

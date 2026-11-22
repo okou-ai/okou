@@ -8,6 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      boot_with_status:
+        description: Boot the selected simulator with a single bootstatus invocation
+        type: boolean
+        default: false
       sample_xcode_startup:
         description: Sample the compile-phase Xcode startup
         type: boolean
@@ -357,6 +361,8 @@ jobs:
           plutil -lint ios/Okou/Resources/Info.plist ios/Okou/Resources/Okou.entitlements ios/NotificationExtension/Info.plist ios/NotificationExtension/NotificationExtension.entitlements ios/Widgets/Info.plist ios/Widgets/OkouWidgets.entitlements ios/Okou.xcodeproj/project.pbxproj
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
+        env:
+          IOS_BOOT_WITH_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.boot_with_status && 'true' || 'false' }}
         run: bash ios/scripts/run-ci-tests.sh
       - name: Upload Xcode startup observations
         if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup

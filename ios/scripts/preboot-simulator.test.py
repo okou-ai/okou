@@ -33,6 +33,15 @@ elif sys.argv[1:3] == ['simctl', 'boot']:
     device['state'] = 'Booted'
     path.write_text(json.dumps(inventory))
 elif sys.argv[1:3] == ['simctl', 'bootstatus']:
+    if sys.argv[4:] == ['-b']:
+        device, = [device for devices in inventory['devices'].values()
+            for device in devices if device['udid'] == sys.argv[3]]
+        if device['state'] != 'Shutdown':
+            sys.exit('Combined invocation should start the shutdown device')
+        device['state'] = 'Booted'
+        path.write_text(json.dumps(inventory))
+    elif sys.argv[4:]:
+        raise ValueError(sys.argv)
     if os.environ.get('SIMULATOR_READY_FAILURE'):
         sys.exit('Simulator readiness failed')
     path.with_suffix('.ready').write_text(sys.argv[3])
@@ -121,6 +130,24 @@ class PrebootSimulatorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(self.state.read_text()), self.inventory)
         self.assertEqual(self.state.with_suffix(".ready").read_text(), "configured")
+
+    def test_combined_invocation_boots_only_the_selected_device_and_waits(self):
+        self.env["IOS_BOOT_WITH_STATUS"] = "true"
+        self.env["SIMULATOR_BOOT_FAILURE"] = "true"  # A separate boot must not run.
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        devices = json.loads(self.state.read_text())["devices"]
+        self.assertEqual(devices[RUNTIME][0]["state"], "Booted")
+        self.assertEqual(devices[OTHER_RUNTIME][0]["state"], "Shutdown")
+        self.assertEqual(self.state.with_suffix(".ready").read_text(), "configured")
+
+    def test_combined_invocation_propagates_readiness_failure(self):
+        self.env["IOS_BOOT_WITH_STATUS"] = "true"
+        self.env["SIMULATOR_READY_FAILURE"] = "true"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Simulator readiness failed", result.stderr)
+        self.assertFalse(self.state.with_suffix(".ready").exists())
 
     def test_readiness_failure_blocks_ci_after_boot_was_requested(self):
         self.env["SIMULATOR_READY_FAILURE"] = "true"
