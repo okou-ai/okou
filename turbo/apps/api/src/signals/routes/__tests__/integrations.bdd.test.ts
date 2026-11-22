@@ -6145,13 +6145,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     integrations.configureGithubAppInstallProvider();
 
     const actor = integrations.user();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Signed GitHub callback",
-    });
     const installQuery = {
       userId: actor.userId,
       orgId: actor.orgId ?? undefined,
-      composeId: agent.agentId,
     };
     const okouInstall = await integrations.requestGithubOauthInstall(
       installQuery,
