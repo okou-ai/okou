@@ -6,6 +6,10 @@ import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.chat.SearchMessageHit
+import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.SearchWorkflowHit
+import ai.okou.android.chat.WorkspaceSearchResults
 import ai.okou.android.chat.WorkspaceSearchScreen
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -26,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
@@ -138,6 +143,77 @@ class SavedUiStateTest {
     @Test
     fun searchRestoresTheSameResultWhenCacheAddsAnEarlierMatch() {
         checkSearchRestoration("Result", "Result 5")
+    }
+
+    @Test
+    fun searchRestoresResultFocusBeforeAnUnrelatedScrollAnchorReloads() {
+        val restoration = StateRestorationTester(compose)
+        val date = "2026-11-13T00:00:00Z"
+        val chat =
+            ConfirmedChat(
+                id = "chat",
+                agentId = "agent",
+                title = "Planning conversation",
+                sortAt = date,
+                createdAt = date,
+                updatedAt = date,
+                pinnedAt = null,
+                archived = false,
+                renamedAt = null,
+            )
+        val message = SearchMessageHit(chat.id, 1, "Release reply", listOf(0..6))
+        val workflow =
+            SearchWorkflowHit("workflow", "agent", "release", "Release workflow", null, true)
+        val loaded =
+            WorkspaceSearchResults(
+                keyword = "Release",
+                messages = SearchRead.Ready(listOf(message)),
+                workflows = SearchRead.Ready(listOf(workflow)),
+            )
+        var remote by mutableStateOf(loaded)
+        var detailsOpen by mutableStateOf(false)
+        restoration.setContent {
+            val search = rememberChatSearchState()
+            OkouTheme(false) {
+                if (detailsOpen) {
+                    Text("Workflow detail")
+                } else {
+                    WorkspaceSearchScreen(
+                        state = ChatListUiState(confirmedAt = 1, threadsByRecency = listOf(chat)),
+                        search = search,
+                        widthDp = 400,
+                        listWidth = null,
+                        workspaceName = null,
+                        focusOnEntry = false,
+                        onFocused = {},
+                        onClose = {},
+                        onOpen = {},
+                        retry = {},
+                        remote = remote,
+                        onOpenWorkflow = { detailsOpen = true },
+                    )
+                }
+            }
+        }
+
+        val query = compose.onNodeWithTag("chat_search_query")
+        val result = compose.onNodeWithText(workflow.title)
+        query.performTextInput("Release")
+        compose.onNodeWithText(message.content).assertIsDisplayed()
+        result.performClick()
+        compose.onNodeWithText("Workflow detail").assertIsDisplayed()
+
+        restoration.emulateSavedInstanceStateRestore()
+        compose.runOnIdle {
+            remote = loaded.copy(messages = SearchRead.Retrying)
+            detailsOpen = false
+        }
+        query.assertTextContains("Release")
+        result.assertIsDisplayed().assertIsFocused()
+
+        compose.runOnIdle { remote = loaded }
+        compose.onNodeWithText(message.content).assertIsDisplayed()
+        result.assertIsFocused()
     }
 
     @Test

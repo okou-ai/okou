@@ -557,14 +557,21 @@ private fun SearchResults(
     val showSkeleton = rememberChatWaitIndicator(pending && items.isEmpty() && status == null)
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
+    val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
     val waitingForAnchor = anchor?.let { waitingForResult(it.key) } == true
-    LaunchedEffect(anchor, items, waitingForAnchor) {
+    LaunchedEffect(anchor, items, waitingForAnchor, pendingFocus) {
         if (anchor != null) {
             val index = items.indexOfFirst { it.key == anchor.key }.takeIf { it >= 0 }
-            if (index != null || !waitingForAnchor) search.restorePosition(index)
+            // Use the selected result as the position if its former anchor is still loading.
+            if (
+                index != null ||
+                    !waitingForAnchor ||
+                    pendingFocus != null && items.any { it.key == pendingFocus }
+            ) {
+                search.restorePosition(index)
+            }
         }
     }
-    val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
     val waitingForFocus = pendingFocus?.let(::waitingForResult) == true
     LaunchedEffect(pendingFocus, anchor, items, waitingForFocus) {
         if (pendingFocus == null) return@LaunchedEffect
