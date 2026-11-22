@@ -569,18 +569,43 @@ class NativeChatListTest {
                     start.y + (vertical * swipeDensity).toInt(),
                 )
             val downAt = SystemClock.uptimeMillis()
+            val finger =
+                MotionEvent.PointerProperties().apply {
+                    id = 0
+                    toolType = MotionEvent.TOOL_TYPE_FINGER
+                }
             fun injectSwipeEvent(action: Int, point: Point): Boolean {
+                val coordinates =
+                    MotionEvent.PointerCoords().apply {
+                        x = point.x.toFloat()
+                        y = point.y.toFloat()
+                        pressure =
+                            if (
+                                action == MotionEvent.ACTION_UP ||
+                                    action == MotionEvent.ACTION_CANCEL
+                            )
+                                0f
+                            else 1f
+                        this.size = 1f
+                    }
                 val event =
                     MotionEvent.obtain(
                         downAt,
                         SystemClock.uptimeMillis(),
                         action,
-                        point.x.toFloat(),
-                        point.y.toFloat(),
-                        0,
+                        1, // pointerCount
+                        arrayOf(finger),
+                        arrayOf(coordinates),
+                        0, // metaState
+                        0, // buttonState
+                        1f, // xPrecision
+                        1f, // yPrecision
+                        0, // deviceId
+                        0, // edgeFlags
+                        InputDevice.SOURCE_TOUCHSCREEN,
+                        0, // flags
                     )
                 try {
-                    event.source = InputDevice.SOURCE_TOUCHSCREEN
                     return instrumentation.uiAutomation.injectInputEvent(event, true)
                 } finally {
                     event.recycle()

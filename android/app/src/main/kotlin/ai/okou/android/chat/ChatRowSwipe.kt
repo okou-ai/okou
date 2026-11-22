@@ -149,12 +149,15 @@ internal fun ChatRowSwipe(
                             val delta = change.position - down.position
                             if (change.changedToUpIgnoreConsumed()) {
                                 val fromStart = delta.x * directionSign > 0f
+                                val releasedAction = if (fromStart) readAction else archiveAction
                                 if (
-                                    reveal.offset != 0f &&
+                                    releasedAction != null &&
+                                        reveal.offset != 0f &&
                                         fromStart == reveal.fromStart &&
                                         delta.reachesSwipeThreshold(threshold)
                                 ) {
-                                    (if (fromStart) readAction else archiveAction)?.let(action)
+                                    reveal = SwipeReveal()
+                                    action(releasedAction)
                                 }
                                 break
                             }
