@@ -5,6 +5,8 @@ import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.HistoryPhase
 import android.os.Looper
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.MouseButton
@@ -17,6 +19,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
@@ -384,6 +387,20 @@ class ChatListRootTest {
         hit.assertIsDisplayed().assertIsFocused().assertTextContains(folded)
         compose.onNodeWithText("Earlier draft").assertExists()
 
+        fun hitBackground(): Color {
+            val pixels = hit.captureToImage().toPixelMap()
+            return pixels[pixels.width / 2, 1]
+        }
+        val highlighted = Color(compose.activity.getColor(R.color.okou_accent))
+        val normal = Color(compose.activity.getColor(R.color.okou_background))
+        val hitBounds = hit.getUnclippedBoundsInRoot()
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(highlighted, hitBackground())
+        compose.mainClock.advanceTimeBy(1_048)
+        assertEquals("The Find highlight should clear after two seconds", normal, hitBackground())
+        hit.assertIsDisplayed().assertIsFocused()
+        assertEquals(hitBounds, hit.getUnclippedBoundsInRoot())
+
         compose.onNodeWithContentDescription("Back").performClick()
         query.assertTextContains(draftQuery)
         compose.waitUntil(10_000) {
@@ -399,6 +416,59 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         hit.assertDoesNotExist()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun findAndWorkspaceSearchKeepTheirOwnBackAndFocus() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Native history reply"), 10_000)
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.performTextInput("Native history")
+        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
+
+        val workspaceSearch = compose.onNodeWithTag("chat_search")
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        workspaceSearch.assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        workspaceSearch.assertDoesNotExist()
+        query.assertIsDisplayed().assertTextContains("Native history")
+
+        compose.onNodeWithText("Native history reply").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val workspaceSearchAncestor = hasAnyAncestor(hasTestTag("chat_search"))
+        compose.onNode(hasContentDescription("Back") and !workspaceSearchAncestor).performClick()
+        workspaceSearch.assertIsDisplayed()
+        query.assertIsDisplayed().assertTextContains("Native history")
+
+        val workspaceQuery = compose.onNodeWithTag("chat_search_query")
+        workspaceQuery.performTouchInput { click() }.assertIsFocused().performTextInput("project")
+        val rows = app.fixture.historyRows
+        app.fixture.historyRows = { request ->
+            if (request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_PERSONAL)
+                MockResponse().setResponseCode(403)
+            else rows(request)
+        }
+        compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                )
+                .chats
+                .history
+                .invalidate(CHAT_PERSONAL)
+        }
+        compose.waitUntilExactlyOneExists(hasText(app.getString(R.string.history_missing)), 10_000)
+        query.assertDoesNotExist()
+        workspaceQuery.assertIsFocused().assertTextContains("project")
     }
 
     @Test

@@ -352,6 +352,9 @@ internal fun ConversationRoute(
                     }
                 }
             } else null
+        LaunchedEffect(findTarget, findPositioned) {
+            if (findPositioned) findTarget?.expireHighlight()
+        }
         val readingReady = positioned && !awaitingFindPosition
         LaunchedEffect(positioned, previewId) {
             // A newly submitted local preview is an action in this chat. A restored preview
