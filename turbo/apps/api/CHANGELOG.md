@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.103.0](https://github.com/okou-ai/okou/compare/api-v2.102.0...api-v2.103.0) (2026-11-22)
+
+
+### Features
+
+* **android:** add the workspace artifacts page ([#49864](https://github.com/okou-ai/okou/issues/49864)) ([f0babd9](https://github.com/okou-ai/okou/commit/f0babd9a5b1d68fef595bc35d6944d3859e593f2))
+* **api:** accept device OAuth for private voice uploads ([#49908](https://github.com/okou-ai/okou/issues/49908)) ([a5b394d](https://github.com/okou-ai/okou/commit/a5b394d5308926d9cd9b03e0b6e8a21c9e010a53))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.100.0
+    * @okouai/core bumped to 8.859.1
+    * @okouai/db bumped to 2.58.1
+    * @okouai/pi-agent-runtime bumped to 1.52.31
+
 ## [2.102.0](https://github.com/okou-ai/okou/compare/api-v2.101.2...api-v2.102.0) (2026-11-22)
 
 

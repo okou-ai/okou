@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.11](https://github.com/okou-ai/okou/compare/ios-v0.51.10...ios-v0.51.11) (2026-11-22)
+
+
+### Bug Fixes
+
+* **ios:** render member-scoped connector permission cards ([#49914](https://github.com/okou-ai/okou/issues/49914)) ([8bc9d40](https://github.com/okou-ai/okou/commit/8bc9d4097ec91dac14bc33e3d5fe752b3a5c645b))
+
 ## [0.51.10](https://github.com/okou-ai/okou/compare/ios-v0.51.9...ios-v0.51.10) (2026-11-22)
 
 
