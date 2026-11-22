@@ -108,6 +108,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.LifecycleResumeEffect
 
 @Composable
@@ -156,21 +157,26 @@ internal fun WorkflowScreen(
     }
     BackHandler(onBack = ::back)
     if (discard) {
+        val actionColors =
+            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
         AlertDialog(
             onDismissRequest = { discard = false },
+            modifier = Modifier.padding(horizontal = 24.dp).widthIn(max = 360.dp).fillMaxWidth(),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
             title = { Text(stringResource(R.string.workflow_discard_title)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         discard = false
                         model.edit(null)
-                    }
+                    },
+                    colors = actionColors,
                 ) {
                     Text(stringResource(R.string.workflow_discard))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { discard = false }) {
+                TextButton(onClick = { discard = false }, colors = actionColors) {
                     Text(stringResource(R.string.workflow_keep_editing))
                 }
             },
