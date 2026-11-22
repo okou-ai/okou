@@ -407,6 +407,7 @@ internal fun OkouApp(
         if (artifactSource != null && !fromLink) closeArtifacts(restoreFocus = false)
         val search =
             when {
+                fromLink -> navigation.search
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
                 !fromSearch && navigation.search == SearchRoute.Open -> SearchRoute.Open
                 else -> SearchRoute.Closed

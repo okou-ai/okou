@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -131,21 +132,10 @@ class ChatListRootTest {
         awaitListAndNames()
         compose.onNodeWithText("Personal chat").performClick()
         val source = compose.onNodeWithText("Read ", substring = true)
-        compose.waitUntil(10_000) {
-            compose
-                .onAllNodesWithText("Project update", substring = true)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
+        val link = awaitInlineLink("Project update")
         val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
         editor.performTextInput("Source draft")
         val sourceBounds = source.getUnclippedBoundsInRoot()
-        val link =
-            compose.onNode(
-                SemanticsMatcher.keyIsDefined(SemanticsProperties.LinkTestMarker) and
-                    hasAnyAncestor(hasText("Project update", substring = true)),
-                useUnmergedTree = true,
-            )
         link.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         link.performKeyInput { pressKey(Key.Enter) }
         compose.waitUntil(10_000) {
@@ -170,9 +160,35 @@ class ChatListRootTest {
         source.assertIsDisplayed()
         assertEquals(sourceBounds, source.getUnclippedBoundsInRoot())
         link.assertIsFocused()
+        awaitInlineLink("Unavailable conversation")
         compose.onNodeWithText("Unavailable conversation", substring = true).performFirstLinkClick()
         compose.onNodeWithText("This conversation link is unavailable").assertIsDisplayed()
         editor.assertTextContains("Source draft")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun returningThroughAnInlineLinkPreservesTheWorkspaceSearch() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT)"
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val query = compose.onNodeWithTag("chat_search_query")
+        query.performTextInput("personal")
+        compose.waitUntilExactlyOneExists(hasText("Personal chat"), 10_000)
+        compose.onNodeWithText("Personal chat").performClick()
+        val link = hasText("Project update", substring = true)
+        awaitInlineLink("Project update")
+        compose.onNode(link).performFirstLinkClick()
+        compose.waitUntilExactlyOneExists(hasText("Project chat"), 10_000)
+
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntilExactlyOneExists(link, 10_000)
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        query.assertIsDisplayed().assertTextContains("personal")
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
     }
 
     @Test
@@ -183,12 +199,7 @@ class ChatListRootTest {
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithText("Personal chat").performClick()
-        compose.waitUntil(10_000) {
-            compose
-                .onAllNodesWithText("Release notes", substring = true)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
+        awaitInlineLink("Release notes")
         val text = compose.onNodeWithText("Release notes", substring = true)
         val layouts = mutableListOf<TextLayoutResult>()
         text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
@@ -206,6 +217,16 @@ class ChatListRootTest {
         assertEquals(android.content.Intent.ACTION_VIEW, intent.action)
         assertEquals("https://example.org/releases?version=2", intent.dataString)
         text.assertIsDisplayed()
+    }
+
+    private fun awaitInlineLink(label: String): SemanticsNodeInteraction {
+        val link =
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.LinkTestMarker) and
+                hasAnyAncestor(hasText(label, substring = true))
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(link, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+        }
+        return compose.onNode(link, useUnmergedTree = true)
     }
 
     @Before
