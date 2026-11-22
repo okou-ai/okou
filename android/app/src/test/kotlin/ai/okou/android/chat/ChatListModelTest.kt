@@ -582,6 +582,44 @@ class ChatListModelTest {
     }
 
     @Test
+    fun anUnreadUndoWithALostResponseSettlesTheOriginalReadProjection() = runTest {
+        val earlierReadback = CompletableDeferred<Indicators>()
+        val unread =
+            Indicators(
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to CHAT_DATE),
+            )
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+
+                    override suspend fun markUnread(threadId: String): ReadState {
+                        statusRead = { unread }
+                        throw ApiFailure.Network(IOException("Response lost"))
+                    }
+                }
+                .apply { statusRead = { unread } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.selectFilter(ChatListFilter.Unread)
+            source.statusRead = { earlierReadback.await() }
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+
+            model.undoRowAction(checkNotNull(model.uiState.value.rowUndo))
+            runCurrent()
+            assertEquals(ChatUndoPhase.Checking, model.uiState.value.rowUndo?.phase)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            earlierReadback.complete(Indicators(emptyMap(), emptyMap()))
+            advanceUntilIdle()
+            assertNull(model.uiState.value.rowUndo)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
     fun connectivityChangesWhileUndoWaitsForAnEarlierReadDoNotDropTheRequest() = runTest {
         val connectivity = MutableStateFlow(true)
         val displayedRead = CompletableDeferred<Unit>()
@@ -1420,6 +1458,41 @@ class ChatListModelTest {
                 assertEquals(connectionFailed, state.isUnread(CHAT_PERSONAL))
                 assertEquals(ChatMarkAllReadResult(0, 1, connectionFailed), state.markAllReadResult)
             }
+        }
+    }
+
+    @Test
+    fun aBulkReadConnectionFailureCannotPublishAnEarlierUnconfirmedRead() = runTest {
+        var attempts = 0
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        if (++attempts == 1) throw ApiFailure.Network(IOException("Response lost"))
+                        throw ApiFailure.Network(ConnectException("Unreachable"))
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            source.statusRead = { throw IOException("Status unavailable") }
+            model.markAllRead()
+            advanceUntilIdle()
+            assertEquals(ChatMarkAllReadResult(0, 1), model.uiState.value.markAllReadResult)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.markAllRead()
+            advanceUntilIdle()
+            assertEquals(2, attempts)
+            assertEquals(ChatMarkAllReadResult(0, 1, true), model.uiState.value.markAllReadResult)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
         }
     }
 

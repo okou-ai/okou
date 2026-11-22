@@ -413,6 +413,7 @@ class ChatListModel(
         val intent: ChatReadIntent,
         val receiptCoversIntent: Boolean,
         val reportFailure: Boolean,
+        val projectedIntent: ChatReadIntent? = null,
         val rejected: Boolean = false,
         val connectionFailed: Boolean = false,
     ) {
@@ -700,12 +701,12 @@ class ChatListModel(
                         error is ApiFailure.Http && error.status in 400..499 && error.status != 408
                 ) {
                     val state = mutable.value
-                    // A preceding write can still be awaiting its readback.
-                    val earlier = readConfirmations[threadId]?.intent
+                    val earlier = readConfirmations[threadId]?.projectedIntent
                     mutable.value =
                         state.copy(
                             readIntents =
-                                if (earlier == null) state.readIntents - threadId
+                                if (state.readIntents[threadId] !== intent) state.readIntents
+                                else if (earlier == null) state.readIntents - threadId
                                 else state.readIntents + (threadId to earlier),
                             failedRowAction =
                                 if (reportFailure)
@@ -727,10 +728,13 @@ class ChatListModel(
                 false
             }
         requireCurrent()
-        return ReadConfirmation(intent, received, reportFailure).also {
+        val state = mutable.value
+        val publish = received && publishOnReceipt
+        // A write awaiting confirmation can leave an earlier projection visible until readback.
+        val projectedIntent = if (publish) intent else state.readIntents[threadId]
+        return ReadConfirmation(intent, received, reportFailure, projectedIntent).also {
             readConfirmations[threadId] = it
-            if (received && publishOnReceipt) {
-                val state = mutable.value
+            if (publish) {
                 mutable.value = state.copy(readIntents = state.readIntents + (threadId to intent))
             }
         }
@@ -1680,7 +1684,8 @@ class ChatListModel(
                         confirmation.observedUnread =
                             confirmation.intent.action == ChatRowAction.MarkUnread &&
                                 id in result.unreadAt
-                        if (state.readIntents[id] === confirmation.intent) {
+                        val projectedIntent = confirmation.projectedIntent
+                        if (projectedIntent != null && state.readIntents[id] === projectedIntent) {
                             settledVisible.add(id)
                             if (
                                 confirmation.reportFailure &&
