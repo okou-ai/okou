@@ -93,12 +93,16 @@ internal fun HistoryMarkdown(
     highlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
 ) =
-    key(source, artifacts != null) {
+    key(source, artifacts != null, links != null) {
         val rendered by
             produceState<List<HistoryMarkdownBlock>?>(null) {
                 value =
                     withContext(Dispatchers.Default) {
-                        historyMarkdownBlocks(source, artifacts != null)
+                        historyMarkdownBlocks(
+                            source,
+                            artifactCards = artifacts != null,
+                            interactiveLinks = links != null,
+                        )
                     }
             }
         val blocks = rendered
@@ -336,7 +340,8 @@ private fun HistoryMarkdownBlock.findText(): String =
 internal fun conversationMarkdownFindPassages(
     source: String,
     artifactCards: Boolean,
-): List<String> = historyMarkdownBlocks(source, artifactCards).map { it.findText() }
+): List<String> =
+    historyMarkdownBlocks(source, artifactCards, interactiveLinks = true).map { it.findText() }
 
 private val historyMarkdownParser =
     Parser.builder().extensions(listOf(TablesExtension.create())).build()
@@ -346,17 +351,20 @@ private val artifactMarkdownParser = Parser.builder().build()
 private fun historyMarkdownBlocks(
     source: String,
     artifactCards: Boolean,
+    interactiveLinks: Boolean,
 ): List<HistoryMarkdownBlock> =
     historyMarkdownParser
         .parse(source)
         .children()
-        .map { it.historyMarkdownBlock(artifactCards) }
+        .map { it.historyMarkdownBlock(artifactCards, interactiveLinks) }
         .toList()
 
-private fun Node.historyMarkdownBlock(artifactCards: Boolean): HistoryMarkdownBlock =
+private fun Node.historyMarkdownBlock(
+    artifactCards: Boolean,
+    interactiveLinks: Boolean,
+): HistoryMarkdownBlock =
     when (this) {
-        is TableBlock ->
-            HistoryMarkdownBlock.Table(historyMarkdownRows(this, interactiveLinks = true))
+        is TableBlock -> HistoryMarkdownBlock.Table(historyMarkdownRows(this, interactiveLinks))
         is ListBlock -> {
             val startNumber = (this as? OrderedList)?.markerStartNumber
             HistoryMarkdownBlock.ListItems(
@@ -365,7 +373,10 @@ private fun Node.historyMarkdownBlock(artifactCards: Boolean): HistoryMarkdownBl
                         val marker = if (startNumber == null) "•" else "${startNumber + index}."
                         HistoryMarkdownListItem(
                             marker,
-                            item.children().map { it.historyMarkdownBlock(artifactCards) }.toList(),
+                            item
+                                .children()
+                                .map { it.historyMarkdownBlock(artifactCards, interactiveLinks) }
+                                .toList(),
                         )
                     }
                     .toList()
@@ -376,7 +387,7 @@ private fun Node.historyMarkdownBlock(artifactCards: Boolean): HistoryMarkdownBl
                 renderHistoryMarkdownNode(
                     this,
                     artifactCards = artifactCards,
-                    interactiveLinks = true,
+                    interactiveLinks = interactiveLinks,
                 )
             HistoryMarkdownBlock.Paragraph(
                 rendered.subSequence(0, rendered.text.trimEnd('\n').length),
