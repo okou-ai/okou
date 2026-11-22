@@ -50,6 +50,7 @@
     <string name="connector_impact_failed">暂时无法检查此账号的使用情况。</string>
     <string name="connector_offline">离线</string>
     <string name="connector_offline_action">联网后可以管理账号。</string>
+    <string name="connector_account_unavailable">此账号已不可用。</string>
     <string name="connector_unavailable">此账号暂时无法授权。</string>
     <string name="connector_no_method">此服务暂未提供账号连接操作。</string>
     <string name="connector_authorization">%1$s · %2$s</string>

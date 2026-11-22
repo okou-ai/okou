@@ -51,7 +51,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -92,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 
@@ -109,9 +109,9 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
     val wide = listWidth != null
     val selected = route.slug
 
-    DisposableEffect(model) {
+    LifecycleStartEffect(model) {
         model.setOpen(true)
-        onDispose { model.setOpen(false) }
+        onStopOrDispose { model.setOpen(false) }
     }
     LaunchedEffect(model, selected) { model.select(selected) }
     LaunchedEffect(model, filter) { model.setFilter(filter) }
@@ -319,7 +319,7 @@ private fun ConnectorDirectory(
                 item {
                     when {
                         entries == null ->
-                            if (!state.offline && read.failures == 0) {
+                            if (!state.offline && read.failure == null) {
                                 key(route.connected, filter) {
                                     ConnectorSkeleton(
                                         stringResource(R.string.connector_loading),
@@ -382,7 +382,7 @@ private fun ConnectorDirectory(
             }
         }
         if (state.offline) ConnectorStatusBanner(R.string.connector_offline)
-        else if (read.failures >= 3 && !entries.isNullOrEmpty()) {
+        else if (entries != null && read.failure == ConnectorReadFailure.Sustained) {
             ConnectorStatusBanner(R.string.connector_refresh_failed)
         }
     }

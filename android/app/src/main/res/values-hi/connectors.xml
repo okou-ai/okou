@@ -50,6 +50,7 @@
     <string name="connector_impact_failed">यह नहीं जाँचा जा सका कि इस खाते का इस्तेमाल कहाँ हो रहा है।</string>
     <string name="connector_offline">ऑफ़लाइन</string>
     <string name="connector_offline_action">खातों को प्रबंधित करने के लिए इंटरनेट से कनेक्ट करें।</string>
+    <string name="connector_account_unavailable">यह खाता अब उपलब्ध नहीं है।</string>
     <string name="connector_unavailable">इस खाते को अनुमति नहीं दी जा सकती।</string>
     <string name="connector_no_method">इस सेवा का खाता यहाँ सेट अप नहीं किया जा सकता।</string>
     <string name="connector_authorization">%1$s · %2$s</string>

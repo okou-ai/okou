@@ -50,6 +50,7 @@
     <string name="connector_impact_failed">Could not check where this account is used.</string>
     <string name="connector_offline">Offline</string>
     <string name="connector_offline_action">Connect to the internet to manage accounts.</string>
+    <string name="connector_account_unavailable">This account is no longer available.</string>
     <string name="connector_unavailable">Authorization is unavailable for this account.</string>
     <string name="connector_no_method">This service has no account setup action here.</string>
     <string name="connector_authorization">%1$s · %2$s</string>

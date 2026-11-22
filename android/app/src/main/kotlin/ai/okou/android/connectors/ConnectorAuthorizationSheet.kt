@@ -104,8 +104,8 @@ internal fun ConnectorAuthorizationSheet(
     val canContinue = canDismiss && action?.reconciling != true && !offline
     when (val step = action?.authorization) {
         is ConnectorAuthorization.Browser -> {
-            LaunchedEffect(step, action.busy, action.browserOpened, action.problem) {
-                if (!action.busy && !action.browserOpened && action.problem == null)
+            LaunchedEffect(step, canContinue, action.browserOpened, action.problem) {
+                if (canContinue && !action.browserOpened && action.problem == null)
                     continueInBrowser()
             }
             Text(stringResource(R.string.connector_return_browser), style = connectorBodyType())

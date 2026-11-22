@@ -30,11 +30,12 @@ internal class ConnectorApiFixture : Closeable {
     private val https = FixtureHttpsServer()
     private val api: ApiClient
     val service: ConnectorService
-    val discoveryRequested = CountDownLatch(1)
+    @Volatile var discoveryRequested = CountDownLatch(1)
     @Volatile var discoveryGate: CountDownLatch? = null
     @Volatile var failDiscovery = false
     @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
+    @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
     private val entries = buildList {
         add(
@@ -291,6 +292,7 @@ internal class ConnectorApiFixture : Closeable {
             }
             parts.getOrNull(1) == "connector-accounts" &&
                 parts.getOrNull(2) == "oauth-completions" -> {
+                if (failOauthCompletion) return rejected(503)
                 val id = oauthCompletion ?: return rejected(404)
                 if (parts.last() != CONNECTOR_OAUTH_ATTEMPT || accounts[id]?.slug != querySlug)
                     return rejected(404)

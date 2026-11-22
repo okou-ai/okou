@@ -50,6 +50,7 @@
     <string name="connector_impact_failed">Penggunaan akun ini tidak dapat diperiksa.</string>
     <string name="connector_offline">Offline</string>
     <string name="connector_offline_action">Sambungkan ke internet untuk mengelola akun.</string>
+    <string name="connector_account_unavailable">Akun ini tidak lagi tersedia.</string>
     <string name="connector_unavailable">Otorisasi tidak tersedia untuk akun ini.</string>
     <string name="connector_no_method">Penyiapan akun untuk layanan ini tidak tersedia di sini.</string>
     <string name="connector_authorization">%1$s · %2$s</string>

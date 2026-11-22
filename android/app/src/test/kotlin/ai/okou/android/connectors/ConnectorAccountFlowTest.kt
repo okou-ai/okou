@@ -92,11 +92,28 @@ class ConnectorAccountFlowTest {
         compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
 
-        awaitText("Authorization is unavailable for this account.")
+        awaitText("This account is no longer available.")
         compose.onNodeWithText("Continue to provider").assertDoesNotExist()
         compose.onNodeWithText("Close").performClick()
         compose.onNodeWithText("工作日历").assertExists()
     }
+
+    @Test
+    fun removingTheAccountWhileRenamingLeavesADismissibleExplanation() =
+        withCalendar { fixture, _ ->
+            compose.onNodeWithText("工作日历").performClick()
+            compose.onNodeWithText("Rename").performClick()
+            compose.onNodeWithText("Rename account").assertIsDisplayed()
+
+            fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+
+            awaitText("This account is no longer available.")
+            compose.onNodeWithText("Rename account").assertDoesNotExist()
+            compose.onNodeWithText("Close").performClick()
+            compose.onNodeWithText("协作日历").assertIsDisplayed()
+        }
 
     @Test
     fun anUnconfirmedRenameCanBeDismissedAndStillReconcilesOnReconnect() =

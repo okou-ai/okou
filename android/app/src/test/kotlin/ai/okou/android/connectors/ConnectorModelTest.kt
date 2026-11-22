@@ -12,10 +12,13 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -26,6 +29,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -56,6 +60,28 @@ class ConnectorModelTest {
                 ConnectorAccountStatus.Connected,
                 connected.accountsFor("gmail").single().status,
             )
+        }
+
+    @Test
+    fun aTemporaryBrowserReceiptReadFailureRetriesTheSameAuthorization() =
+        withModel("gmail") { fixture, model ->
+            model.startAuthorization(null, "oauth", emptyMap())
+            model.await {
+                it.action?.busy == false &&
+                    it.action.authorization is ConnectorAuthorization.Browser
+            }
+            model.openBrowser { true }
+            fixture.failOauthCompletion = true
+            model.resume()
+            model.await {
+                it.action?.busy == false &&
+                    it.action.problem == ConnectorProblem.VerificationPending
+            }
+
+            fixture.authorizeGmail()
+            fixture.failOauthCompletion = false
+            val connected = model.await { it.action?.result == ConnectorResult.Authorized }
+            assertEquals(CONNECTOR_GMAIL_ACCOUNT, connected.action?.target?.connectionId)
         }
 
     @Test
@@ -121,7 +147,7 @@ class ConnectorModelTest {
     fun connectedAccountsRefreshWhileDiscoveryIsRetrying() =
         withModel(CONNECTOR_CALENDAR, configure = { it.failDiscovery = true }) { fixture, model ->
             model.await {
-                it.browse.failures > 0 &&
+                it.browse.failure != null &&
                     it.accountsFor("slack").singleOrNull()?.status ==
                         ConnectorAccountStatus.Reauthorize
             }
@@ -133,9 +159,39 @@ class ConnectorModelTest {
             assertEquals(2, refreshed.accountsFor(CONNECTOR_CALENDAR).size)
         }
 
+    @Test
+    fun reconnectClearsTheReadFailureWhileKeepingTheLastResultsDuringRefresh() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->
+            val cached = model.await { it.browse.data != null }.browse.data
+            fixture.failDiscovery = true
+            model.resume()
+            model.await { it.browse.failure != null }
+            online.value = false
+            model.await { it.offline }
+
+            val requested = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            fixture.discoveryRequested = requested
+            fixture.discoveryGate = release
+            fixture.failDiscovery = false
+            online.value = true
+            try {
+                withContext(Dispatchers.IO) { assertTrue(requested.await(10, TimeUnit.SECONDS)) }
+                val refreshing = model.uiState.value
+                assertFalse(refreshing.offline)
+                assertEquals(cached, refreshing.browse.data)
+                assertNull(refreshing.browse.failure)
+            } finally {
+                release.countDown()
+            }
+        }
+    }
+
     private fun withModel(
         slug: String,
         configure: (ConnectorApiFixture) -> Unit = {},
+        connectivity: Flow<Boolean> = emptyFlow(),
         exercise: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
     ) = runBlocking {
         ConnectorApiFixture().use { fixture ->
@@ -153,7 +209,7 @@ class ConnectorModelTest {
                                             initializer {
                                                 ConnectorModel(
                                                     fixture.service,
-                                                    emptyFlow(),
+                                                    connectivity,
                                                     { true },
                                                 ) {
                                                     throw AssertionError(

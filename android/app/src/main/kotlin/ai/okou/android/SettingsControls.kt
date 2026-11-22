@@ -33,7 +33,6 @@ import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberBottomSheetState
@@ -50,6 +49,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -220,19 +221,31 @@ internal fun SettingsSwitchRow(
         }
         Box(Modifier.width(52.dp)) {
             if (checked != null) {
-                val outline = MaterialTheme.colorScheme.onSurfaceVariant
-                Switch(
-                    checked,
-                    onCheckedChange = null,
-                    enabled = onCheckedChange != null,
-                    colors =
-                        SwitchDefaults.colors(
-                            uncheckedThumbColor = outline,
-                            uncheckedBorderColor = outline,
-                        ),
-                )
+                OkouSwitch(checked, enabled = onCheckedChange != null)
             }
         }
+    }
+}
+
+@Composable
+internal fun OkouSwitch(checked: Boolean, enabled: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    val dark = LocalOkouDarkMode.current
+    val activity = LocalActivityStatusColor.current
+    val switchColors =
+        remember(colors, dark, activity) {
+            colors.copy(
+                primary = if (dark) colors.primary else activity,
+                onPrimary = if (dark) colors.onPrimary else Color.White,
+                surfaceContainerHighest =
+                    colors.onSurface
+                        .copy(alpha = if (dark) 0.16f else 0.12f)
+                        .compositeOver(colors.surface),
+                outline = colors.onSurface.copy(alpha = 0.64f).compositeOver(colors.surface),
+            )
+        }
+    MaterialTheme(colorScheme = switchColors) {
+        Switch(checked = checked, enabled = enabled, onCheckedChange = null)
     }
 }
 

@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.OkouSwitch
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.chat.ChatSkeletonBlock
@@ -31,8 +32,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -76,6 +75,7 @@ internal fun ConnectorDetails(
     val detail = state.detail.data
     val entry = detail?.entry ?: preview
     val accounts = state.accounts.data ?: entry?.slug?.let(state::accountsFor).orEmpty()
+    val hasAccountContent = state.accounts.data != null || accounts.isNotEmpty()
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
     var confirmingDisconnect by remember { mutableStateOf(false) }
@@ -231,20 +231,15 @@ internal fun ConnectorDetails(
                     }
                 }
 
-                if (
-                    state.accounts.data == null &&
-                        accounts.isEmpty() &&
-                        state.accounts.failures == 0 &&
-                        !state.offline
-                ) {
-                    ConnectorSkeleton(stringResource(R.string.connector_loading_accounts), rows = 1)
-                }
-                if (
-                    state.accounts.failures > 0 &&
-                        (state.accounts.data == null || state.accounts.failures >= 3) &&
-                        !state.offline
-                ) {
-                    ConnectorStatusBanner(R.string.connector_accounts_failed)
+                if (!hasAccountContent && !state.offline) {
+                    if (state.accounts.failure == null) {
+                        ConnectorSkeleton(
+                            stringResource(R.string.connector_loading_accounts),
+                            rows = 1,
+                        )
+                    } else {
+                        ConnectorStatusBanner(R.string.connector_accounts_failed)
+                    }
                 }
                 if (detail != null && state.accounts.data != null) {
                     Spacer(Modifier.height(8.dp))
@@ -288,13 +283,17 @@ internal fun ConnectorDetails(
                     }
                 }
                 if (state.offline) ConnectorStatusBanner(R.string.connector_offline_action)
-                else if (
-                    state.detail.failures > 0 && (detail == null || state.detail.failures >= 3)
-                ) {
+                else if (detail == null && state.detail.failure != null) {
                     ConnectorStatusBanner(R.string.connector_load_failed)
+                } else if (
+                    state.detail.failure == ConnectorReadFailure.Sustained ||
+                        hasAccountContent &&
+                            state.accounts.failure == ConnectorReadFailure.Sustained
+                ) {
+                    ConnectorStatusBanner(R.string.connector_refresh_failed)
                 }
                 if (panel == null) ConnectorActionFeedback(action)
-            } else if (!state.offline && state.detail.failures == 0) {
+            } else if (!state.offline && state.detail.failure == null) {
                 if (rememberChatWaitIndicator(waiting = true)) {
                     val label = stringResource(R.string.connector_loading)
                     Column(
@@ -320,6 +319,17 @@ internal fun ConnectorDetails(
 
     if (panel != null && entry != null) {
         ConnectorSheet(::dismissPanel, dismissible = !busy) {
+            if (panel != ConnectorPanel.Permissions && accountId != null && account == null) {
+                ConnectorStatusBanner(R.string.connector_account_unavailable)
+                ConnectorActionFeedback(action)
+                ConnectorButton(
+                    stringResource(R.string.updates_close),
+                    ::dismissPanel,
+                    enabled = !busy,
+                    treatment = ConnectorButtonTreatment.Text,
+                )
+                return@ConnectorSheet
+            }
             when (panel) {
                 ConnectorPanel.Permissions ->
                     ConnectorPermissionSheet(
@@ -353,7 +363,7 @@ internal fun ConnectorDetails(
                                 model.prepareDisconnect(account.id)
                             },
                         )
-                    } else ConnectorStatusBanner(R.string.connector_unavailable)
+                    }
                 ConnectorPanel.Rename ->
                     if (account != null) {
                         ConnectorRenameSheet(
@@ -365,16 +375,7 @@ internal fun ConnectorDetails(
                         )
                     }
                 ConnectorPanel.Authorize ->
-                    if (accountId != null && account == null) {
-                        ConnectorStatusBanner(R.string.connector_unavailable)
-                        ConnectorActionFeedback(action)
-                        ConnectorButton(
-                            stringResource(R.string.updates_close),
-                            ::dismissPanel,
-                            enabled = !busy,
-                            treatment = ConnectorButtonTreatment.Text,
-                        )
-                    } else if (detail != null) {
+                    if (detail != null) {
                         ConnectorAuthorizationSheet(
                             model,
                             detail,
@@ -505,10 +506,8 @@ private fun ConnectorPermissionSheet(
     Text(stringResource(R.string.connector_permissions_copy), style = connectorBodyType())
     when {
         permissions.data == null -> {
-            if (offline) ConnectorStatusBanner(R.string.connector_offline)
-            else if (permissions.failures > 0)
-                ConnectorStatusBanner(R.string.connector_permissions_failed)
-            else ConnectorSkeleton(stringResource(R.string.connector_loading_permissions), rows = 1)
+            if (!offline && permissions.failure == null)
+                ConnectorSkeleton(stringResource(R.string.connector_loading_permissions), rows = 1)
         }
         permissions.data.isEmpty() ->
             Text(stringResource(R.string.connector_no_permissions), style = connectorFeedbackType())
@@ -533,6 +532,13 @@ private fun ConnectorPermissionSheet(
                     }
                 }
             }
+    }
+    when {
+        offline -> ConnectorStatusBanner(R.string.connector_offline)
+        permissions.data == null && permissions.failure != null ->
+            ConnectorStatusBanner(R.string.connector_permissions_failed)
+        permissions.failure == ConnectorReadFailure.Sustained ->
+            ConnectorStatusBanner(R.string.connector_refresh_failed)
     }
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
         ConnectorButton(
@@ -629,19 +635,7 @@ private fun ConnectorDefaultSwitch(
             color = color.onSurface.copy(alpha = if (enabled) 1f else 0.38f),
             style = connectorBodyType(),
         )
-        Switch(
-            checked = checked,
-            enabled = enabled,
-            onCheckedChange = null,
-            colors =
-                SwitchDefaults.colors(
-                    checkedTrackColor = color.primary,
-                    checkedThumbColor = color.onPrimary,
-                    uncheckedTrackColor = color.surfaceContainerHighest,
-                    uncheckedThumbColor = color.onSurfaceVariant,
-                    uncheckedBorderColor = color.onSurfaceVariant,
-                ),
-        )
+        OkouSwitch(checked, enabled)
     }
 }
 
@@ -743,7 +737,7 @@ private fun ConnectorDisconnectDialog(
                         )
                     }
                     offline -> ConnectorStatusBanner(R.string.connector_offline_action)
-                    impact != null && impact.failures > 0 ->
+                    impact?.failure != null ->
                         ConnectorStatusBanner(R.string.connector_impact_failed)
                     count == null -> ConnectorProgress(R.string.connector_loading_impact)
                 }

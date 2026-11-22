@@ -50,6 +50,7 @@
     <string name="connector_impact_failed">暫時無法檢查此帳號的使用情況。</string>
     <string name="connector_offline">離線</string>
     <string name="connector_offline_action">連上網路後即可管理帳號。</string>
+    <string name="connector_account_unavailable">此帳號已無法使用。</string>
     <string name="connector_unavailable">此帳號暫時無法授權。</string>
     <string name="connector_no_method">此服務目前沒有提供帳號連接操作。</string>
     <string name="connector_authorization">%1$s · %2$s</string>

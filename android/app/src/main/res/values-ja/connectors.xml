@@ -50,6 +50,7 @@
     <string name="connector_impact_failed">このアカウントの利用先を確認できませんでした。</string>
     <string name="connector_offline">オフライン</string>
     <string name="connector_offline_action">アカウントを管理するにはインターネットに接続してください。</string>
+    <string name="connector_account_unavailable">このアカウントは利用できなくなりました。</string>
     <string name="connector_unavailable">このアカウントは認証できません。</string>
     <string name="connector_no_method">このサービスのアカウント設定はここでは利用できません。</string>
     <string name="connector_authorization">%1$s · %2$s</string>

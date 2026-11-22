@@ -50,6 +50,7 @@
     <string name="connector_impact_failed">Não foi possível verificar onde esta conta é usada.</string>
     <string name="connector_offline">Sem conexão</string>
     <string name="connector_offline_action">Conecte-se à internet para gerenciar as contas.</string>
+    <string name="connector_account_unavailable">Esta conta não está mais disponível.</string>
     <string name="connector_unavailable">A autorização não está disponível para esta conta.</string>
     <string name="connector_no_method">Não há uma opção de configuração de conta para este serviço aqui.</string>
     <string name="connector_authorization">%1$s · %2$s</string>
