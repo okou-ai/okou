@@ -14,6 +14,7 @@ import ai.okou.android.awaitChatList
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
 import android.app.LocaleManager
+import android.graphics.Rect
 import android.view.KeyEvent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -135,7 +136,7 @@ class ScreenshotScenario {
                     capture("05-default-model-keyboard.png")
 
                     device.pressBack()
-                    device.executeShellCommand("wm size 1080x1050")
+                    device.executeShellCommand("wm size 1080x950")
                     check(device.wait(object : Condition<UiDevice, Boolean> {
                         override fun apply(device: UiDevice): Boolean {
                             var ready = false
@@ -149,14 +150,25 @@ class ScreenshotScenario {
                         openSettings()
                     }
                     clickable(text(R.string.settings_default_model)).click()
-                    text(R.string.settings_auto_model_detail)
-                    val titleBounds = text(R.string.settings_default_model).visibleBounds
-                    check(titleBounds.top < 145) { "Short window should show the full-screen header" }
-                    val options = checkNotNull(device.findObject(By.pkg(app.packageName).scrollable(true)))
-                    options.scroll(Direction.DOWN, 0.85f)
-                    text(R.string.settings_model_fast)
-                    check(text(R.string.settings_default_model).visibleBounds == titleBounds)
+                    val autoDetail = text(R.string.settings_auto_model_detail)
+                    val autoTop = autoDetail.visibleBounds.top
+                    val titleBounds = headingBounds(R.string.settings_default_model)
+                    check(titleBounds.top < 145) { "Expected a full-screen header at $titleBounds" }
+                    val options = generateSequence(autoDetail) { it.parent }
+                        .first { it.isScrollable }.visibleBounds
+                    check(device.swipe(
+                        options.centerX(), options.bottom - 40,
+                        options.centerX(), options.top + 40, 30,
+                    ))
+                    val fast = By.pkg(app.packageName).text(app.getString(R.string.settings_model_fast))
+                    checkNotNull(device.wait(Until.findObject(fast), TIMEOUT))
                     capture("06-default-model-short-window.png")
+                    val after = headingBounds(R.string.settings_default_model)
+                    check(after.top == titleBounds.top) { "Header moved from $titleBounds to $after" }
+                    val auto = By.pkg(app.packageName).text(app.getString(R.string.settings_auto_model_detail))
+                    check(device.findObject(auto)?.visibleBounds?.top?.let { it < autoTop } != false) {
+                        "Options did not scroll"
+                    }
                 }
             } finally {
                 app.connectivity.value = oldOnline
@@ -178,6 +190,14 @@ class ScreenshotScenario {
 
     private fun clickable(node: UiObject2) =
         generateSequence(node) { it.parent }.first { it.isClickable }
+
+    private fun headingBounds(resource: Int): Rect {
+        val label = app.getString(resource)
+        val heading = checkNotNull(instrumentation.uiAutomation.rootInActiveWindow)
+            .findAccessibilityNodeInfosByText(label)
+            .single { it.text?.toString() == label && it.isHeading }
+        return Rect().also(heading::getBoundsInScreen)
+    }
 
     private fun openSettings() {
         val settings = device.findObject(By.pkg(app.packageName).desc(app.getString(R.string.settings)))
