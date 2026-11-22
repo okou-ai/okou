@@ -79,8 +79,9 @@ internal fun HistoryMarkdown(
             val whole = highlight.takeIf { hit < 0 }
             HistoryMarkdownBlocks(
                 blocks,
-                if (whole == null) style
-                else style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer),
+                if (whole?.target?.highlighted == true)
+                    style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
+                else style,
                 Modifier.conversationFindHighlight(whole),
                 hit,
                 highlight,
@@ -109,12 +110,13 @@ private fun HistoryMarkdownBlocks(
         for ((index, block) in blocks.withIndex()) {
             val selected = highlight.takeIf { index == hit }
             val blockModifier = Modifier.conversationFindHighlight(selected)
+            val highlighted = selected?.target?.highlighted == true
             val contentStyle =
-                if (selected == null) style
-                else style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
+                if (highlighted) style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
+                else style
             when (block) {
                 is HistoryMarkdownBlock.Table ->
-                    HistoryMarkdownTable(block.rows, blockModifier, selected != null)
+                    HistoryMarkdownTable(block.rows, blockModifier, highlighted)
                 is HistoryMarkdownBlock.ListItems ->
                     Column(blockModifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (item in block.items) {
