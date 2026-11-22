@@ -108,11 +108,31 @@ class ScreenshotScenario {
         onDevice("short", 820, 380, 2f) { _ ->
             description("筛选服务类别").click()
             action("开发者工具").click()
-            text("Manual setup sample").click()
+            val directory =
+                find(
+                    By.pkg(app.packageName)
+                        .scrollable(true)
+                        .hasDescendant(By.text("Device authorization sample")),
+                    "filtered Connector directory",
+                )
+            checkNotNull(
+                    directory.scrollUntil(
+                        Direction.DOWN,
+                        Until.findObject(By.text("Manual setup sample")),
+                    )
+                )
+                .click()
+            val detail =
+                find(
+                    By.pkg(app.packageName).scrollable(true).hasDescendant(By.text("账号")),
+                    "Connector detail",
+                )
+            checkNotNull(detail.scrollUntil(Direction.DOWN, Until.findObject(By.text("连接账号"))))
             action("连接账号").click()
             val titleLabel = "连接账号 · Manual setup sample"
             val titleBounds = text(titleLabel).visibleBounds
             val cancelBounds = action("取消").visibleBounds
+            val submitBounds = action("连接账号", enabled = false).visibleBounds
             val scrollBody =
                 find(
                     By.pkg(app.packageName).scrollable(true).hasDescendant(By.text("Workspace")),
@@ -121,6 +141,9 @@ class ScreenshotScenario {
             checkNotNull(scrollBody.scrollUntil(Direction.DOWN, Until.findObject(By.text("Notes"))))
             assertEquals(titleBounds, text(titleLabel).visibleBounds)
             assertEquals(cancelBounds, action("取消").visibleBounds)
+            assertEquals(submitBounds, action("连接账号", enabled = false).visibleBounds)
+            assertTrue(cancelBounds.height() >= 48)
+            assertTrue(submitBounds.height() >= 48)
             capture("authorization-short-large-text.png")
         }
 
