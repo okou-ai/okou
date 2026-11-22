@@ -82,10 +82,10 @@ internal fun ConnectorRenameSheet(
             if (it.trim().length in 1..CONNECTOR_ACCOUNT_NAME_LIMIT) showError = false
         },
         canModify,
+        modifier = Modifier.focusRequester(focus),
         supportingText =
             stringResource(R.string.connector_rename_hint, CONNECTOR_ACCOUNT_NAME_LIMIT),
         errorMessage = errorMessage.takeIf { showError },
-        modifier = Modifier.focusRequester(focus),
     )
     ConnectorActionFeedback(action)
     if (offline) {
@@ -353,11 +353,11 @@ private fun ConnectorInput(
     value: String,
     edit: (String) -> Unit,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
     secret: Boolean = false,
     placeholder: String? = null,
     supportingText: String? = null,
     errorMessage: String? = null,
-    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {

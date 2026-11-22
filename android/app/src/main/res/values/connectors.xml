@@ -36,9 +36,9 @@
     <string name="connector_rename">Rename</string>
     <string name="connector_rename_title">Rename account</string>
     <string name="connector_account_name">Account name</string>
-    <string name="connector_rename_hint">Leading and trailing spaces are removed. Up to %1$d characters.</string>
+    <string name="connector_rename_hint">Leading and trailing spaces are removed. The character limit is %1$d.</string>
     <string name="connector_rename_required">Enter an account name.</string>
-    <string name="connector_rename_too_long">Account name can contain up to %1$d characters.</string>
+    <string name="connector_rename_too_long">The account name exceeds the character limit of %1$d.</string>
     <string name="connector_disconnect">Disconnect account</string>
     <string name="connector_disconnect_title">Disconnect this account?</string>
     <string name="connector_disconnect_copy">Chats and automations using this account may need to choose another connection. Other accounts remain available.</string>
