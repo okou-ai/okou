@@ -9,9 +9,11 @@ import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -54,6 +56,14 @@ class ConnectorAccountFlowTest {
                 useUnmergedTree = true,
             )
             .assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun accountPanelUsesTheSharedWideWidth() = withCalendar { _, _ ->
+        compose.onNodeWithText("工作日历").performClick()
+        compose.onNodeWithTag("connector-sheet").assertIsDisplayed().assertWidthIsEqualTo(460.dp)
+        compose.onNodeWithText("Enable by default").assertIsOn()
     }
 
     @Test

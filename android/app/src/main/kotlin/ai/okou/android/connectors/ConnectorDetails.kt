@@ -1,6 +1,8 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.R
+import ai.okou.android.SettingsModal
+import ai.okou.android.currentWindowSizeDp
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,24 +26,18 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -455,35 +451,26 @@ private fun ConnectorSectionDivider() {
     Spacer(Modifier.height(16.dp))
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConnectorSheet(
     dismiss: () -> Unit,
     dismissible: Boolean,
     content: @Composable () -> Unit,
 ) {
-    val allowDismiss by rememberUpdatedState(dismissible)
-    ModalBottomSheet(
-        onDismissRequest = dismiss,
-        sheetState =
-            rememberBottomSheetState(
-                initialValue = SheetValue.Hidden,
-                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-                confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
-            ),
-        sheetGesturesEnabled = dismissible,
-        properties =
-            ModalBottomSheetProperties(
-                shouldDismissOnBackPress = dismissible,
-                shouldDismissOnClickOutside = dismissible,
-            ),
-        containerColor = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.testTag("connector-sheet"),
-    ) {
+    val windowHeight = currentWindowSizeDp().height.dp
+    val scroll = rememberScrollState()
+    SettingsModal(dismiss, dismissible) { centered ->
         Column(
             Modifier.fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                .heightIn(max = windowHeight * 0.80f)
+                .testTag("connector-sheet")
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = if (centered) 16.dp else 0.dp,
+                    bottom = 16.dp,
+                )
+                .verticalScroll(scroll),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             content()
@@ -567,67 +554,79 @@ private fun ConnectorAccountSheet(
         account.defaultEnabled.takeIf { account.status == ConnectorAccountStatus.Connected }
     if (defaultEnabled == null) ConnectorAccountStatusText(account)
     if (offline) ConnectorStatusBanner(R.string.connector_offline_action)
-    Spacer(Modifier.height(8.dp))
-    if (account.status.needsAttention) {
-        ConnectorAccountAction(
-            stringResource(
-                if (account.status == ConnectorAccountStatus.UpdatePermissions)
-                    R.string.connector_update_permissions
-                else R.string.connector_reauthorize
-            ),
-            enabled = canModify,
-            modifier = Modifier.focusRequester(reauthorizeFocus),
-            onClick = reauthorize,
-        )
-    } else if (defaultEnabled != null) {
-        Row(
-            Modifier.fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .toggleable(
-                    defaultEnabled,
-                    enabled = canModify,
-                    role = Role.Switch,
-                    onValueChange = onDefault,
-                )
-                .padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.connector_default_enabled),
-                Modifier.weight(1f),
-                style = connectorBodyType(),
-            )
-            Switch(
-                checked = defaultEnabled,
+    Column(Modifier.fillMaxWidth()) {
+        if (account.status.needsAttention) {
+            ConnectorAccountAction(
+                stringResource(
+                    if (account.status == ConnectorAccountStatus.UpdatePermissions)
+                        R.string.connector_update_permissions
+                    else R.string.connector_reauthorize
+                ),
                 enabled = canModify,
-                onCheckedChange = null,
-                colors =
-                    SwitchDefaults.colors(
-                        checkedTrackColor = color.primary,
-                        checkedThumbColor = color.onPrimary,
-                        uncheckedTrackColor = color.surfaceContainerHighest,
-                        uncheckedThumbColor = color.onSurfaceVariant,
-                        uncheckedBorderColor = color.onSurfaceVariant,
-                    ),
+                modifier = Modifier.focusRequester(reauthorizeFocus),
+                onClick = reauthorize,
             )
+        } else if (defaultEnabled != null) {
+            ConnectorDefaultSwitch(defaultEnabled, canModify, onDefault)
         }
+        ConnectorAccountAction(
+            stringResource(R.string.connector_rename),
+            modifier = Modifier.focusRequester(renameFocus),
+            enabled = canModify,
+            onClick = rename,
+        )
+        ConnectorAccountAction(
+            stringResource(R.string.connector_disconnect),
+            modifier = Modifier.focusRequester(disconnectFocus),
+            enabled = canModify,
+            destructive = true,
+            onClick = disconnect,
+        )
     }
-    ConnectorAccountAction(
-        stringResource(R.string.connector_rename),
-        modifier = Modifier.focusRequester(renameFocus),
-        enabled = canModify,
-        onClick = rename,
-    )
-    ConnectorAccountAction(
-        stringResource(R.string.connector_disconnect),
-        modifier = Modifier.focusRequester(disconnectFocus),
-        enabled = canModify,
-        destructive = true,
-        onClick = disconnect,
-    )
     ConnectorActionFeedback(action)
+}
+
+@Composable
+private fun ConnectorDefaultSwitch(
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val color = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .toggleable(
+                checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.connector_default_enabled),
+            Modifier.weight(1f),
+            color = color.onSurface.copy(alpha = if (enabled) 1f else 0.38f),
+            style = connectorBodyType(),
+        )
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = null,
+            colors =
+                SwitchDefaults.colors(
+                    checkedTrackColor = color.primary,
+                    checkedThumbColor = color.onPrimary,
+                    uncheckedTrackColor = color.surfaceContainerHighest,
+                    uncheckedThumbColor = color.onSurfaceVariant,
+                    uncheckedBorderColor = color.onSurfaceVariant,
+                ),
+        )
+    }
 }
 
 @Composable
@@ -643,10 +642,10 @@ private fun ConnectorAccountAction(
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .heightIn(min = if (chevron) 52.dp else 56.dp)
+            .clip(RoundedCornerShape(if (chevron) 8.dp else 12.dp))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = if (chevron) 12.dp else 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -680,7 +679,21 @@ private fun ConnectorDisconnectDialog(
     val count = impact?.data
     AlertDialog(
         onDismissRequest = cancel,
-        title = { ConnectorSheetHeading(stringResource(R.string.connector_disconnect_title)) },
+        modifier = Modifier.widthIn(max = 360.dp),
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Text(
+                stringResource(R.string.connector_disconnect_title),
+                modifier = Modifier.semantics { heading() },
+                style =
+                    MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 24.sp,
+                        lineHeight = 32.sp,
+                        letterSpacing = 0.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+            )
+        },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -782,7 +795,7 @@ internal fun ConnectorSheetHeading(label: String) {
         modifier = Modifier.semantics { heading() },
         style =
             MaterialTheme.typography.titleLarge.copy(
-                fontSize = 20.sp,
+                fontSize = 22.sp,
                 lineHeight = 28.sp,
                 letterSpacing = 0.sp,
                 fontWeight = FontWeight.SemiBold,

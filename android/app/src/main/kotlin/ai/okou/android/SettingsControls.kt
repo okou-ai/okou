@@ -29,17 +29,20 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -275,13 +278,19 @@ internal fun SettingsTrigger(
 @Composable
 internal fun SettingsModal(
     onDismiss: () -> Unit,
+    dismissible: Boolean = true,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
     if (workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
             onDismissRequest = onDismiss,
-            properties = DialogProperties(usePlatformDefaultWidth = false),
+            properties =
+                DialogProperties(
+                    dismissOnBackPress = dismissible,
+                    dismissOnClickOutside = dismissible,
+                    usePlatformDefaultWidth = false,
+                ),
         ) {
             Surface(
                 Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
@@ -292,12 +301,24 @@ internal fun SettingsModal(
             }
         }
     } else {
+        val allowDismiss by rememberUpdatedState(dismissible)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState =
+                rememberBottomSheetState(
+                    initialValue = SheetValue.Hidden,
+                    enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+                    confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
+                ),
+            sheetGesturesEnabled = dismissible,
             sheetMaxWidth = 460.dp,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surface,
+            properties =
+                ModalBottomSheetProperties(
+                    shouldDismissOnBackPress = dismissible,
+                    shouldDismissOnClickOutside = dismissible,
+                ),
         ) {
             content(false)
         }
