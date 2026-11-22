@@ -32,6 +32,9 @@ export async function openBrowserChat(
   holdResume = false,
   options: {
     many?: boolean;
+    beforeStart?: () => void;
+    initialGrant?: boolean;
+    onConnecting?: (url: string, socket: { open(): void }) => void;
     working?: boolean;
     completed?: boolean;
     mobile?: boolean;
@@ -79,6 +82,7 @@ export async function openBrowserChat(
     suspensionReason: "idle",
   };
   const cdp = mockBrowserCdp(context, nativeUrl, {
+    onConnecting: options.onConnecting,
     targets: Array.from({ length: options.many ? 12 : 1 }, (_, i) => {
       return {
         targetId: i === 0 ? "review-page" : "page-" + String(i + 1),
@@ -127,14 +131,14 @@ export async function openBrowserChat(
     }
     mockChatLifecycle(context, {
       threadId: RUN_THREAD_ID,
-      cloudBrowserEnabled: true,
+      cloudBrowserEnabled: options.initialGrant ?? true,
       activeRunIds: options.working ? [runId] : [],
       chatEvents: events,
     });
   } else {
     createChatCapabilityHelpers(context).installCapabilityChat({
       events: completedConversation(reply),
-      cloudBrowserEnabled: true,
+      cloudBrowserEnabled: options.initialGrant ?? true,
     });
   }
   if (options.mobile) {
@@ -171,6 +175,7 @@ export async function openBrowserChat(
     status = "live";
     return respond(200, { browser: viewer.browser, viewer });
   });
+  options.beforeStart?.();
   await setupPage({
     context,
     path: RUN_PATH,

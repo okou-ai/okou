@@ -110,3 +110,34 @@ test("chat-composer-slash-panel-024 Website stays selected as the pointer moves 
   expect(editor.textContent).not.toContain("/");
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+test("chat-composer-slash-panel-011 Mobile keyboard selection follows the visible order from workflows back to Create and opens Presentation templates", async () => {
+  const { panel, editor } = await slashMenu(context, { desktop: false });
+  const rows = labels(panel);
+  expect(
+    rows.slice(0, 4).map((s, index) => {
+      return s.startsWith(names[index]!);
+    }),
+  ).toStrictEqual([true, true, true, true]);
+  expect(rows.slice(4, 7)).toStrictEqual(
+    ["axiom-red", "axiom-status", "axiom-traces"].map((name) => {
+      return "/" + name + " Inspect " + name;
+    }),
+  );
+  expect(rows.at(-1)).toBe("Browse all templates");
+  moveTo(editor, panel, "/axiom-traces");
+  expect(active(panel)).toHaveTextContent("/axiom-traces");
+  move(editor, "ArrowUp");
+  expect(active(panel)).toHaveTextContent("/axiom-status");
+  for (const label of ["/axiom-red", "Workflow", "Create"]) {
+    move(editor, "ArrowUp");
+    expect(active(panel)).toHaveTextContent(label);
+  }
+  expect(active(panel)).toHaveTextContent("Create");
+  move(editor, "Enter");
+  await expect(
+    screen.findByRole("group", { name: "Presentation templates" }),
+  ).resolves.toBeVisible();
+  await closed(panel);
+  expect(editor.textContent).toMatch(/^Draft\s*$/u);
+});

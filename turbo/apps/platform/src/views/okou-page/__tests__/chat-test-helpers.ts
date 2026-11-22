@@ -350,13 +350,17 @@ export function mockChatLifecycle(
      * Gate or per-send gate factory awaited before the initial send responds.
      * Lets tests keep an optimistic run mounted while interacting with it.
      */
-    sendGate?: Promise<void> | (() => Promise<void>);
+    sendGate?:
+      Promise<void> | ((message: { prompt?: string }) => Promise<void>);
     /**
      * Promise the thread metadata handler awaits before responding. Lets tests
      * prove event-derived UI does not wait for activeRunIds metadata.
      */
     threadGate?: Promise<void>;
     afterInitialEventsList?: () => void;
+    beforeEventRowsResponse?: (
+      rows: ReturnType<typeof mockChatEventRows>,
+    ) => Promise<void>;
     onRunCreate?: (body: {
       prompt?: string;
       clientEventId?: string;
@@ -698,7 +702,7 @@ export function mockChatLifecycle(
     sourceRunId?: string;
   }) => {
     if (typeof options?.sendGate === "function") {
-      await options.sendGate();
+      await options.sendGate(body);
     } else if (options?.sendGate) {
       await options.sendGate;
     }
@@ -765,22 +769,28 @@ export function mockChatLifecycle(
       },
     });
   });
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    const rows = mockChatEventRows(
-      normalizeMockChatEvents(
-        buildCanonicalEvents().map(cloneMockChatEvent),
-        threadId,
-      ),
-    )
-      .filter((row) => {
-        return row.seqId > query.sinceSeqId;
-      })
-      .slice(0, query.limit ?? 50);
-    if (query.sinceSeqId === 0) {
-      options?.afterInitialEventsList?.();
-    }
-    return respond(200, chatEventRowsResponse(rows, query));
-  });
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    async ({ query, respond }) => {
+      const rows = mockChatEventRows(
+        normalizeMockChatEvents(
+          buildCanonicalEvents().map(cloneMockChatEvent),
+          threadId,
+        ),
+      )
+        .filter((row) => {
+          return row.seqId > query.sinceSeqId;
+        })
+        .slice(0, query.limit ?? 50);
+      if (query.sinceSeqId === 0) {
+        options?.afterInitialEventsList?.();
+      }
+      if (options?.beforeEventRowsResponse) {
+        await options.beforeEventRowsResponse(rows);
+      }
+      return respond(200, chatEventRowsResponse(rows, query));
+    },
+  );
   context.mocks.api(chatThreadByIdContract.get, async ({ respond }) => {
     if (options?.threadGate) {
       await options.threadGate;
