@@ -3,8 +3,10 @@ package ai.okou.android.workflows
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
+import ai.okou.android.api.generated.WorkflowDetailShadowedBy
 import ai.okou.android.api.generated.WorkflowDetailVisibility
 import ai.okou.android.api.generated.WorkflowSummary
+import ai.okou.android.api.generated.WorkflowSummaryShadowedBy
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
@@ -66,6 +68,7 @@ internal constructor(
     private var foreground = false
     private var offline = false
     private var selected: String? = null
+    private var readSequence = 0L
     private val catalogRead = WorkflowRangeRead()
     private val rulesRead = WorkflowRangeRead()
     private val connectionsRead = WorkflowRangeRead()
@@ -270,26 +273,26 @@ internal constructor(
         range.job =
             viewModelScope.launch {
                 retryReads(failure) {
-                    val updates = mutableMapOf<String, WorkflowDirectoryUpdate?>()
-                    range.pendingDetails = updates
+                    val attempt = WorkflowRangeAttempt(++readSequence)
+                    range.pending = attempt
                     val result =
                         try {
                             read(fetch)
                         } finally {
-                            if (range.pendingDetails === updates) range.pendingDetails = null
+                            if (range.pending === attempt) range.pending = null
                         }
                     if (!authorized()) return@retryReads null
                     val error = result.exceptionOrNull()
                     when {
                         error.denied() -> {
-                            range.readAt = null
+                            range.receipt = null
                             denied()
                             null
                         }
                         error != null -> error
                         else -> {
-                            range.readAt = monotonicMillis()
-                            receive(result.getOrThrow(), updates)
+                            range.receipt = WorkflowReadReceipt(attempt.sequence, monotonicMillis())
+                            receive(result.getOrThrow(), attempt.updates)
                             null
                         }
                     }
@@ -307,15 +310,20 @@ internal constructor(
                 directory.mapNotNull { row ->
                     if (row.id in updates) updates[row.id]?.applyTo(row) else row
                 }
-        val visibleIds = rows.mapTo(mutableSetOf()) { it.id }
+        val summaries = rows.associateBy(WorkflowSummary::id)
         val current = mutable.value
         val previouslyKnown = current.catalog.orEmpty().mapTo(mutableSetOf()) { it.id }
         previouslyKnown.addAll(details.keys)
         selected?.let(previouslyKnown::add)
-        val removed = previouslyKnown.filter { it !in visibleIds && updates[it] == null }
+        val removed = previouslyKnown.filter { it !in summaries && updates[it] == null }
         for (id in removed) {
             details.remove(id)
-            rulesRead.pendingDetails?.set(id, null)
+            rulesRead.pending?.updates?.set(id, null)
+        }
+        details.replaceAll { id, cached ->
+            val summary = summaries[id]
+            if (summary == null) cached
+            else cached.copy(detail = cached.detail.withSummary(summary))
         }
         val lostSelected = selected?.let(removed::contains) == true
         if (lostSelected) cancelDetailRead()
@@ -324,7 +332,7 @@ internal constructor(
                 catalog = rows,
                 catalogFailure = null,
                 rules = if (removed.isEmpty()) current.rules else current.rules?.minus(removed),
-                detail = current.detail.takeUnless { lostSelected },
+                detail = current.detail?.let { details[it.id]?.detail },
                 detailFailure =
                     if (lostSelected) WorkflowReadFailure.Unavailable else current.detailFailure,
                 editor = current.editor.takeUnless { lostSelected },
@@ -339,9 +347,8 @@ internal constructor(
         val confirmed = directory.withDirectoryUpdates(updates)
         // The detail and directory endpoints include the same caller-owned rules.
         details.replaceAll { id, cached ->
-            val rules = confirmed[id].orEmpty()
-            if (cached.detail.automations == rules) cached
-            else cached.copy(detail = cached.detail.copy(automations = rules))
+            val detail = cached.detail.withRules(confirmed[id].orEmpty())
+            if (cached.detail === detail) cached else cached.copy(detail = detail)
         }
         val current = mutable.value
         mutable.value =
@@ -378,6 +385,7 @@ internal constructor(
         detailLoad =
             viewModelScope.launch {
                 retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
+                    val sequence = ++readSequence
                     val response = read {
                         service.workflow(id).also {
                             if (it.id != id) throw ApiFailure.IncompatibleResponse()
@@ -390,7 +398,7 @@ internal constructor(
                         error.denied() ||
                             (error as? ApiFailure.Http)?.status == 404 ||
                             detail?.official != null -> {
-                            recordDetailUpdate(id, null)
+                            recordDetailUpdate(id, null, sequence)
                             details.remove(id)
                             val current = mutable.value
                             mutable.value =
@@ -405,7 +413,7 @@ internal constructor(
                             null
                         }
                         detail != null -> {
-                            publishDetail(detail)
+                            publishDetail(detail, sequence)
                             null
                         }
                         else -> error
@@ -575,18 +583,26 @@ internal constructor(
         }
     }
 
-    private fun publishDetail(response: WorkflowDetail) {
+    private fun publishDetail(response: WorkflowDetail, sequence: Long = ++readSequence) {
         val id = response.id
         if (!authorized() || selected != id) return
+        val current = mutable.value
         // This screen does not use the attached file bodies returned by GET.
-        val detail =
+        var detail =
             if (response.fileContents == null) response else response.copy(fileContents = null)
+        // A late detail response can still supply its own fields, while shared fields use a
+        // subsequently started read that has already been confirmed.
+        if (catalogRead.isNewerThan(sequence)) {
+            current.catalog?.firstOrNull { it.id == id }?.let { detail = detail.withSummary(it) }
+        }
+        if (rulesRead.isNewerThan(sequence) && current.rules != null) {
+            detail = detail.withRules(current.rules[id].orEmpty())
+        }
         details[id] = CachedWorkflowDetail(detail, monotonicMillis())
         if (details.size > WORKFLOW_DETAIL_CACHE_CAPACITY) details.remove(details.keys.first())
         val update = WorkflowDirectoryUpdate(detail)
         // The directory read may complete after the user has left this detail.
-        recordDetailUpdate(id, update)
-        val current = mutable.value
+        recordDetailUpdate(id, update, sequence)
         val rules =
             current.rules?.let { previous ->
                 when {
@@ -610,9 +626,9 @@ internal constructor(
     private fun publishRules(detail: WorkflowDetail, rules: List<WorkflowAutomation>) =
         publishDetail(detail.copy(automations = rules))
 
-    private fun recordDetailUpdate(id: String, detail: WorkflowDirectoryUpdate?) {
-        catalogRead.pendingDetails?.set(id, detail)
-        rulesRead.pendingDetails?.set(id, detail)
+    private fun recordDetailUpdate(id: String, detail: WorkflowDirectoryUpdate?, sequence: Long) {
+        catalogRead.pending?.record(id, detail, sequence)
+        rulesRead.pending?.record(id, detail, sequence)
     }
 
     private suspend fun <T> read(block: suspend () -> T): Result<T> =
@@ -652,20 +668,35 @@ private val directoryScopes =
 private val allReadScopes = WorkflowReadScope.entries.toSet()
 
 private class WorkflowRangeRead {
-    var readAt: Long? = null
+    var receipt: WorkflowReadReceipt? = null
+    val readAt: Long?
+        get() = receipt?.completedAt
+
     var job: Job? = null
-    // A null update records confirmed unavailability from an overlapping detail read.
-    var pendingDetails: MutableMap<String, WorkflowDirectoryUpdate?>? = null
+    var pending: WorkflowRangeAttempt? = null
+
+    fun isNewerThan(sequence: Long): Boolean = (receipt?.sequence ?: 0L) > sequence
 
     fun cancel() {
         job?.cancel()
         job = null
-        pendingDetails = null
+        pending = null
     }
 
     fun invalidate() {
         cancel()
-        readAt = null
+        receipt = null
+    }
+}
+
+private data class WorkflowReadReceipt(val sequence: Long, val completedAt: Long)
+
+private class WorkflowRangeAttempt(val sequence: Long) {
+    val updates = mutableMapOf<String, WorkflowDirectoryUpdate?>()
+
+    fun record(id: String, update: WorkflowDirectoryUpdate?, fromSequence: Long) {
+        // A confirmed loss of access also removes the workflow from this in-flight result.
+        if (update == null || fromSequence > sequence) updates[id] = update
     }
 }
 
@@ -680,6 +711,8 @@ private class WorkflowDirectoryUpdate(detail: WorkflowDetail) {
     private val displayName = detail.displayName
     private val description = detail.description
     private val canManage = detail.canManage
+    private val shadowedBy =
+        detail.shadowedBy?.let { WorkflowSummaryShadowedBy(it.id, it.name, it.displayName) }
     private val visibility =
         when (detail.visibility) {
             WorkflowDetailVisibility.PUBLIC -> WorkflowSummaryVisibility.PUBLIC
@@ -694,8 +727,27 @@ private class WorkflowDirectoryUpdate(detail: WorkflowDetail) {
             description = description,
             canManage = canManage,
             visibility = visibility,
+            shadowedBy = shadowedBy,
         )
 }
+
+private fun WorkflowDetail.withSummary(summary: WorkflowSummary): WorkflowDetail =
+    copy(
+        name = summary.name,
+        displayName = summary.displayName,
+        description = summary.description,
+        canManage = summary.canManage,
+        visibility =
+            when (summary.visibility) {
+                WorkflowSummaryVisibility.PUBLIC -> WorkflowDetailVisibility.PUBLIC
+                WorkflowSummaryVisibility.PRIVATE -> WorkflowDetailVisibility.PRIVATE
+            },
+        shadowedBy =
+            summary.shadowedBy?.let { WorkflowDetailShadowedBy(it.id, it.name, it.displayName) },
+    )
+
+private fun WorkflowDetail.withRules(rules: List<WorkflowAutomation>): WorkflowDetail =
+    if (automations == rules) this else copy(automations = rules)
 
 private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
     updates: Map<String, WorkflowDirectoryUpdate?>

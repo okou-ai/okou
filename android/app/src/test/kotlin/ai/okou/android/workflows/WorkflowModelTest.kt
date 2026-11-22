@@ -263,27 +263,36 @@ class WorkflowModelTest {
         }
 
     @Test
+    fun olderDetailCannotReplaceNewerCatalogAndRules() = check { service, model ->
+        val olderDetail = CompletableDeferred<WorkflowDetail>()
+        val latestSummary = service.summary.copy(displayName = "Renamed on another device")
+        val active = service.weeklyRule()
+        service.detailRead = { olderDetail.await() }
+        service.catalogRead = { listOf(latestSummary) }
+        service.rulesRead = { listOf(WorkspaceWorkflowAutomationsItem(latestSummary, active)) }
+
+        model.select(service.summary.id)
+        model.visibilityChanged(true)
+        runCurrent()
+        assertNull(model.state.value.detail)
+        assertEquals(listOf(latestSummary), model.state.value.catalog)
+        assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
+
+        olderDetail.complete(
+            service.detail.copy(automations = listOf(active.copy(enabled = false)))
+        )
+        runCurrent()
+        assertEquals(latestSummary.displayName, model.state.value.detail?.displayName)
+        assertEquals(listOf(latestSummary), model.state.value.catalog)
+        assertEquals(listOf(active), model.state.value.detail?.automations)
+        assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
+    }
+
+    @Test
     fun directoryKeepsConfirmedRulesAfterLeavingDetail() = check { service, model ->
         val rules = CompletableDeferred<WorkspaceWorkflowAutomations>()
         val connections = CompletableDeferred<Set<String>>()
-        val active =
-            WorkflowAutomationVariant1(
-                id = "weekly",
-                ownerUserId = service.summary.ownerUserId,
-                enabled = true,
-                chatThreadId = null,
-                nextRunAt = CHAT_DATE,
-                lastRunAt = null,
-                official = null,
-                kind = WorkflowAutomationVariant1Kind.SCHEDULE,
-                schedule =
-                    WorkflowAutomationVariant1ScheduleVariant1(
-                        WorkflowAutomationVariant1ScheduleVariant1Type.CRON,
-                        "0 9 * * 1",
-                        "UTC",
-                    ),
-                scheduleSummary = "Weekly at 09:00",
-            )
+        val active = service.weeklyRule()
         service.detail = service.detail.copy(automations = listOf(active))
         service.rulesRead = { rules.await() }
         service.connectionsRead = { connections.await() }
@@ -596,6 +605,25 @@ class WorkflowModelTest {
 
         var createAttempts = 0
             private set
+
+        fun weeklyRule() =
+            WorkflowAutomationVariant1(
+                id = "weekly",
+                ownerUserId = summary.ownerUserId,
+                enabled = true,
+                chatThreadId = null,
+                nextRunAt = CHAT_DATE,
+                lastRunAt = null,
+                official = null,
+                kind = WorkflowAutomationVariant1Kind.SCHEDULE,
+                schedule =
+                    WorkflowAutomationVariant1ScheduleVariant1(
+                        WorkflowAutomationVariant1ScheduleVariant1Type.CRON,
+                        "0 9 * * 1",
+                        "UTC",
+                    ),
+                scheduleSummary = "Weekly at 09:00",
+            )
 
         override suspend fun workflows(): List<WorkflowSummary> {
             catalogReads++
