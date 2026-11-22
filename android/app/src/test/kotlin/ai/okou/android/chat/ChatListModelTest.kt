@@ -3170,6 +3170,38 @@ class ChatListModelTest {
         }
     }
 
+    @Test
+    fun aLateMoveResponseDoesNotAnnounceADeletedDestination() = runTest {
+        val source = ProjectOrganizationService()
+        val response = CompletableDeferred<Unit>()
+        source.moveResponse = { thread, project, event ->
+            source.publishMembership(thread, project, event)
+            response.await()
+        }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+            runCurrent()
+
+            source.publishDeletion("00000022-0000-4000-8000-000000000000")
+            source.publishMembership(CHAT_PERSONAL, null, "00000023-0000-4000-8000-000000000000")
+            model.refresh()
+            runCurrent()
+            val detached = model.uiState.value
+            assertTrue(detached.projects.isEmpty())
+            assertNull(detached.threads.single { it.id == CHAT_PERSONAL }.projectId)
+            assertEquals(ChatRowAction.MoveProject, detached.pendingRowActions[CHAT_PERSONAL])
+
+            response.complete(Unit)
+            runCurrent()
+            val settled = model.uiState.value
+            assertNull(settled.pendingRowActions[CHAT_PERSONAL])
+            assertNull(settled.chatMoveNotice)
+            assertNull(settled.failedRowAction)
+        }
+    }
+
     private inner class ProjectOrganizationService : Service() {
         private val events =
             mutableListOf(
