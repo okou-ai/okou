@@ -949,7 +949,7 @@ Original test `Keep browser mode free of number shortcuts`. [Registration](https
 - **Given** The user is in browser mode viewing a chat, with two chats in the sidebar.
 - **When** The user presses Ctrl+1.
 - **Then** No number hints appear, the current chat remains open, and the browser does not prevent the key event’s default behavior."
-thread-mail-003	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.bdd.md	470	pending					"## thread-mail-003
+thread-mail-003	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.bdd.md	470	first-verified	thread-mail-003 Draft selection shows mixed and complete bulk actions, clears on a second selection and excludes sent mail	turbo/apps/platform/src/views/okou-page/__tests__/managing-email-from-conversation-actions.test.ts	stage6-new.json	mail-selection-native-link-and-alert-red.json	"## thread-mail-003
 
 Original test `thread email manager > selects only filtered drafts and shows their bulk actions`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx#L470).
 
@@ -970,7 +970,7 @@ Original test `thread email manager > restores the narrow transcript anchor once
 - **Given** On a 390-pixel-wide chat transcript, the user opens the email list and then Proposal 2 detail after positioning the transcript at a visible anchor offset of 275 pixels.
 - **When** The user presses browser Back, waits through two animation frames, then repeats the Back/Forward navigation with the anchor at 475 pixels.
 - **Then** On each Back, the transcript first becomes visible at scroll position zero, then after two frames restores the captured anchor to its prior screen position with exactly one scroll write to the captured offset. It does not write again on a third frame; Forward returns to detail and allows the next Back to capture and restore the new 475-pixel offset."
-thread-mail-008	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.bdd.md	701	pending					"## thread-mail-008
+thread-mail-008	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.bdd.md	701	first-verified	thread-mail-008 Ctrl activation leaves the thread email list open and preserves the browser's original detail destination	turbo/apps/platform/src/views/okou-page/__tests__/managing-email-from-conversation-actions.test.ts	stage6-new.json	mail-selection-native-link-and-alert-red.json	"## thread-mail-008
 
 Original test `thread email manager > leaves modified email-link activation to the browser`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx#L701).
 
@@ -991,7 +991,7 @@ Original test `thread email manager > restores mail history ahead of another pan
 - **Given** A right-hand pane has an email list and detail history; the left-hand pane has an unavailable artifact in its utility sidebar.
 - **When** The user opens the left-pane artifact, then presses browser Back twice.
 - **Then** The first Back restores the email detail, and the second restores the email list without reopening the unavailable artifact sidebar."
-thread-mail-011	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.bdd.md	818	pending					"## thread-mail-011
+thread-mail-011	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.bdd.md	818	first-verified	thread-mail-011 A forbidden conversation email list stays open and announces the load failure	turbo/apps/platform/src/views/okou-page/__tests__/managing-email-from-conversation-actions.test.ts	stage6-new.json	mail-selection-native-link-and-alert-red.json	"## thread-mail-011
 
 Original test `thread email manager > keeps a failed initial list read accessible`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/thread-mail.test.tsx#L818).
 
@@ -1005,14 +1005,14 @@ Original test `thread email manager > sends only drafts, retains failures for re
 - **Given** Two drafts are selected for sending; the first send is pending and Proposal 2 initially fails to send.
 - **When** The user confirms sending, attempts Escape and browser Back/Forward while sending is in progress, then retries after the first operation finishes.
 - **Then** The confirmation’s Send and Cancel controls are disabled while pending and Escape does not dismiss it. Back leaves email-list navigation and Forward restores it; neither enables another send while the operation is pending. The result is 1 completed and 1 failed, with only Proposal 1 sent. Retrying after Proposal 2 becomes available sends it once, never resends the successful Proposal 1, and removes the draft selection controls and Send action when no drafts remain."
-thread-resource-thumbnails-001	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.bdd.md	68	pending					"## thread-resource-thumbnails-001
+thread-resource-thumbnails-001	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.bdd.md	68	probe-insufficient	Opening the private image from Artifacts and chats then activating Back to artifacts returns to the resource dialog. Its row displays FILE after grant release; the probe does not reach the thread gallery with a 640px transformation or its original-image preview. The 64px workspace-search observation belongs only to 002.	thread-resource-thumbnails-001.ts.txt; image-diag2.log; image-diag2.json; thumbnail3.json			"## thread-resource-thumbnails-001
 
 Original test `Thread artifacts use authorized thumbnails and open the original image`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx#L68).
 
 - **Given** A private image artifact is in the thread, and its authorized thumbnail URL has not yet been resolved.
 - **When** The user opens the artifact sidebar, returns to the artifact list, and authorization completes; then they preview the image.
 - **Then** The catalog shows no thumbnail before authorization, then displays the authorized image through the 640-pixel thumbnail transformation. Previewing the artifact displays the original image URL."
-thread-resource-thumbnails-002	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.bdd.md	99	pending					"## thread-resource-thumbnails-002
+thread-resource-thumbnails-002	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.bdd.md	99	first-verified	thread-resource-thumbnails-002 Workspace search shows the matching private image thumbnail only after its 64-pixel preview is authorized	turbo/apps/platform/src/views/okou-page/__tests__/authorized-artwork-in-the-workspace.test.ts	stage6-new.json	vnc-import-canonical-and-thumbnail-red.json	"## thread-resource-thumbnails-002
 
 Original test `Workspace search uses a small authorized thumbnail for a private image`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/thread-resource-thumbnails.test.tsx#L99).
 
@@ -1166,77 +1166,77 @@ Original test `QEMU SCRAM creates only its explicit X509SASL pair and keeps its 
 - **Given** The owner is adding a QEMU SCRAM-SHA-256 connection using X509SASL.
 - **When** The owner enters a valid username and a password with surrounding spaces, selects custom CA trust, and saves.
 - **Then** The request contains the explicit QEMU SCRAM authentication and X509SASL security pair with the exact credentials and CA bundle. The password is cleared from the field and is not visible in page text."
-vnc-settings-026	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1557	pending					"## vnc-settings-026
+vnc-settings-026	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1557	first-verified	vnc-settings-026 A selected service ticket is saved only on confirmation with the exact service and initiator	turbo/apps/platform/src/views/okou-page/__tests__/importing-kerberos-files-in-vnc-settings.test.ts	stage6-new.json	vnc-import-canonical-and-thumbnail-red.json	"## vnc-settings-026
 
 Original test `A supplied service ticket is imported without saving and retains its exact service on Save`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1557).
 
 - **Given** The owner has a service-ticket file to import for the service EXAMPLE.INVALID/vnc/host.example.invalid.
 - **When** The owner selects the file and saves the import.
 - **Then** No request is sent before Save, the form does not ask for a KDC host, and saving sends the ticket bytes with the exact initiator and service identity."
-vnc-settings-027	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1595	pending					"## vnc-settings-027
+vnc-settings-027	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1595	first-verified	vnc-settings-027 Returning a ticket draft to its original identity requires a freshly selected file	turbo/apps/platform/src/views/okou-page/__tests__/importing-kerberos-files-in-vnc-settings.test.ts	stage6-new.json	vnc-import-stale-delivery-red.json,vnc-import-canonical-and-thumbnail-red.json,owner-change-after-return-red.json	"## vnc-settings-027
 
 Original test `Changing a ticket's service away and back invalidates its pending import`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1595).
 
 - **Given** The owner has selected a service-ticket file while its file read is pending for host.example.invalid.
 - **When** The owner changes the service instance to other.example.invalid and back, lets the old read finish, and tries to save.
 - **Then** The stale import is rejected with an alert and no request is sent. Selecting a new file for the restored service allows the import to be saved."
-vnc-settings-028	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1624	pending					"## vnc-settings-028
+vnc-settings-028	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1624	first-verified	vnc-settings-028 Completing the old keytab read after its replacement still saves the replacement bytes	turbo/apps/platform/src/views/okou-page/__tests__/importing-kerberos-files-in-vnc-settings.test.ts	stage6-new.json	vnc-import-stale-delivery-red.json,vnc-import-canonical-and-thumbnail-red.json,owner-change-after-return-red.json	"## vnc-settings-028
 
 Original test `A replacement keytab is saved without a late file overwriting it`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1624).
 
 - **Given** The owner has selected an old keytab file whose read is pending.
 - **When** The owner selects a replacement keytab before the old read finishes, then saves.
 - **Then** The late old file does not overwrite the replacement; the saved import contains the replacement keytab bytes."
-vnc-settings-029	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1657	pending					"## vnc-settings-029
+vnc-settings-029	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1657	first-verified	vnc-settings-029 Returning a keytab draft to its original identity requires a freshly selected file	turbo/apps/platform/src/views/okou-page/__tests__/importing-kerberos-files-in-vnc-settings.test.ts	stage6-new.json	vnc-import-stale-delivery-red.json,vnc-import-canonical-and-thumbnail-red.json,owner-change-after-return-red.json	"## vnc-settings-029
 
 Original test `Changing an initiator away and back invalidates a pending keytab import`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1657).
 
 - **Given** The owner has selected a keytab while its read is pending for initiator realm EXAMPLE.INVALID.
 - **When** The owner changes the realm to OTHER.INVALID and back, lets the old read finish, and tries to save.
 - **Then** The stale import is rejected with an alert and no request is sent. Selecting a new keytab for the restored identity allows the import to be saved."
-vnc-settings-030	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1690	pending					"## vnc-settings-030
+vnc-settings-030	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1690	first-verified	vnc-settings-030 Closing the original dialog prevents its delayed file from populating a new keytab import	turbo/apps/platform/src/views/okou-page/__tests__/importing-kerberos-files-in-vnc-settings.test.ts	stage6-new.json	vnc-import-stale-delivery-red.json,vnc-import-canonical-and-thumbnail-red.json,owner-change-after-return-red.json	"## vnc-settings-030
 
 Original test `A closed dialog cannot deliver its pending keytab into a new dialog`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1690).
 
 - **Given** The owner has selected a keytab in an open import dialog while its read is pending.
 - **When** The owner closes that dialog, opens a new keytab dialog, lets the old read finish, and tries to save the new dialog.
 - **Then** The old file is not delivered into the new dialog; saving is rejected with an alert and no import request is sent."
-vnc-settings-031	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1716	pending					"## vnc-settings-031
+vnc-settings-031	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1716	first-verified	vnc-settings-031 Replacing an unreadable keytab dismisses its import error and saves the readable material	turbo/apps/platform/src/views/okou-page/__tests__/importing-kerberos-files-in-vnc-settings.test.ts	stage6-new.json	vnc-import-canonical-and-thumbnail-red.json	"## vnc-settings-031
 
 Original test `A keytab read failure is reported and a newly selected file can be saved`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1716).
 
 - **Given** The owner selects a keytab file whose read fails.
 - **When** The owner selects a readable replacement file and saves.
 - **Then** The read failure is reported and no request is sent for the unreadable file; the replacement file can be saved successfully."
-vnc-settings-032	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1741	pending					"## vnc-settings-032
+vnc-settings-032	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1741	first-verified	vnc-settings-032 A round trip through Kerberos password discards the pending keytab import even after the file is read	turbo/apps/platform/src/views/okou-page/__tests__/importing-kerberos-files-in-vnc-settings.test.ts	stage6-new.json	vnc-import-stale-delivery-red.json,vnc-import-canonical-and-thumbnail-red.json,owner-change-after-return-red.json	"## vnc-settings-032
 
 Original test `Switching authentication profiles away and back discards a pending keytab`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1741).
 
 - **Given** The owner has selected a keytab while its read is pending in the Kerberos keytab profile.
 - **When** The owner switches to Kerberos password and back to Kerberos keytab, fills the initiator details, lets the old read finish, and saves.
 - **Then** The pending keytab import is discarded, saving shows an alert, and no import request is sent."
-vnc-settings-033	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1769	pending					"## vnc-settings-033
+vnc-settings-033	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1769	first-verified	vnc-settings-033 Returning to the original owner creates an empty keytab draft even after their old file finishes	turbo/apps/platform/src/views/okou-page/__tests__/importing-kerberos-files-in-vnc-settings.test.ts	stage6-new.json	owner-change-after-return-red.json	"## vnc-settings-033
 
 Original test `Changing owners discards a pending keytab even after the original owner returns`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1769).
 
 - **Given** The owner has selected a keytab while its read is pending.
 - **When** The signed-in owner changes, then returns to the original owner and opens a new keytab dialog before the old read finishes.
 - **Then** The original owner's pending file is discarded; saving the new dialog shows an alert and sends no import request."
-vnc-settings-034	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1805	pending					"## vnc-settings-034
+vnc-settings-034	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	1805	first-verified	vnc-settings-034 Replacing a Kerberos password keeps the initiator fixed and clears the submitted secret	turbo/apps/platform/src/views/okou-page/__tests__/saving-vnc-login-details.test.ts	stage6-new.json	vnc-login-validation-and-writes-red.json	"## vnc-settings-034
 
 Original test `Kerberos metadata can be read and its stored password replaced without revealing it`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L1805).
 
 - **Given** A saved Kerberos-password credential has initiator EXAMPLE.INVALID/Alice and a stored password.
 - **When** The owner opens credential editing, opts to change login details, enters a replacement password, and saves.
 - **Then** The stored password is not revealed, the initiator realm remains read-only, and the update preserves the initiator while replacing the password. The password field is cleared and the new password is absent from page text."
-vnc-settings-043	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2119	pending					"## vnc-settings-043
+vnc-settings-043	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2119	first-verified	vnc-settings-043 Renaming a reusable VNC credential preserves authentication and a later login edit clears its exact new password	turbo/apps/platform/src/views/okou-page/__tests__/saving-vnc-login-details.test.ts	stage6-new.json	vnc-login-validation-and-writes-red.json	"## vnc-settings-043
 
 Original test `Plain credential cards and edits expose only password-free metadata`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2119).
 
 - **Given** A username-and-password credential is saved for a host.
 - **When** I rename it without enabling login-detail changes, then enable that option and replace the username and password.
 - **Then** The credential card and edit form expose the username and other password-free metadata, but no saved password. Renaming sends no authentication details; the later update sends the new username and exact password, then clears the password field and does not display the secret in the page."
-vnc-settings-044	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2202	pending					"## vnc-settings-044
+vnc-settings-044	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2202	first-verified	vnc-settings-044 A 1,026-byte password fails validation in the username-and-password credential editor	turbo/apps/platform/src/views/okou-page/__tests__/saving-vnc-login-details.test.ts	stage6-new.json	vnc-login-validation-and-writes-red.json	"## vnc-settings-044
 
 Original test `Plain oversized UTF-8 password validation fails before an API write`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2202).
 
@@ -1250,7 +1250,7 @@ Original test `Deleting a host requires confirmation and uses its displayed gene
 - **Given** A host is displayed with generation 4.
 - **When** I choose to delete it and confirm in the deletion dialog.
 - **Then** No deletion request is sent before confirmation. After confirmation, the host is removed and the request uses generation 4."
-vnc-settings-048	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2351	pending					"## vnc-settings-048
+vnc-settings-048	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2351	first-verified	vnc-settings-048 A credential shared by two devices exposes its edit impact and locks deletion until it is unbound	turbo/apps/platform/src/views/okou-page/__tests__/saving-vnc-login-details.test.ts	stage6-new.json	vnc-login-validation-and-writes-red.json	"## vnc-settings-048
 
 Original test `A reusable credential explains bound-host impact and only replaces its password explicitly`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2351).
 
@@ -1264,14 +1264,14 @@ Original test `An uncertain host creation preserves its frozen draft`. [Registra
 - **Given** I have completed a host-creation draft with a VNC password.
 - **When** I save, but the request receives no response.
 - **Then** The form reports that saving failed while preserving the password and draft; the password, connection name, and save action are disabled."
-vnc-settings-052	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2483	pending					"## vnc-settings-052
+vnc-settings-052	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2483	first-verified	vnc-settings-052 Unsupported characters remain in the invalid classic VNC password field and leave the new credential unsaved	turbo/apps/platform/src/views/okou-page/__tests__/saving-vnc-login-details.test.ts	stage6-new.json	vnc-login-validation-and-writes-red.json	"## vnc-settings-052
 
 Original test `An unsupported password 密码 remains intact and cannot be saved`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2483).
 
 - **Given** I am creating a VNC password credential.
 - **When** I enter the unsupported password 密码 and try to save.
 - **Then** The value remains in the invalid password field, the form remains open, and no create request is sent."
-vnc-settings-053	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2508	pending					"## vnc-settings-053
+vnc-settings-053	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2508	first-verified	vnc-settings-053 A known invalid-input response keeps the VNC password editable and its server diagnostics private	turbo/apps/platform/src/views/okou-page/__tests__/saving-vnc-login-details.test.ts	stage6-new.json	vnc-login-validation-and-writes-red.json	"## vnc-settings-053
 
 Original test `A known invalid credential response retains an editable draft without leaking server details`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2508).
 
@@ -1511,7 +1511,7 @@ Original test `owners can change three access levels separately from copying the
 - **Then** Each selected access level becomes checked, and the API receives the changes in that order: organization, public, private. Each copy writes the same canonical app link; there is no text box or copied-link notice before copying, and only one permission-status read occurs.
 
 Batch 25 disposition: unverified. The separate Router exercise confirmed the checked audience at each step, the ordered audience writes, the absence of a text box and copied-link notice before copying, and the canonical clipboard value after each copy. The number of identical permission-status reads has no observable page outcome. The status fixture was independent of read frequency. [Platform assertion rules](../../../../../../../docs/app/app-testing.md#assertions) prohibit request counts. The original Then remains intact. This ID has no accepted Vitest row."
-auth-v1-oauth-030	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.bdd.md	234	pending					"## auth-v1-oauth-030
+auth-v1-oauth-030	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx	turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.bdd.md	234	upstream-changed	Current sign-in only continues an OAuth return for an active signed-in user without a current task. With the same valid consent URL and local rejecting Clerk fixture, the signed-out Router shows Clerk sign-in and no recovery alert. The signed-in control renders the frozen recovery alert for that URL. The signed-out Given does not initiate the operation.	auth-v1-oauth-030.ts.txt; owners-mail-consent2.json (signed-out and signed-in); auth-consent-premise.txt			"## auth-v1-oauth-030
 
 Original test `A failed OAuth continuation offers visible recovery`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/auth-v1/__tests__/auth-v1-oauth.test.tsx#L234).
 
