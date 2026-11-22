@@ -2322,7 +2322,9 @@
     "messageDocument": {
       "chatThread": "[Fil de discussion : {{title}}]",
       "file": "[Fichier : {{filename}}]",
-      "template": "[Modèle : {{title}}]"
+      "template": "[Modèle : {{title}}]",
+      "voice": "Message vocal",
+      "voiceClip": "Extrait audio {{index}}"
     },
     "newChat": "Nouvelle discussion",
     "origins": {

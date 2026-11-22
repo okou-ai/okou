@@ -30,6 +30,7 @@ const messagePartTypes = {
   automation: true,
   feedback: true,
   file: true,
+  voice: true,
   model: true,
   source: true,
 } satisfies Record<UserMessagePart["type"], true>;

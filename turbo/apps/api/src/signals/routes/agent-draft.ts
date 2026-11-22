@@ -1,4 +1,9 @@
 import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  iosVoiceDraftTransforms,
+  androidVoiceDraftTransforms,
+} from "@okouai/api-contracts/client-transforms/voice-draft";
+import type { ClientResponseTransform } from "@okouai/api-contracts/client-transforms/types";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import { personalProjectAccess$ } from "./projects";
 import { command, computed } from "ccstate";
@@ -92,6 +97,7 @@ function createAgentDraftReader(
 function createAgentDraftRoutes(
   contract: AgentDraftContract,
   projectEndpoint: boolean,
+  responseTransforms: readonly ClientResponseTransform[] = [],
 ): readonly RouteEntry[] {
   const getAgentDraftInner$ = createAgentDraftReader(contract, projectEndpoint);
   const patchAgentDraftInner$ = command(
@@ -185,6 +191,7 @@ function createAgentDraftRoutes(
   return [
     {
       route: contract.get,
+      responseTransforms,
       handler: authRoute(auth, getAgentDraftInner$),
     },
     {
@@ -196,6 +203,7 @@ function createAgentDraftRoutes(
 export const agentDraftRoutes = createAgentDraftRoutes(
   agentDraftContract,
   false,
+  [iosVoiceDraftTransforms.agent, androidVoiceDraftTransforms.agent],
 );
 export const projectAgentDraftRoutes = createAgentDraftRoutes(
   {
@@ -208,4 +216,5 @@ export const projectAgentDraftRoutes = createAgentDraftRoutes(
 export const composerDraftRoutes = createAgentDraftRoutes(
   composerDraftContract,
   false,
+  [iosVoiceDraftTransforms.composer, androidVoiceDraftTransforms.composer],
 );

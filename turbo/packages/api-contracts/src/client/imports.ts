@@ -1937,6 +1937,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "transcribe",
+    contracts: ["transcribeContract"],
+    bindings: [],
+  },
+  {
     module: "uploads",
     contracts: ["uploadsContract"],
     bindings: [],

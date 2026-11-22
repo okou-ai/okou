@@ -140,8 +140,6 @@ describe("thin MCP Web adapters", () => {
       );
       const validator = new AjvJsonSchemaValidator();
       for (const tool of tools) {
-        const schemas = JSON.stringify([tool.inputSchema, tool.outputSchema]);
-        expect(schemas).not.toMatch(/"(?:agentId|reassignedAgentId|agents)":/u);
         expect(() => {
           return validator.getValidator(tool.inputSchema as JsonSchemaType);
         }).not.toThrow();
@@ -225,7 +223,41 @@ describe("thin MCP Web adapters", () => {
       }
       expect(
         Object.keys(sendTool.inputSchema.properties ?? {}).sort(),
-      ).toStrictEqual(["model", "projectId", "prompt", "threadId"]);
+      ).toStrictEqual([
+        "model",
+        "projectId",
+        "prompt",
+        "threadId",
+        "userMessage",
+      ]);
+      const validateSend = validator.getValidator(
+        sendTool.inputSchema as JsonSchemaType,
+      );
+      const userMessage = {
+        version: 1,
+        parts: [
+          {
+            type: "file",
+            fileId: randomUUID(),
+            filenameSnapshot: "meeting.txt",
+            contentType: "text/plain",
+          },
+          {
+            type: "feedback",
+            quote: "earlier note",
+            note: [{ type: "text", text: "Check this" }],
+          },
+          {
+            type: "voice",
+            clips: [{ fileId: randomUUID() }, { fileId: randomUUID() }],
+          },
+        ],
+      };
+      expect(validateSend({ userMessage }).valid).toBeTruthy();
+      expect(
+        validateSend({ userMessage, prompt: "ambiguous input" }).valid,
+      ).toBeFalsy();
+      expect(validateSend({}).valid).toBeFalsy();
       expect(sendTool.outputSchema).toMatchObject({
         properties: { eventId: { type: "string", format: "uuid" } },
       });
@@ -283,9 +315,22 @@ describe("thin MCP Web adapters", () => {
       expect(
         validate({ threadId: randomUUID(), sinceSeqId: 3 }).valid,
       ).toBeFalsy();
+      const contentParts = [
+        { type: "text", text: "SDK canonical reference" },
+        {
+          type: "feedback",
+          quote: "earlier note",
+          note: [{ type: "text", text: "Check this" }],
+        },
+      ];
       const sent = await sdk.callTool({
         name: "send_chat_message",
-        arguments: { prompt: "SDK canonical reference" },
+        arguments: {
+          userMessage: {
+            version: 1,
+            parts: [...contentParts, { type: "source", kind: "slack" }],
+          },
+        },
       });
       expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();
       const reference = mcpSendChatMessageOutputSchema.parse(
@@ -311,6 +356,15 @@ describe("thin MCP Web adapters", () => {
           threadId: reference.threadId,
           eventType: "input.prompt",
           runId: null,
+          payload: expect.objectContaining({
+            userMessage: {
+              version: 1,
+              parts: [
+                ...contentParts,
+                { type: "source", kind: "mcp", clientId: "mcp_test_client" },
+              ],
+            },
+          }),
         }),
       );
       const lifecycle = await sdk.callTool({

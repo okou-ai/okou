@@ -2322,7 +2322,9 @@
     "messageDocument": {
       "chatThread": "[Hilo de chat: {{title}}]",
       "file": "[Archivo: {{filename}}]",
-      "template": "[Plantilla: {{title}}]"
+      "template": "[Plantilla: {{title}}]",
+      "voice": "Mensaje de voz",
+      "voiceClip": "Clip de voz {{index}}"
     },
     "newChat": "Nuevo chat",
     "origins": {

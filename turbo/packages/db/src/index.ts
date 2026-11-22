@@ -1,3 +1,4 @@
+import * as voiceTranscriptionSchema from "./schema/voice-transcription";
 import * as larkOfficialAppTicketSchema from "./schema/lark-official-app-ticket";
 import * as phoneUseSchema from "./schema/phone-use";
 import * as marketingContentGrantSchema from "./schema/marketing-content-grant";
@@ -267,6 +268,7 @@ export const schema = {
   ...usagePackCreditRefundSchema,
   ...usagePackSubscriptionSchema,
   ...runBuiltInAdmissionSchema,
+  ...voiceTranscriptionSchema,
   ...githubInstallationSchema,
   ...githubUserLinkSchema,
   ...telegramOfficialUserLinkSchema,

@@ -1064,6 +1064,16 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
       continue;
     }
 
+    if (part.type === "voice") {
+      flushInlineText();
+      blocks.push(
+        i18n.t(($) => {
+          return $.chat.messageDocument.voice;
+        }),
+      );
+      continue;
+    }
+
     flushInlineText();
     blocks.push(
       i18n.t(

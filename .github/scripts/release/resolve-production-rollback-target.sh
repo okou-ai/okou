@@ -304,7 +304,7 @@ fi
 
 # The feed contraction follows the Workflow contraction. Both need a compatible API and scheduler.
 feed_contraction_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- turbo/packages/db/src/migrations/1612_drop_feed_source_type.sql | sed -n '1p')
+  origin/main -- turbo/packages/db/src/migrations/1613_drop_feed_source_type.sql | sed -n '1p')
 if [[ ! "$feed_contraction_commit" =~ ^[0-9a-f]{40}$ ]]; then
   fail "Cannot resolve the merged feed storage contraction on main."
 fi

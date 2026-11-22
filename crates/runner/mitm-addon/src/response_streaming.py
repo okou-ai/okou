@@ -810,5 +810,4 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINALIZER, None)
-    if stream_callback is not None and flow.response and flow.response.stream is stream_callback:
-        flow.response.stream = False
+    stream_capture.replace_owned_stream(flow.response, stream_callback)

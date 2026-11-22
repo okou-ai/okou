@@ -2277,7 +2277,9 @@
     "messageDocument": {
       "chatThread": "[聊天會話：{{title}}]",
       "file": "[檔案：{{filename}}]",
-      "template": "[模板：{{title}}]"
+      "template": "[模板：{{title}}]",
+      "voice": "語音訊息",
+      "voiceClip": "第 {{index}} 段語音"
     },
     "newChat": "新建聊天",
     "origins": {

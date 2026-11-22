@@ -135,7 +135,7 @@ type InstatusNoticePlacement = "floating" | "list";
 function placementClassName(placement: InstatusNoticePlacement): string {
   switch (placement) {
     case "floating": {
-      return "pointer-events-none fixed inset-x-3 bottom-safe-offset-4 z-[2147483646] flex max-h-[calc(100dvh-32px)] flex-col gap-3 overflow-y-auto sm:left-6 sm:right-auto sm:w-[390px]";
+      return "fixed inset-x-3 bottom-safe-offset-4 z-[2147483646] flex max-h-[calc(100dvh-32px)] flex-col gap-3 overflow-y-auto sm:left-6 sm:right-auto sm:w-[390px]";
     }
     case "list": {
       // On the mobile chat list the notice sits above its rows and shares
@@ -173,13 +173,12 @@ export function InstatusStatusNotice({
     >
       {issues.map((issue) => {
         return (
-          <div key={issue.id} className="pointer-events-auto">
-            <InstatusIssueNotice
-              issue={issue}
-              compact={placement !== "floating"}
-              pageBaseUrl={config.pageBaseUrl}
-            />
-          </div>
+          <InstatusIssueNotice
+            key={issue.id}
+            issue={issue}
+            compact={placement !== "floating"}
+            pageBaseUrl={config.pageBaseUrl}
+          />
         );
       })}
     </div>
