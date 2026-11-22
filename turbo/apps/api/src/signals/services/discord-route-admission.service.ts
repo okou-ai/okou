@@ -27,11 +27,9 @@ import {
   type DiscordChatThreadRouteBinding,
 } from "./discord-chat-ingress.service";
 import {
-  readDiscordEffectiveAgent$,
   readDiscordIngressSenderBindings$,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import { sendDiscordIngressNotice$ } from "./internal-discord-chat-run-callback.service";
 
 const terminalIngress$ = command(
   async (
@@ -202,34 +200,6 @@ const resolveDiscordAdmissionSource$ = command(
   },
 );
 
-const terminalAgentUnavailable$ = command(
-  async (
-    { set },
-    { claim, message, source: { binding } }: DiscordAdmissionContext,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const terminal = await set(
-      terminalIngress$,
-      { ...claim, reason: "agent_unavailable" },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (terminal) {
-      await set(
-        sendDiscordIngressNotice$,
-        {
-          ingressId: claim.ingressId,
-          connectionId: binding.connectionId,
-          channelId: message.channel_id,
-          content:
-            "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
-        },
-        signal,
-      );
-    }
-  },
-);
-
 type DiscordRouteKey = Pick<
   DiscordChatThreadRouteBinding,
   "connectionId" | "userId" | "channelId" | "sessionKey"
@@ -240,22 +210,10 @@ const createDiscordAdmissionRoute$ = command(
     { set },
     context: DiscordAdmissionContext,
     routeKey: DiscordRouteKey,
-    preferences: {
-      readonly effectiveAgent: { readonly id: string } | null;
-    },
     signal: AbortSignal,
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
     set(writeDb$);
     const { binding } = context.source;
-    const { effectiveAgent } = preferences;
-    const agent =
-      effectiveAgent ?? (await set(readDiscordEffectiveAgent$, binding));
-    signal.throwIfAborted();
-    if (!agent) {
-      await set(terminalAgentUnavailable$, context, signal);
-      signal.throwIfAborted();
-      return undefined;
-    }
     const route = await set(
       ensureCanonicalDiscordChatThreadRoute$,
       {
@@ -347,21 +305,11 @@ const resolveCanonicalDiscordRoute$ = command(
       signal.throwIfAborted();
     }
     signal.throwIfAborted();
-    const effectiveAgent =
-      isDm && !assignedRoute
-        ? await set(readDiscordEffectiveAgent$, binding)
-        : null;
-    signal.throwIfAborted();
-    if (isDm && !assignedRoute && !effectiveAgent) {
-      await set(terminalAgentUnavailable$, context, signal);
-      signal.throwIfAborted();
-      return undefined;
-    }
     const routeKey = assignedRoute ?? {
       connectionId: binding.connectionId,
       userId: binding.userId,
       channelId: routeChannelId,
-      sessionKey: effectiveAgent
+      sessionKey: isDm
         ? INTEGRATION_DM_SESSION_KEY
         : isThread
           ? channel.id
@@ -372,13 +320,7 @@ const resolveCanonicalDiscordRoute$ = command(
       (await set(findDiscordChatThreadRoute$, routeKey, signal));
     signal.throwIfAborted();
     if (!route) {
-      return await set(
-        createDiscordAdmissionRoute$,
-        context,
-        routeKey,
-        { effectiveAgent },
-        signal,
-      );
+      return await set(createDiscordAdmissionRoute$, context, routeKey, signal);
     }
     if (!ingress.routeId) {
       const routeId = route.id;

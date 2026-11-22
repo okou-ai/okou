@@ -41,18 +41,12 @@ export async function validateChatThreadEventExecutorRetirement(
       [...saved],
       [{ content: "", bundle: personal, version: savedVersion }],
     );
-    const copied = await sql`SELECT user_id, content, bundle FROM instructions
-      WHERE org_id = ${org} AND user_id <> 'owner'`;
-    assert.deepEqual(
-      [...copied],
-      [{ user_id: "peer", content: "workspace text", bundle: shared }],
-    );
-    const privateRows =
-      await sql`SELECT user_id, content, bundle FROM instructions
-      WHERE org_id = ${otherOrg}`;
-    assert.deepEqual(
-      [...privateRows],
-      [{ user_id: "owner", content: "private text", bundle: personal }],
+    const missing = await sql`SELECT org_id FROM instructions
+      WHERE (org_id = ${org} AND user_id = 'peer') OR org_id = ${otherOrg}`;
+    assert.equal(
+      missing.length,
+      0,
+      "members without saved instructions keep the built-in default",
     );
   } finally {
     await sql.end();

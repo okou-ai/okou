@@ -1,3 +1,5 @@
+import { createBddApi } from "./helpers/api-bdd";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import {
@@ -478,7 +480,7 @@ describe("canonical Discord ingress", () => {
     });
   });
 
-  it("sends one unavailable-agent notice before workspace bootstrap without admitting or replaying a chat", async () => {
+  it("admits one chat for a linked sender before workspace bootstrap, including replay", async () => {
     configureDiscordApp();
     mockEnv("DISCORD_APPLICATION_ID", DISCORD_TEST_APPLICATION_ID);
     mockEnv("DISCORD_GATEWAY_SECRET", DISCORD_TEST_GATEWAY_SECRET);
@@ -514,6 +516,11 @@ describe("canonical Discord ingress", () => {
       flow: "install",
       botUserId: DISCORD_TEST_APPLICATION_ID,
     });
+    mockClerkMembership(
+      context,
+      createBddApi(context).user(identity),
+      identity.orgRole,
+    );
     const provider = mockDiscordProvider(actor);
     const status = await discordStatus(actor);
     expect(status).toMatchObject({
@@ -540,18 +547,8 @@ describe("canonical Discord ingress", () => {
       "accepted",
     );
     await flushWaitUntilForTest();
-    expect(provider.sentMessages).toStrictEqual([
-      expect.objectContaining({
-        channel_id: provider.guildChannelId,
-        content:
-          "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
-        message_reference: {
-          message_id: message.id,
-          fail_if_not_exists: true,
-        },
-      }),
-    ]);
-    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual([]);
+    const threads = await discordChatThreads(context, actor);
+    expect(threads).toHaveLength(1);
     const delivered = [...provider.sentMessages];
     expect(
       (await postDiscordMessage(context, message, `agent-replay:${message.id}`))
@@ -559,7 +556,9 @@ describe("canonical Discord ingress", () => {
     ).toBe("duplicate");
     await flushWaitUntilForTest();
     expect(provider.sentMessages).toStrictEqual(delivered);
-    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual([]);
+    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual(
+      threads,
+    );
   });
 
   it.each([true, false])(

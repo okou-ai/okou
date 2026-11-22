@@ -4517,7 +4517,7 @@ export function registerFeishuIntegrationTests(
         ).toBe(`${APP_ORIGIN}${provider.settingsPath}`);
       });
 
-      it("replies when the default agent has not been initialized", async () => {
+      it("offers connection to an unlinked sender before workspace onboarding", async () => {
         const actor = createActor({
           userId: `user_${randomUUID()}`,
           orgId: `org_${randomUUID()}`,
@@ -4562,15 +4562,12 @@ export function registerFeishuIntegrationTests(
         expect(replies).toHaveLength(1);
         const reply = requireValue(
           replies[0],
-          "Expected unavailable Agent reply",
+          "Expected account connection reply",
         );
         expect(reply.target).toBe(messageId);
         expect(reply.replyInThread).toBeTruthy();
         expect(reply.msgType).toBe("interactive");
-        expect(messageContent(reply)).toContain("Agent unavailable");
-        expect(messageContent(reply)).toContain(
-          `The configured ${provider.name} agent could not be found. Ask an admin to select another agent.`,
-        );
+        expect(messageContent(reply)).toContain("Connect your account");
         const duplicate = await own(() => {
           return postEvent(callbackUrl, event, { encrypted: true });
         });
