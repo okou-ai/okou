@@ -431,8 +431,10 @@ class UpdateRootTest {
 
     private fun nextLaunch(): org.robolectric.shadows.ShadowActivity.IntentForResult {
         val shadow = shadowOf(compose.activity)
-        compose.waitUntil(10_000) { shadow.peekNextStartedActivityForResult() != null }
-        return checkNotNull(shadow.nextStartedActivityForResult)
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { shadow.peekNextStartedActivityForResult() != null }
+        }
+        return checkNotNull(compose.runOnIdle { shadow.nextStartedActivityForResult })
     }
 
     private fun returnFrom(requestCode: Int, resultCode: Int = Activity.RESULT_CANCELED) {

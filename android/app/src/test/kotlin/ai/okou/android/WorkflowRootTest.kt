@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
+import android.os.Looper
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -36,7 +37,6 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -46,6 +46,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 class WorkflowRootApplication : TestOkouApplication() {
@@ -79,26 +80,32 @@ class WorkflowRootTest {
     fun tearDown() {
         val application = app
         application.gate.countDown()
-        val jobs =
-            compose.activity.let { activity ->
-                compose.runOnIdle {
-                    ViewModelProvider(activity)[SessionModel::class.java]
-                        .uiState
-                        .value
-                        .ready
-                        ?.let {
-                            listOfNotNull(
-                                it.chats.viewModelScope.coroutineContext[Job],
-                                it.composer.viewModelScope.coroutineContext[Job],
-                                it.workflows?.viewModelScope?.coroutineContext?.get(Job),
-                            )
-                        }
-                        .orEmpty()
+        application.fixture.use {
+            try {
+                val jobs =
+                    compose.runOnIdle {
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                            ?.let {
+                                listOfNotNull(
+                                    it.chats.viewModelScope.coroutineContext[Job],
+                                    it.composer.viewModelScope.coroutineContext[Job],
+                                    it.workflows?.viewModelScope?.coroutineContext?.get(Job),
+                                )
+                            }
+                            .orEmpty()
+                    }
+                compose.activityRule.scenario.close()
+                compose.waitUntil(10_000) {
+                    shadowOf(Looper.getMainLooper()).idle()
+                    jobs.all { it.isCompleted }
                 }
+            } finally {
+                runBlocking { checkNotNull(application.journalStore).close() }
             }
-        compose.activityRule.scenario.close()
-        runBlocking { withTimeout(10_000) { jobs.forEach { it.join() } } }
-        application.fixture.close()
+        }
     }
 
     @Test
