@@ -2277,9 +2277,11 @@
     "messageDocument": {
       "chatThread": "[채팅 스레드: {{title}}]",
       "file": "[파일: {{filename}}]",
+      "pauseVoice": "음성 메시지 일시 정지",
+      "playVoice": "음성 메시지 재생",
+      "retryVoice": "음성 재생 다시 시도",
       "template": "[템플릿: {{title}}]",
-      "voice": "음성 메시지",
-      "voiceClip": "음성 클립 {{index}}"
+      "voice": "음성 메시지"
     },
     "newChat": "새 채팅",
     "origins": {

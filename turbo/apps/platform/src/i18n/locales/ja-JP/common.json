@@ -2277,9 +2277,11 @@
     "messageDocument": {
       "chatThread": "[チャット スレッド: {{title}}]",
       "file": "[ファイル: {{filename}}]",
+      "pauseVoice": "音声メッセージを一時停止",
+      "playVoice": "音声メッセージを再生",
+      "retryVoice": "音声の再生を再試行",
       "template": "[テンプレート: {{title}}]",
-      "voice": "音声メッセージ",
-      "voiceClip": "音声クリップ {{index}}"
+      "voice": "音声メッセージ"
     },
     "newChat": "新しいチャット",
     "origins": {
