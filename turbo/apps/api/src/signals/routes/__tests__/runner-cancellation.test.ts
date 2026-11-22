@@ -132,11 +132,7 @@ async function directFixture(runCounts: readonly number[]) {
   for (const [actorIndex, actor] of actors.entries()) {
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Direct cancellation agent",
-      description: "Exercises cancellation after direct process selection.",
-      visibility: "private",
-    });
+
     for (let index = 0; index < runCounts[actorIndex]!; index++) {
       const run = await runs.createThreadRun(actor, {
         prompt: "reconcile a directly dispatched Run",

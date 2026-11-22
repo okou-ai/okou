@@ -1315,7 +1315,6 @@ describe("POST /api/webhooks/notion", () => {
   it("synchronizes Notion listeners after Chat, Run, approval and account allowance changes", async () => {
     const {
       actor,
-      agentId,
       threadId,
       runnerGroup,
       firstAccount,

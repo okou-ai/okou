@@ -274,10 +274,7 @@ export function createBillingCheckoutFixture() {
       const runnerGroup = await runs.configureRunnerGroup();
       await createAuthDeviceSupportApi(context).initializePreferences(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Billing credential carrier",
-        visibility: "private",
-      });
+
       const run = await runs.createThreadRun(actor, {
         model: "claude-fable-5-1",
         prompt: "Use the issued agent credential for billing",

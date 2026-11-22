@@ -126,7 +126,7 @@ test.each([
 ] as const)(
   "pins complete $framework Workflow bundles at dispatch, including Workflows added while queued",
   async ({ framework, root }) => {
-    const { actor, agent, group, s3 } = await fixture(framework);
+    const { actor, group, s3 } = await fixture(framework);
     await saveInstructions(actor, "Dispatch-time personal Instructions");
     const workflow = await createWorkflow(actor, {
       files: [{ path: "reference.md", content: "old attachment" }],
@@ -295,7 +295,7 @@ test("re-evaluates private/public precedence without exposing another member's p
 test.each(["sharing withdrawal", "rename", "deletion"] as const)(
   "keeps the accepted Workflow after %s during startup",
   async (change) => {
-    const { actor, agent, s3 } = await fixture();
+    const { actor, s3 } = await fixture();
     const owner = publicRunOwner(context, actor);
     await owner.run(async () => {
       if (change === "rename") {
@@ -427,7 +427,7 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
 );
 
 test("invokes the caller's Private Workflow when Public and foreign Private Workflows share its slug", async () => {
-  const { actor, agent, group, s3 } = await fixture();
+  const { actor, group, s3 } = await fixture();
   const name = `invoked-${randomUUID().slice(0, 8)}`;
   await createWorkflow(actor, {
     name,
@@ -628,7 +628,7 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
 });
 
 test("keeps a large non-ASCII Workflow in its complete package without truncation", async () => {
-  const { actor, agent, group, s3 } = await fixture();
+  const { actor, group, s3 } = await fixture();
   const instruction = "指令\n".repeat(800_000);
   const workflow = await createWorkflow(actor, { instruction });
   const run = await runs.createThreadRun(actor, {

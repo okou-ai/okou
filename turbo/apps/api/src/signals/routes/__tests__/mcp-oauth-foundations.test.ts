@@ -682,9 +682,6 @@ describe("MCP OAuth foundations", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "OAuth refresh transport owner",
-    });
 
     const tokenRequests: {
       readonly body: string;

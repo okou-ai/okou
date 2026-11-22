@@ -60,4 +60,3 @@ test.each(["user", "organization"] as const)(
     expect(replay.status).toBe(200);
   },
 );
-

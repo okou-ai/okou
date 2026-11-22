@@ -6042,10 +6042,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         });
       }
 
-      const agent = await bdd.createAgent(actor, {
-        displayName: "BDD agentphone upload agent",
-        visibility: "private",
-      });
       const run = await runs.createThreadRun(actor, {
         prompt: "deliver a phone attachment",
       });

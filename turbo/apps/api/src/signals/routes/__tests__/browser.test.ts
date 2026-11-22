@@ -3212,8 +3212,7 @@ describe("Browser user-action route", () => {
   );
 
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
-    const { routeMocks, runs, chat, actor } =
-      await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
@@ -3453,8 +3452,7 @@ describe("Browser user-action route", () => {
   });
 
   it("discovers exact radio member identities, selects duplicate-valued option by index, and rejects group drift", async () => {
-    const { routeMocks, runs, chat, actor } =
-      await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
@@ -3848,8 +3846,7 @@ describe("Browser user-action route", () => {
   });
 
   it("selects by option index, rejects disabled and drifted options, and supports explicit clear", async () => {
-    const { routeMocks, runs, chat, actor } =
-      await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
@@ -4208,8 +4205,7 @@ describe("Browser user-action route", () => {
   });
 
   it("supports live number constraints, optional clear, and exact readback", async () => {
-    const { routeMocks, runs, chat, actor } =
-      await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
@@ -4433,8 +4429,7 @@ describe("Browser user-action route", () => {
   });
 
   it("guards native slider position, constraints, required confirmation and post-event readback", async () => {
-    const { routeMocks, runs, chat, actor } =
-      await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
@@ -4754,8 +4749,7 @@ describe("Browser user-action route", () => {
   });
 
   it("guards native opaque color selection, unchanged values, stale targets and independent readback", async () => {
-    const { routeMocks, runs, chat, actor } =
-      await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
@@ -4986,8 +4980,7 @@ describe("Browser user-action route", () => {
   });
 
   it("validates all five native date/time subtypes, empty/required values and independent readback", async () => {
-    const { routeMocks, runs, chat, actor } =
-      await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,
@@ -5482,8 +5475,7 @@ describe("Browser user-action route", () => {
   );
 
   it("validates and applies CLI-resolved Browser input without exposing target or value data", async () => {
-    const { routeMocks, runs, chat, actor } =
-      await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor } = await setupBrowserScenario();
     const current = await createDispatchedChatRun(
       chat,
       runs,

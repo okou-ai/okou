@@ -1461,8 +1461,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async searchChat(
       actor: ApiTestUser,
       keyword: string,
-      query: {
-      } = {},
+      query: {} = {},
     ): Promise<ChatSearchResponse> {
       const response = await accept(
         chatSearchClient().search({

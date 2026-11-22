@@ -108,7 +108,7 @@ async function observeMemory(
       owner.user({ orgId: actor.orgId, orgRole: "org:admin" }),
     );
   }
-  const { agentId, runnerGroup } = await owner.prepareActor(actor);
+  const { runnerGroup } = await owner.prepareActor(actor);
   const run = await runs.createThreadRun(actor, {
     prompt: "Observe this member's initialized Memory",
     model: "claude-fable-5-1",
@@ -139,9 +139,7 @@ describe("member memory account initialization", () => {
       await owner.prepareActor(admin);
       const runs = createRunsApi(context);
       await runs.ensurePersonalSubscriptionModel(actor);
-      const { agentId } = await api.createAgent(actor, {
-        visibility: "private",
-      });
+
       await prepareReadablePreferences(actor);
 
       const { sendChatRun } = createChatEventsFixture(context);

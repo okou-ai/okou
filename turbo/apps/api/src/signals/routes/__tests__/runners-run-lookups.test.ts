@@ -14,7 +14,7 @@ describe("Runner run lookup ownership", () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     const member = createBddApi(context).user({
       orgId: actor.orgId,
       orgRole: "org:member",
@@ -108,7 +108,7 @@ describe("Runner run lookup ownership", () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     const body = {
       targets: [{ kind: "builtin" as const, connectorSlug: "missing-builtin" }],
     };

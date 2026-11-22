@@ -53,7 +53,7 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
-    const { agentId } = await createAgentForNoCreditAdmission(actor);
+    await createAgentForNoCreditAdmission(actor);
 
     await expect(
       api.readThreadRunRejection(actor, {

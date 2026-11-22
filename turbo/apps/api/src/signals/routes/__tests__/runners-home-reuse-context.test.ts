@@ -11,12 +11,7 @@ describe("Execution home-reuse context", () => {
   it("distinguishes current input, earlier Runs and another thread through dispatched input", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const {
-      actor,
-      agentId,
-      run: own,
-      executionInput,
-    } = await publicChatActor(context);
+    const { actor, run: own, executionInput } = await publicChatActor(context);
 
     await own(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");

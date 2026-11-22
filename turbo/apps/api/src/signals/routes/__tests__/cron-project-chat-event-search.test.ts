@@ -199,9 +199,9 @@ describe("chat search publication", () => {
         }),
       ),
     );
-    await expect(
-      chat.searchChat(owner, keyword, { }),
-    ).resolves.toStrictEqual(native);
+    await expect(chat.searchChat(owner, keyword, {})).resolves.toStrictEqual(
+      native,
+    );
     const token = mcp.authorize(owner);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [owner.orgId, otherOrg.orgId].map((orgId) => {
@@ -351,10 +351,7 @@ describe("chat search publication", () => {
       const owner = bdd.user({ orgId: `org_${randomUUID()}` });
       await bdd.provisionWorkspace(owner);
       await bdd.completeOnboarding(owner);
-      const agent = await bdd.createAgent(owner, {
-        displayName: "Unicode research",
-        visibility: "private",
-      });
+
       const examples = [
         {
           contract: "UTF-16 ranges",
@@ -431,8 +428,7 @@ describe("chat search publication", () => {
         const result = mcpProjectChatSearchContract.search.responses[200].parse(
           response.structuredContent,
         );
-        const native = await chat.searchChat(owner, keyword, {
-        });
+        const native = await chat.searchChat(owner, keyword, {});
         expect(
           result.results.map((hit) => {
             return {
@@ -520,10 +516,7 @@ describe("chat search publication", () => {
       );
     });
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Search ordering",
-      visibility: "private",
-    });
+
     const keyword = `ordering${randomUUID().replaceAll("-", "")}`;
     const threadId = await withMockNowForTest(
       new Date("2026-10-12T08:00:00Z"),
@@ -575,8 +568,7 @@ describe("chat search publication", () => {
       `${keyword} middle`,
       `${keyword} oldest`,
     ]);
-    const viaWeb = await chat.searchChat(owner, keyword, {
-    });
+    const viaWeb = await chat.searchChat(owner, keyword, {});
     expect(
       viaWeb.results.map((hit) => {
         return [hit.matchedMessage.content, hit.matchedMessage.createdAt];

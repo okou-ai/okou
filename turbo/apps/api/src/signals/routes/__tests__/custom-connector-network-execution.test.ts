@@ -160,9 +160,7 @@ test("chat account startup preserves HTTP/MCP network bindings and unbound Direc
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
     });
-    const { agentId } = await bdd.createAgent(actor, {
-      displayName: "Bound connector execution",
-    });
+
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const config = (
       await accept(

@@ -93,7 +93,7 @@ describe("default connector account runtime wakeups", () => {
       const otherRun = await memberRuns.run(async () => {
         await bdd.completeOnboarding(member);
         await runs.ensurePersonalSubscriptionModel(member);
-        const agent = await bdd.createAgent(member);
+
         const created = await runs.createThreadRun(member, {
           prompt: "Keep a teammate's run active",
         });

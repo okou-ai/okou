@@ -58,10 +58,7 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Mail notification agent",
-    visibility: "private",
-  });
+
   await runs.heartbeatRunner(runnerGroup);
   const run = await runs.createThreadRun(actor, {
     model: "claude-fable-5-1",

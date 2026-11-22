@@ -870,9 +870,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     const actor = bdd.user({ orgRole: "org:admin" });
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "MCP no-auth reauthorization Agent",
-    });
+
     const connector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "MCP no-auth reauthorization",

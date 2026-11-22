@@ -980,7 +980,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks", () => {
       it("names the deck guide in the agent tools prompt", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
           prompt: "turn this deck into a template",
@@ -1005,7 +1005,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("enables Markdown-first output guidance for staff runs", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor({
+        const { actor, runnerGroup } = await entitledRunActor({
           orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
         });
         const run = await api.createThreadRun(actor, {
@@ -1025,7 +1025,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("advertises the installed Okou CLI in execution input", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const run = await api.createThreadRun(actor, {
           prompt: "use the Okou CLI",
         });
@@ -1039,7 +1039,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("advertises private artifact sharing and downloads", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
         const created = await api.createThreadRun(actor, {
           prompt: "share the report with my organization",
         });
@@ -1056,7 +1056,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("advertises current Run usage and grants its Run capability", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const created = await api.createThreadRun(actor, {
           prompt: "inspect this Run's provider-token usage",
         });
@@ -1080,7 +1080,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("advertises Lark messaging only while the organization rollout is enabled", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
         const disabled = await api.createThreadRun(actor, {
           prompt: "send a message",
         });
@@ -1109,7 +1109,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("dispatches execution input without connector scope", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const created = await api.createThreadRun(actor, {
           prompt: "run without connectors",
         });
@@ -1128,7 +1128,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("adopts a newly connected sibling account after repeated runs", async () => {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
-        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        const { actor, runnerGroup } = await oauth.entitledRunActor();
         const x = await oauth.connect(actor, {
           connectorSlug: "x",
           accessToken: "x-bdd-scoped-access",
@@ -1176,7 +1176,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("admits the connected account across a catalog capability change", async () => {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
-        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        const { actor, runnerGroup } = await oauth.entitledRunActor();
         const x = await oauth.connect(actor, {
           connectorSlug: "x",
           accessToken: "x-bdd-capability-access",
@@ -1202,7 +1202,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         mockEnv("GIT_COMMIT_SHA", "a".repeat(40));
-        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        const { actor, runnerGroup } = await oauth.entitledRunActor();
         await oauth.connect(actor, {
           connectorSlug: "x",
           accessToken: "x-reusable-authority-access",
@@ -1396,10 +1396,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        const shared = await bdd.createAgent(actor, {
-          displayName: "Shared Agent for first-run Memory",
-          visibility: "public",
-        });
+
         // A member can send before the Clerk membership webhook initializes
         // Memory or before opening the Web onboarding/preferences flow.
         const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
@@ -1443,10 +1440,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("prepares the storage manifest without uploading empty artifact objects", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+        const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
         const prompt = "storage manifest dimensions should not leak prompt";
         const defaultAgentId =
           await createBddApi(context).readDefaultAgentId(actor);
@@ -1536,7 +1530,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("resolves Connector and memory artifacts with exact candidates", async () => {
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -1622,7 +1616,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("returns canonical storage manifests without API-only ownership fields", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -1657,7 +1651,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("persists canonical mounts across historyless session continuation", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -1916,7 +1910,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("keeps a direct launch claimable when run-context ingest fails", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
         const prompt = "run-context ingest should not block launch";
         context.mocks.axiom.ingest.mockImplementation((dataset, events) => {
           if (
@@ -1945,7 +1939,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("keeps a direct launch claimable when sandbox telemetry ingest fails", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
         const prompt = "sandbox telemetry should not block launch";
         mockAxiomSdkTelemetryFailure({
           mode: "ingest",
@@ -1966,10 +1960,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("resumes the Agent execution session for a continued run", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+        const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
         const first = await api.createThreadRun(actor, {
           prompt: "start a finalized timing session",
@@ -2017,7 +2008,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const {
           actor,
-          agentId,
           run: own,
           runExecution,
         } = await publicChatActor(context, {
@@ -2125,10 +2115,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const webhooks = createWebhookCallbackApi(context);
         const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
         // A public Agent, so other members reach the thread ownership check.
-        const { agentId } = await bdd.createAgent(actor, {
-          displayName: "Shared continuation Agent",
-          visibility: "public",
-        });
 
         const first = await api.createThreadRun(actor, {
           prompt: "start a session",
@@ -2225,7 +2211,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const webhooks = createWebhookCallbackApi(context);
         // The owned GPT 6 Astra subscription has no Pi route and runs the native Codex CLI.
         const selectedModel = "gpt-6-astra";
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -2367,11 +2353,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.ensurePersonalSubscriptionModel(actor);
         // A personal subscription default route and a selectable built-in route.
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD suspended-org agent",
-          description: "Covers the suspended entitlement admission branch.",
-          visibility: "private",
-        });
+
         const subscriptionPrompt = `suspended subscription ${randomUUID()}`;
         const builtInPrompt = `suspended built-in ${randomUUID()}`;
         await plan.update("canceled");
@@ -2506,10 +2488,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+        const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
         const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
         const owned = await api.createThreadRun(actor, {
@@ -2545,10 +2524,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const uninitialized = bdd.user();
         bdd.acceptAgentStorageWrites();
         await api.configureRunnerGroup();
-        const bareAgent = await bdd.createAgent(uninitialized, {
-          displayName: "BDD uninitialized-org agent",
-          visibility: "private",
-        });
+
         await expect(
           api.readThreadRunRejection(uninitialized, {
             prompt: "built-in model run",
@@ -2563,10 +2539,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.grantProEntitlement(actor, {
           periodEndUnix: Math.floor(now() / 1000) - 60 * 86_400,
         });
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD expired-credits agent",
-          visibility: "private",
-        });
+
         await expect(
           api.readThreadRunRejection(actor, {
             prompt: "built-in model run",
@@ -2590,10 +2563,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.ensurePersonalSubscriptionModel(actor);
         // A personal subscription default route and a selectable built-in route.
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD subscription admission agent",
-          visibility: "private",
-        });
 
         const ownedRuns = publicRunOwner(context, actor);
         const run = await api.createThreadRun(actor, {
@@ -2768,10 +2737,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.configureRunnerGroup();
         await api.grantProEntitlement(actor);
         await setPaidToolDisabled(context, actor, "image-generation", true);
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD managed key agent",
-          visibility: "private",
-        });
+
         preparePiSandboxExecution();
 
         // No personal subscription and an Auto send: the managed route.
@@ -2862,7 +2828,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("does not add Codex image upload guidance to a Claude web chat run", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -2976,7 +2942,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("omits connected stored connectors when the account is disabled for Chats", async () => {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
-        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        const { actor, runnerGroup } = await oauth.entitledRunActor();
 
         await oauth.connect(actor, {
           connectorSlug: "x",
@@ -3018,7 +2984,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        const { actor, runnerGroup } = await oauth.entitledRunActor();
 
         await oauth.connect(actor, {
           connectorSlug: "x",
@@ -3122,11 +3088,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           refreshToken: "test-oauth-bdd-refresh",
         });
         await api.ensurePersonalSubscriptionModel(actor);
-        const agent = await oauth.createAgent(actor, {
-          displayName: "BDD test-oauth connector agent",
-          description: "Uses the test-oauth connector.",
-          visibility: "private",
-        });
 
         const run = await api.createThreadRun(actor, {
           prompt: "use stored connector variable aliases",
@@ -3154,7 +3115,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("injects manual-grant api-token connectors and their optional variables", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const gitlabConnection = await connectors.connectManualGrant(
           actor,
@@ -3213,10 +3174,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId } = await oauth.entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+        const { actor } = await oauth.entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
         await oauth.connect(actor, {
           connectorSlug: "x",
@@ -3263,7 +3221,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
 
         await connectors.connectManualGrant(actor, "figma", "api-token", {
           accessToken: "figd_bdd",
@@ -3333,7 +3291,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("keeps refresh-owned connector secrets out of the sandbox environment", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const connected = await connectors.connectManualGrant(
           actor,
@@ -3457,7 +3415,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const catalogBucket = `test-run-lifecycle-runtime-sync-projection-${randomUUID()}`;
         mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
 
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const connected = await connectors.connectManualGrant(
           actor,
@@ -3602,7 +3560,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        const { actor, runnerGroup } = await oauth.entitledRunActor();
         mockOptionalEnv(
           "GOOGLE_ADS_DEVELOPER_TOKEN",
           "developer-token-before-preparation",
@@ -3745,7 +3703,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("omits OpenAI credentials and firewall rules without a connected account", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
           prompt: "run without a connected OpenAI account",
@@ -3841,7 +3799,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("runs connected no-auth HTTP and MCP custom connectors without credentials", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const rand = randomUUID().replaceAll("-", "").slice(0, 8);
         mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
         mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -3997,7 +3955,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("admits an explicitly connected custom connector without stored values", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const rand = randomUUID().replaceAll("-", "").slice(0, 8);
 
         const custom = await connectors.createCustomConnector(actor, {
@@ -4044,7 +4002,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("admits overlapping custom and built-in connector targets", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         await connectors.connectManualGrant(actor, "figma", "api-token", {
           accessToken: "selected-figma-token",
@@ -4107,7 +4065,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("keeps a built-in connector when a custom connector only overrides a narrower path", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         await connectors.connectManualGrant(actor, "figma", "api-token", {
           accessToken: "selected-figma-token",
@@ -4217,7 +4175,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         });
         owned.ownsFeatureSwitches();
-        const { actor, agentId, runnerGroup } = owned;
+        const { actor, runnerGroup } = owned;
         function own<T>(operation: () => Promise<T>) {
           acceptedState = captureExternalState();
           return owned.run(operation);
@@ -4686,7 +4644,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const mcpDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime",
@@ -4966,7 +4924,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("rejects a deleted custom credential and synchronizes its replacement", async () => {
         const owned = await publicChatActor(context);
         owned.ownsFeatureSwitches();
-        const { actor, agentId, runnerGroup } = owned;
+        const { actor, runnerGroup } = owned;
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
@@ -5267,7 +5225,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -5448,7 +5406,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const connectedAt = now();
         mockNow(connectedAt);
         onTestFinished(() => {
@@ -5593,7 +5551,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
         const fixture = await publicChatActor(context);
-        const { actor, agentId, runnerGroup } = fixture;
+        const { actor, runnerGroup } = fixture;
         const callbacks = createWebhookCallbackApi(context);
         function own<T>(operation: () => Promise<T>) {
           const acceptedAt = now();
@@ -5886,7 +5844,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const custom = await connectors.createCustomConnector(actor, {
           displayName: "BDD Revoked OAuth 2.0 Runtime API",
@@ -6110,7 +6068,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const mcp = await connectors.createCustomConnector(actor, {
           kind: "mcp",
@@ -6501,7 +6459,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
         const fixture = await publicChatActor(context);
-        const { actor, agentId, runnerGroup } = fixture;
+        const { actor, runnerGroup } = fixture;
         const callbacks = createWebhookCallbackApi(context);
         function own<T>(operation: () => Promise<T>) {
           const acceptedAt = now();
@@ -6666,7 +6624,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -6866,7 +6824,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const rand = randomUUID().replace(/-/g, "").slice(0, 8);
 
         const saved = await connectors.saveCustomConnectorProposal(actor, {
@@ -7016,7 +6974,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("omits storage-incompatible custom connectors from new runs", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const rand = randomUUID().replace(/-/g, "").slice(0, 8);
 
         const saved = await connectors.saveCustomConnectorProposal(actor, {
@@ -7097,7 +7055,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fixture = await publicChatActor(context);
-        const { actor, agentId, runnerGroup } = fixture;
+        const { actor, runnerGroup } = fixture;
         const callbacks = createWebhookCallbackApi(context);
         function own<T>(operation: () => Promise<T>) {
           const acceptedAt = now();
@@ -7297,7 +7255,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("admits a custom connector only in runs created after full recovery", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const rand = randomUUID().replace(/-/g, "").slice(0, 8);
         const saved = await connectors.saveCustomConnectorProposal(actor, {
           proposal: {
@@ -7450,7 +7408,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const rand = randomUUID().replace(/-/g, "").slice(0, 8);
 
         const saved = await connectors.saveCustomConnectorProposal(actor, {
@@ -7583,7 +7541,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("keeps connector-owned vars out of custom connector base urls", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         await connectors.connectManualGrant(
           actor,
@@ -7654,7 +7612,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         async ({ gitlabEnabled }) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
-          const { actor, agentId, runnerGroup } = await entitledRunActor();
+          const { actor, runnerGroup } = await entitledRunActor();
 
           const jiraConnection = await connectors.connectManualGrant(
             actor,
@@ -7778,7 +7736,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const agent = await oauth.createAgent(actor, {
           displayName: "BDD queued permission refresh agent",
         });
-        const agentId = agent.agentId;
+
         await oauth.connect(actor, {
           connectorSlug: "slack",
           accessToken: "xoxb-bdd-baseline",
@@ -7843,9 +7801,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const { actor, runnerGroup } = await entitledRunActor();
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD no built-in connectors agent",
-        });
+
         await api.heartbeatRunner(runnerGroup);
 
         const run = await api.createThreadRun(actor, {
@@ -7863,7 +7819,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("distinguishes terminal connector runtime sync from missing runs", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -7962,7 +7918,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor(
+        const { actor, runnerGroup } = await oauth.entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -8020,7 +7976,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("applies Cloudflare permission overrides without changing the sibling Slack policy", async () => {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
-        const { actor, agentId, runnerGroup } = await oauth.entitledRunActor();
+        const { actor, runnerGroup } = await oauth.entitledRunActor();
         await oauth.connect(actor, {
           connectorSlug: "cloudflare",
           accessToken: "cloudflare-bdd-token",
@@ -8091,11 +8047,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           accessToken: "cloudflare-direct-bdd-token",
         });
         await api.ensurePersonalSubscriptionModel(actor);
-        const agent = await oauth.createAgent(actor, {
-          displayName: "BDD cloudflare connector agent",
-          description: "Uses the cloudflare connector.",
-          visibility: "private",
-        });
 
         const run = await api.createThreadRun(actor, {
           prompt: "thread run cloudflare defaults",
@@ -8158,12 +8109,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await bdd.readMe(actor);
         await api.grantProEntitlement(actor);
         await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
-        const agent = await oauth.createAgent(actor, {
-          displayName: "Research Bot",
-          description: "Finds release details",
-          sound: "direct",
-          visibility: "private",
-        });
+
         await oauth.connect(actor, {
           connectorSlug: "slack",
           accessToken: "xoxb-bdd-context",
@@ -8379,7 +8325,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("advertises Outlook draft review to web chat runs", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const run = await api.createThreadRun(actor, {
           prompt: "prepare an Outlook email",
         });
@@ -8401,7 +8347,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("appends the restricted explicit content policy last", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
           prompt: "summarize the safety policy",
@@ -8433,7 +8379,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("omits all disabled managed tool guidance while retaining independent tools and content policy", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -8464,7 +8410,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("explains live tool discovery and schema-based calls to the agent", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -8487,7 +8433,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -8594,7 +8540,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("snapshots native Codex image preferences independently from Web Search", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -8681,10 +8627,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        const agent = await bdd.createAgent(actor, {
-          displayName: "Shared paid tool preferences agent",
-          visibility: "public",
-        });
+
         const member = bdd.user({ orgId: actor.orgId });
         await bdd.completeOnboarding(member);
         await api.ensurePersonalSubscriptionModel(member, NATIVE_RUNNER_ROUTE);
@@ -8709,7 +8652,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("advertises banking tools only while the feature is enabled", async () => {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         await connectors.updateFeatureSwitches(actor, {
           [FeatureSwitchKey.Banking]: false,
@@ -8756,7 +8699,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("advertises SSH guidance and grants Run scopes for an ordinary organization", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const run = await api.createThreadRun(actor, {
           prompt: "inspect my SSH hosts",
         });
@@ -8796,7 +8739,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("advertises VNC instructions and Run capabilities", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
           prompt: "inspect my remote VNC desktop",
@@ -8845,7 +8788,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
           const webhooks = createWebhookCallbackApi(context);
-          const { actor, agentId, runnerGroup } = await entitledRunActor();
+          const { actor, runnerGroup } = await entitledRunActor();
 
           await connectors.updateFeatureSwitches(actor, {
             [FeatureSwitchKey.PresentationConvert]: enabled,
@@ -8898,7 +8841,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
           const webhooks = createWebhookCallbackApi(context);
-          const { actor, agentId, runnerGroup } = await entitledRunActor();
+          const { actor, runnerGroup } = await entitledRunActor();
           await connectors.updateFeatureSwitches(actor, {
             [FeatureSwitchKey.BatchConnectorPermissions]: enabled,
           });
@@ -9001,7 +8944,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("keeps the standard disallowed tools with callback guidance", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
 
         const run = await api.createThreadRun(actor, {
           prompt: "continue the task",
@@ -9073,7 +9016,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const {
           actor,
-          agentId,
           runnerGroup,
           run: own,
           runExecution,
@@ -9194,10 +9136,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("dispatches native continuation without reading history object metadata", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+        const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
         const source = await api.createThreadRun(actor, {
           prompt: "create history for a failed execution delivery",
@@ -9821,10 +9760,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         async (terminalStatus) => {
           const api = createRunsApi(context);
           const webhooks = createWebhookCallbackApi(context);
-          const { actor, agentId } = await entitledRunActor(
-            {},
-            NATIVE_RUNNER_ROUTE,
-          );
+          const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
           const run = await api.createThreadRun(actor, {
             prompt: "recover native history after Runner fallback",
           });
@@ -9920,10 +9856,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         async (cliAgentType) => {
           const api = createRunsApi(context);
           const webhooks = createWebhookCallbackApi(context);
-          const { actor, agentId } = await entitledRunActor(
-            {},
-            NATIVE_RUNNER_ROUTE,
-          );
+          const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
           // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
           const model =
@@ -10088,10 +10021,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("preserves generic cancellation recovery in a combined request", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
+        const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
         const run = await api.createThreadRun(actor, {
           prompt: "cancel before combined recovery",
         });
@@ -10141,7 +10071,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("keeps execution auth valid through timeout completion and final telemetry", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
         const issuedAt = now();
         mockNow(issuedAt);
         onTestFinished(() => {
@@ -10205,10 +10135,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         async (nativeState) => {
           const api = createRunsApi(context);
           const webhooks = createWebhookCallbackApi(context);
-          const { actor, agentId } = await entitledRunActor(
-            {},
-            NATIVE_RUNNER_ROUTE,
-          );
+          const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
 
           const source = await api.createThreadRun(actor, {
             prompt: "run until the execution deadline",
@@ -10714,7 +10641,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("keeps Axiom trace failures outside the required event ACK", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         await createBillingMediaApi(context).updateFeatureSwitches(actor, {
           [FeatureSwitchKey.OkouDebug]: true,
         });

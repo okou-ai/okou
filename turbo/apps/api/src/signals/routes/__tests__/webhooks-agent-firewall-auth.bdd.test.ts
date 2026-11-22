@@ -918,10 +918,7 @@ describe("FW-3: billable firewall lease", () => {
     const runnerGroup = await runsApi.configureRunnerGroup();
     const granted = await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD billable suspension agent",
-      visibility: "private",
-    });
+
     const run = await runsApi.createThreadRun(actor, {
       prompt: "billable auth across a subscription deletion",
     });
@@ -992,10 +989,7 @@ describe("FW-3: billable firewall lease", () => {
       periodEndUnix: Math.floor(now() / 1000) - 60 * 86_400,
     });
     await runsApi.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD expired-credit billable agent",
-      visibility: "private",
-    });
+
     const run = await runsApi.createThreadRun(actor, {
       prompt: "billable auth with expired credits",
     });

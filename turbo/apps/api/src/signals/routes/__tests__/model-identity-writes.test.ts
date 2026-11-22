@@ -71,7 +71,7 @@ describe("model identity new writes", () => {
   });
 
   it("preserves a personal selection and effort when rename and send omit the model", async () => {
-    const { actor, agentId } = await actorWithAgent();
+    const { actor } = await actorWithAgent();
     await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -181,7 +181,7 @@ describe("model identity new writes", () => {
   it("writes canonical Auto on a send and launches the managed route", async () => {
     // The fixed test seed provides the managed key, so an Auto send without a
     // personal subscription launches on the platform route.
-    const { actor, agentId } = await actorWithAgent();
+    const { actor } = await actorWithAgent();
     await runs.grantProEntitlement(actor);
     await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();

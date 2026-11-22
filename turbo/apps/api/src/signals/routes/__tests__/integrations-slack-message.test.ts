@@ -113,10 +113,7 @@ describe("POST /api/integrations/slack/message", () => {
     };
     bdd.acceptAgentStorageWrites();
     await api.grantProEntitlement(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "My <Assistant> & Reports",
-      visibility: "private",
-    });
+
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-sonnet-5-5",
     });

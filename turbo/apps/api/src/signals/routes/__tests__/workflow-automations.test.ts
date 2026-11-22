@@ -4406,7 +4406,7 @@ describe("okou workflow automations", () => {
   });
 
   it("repairs a lazy destination after public thread deletion without reusing its identity", async () => {
-    const owned = await publicChatActor(context, { });
+    const owned = await publicChatActor(context, {});
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
         name: WORKFLOW_NAME,

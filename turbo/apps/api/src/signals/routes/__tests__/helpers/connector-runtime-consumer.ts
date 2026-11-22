@@ -56,10 +56,7 @@ export async function withConnectorRuntime(
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, options);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Connector credential consumer",
-    visibility: "private",
-  });
+
   const owned: { runId?: string } = {};
   let cleanupPromise: Promise<void> | undefined;
   async function cleanupOwnedResources(): Promise<void> {

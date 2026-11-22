@@ -989,10 +989,6 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(admin);
     await runs.ensurePersonalSubscriptionModel(admin);
-    const agent = await api.createAgent(admin, {
-      displayName: "BDD Org Token Agent",
-      visibility: "private",
-    });
 
     const created = await runs.createThreadRun(admin, {
       prompt: "exercise org reads with the run Okou token",

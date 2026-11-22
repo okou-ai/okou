@@ -60,7 +60,7 @@ async function connectPublic(actor: ApiTestUser) {
 
 describe("builtin MCP Run admission", () => {
   it("pins execution input, refreshes discovery and keeps MCP credentials behind firewall auth", async () => {
-    const { actor, agentId, runnerGroup } = await runActor();
+    const { actor, runnerGroup } = await runActor();
     const publicAccountId = await connectPublic(actor);
     await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
       apiKey: "admitted-mcp-token",

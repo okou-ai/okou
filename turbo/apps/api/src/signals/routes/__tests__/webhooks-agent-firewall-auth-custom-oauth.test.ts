@@ -86,9 +86,7 @@ async function setupCustomOAuthFirewall(
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Custom OAuth refresh agent",
-  });
+
   const run = await runs.createThreadRun(actor, {
     prompt: "resolve custom OAuth firewall auth",
   });

@@ -38,10 +38,7 @@ describe("runner environment ownership", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Environment ownership agent",
-      visibility: "private",
-    });
+
     const run = await runs.createThreadRun(actor, {
       prompt: "exercise environment ownership",
     });

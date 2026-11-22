@@ -97,9 +97,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "MCP identity refresh",
-    });
+
     const automatic = setupApp({
       context,
       routes: builtinConnectorsAutomaticRoutes,
@@ -253,9 +251,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "MCP concurrent registration retirement",
-    });
+
     const automatic = setupApp({
       context,
       routes: builtinConnectorsAutomaticRoutes,
@@ -489,9 +485,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       const runnerGroup = await runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "MCP omitted refresh fields",
-      });
+
       const automatic = setupApp({
         context,
         routes: builtinConnectorsAutomaticRoutes,
@@ -788,9 +782,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: `MCP refresh ${outcomeKind}`,
-    });
+
     const automatic = setupApp({
       context,
       routes: builtinConnectorsAutomaticRoutes,

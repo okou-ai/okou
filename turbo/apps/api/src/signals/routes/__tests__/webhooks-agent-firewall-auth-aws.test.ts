@@ -35,11 +35,7 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "AWS refresh agent",
-    description: "Exercises AWS refresh and reconnect.",
-    visibility: "private",
-  });
+
   const run = await runs.createThreadRun(actor, {
     prompt: "resolve AWS firewall auth",
   });

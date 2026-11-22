@@ -43,7 +43,6 @@ const {
 
 async function configureResponsesWithOwnedRuns(args: {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runnerGroup: string;
   readonly selectedModel: "gpt-6-luna";
 }): Promise<{
@@ -214,7 +213,7 @@ async function configureResponsesWithOwnedRuns(args: {
 describe("CHAT-02: model-first routing", () => {
   it("reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for gpt-6-luna", async () => {
     const selectedModel = "gpt-6-luna";
-    const { actor, agentId, runnerGroup } = await publicChatActor(context);
+    const { actor, runnerGroup } = await publicChatActor(context);
     const {
       run: own,
       model,
@@ -222,7 +221,6 @@ describe("CHAT-02: model-first routing", () => {
       runExecution,
     } = await configureResponsesWithOwnedRuns({
       actor,
-      agentId,
       runnerGroup,
       selectedModel,
     });

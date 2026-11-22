@@ -138,10 +138,7 @@ export async function launchPublicToolRun(
   const personal = await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Public paid-tool actor",
-    visibility: "private",
-  });
+
   const owned: { runId?: string; sandboxToken?: string } = {};
   let released = false;
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");

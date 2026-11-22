@@ -45,10 +45,6 @@ async function fundedFreeRuns() {
       status: "active",
       credits: 100_000,
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Runtime credit balance",
-      visibility: "private",
-    });
 
     async function startRunExecution(prompt: string) {
       const run = await runs.createThreadRun(actor, {

@@ -111,7 +111,6 @@ export const clientContractImportManifest = [
     contracts: [
       "bankingContract",
       "bankingPublicContract",
-      "bankingUserContract",
       "bankingWorkspaceContract",
     ],
     bindings: [],

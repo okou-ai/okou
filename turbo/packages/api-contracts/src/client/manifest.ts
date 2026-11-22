@@ -55,7 +55,6 @@ export const clientDescriptorManifest = [
     contracts: [
       "bankingContract",
       "bankingPublicContract",
-      "bankingUserContract",
       "bankingWorkspaceContract",
     ],
   },

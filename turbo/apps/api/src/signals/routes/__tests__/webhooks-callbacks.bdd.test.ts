@@ -4964,10 +4964,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     await connectors.connectManualGrant(actor, "openai", "api-token", {
       apiKey: "org-teardown-connector-token",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Org Teardown Agent",
-      visibility: "public",
-    });
+
     const customManual = await connectors.createCustomConnector(actor, {
       ...customManualConnectorBodyForTeardown("org"),
       skillMarkdown: "Keep this registered teardown skill active.",
@@ -5582,7 +5579,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
 
     it("retains the deleted user's Agents and another member's thread and run on them", async () => {
       const fixture = await prepareUserDeletion();
-      const { runs, runnerGroup, doomed, peer, doomedAgent } = fixture;
+      const { runs, runnerGroup, doomed, peer } = fixture;
       const bdd = createBddApi(context);
       const chat = createChatFilesBddApi(context);
       const doomedPublicAgent = await bdd.createAgent(doomed, {
@@ -5667,10 +5664,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const banned = bdd.user();
     const granted = await runs.grantProEntitlement(banned);
     await runs.ensurePersonalSubscriptionModel(banned);
-    const agent = await bdd.createAgent(banned, {
-      displayName: "BDD Banned User Agent",
-      visibility: "private",
-    });
 
     const run = await runs.createThreadRun(banned, {
       prompt: "banned user cleanup run",

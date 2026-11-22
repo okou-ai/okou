@@ -108,7 +108,7 @@ describe("content bundle presigned URL cache", () => {
   }
 
   it("issues and reuses two-day URLs for Connector Skill bundles", async () => {
-    const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
+    const { actor, runnerGroup } = await entitledWorkflowActor();
     if (!actor.orgId) {
       throw new Error("Expected readonly cache test actor to have an org");
     }
@@ -318,7 +318,7 @@ describe("content bundle presigned URL cache", () => {
   });
 
   it("retains the newer URL when an older cold signer publishes last", async () => {
-    const { actor, agentId, chats, readWorkflowExecution } =
+    const { actor, chats, readWorkflowExecution } =
       await workflowCacheFixture();
     const api = createRunsApi(context);
     const startedAt = Math.floor(now() / 1000) * 1000;

@@ -1,7 +1,7 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type {
   BankingWorkspaceStatus,
-  BankingConnectSessionRequest,
+  WorkspaceBankingConnectSessionRequest,
   BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
 import {
@@ -39,7 +39,7 @@ type BankingAccount = BankingConnection["accounts"][number];
 type BankingGrant = NonNullable<BankingWorkspaceStatus["grant"]>;
 type UpdateBankingUi = (patch: Partial<BankingCardUiState>) => void;
 type OpenBankingConnect = (
-  mode: BankingConnectSessionRequest["mode"],
+  mode: WorkspaceBankingConnectSessionRequest["mode"],
   institutionLoginId?: string,
 ) => void;
 const BANKING_GRANT_DURATIONS: readonly BankingGrantDuration[] = [
