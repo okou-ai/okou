@@ -21,6 +21,7 @@ import ai.okou.android.settings.WorkspaceSettingsDataPage
 import ai.okou.android.settings.settingsWebClick
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.rememberSettingsFlag
+import ai.okou.android.state.rememberSettingsReturnFocus
 import ai.okou.android.state.rememberWorkspaceSwitchTarget
 import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.updates.updateFocusOutline
@@ -55,7 +56,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -316,7 +316,7 @@ private fun WorkspaceSettingsContent(
 ) {
     val rowFocus = remember { SettingsDestination.entries.associateWith { FocusRequester() } }
     var focused by remember { mutableStateOf<SettingsDestination?>(null) }
-    var restore by rememberSaveable { mutableStateOf<SettingsDestination?>(null) }
+    var restore by rememberSettingsReturnFocus()
     fun focusFor(page: SettingsDestination) =
         Modifier.focusRequester(rowFocus.getValue(page)).onFocusChanged {
             if (it.isFocused) focused = page else if (focused == page) focused = null
@@ -344,12 +344,14 @@ private fun WorkspaceSettingsContent(
                 appUpdates = appUpdates,
                 workspacePreferences = { MemberPreferencesSettings(ready.preferences) },
                 workspace = {
-                    WorkspaceSettings(
-                        state,
-                        switchWorkspace,
-                        focusFor(SettingsDestination.CreditBalance),
-                        { openPage(SettingsDestination.CreditBalance) },
-                    )
+                    WorkspaceSettings(state, switchWorkspace) {
+                        SettingsRow(
+                            stringResource(R.string.settings_credit_balance),
+                            leading = { SettingsIcon(R.drawable.ic_paid) },
+                            modifier = focusFor(SettingsDestination.CreditBalance),
+                            onClick = { openPage(SettingsDestination.CreditBalance) },
+                        )
+                    }
                 },
                 models = {
                     SettingsRow(
@@ -396,8 +398,7 @@ private fun WorkspaceSettingsContent(
 private fun WorkspaceSettings(
     state: SessionUiState,
     chooseWorkspace: (String) -> Unit,
-    creditFocus: Modifier,
-    openCredits: () -> Unit,
+    creditRow: @Composable () -> Unit,
 ) {
     val organization = checkNotNull(state.ready).organization
     SettingsGroup {
@@ -415,12 +416,7 @@ private fun WorkspaceSettings(
             )
         }
         HorizontalDivider()
-        SettingsRow(
-            stringResource(R.string.settings_credit_balance),
-            leading = { SettingsIcon(R.drawable.ic_paid) },
-            modifier = creditFocus,
-            onClick = openCredits,
-        )
+        creditRow()
     }
 }
 

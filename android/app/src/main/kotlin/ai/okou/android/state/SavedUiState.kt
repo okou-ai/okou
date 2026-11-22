@@ -53,6 +53,11 @@ internal fun rememberSettingsFlag(): MutableState<Boolean> = rememberSaveable {
 }
 
 @Composable
+internal fun rememberSettingsReturnFocus(): MutableState<SettingsDestination?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
+@Composable
 internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSaveable {
     mutableStateOf(null)
 }

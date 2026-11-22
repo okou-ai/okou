@@ -1,9 +1,11 @@
 package ai.okou.android
 
-import java.time.Instant
-import java.time.temporal.ChronoUnit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,7 +22,7 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
     val accountReads = AtomicInteger()
     val billingReads = AtomicInteger()
     val usagePackReads = AtomicInteger()
-    private val now = Instant.now().truncatedTo(ChronoUnit.MINUTES)
+    private val now = Clock.System.now()
 
     init {
         val previous = api.commandResponse
@@ -90,15 +92,9 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
                 alternateAccount -> "work@example.com"
                 else -> "claude@example.com"
             }
-        val shortWindow =
-            if (id == alternateAccount) "null"
-            else window(72, 18_000, now.plus(3, ChronoUnit.HOURS))
+        val shortWindow = if (id == alternateAccount) "null" else window(72, 18_000, now + 3.hours)
         val week =
-            window(
-                if (claude) 0 else if (id == primaryAccount) 42 else 84,
-                604_800,
-                now.plus(3, ChronoUnit.DAYS),
-            )
+            window(if (claude) 0 else if (id == primaryAccount) 42 else 84, 604_800, now + 3.days)
         val credits =
             when (id) {
                 alternateAccount -> ""","subscriptionCredits":{"balance":120,"unlimited":false}"""

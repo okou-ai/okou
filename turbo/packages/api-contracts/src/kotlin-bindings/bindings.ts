@@ -424,6 +424,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "UsagePackCredits",
     schema: billingUsagePackCreditsContract.get.responses[200],
+    readSchema: billingUsagePackCreditsContract.get.responses[200].pick({
+      totalCredits: true,
+      purchasedCredits: true,
+      bonusCredits: true,
+    }),
     direction: "output",
   },
   {
@@ -434,6 +439,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "ActivatedModelAccount",
     schema: personalModelProviderAccountsByIdContract.activate.responses[200],
+    readSchema:
+      personalModelProviderAccountsByIdContract.activate.responses[200].pick({
+        id: true,
+        isActive: true,
+      }),
     direction: "output",
   },
   {

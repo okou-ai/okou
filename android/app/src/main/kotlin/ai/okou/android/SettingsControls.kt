@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -212,7 +213,14 @@ internal fun SettingsSwitchRow(
                 )
             }
         }
-        Switch(checked, onCheckedChange = null, enabled = enabled)
+        val outline = MaterialTheme.colorScheme.onSurfaceVariant
+        Switch(
+            checked,
+            onCheckedChange = null,
+            enabled = enabled,
+            colors =
+                SwitchDefaults.colors(uncheckedThumbColor = outline, uncheckedBorderColor = outline),
+        )
     }
 }
 

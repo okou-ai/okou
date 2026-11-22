@@ -7,7 +7,9 @@ import ai.okou.android.SettingsSection
 import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.RecoveryBillingCreditBreakdownItemCategory
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
+import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.SettingsDestination
+import android.icu.util.Calendar
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -32,9 +35,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -50,14 +53,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import java.text.DateFormat
 import java.text.NumberFormat
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
-import java.time.format.TextStyle
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import kotlin.time.Instant
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Composable
@@ -83,7 +84,12 @@ internal fun WorkspaceSettingsDataPage(
 
 @Composable
 internal fun SettingsWebAction(label: String, section: String) {
-    TextButton(onClick = settingsWebClick(section)) { Text(label) }
+    TextButton(
+        onClick = settingsWebClick(section),
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+    ) {
+        Text(label, fontWeight = FontWeight.SemiBold)
+    }
 }
 
 @Composable
@@ -309,13 +315,13 @@ private fun ModelAccountRow(
 
 @Composable
 private fun settingsDetailsStacked(): Boolean =
-    LocalConfiguration.current.screenWidthDp < 360 || LocalDensity.current.fontScale > 1.3f
+    currentWindowSizeDp().width < 360 || LocalDensity.current.fontScale > 1.3f
 
 @Composable
 private fun QuotaView(quota: ModelAccountQuota, modifier: Modifier) {
     val typography = MaterialTheme.typography
     val colors = MaterialTheme.colorScheme
-    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val locale = LocalLocale.current.platformLocale
     val label =
         when (quota.period) {
             QuotaPeriod.Week -> stringResource(R.string.settings_weekly_quota)
@@ -374,25 +380,25 @@ private fun QuotaView(quota: ModelAccountQuota, modifier: Modifier) {
 
 @Composable
 private fun resetLabel(value: String, locale: Locale): String? {
-    val instant = runCatching { Instant.parse(value) }.getOrNull() ?: return null
-    val resetAt = instant.atZone(ZoneId.systemDefault())
-    val today = LocalDate.now()
-    val time =
-        resetAt.format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale))
+    val resetAt =
+        runCatching { Date(Instant.parse(value).toEpochMilliseconds()) }.getOrNull() ?: return null
+    val calendar = Calendar.getInstance(locale)
+    val today = calendar.get(Calendar.JULIAN_DAY)
+    calendar.time = resetAt
+    val days = calendar.get(Calendar.JULIAN_DAY) - today
+    val time = DateFormat.getTimeInstance(DateFormat.SHORT, locale).format(resetAt)
     return when {
-        resetAt.toLocalDate() == today -> stringResource(R.string.settings_quota_resets_today, time)
-        resetAt.toLocalDate() in today.plusDays(1)..today.plusDays(6) ->
+        days == 0 -> stringResource(R.string.settings_quota_resets_today, time)
+        days in 1..6 ->
             stringResource(
                 R.string.settings_quota_resets,
-                resetAt.dayOfWeek.getDisplayName(TextStyle.SHORT, locale),
+                SimpleDateFormat("EEE", locale).format(resetAt),
                 time,
             )
         else ->
             stringResource(
                 R.string.settings_quota_resets,
-                resetAt.format(
-                    DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withLocale(locale)
-                ),
+                DateFormat.getDateInstance(DateFormat.SHORT, locale).format(resetAt),
                 time,
             )
     }
@@ -507,6 +513,6 @@ private fun CreditCard(balance: Number, breakdown: List<Pair<String, Number>>) {
 
 @Composable
 private fun formatBalance(value: Number): String =
-    NumberFormat.getNumberInstance(LocalConfiguration.current.locales[0] ?: Locale.getDefault())
+    NumberFormat.getNumberInstance(LocalLocale.current.platformLocale)
         .apply { maximumFractionDigits = 2 }
         .format(value)
