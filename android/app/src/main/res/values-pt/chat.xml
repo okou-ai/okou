@@ -25,7 +25,11 @@
     <string name="chat_inbox">Caixa de entrada</string>
     <string name="chat_mark_all_read">Marcar tudo como lido</string>
     <string name="chat_mark_all_read_unconfirmed">Algumas conversas ainda podem estar por ler.</string>
-    <string name="chat_mark_all_read_partial">%1$d de %2$d conversas foram marcadas como lidas.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">%1$d de %2$d conversas foi marcada como lida.</item>
+        <item quantity="many">%1$d de %2$d conversas foram marcadas como lidas.</item>
+        <item quantity="other">%1$d de %2$d conversas foram marcadas como lidas.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d conversa marcada como lida.</item>
         <item quantity="many">%1$d conversas marcadas como lidas.</item>

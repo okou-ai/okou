@@ -25,7 +25,10 @@
     <string name="chat_inbox">Posteingang</string>
     <string name="chat_mark_all_read">Alles als gelesen markieren</string>
     <string name="chat_mark_all_read_unconfirmed">Einige Chats sind möglicherweise noch ungelesen.</string>
-    <string name="chat_mark_all_read_partial">%1$d von %2$d Chats wurden als gelesen markiert.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">%1$d von %2$d Chats wurde als gelesen markiert.</item>
+        <item quantity="other">%1$d von %2$d Chats wurden als gelesen markiert.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d Chat als gelesen markiert.</item>
         <item quantity="other">%1$d Chats als gelesen markiert.</item>

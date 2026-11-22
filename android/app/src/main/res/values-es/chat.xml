@@ -25,7 +25,11 @@
     <string name="chat_inbox">Bandeja de entrada</string>
     <string name="chat_mark_all_read">Marcar todo como leído</string>
     <string name="chat_mark_all_read_unconfirmed">Es posible que algunos chats sigan sin leer.</string>
-    <string name="chat_mark_all_read_partial">Se marcaron como leídos %1$d de %2$d chats.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">Se marcó como leído %1$d de %2$d chats.</item>
+        <item quantity="many">Se marcaron como leídos %1$d de %2$d chats.</item>
+        <item quantity="other">Se marcaron como leídos %1$d de %2$d chats.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">Se marcó %1$d chat como leído.</item>
         <item quantity="many">Se marcaron %1$d chats como leídos.</item>

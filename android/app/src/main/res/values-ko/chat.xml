@@ -25,7 +25,9 @@
     <string name="chat_inbox">받은편지함</string>
     <string name="chat_mark_all_read">모두 읽음으로 표시</string>
     <string name="chat_mark_all_read_unconfirmed">일부 채팅이 아직 읽지 않은 상태일 수 있습니다.</string>
-    <string name="chat_mark_all_read_partial">채팅 %2$d개 중 %1$d개를 읽음으로 표시했습니다.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="other">채팅 %2$d개 중 %1$d개를 읽음으로 표시했습니다.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">채팅 %1$d개를 읽음으로 표시했습니다.</item>
     </plurals>

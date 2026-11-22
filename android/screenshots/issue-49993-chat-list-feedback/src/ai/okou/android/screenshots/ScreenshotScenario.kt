@@ -225,7 +225,8 @@ class ScreenshotScenario {
             text("Personal chat")
             element(filter).click()
             text(R.string.chat_mark_all_read).click()
-            val partialFeedback = app.getString(R.string.chat_mark_all_read_partial, 1, 2)
+            val partialFeedback =
+                app.resources.getQuantityString(R.plurals.chat_mark_all_read_partial, 1, 1, 2)
             text(partialFeedback)
             assertFalse(device.hasObject(selector("Personal chat")))
             text(project)

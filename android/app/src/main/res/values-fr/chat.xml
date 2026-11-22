@@ -25,7 +25,11 @@
     <string name="chat_inbox">Boîte de réception</string>
     <string name="chat_mark_all_read">Tout marquer comme lu</string>
     <string name="chat_mark_all_read_unconfirmed">Certaines discussions sont peut-être encore non lues.</string>
-    <string name="chat_mark_all_read_partial">%1$d conversations sur %2$d ont été marquées comme lues.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">%1$d conversation sur %2$d a été marquée comme lue.</item>
+        <item quantity="many">%1$d conversations sur %2$d ont été marquées comme lues.</item>
+        <item quantity="other">%1$d conversations sur %2$d ont été marquées comme lues.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d discussion marquée comme lue.</item>
         <item quantity="many">%1$d discussions marquées comme lues.</item>

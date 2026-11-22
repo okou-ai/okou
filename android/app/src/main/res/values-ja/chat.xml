@@ -25,7 +25,9 @@
     <string name="chat_inbox">受信トレイ</string>
     <string name="chat_mark_all_read">すべて既読にする</string>
     <string name="chat_mark_all_read_unconfirmed">一部のチャットが未読のままの可能性があります。</string>
-    <string name="chat_mark_all_read_partial">%2$d 件のチャットのうち %1$d 件を既読にしました。</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="other">%2$d 件のチャットのうち %1$d 件を既読にしました。</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">%1$d 件のチャットを既読にしました。</item>
     </plurals>

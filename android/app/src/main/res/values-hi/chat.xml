@@ -25,7 +25,10 @@
     <string name="chat_inbox">इनबॉक्स</string>
     <string name="chat_mark_all_read">सभी को पढ़ा हुआ चिह्नित करें</string>
     <string name="chat_mark_all_read_unconfirmed">कुछ चैट अब भी अपठित हो सकती हैं।</string>
-    <string name="chat_mark_all_read_partial">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</item>
+        <item quantity="other">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
         <item quantity="other">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
