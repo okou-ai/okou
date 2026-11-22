@@ -44,6 +44,7 @@ internal fun ChatArtifactResources(
     val state by model.state.collectAsStateWithLifecycle()
     val query = remember(threadId) { ArtifactQuery(chatThreadId = threadId) }
     val page = rememberArtifactPageState()
+    val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val position = rememberLazyListState()
     val selected = page.selectedId
     LifecycleStartEffect(model, threadId) {
@@ -71,7 +72,7 @@ internal fun ChatArtifactResources(
                 ::back,
                 toolbarPadding,
             )
-            ArtifactSelectionPreview(model, state, page, selected, wide)
+            ArtifactSelectionPreview(model, state, page, selected, wide, saveLauncher)
         }
         return
     }

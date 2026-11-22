@@ -9,6 +9,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +61,7 @@ internal fun ArtifactsRoute(
     val keyboard = LocalSoftwareKeyboardController.current
     val input = rememberTextFieldState()
     val page = rememberArtifactPageState()
+    val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val selectedId = page.selectedId
 
     LifecycleStartEffect(model) {
@@ -139,7 +141,16 @@ internal fun ArtifactsRoute(
             Column(Modifier.weight(1f)) {
                 if (!wide)
                     ArtifactToolbar(R.string.artifact_title, R.string.artifact_return_list, ::back)
-                ArtifactSelectionPreview(model, state, page, selectedId, wide, threads, onSource)
+                ArtifactSelectionPreview(
+                    model,
+                    state,
+                    page,
+                    selectedId,
+                    wide,
+                    saveLauncher,
+                    threads,
+                    onSource,
+                )
             }
         } else if (wide) {
             Box(
@@ -157,6 +168,31 @@ internal fun ArtifactsRoute(
     }
 }
 
+/** Register with the route so a document result can arrive after a preview closes. */
+@Composable
+internal fun rememberArtifactSaveLauncher(
+    model: ArtifactCatalogModel,
+    page: ArtifactPageState,
+): ActivityResultLauncher<Intent> {
+    val context = LocalContext.current
+    return rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        result ->
+        val id = page.pickerArtifactId
+        page.pickerArtifactId = null
+        val destination = result.data?.data
+        if (
+            id != null &&
+                result.resultCode == Activity.RESULT_OK &&
+                destination?.scheme == "content"
+        ) {
+            model.save(id) {
+                context.contentResolver.openOutputStream(destination, "wt")
+                    ?: throw IOException("Document provider did not open its destination")
+            }
+        }
+    }
+}
+
 @Composable
 internal fun ArtifactSelectionPreview(
     model: ArtifactCatalogModel,
@@ -164,29 +200,11 @@ internal fun ArtifactSelectionPreview(
     page: ArtifactPageState,
     selectedId: String,
     wide: Boolean,
+    saveLauncher: ActivityResultLauncher<Intent>,
     threads: List<ConfirmedChat> = emptyList(),
     onSource: (ConfirmedChat) -> Unit = {},
 ) {
     var pickerFailed by remember(selectedId) { mutableStateOf(false) }
-    val context = LocalContext.current
-    val picker =
-        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result
-            ->
-            val id = page.pickerArtifactId
-            page.pickerArtifactId = null
-            val destination = result.data?.data
-            if (
-                id != null &&
-                    result.resultCode == Activity.RESULT_OK &&
-                    destination?.scheme == "content"
-            ) {
-                model.save(id) {
-                    context.contentResolver.openOutputStream(destination, "wt")
-                        ?: throw IOException("Document provider did not open its destination")
-                }
-            }
-        }
-
     key(selectedId) {
         val id = selectedId
         val preview = state.preview?.takeIf { it.id == id }
@@ -212,7 +230,7 @@ internal fun ArtifactSelectionPreview(
                     page.pickerArtifactId = id
                     pickerFailed = false
                     try {
-                        picker.launch(
+                        saveLauncher.launch(
                             Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                                 addCategory(Intent.CATEGORY_OPENABLE)
                                 type =

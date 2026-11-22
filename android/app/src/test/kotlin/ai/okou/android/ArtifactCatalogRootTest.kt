@@ -1,8 +1,11 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import android.app.Activity
+import android.content.Intent
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -24,6 +27,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -211,6 +215,32 @@ class ArtifactCatalogRootTest {
         compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
     }
 
+    @Test
+    fun workspaceCatalogHandlesPickerCancellationAfterLeavingThePreview() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+
+        cancelSaveAfterLeavingPreview(fixture.checklist.title, "Back to artifacts")
+        assertTrue(fixture.requestedDownloads.isEmpty())
+    }
+
+    @Test
+    fun chatResourcesHandlesPickerCancellationAfterLeavingThePreview() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Chat resources").performClick()
+
+        cancelSaveAfterLeavingPreview(fixture.checklist.title, "Back to chat resources")
+        assertTrue(fixture.requestedDownloads.isEmpty())
+    }
+
     @After
     fun close() {
         app.responseGate.countDown()
@@ -226,5 +256,30 @@ class ArtifactCatalogRootTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
+    }
+
+    private fun cancelSaveAfterLeavingPreview(title: String, backDescription: String) {
+        awaitText(title)
+        compose.onNodeWithText(title).performClick()
+        awaitText("Save file")
+        compose.onNodeWithText("Save file").performClick()
+        val launch = checkNotNull(shadowOf(compose.activity).nextStartedActivityForResult)
+        assertEquals(Intent.ACTION_CREATE_DOCUMENT, launch.intent.action)
+        compose.onNodeWithText("Save file").assertIsNotEnabled()
+
+        compose.onNodeWithContentDescription(backDescription).performClick()
+        compose.onNodeWithTag("artifact_preview").assertDoesNotExist()
+        compose.activityRule.scenario.onActivity {
+            assertTrue(
+                it.activityResultRegistry.dispatchResult(
+                    launch.requestCode,
+                    Activity.RESULT_CANCELED,
+                    null,
+                )
+            )
+        }
+        compose.onNodeWithText(title).performClick()
+        awaitText("Save file")
+        compose.onNodeWithText("Save file").assertIsEnabled()
     }
 }
