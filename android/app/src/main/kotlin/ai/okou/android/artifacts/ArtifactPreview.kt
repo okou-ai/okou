@@ -192,6 +192,8 @@ internal fun ArtifactPreview(
                     }
                 }
             }
+            val browserUrl = preview?.info?.browserUrl
+            val open = browserUrl?.takeUnless { offline }
             val feedback =
                 when (saveResult) {
                     ArtifactSaveResult.Saving -> R.string.artifact_saving
@@ -203,7 +205,7 @@ internal fun ArtifactPreview(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PreviewContent(preview, offline)
                 if (feedback != null) {
-                    KeepSpaceWhenHidden(visible = saveResult != null || !offline) {
+                    KeepSpaceWhenHidden(visible = saveResult != null || open != null) {
                         Text(
                             stringResource(feedback),
                             Modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -213,17 +215,18 @@ internal fun ArtifactPreview(
                     }
                 }
             }
-            val open = preview?.info?.browserUrl
-            if (open != null) {
-                KeepSpaceWhenHidden(visible = !offline) {
+            // Keep the action's space while inline sites wait for preview authorization.
+            if (browserUrl != null || preview?.info?.resource is ArtifactResource.Site) {
+                KeepSpaceWhenHidden(visible = open != null) {
                     ArtifactAction(
                         R.string.artifact_open_website,
                         icon = R.drawable.ic_open_in_new,
-                        enabled = !offline,
+                        enabled = open != null,
                     ) {
+                        val destination = open ?: return@ArtifactAction
                         browserUnavailable =
                             try {
-                                browser.openUri(open.toString())
+                                browser.openUri(destination.toString())
                                 false
                             } catch (_: IllegalArgumentException) {
                                 true

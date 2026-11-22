@@ -453,6 +453,57 @@ class ArtifactCatalogRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w720dp-h360dp")
+    fun inlineWebsiteKeepsTheReadingPositionWhileItsReconnectGrantIsPending() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.fixture.historyReply = "[${fixture.site.title}](https://fixture.okou.app/)"
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(fixture.site.title)
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.onNodeWithText(fixture.site.title).performClick()
+
+        val browser = compose.onNodeWithText("Open in browser")
+        val surface = compose.onNodeWithTag("artifact_preview_surface")
+        awaitText("Connect to load the preview")
+        val initialBounds = surface.getUnclippedBoundsInRoot()
+        val width = initialBounds.right - initialBounds.left
+        val height = initialBounds.bottom - initialBounds.top
+        assertEquals(width.value * 9f / 16f, height.value, 1f)
+        compose.onNodeWithTag("artifact_preview_title").assertTextContains("fixture.okou.app")
+        browser.assertDoesNotExist()
+        assertTrue(fixture.requestedSiteGrants.isEmpty())
+
+        compose.runOnIdle { app.connectivity.value = true }
+        awaitText("Open in browser")
+        assertEquals(initialBounds, surface.getUnclippedBoundsInRoot())
+        browser.performScrollTo().assertIsDisplayed()
+        val readingBounds = surface.getUnclippedBoundsInRoot()
+        assertTrue(readingBounds.top < initialBounds.top)
+
+        compose.runOnIdle { app.connectivity.value = false }
+        awaitText("Connect to load the preview")
+        assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
+
+        val releaseGrant = CountDownLatch(1)
+        try {
+            fixture.beforeSitePreview = { releaseGrant.await() }
+            compose.runOnIdle { app.connectivity.value = true }
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_preview_loading"), 10_000)
+            compose.waitUntil(10_000) { fixture.requestedSiteGrants.size == 2 }
+            browser.assertDoesNotExist()
+            assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
+        } finally {
+            releaseGrant.countDown()
+        }
+
+        awaitText("Open in browser")
+        assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
     fun inlineArtifactPreviewReturnsToTheFindHit() {
         val fixture = ArtifactApiFixture(app.fixture)

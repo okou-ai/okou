@@ -149,7 +149,14 @@ internal constructor(
     internal fun select(id: String?, item: ArtifactItem? = null) {
         if (mutable.value.preview?.id == id) return
         previewJob?.cancel()
-        val initial = id?.let { previews[it] ?: ArtifactPreviewState(it, item) }
+        val initial =
+            id?.let {
+                previews[it]
+                    ?: run {
+                        val info = if (item == null) knownMessageSiteInfo(it) else null
+                        ArtifactPreviewState(it, item ?: info?.item, info = info)
+                    }
+            }
         mutable.update {
             it.copy(
                 preview = initial,
