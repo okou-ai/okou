@@ -19,6 +19,13 @@ function projectReferences(document: UserMessageDocument | null | undefined) {
     });
 }
 
+export function canAccessPersonalProjects(auth: AuthContext): boolean {
+  return (
+    auth.tokenType !== "agent" ||
+    auth.capabilities?.includes("project:read") === true
+  );
+}
+
 export function captureProjectReferences(
   auth: AuthContext,
   document: UserMessageDocument | null | undefined,
@@ -45,9 +52,7 @@ export function captureProjectReferences(
       }
       if (
         !auth.orgId ||
-        (references.length > 0 &&
-          auth.tokenType === "agent" &&
-          auth.singleAgent !== true)
+        (references.length > 0 && !canAccessPersonalProjects(auth))
       ) {
         return null;
       }
@@ -72,6 +77,6 @@ export function canWriteProjectReferences(
 ) {
   return (
     projectReferences(document).length === 0 ||
-    (!!auth.orgId && (auth.tokenType !== "agent" || auth.singleAgent === true))
+    (!!auth.orgId && canAccessPersonalProjects(auth))
   );
 }

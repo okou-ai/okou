@@ -28,9 +28,7 @@ interface WalletUsageOwner {
 }
 
 export function recordWalletConnectionUsage(
-  owner: Omit<WalletUsageOwner, "agentId"> & {
-    readonly agentId?: string | null;
-  },
+  owner: WalletUsageOwner,
   authorizationId: string,
   event:
     | "connection_started"
@@ -43,7 +41,6 @@ export function recordWalletConnectionUsage(
     eventId: `${authorizationId}:${event}`,
     userId: owner.userId,
     orgId: owner.orgId,
-    ...(owner.agentId ? { agentId: owner.agentId } : {}),
     authorizationId,
   });
 }
