@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+import { uuid } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -215,7 +216,7 @@ describe("Teams message launch context", () => {
       const chat = createChatFilesBddApi(context);
       const page = await chat.listThreadEvents(
         owned.actor,
-        execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
+        uuid().parse(execution.platformEnvironment.OKOU_CHAT_THREAD_ID),
       );
       const input = page.events.find((event) => {
         return (

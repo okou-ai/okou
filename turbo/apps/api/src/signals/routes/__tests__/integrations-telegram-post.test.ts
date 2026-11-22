@@ -24,6 +24,7 @@ import {
   onTestFinished,
   vi,
 } from "vitest";
+import { uuid } from "zod";
 
 import { createApp } from "../../../app-factory";
 import {
@@ -2282,7 +2283,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         await expect(
           readTelegramSourcePart(
             fixture,
-            execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
+            uuid().parse(execution.platformEnvironment.OKOU_CHAT_THREAD_ID),
             `@${botUsername}`,
             fixture.context,
           ),
@@ -2359,7 +2360,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await expect(
       readTelegramSourcePart(
         fixture,
-        execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
+        uuid().parse(execution.platformEnvironment.OKOU_CHAT_THREAD_ID),
         "run through official bot",
       ),
     ).resolves.toStrictEqual({

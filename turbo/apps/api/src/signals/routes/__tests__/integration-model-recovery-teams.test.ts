@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
-import { array, object, string, unknown as zUnknown } from "zod";
+import { uuid, array, object, string, unknown as zUnknown } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -88,7 +88,9 @@ describe("integration model recovery in Teams", () => {
         throw new Error("Expected the error's switch-model action");
       }
       expect(action.title).toBe("Switch model");
-      const threadId = execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
+      const threadId = uuid().parse(
+        execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
+      );
       const activity = teamsMessageActivityForTest(fixture.installation, {
         type: "invoke",
         name: "task/fetch",

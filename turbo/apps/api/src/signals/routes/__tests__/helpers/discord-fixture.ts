@@ -60,7 +60,7 @@ export interface ConnectedDiscordActor {
   readonly defaultAgentId: string;
   readonly runnerGroup: string;
   readonly connectionId: string;
-  readonly sinceSetupSeqId: number | undefined;
+  readonly sinceSetupSeqId?: number;
 }
 
 export async function setupConnectedDiscordActor(

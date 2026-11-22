@@ -21,7 +21,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { object, string } from "zod";
+import { uuid, object, string } from "zod";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { signSandboxJwtForTests, verifyOkouToken } from "../../auth/tokens";
@@ -2314,7 +2314,7 @@ describe("POST /api/webhooks/teams/bot", () => {
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const threadEventsPage = await readProjectedChatEvents(context, {
-      threadId: execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
+      threadId: uuid().parse(execution.platformEnvironment.OKOU_CHAT_THREAD_ID),
       headers: { authorization: "Bearer clerk-session" },
     });
     expect(threadEventsPage).toContainEqual(
