@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -49,6 +50,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -291,10 +293,12 @@ internal fun SettingsTrigger(
 internal fun SettingsModal(
     onDismiss: () -> Unit,
     dismissible: Boolean = true,
+    fullScreen: Boolean = false,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
-    if (workspaceListPaneWidth(window.width, window.height) != null) {
+    val centered = !fullScreen && workspaceListPaneWidth(window.width, window.height) != null
+    if (fullScreen || centered) {
         Dialog(
             onDismissRequest = onDismiss,
             properties =
@@ -305,11 +309,12 @@ internal fun SettingsModal(
                 ),
         ) {
             Surface(
-                Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                if (fullScreen) Modifier.fillMaxSize()
+                else Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
+                shape = if (fullScreen) RectangleShape else RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surface,
             ) {
-                content(true)
+                content(centered)
             }
         }
     } else {
