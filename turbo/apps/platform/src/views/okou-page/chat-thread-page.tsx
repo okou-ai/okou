@@ -6685,7 +6685,10 @@ function UserMessageAttachmentRow({
   }
 
   return (
-    <div className="flex flex-wrap justify-end gap-2" data-testid={testId}>
+    <div
+      className="flex flex-wrap items-center justify-end gap-2"
+      data-testid={testId}
+    >
       {attachments.map((a) => {
         return (
           <MessageAttachment
