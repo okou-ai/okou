@@ -108,7 +108,8 @@ class ChatListRootTest {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    @Config(qualifiers = "en-rUS-w320dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun workspaceToolEntriesAreVisibleButDisabledOnTheList() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
@@ -126,6 +127,16 @@ class ChatListRootTest {
         val entryBounds = entries.map { it.getUnclippedBoundsInRoot() }
         assertTrue(entryBounds.all { it.top >= searchBounds.bottom && it.bottom - it.top >= 48.dp })
         assertTrue(entryBounds.zipWithNext().all { (start, end) -> start.right < end.left })
+        val connectorLabel = "Connectors"
+        val connectorLayouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(connectorLabel, useUnmergedTree = true).performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult
+        ) {
+            it(connectorLayouts)
+        }
+        val connectorLayout = connectorLayouts.single()
+        assertEquals(connectorLabel.length, connectorLayout.getLineEnd(0, visibleEnd = true))
+        assertTrue(connectorLayout.size.width >= connectorLayout.multiParagraph.maxIntrinsicWidth)
         search.performClick()
         entries.forEach { it.assertDoesNotExist() }
         compose.onNodeWithContentDescription("Back").performClick()
