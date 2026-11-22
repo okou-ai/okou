@@ -10,12 +10,17 @@ import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateDefaultModelPreferenceModelSettingsPatch
 import ai.okou.android.api.generated.UpdateDefaultModelPreferenceModelSettingsPatchEffort
 import ai.okou.android.api.generated.UpdateDefaultModelPreferenceServiceTier
+import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.state.SettingsDestination
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -23,13 +28,19 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
-private val readRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
-private const val readFailureWindowMillis = 30_000L
+private val retryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
+private const val preferenceRefreshMillis = 10 * 60_000L
+private const val catalogFailureWindowMillis = 30_000L
 
 internal typealias ModelEffort = UpdateDefaultModelPreferenceModelSettingsPatchEffort
+
+internal fun isAutoDefaultModel(id: String?): Boolean =
+    id == null || id == "auto" || id == "okou-1.0"
 
 internal data class DefaultModelChoice(
     val id: String,
@@ -44,8 +55,7 @@ internal data class DefaultModelOptions(
     val choices: List<DefaultModelChoice>,
     val replacements: Map<String, String>,
 ) {
-    fun resolve(id: String?): String? =
-        id?.let { replacements[it] }?.takeUnless { it == "auto" || it == "okou-1.0" }
+    fun resolve(id: String?): String? = id?.let(replacements::get)?.takeUnless(::isAutoDefaultModel)
 }
 
 private fun modelOptions(
@@ -58,7 +68,7 @@ private fun modelOptions(
         catalog.models
             .sortedBy { it.sortOrder }
             .mapNotNull { model ->
-                if (model.replacedBy != null || model.model in setOf("auto", "okou-1.0")) {
+                if (model.replacedBy != null || isAutoDefaultModel(model.model)) {
                     return@mapNotNull null
                 }
                 val run = available[model.model] ?: return@mapNotNull null
@@ -106,314 +116,416 @@ private fun modelOptions(
     return DefaultModelOptions(choices, catalog.models.associate { it.model to it.resolvedModel })
 }
 
-internal enum class DefaultModelFailure {
-    Read,
-    Save,
-}
-
-private enum class SaveVerification {
-    ReadyToWrite,
-    NeedsReadback,
-    ReadbackBlocked,
+internal enum class DefaultModelNotice {
+    SyncFailed,
+    LocalSaveFailed,
 }
 
 internal data class DefaultModelState(
-    val preference: DefaultModelPreference? = null,
+    val record: DefaultModelRecord? = null,
     val options: DefaultModelOptions? = null,
-    val pending: UpdateDefaultModelPreference? = null,
     val offline: Boolean = false,
-    val failure: DefaultModelFailure? = null,
+    val catalogUnavailable: Boolean = false,
+    val saveDegraded: Boolean = false,
 ) {
-    val failed: Boolean
-        get() = failure != null
+    val pending: UpdateDefaultModelPreference?
+        get() = record?.pending
 
     val selected: DefaultModelChoice?
         get() {
-            val id =
-                if (pending != null) pending.selectedModel
-                else options?.resolve(preference?.selectedModel)
+            val id = options?.resolve(record?.selectedModel)
             return options?.choices?.firstOrNull { it.id == id }
         }
 
     val fast: Boolean
         get() =
             selected?.fastMultiplier != null &&
-                (if (pending != null) pending.serviceTier != null
-                else preference?.serviceTier != null)
+                if (record?.edit != null) record.edit.request.serviceTier != null
+                else record?.confirmed?.serviceTier != null
 
     val effort: ModelEffort?
         get() {
             val choice = selected ?: return null
             val name =
-                pending?.modelSettingsPatch?.effort?.name
-                    ?: preference?.modelSettings?.get(choice.id)?.effort?.name
+                record?.efforts?.get(choice.id)?.name
+                    ?: record?.confirmed?.modelSettings?.get(choice.id)?.effort?.name
             return choice.efforts.firstOrNull { it.name == name } ?: choice.defaultEffort
         }
 }
 
-/** Workspace-owned writer; navigation does not cancel a save. */
+/** Owns one authorized workspace's cached default, writes, and foreground refresh. */
 internal class DefaultModelSettings(
     private val scope: CoroutineScope,
     private val service: WorkspaceSession,
+    private val identity: WorkspaceIdentity,
+    private val store: DefaultModelStore,
     private val authorized: () -> Boolean,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
     private val onFailure: (Exception) -> Unit,
 ) {
     private val mutable = MutableStateFlow(DefaultModelState())
     val state = mutable.asStateFlow()
-    private var visible = false
-    private var refreshRequested = false
-    private var saveVerification = SaveVerification.ReadyToWrite
-    private var work: Job? = null
-    private var retryWait: Job? = null
-    private var readFailures = 0
-    private var readFailureWindow: Job? = null
+    private val messages = Channel<DefaultModelNotice>(1, BufferOverflow.DROP_OLDEST)
+    val notices = messages.receiveAsFlow()
+    private val preferenceRequests = Mutex()
+    private var presented = false
+    private var foreground = false
+    private var destination: SettingsDestination? = null
+    private var preferenceRead: Job? = null
+    private var catalogRead: Job? = null
+    private var saving: Job? = null
+    private var saveWait: Job? = null
+    private var storageWrite: Deferred<Boolean>? = null
+    private var needsReadback = false
+    private var readbackBlocked = false
 
-    fun visible(active: Boolean) {
-        if (visible == active) return
-        visible = active
-        refreshRequested = active
-        if (active) resumeReadback()
-        if (!active) resetReadFailures()
-        val current = mutable.value
-        if (!active && current.pending == null) {
-            work?.cancel()
-            if (current.failure == DefaultModelFailure.Save)
-                mutable.value = current.copy(failure = null)
+    init {
+        scope.launch {
+            if (!authorized()) return@launch
+            val record = store.load(identity)
+            currentCoroutineContext().ensureActive()
+            if (!authorized()) return@launch
+            // A restored edit may have reached the service before the process stopped.
+            needsReadback = record.pending != null
+            mutable.value = mutable.value.copy(record = record)
+            if (mutable.value.options != null) publish(record)
+            synchronizeSaves()
+            synchronizeReads()
         }
-        synchronize()
+    }
+
+    fun showSettings(page: SettingsDestination?) {
+        if (presented && destination == page) return
+        if (destination == null && page != null) resumeReadback()
+        presented = true
+        destination = page
+        synchronizeReads()
+    }
+
+    fun foreground(active: Boolean) {
+        if (foreground == active) return
+        foreground = active
+        synchronizeReads()
     }
 
     fun online(online: Boolean) {
         val current = mutable.value
         if (current.offline == !online) return
-        mutable.value =
-            current.copy(
-                offline = !online,
-                failure = current.failure.takeUnless { online && it == DefaultModelFailure.Read },
-            )
-        if (!online) {
-            // A pending save can keep this worker alive across a network change.
-            resetReadFailures()
-            retryWait?.cancel()
-            if (current.pending == null) work?.cancel()
-        } else {
-            resumeReadback()
-            if (visible) refreshRequested = true
-        }
-        synchronize()
+        mutable.value = current.copy(offline = !online, catalogUnavailable = false)
+        saveWait?.cancel()
+        if (online) resumeReadback()
+        synchronizeReads()
     }
 
     fun select(id: String?) {
         val value = mutable.value
         val options = value.options ?: return
-        if (
-            value.selected?.id == id ||
-                id != null && options.choices.none { it.id == id && it.canSelect }
-        )
-            return
-        submit(UpdateDefaultModelPreference(id, null))
+        val choice = options.choices.firstOrNull { it.id == id }
+        if (value.selected?.id == id || id != null && choice?.canSelect != true) return
+        submit(id, fast = false, choice = choice)
     }
 
     fun effort(effort: ModelEffort) {
         val value = mutable.value
         val choice = value.selected ?: return
         if (!choice.canSelect || effort !in choice.efforts || effort == value.effort) return
-        submit(
-            UpdateDefaultModelPreference(
-                choice.id,
-                if (value.fast) UpdateDefaultModelPreferenceServiceTier.PRIORITY else null,
-                UpdateDefaultModelPreferenceModelSettingsPatch(choice.id, effort),
-            )
-        )
+        submit(choice.id, value.fast, choice, effort)
     }
 
     fun fast(enabled: Boolean) {
         val value = mutable.value
         val choice = value.selected ?: return
         if (!choice.canSelect || choice.fastMultiplier == null || enabled == value.fast) return
-        submit(
-            UpdateDefaultModelPreference(
-                choice.id,
-                if (enabled) UpdateDefaultModelPreferenceServiceTier.PRIORITY else null,
-                value.pending?.modelSettingsPatch,
-            )
-        )
+        submit(choice.id, enabled, choice)
     }
 
-    private fun submit(change: UpdateDefaultModelPreference) {
-        if (!authorized()) return
+    private fun submit(
+        id: String?,
+        fast: Boolean,
+        choice: DefaultModelChoice?,
+        effort: ModelEffort? = null,
+    ) {
         val current = mutable.value
-        mutable.value =
-            current.copy(
-                pending = change,
-                failure =
-                    current.failure.takeIf { saveVerification == SaveVerification.ReadbackBlocked },
+        val record = current.record ?: return
+        if (!authorized()) return
+        val efforts =
+            if (id != null && effort != null) record.efforts + (id to effort) else record.efforts
+        val patch =
+            choice?.let { model ->
+                efforts[model.id]
+                    ?.takeIf { it in model.efforts }
+                    ?.let { UpdateDefaultModelPreferenceModelSettingsPatch(model.id, it) }
+            }
+        val request =
+            UpdateDefaultModelPreference(
+                id,
+                if (fast) UpdateDefaultModelPreferenceServiceTier.PRIORITY else null,
+                patch,
             )
-        synchronize()
+        clearSaveFailure()
+        publish(record.copy(edit = DefaultModelEdit(request), efforts = efforts))
+        if (readbackBlocked) reportSaveFailure(requireNotNull(storageWrite))
+        saveWait?.cancel()
+        synchronizeSaves()
     }
 
     private fun resumeReadback() {
-        if (saveVerification == SaveVerification.ReadbackBlocked) {
-            saveVerification = SaveVerification.NeedsReadback
+        readbackBlocked = false
+        synchronizeSaves()
+    }
+
+    private fun synchronizeReads() {
+        val current = mutable.value
+        val active = foreground && !current.offline && authorized()
+        val refresh = active && presented && destination == null && current.record != null
+        if (!refresh) {
+            preferenceRead?.cancel()
+            preferenceRead = null
+        } else if (preferenceRead?.isActive != true) {
+            preferenceRead = scope.launch { refreshPreferences() }
+        }
+
+        val catalogVisible =
+            active &&
+                (destination == SettingsDestination.Overview ||
+                    destination == SettingsDestination.Instructions)
+        if (!catalogVisible) {
+            catalogRead?.cancel()
+            catalogRead = null
+        } else if (catalogRead == null) {
+            catalogRead = scope.launch { refreshCatalog() }
         }
     }
 
-    private fun synchronize() {
-        if (
-            !authorized() ||
-                mutable.value.offline ||
-                saveVerification == SaveVerification.ReadbackBlocked ||
-                work != null ||
-                (mutable.value.pending == null && !refreshRequested)
-        )
-            return
+    private suspend fun refreshPreferences() {
+        var failures = 0
+        while (authorized()) {
+            val last = mutable.value.record?.lastRefreshMillis
+            val age = last?.let { nowMillis() - it }
+            if (age != null && age in 0 until preferenceRefreshMillis) {
+                delay(preferenceRefreshMillis - age)
+            }
+            state.first { it.pending == null || it.saveDegraded }
+            try {
+                preferenceRequests.withLock {
+                    val before = mutable.value
+                    if (before.pending != null && !before.saveDegraded) return@withLock
+                    val remote = service.defaultModelPreference()
+                    currentCoroutineContext().ensureActive()
+                    if (!authorized()) return
+                    if (before.record?.edit != mutable.value.record?.edit) return@withLock
+                    needsReadback = false
+                    readbackBlocked = false
+                    clearSaveFailure()
+                    publish(DefaultModelRecord(confirmed = remote, lastRefreshMillis = nowMillis()))
+                    saveWait?.cancel()
+                }
+                failures = 0
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                onFailure(error)
+                delay(if (error.retryable()) retryDelay(++failures) else preferenceRefreshMillis)
+            }
+        }
+    }
+
+    private suspend fun refreshCatalog() {
+        var failures = 0
+        var firstFailure = 0L
+        while (authorized()) {
+            try {
+                val options = loadOptions()
+                currentCoroutineContext().ensureActive()
+                if (!authorized()) return
+                mutable.value = mutable.value.copy(options = options, catalogUnavailable = false)
+                mutable.value.record?.let(::publish)
+                return
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                onFailure(error)
+                if (!authorized()) return
+                if (failures++ == 0) firstFailure = nowMillis()
+                if (mutable.value.options == null || !error.retryable()) showCatalogFailure()
+                if (!error.retryable()) return
+
+                var untilRetry = retryDelay(failures)
+                if (failures >= 3 && !mutable.value.catalogUnavailable) {
+                    val untilNotice =
+                        (catalogFailureWindowMillis - (nowMillis() - firstFailure)).coerceAtLeast(0)
+                    if (untilNotice <= untilRetry) {
+                        delay(untilNotice)
+                        if (!authorized()) return
+                        showCatalogFailure()
+                        untilRetry -= untilNotice
+                    }
+                }
+                delay(untilRetry)
+            }
+        }
+    }
+
+    private fun showCatalogFailure() {
+        mutable.value = mutable.value.copy(catalogUnavailable = true)
+    }
+
+    private fun synchronizeSaves() {
+        if (!canSave() || saving != null) return
         val job =
             scope.launch(start = CoroutineStart.LAZY) {
-                var saveFailures = 0
                 try {
-                    while (authorized() && !mutable.value.offline) {
-                        val pending = mutable.value.pending
-                        if (pending == null && !refreshRequested) break
-                        val readback =
-                            pending != null && saveVerification == SaveVerification.NeedsReadback
-                        try {
-                            if (pending == null) {
-                                refreshRequested = false
-                                refresh()
-                                resetReadFailures()
-                            } else {
-                                val confirmed =
-                                    if (readback) service.defaultModelPreference()
-                                    else {
-                                        saveVerification = SaveVerification.NeedsReadback
-                                        service.updateDefaultModelPreference(pending)
-                                    }
-                                currentCoroutineContext().ensureActive()
-                                if (!authorized()) break
-                                val current = mutable.value
-                                val fulfilled =
-                                    if (readback) current.pending?.matches(confirmed) == true
-                                    else current.pending == pending
-                                saveVerification = SaveVerification.ReadyToWrite
-                                val awaitingWrite = readback && !fulfilled
-                                if (!awaitingWrite) saveFailures = 0
-                                mutable.value =
-                                    current.copy(
-                                        preference = confirmed,
-                                        pending = current.pending.takeUnless { fulfilled },
-                                        failure = current.failure.takeIf { awaitingWrite },
-                                    )
-                            }
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (error: Exception) {
-                            currentCoroutineContext().ensureActive()
-                            onFailure(error)
-                            if (!authorized()) break
-                            if (pending == null && !visible) continue
-                            val retryable =
-                                error is ApiFailure.Network ||
-                                    pending != null && error is ApiFailure.IncompatibleResponse ||
-                                    error is ApiFailure.Http &&
-                                        (error.status >= 500 || error.status in setOf(408, 429))
-                            val current = mutable.value
-                            val failure =
-                                if (pending != null) DefaultModelFailure.Save
-                                else current.failure ?: DefaultModelFailure.Read
-                            if (!retryable) {
-                                if (readback) {
-                                    // A rejected read cannot establish whether the PUT committed.
-                                    saveVerification = SaveVerification.ReadbackBlocked
-                                    mutable.value = current.copy(failure = DefaultModelFailure.Save)
-                                    break
-                                }
-                                saveVerification = SaveVerification.ReadyToWrite
-                                mutable.value =
-                                    current.copy(
-                                        pending = current.pending.takeUnless { it == pending },
-                                        failure = failure,
-                                    )
-                                if (mutable.value.pending == null) break
-                                continue
-                            }
-
-                            if (pending == null) refreshRequested = visible
-                            if (current.offline) continue
-                            val retryMillis =
-                                if (pending == null) {
-                                    readFailures =
-                                        (readFailures + 1).coerceAtMost(readRetryDelays.size)
-                                    if (
-                                        current.options == null ||
-                                            readFailures >= 3 &&
-                                                readFailureWindow?.isCompleted == true
-                                    ) {
-                                        showReadFailure()
-                                    } else if (readFailures == 1) {
-                                        readFailureWindow = launch {
-                                            delay(readFailureWindowMillis)
-                                            if (
-                                                readFailures >= 3 &&
-                                                    visible &&
-                                                    !mutable.value.offline &&
-                                                    authorized()
-                                            )
-                                                showReadFailure()
-                                        }
-                                    }
-                                    readRetryDelays[readFailures - 1]
-                                } else {
-                                    saveFailures++
-                                    if (saveFailures >= 2)
-                                        mutable.value = current.copy(failure = failure)
-                                    if (saveFailures == 1) 5_000L else 30_000L
-                                }
-                            if (!waitForRetry(retryMillis, refreshing = pending == null))
-                                saveFailures = 0
-                        }
-                    }
+                    savePreferences()
                 } finally {
-                    resetReadFailures()
-                    work = null
-                    if (authorized()) synchronize()
+                    saving = null
+                    synchronizeSaves()
                 }
             }
-        work = job
+        saving = job
         job.start()
     }
 
-    private fun resetReadFailures() {
-        readFailures = 0
-        readFailureWindow?.cancel()
-        readFailureWindow = null
-    }
+    private fun canSave(): Boolean =
+        authorized() && !mutable.value.offline && !readbackBlocked && mutable.value.pending != null
 
-    private fun showReadFailure() {
-        val current = mutable.value
-        if (current.failure != DefaultModelFailure.Save) {
-            mutable.value = current.copy(failure = DefaultModelFailure.Read)
+    private suspend fun savePreferences() {
+        var previous: UpdateDefaultModelPreference? = null
+        var failures = 0
+        while (canSave()) {
+            val retryMillis =
+                preferenceRequests.withLock {
+                    if (!canSave()) return
+                    val request = mutable.value.pending ?: return
+                    if (previous != request) {
+                        failures = 0
+                        previous = request
+                    }
+                    val disk = storageWrite
+                    val durable = disk?.await() ?: true
+                    if (!canSave()) return
+                    if (request != mutable.value.pending) return@withLock 0L
+                    val readback = needsReadback
+                    try {
+                        val remote =
+                            if (readback) service.defaultModelPreference()
+                            else {
+                                needsReadback = true
+                                service.updateDefaultModelPreference(request)
+                            }
+                        currentCoroutineContext().ensureActive()
+                        if (!authorized()) return
+                        val current = checkNotNull(mutable.value.record)
+                        val latest = current.pending
+                        val fulfilled =
+                            if (readback) latest?.matches(remote) == true else latest == request
+                        needsReadback = false
+                        if (fulfilled) {
+                            failures = 0
+                            clearSaveFailure()
+                        }
+                        publish(
+                            current.copy(
+                                confirmed = remote,
+                                edit = current.edit.takeUnless { fulfilled },
+                                efforts =
+                                    current.efforts.filterNot { (model, effort) ->
+                                        remote.modelSettings[model]?.effort?.name == effort.name ||
+                                            fulfilled && latest?.modelSettingsPatch?.model == model
+                                    },
+                            )
+                        )
+                        0L
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        currentCoroutineContext().ensureActive()
+                        onFailure(error)
+                        if (!authorized()) return
+                        if (!error.retryable() && error !is ApiFailure.IncompatibleResponse) {
+                            if (readback) {
+                                // A rejected read cannot tell us whether the write committed.
+                                readbackBlocked = true
+                                reportSaveFailure(durable)
+                                return
+                            }
+                            needsReadback = false
+                            val current = checkNotNull(mutable.value.record)
+                            if (current.pending == request) {
+                                reportSaveFailure(durable)
+                                publish(current.copy(edit = current.edit?.copy(pending = false)))
+                            }
+                            return@withLock 0L
+                        }
+                        if (request != mutable.value.pending) return@withLock 0L
+                        if (++failures >= 3) reportSaveFailure(durable)
+                        retryDelay(failures)
+                    }
+                }
+            if (retryMillis > 0 && canSave()) waitToSave(retryMillis)
         }
     }
 
-    private suspend fun CoroutineScope.waitForRetry(millis: Long, refreshing: Boolean): Boolean {
-        val wait = launch {
-            if (refreshing) withTimeoutOrNull(millis) { state.first { it.pending != null } }
-            else delay(millis)
-        }
-        retryWait = wait
+    private suspend fun waitToSave(millis: Long) = coroutineScope {
+        val wait = launch { delay(millis) }
+        saveWait = wait
         try {
             wait.join()
-            return !wait.isCancelled
         } finally {
-            retryWait = null
+            saveWait = null
         }
     }
 
-    private suspend fun refresh() = coroutineScope {
-        val preference = async { service.defaultModelPreference() }
+    private fun reportSaveFailure(disk: Deferred<Boolean>) {
+        val edit = mutable.value.record?.edit
+        scope.launch {
+            val durable = disk.await()
+            if (authorized() && edit == mutable.value.record?.edit) reportSaveFailure(durable)
+        }
+    }
+
+    private fun reportSaveFailure(durable: Boolean) {
+        val current = mutable.value
+        if (current.saveDegraded) return
+        mutable.value = current.copy(saveDegraded = true)
+        messages.trySend(
+            if (durable) DefaultModelNotice.SyncFailed else DefaultModelNotice.LocalSaveFailed
+        )
+    }
+
+    private fun clearSaveFailure() {
+        val current = mutable.value
+        if (!current.saveDegraded) return
+        mutable.value = current.copy(saveDegraded = false)
+        messages.tryReceive()
+    }
+
+    private fun publish(record: DefaultModelRecord) {
+        val state = mutable.value
+        val label =
+            if (state.options != null) {
+                val model = state.options.resolve(record.selectedModel)
+                state.options.choices.firstOrNull { it.id == model }?.label
+            } else
+                state.record?.label?.takeIf { state.record.selectedModel == record.selectedModel }
+        val updated = record.copy(label = label)
+        if (updated == state.record) return
+        mutable.value = state.copy(record = updated)
+        val write = store.save(identity, updated)
+        storageWrite = write
+        if (updated.pending != null) {
+            scope.launch {
+                if (!write.await() && mutable.value.record == updated && mutable.value.offline) {
+                    reportSaveFailure(durable = false)
+                }
+            }
+        }
+    }
+
+    private suspend fun loadOptions() = coroutineScope {
         val catalog = async { service.recoveryCatalog() }
         val models = async { service.recoveryModels() }
-        val confirmed = preference.await()
         val available = models.await()
         val currentCatalog = catalog.await()
         val hasPiUltra =
@@ -428,23 +540,20 @@ internal class DefaultModelSettings(
             }
         val codexExecution =
             hasPiUltra && service.featureSwitches().effectiveSwitches["_codexExecution"] == true
-        val options = modelOptions(available, currentCatalog, codexExecution)
-        currentCoroutineContext().ensureActive()
-        if (authorized()) {
-            val current = mutable.value
-            mutable.value =
-                current.copy(
-                    preference = confirmed,
-                    options = options,
-                    failure = current.failure.takeIf { it == DefaultModelFailure.Save },
-                )
-        }
+        modelOptions(available, currentCatalog, codexExecution)
     }
-
-    private fun UpdateDefaultModelPreference.matches(preference: DefaultModelPreference): Boolean =
-        selectedModel == preference.selectedModel &&
-            serviceTier?.name == preference.serviceTier?.name &&
-            (modelSettingsPatch?.let {
-                preference.modelSettings[it.model]?.effort?.name == it.effort.name
-            } ?: true)
 }
+
+private fun Exception.retryable(): Boolean =
+    this is ApiFailure.Network ||
+        this is ApiFailure.Http && (status >= 500 || status == 408 || status == 429)
+
+private fun retryDelay(failures: Int): Long =
+    retryDelays[(failures - 1).coerceAtMost(retryDelays.lastIndex)]
+
+private fun UpdateDefaultModelPreference.matches(preference: DefaultModelPreference): Boolean =
+    selectedModel == preference.selectedModel &&
+        serviceTier?.name == preference.serviceTier?.name &&
+        (modelSettingsPatch?.let {
+            preference.modelSettings[it.model]?.effort?.name == it.effort.name
+        } ?: true)

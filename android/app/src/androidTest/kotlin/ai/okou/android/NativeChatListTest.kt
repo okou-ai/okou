@@ -537,7 +537,14 @@ class NativeChatListTest {
                 )
                 text("Native history reply")
                 assertTrue(device.pressDPadCenter())
-                clickText(app.getString(R.string.chat_inbox))
+                text(app.getString(R.string.chat_inbox))
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
+                device.awaitKeyboardFocus(
+                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted))
+                )
+                repeat(3) { assertTrue(device.pressDPadUp()) }
+                device.awaitKeyboardFocus(inbox)
+                assertTrue(device.pressDPadCenter())
                 revealText("Project chat")
                 click(UiSelector().description(app.getString(R.string.settings)))
                 text(app.getString(R.string.appearance))

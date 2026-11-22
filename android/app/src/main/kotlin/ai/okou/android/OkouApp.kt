@@ -33,6 +33,7 @@ import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.conversationRunControls
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
+import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
@@ -77,6 +78,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -123,6 +125,9 @@ internal fun OkouApp(
     startupRecovery: @Composable (() -> Unit)? = null,
     workspaceReady: Boolean = composer != null,
     connectors: ConnectorModel? = null,
+    defaultModel: DefaultModelSettings? = null,
+    snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    feedbackInOverlay: Boolean = false,
 ) {
     val list =
         chats?.uiState?.collectAsStateWithLifecycle()?.value
@@ -152,6 +157,7 @@ internal fun OkouApp(
                 SettingsDestination.Overview
             else -> navigation.settings
         }
+    SideEffect { defaultModel?.showSettings(settings) }
     val requestedTarget = artifactSource?.let { WorkspaceTarget.Chat(it) } ?: navigation.target
     val restoringFirstSend =
         !workspaceReady &&
@@ -236,7 +242,6 @@ internal fun OkouApp(
             key(settings) { rememberScrollState() }
         else settingsPosition
     val conversations = rememberConversationUiState()
-    val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val missingChat = stringResource(R.string.history_missing)
     val focus = LocalFocusManager.current
@@ -909,7 +914,7 @@ internal fun OkouApp(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
-            if (!showChatList && !showConversationFeedback) {
+            if (!feedbackInOverlay && !showChatList && !showConversationFeedback) {
                 WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 16.dp))
             }
         },
