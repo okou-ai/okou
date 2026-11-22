@@ -1,4 +1,3 @@
-import { executionAgentId } from "../services/execution-agent";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
@@ -31,6 +30,7 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import {
   agentResponse,
+  defaultProfileId,
   visibleAgentIdentityCondition,
   agentList,
   publicAgentCountReadPlan,
@@ -283,7 +283,7 @@ const createAgentBody$ = bodyResultOf(agentsMainContract.create);
 function createdAgentSelection() {
   return {
     agentId: agents.id,
-    defaultAgentId: executionAgentId(agents.orgId).as("default_executor_id"),
+    defaultAgentId: defaultProfileId.as("default_executor_id"),
     owner: agents.owner,
     displayName: agents.displayName,
     description: agents.description,
@@ -450,7 +450,7 @@ const getAgentInner$ = computed(async (get) => {
   const [row] = await get(db$)
     .select({
       agentId: agents.id,
-      defaultAgentId: executionAgentId(agents.orgId).as("default_executor_id"),
+      defaultAgentId: defaultProfileId.as("default_executor_id"),
       owner: agents.owner,
       displayName: agents.displayName,
       description: agents.description,
@@ -495,9 +495,7 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         id: agents.id,
         owner: agents.owner,
         visibility: agents.visibility,
-        defaultAgentId: executionAgentId(agents.orgId).as(
-          "default_executor_id",
-        ),
+        defaultAgentId: defaultProfileId.as("default_executor_id"),
         publicAgentCount: (updateBody.visibility === "public"
           ? sql`CASE WHEN ${and(eq(agents.visibility, "private"), eq(agents.owner, member.userId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
           : sql`0::bigint`

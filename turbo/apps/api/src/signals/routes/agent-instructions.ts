@@ -1,4 +1,3 @@
-import { executionAgentId } from "../services/execution-agent";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 import { and, eq, or, sql } from "drizzle-orm";
@@ -13,7 +12,10 @@ import { writeDb$ } from "../external/db";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
-import { agentResponse } from "../services/agent-data.service";
+import {
+  agentResponse,
+  defaultProfileId,
+} from "../services/agent-data.service";
 import {
   agentInstructions,
   agentInstructionsContent,
@@ -136,7 +138,7 @@ const updateAgentInstructionsInner$ = command(
       )
       .returning({
         ...instructionResponseColumns,
-        defaultAgentId: executionAgentId(auth.orgId).as("default_agent_id"),
+        defaultAgentId: defaultProfileId.as("default_agent_id"),
       });
     signal.throwIfAborted();
     if (updated) {

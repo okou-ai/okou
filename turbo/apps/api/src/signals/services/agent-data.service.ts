@@ -1,9 +1,9 @@
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { DEFAULT_AGENT_NAME } from "./default-agent-profile";
-import { executionAgentId } from "./execution-agent";
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { agents } from "@okouai/db/schema/agent";
-import { and, count, desc, eq, or } from "drizzle-orm";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 
@@ -46,12 +46,18 @@ export function publicAgentCountReadPlan(orgId: string) {
   };
 }
 
-export function sharedExecutorCondition(orgId: string) {
-  return and(
-    eq(agents.orgId, orgId),
-    eq(agents.name, DEFAULT_AGENT_NAME),
-    eq(agents.visibility, "public"),
+const isDefaultProfile = and(
+  eq(agents.name, DEFAULT_AGENT_NAME),
+  eq(agents.visibility, "public"),
+);
+
+export const defaultProfileId =
+  sql`CASE WHEN ${isDefaultProfile} THEN ${agents.id} END`.mapWith(
+    nullableDriverValueDecoder(agents.id),
   );
+
+export function defaultProfileCondition(orgId: string) {
+  return and(eq(agents.orgId, orgId), isDefaultProfile);
 }
 
 function visibleAgentCondition(userId: string) {
@@ -82,7 +88,7 @@ export function agentList(
     const rows = await get(db$)
       .select({
         agentId: agents.id,
-        defaultAgentId: executionAgentId(agents.orgId),
+        defaultAgentId: defaultProfileId,
         owner: agents.owner,
         displayName: agents.displayName,
         description: agents.description,

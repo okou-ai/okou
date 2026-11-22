@@ -16,7 +16,7 @@ import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { settle, tapError } from "../utils";
 import { ensureOrgLimitedFreeBootstrap$ } from "../services/org-limited-free-bootstrap.service";
-import { ensureSharedExecutor$ } from "../services/workspace-executor.service";
+import { ensureLegacyDefaultAgentProfile$ } from "../services/legacy-default-agent-profile.service";
 import {
   cleanupClerkBannedUser$,
   cleanupClerkDeletedOrgBilling$,
@@ -377,7 +377,7 @@ const handleOrganizationCreatedWebhook$ = command(
     const creator = { orgId: identity.orgId, ownerUserId: identity.userId };
     await set(ensureOrgLimitedFreeBootstrap$, creator, signal);
     signal.throwIfAborted();
-    await set(ensureSharedExecutor$, creator, signal);
+    await set(ensureLegacyDefaultAgentProfile$, creator, signal);
     signal.throwIfAborted();
 
     const name = stringPropertyOf(data, "name");

@@ -843,6 +843,28 @@ const processClaimedIngress$ = command(
       args.ingressId,
       signal,
     );
+    const commandHandled =
+      connection &&
+      (await set(
+        dispatchConnectedFeishuCommand$,
+        { installation, connection, message },
+        signal,
+      ));
+    signal.throwIfAborted();
+    if (commandHandled) {
+      await db
+        .update(feishuChatIngress)
+        .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(feishuChatIngress.id, ingress.ingressId),
+            eq(feishuChatIngress.status, "processing"),
+          ),
+        );
+      signal.throwIfAborted();
+      return null;
+    }
+
     if (
       !connection ||
       (
@@ -863,26 +885,6 @@ const processClaimedIngress$ = command(
         },
         signal,
       );
-      return null;
-    }
-
-    const commandHandled = await set(
-      dispatchConnectedFeishuCommand$,
-      { installation, connection, message },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (commandHandled) {
-      await db
-        .update(feishuChatIngress)
-        .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-        .where(
-          and(
-            eq(feishuChatIngress.id, ingress.ingressId),
-            eq(feishuChatIngress.status, "processing"),
-          ),
-        );
-      signal.throwIfAborted();
       return null;
     }
 

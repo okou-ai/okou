@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { publishContentBundle$ } from "./content-bundle.service";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 import { agents } from "@okouai/db/schema/agent";
-import { sharedExecutorCondition } from "./agent-data.service";
+import { defaultProfileCondition } from "./agent-data.service";
 import {
   DEFAULT_AGENT_AVATAR_URL,
   DEFAULT_AGENT_DISPLAY_NAME,
@@ -12,8 +12,8 @@ import {
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 
-// Run dispatch and channel integrations still resolve a shared executor.
-export const ensureSharedExecutor$ = command(
+// Legacy profile-management clients expect a public default profile after workspace creation.
+export const ensureLegacyDefaultAgentProfile$ = command(
   async (
     { set },
     args: { readonly orgId: string; readonly ownerUserId: string },
@@ -24,7 +24,7 @@ export const ensureSharedExecutor$ = command(
       return db
         .select({ id: agents.id })
         .from(agents)
-        .where(sharedExecutorCondition(args.orgId))
+        .where(defaultProfileCondition(args.orgId))
         .limit(1);
     };
     const [existing] = await findShared();
@@ -61,7 +61,7 @@ export const ensureSharedExecutor$ = command(
       .returning({ id: agents.id });
     signal.throwIfAborted();
     if (!created && !(await findShared()).length) {
-      throw new Error("Workspace executor name is already in use");
+      throw new Error("Default Agent profile name is already in use");
     }
   },
 );
