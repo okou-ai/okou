@@ -212,12 +212,7 @@ internal constructor(
                     resolvedAccess = access,
                 )
             }
-            val site = checkNotNull(artifactHttpsUrl(link))
-            return ArtifactInfo(
-                ArtifactItem(id, site.host, ArtifactKind.Website, null),
-                null,
-                ArtifactResource.Site(site),
-            )
+            return messageSiteInfo(id, checkNotNull(artifactHttpsUrl(link)))
         }
         return api.artifactDetail(id).toInfo().also {
             if (it.item.id != id) throw ApiFailure.IncompatibleResponse()
@@ -360,6 +355,16 @@ internal fun messageArtifactLink(value: String): String? {
         ?.build()
         ?.toString()
 }
+
+internal fun knownMessageSiteInfo(id: String): ArtifactInfo? =
+    messageArtifactLink(id)?.let(::artifactHttpsUrl)?.let { messageSiteInfo(id, it) }
+
+private fun messageSiteInfo(id: String, site: HttpUrl): ArtifactInfo =
+    ArtifactInfo(
+        ArtifactItem(id, site.host, ArtifactKind.Website, null),
+        null,
+        ArtifactResource.Site(site),
+    )
 
 private const val MAX_IMAGE_BYTES = 16L * 1024 * 1024
 private const val MAX_TEXT_BYTES = 256L * 1024

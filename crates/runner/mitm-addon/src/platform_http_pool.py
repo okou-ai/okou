@@ -20,6 +20,14 @@ class ConnectedStream(NamedTuple):
     socket: socket.socket
 
 
+def abort_socket(sock: socket.socket) -> None:
+    """Abort an owned raw socket independently of the asyncio transport."""
+    with suppress(OSError):
+        sock.shutdown(socket.SHUT_RDWR)
+    with suppress(OSError):
+        sock.close()
+
+
 @dataclass(eq=False)
 class HttpConnection:
     stream: ConnectedStream
@@ -49,10 +57,7 @@ class HttpConnection:
             if not loop.is_closed():
                 self.stream.writer.transport.abort()
         finally:
-            with suppress(OSError):
-                self.stream.socket.shutdown(socket.SHUT_RDWR)
-            with suppress(OSError):
-                self.stream.socket.close()
+            abort_socket(self.stream.socket)
 
     def reusable(self) -> bool:
         return (
