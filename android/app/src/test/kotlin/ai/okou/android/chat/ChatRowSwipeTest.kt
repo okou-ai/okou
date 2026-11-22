@@ -25,12 +25,16 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = TestOkouApplication::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w400dp-h800dp-mdpi",
+    application = TestOkouApplication::class,
+)
 class ChatRowSwipeTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun hapticsFollowThresholdEntryAndOnlyAnArmedReleaseCommits() {
+    fun theRowFollowsADragAndOnlyAnArmedReleaseCommits() {
         val haptics = mutableListOf<HapticFeedbackType>()
         val actions = mutableListOf<ChatRowAction>()
         val feedback =
@@ -58,9 +62,19 @@ class ChatRowSwipeTest {
         val thresholdHaptic = HapticFeedbackType.GestureThresholdActivate
         row.performTouchInput {
             down(center)
-            moveTo(center + Offset(-40.dp.toPx(), 0f))
-            moveTo(center + Offset(-80.dp.toPx(), 0f))
-            moveTo(center + Offset(-96.dp.toPx(), 0f))
+            moveTo(center + Offset(-36.dp.toPx(), 0f))
+        }
+        assertEquals(restingLeft - 36.dp, foreground.getUnclippedBoundsInRoot().left)
+        row.performTouchInput { moveTo(center + Offset(-71.dp.toPx(), 0f)) }
+        compose.runOnIdle { assertEquals(emptyList<HapticFeedbackType>(), haptics) }
+        row.performTouchInput { moveTo(center + Offset(-72.dp.toPx(), 0f)) }
+        compose.runOnIdle {
+            assertEquals(listOf(thresholdHaptic), haptics)
+            assertEquals(emptyList<ChatRowAction>(), actions)
+        }
+        row.performTouchInput { moveTo(center + Offset(-104.dp.toPx(), 0f)) }
+        assertEquals(restingLeft - 104.dp, foreground.getUnclippedBoundsInRoot().left)
+        row.performTouchInput {
             moveTo(center + Offset(-64.dp.toPx(), 0f))
             up()
         }

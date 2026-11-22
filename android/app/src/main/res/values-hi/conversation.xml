@@ -14,4 +14,15 @@
     <string name="conversation_reply_copied">जवाब कॉपी हो गया</string>
     <string name="conversation_revoke">वापस लें</string>
     <string name="conversation_stop">रोकें</string>
+    <string name="conversation_find">मैसेज खोजें</string>
+    <string name="conversation_find_turns">बातचीत के क्रम देखें</string>
+    <string name="conversation_find_empty">खोजने के लिए कोई मैसेज नहीं है</string>
+    <string name="conversation_find_no_match">कोई मेल खाता मैसेज नहीं मिला</string>
+    <string name="conversation_find_you">आपका मैसेज</string>
+    <string name="conversation_find_unavailable">यह मैसेज उपलब्ध नहीं है।</string>
+    <string name="conversation_find_attachment">अटैचमेंट</string>
+    <plurals name="conversation_find_matches">
+        <item quantity="one">%d मेल खाता मैसेज</item>
+        <item quantity="other">%d मेल खाते मैसेज</item>
+    </plurals>
 </resources>
