@@ -4,9 +4,14 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatRowAction
 import android.os.Looper
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -93,7 +98,14 @@ class ChatListApplication : TestOkouApplication() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
 class ChatListRootTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    private val animationScale = mutableFloatStateOf(1f)
+    private val motion =
+        object : MotionDurationScale {
+            override val scaleFactor: Float
+                get() = animationScale.floatValue
+        }
+
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>(ComposeUiTestConfig(motion))
     private var chatJob: Job? = null
 
     @Before
@@ -128,6 +140,76 @@ class ChatListRootTest {
         row.performKeyInput { pressKey(Key.Menu) }
         compose.onNodeWithText("Pin chat").performClick()
         row.assertIsFocused()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun projectToggleReflowsFollowingRowsWhileKeepingItsKeyboardFocus() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val expansion =
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .projectExpansion
+            }
+        compose.waitUntil(10_000) { expansion.state.value.expandedIds != null }
+        val heading = hasText("Research")
+        val project = compose.onNode(heading)
+        val followingChat = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        project.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        val header = project.getUnclippedBoundsInRoot()
+        val collapsedTop = followingChat.getUnclippedBoundsInRoot().top
+        compose.mainClock.autoAdvance = false
+        try {
+            fun toggle(key: Key, newAction: SemanticsPropertyKey<*>) {
+                project.performKeyInput { pressKey(key) }
+                val updated = heading.and(SemanticsMatcher.keyIsDefined(newAction))
+                compose.waitUntil(10_000) {
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.onAllNodes(updated).fetchSemanticsNodes().isNotEmpty()
+                }
+                compose.mainClock.advanceTimeBy(64)
+                project.assertIsFocused()
+                assertEquals(header, project.getUnclippedBoundsInRoot())
+            }
+
+            toggle(Key.Enter, SemanticsActions.Collapse)
+            val openingTop = followingChat.getUnclippedBoundsInRoot().top
+            compose.mainClock.advanceTimeBy(250)
+            val expandedTop = followingChat.getUnclippedBoundsInRoot().top
+            assertTrue(
+                "Opening row is in motion: $collapsedTop, $openingTop, $expandedTop",
+                openingTop > collapsedTop && openingTop < expandedTop,
+            )
+
+            val child = compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").getUnclippedBoundsInRoot()
+            assertEquals(24f, (child.left - header.left).value, 1f)
+            assertEquals(52f, (child.bottom - child.top).value, 1f)
+
+            toggle(Key.Spacebar, SemanticsActions.Expand)
+            val closingTop = followingChat.getUnclippedBoundsInRoot().top
+            assertTrue(
+                "Closing row is in motion: $collapsedTop, $closingTop, $expandedTop",
+                closingTop > collapsedTop && closingTop < expandedTop,
+            )
+            compose.mainClock.advanceTimeBy(250)
+            assertEquals(collapsedTop, followingChat.getUnclippedBoundsInRoot().top)
+            compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertDoesNotExist()
+
+            compose.runOnIdle { animationScale.floatValue = 0f }
+            toggle(Key.Enter, SemanticsActions.Collapse)
+            assertEquals(expandedTop, followingChat.getUnclippedBoundsInRoot().top)
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
     }
 
     @Test
@@ -1388,6 +1470,14 @@ class ChatListRootTest {
         row.performTouchInput {
             swipe(center, center.copy(x = centerX - 90.dp.toPx(), y = centerY - 120.dp.toPx()))
         }
+        assertEquals(left, row.getUnclippedBoundsInRoot().left)
+        row.performTouchInput {
+            down(center)
+            moveTo(center + Offset(-32.dp.toPx(), 0f))
+            moveTo(center + Offset(-96.dp.toPx(), 72.dp.toPx()))
+            up()
+        }
+        row.assertIsDisplayed()
         assertEquals(left, row.getUnclippedBoundsInRoot().left)
         assertTrue(commands.isEmpty())
 

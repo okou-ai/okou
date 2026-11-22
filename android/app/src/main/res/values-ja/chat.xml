@@ -50,6 +50,10 @@
     <string name="chat_unmute">ミュートを解除</string>
     <string name="chat_archive">チャットをアーカイブ</string>
     <string name="chat_unarchive">アーカイブを解除</string>
+    <string name="chat_swipe_read">既読</string>
+    <string name="chat_swipe_unread">未読</string>
+    <string name="chat_swipe_archive">アーカイブ</string>
+    <string name="chat_swipe_restore">復元</string>
     <string name="chat_row_action_pending">チャットを更新しています…</string>
     <string name="chat_row_action_failed">チャットの変更を確認できませんでした。</string>
     <string name="chat_row_action_rejected">チャットの変更を完了できませんでした。</string>

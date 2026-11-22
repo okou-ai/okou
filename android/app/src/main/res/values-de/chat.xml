@@ -51,6 +51,10 @@
     <string name="chat_unmute">Stummschaltung aufheben</string>
     <string name="chat_archive">Chat archivieren</string>
     <string name="chat_unarchive">Archivierung aufheben</string>
+    <string name="chat_swipe_read">Gelesen</string>
+    <string name="chat_swipe_unread">Ungelesen</string>
+    <string name="chat_swipe_archive">Archivieren</string>
+    <string name="chat_swipe_restore">Zurückholen</string>
     <string name="chat_row_action_pending">Chat wird aktualisiert…</string>
     <string name="chat_row_action_failed">Die Chatänderung konnte nicht bestätigt werden.</string>
     <string name="chat_row_action_rejected">Die Chatänderung konnte nicht abgeschlossen werden.</string>
