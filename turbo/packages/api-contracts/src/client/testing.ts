@@ -10,8 +10,6 @@ import {
   composerDraftContract as OriginalComposerDraftContract,
 } from "../contracts/agent-draft";
 import { agentDraftContract, composerDraftContract } from "./agent-draft";
-import { agentSetupPromptsContract as OriginalAgentSetupPromptsContract } from "../contracts/agent-setup-prompts";
-import { agentSetupPromptsContract } from "./agent-setup-prompts";
 import {
   agentInstructionsContract as OriginalAgentInstructionsContract,
   agentsByIdContract as OriginalAgentsByIdContract,
@@ -807,7 +805,6 @@ export const clientDescriptorContracts: readonly (readonly [
 ])[] = [
   [agentDraftContract, OriginalAgentDraftContract],
   [composerDraftContract, OriginalComposerDraftContract],
-  [agentSetupPromptsContract, OriginalAgentSetupPromptsContract],
   [agentInstructionsContract, OriginalAgentInstructionsContract],
   [agentsByIdContract, OriginalAgentsByIdContract],
   [agentsMainContract, OriginalAgentsMainContract],

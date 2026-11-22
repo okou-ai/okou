@@ -17,7 +17,6 @@ import {
 import { feedRoutes } from "./routes/feed";
 import { instructionsRoutes } from "./routes/instructions";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
-import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
 import { artifactDownloadRoutes } from "./routes/artifact-downloads";
@@ -421,7 +420,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...meModelProvidersUpsertRoutes,
   ...voiceIoQuotaRoutes,
   ...voiceIoPolishRoutes,
-  ...agentSetupPromptRoutes,
   ...transcribeRoutes,
   ...voiceIoTranscribeRoutes,
   ...webFileUrlRoutes,

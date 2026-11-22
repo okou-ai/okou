@@ -157,7 +157,6 @@
         }
         OkouCatalogSection("New chat greeting") {
           NewChatGreeting(
-            avatarURL: nil, agentName: "Okou", isDefaultAgent: true,
             text: "What are we working on, Tong?"
           )
           .frame(maxWidth: .infinity)

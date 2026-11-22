@@ -545,7 +545,7 @@ private final class ComputerAuthorizationFixture: Sendable {
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
             body:
-              "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":\(kind == .browser ? "null" : "\"\(Self.hostID)\""),\"cloudBrowserEnabled\":\(kind == .browser)}"
+              "{\"id\":\"\(Self.threadID)\",\"computerUseHostId\":\(kind == .browser ? "null" : "\"\(Self.hostID)\""),\"cloudBrowserEnabled\":\(kind == .browser)}"
           )
         }
         if path == threadPath + "/event-snapshot" {
@@ -644,7 +644,7 @@ private final class ComputerAuthorizationFixture: Sendable {
     let sync = ChatSync(client: http.client)
     let commands = ChatCommands(client: http.client, sync: sync)
     let thread = ChatThread(
-      id: Self.threadID, agentID: Self.agentID, title: "Access", createdAt: .now,
+      id: Self.threadID, title: "Access", createdAt: .now,
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ComputerAuthorizationStore(
       action: action, thread: thread, commands: commands, sync: sync,
@@ -672,7 +672,7 @@ private final class ComputerAuthorizationFixture: Sendable {
     let sync = ChatSync(client: http.client)
     let commands = ChatCommands(client: http.client, sync: sync)
     let thread = ChatThread(
-      id: Self.threadID, agentID: Self.agentID, title: "Access", createdAt: .now,
+      id: Self.threadID, title: "Access", createdAt: .now,
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ConversationStore(
       thread: thread, sync: sync, commands: commands, webURL: http.baseURL,

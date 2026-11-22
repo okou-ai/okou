@@ -3,9 +3,6 @@ import SwiftUI
 /// The new-chat greeting as the web draws it: the agent and a rotating tagline that arrive
 /// word by word (opacity, an 8 pt blur and a 14 pt rise over 720 ms, 70 ms apart).
 struct NewChatGreeting: View {
-  let avatarURL: String?
-  let agentName: String
-  let isDefaultAgent: Bool
   let text: String
   @State private var revealed = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,11 +16,8 @@ struct NewChatGreeting: View {
     let words = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
     // Stacked on one centre line: it stays tidy at every width and greeting length.
     VStack(spacing: OkouSpace.md) {
-      OkouAgentAvatar(
-        avatarURL: avatarURL, name: agentName, isDefault: isDefaultAgent,
-        size: OkouAvatarSize.greeting
-      )
-      .modifier(GreetingEntrance(revealed: revealed, delay: 0))
+      OkouAvatar(size: OkouAvatarSize.greeting, label: "Okou")
+        .modifier(GreetingEntrance(revealed: revealed, delay: 0))
       GreetingWordFlow {
         ForEach(Array(words.enumerated()), id: \.offset) { index, word in
           Text(word)

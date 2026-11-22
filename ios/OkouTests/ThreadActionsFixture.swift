@@ -198,7 +198,7 @@ final class ThreadActionsFixture: Sendable {
     case "/api/chat-threads/\(Self.thread)/metadata":
       return ChatHTTPResponse(
         body:
-          "{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+          "{\"id\":\"\(Self.thread)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
       )
     case "/api/chat-threads/\(Self.thread)/event-snapshot":
       return ChatHTTPResponse(
@@ -233,18 +233,12 @@ final class ThreadActionsFixture: Sendable {
       return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
     case "/api/chat-threads/\(Self.thread)/connector-selections":
       return ChatHTTPResponse(body: "{\"selections\":[]}")
-    case "/api/agents":
-      return ChatHTTPResponse(
-        body:
-          "[{\"agentId\":\"\(Self.agent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"},{\"agentId\":\"\(Self.otherAgent)\",\"isDefaultAgent\":false,\"displayName\":\"Research\"}]"
-      )
-
     case "/api/feature-switches":
       return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
     case "/api/chat-threads/snapshot":
       return ChatHTTPResponse(
         body:
-          "{\"chatThreads\":[{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"title\":\"Planning a useful week\",\"muted\":\(muted),\"createdAt\":\"\(Self.date)\",\"updatedAt\":\"\(Self.date)\",\"sortAt\":\"\(Self.date)\"}],\"latestEventId\":null,\"latestSeqId\":null}"
+          "{\"chatThreads\":[{\"id\":\"\(Self.thread)\",\"title\":\"Planning a useful week\",\"muted\":\(muted),\"createdAt\":\"\(Self.date)\",\"updatedAt\":\"\(Self.date)\",\"sortAt\":\"\(Self.date)\"}],\"latestEventId\":null,\"latestSeqId\":null}"
       )
     case "/api/chat-threads/events":
       if let status = state.value.withLock({ $0.failNext.removeValue(forKey: "events") }) {
@@ -283,7 +277,7 @@ final class ThreadActionsFixture: Sendable {
   }
 
   private static func event(kind: String, id: String, seq: Int, extra: String) -> String {
-    "{\"id\":\"\(id.lowercased())\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"agentId\":\"\(agent)\",\"createdAt\":\"\(date)\"\(extra)}"
+    "{\"id\":\"\(id.lowercased())\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"createdAt\":\"\(date)\"\(extra)}"
   }
 
   private static func messageID(_ seq: Int) -> String {

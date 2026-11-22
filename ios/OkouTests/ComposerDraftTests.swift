@@ -11,7 +11,7 @@ import XCTest
 @MainActor
 final class ComposerDraftTests: XCTestCase {
   func testWhitespaceOnlyDraftsClearCloudContentWithoutTrimmingMeaningfulText() async throws {
-    for target in [ChatDraftTarget.agent(draftAgentID), .thread(draftThreadID)] {
+    for target in [ChatDraftTarget.legacyWorkspace(draftAgentID), .thread(draftThreadID)] {
       let server = DraftServer()
       let storage = server.storage()
       let composer = server.composer(storage: storage, target: target)
@@ -52,7 +52,8 @@ final class ComposerDraftTests: XCTestCase {
 
     composer.text = " \n\t"
     await composer.synchronize()
-    let saved = try await ChatDraftRepository(client: server.http.client).load(.agent(draftAgentID))
+    let saved = try await ChatDraftRepository(client: server.http.client).load(
+      .legacyWorkspace(draftAgentID))
     XCTAssertEqual(saved.draftAttachments, remote.draftAttachments)
     XCTAssertEqual(
       saved.draftUserMessage?.parts.filter { $0["type"]?.string != "text" },
@@ -72,7 +73,7 @@ final class ComposerDraftTests: XCTestCase {
   func testUnreadableDeviceDraftIsNotReplacedByAnEmptyDefault() async throws {
     let server = DraftServer()
     let storage = server.storage()
-    let key = ChatDraftTarget.agent(draftAgentID).key
+    let key = ChatDraftTarget.legacyWorkspace(draftAgentID).key
     try storage.save("unreadable draft record", key: key)
     let composer = server.composer(storage: storage)
     XCTAssertNotNil(composer.error)
@@ -462,7 +463,8 @@ final class ComposerRichDraftTests: XCTestCase {
     let current = try XCTUnwrap(composer.editorBlocks.first)
     composer.editBlock(current.id, text: "Replacement draft")
     await composer.synchronize()
-    let saved = try await ChatDraftRepository(client: server.http.client).load(.agent(draftAgentID))
+    let saved = try await ChatDraftRepository(client: server.http.client).load(
+      .legacyWorkspace(draftAgentID))
     XCTAssertEqual(saved.draftUserMessage?.text, "Replacement draft")
     composer.close()
     let reopened = server.composer(storage: storage)

@@ -34,7 +34,7 @@ final class ChatThreadPinTests: XCTestCase {
     XCTAssertFalse(marked)
     XCTAssertNil(store.list.error)
     XCTAssertEqual(
-      store.list.threads(agentID: PinFixture.agent, archived: false).first?.id, PinFixture.target)
+      store.list.threads(archived: false).first?.id, PinFixture.target)
     XCTAssertEqual(fixture.writes.first?.rank, "Zz")
 
     // An older refresh was already reading before the next local click.
@@ -82,7 +82,7 @@ final class ChatThreadPinTests: XCTestCase {
     await store.list.refresh(waitForCurrent: true)
     XCTAssertFalse(isPinned(store))
     XCTAssertEqual(
-      store.list.threads(agentID: PinFixture.agent, archived: false).first?.id, PinFixture.peer)
+      store.list.threads(archived: false).first?.id, PinFixture.peer)
   }
 
   func testFailedPinKeepsOptimisticDisplayAndNextSaveStillRuns() async throws {
@@ -139,7 +139,7 @@ final class ChatThreadPinTests: XCTestCase {
     await latest.value
     XCTAssertTrue(isPinned(store))
     XCTAssertEqual(
-      store.list.threads(agentID: PinFixture.agent, archived: false).first?.id, PinFixture.target)
+      store.list.threads(archived: false).first?.id, PinFixture.target)
   }
 
   func testClosingWorkspaceCancelsActiveAndQueuedPinsWithoutLeakingOptimism() async throws {
@@ -357,10 +357,6 @@ private final class PinOrderFixture: Sendable {
       }
       let path = request.url?.path ?? ""
       switch path {
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body: "[{\"agentId\":\"\(Self.agent)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]"
-        )
       case "/api/projects/snapshot":
         return ChatHTTPResponse(
           body:
@@ -371,7 +367,7 @@ private final class PinOrderFixture: Sendable {
         let rows = (1...5).map { index in
           let project = index > 3 ? "\"\(Self.project)\"" : "null"
           return """
-            {"id":"\(Self.id(index))","agentId":"\(Self.agentID(of: Self.id(index)))",
+            {"id":"\(Self.id(index))",
             "title":"Pin \(index)","projectId":\(project),
             "createdAt":"2026-11-11T00:00:00Z","updatedAt":"2026-11-11T00:00:00Z",
             "sortAt":"2026-11-11T00:0\(index):00Z","pinnedAt":"2026-11-11T00:00:00Z",
@@ -391,7 +387,7 @@ private final class PinOrderFixture: Sendable {
         return ChatHTTPResponse(
           body: "{\"events\":[\(events.joined(separator: ","))],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+        return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
       default:
         guard request.httpMethod == "POST", path.hasPrefix("/api/chat-threads/"),
           path.hasSuffix("/pin-order")
@@ -402,7 +398,7 @@ private final class PinOrderFixture: Sendable {
           state.writes.append(write)
           state.events.append(
             """
-            {"id":"\(write.eventID)","seqId":\(state.events.count + 1),"kind":"sort_touched","chatThreadId":"\(write.threadID)","agentId":"\(Self.agentID(of: write.threadID))","pinOrder":"\(write.pinOrder)","createdAt":"2026-11-11T01:00:00Z"}
+            {"id":"\(write.eventID)","seqId":\(state.events.count + 1),"kind":"sort_touched","chatThreadId":"\(write.threadID)","pinOrder":"\(write.pinOrder)","createdAt":"2026-11-11T01:00:00Z"}
             """)
         }
         return ChatHTTPResponse(status: 204, body: "")
@@ -473,8 +469,8 @@ private final class PinFixture: Sendable {
         return ChatHTTPResponse(
           body: """
             {"chatThreads":[
-            {"id":"\(Self.target)","agentId":"\(Self.agent)","title":"Pin interaction","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"},
-            {"id":"\(Self.peer)","agentId":"\(Self.agent)","title":"Existing pinned chat","createdAt":"2026-10-19T00:00:00Z","updatedAt":"2026-10-19T00:00:00Z","sortAt":"2026-10-19T00:00:00Z","pinnedAt":"2026-10-19T00:00:00Z","pinOrder":"a0"}
+            {"id":"\(Self.target)","title":"Pin interaction","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"},
+            {"id":"\(Self.peer)","title":"Existing pinned chat","createdAt":"2026-10-19T00:00:00Z","updatedAt":"2026-10-19T00:00:00Z","sortAt":"2026-10-19T00:00:00Z","pinnedAt":"2026-10-19T00:00:00Z","pinOrder":"a0"}
             ],"latestEventId":null,"latestSeqId":null}
             """)
       case "/api/chat-threads/events":
@@ -488,7 +484,7 @@ private final class PinFixture: Sendable {
             "{\"events\":[\(state.value.withLock { Array($0.events.dropFirst(since)).joined(separator: ",") })],\"hasMore\":false}"
         )
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+        return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
       case "/api/chat-threads/\(Self.target)/pin", "/api/chat-threads/\(Self.target)/unpin":
         let query =
           URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems
@@ -535,7 +531,7 @@ private final class PinFixture: Sendable {
   private static func event(_ write: Write, sequence: Int) -> String {
     let rank = write.rank.map { "\"\($0)\"" } ?? "null"
     return """
-      {"id":"\(write.eventID.lowercased())","seqId":\(sequence),"kind":"\(write.action == "pin" ? "pinned" : "unpinned")","chatThreadId":"\(target)","agentId":"\(agent)","pinOrder":\(rank),"createdAt":"2026-10-20T01:00:00Z"}
+      {"id":"\(write.eventID.lowercased())","seqId":\(sequence),"kind":"\(write.action == "pin" ? "pinned" : "unpinned")","chatThreadId":"\(target)","pinOrder":\(rank),"createdAt":"2026-10-20T01:00:00Z"}
       """
   }
 }

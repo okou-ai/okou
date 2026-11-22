@@ -14,17 +14,6 @@ export const clientContractImportManifest = [
     ],
   },
   {
-    module: "agent-setup-prompts",
-    contracts: ["agentSetupPromptsContract"],
-    bindings: [
-      {
-        name: "AGENT_SETUP_RESPONSIBILITY_MAX_CHARS",
-        source: "validators/agent-setup-prompts",
-        imported: "AGENT_SETUP_RESPONSIBILITY_MAX_CHARS",
-      },
-    ],
-  },
-  {
     module: "agents",
     contracts: [
       "agentInstructionsContract",

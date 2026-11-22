@@ -21,7 +21,7 @@ final class NotificationRefreshTests: XCTestCase {
         let pin = state.pinned ? #""a0""# : "null"
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)",\
+            {"chatThreads":[{"id":"\(threadID)",\
             "title":"\(state.title)","muted":\(state.muted),"pinOrder":\(pin),\
             "projectId":\(project),"createdAt":"2026-10-20T00:00:00Z",\
             "updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],\
@@ -30,8 +30,7 @@ final class NotificationRefreshTests: XCTestCase {
       case ("GET", "/api/chat-threads/events"):
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case ("GET", "/api/indicators"):
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
-      case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case ("POST", "/api/chat-threads/\(threadID)/mark-read"):
         return ChatHTTPResponse(body: #"{"lastReadAt":"2026-11-16T00:00:00Z"}"#)
       case ("POST", "/api/ios-notifications/reconcile"):
@@ -121,7 +120,7 @@ final class NotificationRefreshTests: XCTestCase {
       case ("GET", "/api/chat-threads/snapshot"):
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)",\
+            {"chatThreads":[{"id":"\(threadID)",\
             "title":"Unread result","archived":\(archived.withLock { $0 }),\
             "createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z",\
             "sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
@@ -135,7 +134,6 @@ final class NotificationRefreshTests: XCTestCase {
             {"agents":\(agents),"threads":{"\(threadID)":"unread"},\
             "unreadAt":{"\(threadID)":"2026-10-20T00:00:00Z"}}
             """)
-      case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
       case ("POST", "/api/ios-notifications/reconcile"):
         let isArchived = archived.withLock { $0 }
         let removed = isArchived ? #""archived""# : ""

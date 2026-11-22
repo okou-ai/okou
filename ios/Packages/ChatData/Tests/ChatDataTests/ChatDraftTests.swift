@@ -22,7 +22,7 @@ final class ChatDraftTests: XCTestCase {
         message: message, range: (message.text as NSString).range(of: "Selected passage")))
     document.parts.append(selection.part)
     let draft = ComposerDraft(document: document)
-    let agent = ChatDraftTarget.agent("agent")
+    let agent = ChatDraftTarget.legacyWorkspace("agent")
     let thread = ChatDraftTarget.thread("thread")
     try ChatDraftStorage(scope: scope, directory: directory).save(draft, key: agent.key)
     let reopened = ChatDraftStorage(scope: scope, directory: directory)
@@ -46,7 +46,7 @@ final class ChatDraftTests: XCTestCase {
   func testIncompleteRemoteResponseFailsInsteadOfBecomingAnEmptyDraft() async throws {
     let fixture = ChatHTTPFixture { _ in ChatHTTPResponse(body: "{\"draftUserMessage\":null}") }
     do {
-      _ = try await ChatDraftRepository(client: fixture.client).load(.agent("agent"))
+      _ = try await ChatDraftRepository(client: fixture.client).load(.legacyWorkspace("agent"))
       XCTFail("Missing required draft metadata must not silently clear local content")
     } catch APIClientError.incompatibleData {}
   }
@@ -71,7 +71,7 @@ final class ChatDraftTests: XCTestCase {
         json: draft)
     }
     let repository = ChatDraftRepository(client: fixture.client)
-    for target in [ChatDraftTarget.workspace, .agent("agent"), .thread("thread")] {
+    for target in [ChatDraftTarget.workspace, .legacyWorkspace("agent"), .thread("thread")] {
       let restored = try await repository.load(target)
       XCTAssertEqual(restored, draft)
       try await repository.save(restored, to: target)

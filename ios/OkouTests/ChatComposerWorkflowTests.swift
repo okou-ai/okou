@@ -471,7 +471,7 @@ extension XCTestCase {
       error: conversation.error, attachmentURL: conversation.webURL,
       attachments: conversation.attachmentDraft, draftState: conversation.composer,
       submit: { await conversation.send() }, refresh: nil,
-      workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID
+      workflowSource: conversation.workflowSource
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .background(Color(uiColor: .systemBackground))
@@ -522,7 +522,7 @@ private struct WorkflowNewChatHost: View {
       attachmentURL: workspace.webURL, attachments: composer.attachments, draftState: composer,
       submit: { await workspace.sendNewChat() }, refresh: nil,
       mentionSource: workspace.mentionTestSource,
-      workflowSource: workspace.composerWorkflows, agentID: workspace.selectedAgentID
+      workflowSource: workspace.composerWorkflows
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .composerSuggestionOverlay()

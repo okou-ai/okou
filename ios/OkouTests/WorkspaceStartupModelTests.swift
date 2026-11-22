@@ -184,7 +184,7 @@ final class WorkspaceStartupFixture: Sendable {
         switch path {
         case "/api/indicators":
           try await beforeIndicatorsRead?()
-          return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
+          return ChatHTTPResponse(body: #"{"unreadAt":{},"threads":{}}"#)
         case "/api/chat-drafts/composer",
           "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
           return ChatHTTPResponse(

@@ -28,7 +28,7 @@ public enum ModelHTTPFixtures {
     {"model":"claude-model","upstreamModel":"claude-model","providerType":"claude-code-oauth-token","concreteProviderType":"claude-code-oauth-token","enabled":true,"priority":0,"efforts":["low","medium","high","extra","max","ultracode"],"defaultEffort":"high","piRuntimeCapable":false}]}
     """
   public static let metadata = """
-    {"id":"\(threadID)","agentId":"\(agentID)","selectedModel":"codex-model","modelSettings":{"codex-model":{"effort":"max"}},"serviceTier":null,"cloudBrowserEnabled":false,"computerUseHostId":null}
+    {"id":"\(threadID)","selectedModel":"codex-model","modelSettings":{"codex-model":{"effort":"max"}},"serviceTier":null,"cloudBrowserEnabled":false,"computerUseHostId":null}
     """
   public static let subscriptions = """
     {"subscriptions":[{"id":"\(accountID)","type":"codex-oauth-token","isActive":true,"accountEmail":"sample@example.invalid","planType":"pro","needsReconnect":false,"lastRefreshErrorCode":null,"subscriptionResetCredits":2,"subscriptionResetSupported":true,"subscriptionResetCreditsNextExpiresAt":"2030-12-01T00:00:00Z","subscriptionUsage":{"fiveHour":{"usedPercent":20,"remainingPercent":80,"resetAt":"2030-10-20T08:00:00Z","windowSeconds":18000},"weekly":{"usedPercent":70,"remainingPercent":30,"resetAt":"2030-10-25T00:00:00Z","windowSeconds":604800}}}]}

@@ -42,9 +42,6 @@ struct ChatDetailView: View {
   }
 
   private var history: ChatHistory { conversation.history ?? .empty }
-  private var agentName: String? {
-    "Okou"
-  }
   private var rows: [ConversationCollectionRow] {
     ConversationRowProjection(conversation: conversation).rows
   }
@@ -227,9 +224,9 @@ struct ChatDetailView: View {
             modelSelection: conversation.modelSelection,
             connectorSelection: conversation.modelSelection?.connectors,
             mentionSource: mentionSource,
-            workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
+            workflowSource: conversation.workflowSource,
             sendTransition: scrolling.sendTransition,
-            placeholder: agentName.map { String(localized: "Message \($0)") }
+            placeholder: String(localized: "Message Okou")
           )
         }
       }
@@ -251,7 +248,7 @@ struct ChatDetailView: View {
     let assistant = message.role == .assistant
     return .init(
       webURL: conversation.webURL,
-      action: assistant ? .init(agentID: thread.agentID, threadID: thread.id) : nil,
+      action: assistant ? .init(threadID: thread.id) : nil,
       permissionMember: conversation.permissionActions.member,
       artifacts: assistant ? conversation.artifacts : nil)
   }
@@ -396,7 +393,7 @@ struct ChatDetailView: View {
   }
 
   private var assistantAvatar: some View {
-    OkouAgentAvatar(avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.message)
+    OkouAvatar(size: OkouAvatarSize.message, label: "Okou")
       .accessibilityIdentifier("assistant-avatar")
   }
 
@@ -420,7 +417,7 @@ struct ChatDetailView: View {
         MessageBodyView(
           text: message.text, baseURL: conversation.webURL, markdown: conversation.messageMarkdown,
           actionContext: message.role == .assistant
-            ? MessageActionContext(agentID: thread.agentID, threadID: thread.id) : nil,
+            ? MessageActionContext(threadID: thread.id) : nil,
           connectorActions: conversation.connectorActions,
           permissionActions: conversation.permissionActions,
           approvals: message.role == .assistant ? conversation.approvals : nil,

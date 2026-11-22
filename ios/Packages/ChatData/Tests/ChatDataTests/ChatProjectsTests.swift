@@ -101,9 +101,6 @@ final class ChatProjectsTests: XCTestCase {
     let thread = Self.thread
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body: "[{\"agentId\":\"\(agent)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
       case "/api/chat-threads":
         bodies.withLock { $0.append(chatRequestBody(request)) }
         return ChatHTTPResponse(

@@ -334,7 +334,7 @@ final class ChatProjectStoreTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -444,7 +444,7 @@ final class ChatProjectStoreTests: XCTestCase {
   }
 
   private func thread(_ id: String, agent: String) -> ChatThread {
-    ChatThread(id: id, agentID: agent, title: id, createdAt: .now, updatedAt: .now, sortAt: .now)
+    ChatThread(id: id, title: id, createdAt: .now, updatedAt: .now, sortAt: .now)
   }
 
   private struct RenameBody: Decodable {

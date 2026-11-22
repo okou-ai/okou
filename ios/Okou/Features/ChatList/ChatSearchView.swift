@@ -110,7 +110,7 @@ private struct ChatSearchContent: View {
   private var titleThreads: [ChatThread] {
     search.keyword.isEmpty
       ? workspace.list.threads(
-        agentID: workspace.selectedAgentID, archived: showsArchived,
+        archived: showsArchived,
         onlyUnread: workspace.sidebar.filter == .unread)
       : workspace.list.threads
   }

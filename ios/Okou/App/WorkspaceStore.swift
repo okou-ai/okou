@@ -94,7 +94,7 @@ final class WorkspaceStore {
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
   private var workspaceComposerReady = false
-  private var agentDraftTask: Task<Void, Never>?
+  private var composerSyncTask: Task<Void, Never>?
   @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
     resources: resources, lifecycleTasks: lifecycleTasks,
     didFail: { [weak self] in self?.handle($0) })
@@ -290,7 +290,7 @@ final class WorkspaceStore {
     searchArtifacts.close()
     synchronization.stopRealtime()
     messageMarkdown.clear()
-    agentDraftTask?.cancel()
+    composerSyncTask?.cancel()
     newComposer.close()
     commands.closeFileCache()
     let work = lifecycleTasks.close()
@@ -308,13 +308,12 @@ final class WorkspaceStore {
   func prepareWorkspaceComposer() async {
     guard !closed, !workspaceComposerReady, !Task.isCancelled else { return }
     // A previous installation can have unsent text, attachments or voice under its old local key.
-    let previousNavigation = await sync.cachedNavigation()
-    let localAgentID = previousNavigation?.agents.first(where: \.isDefaultAgent)?.agentId
+    let localDraftID = await sync.cachedComposerLocation()?.localID
     guard !closed, !workspaceComposerReady, !Task.isCancelled else { return }
-    agentDraftTask?.cancel()
+    composerSyncTask?.cancel()
     let previous = newComposer
     let composer = ComposerDraftStore(
-      target: localAgentID.map(ChatDraftTarget.agent) ?? .workspace, commands: commands,
+      target: localDraftID.map(ChatDraftTarget.legacyWorkspace) ?? .workspace, commands: commands,
       repository: draftRepository, storage: draftStorage,
       didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
@@ -326,8 +325,8 @@ final class WorkspaceStore {
     workspaceComposerReady = true
     newComposer = composer
     composer.setForeground(isForeground)
-    agentDraftTask = Task { await composer.synchronize() }
-    if let agentDraftTask { lifecycleTasks.track(agentDraftTask) }
+    composerSyncTask = Task { await composer.synchronize() }
+    if let composerSyncTask { lifecycleTasks.track(composerSyncTask) }
   }
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
@@ -467,7 +466,7 @@ final class WorkspaceStore {
       !closed,
       let conversation = conversation(for: created.id)
     else { return }
-    newModelSelection.connectors.consumeNewChatOptions(agentID: nil)
+    newModelSelection.connectors.consumeNewChatOptions()
     sourceComposer.move(to: conversation.composer)
     if wasAwaitingComposer && newComposer !== sourceComposer {
       newComposer.clear()

@@ -6,14 +6,14 @@ import {
   chatThreadByIdContract,
   chatThreadDraftContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { projectRoutes } from "../projects";
 import { chatThreadRoutes } from "../chat-threads";
-import { agentDraftRoutes } from "../agent-draft";
+import { composerDraftRoutes } from "../agent-draft";
 import {
   createBddApi,
   type ApiTestUser,
@@ -66,8 +66,7 @@ async function create(
     )
   ).body;
 }
-async function agent(actor: ApiTestUser) {
-  bdd.acceptAgentStorageWrites();
+async function configureChatModel(actor: ApiTestUser) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-sonnet-5-5",
   });
@@ -75,14 +74,9 @@ async function agent(actor: ApiTestUser) {
     actor,
   );
   await runs.updateUserModelPreference(actor, "claude-sonnet-5-5");
-  return await bdd.createAgent(actor, {
-    displayName: "Project Agent",
-    visibility: "private",
-  });
 }
 async function thread(
   actor: ApiTestUser,
-  _agentId: string,
   projectId?: string,
 ) {
   return (
@@ -327,12 +321,12 @@ describe("private Project order", () => {
   });
 });
 
-describe("private cross-Agent Projects", () => {
-  it("preserves structured Project references through ordinary Agent and Thread drafts", async () => {
+describe("private Projects", () => {
+  it("preserves structured Project references through member composer and Thread drafts", async () => {
     const actor = owner();
     const project = await create(actor);
-    const a = await agent(actor);
-    const t = await thread(actor, a.agentId, project.id);
+    await configureChatModel(actor);
+    const t = await thread(actor, project.id);
     const draft = {
       draftUserMessage: {
         version: 1 as const,
@@ -377,13 +371,12 @@ describe("private cross-Agent Projects", () => {
         )
       ).body,
     ).toStrictEqual(draft);
-    const agentApi = setupApp({ context, routes: agentDraftRoutes })(
-      agentDraftContract,
+    const composerApi = setupApp({ context, routes: composerDraftRoutes })(
+      composerDraftContract,
     );
     await accept(
-      agentApi.patch({
+      composerApi.patch({
         headers: headers(actor),
-        params: { id: a.agentId },
         body: draft,
       }),
       [204],
@@ -391,9 +384,8 @@ describe("private cross-Agent Projects", () => {
     expect(
       (
         await accept(
-          agentApi.get({
+          composerApi.get({
             headers: headers(actor),
-            params: { id: a.agentId },
           }),
           [200],
         )
@@ -426,15 +418,11 @@ describe("private cross-Agent Projects", () => {
       ).status,
     ).toBe(404);
   });
-  it("keeps Agent identity and activity while moving across Projects and ignores a replayed old move", async () => {
+  it("keeps thread activity while moving across Projects and ignores a replayed old move", async () => {
     const actor = owner();
-    const a = await agent(actor);
-    const b = await bdd.createAgent(actor, {
-      displayName: "Other Agent",
-      visibility: "private",
-    });
-    const first = await thread(actor, a.agentId);
-    const second = await thread(actor, b.agentId);
+    await configureChatModel(actor);
+    const first = await thread(actor);
+    const second = await thread(actor);
     const p = await create(actor, "Launch", first.id);
     const q = await create(actor, "Research");
     expect((await move(actor, second.id, p.id)).status).toBe(200);
@@ -488,10 +476,10 @@ describe("private cross-Agent Projects", () => {
   });
   it("deletes the Project atomically, clears each membership and never resurrects an old creation", async () => {
     const actor = owner();
-    const a = await agent(actor);
-    const first = await thread(actor, a.agentId);
+    await configureChatModel(actor);
+    const first = await thread(actor);
     const p = await create(actor, "Launch", first.id);
-    const second = await thread(actor, a.agentId, p.id);
+    const second = await thread(actor, p.id);
     expect(second.projectId).toBe(p.id);
     expect(
       (
@@ -576,8 +564,8 @@ describe("private cross-Agent Projects", () => {
 
 test("serializes concurrent moves, duplicate creates and deletion against new memberships", async () => {
   const actor = owner();
-  const a = await agent(actor);
-  const first = await thread(actor, a.agentId);
+  await configureChatModel(actor);
+  const first = await thread(actor);
   const p = await create(actor, "Launch");
   const q = await create(actor, "Review");
   const same = operation();

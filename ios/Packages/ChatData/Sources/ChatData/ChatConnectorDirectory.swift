@@ -40,7 +40,7 @@ extension ChatComposerAccess {
     client.baseURL.appending(path: "api/desktop/updates/stable/darwin/arm64/dmg")
   }
 
-  public func validate(agentID _: String?, threadID: String?) async throws {
+  public func validate(threadID: String?) async throws {
     if let threadID {
       let metadata: ThreadMetadata = try await client.request(
         "/api/chat-threads/\(threadID)/metadata")

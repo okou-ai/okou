@@ -22,7 +22,7 @@ struct ChatComposerView: View {
   var connectorSelection: ComposerConnectorStore?
   var mentionSource: ComposerMentionSource?
   var workflowSource: ComposerWorkflowSource?
-  var agentID: String?
+
   var sendTransition: ConversationSendTransition?
   /// "Message <agent>", so the field names who will do the work.
   var placeholder: String?
@@ -270,9 +270,8 @@ struct ChatComposerView: View {
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
     .sensoryFeedback(.error, trigger: error) { _, new in new != nil }
-    .onChange(of: "\(agentID ?? "")/\(connectorSelection != nil)", initial: true) { _, _ in
+    .onChange(of: connectorSelection.map(ObjectIdentifier.init), initial: true) { _, _ in
       showsConnectors = false
-      connectorSelection?.configure(agentID: agentID)
     }
     .sheet(isPresented: $showsAddSheet, onDismiss: openPendingAdd) {
       ComposerAddSheet(

@@ -155,7 +155,8 @@ final class VoiceComposerFixture: Sendable {
         apiBaseURL: http.baseURL, userID: "voice-user", workspaceID: "voice-org"),
       directory: root)
     return ComposerDraftStore(
-      target: .agent(agent), commands: ChatCommands(client: client, sync: ChatSync(client: client)),
+      target: .legacyWorkspace(agent),
+      commands: ChatCommands(client: client, sync: ChatSync(client: client)),
       repository: syncDrafts ? ChatDraftRepository(client: client) : nil,
       storage: storage, didFail: didFail, voiceCapture: capture)
   }

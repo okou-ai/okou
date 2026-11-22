@@ -136,7 +136,7 @@ final class AttachmentFlowFixture: Sendable {
     case "/api/chat-threads/events":
       return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
     default:
-      return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
     }
   }
 
@@ -146,12 +146,6 @@ final class AttachmentFlowFixture: Sendable {
     case "/api/chat-thread-drafts":
       return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
     case "/api/web/file-url": return ChatHTTPResponse(body: "{}")
-    case "/api/agents":
-      return ChatHTTPResponse(
-        body:
-          "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
-    case "/api/agents/\(Self.agentID)":
-      return ChatHTTPResponse(body: "{\"agentId\":\"\(Self.agentID)\"}")
     case "/api/remotes/overview":
       return ChatHTTPResponse(
         body:
@@ -166,7 +160,7 @@ final class AttachmentFlowFixture: Sendable {
     case let path where path.hasSuffix("/metadata"):
       return ChatHTTPResponse(
         body:
-          "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+          "{\"id\":\"\(Self.threadID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
       )
     default: return nil
     }
@@ -236,7 +230,7 @@ final class AttachmentFlowFixture: Sendable {
     let sync = ChatSync(client: http.client)
     return ConversationStore(
       thread: ChatThread(
-        id: Self.threadID, agentID: Self.agentID, title: "Attachments",
+        id: Self.threadID, title: "Attachments",
         createdAt: .now, updatedAt: .now, sortAt: .now),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync), webURL: http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),

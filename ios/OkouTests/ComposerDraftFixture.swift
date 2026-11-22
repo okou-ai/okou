@@ -81,7 +81,7 @@ final class DraftServer: Sendable {
       directory: directory)
   }
   @MainActor func composer(
-    storage: ChatDraftStorage? = nil, target: ChatDraftTarget = .agent(draftAgentID)
+    storage: ChatDraftStorage? = nil, target: ChatDraftTarget = .legacyWorkspace(draftAgentID)
   ) -> ComposerDraftStore {
     ComposerDraftStore(
       target: target,

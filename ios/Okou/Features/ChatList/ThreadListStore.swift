@@ -41,7 +41,7 @@ final class ThreadListStore {
       }
     }
   }
-  private(set) var unreadAgentIDs: Set<String> = []
+  private(set) var unreadThreadIDs: Set<String> = []
   private(set) var markingAllRead = false
   private var readRevision = 0
   var actionError: String? { actions.actionError }
@@ -68,7 +68,7 @@ final class ThreadListStore {
   private var appliedIndicatorsRevision = 0
   // Online running state can arrive before its list event. Keep the current
   // server set so later metadata can project it; running state is never persisted.
-  private var activeThreadIDs: Set<String> = []
+  private(set) var activeThreadIDs: Set<String> = []
   private var creationRevision = 0
   @ObservationIgnored private let listDemand = CCState.State<UUID?>(nil)
   @ObservationIgnored private let listLifetime = CCState.State(true)
@@ -140,7 +140,7 @@ final class ThreadListStore {
       read == readRevision, restoredThreads || cached.revision > appliedIndicatorsRevision
     else { return }
     appliedIndicatorsRevision = cached.revision
-    unreadAgentIDs = cached.unreadAgentIDs
+    unreadThreadIDs = Set(cached.unreadAt.keys)
     threads = ThreadListReadProjection.readState(threads, unreadAt: cached.unreadAt)
     if hasLoadedThreads { didRefresh(threads) }
   }
@@ -205,7 +205,7 @@ final class ThreadListStore {
               cachedUnread.revision > appliedIndicatorsRevision
             {
               appliedIndicatorsRevision = cachedUnread.revision
-              unreadAgentIDs = cachedUnread.unreadAgentIDs
+              unreadThreadIDs = Set(cachedUnread.unreadAt.keys)
             }
             guard response.cursor.seqID >= appliedThreadSequence else { continue }
             appliedThreadSequence = response.cursor.seqID
@@ -379,7 +379,7 @@ final class ThreadListStore {
             continue
           }
           activeThreadIDs = Set(result.threads.filter { $0.value == .active }.map(\.key))
-          unreadAgentIDs = result.unreadAgentIDs(in: threads)
+          unreadThreadIDs = Set(result.threads.compactMap { $0.value == .unread ? $0.key : nil })
           threads = threads.map { thread in
             var updated = thread
             updated.indicator = result.threads[thread.id]
@@ -423,8 +423,7 @@ final class ThreadListStore {
   }
 
   /// Places a pinned chat beside another pin listed with it, as the PWA's Move up / Move down.
-  /// A pin ranks against the pins listed with it: its project's chats, which can belong to
-  /// several Agents, or else its Agent's chats. Only the moved rank (and a tied run) changes.
+  /// Only the moved rank and tied ranks change within the current list.
   func movePinned(
     _ id: String, beside targetID: String, placement: ChatThreadReplay.PinPlacement,
     projectID: String? = nil
@@ -559,9 +558,9 @@ extension ThreadListStore {
 
   @discardableResult
   func delete(
-    _ id: String, agentID: String?, eventID: String,
+    _ id: String, eventID: String,
     onFailure: (@MainActor (String) -> Void)? = nil
   ) async -> Bool {
-    return await actions.delete(id, agentID: agentID, eventID: eventID, onFailure: onFailure)
+    return await actions.delete(id, eventID: eventID, onFailure: onFailure)
   }
 }

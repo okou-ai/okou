@@ -79,15 +79,15 @@ public actor ChatCache {
     connection = nil
   }
 
-  public func loadNavigation() throws -> SidebarNavigationSnapshot? {
+  public func loadNavigation() throws -> LegacyComposerLocation? {
     try withDatabase { database in
       let query = try database.prepare("SELECT snapshot FROM sidebar_navigation WHERE id = 1")
       guard try query.step() else { return nil }
-      return try JSONDecoder().decode(SidebarNavigationSnapshot.self, from: query.blob(at: 0))
+      return try JSONDecoder().decode(LegacyComposerLocation.self, from: query.blob(at: 0))
     }
   }
 
-  public func saveNavigation(_ snapshot: SidebarNavigationSnapshot) throws {
+  public func saveNavigation(_ snapshot: LegacyComposerLocation) throws {
     try Task.checkCancellation()
     let data = try JSONEncoder().encode(snapshot)
     try withDatabase { database in

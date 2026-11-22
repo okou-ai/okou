@@ -81,12 +81,12 @@ final class FailureRecoveryFixture: Sendable {
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(ModelHTTPFixtures.threadID)","agentId":"\(ModelHTTPFixtures.agentID)","title":"Failure recovery","selectedModel":"codex-model","modelSettings":{"codex-model":{"effort":"max"}},"createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":0}
+            {"chatThreads":[{"id":"\(ModelHTTPFixtures.threadID)","title":"Failure recovery","selectedModel":"codex-model","modelSettings":{"codex-model":{"effort":"max"}},"createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":0}
             """)
       case "/api/chat-threads/events":
         return await Self.threadEventsResponse(request, state: state)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case threadPath + "/event-snapshot":
         return ChatHTTPResponse(
           status: 404,
@@ -337,7 +337,7 @@ final class FailureRecoveryFixture: Sendable {
     let resource = ChatModelStore(
       client: http.client, webURL: http.baseURL, readRetrySleep: { _ in }, didFail: { _ in })
     let thread = ChatThread(
-      id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
+      id: ModelHTTPFixtures.threadID,
       title: "Failure recovery", selectedModel: "codex-model", createdAt: .now, updatedAt: .now,
       sortAt: .now)
     let selection = ChatModelSelectionStore(models: resource, thread: thread)
@@ -357,7 +357,7 @@ final class FailureRecoveryFixture: Sendable {
 
   static func id(_ seq: Int) -> String { String(format: "99000000-0000-4000-8000-%012d", seq) }
   static func threadEvent(_ seq: Int, kind: String, fields: String) -> String {
-    "{\"id\":\"\(id(1000 + seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"createdAt\":\"2026-10-20T00:00:01Z\",\(fields)}"
+    "{\"id\":\"\(id(1000 + seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"createdAt\":\"2026-10-20T00:00:01Z\",\(fields)}"
   }
 
   static func row(

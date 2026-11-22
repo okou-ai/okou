@@ -13,7 +13,7 @@ final class MailDraftCardTests: XCTestCase {
     let commands = ChatCommands(client: fixture.http.client, sync: sync)
     let thread = ChatThread(
       id: "63000000-0000-4000-8000-000000000002",
-      agentID: "63000000-0000-4000-8000-000000000001", title: "Mail review",
+      title: "Mail review",
       createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ConversationStore(
       thread: thread, sync: sync, commands: commands, webURL: fixture.http.baseURL,

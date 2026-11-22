@@ -14,7 +14,7 @@ final class NavigationResourceTests: XCTestCase {
     let cache = cacheDirectory.cache(
       scope: ChatCacheScope(apiBaseURL: server.http.baseURL, userID: "user", workspaceID: "org"))
     let previousNavigation = try JSONDecoder().decode(
-      SidebarNavigationSnapshot.self,
+      LegacyComposerLocation.self,
       from: Data(
         #"""
         {"agents":[{"agentId":"\#(draftAgentID)","isDefaultAgent":true,"displayName":"Previous profile"}]}
@@ -35,7 +35,5 @@ final class NavigationResourceTests: XCTestCase {
     let requests = server.state.value.withLock { $0.paths }
     XCTAssertTrue(requests.contains("GET /api/chat-drafts/composer"))
     XCTAssertFalse(requests.contains(where: { $0.contains("/api/agents") }))
-    XCTAssertNil(workspace.selectedAgentID)
-    XCTAssertEqual(workspace.currentAgentName, "Okou")
   }
 }

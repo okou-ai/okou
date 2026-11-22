@@ -5,14 +5,14 @@ import Foundation
 public enum ChatDraftTarget: Equatable, Sendable {
   case unassigned
   case workspace
-  case agent(String)
+  case legacyWorkspace(String)
   case thread(String)
 
   public var key: String {
     switch self {
     case .unassigned: "unassigned"
     case .workspace: "workspace"
-    case .agent(let id): "agent/" + id
+    case .legacyWorkspace(let id): "agent/" + id
     case .thread(let id): "thread/" + id
     }
   }
@@ -74,14 +74,14 @@ public struct ChatDraftRepository: Sendable {
   public func load(_ target: ChatDraftTarget) async throws -> ComposerDraft {
     switch target {
     case .unassigned: throw ChatError.composerUnavailable
-    case .workspace, .agent: return try await client.request("/api/chat-drafts/composer")
+    case .workspace, .legacyWorkspace: return try await client.request("/api/chat-drafts/composer")
     case .thread(let id): return try await client.request("/api/chat-threads/\(id)/draft")
     }
   }
   public func save(_ draft: ComposerDraft, to target: ChatDraftTarget) async throws {
     switch target {
     case .unassigned: throw ChatError.composerUnavailable
-    case .workspace, .agent:
+    case .workspace, .legacyWorkspace:
       try await client.data(
         "/api/chat-drafts/composer", method: "PATCH", body: JSONEncoder().encode(draft))
     case .thread(let id):

@@ -31,14 +31,11 @@ final class WorkspaceStartupTests: XCTestCase {
     let requestedRealtime = Mutex(false)
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
-      case "/api/agents":
-        XCTFail("Workspace startup requested a retired profile")
-        throw URLError(.unsupportedURL)
-      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Other agent's chat")
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Existing chat")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
+        return ChatHTTPResponse(body: #"{"unreadAt":{},"threads":{}}"#)
       case "/api/realtime/token":
         if requestedRealtime.withLock({ requested in
           guard !requested else { return false }
@@ -61,8 +58,7 @@ final class WorkspaceStartupTests: XCTestCase {
       await startup.value
     }
     await fulfillment(of: [realtime], timeout: 3)
-    try await waitForBusinessResult { store.list.threads.first?.title == "Other agent's chat" }
-    XCTAssertNil(store.selectedAgentID)
+    try await waitForBusinessResult { store.list.threads.first?.title == "Existing chat" }
     await startup.value
     XCTAssertEqual(store.newChatDraft, "Input entered before navigation finishes")
     XCTAssertNil(store.selectedThreadID)
@@ -97,7 +93,7 @@ final class WorkspaceStartupTests: XCTestCase {
         }
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       case "/api/realtime/token":
         return ChatHTTPResponse(
           status: 403, body: "{\"error\":{\"message\":\"No live updates\"}}")
@@ -136,13 +132,13 @@ final class WorkspaceStartupTests: XCTestCase {
     try assertCachedProjectSidebar(store, projectID: projectID)
     let expected = ["Recent cached chat"]
     XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), expected)
+      store.list.threads(archived: false).map(\.title), expected)
     releaseCatchUp.open()
     await startup.value
     XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), expected)
+      store.list.threads(archived: false).map(\.title), expected)
     XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: true).map(\.title),
+      store.list.threads(archived: true).map(\.title),
       ["Archived cached chat"])
     XCTAssertNil(store.list.error)
   }
@@ -151,10 +147,10 @@ final class WorkspaceStartupTests: XCTestCase {
     ChatHTTPResponse(
       body: """
         {"chatThreads":[
-          {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","projectId":"\(projectID)",\
+          {"id":"\(storeThreadID)","projectId":"\(projectID)",\
         "title":"Recent cached chat",\
         "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
-          {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived cached chat",\
+          {"id":"\(archivedID)","title":"Archived cached chat",\
         "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
         ],"latestEventId":null,"latestSeqId":null}
         """)
@@ -167,7 +163,7 @@ final class WorkspaceStartupTests: XCTestCase {
     XCTAssertTrue(store.projects.isExpanded(projectID))
     XCTAssertTrue(cached.chats.isEmpty)
     XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
+      store.list.threads(archived: false).map(\.title),
       ["Recent cached chat"])
   }
 
@@ -186,7 +182,7 @@ final class WorkspaceStartupTests: XCTestCase {
           updated.withLock { $0 } && since == nil
           ? """
           {"id":"\(storeEventID(1))","seqId":1,"kind":"renamed",\
-          "chatThreadId":"\(storeThreadID)","agentId":"\(storeAgentID)",\
+          "chatThreadId":"\(storeThreadID)",\
           "title":"Prefetched title","createdAt":"\(storeDate)"}
           """ : ""
         return ChatHTTPResponse(body: "{\"events\":[\(events)],\"hasMore\":false}")
@@ -231,7 +227,7 @@ final class WorkspaceStartupTests: XCTestCase {
           }
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case "/api/indicators":
-          return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
+          return ChatHTTPResponse(body: #"{"unreadAt":{},"threads":{}}"#)
         case "/api/realtime/token":
           return ChatHTTPResponse(
             status: 403, body: "{\"error\":{\"message\":\"No live updates\"}}")
@@ -274,7 +270,7 @@ final class WorkspaceStartupTests: XCTestCase {
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
         return ChatHTTPResponse(
-          body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{\"\(storeThreadID)\":\"unread\"}}")
+          body: "{\"unreadAt\":{},\"threads\":{\"\(storeThreadID)\":\"unread\"}}")
       case "/api/chat-threads/\(storeThreadID)/event-snapshot":
         return ChatHTTPResponse(
           status: 404,
@@ -317,7 +313,7 @@ final class WorkspaceStartupTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       case "/api/chat-threads/\(storeThreadID)/event-snapshot":
         return ChatHTTPResponse(
           status: 404,

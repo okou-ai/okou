@@ -57,7 +57,7 @@ func threadSnapshot(title: String, threadIDs: [String] = [storeThreadID])
 {
   let threads = threadIDs.map { id in
     """
-    {"id":"\(id)","agentId":"\(storeAgentID)","title":"\(title)","sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","pinnedAt":null,"renamedAt":null,"selectedModel":"gpt-5.6-sol","serviceTier":null,"computerUseHostId":null,"cloudBrowserEnabled":false}
+    {"id":"\(id)","title":"\(title)","sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","pinnedAt":null,"renamedAt":null,"selectedModel":"gpt-5.6-sol","serviceTier":null,"computerUseHostId":null,"cloudBrowserEnabled":false}
     """
   }
   return ChatHTTPResponse(

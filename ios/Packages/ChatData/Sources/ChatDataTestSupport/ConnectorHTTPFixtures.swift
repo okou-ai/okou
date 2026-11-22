@@ -8,7 +8,7 @@ public enum ConnectorHTTPFixtures {
   public static let attemptID = "98000000-0000-4000-8000-000000000005"
   public static let customID = "98000000-0000-4000-8000-000000000006"
   public static let metadata = """
-    {"id":"\(threadID)","agentId":"\(agentID)","cloudBrowserEnabled":false,"computerUseHostId":null}
+    {"id":"\(threadID)","cloudBrowserEnabled":false,"computerUseHostId":null}
     """
   public static func account(
     id: String = accountID, custom: Bool = false, connected: Bool = true,

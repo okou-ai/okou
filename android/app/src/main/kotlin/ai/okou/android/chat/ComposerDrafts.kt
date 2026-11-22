@@ -86,15 +86,15 @@ internal fun plainDraftDocument(text: String): JsonObject = buildJsonObject {
 /** Preserve every old editable candidate and all frozen requests before changing ownership. */
 internal fun ComposerJournal.withServerDrafts(): ComposerJournal {
     if (format == 3) {
-        val agentDrafts = drafts.filterKeys { it.startsWith("agent:") }
-        if (agentDrafts.isEmpty()) return this
+        val retiredDrafts = drafts.filterKeys { it != ServerDraftTarget().key && !it.startsWith("thread:") }
+        if (retiredDrafts.isEmpty()) return this
         // Keep old device-local text available for explicit restore into an empty composer.
         val candidates =
-            agentDrafts.entries
+            retiredDrafts.entries
                 .filter { it.value.text.isNotEmpty() }
                 .associate { (key, draft) -> "draft:$key" to draft.text }
         return copy(
-            drafts = drafts - agentDrafts.keys,
+            drafts = drafts - retiredDrafts.keys,
             retainedDrafts = retainedDrafts + candidates,
         )
     }

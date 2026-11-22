@@ -33,7 +33,7 @@ final class ChatCacheTests: XCTestCase {
       snapshot: Data(#"{"chatThreads":[]}"#.utf8),
       cursor: ChatCacheCursor(eventID: nil, seqID: 0), events: [])
     let navigation = try JSONDecoder().decode(
-      SidebarNavigationSnapshot.self,
+      LegacyComposerLocation.self,
       from: Data(
         #"{"agents":[{"agentId":"agent-old","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":[]},"featureSwitches":{"effectiveSwitches":{}}}"#
           .utf8))
@@ -54,7 +54,7 @@ final class ChatCacheTests: XCTestCase {
     let imported = try await app.loadHistory(threadID: "other")
     XCTAssertEqual(imported?.rows, [event(1)])
     let restoredNavigation = try await app.loadNavigation()
-    XCTAssertEqual(restoredNavigation?.agents.first?.displayName, "Assistant")
+    XCTAssertEqual(restoredNavigation?.localID, "agent-old")
     let retained = try await legacy.loadHistory(threadID: "chat")
     XCTAssertEqual(retained?.rows, [event(1)])
   }
@@ -118,14 +118,14 @@ final class ChatCacheTests: XCTestCase {
 
     let reopened = directory.cache(scope: scope)
     let navigation = try JSONDecoder().decode(
-      SidebarNavigationSnapshot.self,
+      LegacyComposerLocation.self,
       from: Data(
         #"{"agents":[{"agentId":"agent-a","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":["agent-a"]},"featureSwitches":{"effectiveSwitches":{"singleAgent":true}}}"#
           .utf8))
     try await reopened.saveNavigation(navigation)
     let persistedNavigation = try await directory.cache(scope: scope)
       .loadNavigation()
-    XCTAssertEqual(persistedNavigation?.agents.first?.displayName, "Assistant")
+    XCTAssertEqual(persistedNavigation?.localID, "agent-a")
     let loaded = try await reopened.loadThreadList()
     let stored = try XCTUnwrap(loaded)
     XCTAssertEqual(stored.snapshot, snapshot)

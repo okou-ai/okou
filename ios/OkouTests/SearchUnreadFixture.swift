@@ -89,12 +89,6 @@ final class SearchUnreadFixture: Sendable {
       if request.httpMethod == "GET", let empty = emptySearchResources(request) { return empty }
       let path = request.url?.path ?? ""
       switch (request.httpMethod, path) {
-      case ("GET", "/api/agents"):
-        return ChatHTTPResponse(
-          body: """
-            [{"agentId":"\(Self.agent)","displayName":"Okou","isDefaultAgent":true},{"agentId":"\(Self.otherAgent)","displayName":"Research","isDefaultAgent":false}]
-            """)
-
       case ("GET", "/api/feature-switches"):
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case ("GET", "/api/chat/search"):
@@ -102,7 +96,7 @@ final class SearchUnreadFixture: Sendable {
       case ("GET", "/api/chat-threads/snapshot"):
         let threads = (1...40).map { index in
           """
-          {"id":"\(Self.id(index))","agentId":"\(index.isMultiple(of: 2) ? Self.otherAgent : Self.agent)","title":"Chat \(index)","createdAt":"\(Self.timestamp)","updatedAt":"\(Self.timestamp)","sortAt":"\(Self.timestamp)","muted":\(index == 3),"archived":\(index == 5)}
+          {"id":"\(Self.id(index))","title":"Chat \(index)","createdAt":"\(Self.timestamp)","updatedAt":"\(Self.timestamp)","sortAt":"\(Self.timestamp)","muted":\(index == 3),"archived":\(index == 5)}
           """
         }.joined(separator: ",")
         return ChatHTTPResponse(

@@ -77,7 +77,7 @@ final class ChatCommandContractTests: XCTestCase {
 
   func testCreateUsesSavedModelWithoutAgentLookup() async throws {
     struct CreatedRequest: Decodable, Sendable {
-      let agentId: String?
+
       let model: String
       let reasoningEffort: String?
     }
@@ -108,9 +108,7 @@ final class ChatCommandContractTests: XCTestCase {
     let created = try await ChatCommands(
       client: fixture.client, sync: ChatSync(client: fixture.client)
     ).createThread()
-    XCTAssertNil(created.agentID)
     XCTAssertEqual(created.selectedModel, "gpt-5.6-sol")
-    XCTAssertEqual(createdRequests.withLock { $0.map(\.agentId) }, [nil])
     XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["gpt-5.6-sol"])
     XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high"])
   }
@@ -120,11 +118,6 @@ final class ChatCommandContractTests: XCTestCase {
       let explicitNullModels = Mutex<[Bool]>([])
       let fixture = ChatHTTPFixture { request in
         switch request.url?.path {
-        case "/api/agents":
-          return ChatHTTPResponse(
-            body:
-              "[{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
-          )
         case "/api/user-model-preference":
           return ChatHTTPResponse(
             body:
@@ -164,11 +157,6 @@ final class ChatCommandContractTests: XCTestCase {
     let createdRequests = Mutex<[CreatedRequest]>([])
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body: """
-            [{"agentId":"\(fixtureAgent)","isDefaultAgent":true,"displayName":"Okou"}]
-            """)
       case "/api/user-model-preference":
         return ChatHTTPResponse(
           body: """
@@ -210,11 +198,6 @@ final class ChatCommandContractTests: XCTestCase {
       let createdRequests = Mutex<[CreatedRequest]>([])
       let fixture = ChatHTTPFixture { request in
         switch request.url?.path {
-        case "/api/agents":
-          return ChatHTTPResponse(
-            body: """
-              [{"agentId":"\(fixtureAgent)","isDefaultAgent":true,"displayName":"Okou"}]
-              """)
         case "/api/user-model-preference":
           return ChatHTTPResponse(
             body: """
@@ -275,11 +258,6 @@ final class ChatCommandContractTests: XCTestCase {
       let createdRequests = Mutex<[CreatedRequest]>([])
       let fixture = ChatHTTPFixture { request in
         switch request.url?.path {
-        case "/api/agents":
-          return ChatHTTPResponse(
-            body: """
-              [{"agentId":"\(fixtureAgent)","isDefaultAgent":true,"displayName":"Okou"}]
-              """)
         case "/api/user-model-preference":
           return ChatHTTPResponse(
             body: """

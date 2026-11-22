@@ -13,7 +13,7 @@ extension ChatSync {
     try await cache?.acknowledgePrefetchReport(id)
   }
 
-  public func cachedNavigation() async -> SidebarNavigationSnapshot? {
+  public func cachedComposerLocation() async -> LegacyComposerLocation? {
     do {
       return try await cache?.loadNavigation()
     } catch {
@@ -22,19 +22,6 @@ extension ChatSync {
           "event=chat.cache.navigation.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
       return nil
-    }
-  }
-
-  public func persistNavigation(_ snapshot: SidebarNavigationSnapshot) async {
-    do {
-      try Task.checkCancellation()
-      try await cache?.saveNavigation(snapshot)
-    } catch is CancellationError {
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error(
-          "event=chat.cache.navigation.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
-        )
     }
   }
 

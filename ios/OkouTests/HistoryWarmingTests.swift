@@ -194,7 +194,6 @@ private final class HistoryWarmingFixture {
     ])
     http = ChatHTTPFixture { request in
       switch (request.httpMethod, request.url?.path) {
-      case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
       case ("POST", "/api/realtime/token"):
         return ChatHTTPResponse(body: String(data: token, encoding: .utf8)!)
       case ("GET", "/api/chat-threads/snapshot"):
@@ -202,7 +201,7 @@ private final class HistoryWarmingFixture {
         let sequence = title == "Original chat" ? 1 : 2
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(warmingThreadID)","agentId":"\(warmingAgentID)",\
+            {"chatThreads":[{"id":"\(warmingThreadID)",\
             "title":"\(title)","createdAt":"2026-10-20T00:00:00Z",\
             "updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],\
             "latestEventId":"\(warmingListEventID(sequence))","latestSeqId":\(sequence)}
@@ -278,7 +277,7 @@ private func emptyWarmingResponse() -> ChatHTTPResponse {
 private func warmingListEvent(_ sequence: Int, kind: String, title: String) -> String {
   """
   {"id":"\(warmingListEventID(sequence))","seqId":\(sequence),"kind":"\(kind)",\
-  "chatThreadId":"\(warmingThreadID)","agentId":"\(warmingAgentID)",\
+  "chatThreadId":"\(warmingThreadID)",\
   "title":"\(title)","createdAt":"2026-10-20T00:00:00Z"}
   """
 }

@@ -83,7 +83,7 @@ final class AttachmentDraftTests: XCTestCase {
             count == 1 || deleted.withLock { $0 }
             ? ""
             : """
-            {"id":"\(AttachmentFlowFixture.threadID)","agentId":"\(AttachmentFlowFixture.agentID)","title":"Screenshot conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
+            {"id":"\(AttachmentFlowFixture.threadID)","title":"Screenshot conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
             """
           if count == 1 {
             oldListReady.fulfill()
@@ -98,7 +98,7 @@ final class AttachmentDraftTests: XCTestCase {
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
         case "/api/indicators":
-          return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+          return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
         default: throw URLError(.unsupportedURL)
         }
       })
@@ -254,13 +254,11 @@ final class AttachmentDraftTests: XCTestCase {
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
     await reopened.prepareWorkspaceComposer()
-    XCTAssertNil(reopened.selectedAgentID)
     XCTAssertEqual(reopened.newChatDraft, "Agent draft")
     XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
     _ = await reopened.createChat()
     XCTAssertEqual(reopened.selectedConversation?.draft, "Thread draft")
     reopened.startNewChat()
-    XCTAssertNil(reopened.selectedAgentID)
     XCTAssertEqual(reopened.newChatDraft, "Agent draft")
     XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
     reopened.newComposer.clear()
@@ -506,14 +504,14 @@ final class NewChatAttachmentTests: XCTestCase {
           let threads =
             created.withLock { $0 }
             ? """
-            {"id":"\(AttachmentFlowFixture.threadID)","agentId":"\(AttachmentFlowFixture.agentID)","title":"First conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
+            {"id":"\(AttachmentFlowFixture.threadID)","title":"First conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
             """ : ""
           return ChatHTTPResponse(
             body: "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case "/api/indicators":
-          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+          return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
         default: throw URLError(.unsupportedURL)
         }
       })
@@ -533,7 +531,6 @@ final class NewChatAttachmentTests: XCTestCase {
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { store.close() }
     store.setPhase(.active)
-    XCTAssertNil(store.selectedAgentID)
     store.newChatDraft = "First message before navigation finishes"
     let sending = Task { await store.sendNewChat() }
     addTeardownBlock { @MainActor in
@@ -579,7 +576,6 @@ final class NewChatAttachmentTests: XCTestCase {
     gate.continuation.finish()
     await sending.value
     XCTAssertEqual(store.newChatDraft, "Keep the first message for retry")
-    XCTAssertNil(store.selectedAgentID)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertNotNil(store.error)
   }
@@ -632,7 +628,6 @@ final class NewChatAttachmentTests: XCTestCase {
       store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
     }
     let connectors = store.newModelSelection.connectors
-    connectors.configure(agentID: AttachmentFlowFixture.agentID)
     await connectors.refresh()
     await connectors.setAccountAccess(
       target: .builtin("slack"), connectionID: accountID, enabled: false)

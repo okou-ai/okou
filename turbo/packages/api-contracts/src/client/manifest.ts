@@ -7,10 +7,6 @@ export const clientDescriptorManifest = [
     contracts: ["agentDraftContract", "composerDraftContract"],
   },
   {
-    module: "agent-setup-prompts",
-    contracts: ["agentSetupPromptsContract"],
-  },
-  {
     module: "agents",
     contracts: [
       "agentInstructionsContract",

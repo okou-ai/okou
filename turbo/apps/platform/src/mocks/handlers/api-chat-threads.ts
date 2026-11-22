@@ -17,7 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mockApi } from "../msw-contract.ts";
 
-export const apiAgentsHandlers = [
+export const chatThreadHandlers = [
   // GET /api/chat-drafts/composer
   mockApi(composerDraftContract.get, ({ respond }) => {
     return respond(200, {

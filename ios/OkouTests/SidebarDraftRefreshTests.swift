@@ -186,10 +186,10 @@ private final class SidebarDraftFixture: Sendable {
         let title = state.values.withLock { $0.title }
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)",\
+            {"chatThreads":[{"id":"\(threadID)",\
             "title":"\(title)","createdAt":"2026-11-13T00:00:00Z",\
             "updatedAt":"2026-11-13T00:00:00Z","sortAt":"2026-11-13T00:00:00Z"},\
-            {"id":"\(otherID)","agentId":"\(agentID)","title":"Other draft",\
+            {"id":"\(otherID)","title":"Other draft",\
             "createdAt":"2026-11-13T00:00:00Z","updatedAt":"2026-11-13T00:00:00Z",\
             "sortAt":"2026-11-13T00:00:00Z"}],\
             "latestEventId":null,"latestSeqId":null}
@@ -197,7 +197,7 @@ private final class SidebarDraftFixture: Sendable {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case "/api/chat-thread-drafts":
         let present = state.values.withLock {
           $0.draftReads += 1

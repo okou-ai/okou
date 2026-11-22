@@ -551,7 +551,6 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
     await fixture.workspace.resumePendingRefresh()?.value
 
     XCTAssertTrue(fixture.workspace.list.hasUnreadThreads)
-    XCTAssertEqual(fixture.workspace.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
     XCTAssertEqual(fixture.indicatorReads, 2)
   }
 
@@ -577,7 +576,6 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
     await startup.value
 
     XCTAssertTrue(workspace.list.hasUnreadThreads)
-    XCTAssertEqual(workspace.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
   }
 
   func testClosingWorkspaceReleasesThePendingIndicatorBaseline() async throws {
@@ -643,12 +641,10 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
     remote.withLock { $0 = "unread" }
     try fixture.server.notify("chatIndicatorsChanged", channel: fixture.channel)
     try await waitForBusinessResult { fixture.workspace.list.hasUnreadThreads }
-    XCTAssertEqual(fixture.workspace.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
 
     remote.withLock { $0 = "none" }
     try fixture.server.notify("chatThreadReadCursorUpdated", channel: fixture.channel)
     try await waitForBusinessResult { !fixture.workspace.list.hasUnreadThreads }
-    XCTAssertEqual(fixture.workspace.list.unreadAgentIDs, [])
     XCTAssertEqual(
       fixture.http.history.requests.values.withLock {
         $0.filter { $0 == "GET /api/chat-threads/events" }.count

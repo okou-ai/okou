@@ -15,7 +15,6 @@ import { server } from "../../../mocks/server";
 import { chatCommand } from "../index";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000001";
-const AGENT_ID = "00000000-0000-4000-8000-000000000010";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000002";
 const GET_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/metadata`;
 const OTHER_GET_URL = `http://localhost:3000/api/chat-threads/${OTHER_THREAD_ID}/metadata`;
@@ -93,7 +92,6 @@ describe("okou chat get command", () => {
       http.get(GET_URL, () => {
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: "claude-sonnet-5",
           hidden: true,

@@ -454,7 +454,7 @@ private final class SyncRecoveryFixture: Sendable {
         }
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(Self.threadID)","agentId":"\(Self.agentID)",\
+            {"chatThreads":[{"id":"\(Self.threadID)",\
             "title":"\(result.0)","sortAt":"\(Self.date)","createdAt":"\(Self.date)",\
             "updatedAt":"\(Self.date)"}],"latestEventId":null,"latestSeqId":null}
             """)
@@ -463,7 +463,7 @@ private final class SyncRecoveryFixture: Sendable {
       case "/api/chat/events/catch-up":
         return ChatHTTPResponse(body: #"{"events":{},"notFoundThreads":[]}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case "/api/chat-threads/\(Self.threadID)/event-snapshot":
         return ChatHTTPResponse(
           status: 404,

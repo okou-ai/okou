@@ -32,7 +32,7 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertEqual(try JSONDecoder().decode(ChatDraftDocument.self, from: data), expected)
     XCTAssertEqual(
       UIPasteboard.general.string,
-      "Before [Cross Agent archived plan](/chats/\(MentionNavigationFixture.thread(31)))"
+      "Before [Archived plan](/chats/\(MentionNavigationFixture.thread(31)))"
         + " and [Project 30](/chats/\(MentionNavigationFixture.thread(30))) after 🌷")
     input.cut(nil)
     try await waitForBusinessResult { !conversation.composer.hasContent }

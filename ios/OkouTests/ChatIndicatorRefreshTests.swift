@@ -26,7 +26,6 @@ final class ChatIndicatorRefreshTests: XCTestCase {
     fixture.state.values.withLock { $0.indicator = "unread" }
     await workspace.refresh([.indicators])
     XCTAssertTrue(workspace.list.threads.first?.isUnread == true)
-    XCTAssertEqual(workspace.list.unreadAgentIDs, [fixture.agentID])
     XCTAssertEqual(fixture.reads("/api/indicators"), initialIndicatorReads + 1)
     XCTAssertEqual(fixture.reads("/api/chat-threads/events"), listReads)
   }
@@ -73,7 +72,7 @@ final class ChatIndicatorRefreshTests: XCTestCase {
       await refresh.value
     }
     await fulfillment(of: [began], timeout: 3)
-    try await waitForBusinessResult { workspace.list.unreadAgentIDs.contains(fixture.agentID) }
+    try await waitForBusinessResult { workspace.list.activeThreadIDs.contains(fixture.threadID) }
     gate.open()
     await refresh.value
     XCTAssertEqual(workspace.list.threads.first?.id, fixture.threadID)
@@ -110,7 +109,7 @@ private final class IndicatorListFixture: Sendable {
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)",\
+            {"chatThreads":[{"id":"\(threadID)",\
             "title":"\(current.0)","createdAt":"2026-11-13T00:00:00Z",\
             "updatedAt":"2026-11-13T00:00:00Z",\
             "sortAt":"2026-11-13T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}

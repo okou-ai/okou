@@ -28,7 +28,6 @@ final class ChatIndicatorCacheTests: XCTestCase {
     let restored = await reopened.cachedIndicators()
     let saved = try XCTUnwrap(restored)
     XCTAssertEqual(saved.indicators.threads, [indicatorThread: .unread])
-    XCTAssertEqual(saved.unreadAgentIDs, [indicatorAgent])
     XCTAssertEqual(saved.unreadAt[indicatorThread], indicatorDate)
     let other = ChatSync(
       client: fixture.client,
@@ -81,7 +80,6 @@ final class ChatIndicatorCacheTests: XCTestCase {
     let reopened = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
     let read = await reopened.cachedIndicators()
     XCTAssertTrue(read?.unreadAt.isEmpty == true)
-    XCTAssertTrue(read?.unreadAgentIDs.isEmpty == true)
 
     let reply = try await reopened.indicators()
     XCTAssertEqual(reply.unreadAt[indicatorThread], indicatorLaterDate)
@@ -162,7 +160,6 @@ final class ChatIndicatorCacheTests: XCTestCase {
     try await marking.value
     let saved = await app.cachedIndicators()
     XCTAssertEqual(saved?.unreadAt[indicatorThread], indicatorLaterDate)
-    XCTAssertEqual(saved?.unreadAgentIDs, [indicatorAgent])
   }
 
   func testManualUnreadRejectsAnEarlierEmptyResponse() async throws {
@@ -179,7 +176,7 @@ final class ChatIndicatorCacheTests: XCTestCase {
         if first {
           started.fulfill()
           await gate.wait()
-          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+          return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
         }
         return unreadResponse()
       case "/api/chat-threads/\(indicatorThread)/mark-unread":
@@ -232,7 +229,7 @@ private func indicatorMetadata(_ request: URLRequest) throws -> ChatHTTPResponse
   case "/api/chat-threads/snapshot":
     return ChatHTTPResponse(
       body: """
-        {"chatThreads":[{"id":"\(indicatorThread)","agentId":"\(indicatorAgent)","title":"Unread","createdAt":"2026-11-09T00:00:00Z","updatedAt":"2026-11-09T00:00:00Z","sortAt":"2026-11-09T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
+        {"chatThreads":[{"id":"\(indicatorThread)","title":"Unread","createdAt":"2026-11-09T00:00:00Z","updatedAt":"2026-11-09T00:00:00Z","sortAt":"2026-11-09T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
         """)
   case "/api/chat-threads/events":
     return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)

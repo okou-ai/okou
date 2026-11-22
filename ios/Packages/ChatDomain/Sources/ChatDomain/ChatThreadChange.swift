@@ -35,8 +35,7 @@ public struct ChatThreadChange: Sendable {
   }
   public let kind: Kind
   public let chatThreadId: String
-  public let agentId: String?
-  public let reassignedAgentId: String?
+
   public let projectId: String?
   public let title: String?
   public let selectedModel: String?
@@ -53,8 +52,6 @@ public struct ChatThreadChange: Sendable {
   public init(
     kind: Kind,
     chatThreadId: String,
-    agentId: String?,
-    reassignedAgentId: String? = nil,
     projectId: String? = nil,
     title: String? = nil,
     selectedModel: String? = nil,
@@ -70,8 +67,6 @@ public struct ChatThreadChange: Sendable {
   ) {
     self.kind = kind
     self.chatThreadId = chatThreadId
-    self.agentId = agentId
-    self.reassignedAgentId = reassignedAgentId
     self.projectId = projectId
     self.title = title
     self.selectedModel = selectedModel

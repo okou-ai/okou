@@ -59,13 +59,13 @@ final class ManagedConnectorActionTests: XCTestCase {
     let action: ChatConnectorAction
     if initiallyConnected {
       action = .configuration(
-        target: .custom(FixtureData.customID), agentID: FixtureData.agentID,
+        target: .custom(FixtureData.customID),
         threadID: FixtureData.threadID, connectionID: FixtureData.accountID)
     } else {
       action = try XCTUnwrap(
         ChatConnectorAction.parse(
-          "/connectors/_\(brand)/connect?agentId=\(FixtureData.agentID)", webURL: fixture.baseURL,
-          agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+          "/connectors/_\(brand)/connect", webURL: fixture.baseURL,
+          threadID: FixtureData.threadID))
     }
     store.activate(action)
     try await waitForBusinessResult { store.active != nil || store.activationError != nil }
