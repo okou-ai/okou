@@ -10,7 +10,7 @@ import {
   chatConnectorOverviewFixture,
   connectorAccount,
 } from "./chat-composer-connectors-test-helpers.ts";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill } from "../../../__tests__/page-helper.ts";
@@ -25,9 +25,15 @@ function scrollTo(view: HTMLElement, position: number) {
   fireEvent.scroll(view);
 }
 async function accounts(n: number) {
-  const target = await findFastControl("button", new RegExp(`Scroll ${n}\\b`));
+  const label = `Scroll ${n}`;
+  const overview = screen.getByRole("list", { name: "Connectors" });
+  const text = await within(overview).findByText(label, { exact: true });
+  const target = text.closest("button");
+  if (!target) {
+    throw new Error(`No account button contains ${label}`);
+  }
   click(target);
-  const panel = await screen.findByRole("group", { name: `Scroll ${n}` });
+  const panel = await screen.findByRole("group", { name: label });
   return { target, panel };
 }
 test("chat-composer-connector-scroll-001 Returning to either account panel starts at the top and preserves the overview position", async () => {
