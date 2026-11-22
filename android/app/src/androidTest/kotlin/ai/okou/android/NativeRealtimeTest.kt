@@ -131,19 +131,23 @@ class NativeRealtimeTest {
             fun reveal(value: String) {
                 val target = label(value)
                 val scrollable = By.pkg(app.packageName).scrollable(true)
+                var foundContainer: UiObject2? = null
                 check(
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice) =
-                                device.hasObject(target) || device.hasObject(scrollable)
+                            override fun apply(device: UiDevice): Boolean {
+                                if (device.hasObject(target)) return true
+                                foundContainer = device.findObject(scrollable)
+                                return foundContainer != null
+                            }
                         },
                         10_000,
                     )
                 ) {
                     "Native reply and its scroll container are both unavailable"
                 }
-                if (!device.hasObject(target)) {
-                    val container = checkNotNull(device.findObject(scrollable))
+                val container = foundContainer
+                if (container != null && !device.hasObject(target)) {
                     // Start swipes above the floating conversation jump button.
                     val jumpInset = (56 * app.resources.displayMetrics.density).roundToInt()
                     container.setGestureMargins(0, 0, 0, jumpInset)
