@@ -491,7 +491,7 @@ describe("workflows", () => {
     await api.requestCancelRun(member, publicRun.runId, [200]);
   });
 
-  it("requires agent write-permission to create public workflows under an agent", async () => {
+  it("requires workspace admin rights to create public workflows", async () => {
     const owner = user();
     const member = user({ orgId: owner.orgId, orgRole: "org:member" });
     const agent = await workspaceExecutor(owner);
@@ -509,8 +509,7 @@ describe("workflows", () => {
     );
     expect(rejected.body).toStrictEqual({
       error: {
-        message:
-          "Only the agent owner or org admin can create workflows on this agent",
+        message: "Only workspace admins can create public workflows",
         code: "FORBIDDEN",
       },
     });
@@ -572,7 +571,7 @@ describe("workflows", () => {
   });
 
   it.each(["workflow owner", "agent owner", "org admin"] as const)(
-    "allows the %s to maintain a shared agent's public workflow",
+    "evaluates public workflow management for the %s",
     async (maintainer) => {
       const agentOwner = user();
       const author = user({ orgId: agentOwner.orgId });
@@ -590,6 +589,23 @@ describe("workflows", () => {
         "org admin": user({ orgId: agentOwner.orgId }),
       };
       const actor = maintainers[maintainer];
+      if (maintainer === "agent owner") {
+        const read = await accept(
+          detailClient().get({
+            headers: authHeaders(actor),
+            params: { workflowId: workflow.body.id },
+          }),
+          [200],
+        );
+        expect(read.body.canManage).toBeFalsy();
+        await requestUpdateWorkflow(
+          actor,
+          workflow.body.id,
+          { instruction: "# denied" },
+          [403],
+        );
+        return;
+      }
       const listed = await accept(
         collectionClient().list({ headers: authHeaders(actor) }),
         [200],
@@ -882,7 +898,7 @@ describe("workflows", () => {
       [409],
     );
     expect(duplicate.body.error.message).toContain(
-      `/${workflowName}" already exists on this agent`,
+      `/${workflowName}" already exists in this workspace`,
     );
 
     const scopedList = await accept(
@@ -1197,7 +1213,7 @@ describe("workflows", () => {
       [409],
     );
     expect(duplicate.body.error.message).toContain(
-      `/${existingName}" already exists on this agent`,
+      `/${existingName}" already exists in this workspace`,
     );
   });
 
@@ -1251,7 +1267,7 @@ describe("workflows", () => {
       [409],
     );
     expect(response.body.error.message).toContain(
-      `/${workflowName}" already exists on this agent`,
+      `/${workflowName}" already exists in this workspace`,
     );
   });
 

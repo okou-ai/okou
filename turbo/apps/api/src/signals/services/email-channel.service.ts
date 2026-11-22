@@ -380,7 +380,11 @@ const initializeEmailWorkspace$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const defaultAgentId = await set(resolveOrgDefaultComposeId$, args.orgId);
+    const defaultAgentId = await set(
+      resolveOrgDefaultComposeId$,
+      args.orgId,
+      args.userId,
+    );
     signal.throwIfAborted();
     if (args.role === "admin" && !defaultAgentId) {
       // Signup can reach this continuation before Clerk's organization webhook.

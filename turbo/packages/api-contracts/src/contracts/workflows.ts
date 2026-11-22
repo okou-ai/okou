@@ -910,7 +910,7 @@ export type WorkflowAutomationSummary = zInfer<
 
 const chatThreadWorkflowSchema = object({
   id: uuid(),
-  agentId: uuid(),
+  agentId: uuid().nullable(),
   name: workflowNameSchema,
   displayName: string().nullable(),
   description: string().nullable(),
@@ -1336,14 +1336,12 @@ export type WorkflowAutomationUpdateRequest = zInfer<
 >;
 
 /**
- * Workflow summary. A workflow belongs to exactly one agent (`agentId`).
- * `canManage` allows editing, deletion and demotion: workflow ownership or agent
- * write-permission for public workflows; ownership for private ones.
- * Official workflows remain read-only.
+ * Workspace definition and the calling member’s optional execution profile.
+ * Private definitions belong to their owner. Workspace admins may also manage public definitions.
  */
 export const workflowSummarySchema = object({
   id: uuid(),
-  agentId: uuid(),
+  agentId: uuid().nullable(),
   agentName: string().nullable(),
   agentDisplayName: string().nullable(),
   name: workflowNameSchema,

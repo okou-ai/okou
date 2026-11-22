@@ -1,4 +1,4 @@
-import { workspaceWorkflowNamespace$ } from "../services/workflow-namespace.service";
+import { memberExecutionAgentId$ } from "../services/member-execution-agent.service";
 import {
   bankingContract,
   bankingPublicContract,
@@ -164,7 +164,7 @@ function createAccessRequestStatus(workspace: boolean) {
     }
     const auth = get(organizationAuthContext$);
     const agentId = workspace
-      ? await get(workspaceWorkflowNamespace$)
+      ? await get(memberExecutionAgentId$)
       : get(accessRequestParams$).agentId;
     return await set(bankingAccessRequestStatus$, {
       owner: { orgId: auth.orgId, userId: auth.userId },
@@ -181,7 +181,7 @@ function workspaceBankingBody<T extends object>(
     if (!body.ok) {
       return body;
     }
-    const agentId = await get(workspaceWorkflowNamespace$);
+    const agentId = await get(memberExecutionAgentId$);
     return { ok: true, data: { ...body.data, agentId } };
   });
 }

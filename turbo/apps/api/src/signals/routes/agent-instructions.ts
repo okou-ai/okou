@@ -1,10 +1,10 @@
+import { executionAgentId } from "../services/execution-agent";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 import { and, eq, or, sql } from "drizzle-orm";
 import { command, computed } from "ccstate";
 import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -136,10 +136,7 @@ const updateAgentInstructionsInner$ = command(
       )
       .returning({
         ...instructionResponseColumns,
-        defaultAgentId:
-          sql`(${db.select({ defaultAgentId: orgMetadata.defaultAgentId }).from(orgMetadata).where(eq(orgMetadata.orgId, auth.orgId))})`
-            .mapWith(orgMetadata.defaultAgentId)
-            .as("default_agent_id"),
+        defaultAgentId: executionAgentId(auth.orgId).as("default_agent_id"),
       });
     signal.throwIfAborted();
     if (updated) {

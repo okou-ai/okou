@@ -1,16 +1,15 @@
+import { selectedExecutionAgent } from "./execution-agent";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { agents } from "@okouai/db/schema/agent";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { db$ } from "../external/db";
@@ -29,7 +28,6 @@ import { workflowUserAutomationThreadOwnerCondition } from "./workflow-user-auto
 
 interface MorningBriefInstallation {
   readonly id: string;
-  readonly agentId: string;
   readonly installationState: "installing" | "installed" | null;
 }
 
@@ -42,8 +40,6 @@ interface MorningBriefOwnership {
    * the enrollment owns; it never means the brief is enabled today.
    */
   readonly enrollment: MorningBriefEnrollment | undefined;
-  /** Every Morning Brief installation this member holds, oldest first. */
-  readonly installations: readonly MorningBriefInstallation[];
   /** The single installation the preference surface manages, if any. */
   readonly installation: MorningBriefInstallation | undefined;
 }
@@ -69,12 +65,6 @@ type MorningBriefInconsistency =
 interface MorningBriefStateBase {
   readonly owner: MorningBriefMemberIdentity;
   readonly enrollment: MorningBriefEnrollment | undefined;
-  /**
-   * Installations this member holds beyond the managed one. Holding several is
-   * legitimate: the catalog installs Morning Brief per Agent. They are
-   * reported as inventory and must never be adopted or mutated here.
-   */
-  readonly additionalInstallations: readonly MorningBriefInstallation[];
 }
 
 interface MorningBriefInstallationScope {
@@ -101,12 +91,7 @@ export type MorningBriefState =
         readonly reason: MorningBriefInconsistency;
       });
 
-/**
- * The Agent an org-wide Morning Brief action would use today.
- *
- * It backs both the adoption tie-break and the Settings availability check, so
- * a private Agent nobody else may use resolves to no default at all.
- */
+/** Execution availability for this member’s Morning Brief. */
 export const loadMorningBriefDefaultAgentId$ = command(
   async (
     { get },
@@ -114,47 +99,26 @@ export const loadMorningBriefDefaultAgentId$ = command(
     signal: AbortSignal,
   ): Promise<string | null> => {
     const db = get(db$);
-    const [defaultAgent] = await db
-      .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-      })
-      .from(orgMetadata)
-      .leftJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, orgMetadata.orgId),
-        ),
-      )
-      .where(eq(orgMetadata.orgId, owner.orgId))
-      .limit(1);
+    const [executor] = await db
+      .select()
+      .from(selectedExecutionAgent(owner.orgId, owner.userId));
     signal.throwIfAborted();
-    if (
-      !defaultAgent?.id ||
-      (defaultAgent.visibility === "private" &&
-        defaultAgent.owner !== owner.userId)
-    ) {
-      return null;
-    }
-    return defaultAgent.id;
+    return executor?.id ?? null;
   },
 );
 
-/** Oldest first, so the adoption tie-break reads the head of this list. */
-const loadMorningBriefInstallations$ = command(
+/** The partial unique index covers both Morning Brief variants for a member. */
+const loadMorningBriefInstallation$ = command(
   async (
     { get },
     owner: MorningBriefMemberIdentity,
     signal: AbortSignal,
-  ): Promise<readonly MorningBriefInstallation[]> => {
+  ): Promise<MorningBriefInstallation | undefined> => {
     const db = get(db$);
-    const rows = await db
+    const [installation] = await db
       .select({
         id: workflows.id,
         installationState: workflows.officialInstallationState,
-        agentId: workflows.agentId,
       })
       .from(workflows)
       .where(
@@ -167,24 +131,14 @@ const loadMorningBriefInstallations$ = command(
           ]),
         ),
       )
-      .orderBy(asc(workflows.createdAt), asc(workflows.id));
+      .limit(1);
 
     signal.throwIfAborted();
-    return rows;
+    return installation;
   },
 );
 
-/**
- * Resolve the one installation the enrollment owns.
- *
- * The catalog installs Morning Brief per Agent, so a member may legally hold
- * several installations. The enrollment records which one the preference
- * surface manages. That record can be absent — rows written before the column
- * existed, or a member who never enrolled — and it can be stale once its
- * installation is uninstalled, so fall back to the adoption rule: the
- * installation on the org's current default Agent, otherwise the oldest.
- * Installations that are not adopted keep running untouched.
- */
+/** The unique member installation is shared by both Morning Brief definitions. */
 export const loadMorningBriefOwnership$ = command(
   async (
     { get, set },
@@ -198,35 +152,12 @@ export const loadMorningBriefOwnership$ = command(
       .where(morningBriefEnrollmentWhere(owner))
       .limit(1);
     signal.throwIfAborted();
-    const installations = await set(
-      loadMorningBriefInstallations$,
+    const installation = await set(
+      loadMorningBriefInstallation$,
       owner,
       signal,
     );
-    if (installations.length <= 1) {
-      return {
-        owner,
-        enrollment,
-        installations,
-        installation: installations[0],
-      };
-    }
-    const owned = installations.find(({ id }) => {
-      return id === enrollment?.workflowId;
-    });
-    if (owned) {
-      return { owner, enrollment, installations, installation: owned };
-    }
-    const defaultAgentId = await set(
-      loadMorningBriefDefaultAgentId$,
-      owner,
-      signal,
-    );
-    const adopted =
-      installations.find(({ agentId }) => {
-        return agentId === defaultAgentId;
-      }) ?? installations[0];
-    return { owner, enrollment, installations, installation: adopted };
+    return { owner, enrollment, installation };
   },
 );
 
@@ -307,13 +238,9 @@ export const loadMorningBriefState$ = command(
   ): Promise<MorningBriefState> => {
     const ownership = await set(loadMorningBriefOwnership$, owner, signal);
     const selected = ownership.installation;
-    const additionalInstallations = ownership.installations.filter(({ id }) => {
-      return id !== selected?.id;
-    });
     const base = {
       owner,
       enrollment: ownership.enrollment,
-      additionalInstallations,
     };
     if (!selected) {
       return { ...base, kind: "absent" };

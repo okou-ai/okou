@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { googleMeetTranscriptGeneratedEventConfigSchema } from "@okouai/api-contracts/contracts/workflows";
 import {
   googleWorkspaceEventSubscriptionStates,
@@ -456,7 +457,7 @@ const loadGoogleMeetEventAutomations$ = command(
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(

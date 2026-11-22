@@ -135,7 +135,7 @@ export interface ComposeJobAuth {
 export interface SkillImportAuth {
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   /** The tool the session's prompt was written for, tagged on each import. */
   readonly provider: WorkflowImportSource;
   readonly sessionId: string;

@@ -1,14 +1,13 @@
+import { executionAgentId } from "./execution-agent";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 
 import { env } from "../../lib/env";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { welcomeThreadContent } from "../../lib/welcome-thread-content";
 import { writeDb$ } from "../external/db";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { createChatThread$ } from "./chat-thread.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
@@ -63,16 +62,8 @@ export const createWelcomeChatThread$ = command(
     const db = set(writeDb$);
     const [agent] = await db
       .select({ id: agents.id })
-      .from(orgMetadata)
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, orgMetadata.orgId),
-          visibleJoinedAgentCondition(args.userId),
-        ),
-      )
-      .where(eq(orgMetadata.orgId, args.orgId))
+      .from(agents)
+      .where(eq(agents.id, executionAgentId(args.orgId, args.userId)))
       .limit(1);
     signal.throwIfAborted();
     if (!agent) {

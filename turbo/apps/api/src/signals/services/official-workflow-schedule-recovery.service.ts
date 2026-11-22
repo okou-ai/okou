@@ -1,3 +1,6 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
+import { executionAgentId } from "./execution-agent";
+import { agents } from "@okouai/db/schema/agent";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -151,10 +154,20 @@ export const recoverDueOfficialWorkflowSchedules$ = command(
       .select({
         automation: workflowAutomationColumns(),
         definitionName: workflows.officialDefinitionName,
-        agentId: workflows.agentId,
+        agentId: agents.id,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
+      .innerJoin(
+        agents,
+        eq(
+          agents.id,
+          executionAgentId(
+            workflowAutomations.orgId,
+            workflowAutomations.ownerUserId,
+          ),
+        ),
+      )
       .where(
         and(
           eq(workflowAutomations.enabled, false),

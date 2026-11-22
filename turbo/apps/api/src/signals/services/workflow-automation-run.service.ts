@@ -1,3 +1,4 @@
+import { visibleWorkflowCondition } from "./workflow-visibility";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -631,7 +632,10 @@ const commitWorkflowInput$ = command(
 const workflowQueueDisplayName$ = command(
   async (
     { get },
-    workflowId: string,
+    owner: Pick<
+      RunWorkflowAutomationNowArgs["automation"],
+      "orgId" | "workflowId" | "ownerUserId"
+    >,
     timing: ApiDispatchTimingCollector,
     signal: AbortSignal,
   ): Promise<string | null> => {
@@ -640,7 +644,13 @@ const workflowQueueDisplayName$ = command(
     const [workflow] = await database
       .select({ displayName: workflows.displayName })
       .from(workflows)
-      .where(eq(workflows.id, workflowId))
+      .where(
+        and(
+          eq(workflows.id, owner.workflowId),
+          eq(workflows.orgId, owner.orgId),
+          visibleWorkflowCondition(owner.ownerUserId),
+        ),
+      )
       .limit(1)
       .finally(() => {
         safeSync(() => {
@@ -653,7 +663,7 @@ const workflowQueueDisplayName$ = command(
       });
     signal.throwIfAborted();
     if (!workflow) {
-      throw new Error(`Workflow not found: ${workflowId}`);
+      throw new Error(`Workflow not found: ${owner.workflowId}`);
     }
     return workflow.displayName;
   },
@@ -710,7 +720,7 @@ const prepareWorkflowAdmission$ = command(
     );
     const displayName = await set(
       workflowQueueDisplayName$,
-      automation.workflowId,
+      automation,
       timing,
       signal,
     );

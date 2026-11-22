@@ -1,3 +1,6 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
+import { executionAgentId } from "./execution-agent";
+import { agents } from "@okouai/db/schema/agent";
 import {
   workflowUserAutomationThreads,
   workflowWebhookAutomations,
@@ -176,7 +179,7 @@ const loadWebhookAutomationForToken$ = command(
       .select({
         automation: workflowAutomationColumns(),
         webhook: workflowWebhookAutomations,
-        agentId: workflows.agentId,
+        agentId: agents.id,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -186,7 +189,17 @@ const loadWebhookAutomationForToken$ = command(
         workflowAutomations,
         eq(workflowWebhookAutomations.automationId, workflowAutomations.id),
       )
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
+      .innerJoin(
+        agents,
+        eq(
+          agents.id,
+          executionAgentId(
+            workflowAutomations.orgId,
+            workflowAutomations.ownerUserId,
+          ),
+        ),
+      )
       .leftJoin(
         workflowUserAutomationThreads,
         and(
