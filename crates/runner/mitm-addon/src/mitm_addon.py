@@ -2043,11 +2043,9 @@ def _handle_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
         pending_work = data_router.register_response(flow)
     else:
         pending_work = codex_model_catalog_cache.finalize_response(flow)
-        if pending_work is None:
-            # Preserve network latency's sampling point before newly deferred parsing.
-            response_streaming.start_buffered_response_inspection(flow)
-            if response_streaming.has_pending_response_inspection(flow):
-                pending_work = responseinspection(flow)
+        # Preserve network latency's sampling point before newly deferred parsing.
+        if pending_work is None and response_streaming.start_buffered_response_inspection(flow):
+            pending_work = responseinspection(flow)
     if pending_work is not None:
         return _finish_response_after_terminal_work(
             flow,
@@ -2164,8 +2162,7 @@ def _handle_error(flow: http.HTTPFlow) -> Awaitable[None] | None:
 
     # Complete captured model evidence remains observable on errors. Keep the
     # pre-inspection network timing and connector interruption policy intact.
-    response_streaming.start_buffered_response_inspection(flow, interrupted=True)
-    if response_streaming.has_pending_response_inspection(flow):
+    if response_streaming.start_buffered_response_inspection(flow, interrupted=True):
         return _finish_error_after_inspection(flow, latency_ms=latency_ms)
     _finish_error_handling(flow, latency_ms=latency_ms)
     return None

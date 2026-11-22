@@ -38,6 +38,91 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectorModelTest {
     @Test
+    fun returningToDirectoryScopesOfflineRestoresResultsIncludingConfirmedEmpty() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online) { _, model ->
+            val email = ConnectorBrowseFilter(null, "email")
+            val missing = ConnectorBrowseFilter("no matching service", null)
+            model.setFilter(email)
+            val emailResult = model.await { it.matches?.entries?.data != null }.matches
+            model.setFilter(missing)
+            model.await { it.matches?.filter == missing && it.matches.entries.data != null }
+
+            online.value = false
+            model.await { it.offline }
+            model.setFilter(email)
+            assertEquals(emailResult, model.uiState.value.matches)
+            model.setFilter(missing)
+            assertEquals(
+                emptyList<ConnectorEntry>(),
+                model.uiState.value.matches?.entries?.data?.entries,
+            )
+        }
+    }
+
+    @Test
+    fun returningToServiceOfflineKeepsPermissionsAndUsesTheLatestAccountOverview() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->
+            model.showPermissions()
+            val first = model.await { it.permissions.data != null }
+            model.select("slack")
+            model.await { it.detail.data?.entry?.slug == "slack" }
+            fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            model.resume()
+            model.await { it.connected.data?.get(CONNECTOR_CALENDAR)?.accounts?.size == 1 }
+
+            online.value = false
+            model.await { it.offline }
+            model.select(CONNECTOR_CALENDAR)
+            val revisited = model.uiState.value
+            assertEquals(first.detail.data, revisited.detail.data)
+            assertEquals(first.permissions.data, revisited.permissions.data)
+            assertNull(revisited.accounts.data)
+            assertFalse(
+                revisited.accountsFor(CONNECTOR_CALENDAR).any {
+                    it.id == CONNECTOR_CALENDAR_PRIMARY
+                }
+            )
+            assertEquals(1, revisited.accountsFor(CONNECTOR_CALENDAR).size)
+
+            fixture.failAccountReads = true
+            online.value = true
+            val refreshing = model.await { !it.offline && it.accounts.failure != null }
+            assertEquals(first.permissions.data, refreshing.permissions.data)
+            model.startAuthorization(null, "oauth", emptyMap())
+            assertNull(model.uiState.value.action)
+        }
+    }
+
+    @Test
+    fun unavailableCatalogDetailDiscardsRetainedMetadataAndPermissions() {
+        val online = MutableStateFlow(true)
+        withModel("gmail", connectivity = online) { fixture, model ->
+            model.showPermissions()
+            model.await { it.permissions.data != null }
+            model.select("slack")
+            model.await { it.detail.data?.entry?.slug == "slack" }
+            fixture.unavailableCatalogSlugs = setOf("gmail")
+
+            model.select("gmail")
+            assertEquals("gmail", model.uiState.value.detail.data?.entry?.slug)
+            val unavailable = model.await { it.detail.failure != null }
+            assertNull(unavailable.detail.data)
+            assertNull(unavailable.permissions.data)
+
+            model.select("slack")
+            online.value = false
+            model.await { it.offline }
+            model.select("gmail")
+            assertNull(model.uiState.value.detail.data)
+            assertNull(model.uiState.value.permissions.data)
+            assertEquals(ConnectorReadFailure.Unavailable, model.uiState.value.detail.failure)
+            assertEquals(ConnectorReadFailure.Unavailable, model.uiState.value.permissions.failure)
+        }
+    }
+
+    @Test
     fun browserReturnPublishesOnlyTheConfirmedAccount() =
         withModel("gmail") { fixture, model ->
             model.startAuthorization(null, "oauth", emptyMap())
@@ -101,6 +186,32 @@ class ConnectorModelTest {
                     .displayName,
             )
             assertEquals(2, renamed.accountsFor(CONNECTOR_CALENDAR).size)
+        }
+
+    @Test
+    fun renameReplyDoesNotPromoteTheOverviewToAnExactAccountReadAfterReselection() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            model.await { it.connected.data != null }
+            val reply = CountDownLatch(1)
+            fixture.renameReplyGate = reply
+            try {
+                model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+                fixture.failAccountReads = true
+                model.select("slack")
+                model.select(CONNECTOR_CALENDAR)
+                model.await { it.accounts.failure != null }
+            } finally {
+                reply.countDown()
+            }
+            val renamed = model.await { it.action?.result == ConnectorResult.Renamed }
+            assertNull(renamed.accounts.data)
+            assertEquals(
+                "Meeting calendar",
+                renamed
+                    .accountsFor(CONNECTOR_CALENDAR)
+                    .first { it.id == CONNECTOR_CALENDAR_PRIMARY }
+                    .displayName,
+            )
         }
 
     @Test

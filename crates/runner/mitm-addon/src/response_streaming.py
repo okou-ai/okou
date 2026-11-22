@@ -663,11 +663,12 @@ def configure_response_stream(
     flow.metadata[_RESPONSE_STREAM_CALLBACK] = stream_and_observe
 
 
-def start_buffered_response_inspection(flow: http.HTTPFlow, *, interrupted: bool = False) -> None:
-    """Start once; only model observation can inspect a newly interrupted capture."""
+def start_buffered_response_inspection(flow: http.HTTPFlow, *, interrupted: bool = False) -> bool:
+    """Start an eligible buffered inspection and report pending work on the flow."""
     inspection = flow.metadata.get(_RESPONSE_INSPECTION)
     if isinstance(inspection, response_inspection.BufferedResponseInspection):
         inspection.start(interrupted=interrupted)
+    return has_pending_response_inspection(flow)
 
 
 def has_pending_response_inspection(flow: http.HTTPFlow) -> bool:

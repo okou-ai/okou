@@ -477,8 +477,12 @@ class ConversationRouteTest {
 
         compose.runOnIdle { showConversation.value = false }
         compose.waitUntilDoesNotExist(hasTestTag("conversation"), 5_000)
+        // The first reopen can restore the anchor while its history refresh is still running.
         compose.waitUntil(10_000) {
-            compose.runOnIdle { model.uiState.value.indicatorsPhase != ChatReadPhase.Loading }
+            compose.runOnIdle {
+                model.uiState.value.indicatorsPhase != ChatReadPhase.Loading &&
+                    model.history.uiState.value.confirmation?.cursor?.seqId == 13L
+            }
         }
         received.incrementAndGet()
         unread.set(true)

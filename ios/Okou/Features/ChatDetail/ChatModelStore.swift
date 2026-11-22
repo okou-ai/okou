@@ -51,6 +51,22 @@ final class ChatModelStore {
 
   var stateStore: CCState.Store { resources.store }
 
+  /// Settings can offer account management before a chat or the model catalog has loaded.
+  @ObservationIgnored lazy var subscriptionLinkingEnabled: Computed<Task<Bool, Error>> =
+    computedTask { [weak self] get, options in
+      guard let self, try get(lifetime), !closed else { throw CancellationError() }
+      let features = try get(resources.featureSwitches)
+      do {
+        let switches = try await features.value
+        try Task.checkCancellation()
+        try options.signal.checkCancellation()
+        return switches.canLinkSubscriptions
+      } catch {
+        if !Task.isCancelled, !options.signal.isCancelled { report(error) }
+        throw error
+      }
+    }
+
   /// The graph owns the request and publishes one confirmed snapshot for send admission.
   /// Views observe this Task directly; they do not mirror its loading or error state here.
   @ObservationIgnored lazy var configurationValue =

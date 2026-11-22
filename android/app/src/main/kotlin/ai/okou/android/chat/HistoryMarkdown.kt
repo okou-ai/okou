@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
@@ -89,6 +90,7 @@ internal fun HistoryMarkdown(
     style: TextStyle,
     artifacts: ChatArtifactActions?,
     messageId: String,
+    highlight: ConversationFindHighlight? = null,
 ) =
     key(source, artifacts != null) {
         val rendered by
@@ -102,7 +104,19 @@ internal fun HistoryMarkdown(
         if (blocks == null) {
             Text(source, style = style)
         } else {
-            HistoryMarkdownBlocks(blocks, style, artifacts, messageId)
+            val hit = highlight?.target?.markdownBlock?.takeIf { it in blocks.indices } ?: -1
+            val whole = highlight.takeIf { hit < 0 }
+            HistoryMarkdownBlocks(
+                blocks,
+                if (whole?.target?.highlighted == true)
+                    style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
+                else style,
+                artifacts,
+                messageId,
+                Modifier.conversationFindHighlight(whole),
+                hit,
+                highlight,
+            )
         }
     }
 
@@ -122,66 +136,85 @@ private fun HistoryMarkdownBlocks(
     artifacts: ChatArtifactActions?,
     focusPrefix: String,
     modifier: Modifier = Modifier,
+    hit: Int = -1,
+    highlight: ConversationFindHighlight? = null,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        for ((index, block) in blocks.withIndex()) when (block) {
-            is HistoryMarkdownBlock.Table -> HistoryMarkdownTable(block.rows)
-            is HistoryMarkdownBlock.ListItems ->
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for ((itemIndex, item) in block.items.withIndex()) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text(item.marker, Modifier.widthIn(min = 16.dp), style = style)
-                            HistoryMarkdownBlocks(
-                                item.blocks,
-                                style,
-                                artifacts,
-                                "$focusPrefix/$index/$itemIndex",
-                                Modifier.weight(1f),
-                            )
+        for ((index, block) in blocks.withIndex()) {
+            val selected = highlight.takeIf { index == hit }
+            val blockModifier = Modifier.conversationFindHighlight(selected)
+            val highlighted = selected?.target?.highlighted == true
+            val contentStyle =
+                if (highlighted) style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
+                else style
+            when (block) {
+                is HistoryMarkdownBlock.Table ->
+                    HistoryMarkdownTable(block.rows, blockModifier, highlighted)
+                is HistoryMarkdownBlock.ListItems ->
+                    Column(blockModifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for ((itemIndex, item) in block.items.withIndex()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text(
+                                    item.marker,
+                                    Modifier.widthIn(min = 16.dp),
+                                    style = contentStyle,
+                                )
+                                HistoryMarkdownBlocks(
+                                    item.blocks,
+                                    contentStyle,
+                                    artifacts,
+                                    "$focusPrefix/$index/$itemIndex",
+                                    Modifier.weight(1f),
+                                )
+                            }
                         }
                     }
-                }
-            is HistoryMarkdownBlock.Paragraph -> {
-                val blockStyle =
-                    when (block.heading) {
-                        1 ->
-                            style.copy(
-                                fontSize = 20.sp,
-                                lineHeight = 28.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        in 2..6 ->
-                            style.copy(
-                                fontSize = 16.sp,
-                                lineHeight = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        else -> style
-                    }
-                val cards =
-                    remember(block.text) {
-                        block.text.getStringAnnotations("artifact", 0, block.text.length)
-                    }
-                if (artifacts == null || cards.isEmpty()) {
-                    Text(block.text, style = blockStyle)
-                } else {
-                    var start = 0
-                    for (card in cards) {
-                        val before = block.text.subSequence(start, card.start)
-                        if (before.isNotBlank()) Text(before, style = blockStyle)
-                        val focusKey = "$focusPrefix/$index/${card.start}"
-                        MessageArtifactCard(
-                            block.text.text.substring(card.start, card.end),
-                            card.item,
-                            restoreFocus =
-                                artifacts.restored.takeIf { artifacts.restoreKey == focusKey },
-                        ) {
-                            artifacts.open(card.item, focusKey)
+                is HistoryMarkdownBlock.Paragraph -> {
+                    val blockStyle =
+                        when (block.heading) {
+                            1 ->
+                                contentStyle.copy(
+                                    fontSize = 20.sp,
+                                    lineHeight = 28.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            in 2..6 ->
+                                contentStyle.copy(
+                                    fontSize = 16.sp,
+                                    lineHeight = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            else -> contentStyle
                         }
-                        start = card.end
+                    val cards =
+                        remember(block.text) {
+                            block.text.getStringAnnotations("artifact", 0, block.text.length)
+                        }
+                    if (artifacts == null || cards.isEmpty()) {
+                        Text(block.text, blockModifier, style = blockStyle)
+                    } else {
+                        Column(blockModifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            var start = 0
+                            for (card in cards) {
+                                val before = block.text.subSequence(start, card.start)
+                                if (before.isNotBlank()) Text(before, style = blockStyle)
+                                val focusKey = "$focusPrefix/$index/${card.start}"
+                                MessageArtifactCard(
+                                    block.text.text.substring(card.start, card.end),
+                                    card.item,
+                                    restoreFocus =
+                                        artifacts.restored.takeIf {
+                                            artifacts.restoreKey == focusKey
+                                        },
+                                ) {
+                                    artifacts.open(card.item, focusKey)
+                                }
+                                start = card.end
+                            }
+                            val after = block.text.subSequence(start, block.text.length)
+                            if (after.isNotBlank()) Text(after, style = blockStyle)
+                        }
                     }
-                    val after = block.text.subSequence(start, block.text.length)
-                    if (after.isNotBlank()) Text(after, style = blockStyle)
                 }
             }
         }
@@ -215,6 +248,7 @@ private fun MessageArtifactCard(
     Surface(shape = shape, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
         Row(
             Modifier.fillMaxWidth()
+                .focusProperties { canFocus = true }
                 .then(restore)
                 .heightIn(min = 60.dp)
                 .clip(shape)
@@ -261,6 +295,20 @@ private data class HistoryMarkdownListItem(
     val marker: String,
     val blocks: List<HistoryMarkdownBlock>,
 )
+
+private fun HistoryMarkdownBlock.findText(): String =
+    when (this) {
+        is HistoryMarkdownBlock.Paragraph -> text.text
+        is HistoryMarkdownBlock.Table ->
+            rows.joinToString(" ") { row -> row.joinToString(" ") { it.text.text } }
+        is HistoryMarkdownBlock.ListItems ->
+            items.joinToString(" ") { item -> item.blocks.joinToString(" ") { it.findText() } }
+    }
+
+internal fun conversationMarkdownFindPassages(
+    source: String,
+    artifactCards: Boolean,
+): List<String> = historyMarkdownBlocks(source, artifactCards).map { it.findText() }
 
 private val historyMarkdownParser =
     Parser.builder().extensions(listOf(TablesExtension.create())).build()
@@ -328,22 +376,29 @@ private fun historyMarkdownRows(table: TableBlock): List<List<HistoryMarkdownCel
         .toList()
 
 @Composable
-private fun HistoryMarkdownTable(rows: List<List<HistoryMarkdownCell>>) {
+private fun HistoryMarkdownTable(
+    rows: List<List<HistoryMarkdownCell>>,
+    modifier: Modifier,
+    highlighted: Boolean,
+) {
     val columns = rows.firstOrNull()?.size ?: return
     if (columns == 0) return
     val colors = MaterialTheme.colorScheme
-    BoxWithConstraints {
+    BoxWithConstraints(modifier) {
         val cellWidth = (maxWidth / columns).coerceIn(112.dp, 240.dp)
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = colors.background,
-            contentColor = colors.onSurface,
+            color = if (highlighted) colors.secondaryContainer else colors.background,
+            contentColor = if (highlighted) colors.onSecondaryContainer else colors.onSurface,
             border = BorderStroke(1.dp, colors.outline),
         ) {
             Column(Modifier.horizontalScroll(rememberScrollState()).width(cellWidth * columns)) {
                 for ((index, row) in rows.withIndex()) {
                     if (index != 0) HorizontalDivider(color = colors.outline)
-                    Row(if (index == 0) Modifier.background(colors.surfaceVariant) else Modifier) {
+                    Row(
+                        if (index == 0 && !highlighted) Modifier.background(colors.surfaceVariant)
+                        else Modifier
+                    ) {
                         for (cell in row) {
                             Text(
                                 cell.text,

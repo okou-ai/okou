@@ -7,6 +7,28 @@ import XCTest
 
 @MainActor
 final class ChatModelResourceTests: XCTestCase {
+  func testSettingsCanDiscoverSubscriptionsBeforeOpeningAChatOrConnectingAnAccount() async throws {
+    let enabled = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      guard request.url?.path == "/api/feature-switches" else { throw URLError(.unsupportedURL) }
+      let value = enabled.withLock { $0 }
+      return ChatHTTPResponse(
+        body: "{\"effectiveSwitches\":{\"subscriptionLinkingEntry\":\(value)}}")
+    }
+    let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { workspace.close() }
+    let resources = workspace.settingsResources
+    let gate = workspace.modelStore.subscriptionLinkingEnabled
+    workspace.prepareSettings()
+    let initiallyEnabled = try await resources.store.get(gate).value
+    XCTAssertFalse(initiallyEnabled)
+
+    enabled.withLock { $0 = true }
+    try resources.invalidate([.reconnected])
+    let refreshed = try await resources.store.get(gate).value
+    XCTAssertTrue(refreshed)
+  }
+
   func testClosingWorkspaceBeforeAttachmentRetiresItsWaitingReads() async throws {
     let deadline = ModelResponseGate()
     let waiting = expectation(description: "The old workspace is waiting for subscriptions")

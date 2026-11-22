@@ -10,14 +10,21 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -90,6 +97,68 @@ class ArtifactCatalogRootTest {
         awaitText(fixture.summary.title)
         compose.onNodeWithText(fixture.checklist.title).assertDoesNotExist()
         assertTrue(fixture.catalogQueries.contains(null to "Product launch"))
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun openingTheSourceConversationLeavesFindAndBackRestoresThePreview() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText("Native history reply")
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val find = compose.onNodeWithTag("conversation_find")
+        find.assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        awaitText("View source conversation")
+        compose.onNodeWithText("View source conversation").performClick()
+
+        find.assertDoesNotExist()
+        compose.onNodeWithText("Native history reply").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to artifact preview").performClick()
+        awaitText("View source conversation")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun returningFromTheWorkspaceCatalogKeepsFindWithoutReplayingItsFocusRequests() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText("Native history reply")
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.assertIsFocused().performTextReplacement("Native history")
+        awaitText("1 matching message")
+
+        val artifacts = compose.onNodeWithContentDescription("Artifacts")
+        val backToWorkspace = compose.onNodeWithContentDescription("Back to workspace")
+        artifacts.performClick()
+        backToWorkspace.performClick()
+        query.assertTextContains("Native history").assertIsNotFocused()
+        awaitText("1 matching message")
+
+        val result = compose.onNodeWithText("Native history reply")
+        result.performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
+        compose.onNodeWithContentDescription("Back").performClick()
+        awaitText("1 matching message")
+        result.assertIsFocused()
+
+        artifacts.performClick()
+        backToWorkspace.performClick()
+        query.assertTextContains("Native history").assertIsNotFocused()
+        awaitText("1 matching message")
+        result.assertIsNotFocused()
     }
 
     @Test
@@ -247,6 +316,117 @@ class ArtifactCatalogRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         awaitText(fixture.summary.title)
         compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun inlineArtifactPreviewReturnsToTheFindHit() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        fixture.installInlineHistory()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(fixture.summary.title)
+
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.performTextReplacement("artifacts2.md")
+        awaitText("No matching messages")
+        query.performTextReplacement("launch summary")
+        awaitText("1 matching message")
+        val cardLabel = hasText(fixture.summary.title) and hasClickAction()
+        compose.onNode(cardLabel).performClick()
+        val hit = hasTestTag("conversation_find_hit") and isFocused()
+        compose.waitUntil(10_000) { compose.onAllNodes(hit).fetchSemanticsNodes().isNotEmpty() }
+        val card = compose.onNode(cardLabel)
+        card.assertIsDisplayed().performClick()
+
+        awaitText("Preview only", partial = true)
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose.onNodeWithTag("conversation").assertDoesNotExist()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(cardLabel and isFocused()).fetchSemanticsNodes().isNotEmpty()
+        }
+        card.assertIsDisplayed().assertIsFocused()
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        query.assertTextContains("launch summary")
+        awaitText("1 matching message")
+        assertTrue(fixture.catalogScopes.isEmpty())
+    }
+
+    @Test
+    fun chatResourcesReturnsToTheReadingPositionAndFindQuery() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val target = "Find the launch checklist"
+        val earlier = "Earlier reading marker 4"
+        val history = app.fixture
+        history.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        history.historyRows = { request ->
+            val url = checkNotNull(request.requestUrl)
+            val after = url.queryParameter("sinceSeqId")?.toLong() ?: 0
+            val rows =
+                (1L..20L)
+                    .filter { it > after }
+                    .joinToString(",") { seq ->
+                        val id =
+                            if (seq == 20L) HISTORY_LAST_EVENT
+                            else "aaaaaaaa-aaaa-4aaa-8aaa-${seq.toString().padStart(12, '0')}"
+                        val text = if (seq == 20L) target else "Earlier reading marker $seq"
+                        historyEventWire(
+                            id,
+                            seq,
+                            url.pathSegments[2],
+                            payload = """{"content":"$text"}""",
+                            run = null,
+                        )
+                    }
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":20},"hasMore":false}"""
+            )
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(target)
+        val actions = compose.onNodeWithContentDescription("Chat actions")
+        actions.performClick()
+        val find = compose.onNodeWithText("Find messages")
+        val resources = compose.onNodeWithText("Chat resources")
+        assertTrue(find.getUnclippedBoundsInRoot().top < resources.getUnclippedBoundsInRoot().top)
+        find.performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.performTextReplacement("launch checklist")
+        awaitText("1 matching message")
+        compose.onNodeWithText(target).performClick()
+        val focusedHit = hasTestTag("conversation_find_hit") and isFocused()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(focusedHit).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithTag("conversation").performScrollToNode(hasText(earlier))
+        val marker = compose.onNodeWithText(earlier)
+        val readingTop = marker.assertIsDisplayed().getUnclippedBoundsInRoot().top
+        val jump = hasTestTag("conversation_jump")
+        compose.waitUntil(10_000) { compose.onAllNodes(jump).fetchSemanticsNodes().isNotEmpty() }
+
+        actions.performClick()
+        resources.performClick()
+        compose.onNodeWithTag("chat_artifact_resources").assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("chat_artifact_resources").assertDoesNotExist()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(jump or focusedHit).fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals(readingTop, marker.assertIsDisplayed().getUnclippedBoundsInRoot().top)
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        query.assertTextContains("launch checklist")
+        awaitText("1 matching message")
     }
 
     @Test

@@ -14,4 +14,14 @@
     <string name="conversation_reply_copied">답변을 복사했어요</string>
     <string name="conversation_revoke">철회</string>
     <string name="conversation_stop">중지</string>
+    <string name="conversation_find">메시지 찾기</string>
+    <string name="conversation_find_turns">대화 차례별로 보기</string>
+    <string name="conversation_find_empty">검색할 메시지가 없습니다</string>
+    <string name="conversation_find_no_match">일치하는 메시지가 없습니다</string>
+    <string name="conversation_find_you">내 메시지</string>
+    <string name="conversation_find_unavailable">이 메시지를 사용할 수 없습니다.</string>
+    <string name="conversation_find_attachment">첨부 파일</string>
+    <plurals name="conversation_find_matches">
+        <item quantity="other">일치하는 메시지 %d개</item>
+    </plurals>
 </resources>

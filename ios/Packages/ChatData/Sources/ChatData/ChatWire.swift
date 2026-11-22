@@ -209,6 +209,8 @@ struct ChatEventRow: Decodable, Sendable {
 
 public struct SidebarFeatureSwitches: Codable, Sendable {
   public let effectiveSwitches: [String: Bool]
+
+  public var canLinkSubscriptions: Bool { effectiveSwitches["subscriptionLinkingEntry"] == true }
 }
 
 struct CreatedThread: Decodable, Sendable {
