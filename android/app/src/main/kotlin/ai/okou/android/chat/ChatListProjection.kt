@@ -9,12 +9,12 @@ internal class ChatListProjection {
     var confirmedRows = ReplayedChats(emptyList(), emptyList())
         private set
 
-    private class PendingRowEdit(val edit: ChatRowEdit) {
+    private class PendingRowEdit(val edit: ChatRowEdit, private val optimistic: Boolean) {
         var unconfirmed = false
         var confirmedMembershipChanged = false
 
         val optimisticEdit: ChatRowEdit?
-            get() = edit.takeUnless { unconfirmed && confirmedMembershipChanged }
+            get() = edit.takeIf { optimistic && !(unconfirmed && confirmedMembershipChanged) }
     }
 
     private var rowEdits = emptyList<PendingRowEdit>()
@@ -44,8 +44,8 @@ internal class ChatListProjection {
         return confirmedRows.withLocalChanges(optimisticEdits, recentThreads)
     }
 
-    fun addEdits(edits: List<ChatRowEdit>) {
-        rowEdits = rowEdits + edits.map(::PendingRowEdit)
+    fun addEdits(edits: List<ChatRowEdit>, optimistic: Boolean = true) {
+        rowEdits = rowEdits + edits.map { PendingRowEdit(it, optimistic) }
     }
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = rowEdits.any { it.edit in edits }

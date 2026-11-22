@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">Conversa desarquivada</string>
     <string name="chat_undo_marked_read">Conversa marcada como lida</string>
     <string name="chat_undo">Desfazer</string>
-    <string name="chat_undo_offline">%1$s\nDesfaça a alteração quando estiver online novamente.</string>
+    <string name="chat_undo_connection_failed">Não foi possível desfazer a alteração. Verifique sua conexão e tente novamente.</string>
+    <string name="chat_action_connection_failed">Não foi possível conectar. Verifique sua conexão e tente novamente.</string>
     <string name="chat_undo_checking">Verificando se a alteração foi desfeita…</string>
     <string name="chat_undo_failed">Não foi possível desfazer a alteração.</string>
     <string name="chat_undo_unconfirmed">Não foi possível confirmar se a alteração foi desfeita.</string>
@@ -24,6 +25,11 @@
     <string name="chat_inbox">Caixa de entrada</string>
     <string name="chat_mark_all_read">Marcar tudo como lido</string>
     <string name="chat_mark_all_read_unconfirmed">Algumas conversas ainda podem estar por ler.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">%1$d de %2$d conversas foi marcada como lida.</item>
+        <item quantity="many">%1$d de %2$d conversas foram marcadas como lidas.</item>
+        <item quantity="other">%1$d de %2$d conversas foram marcadas como lidas.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d conversa marcada como lida.</item>
         <item quantity="many">%1$d conversas marcadas como lidas.</item>
@@ -69,7 +75,7 @@
     <string name="chat_rename_cancel">Cancelar</string>
     <string name="chat_delete">Excluir</string>
     <string name="chat_delete_title">Excluir conversa?</string>
-    <string name="chat_delete_description">Esta conversa será excluída permanentemente. Qualquer tarefa em execução nesta conversa será interrompida imediatamente. Todas as automações vinculadas serão pausadas. Esta ação não pode ser desfeita.</string>
+    <string name="chat_delete_description">As mensagens e os rascunhos de “%1$s” serão excluídos permanentemente. As tarefas em andamento serão interrompidas e as automações vinculadas serão pausadas.</string>
     <string name="chat_delete_confirm">Excluir</string>
     <string name="chat_rename_project">Renomear projeto</string>
     <string name="chat_project_name">Nome do projeto</string>
@@ -84,8 +90,8 @@
     <string name="chat_project_moved_named">Movida para %1$s</string>
     <string name="chat_project_moved_outside">Movida para fora dos projetos</string>
     <string name="chat_project_delete">Excluir projeto</string>
-    <string name="chat_project_delete_title">Excluir “%1$s”?</string>
-    <string name="chat_project_delete_description">As conversas deste projeto serão movidas para fora dos projetos. As tarefas em execução continuarão.</string>
+    <string name="chat_project_delete_title">Excluir projeto?</string>
+    <string name="chat_project_delete_description">As conversas de “%1$s” serão movidas para fora dos projetos. As tarefas em execução continuarão.</string>
     <string name="chat_project_delete_pending">Excluindo projeto…</string>
     <string name="chat_project_deleted">O projeto foi excluído e suas conversas foram movidas para fora dos projetos.</string>
     <string name="chat_project_delete_rejected">Não foi possível excluir o projeto.</string>
