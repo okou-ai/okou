@@ -22,8 +22,10 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRouteMocks } from "./helpers/route-test";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 const context = testContext();
+const credentials = createRunExecutionCredentials(context);
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 function operation() {
@@ -319,6 +321,25 @@ describe("private Project order", () => {
 });
 
 describe("private Projects", () => {
+  it("lets a dispatched member Run create and read its own Project", async () => {
+    const actor = owner();
+    const token = await credentials.okouToken(actor);
+    const runHeaders = { authorization: `Bearer ${token}` };
+    const id = operation();
+    await accept(
+      client().create({
+        headers: runHeaders,
+        body: { id, eventId: id, name: "Run project" },
+      }),
+      [201],
+    );
+    const project = await accept(
+      client().get({ headers: runHeaders, params: { id } }),
+      [200],
+    );
+    expect(project.body).toMatchObject({ id, name: "Run project" });
+  });
+
   it("preserves structured Project references through member composer and Thread drafts", async () => {
     const actor = owner();
     const project = await create(actor);
