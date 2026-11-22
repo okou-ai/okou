@@ -11,8 +11,10 @@
     <string name="settings_account_web">Kelola akun di web</string>
     <string name="settings_model_accounts">Akun model</string>
     <string name="settings_accounts_scope">Pilih akun langganan yang Anda gunakan di “%1$s”.</string>
+    <string name="settings_accounts_scope_empty">Akun model di “%1$s”</string>
+    <string name="settings_workspace_status">“%1$s” · %2$s</string>
     <string name="settings_accounts_offline">Offline. Sambungkan untuk mengganti akun.</string>
-    <string name="settings_accounts_offline_connect">Sambungkan untuk menautkan akun model.</string>
+    <string name="settings_accounts_offline_connect">Offline. Sambungkan untuk menautkan akun model.</string>
     <string name="settings_accounts_unavailable">Akun model tidak dapat dilihat saat ini.</string>
     <string name="settings_accounts_update_failed">Gagal memperbarui akun model. Informasi terakhir ditampilkan.</string>
     <string name="settings_accounts_empty">Belum ada akun model yang terhubung</string>

@@ -11,8 +11,10 @@
     <string name="settings_account_web">Manage account on Web</string>
     <string name="settings_model_accounts">Model accounts</string>
     <string name="settings_accounts_scope">Choose the subscription accounts you use in “%1$s”.</string>
+    <string name="settings_accounts_scope_empty">Model accounts in “%1$s”</string>
+    <string name="settings_workspace_status">“%1$s” · %2$s</string>
     <string name="settings_accounts_offline">Offline. Connect to switch accounts.</string>
-    <string name="settings_accounts_offline_connect">Connect to link a model account.</string>
+    <string name="settings_accounts_offline_connect">Offline. Connect to link a model account.</string>
     <string name="settings_accounts_unavailable">Unable to view model accounts right now.</string>
     <string name="settings_accounts_update_failed">Unable to refresh model accounts. Showing last known information.</string>
     <string name="settings_accounts_empty">No model accounts connected</string>

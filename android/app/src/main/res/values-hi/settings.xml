@@ -11,8 +11,10 @@
     <string name="settings_account_web">वेब पर खाता प्रबंधित करें</string>
     <string name="settings_model_accounts">मॉडल खाते</string>
     <string name="settings_accounts_scope">वे सदस्यता खाते चुनें जिनका आप “%1$s” में इस्तेमाल करते हैं।</string>
+    <string name="settings_accounts_scope_empty">“%1$s” में मॉडल खाते</string>
+    <string name="settings_workspace_status">“%1$s” · %2$s</string>
     <string name="settings_accounts_offline">ऑफ़लाइन हैं। खाता बदलने के लिए कनेक्ट करें।</string>
-    <string name="settings_accounts_offline_connect">मॉडल खाता जोड़ने के लिए कनेक्ट करें।</string>
+    <string name="settings_accounts_offline_connect">ऑफ़लाइन हैं। मॉडल खाता जोड़ने के लिए कनेक्ट करें।</string>
     <string name="settings_accounts_unavailable">फ़िलहाल मॉडल खाते नहीं दिखाए जा सकते।</string>
     <string name="settings_accounts_update_failed">मॉडल खाते रीफ़्रेश नहीं हो सके। पिछली जानकारी दिखाई जा रही है।</string>
     <string name="settings_accounts_empty">कोई मॉडल खाता नहीं जुड़ा है</string>

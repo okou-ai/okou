@@ -11,6 +11,7 @@ import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.SettingsDestination
 import android.icu.util.Calendar
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -121,6 +122,14 @@ private fun SettingsDetailStatus(text: String) {
 }
 
 @Composable
+private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringRes status: Int?) {
+    val text =
+        if (status == null) stringResource(scope, workspace)
+        else stringResource(R.string.settings_workspace_status, workspace, stringResource(status))
+    SettingsDetailStatus(text)
+}
+
+@Composable
 private fun SettingsPlaceholder() {
     SettingsGroup {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -145,7 +154,7 @@ private fun ModelAccounts(
     activateAccount: (String) -> Unit,
 ) {
     val accounts = state.accounts.value
-    val offlineHint =
+    val status =
         when {
             state.offline && accounts?.isEmpty() == true ->
                 R.string.settings_accounts_offline_connect
@@ -154,10 +163,10 @@ private fun ModelAccounts(
                 R.string.settings_accounts_update_failed
             else -> null
         }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        SettingsDetailStatus(stringResource(R.string.settings_accounts_scope, workspace))
-        offlineHint?.let { SettingsDetailStatus(stringResource(it)) }
-    }
+    val scope =
+        if (accounts?.isEmpty() == true) R.string.settings_accounts_scope_empty
+        else R.string.settings_accounts_scope
+    SettingsPageIntro(workspace, scope, status)
     when {
         accounts == null && (state.accounts.unavailable || state.offline) ->
             SettingsDetailStatus(stringResource(R.string.settings_accounts_unavailable))
@@ -165,20 +174,23 @@ private fun ModelAccounts(
             ModelAccountProvider.entries.forEach { provider ->
                 SettingsSection(provider.name) { SettingsPlaceholder() }
             }
-        accounts.isEmpty() ->
+        accounts.isEmpty() -> {
             SettingsGroup {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .heightIn(min = 72.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+                ) {
                     Text(
                         stringResource(R.string.settings_accounts_empty),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                     SettingsDetailStatus(stringResource(R.string.settings_accounts_empty_help))
-                    SettingsWebAction(
-                        stringResource(R.string.settings_accounts_web_connect),
-                        "model",
-                    )
                 }
             }
+            SettingsWebAction(stringResource(R.string.settings_accounts_web_connect), "model")
+        }
         else -> {
             for (provider in ModelAccountProvider.entries) {
                 val group = accounts.filter { it.provider == provider }
@@ -407,17 +419,15 @@ private fun CreditBalance(
 ) {
     val member = state.usagePack.value
     val shared = state.workspaceCredits.value
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        SettingsDetailStatus(stringResource(R.string.settings_credit_scope, workspace))
-        if (state.offline && (member != null || shared != null)) {
-            SettingsDetailStatus(stringResource(R.string.settings_credit_offline))
-        } else if (
+    val status =
+        when {
+            state.offline && (member != null || shared != null) -> R.string.settings_credit_offline
             state.usagePack.unavailable && member != null ||
-                state.workspaceCredits.unavailable && shared != null
-        ) {
-            SettingsDetailStatus(stringResource(R.string.settings_credit_update_failed))
+                state.workspaceCredits.unavailable && shared != null ->
+                R.string.settings_credit_update_failed
+            else -> null
         }
-    }
+    SettingsPageIntro(workspace, R.string.settings_credit_scope, status)
     SettingsSection(stringResource(R.string.settings_credit_member)) {
         if (member != null) {
             CreditCard(

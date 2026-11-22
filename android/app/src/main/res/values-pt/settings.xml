@@ -11,8 +11,10 @@
     <string name="settings_account_web">Gerenciar conta na Web</string>
     <string name="settings_model_accounts">Contas de modelos</string>
     <string name="settings_accounts_scope">Escolha as contas de assinatura usadas em “%1$s”.</string>
+    <string name="settings_accounts_scope_empty">Contas de modelos em “%1$s”</string>
+    <string name="settings_workspace_status">“%1$s” · %2$s</string>
     <string name="settings_accounts_offline">Offline. Conecte-se para trocar de conta.</string>
-    <string name="settings_accounts_offline_connect">Conecte-se para vincular uma conta de modelo.</string>
+    <string name="settings_accounts_offline_connect">Offline. Conecte-se para vincular uma conta de modelo.</string>
     <string name="settings_accounts_unavailable">Não foi possível exibir as contas de modelos agora.</string>
     <string name="settings_accounts_update_failed">Não foi possível atualizar as contas. Exibindo as últimas informações conhecidas.</string>
     <string name="settings_accounts_empty">Nenhuma conta de modelo vinculada</string>

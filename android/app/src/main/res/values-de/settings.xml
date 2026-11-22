@@ -11,8 +11,10 @@
     <string name="settings_account_web">Konto im Web verwalten</string>
     <string name="settings_model_accounts">Modellkonten</string>
     <string name="settings_accounts_scope">Wähle die Abokonten für „%1$s“.</string>
+    <string name="settings_accounts_scope_empty">Modellkonten in „%1$s“</string>
+    <string name="settings_workspace_status">„%1$s“ · %2$s</string>
     <string name="settings_accounts_offline">Offline. Stelle eine Verbindung her, um Konten zu wechseln.</string>
-    <string name="settings_accounts_offline_connect">Stelle eine Verbindung her, um ein Modellkonto zu verknüpfen.</string>
+    <string name="settings_accounts_offline_connect">Offline. Stelle eine Verbindung her, um ein Modellkonto zu verknüpfen.</string>
     <string name="settings_accounts_unavailable">Modellkonten sind momentan nicht verfügbar.</string>
     <string name="settings_accounts_update_failed">Aktualisierung fehlgeschlagen. Zuletzt bekannte Informationen werden angezeigt.</string>
     <string name="settings_accounts_empty">Keine Modellkonten verbunden</string>

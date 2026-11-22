@@ -11,8 +11,10 @@
     <string name="settings_account_web">在 Web 管理账号</string>
     <string name="settings_model_accounts">模型账号</string>
     <string name="settings_accounts_scope">选择你在「%1$s」使用的订阅账号。</string>
+    <string name="settings_accounts_scope_empty">「%1$s」的模型账号</string>
+    <string name="settings_workspace_status">「%1$s」 · %2$s</string>
     <string name="settings_accounts_offline">离线，联网后可切换账号。</string>
-    <string name="settings_accounts_offline_connect">联网后可连接账号。</string>
+    <string name="settings_accounts_offline_connect">离线，联网后可连接账号。</string>
     <string name="settings_accounts_unavailable">暂时无法查看模型账号。</string>
     <string name="settings_accounts_update_failed">暂时无法更新，显示上次同步的信息。</string>
     <string name="settings_accounts_empty">尚未连接模型账号</string>

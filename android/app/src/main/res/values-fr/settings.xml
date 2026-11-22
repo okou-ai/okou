@@ -11,8 +11,10 @@
     <string name="settings_account_web">Gérer le compte sur le Web</string>
     <string name="settings_model_accounts">Comptes de modèle</string>
     <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans « %1$s ».</string>
+    <string name="settings_accounts_scope_empty">Comptes de modèle dans « %1$s »</string>
+    <string name="settings_workspace_status">« %1$s » · %2$s</string>
     <string name="settings_accounts_offline">Hors ligne. Connectez-vous pour changer de compte.</string>
-    <string name="settings_accounts_offline_connect">Connectez-vous pour associer un compte de modèle.</string>
+    <string name="settings_accounts_offline_connect">Hors ligne. Connectez-vous pour associer un compte de modèle.</string>
     <string name="settings_accounts_unavailable">Impossible d’afficher les comptes de modèle pour le moment.</string>
     <string name="settings_accounts_update_failed">L’actualisation a échoué. Dernières données connues affichées.</string>
     <string name="settings_accounts_empty">Aucun compte de modèle associé</string>

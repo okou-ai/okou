@@ -11,8 +11,10 @@
     <string name="settings_account_web">Gestisci account sul Web</string>
     <string name="settings_model_accounts">Account dei modelli</string>
     <string name="settings_accounts_scope">Scegli gli account in abbonamento che usi in «%1$s».</string>
+    <string name="settings_accounts_scope_empty">Account di modello in «%1$s»</string>
+    <string name="settings_workspace_status">«%1$s» · %2$s</string>
     <string name="settings_accounts_offline">Offline. Connettiti per cambiare account.</string>
-    <string name="settings_accounts_offline_connect">Connettiti per collegare un account di modello.</string>
+    <string name="settings_accounts_offline_connect">Offline. Connettiti per collegare un account di modello.</string>
     <string name="settings_accounts_unavailable">Impossibile visualizzare gli account dei modelli al momento.</string>
     <string name="settings_accounts_update_failed">Impossibile aggiornare gli account. Sono mostrate le ultime informazioni disponibili.</string>
     <string name="settings_accounts_empty">Nessun account di modello collegato</string>

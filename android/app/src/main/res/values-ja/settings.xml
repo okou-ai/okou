@@ -11,8 +11,10 @@
     <string name="settings_account_web">Web でアカウントを管理</string>
     <string name="settings_model_accounts">モデルアカウント</string>
     <string name="settings_accounts_scope">「%1$s」で使用するサブスクリプションアカウントを選択します。</string>
+    <string name="settings_accounts_scope_empty">「%1$s」のモデルアカウント</string>
+    <string name="settings_workspace_status">「%1$s」 · %2$s</string>
     <string name="settings_accounts_offline">オフラインです。接続するとアカウントを切り替えられます。</string>
-    <string name="settings_accounts_offline_connect">接続するとモデルアカウントを連携できます。</string>
+    <string name="settings_accounts_offline_connect">オフラインです。接続するとモデルアカウントを連携できます。</string>
     <string name="settings_accounts_unavailable">現在、モデルアカウントを表示できません。</string>
     <string name="settings_accounts_update_failed">モデルアカウントを更新できませんでした。前回取得した情報を表示しています。</string>
     <string name="settings_accounts_empty">モデルアカウントが連携されていません</string>
