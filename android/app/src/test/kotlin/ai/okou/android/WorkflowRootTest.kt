@@ -249,23 +249,30 @@ class WorkflowRootTest {
     }
 
     @Test
-    fun workflowIntroStaysDismissedAfterItsSearchResultStopsMatching() {
-        app.gate.countDown()
-        compose.onNodeWithContentDescription("Search workspace").performClick()
-        val scope = compose.onNodeWithTag("search_type_Workflows")
-        val query = compose.onNodeWithTag("chat_search_query")
-        scope.performClick()
-        query.performTextInput("checklist")
-        val originalTitle = app.fixture.releaseTitle
-        waitFor(originalTitle)
-
-        val catalogRequested = CountDownLatch(1)
-        val releaseCatalog = CountDownLatch(1)
-        app.fixture.beforeCatalog = {
-            catalogRequested.countDown()
-            releaseCatalog.await()
+    fun workflowIntroRestoresResultsFocusWhileOtherSearchTypesAreLoading() {
+        val messagesRequested = CountDownLatch(1)
+        val releaseMessages = CountDownLatch(1)
+        app.fixture.chats.searchMessages = {
+            messagesRequested.countDown()
+            releaseMessages.await()
+            jsonResponse("""{"results":[]}""")
         }
+        val releaseCatalog = CountDownLatch(1)
         try {
+            app.gate.countDown()
+            compose.onNodeWithContentDescription("Search workspace").performClick()
+            val scope = compose.onNodeWithTag("search_type_All")
+            val query = compose.onNodeWithTag("chat_search_query")
+            query.performTextInput("checklist")
+            val originalTitle = app.fixture.releaseTitle
+            waitFor(originalTitle)
+            compose.waitUntil(5_000) { messagesRequested.count == 0L }
+
+            val catalogRequested = CountDownLatch(1)
+            app.fixture.beforeCatalog = {
+                catalogRequested.countDown()
+                releaseCatalog.await()
+            }
             compose.onNodeWithText(originalTitle).performClick()
             waitFor("View workflow details")
             compose.onNodeWithText("View workflow details").performClick()
@@ -279,8 +286,10 @@ class WorkflowRootTest {
             app.fixture.releaseTitle = updatedTitle
             releaseCatalog.countDown()
 
-            waitFor("No matching workflows")
-            compose.onNodeWithText("View workflow details").assertDoesNotExist()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("View workflow details").fetchSemanticsNodes().isEmpty()
+            }
+            compose.onNodeWithText(originalTitle).assertDoesNotExist()
             compose.onNodeWithTag("chat_search_results").assertIsFocused()
             scope.assertIsSelected()
 
@@ -289,6 +298,7 @@ class WorkflowRootTest {
             compose.onNodeWithText("View workflow details").assertDoesNotExist()
         } finally {
             releaseCatalog.countDown()
+            releaseMessages.countDown()
         }
     }
 

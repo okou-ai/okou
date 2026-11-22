@@ -41,10 +41,7 @@ data class SearchMessageHit(
     val seqId: Long,
     val content: String,
     val ranges: List<IntRange>,
-) {
-    internal val key
-        get() = "message:$threadId:$seqId"
-}
+)
 
 data class SearchWorkflowHit(
     val id: String,
@@ -56,9 +53,6 @@ data class SearchWorkflowHit(
 ) {
     internal val title
         get() = displayName?.takeIf(String::isNotBlank) ?: name
-
-    internal val key
-        get() = "workflow:$id"
 
     internal fun matches(keyword: String) =
         title.contains(keyword, ignoreCase = true) ||
@@ -72,10 +66,7 @@ internal fun WorkflowSummary.toSearchHit() =
 internal fun WorkflowDetail.toSearchHit() =
     SearchWorkflowHit(id, agentId, name, displayName, description, shadowedBy == null)
 
-data class SearchArtifactHit(val id: String, val title: String, val kind: ArtifactKind) {
-    internal val key
-        get() = "artifact:$id"
-}
+data class SearchArtifactHit(val id: String, val title: String, val kind: ArtifactKind)
 
 data class SearchArtifactPage(val hits: List<SearchArtifactHit>, val nextCursor: String?)
 

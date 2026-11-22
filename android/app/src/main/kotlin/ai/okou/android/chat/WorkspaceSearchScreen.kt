@@ -317,6 +317,26 @@ private fun SearchTypes(
     }
 }
 
+private const val GroupKeyPrefix = "group:"
+private const val MessageKeyPrefix = "message:"
+private const val WorkflowKeyPrefix = "workflow:"
+private const val ArtifactKeyPrefix = "artifact:"
+
+private fun searchResultType(key: String): WorkspaceSearchType =
+    when {
+        key.startsWith(GroupKeyPrefix) -> {
+            val name = key.removePrefix(GroupKeyPrefix)
+            WorkspaceSearchType.entries.firstOrNull { it.name == name } ?: WorkspaceSearchType.All
+        }
+        key.startsWith(MessageKeyPrefix) -> WorkspaceSearchType.Messages
+        key.startsWith(WorkflowKeyPrefix) -> WorkspaceSearchType.Workflows
+        key.startsWith(ArtifactKeyPrefix) -> WorkspaceSearchType.Artifacts
+        else -> WorkspaceSearchType.Chats
+    }
+
+private val SearchRead<*>?.isPending: Boolean
+    get() = this == SearchRead.Loading || this == SearchRead.Retrying
+
 private sealed interface SearchItem {
     val key: String
 
@@ -325,7 +345,7 @@ private sealed interface SearchItem {
         @StringRes val title: Int,
         val more: Boolean = false,
     ) : SearchItem {
-        override val key = "group:${type.name}"
+        override val key = "$GroupKeyPrefix${type.name}"
     }
 
     data class Chat(val chat: ConfirmedChat) : SearchItem {
@@ -334,18 +354,15 @@ private sealed interface SearchItem {
     }
 
     data class Message(val message: SearchMessageHit, val chat: ConfirmedChat) : SearchItem {
-        override val key
-            get() = message.key
+        override val key = "$MessageKeyPrefix${message.threadId}:${message.seqId}"
     }
 
     data class Workflow(val workflow: SearchWorkflowHit) : SearchItem {
-        override val key
-            get() = workflow.key
+        override val key = "$WorkflowKeyPrefix${workflow.id}"
     }
 
     data class Artifact(val artifact: SearchArtifactHit) : SearchItem {
-        override val key
-            get() = artifact.key
+        override val key = "$ArtifactKeyPrefix${artifact.id}"
     }
 }
 
@@ -505,7 +522,16 @@ private fun SearchResults(
         needsChatList && list.confirmedAt == null && !list.offline && listFailure == null ||
             needsMessageChats && list.listPhase == ChatReadPhase.Loading
     val retrying = SearchRead.Retrying in reads
-    val pending = waitingForList || SearchRead.Loading in reads || retrying
+    val pending = waitingForList || reads.any { it.isPending }
+    fun waitingForResult(key: String): Boolean =
+        when (searchResultType(key)) {
+            WorkspaceSearchType.Chats -> showChats && waitingForList
+            WorkspaceSearchType.Messages ->
+                messageRead.isPending || needsMessageChats && waitingForList
+            WorkspaceSearchType.Workflows -> workflowRead.isPending
+            WorkspaceSearchType.Artifacts -> artifactRead.isPending
+            WorkspaceSearchType.All -> pending
+        }
     val unavailableType =
         type == WorkspaceSearchType.Artifacts && onOpenArtifact == null ||
             type == WorkspaceSearchType.Workflows && onOpenWorkflow == null
@@ -531,23 +557,25 @@ private fun SearchResults(
     val showSkeleton = rememberChatWaitIndicator(pending && items.isEmpty() && status == null)
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
-    LaunchedEffect(anchor, items, pending) {
+    val waitingForAnchor = anchor?.let { waitingForResult(it.key) } == true
+    LaunchedEffect(anchor, items, waitingForAnchor) {
         if (anchor != null) {
             val index = items.indexOfFirst { it.key == anchor.key }.takeIf { it >= 0 }
-            if (index != null || !pending) search.restorePosition(index)
+            if (index != null || !waitingForAnchor) search.restorePosition(index)
         }
     }
     val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
-    LaunchedEffect(pendingFocus, anchor, items, pending) {
-        if (pendingFocus == null || anchor != null) return@LaunchedEffect
+    val waitingForFocus = pendingFocus?.let(::waitingForResult) == true
+    LaunchedEffect(pendingFocus, anchor, items, waitingForFocus) {
+        if (pendingFocus == null) return@LaunchedEffect
         val index = items.indexOfFirst { it.key == pendingFocus }
-        if (index >= 0) {
+        if (index < 0 && !waitingForFocus) {
+            resultFocus.requestFocus()
+            search.restoreFocus()
+        } else if (index >= 0 && anchor == null) {
             if (search.position.layoutInfo.visibleItemsInfo.none { it.key == pendingFocus }) {
                 search.position.scrollToItem(index)
             }
-        } else if (!pending) {
-            resultFocus.requestFocus()
-            search.restoreFocus()
         }
     }
     LazyColumn(
