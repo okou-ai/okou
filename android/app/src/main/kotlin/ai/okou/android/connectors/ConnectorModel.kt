@@ -9,11 +9,11 @@ import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
@@ -89,9 +89,12 @@ class ConnectorModel(
     private val mutableState = MutableStateFlow(ConnectorUiState())
     internal val uiState = mutableState.asStateFlow()
     private var gateJob: Job? = null
-    private var directoryJob: Job? = null
+    private var browseJob: Job? = null
+    private var connectedJob: Job? = null
+    private var inspectionJob: Job? = null
     private var matchesJob: Job? = null
     private var detailJob: Job? = null
+    private var accountsJob: Job? = null
     private var permissionJob: Job? = null
     private var impactJob: Job? = null
     private var actionJob: Job? = null
@@ -133,9 +136,8 @@ class ConnectorModel(
         if (open) {
             refreshVisible()
         } else {
-            directoryJob?.cancel()
+            invalidateConnectionReads()
             matchesJob?.cancel()
-            detailJob?.cancel()
             permissionJob?.cancel()
             impactJob?.cancel()
             verificationJob?.cancel()
@@ -158,52 +160,54 @@ class ConnectorModel(
     }
 
     private fun refreshDirectory() {
-        if (directoryJob?.isActive == true) return
-        directoryJob =
-            viewModelScope.launch {
-                coroutineScope {
-                    launch {
-                        load({ service.discover(null, null) }) { value, failures ->
-                            mutableState.update { state ->
-                                state.copy(
-                                    browse = ConnectorRead(value ?: state.browse.data, failures)
-                                )
-                            }
+        if (browseJob?.isActive != true) {
+            browseJob =
+                viewModelScope.launch {
+                    load({ service.discover(null, null) }) { value, failures ->
+                        mutableState.update { state ->
+                            state.copy(browse = ConnectorRead(value ?: state.browse.data, failures))
                         }
                     }
-                    launch {
-                        load(service::connected) { value, failures ->
-                            mutableState.update { state ->
-                                state.copy(
-                                    connected =
-                                        ConnectorRead(
-                                            value?.mapValues { (slug, service) ->
-                                                val previous = state.connected.data?.get(slug)
-                                                val statuses =
-                                                    previous?.accounts.orEmpty().associate {
-                                                        it.id to it.status
-                                                    }
-                                                service.withStatuses(statuses)
-                                            } ?: state.connected.data,
-                                            failures,
-                                        )
-                                )
-                            }
-                        }
-                        val connected = mutableState.value.connected.data ?: return@launch
-                        load({ service.inspect(connected) }) { statuses, _ ->
-                            if (statuses != null) {
-                                mutableState.update { state ->
-                                    val data =
-                                        state.connected.data?.mapValues { (_, service) ->
-                                            service.withStatuses(
-                                                statuses,
-                                                preserveScopeMismatch = true,
-                                            )
-                                        }
-                                    state.copy(connected = state.connected.copy(data = data))
+                }
+        }
+        if (connectedJob?.isActive != true) {
+            connectedJob =
+                viewModelScope.launch {
+                    load(service::connected) { value, failures ->
+                        mutableState.update { state ->
+                            val connected =
+                                value?.mapValues { (slug, service) ->
+                                    val statuses =
+                                        state.connected.data
+                                            ?.get(slug)
+                                            ?.accounts
+                                            .orEmpty()
+                                            .associate { it.id to it.status }
+                                    service.withStatuses(statuses)
                                 }
-                            }
+                            state.copy(
+                                connected =
+                                    ConnectorRead(connected ?: state.connected.data, failures)
+                            )
+                        }
+                        if (value != null) inspectConnected(value)
+                    }
+                }
+        }
+    }
+
+    private fun inspectConnected(connected: Map<String, ConnectedService>) {
+        inspectionJob?.cancel()
+        inspectionJob =
+            viewModelScope.launch {
+                load({ service.inspect(connected) }) { statuses, _ ->
+                    if (statuses != null) {
+                        mutableState.update { state ->
+                            val data =
+                                state.connected.data?.mapValues { (_, service) ->
+                                    service.withStatuses(statuses, preserveScopeMismatch = true)
+                                }
+                            state.copy(connected = state.connected.copy(data = data))
                         }
                     }
                 }
@@ -244,8 +248,7 @@ class ConnectorModel(
 
     internal fun select(slug: String?) {
         if (mutableState.value.slug == slug) return
-        detailJob?.cancel()
-        detailJob = null
+        cancelDetailReads()
         permissionJob?.cancel()
         permissionJob = null
         impactJob?.cancel()
@@ -265,30 +268,28 @@ class ConnectorModel(
 
     private fun refreshDetail() {
         val slug = mutableState.value.slug ?: return
-        if (detailJob?.isActive == true) return
-        detailJob =
-            viewModelScope.launch {
-                coroutineScope {
-                    launch {
-                        load({ service.detail(slug) }) { value, failures ->
-                            mutableState.update { state ->
-                                state.copy(
-                                    detail = ConnectorRead(value ?: state.detail.data, failures)
-                                )
-                            }
-                        }
-                    }
-                    launch {
-                        load({ service.accounts(slug) }) { value, failures ->
-                            if (value != null) publishAccounts(slug, value)
-                            else
-                                mutableState.update { state ->
-                                    state.copy(accounts = state.accounts.copy(failures = failures))
-                                }
+        if (detailJob?.isActive != true) {
+            detailJob =
+                viewModelScope.launch {
+                    load({ service.detail(slug) }) { value, failures ->
+                        mutableState.update { state ->
+                            state.copy(detail = ConnectorRead(value ?: state.detail.data, failures))
                         }
                     }
                 }
-            }
+        }
+        if (accountsJob?.isActive != true) {
+            accountsJob =
+                viewModelScope.launch {
+                    load({ service.accounts(slug) }) { value, failures ->
+                        if (value != null) publishAccounts(slug, value)
+                        else
+                            mutableState.update { state ->
+                                state.copy(accounts = state.accounts.copy(failures = failures))
+                            }
+                    }
+                }
+        }
     }
 
     internal fun showPermissions() {
@@ -627,10 +628,15 @@ class ConnectorModel(
             } != true
 
     private fun invalidateConnectionReads() {
-        directoryJob?.cancel()
-        directoryJob = null
+        browseJob?.cancel()
+        connectedJob?.cancel()
+        inspectionJob?.cancel()
+        cancelDetailReads()
+    }
+
+    private fun cancelDetailReads() {
         detailJob?.cancel()
-        detailJob = null
+        accountsJob?.cancel()
     }
 
     private fun replaceAccount(
@@ -754,7 +760,7 @@ class ConnectorModel(
         var failures = 0
         while (authorized()) {
             if (mutableState.value.offline) {
-                delay(2.seconds)
+                uiState.first { !it.offline }
                 continue
             }
             try {

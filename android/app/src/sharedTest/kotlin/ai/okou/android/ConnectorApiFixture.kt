@@ -33,6 +33,7 @@ internal class ConnectorApiFixture : Closeable {
     val discoveryRequested = CountDownLatch(1)
     @Volatile var discoveryGate: CountDownLatch? = null
     @Volatile var failDiscovery = false
+    @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
     @Volatile var oauthCompletion: String? = null
     private val entries = buildList {
@@ -135,6 +136,10 @@ internal class ConnectorApiFixture : Closeable {
             accounts[CONNECTOR_GMAIL_ACCOUNT] = FixtureAccount("gmail", null, "gmail@example.com")
             oauthCompletion = CONNECTOR_GMAIL_ACCOUNT
         }
+    }
+
+    fun removeAccount(id: String) {
+        synchronized(accounts) { accounts.remove(id) }
     }
 
     private fun respond(request: RecordedRequest): MockResponse {
@@ -245,6 +250,7 @@ internal class ConnectorApiFixture : Closeable {
                 )
             }
             path == "/api/connector-accounts/connections" -> {
+                if (failAccountReads) return rejected(503)
                 if (
                     querySlug == null ||
                         url.queryParameter("kind") != "builtin" ||

@@ -69,7 +69,7 @@ internal fun ConnectorRenameSheet(
         enabled =
             canModify && label.trim().let { it.isNotEmpty() && it.length <= 255 && it != baseline },
         cancel = cancel,
-        cancelEnabled = action?.busy != true && action?.reconciling != true,
+        cancelEnabled = action?.busy != true,
     ) {
         save(label)
     }
@@ -100,7 +100,8 @@ internal fun ConnectorAuthorizationSheet(
     val methods = detail.methods.filter { account == null || it.id == account.authMethod }
     val context = LocalContext.current
     val continueInBrowser = { model.openBrowser { launchConnectorBrowser(context, it) } }
-    val abortAllowed = action?.busy != true && action?.reconciling != true
+    val canDismiss = action?.busy != true
+    val canContinue = canDismiss && action?.reconciling != true && !offline
     when (val step = action?.authorization) {
         is ConnectorAuthorization.Browser -> {
             LaunchedEffect(step, action.busy, action.browserOpened, action.problem) {
@@ -111,9 +112,9 @@ internal fun ConnectorAuthorizationSheet(
             ConnectorActionFeedback(action)
             ConnectorFormActions(
                 stringResource(R.string.connector_open_provider),
-                enabled = abortAllowed && !offline,
+                enabled = canContinue,
                 cancel = cancel,
-                cancelEnabled = abortAllowed,
+                cancelEnabled = canDismiss,
                 submit = continueInBrowser,
             )
             if (action.browserOpened)
@@ -121,7 +122,7 @@ internal fun ConnectorAuthorizationSheet(
                     stringResource(R.string.connector_verify_authorization),
                     model::checkAuthorization,
                     treatment = ConnectorButtonTreatment.Text,
-                    enabled = abortAllowed && !offline,
+                    enabled = canContinue,
                 )
         }
         is ConnectorAuthorization.Device -> {
@@ -130,9 +131,9 @@ internal fun ConnectorAuthorizationSheet(
             ConnectorActionFeedback(action)
             ConnectorFormActions(
                 stringResource(R.string.connector_open_provider),
-                enabled = abortAllowed && !offline,
+                enabled = canContinue,
                 cancel = cancel,
-                cancelEnabled = abortAllowed,
+                cancelEnabled = canDismiss,
                 submit = continueInBrowser,
             )
         }
@@ -146,32 +147,33 @@ internal fun ConnectorAuthorizationSheet(
                 stringResource(R.string.connector_open_provider),
                 continueInBrowser,
                 treatment = ConnectorButtonTreatment.Outline,
-                enabled = abortAllowed && !offline,
+                enabled = canContinue,
             )
             ConnectorInput(
                 stringResource(R.string.connector_external_code),
                 code,
                 { code = it },
-                abortAllowed && !offline,
+                canContinue,
                 secret = true,
             )
             ConnectorActionFeedback(action)
             ConnectorFormActions(
                 stringResource(R.string.connector_submit_code),
-                enabled =
-                    abortAllowed && !offline && code.isNotBlank() && code.trim().length <= 4096,
+                enabled = canContinue && code.isNotBlank() && code.trim().length <= 4096,
                 cancel = cancel,
-                cancelEnabled = abortAllowed,
+                cancelEnabled = canDismiss,
             ) {
                 model.completeExternal(code)
             }
         }
         is ConnectorAuthorization.Receipt -> {
             ConnectorActionFeedback(action)
-            ConnectorButton(
+            ConnectorFormActions(
                 stringResource(R.string.connector_verify_authorization),
-                model::checkAuthorization,
-                enabled = !action.busy && !offline,
+                enabled = canDismiss && !offline,
+                cancel = cancel,
+                cancelEnabled = canDismiss,
+                submit = model::checkAuthorization,
             )
         }
         null -> {
@@ -279,7 +281,7 @@ private fun ConnectorMethodForm(
         submitLabel,
         enabled = enabled && ready,
         cancel = cancel,
-        cancelEnabled = action?.busy != true && action?.reconciling != true,
+        cancelEnabled = action?.busy != true,
     ) {
         start(method.id, values.filterValues { it.isNotBlank() })
     }

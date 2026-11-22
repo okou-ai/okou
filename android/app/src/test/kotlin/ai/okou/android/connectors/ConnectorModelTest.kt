@@ -88,11 +88,29 @@ class ConnectorModelTest {
             assertFalse(requireNotNull(disconnected.connected.data).containsKey("slack"))
         }
 
+    @Test
+    fun connectedAccountsRefreshWhileDiscoveryIsRetrying() =
+        withModel(CONNECTOR_CALENDAR, configure = { it.failDiscovery = true }) { fixture, model ->
+            model.await {
+                it.browse.failures > 0 &&
+                    it.accountsFor("slack").singleOrNull()?.status ==
+                        ConnectorAccountStatus.Reauthorize
+            }
+
+            fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+            model.resume()
+
+            val refreshed = model.await { it.connected.data?.containsKey("slack") == false }
+            assertEquals(2, refreshed.accountsFor(CONNECTOR_CALENDAR).size)
+        }
+
     private fun withModel(
         slug: String,
+        configure: (ConnectorApiFixture) -> Unit = {},
         exercise: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
     ) = runBlocking {
         ConnectorApiFixture().use { fixture ->
+            configure(fixture)
             Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { main ->
                 Dispatchers.setMain(main)
                 try {

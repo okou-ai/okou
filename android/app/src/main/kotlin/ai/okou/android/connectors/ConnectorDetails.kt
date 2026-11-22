@@ -90,11 +90,12 @@ internal fun ConnectorDetails(
     val disconnectFocus = remember { FocusRequester() }
     val account = accounts.find { it.id == accountId }
     val action = state.action?.takeIf { it.target.slug == entry?.slug }
-    val busy = action?.busy == true || action?.reconciling == true
+    val busy = action?.busy == true
     val otherAction = state.action?.takeIf { it.target.slug != entry?.slug }
     val canModify =
         !state.offline &&
             !busy &&
+            action?.reconciling != true &&
             state.accounts.data != null &&
             otherAction?.let { it.busy || it.reconciling || it.authorization != null } != true
     val color = MaterialTheme.colorScheme
@@ -134,31 +135,37 @@ internal fun ConnectorDetails(
     }
 
     LaunchedEffect(action?.authorization) {
-        if (panel == null && action?.authorization != null) {
+        if (panel == null && action?.authorization != null && !action.reconciling) {
             accountId = action.target.connectionId
             panel = ConnectorPanel.Authorize
         }
     }
 
     LaunchedEffect(action?.result, action?.busy) {
-        if (action?.busy == true) return@LaunchedEffect
-        when (action?.result) {
+        if (action == null || action.busy) return@LaunchedEffect
+        when (action.result) {
             ConnectorResult.Disconnected -> {
-                confirmingDisconnect = false
-                panel = null
-                accountId = null
+                if (panel == ConnectorPanel.Account && accountId == action.target.connectionId) {
+                    confirmingDisconnect = false
+                    panel = null
+                    accountId = null
+                    if (detail?.methods?.isNotEmpty() == true) addFocus.requestFocus()
+                }
                 model.clearImpact()
                 model.dismissAction()
-                if (detail?.methods?.isNotEmpty() == true) addFocus.requestFocus()
             }
             ConnectorResult.Renamed -> {
-                panel = ConnectorPanel.Account
+                if (panel == ConnectorPanel.Rename && accountId == action.target.connectionId)
+                    panel = ConnectorPanel.Account
                 model.dismissAction()
             }
             ConnectorResult.Authorized -> {
-                panel = if (accountId != null) ConnectorPanel.Account else null
+                if (panel == ConnectorPanel.Authorize) {
+                    panel = if (account != null) ConnectorPanel.Account else null
+                    if (panel == null && detail?.methods?.isNotEmpty() == true)
+                        addFocus.requestFocus()
+                }
                 model.dismissAction()
-                if (panel == null && detail?.methods?.isNotEmpty() == true) addFocus.requestFocus()
             }
             null -> Unit
         }
@@ -346,7 +353,16 @@ internal fun ConnectorDetails(
                         )
                     }
                 ConnectorPanel.Authorize ->
-                    if (detail != null) {
+                    if (accountId != null && account == null) {
+                        ConnectorStatusBanner(R.string.connector_unavailable)
+                        ConnectorActionFeedback(action)
+                        ConnectorButton(
+                            stringResource(R.string.updates_close),
+                            ::dismissPanel,
+                            enabled = !busy,
+                            treatment = ConnectorButtonTreatment.Text,
+                        )
+                    } else if (detail != null) {
                         ConnectorAuthorizationSheet(
                             model,
                             detail,
@@ -717,7 +733,7 @@ private fun ConnectorDisconnectDialog(
             ConnectorButton(
                 stringResource(R.string.settings_cancel),
                 cancel,
-                enabled = action?.busy != true && action?.reconciling != true,
+                enabled = action?.busy != true,
                 treatment = ConnectorButtonTreatment.Text,
             )
         },
