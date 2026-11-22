@@ -5,6 +5,7 @@ import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.UnknownHostException
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -21,6 +22,7 @@ internal enum class ConnectorReadFailure {
 internal data class ConnectorRead<T>(
     val data: T? = null,
     val failure: ConnectorReadFailure? = null,
+    val expiresAt: TimeMark? = null,
 ) {
     val isConfirmed: Boolean
         get() = data != null || failure == ConnectorReadFailure.Unavailable
@@ -28,12 +30,16 @@ internal data class ConnectorRead<T>(
     fun confirmed(): ConnectorRead<T> =
         if (failure == ConnectorReadFailure.Unavailable) this else copy(failure = null)
 
+    fun forEntry(): ConnectorRead<T> =
+        if (expiresAt?.hasPassedNow() == false) confirmed() else ConnectorRead()
+
     fun retaining(previous: ConnectorRead<T>?): ConnectorRead<T> =
         if (data != null || previous == null || failure == ConnectorReadFailure.Unavailable) this
         else if (previous.failure == ConnectorReadFailure.Unavailable) previous
         else
             copy(
                 data = previous.data,
+                expiresAt = previous.expiresAt,
                 failure =
                     if (previous.failure == ConnectorReadFailure.Sustained) previous.failure
                     else failure,
