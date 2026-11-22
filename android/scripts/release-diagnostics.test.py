@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 import zipfile
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -18,7 +19,11 @@ SCRIPTS = Path(__file__).resolve().parent
 
 class ReleaseDiagnosticsTest(unittest.TestCase):
     def test_release_smoke_requires_app_owned_auth_surface(self):
-        surface = runpy.run_path(str(SCRIPTS / "release-smoke.py"))["has_public_auth_surface"]
+        smoke = runpy.run_path(str(SCRIPTS / "release-smoke.py"))
+
+        def surface(xml):
+            return smoke["AUTH_HEADINGS"] & smoke["app_labels"](xml)
+
         self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Welcome to Okou"/></hierarchy>'))
         self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Continue to Okou"/></hierarchy>'))
         self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text="Okou"/></hierarchy>'))
@@ -65,15 +70,64 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
             cold_start = Path(temporary) / "cold-start"
             relaunch = Path(temporary) / "relaunch"
             component = "ai.okou.android/.MainActivity"
-            run_launch(device, None, cold_start, "cold start", (), component)
+            run_launch(device, None, cold_start, "cold start", (), component, "0.36.0")
             with self.assertRaisesRegex(TimeoutError, "relaunch auth surface"):
-                run_launch(device, None, relaunch, "relaunch", (), component)
+                run_launch(device, None, relaunch, "relaunch", (), component, "0.36.0")
             self.assertIn("Launch: 1", (cold_start / "launcher.txt").read_text())
             self.assertIn("Continue to Okou", (cold_start / "ui.xml").read_text())
             self.assertIn("Launch: 2", (relaunch / "launcher.txt").read_text())
             self.assertIn("UI hierarchy unavailable", (relaunch / "ui-probe.txt").read_text())
             self.assertFalse((relaunch / "ui.xml").exists())
             self.assertEqual((relaunch / "screen.png").read_bytes(), screenshot)
+
+    def test_required_update_reports_the_recorded_floor_and_respects_the_expected_surface(self):
+        run_launch = runpy.run_path(str(SCRIPTS / "release-smoke.py"))["run_launch"]
+        version = "0.36.0"
+        minimum = "0.37.2"
+        component = "ai.okou.android/.MainActivity"
+        hierarchy = """<hierarchy>
+          <node package="ai.okou.android" text="Update Okou to continue"/>
+          <node package="ai.okou.android" text="Current version: 0.36.0"/>
+          <node package="ai.okou.android" text="New version: 0.40.0"/>
+        </hierarchy>"""
+        screenshot = b"\x89PNG\r\n\x1a\nfixture"
+
+        def check_once(_emulator, check, description, _seconds):
+            if not check():
+                self.fail(f"Unexpected timeout waiting for {description}")
+
+        def device(*args, **options):
+            if args[:2] == ("exec-out", "cat"):
+                output = hierarchy
+            elif args[:4] == ("shell", "su", "0", "cat"):
+                self.assertTrue(args[-1].endswith("/files/updates/state.json"))
+                output = json.dumps({"installedVersion": version, "blocked": True, "minimum": minimum})
+            elif args[:3] == ("shell", "am", "start"):
+                output = "Status: ok"
+            elif args[:2] == ("exec-out", "screencap"):
+                self.assertFalse(options["text"])
+                return subprocess.CompletedProcess(args, 0, screenshot, b"")
+            else:
+                output = ""
+            return subprocess.CompletedProcess(args, 0, output, "")
+
+        run_launch.__globals__["wait_until"] = check_once
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = Path(temporary)
+            unexpected = evidence / "cold-start"
+            with self.assertRaisesRegex(RuntimeError, r"0\.36\.0.*minimum supported version: 0\.37\.2"):
+                run_launch(device, None, unexpected, "cold start", (), component, version)
+            self.assertEqual((unexpected / "screen.png").read_bytes(), screenshot)
+            self.assertEqual((unexpected / "ui.xml").read_text(), hierarchy)
+            expected = evidence / "required-update"
+            run_launch(device, None, expected, "mandatory update", (), component, version, expected_minimum=minimum)
+            for path, expected_surface in ((unexpected, "signed-out"), (expected, "mandatory-update")):
+                self.assertEqual(json.loads((path / "launch-outcome.json").read_text()), {
+                    "testedVersion": version,
+                    "expectedSurface": expected_surface,
+                    "observedSurface": "mandatory-update",
+                    "minimumSupportedVersion": minimum,
+                })
 
     def test_release_smoke_leaves_a_competing_emulator_untouched(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -108,13 +162,54 @@ else:
                 path.chmod(0o755)
 
             result = subprocess.run(
-                [sys.executable, str(SCRIPTS / "release-smoke.py"), str(root / "test.apk"), str(root)],
+                [sys.executable, str(SCRIPTS / "release-smoke.py"), str(root / "test.apk"), str(root), "0.36.0"],
                 env=dict(os.environ, ANDROID_HOME=str(root)), capture_output=True, text=True, timeout=15,
             )
             unexpected = root / "unexpected-adb"
             self.assertFalse(unexpected.exists(), unexpected.read_text() if unexpected.exists() else "")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("belongs to a different AVD", result.stderr)
+
+    def test_release_smoke_stops_before_install_if_ipv6_isolation_fails(self):
+        smoke = runpy.run_path(str(SCRIPTS / "release-smoke.py"))
+        run = smoke["run"]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            avd = root / "owned-avd"
+            firewalls = []
+
+            def command(argv, **_options):
+                if argv[0].name == "avdmanager":
+                    return subprocess.CompletedProcess(argv, 0, "", "")
+                args = tuple(argv[1:])
+                responses = {
+                    ("devices",): "",
+                    ("devices", "-l"): "emulator-5580\tdevice transport_id:41",
+                    ("-t", "41", "shell", "getprop ro.boot.qemu.avd_name && getprop sys.boot_completed"): "owned-avd\n1",
+                }
+                if args in responses:
+                    return subprocess.CompletedProcess(argv, 0, responses[args], "")
+                self.assertEqual(args[:2], ("-t", "41"))
+                if args[2:5] == ("shell", "su", "0"):
+                    tool = args[5]
+                    self.assertEqual(args[6:], ("-w", "5", "-I", "OUTPUT", "!", "-o", "lo", "-j", "REJECT"))
+                    firewalls.append(tool)
+                    if tool == "ip6tables":
+                        return subprocess.CompletedProcess(argv, 1, "", "fixture IPv6 failure")
+                    return subprocess.CompletedProcess(argv, 0, "", "")
+                if args[2] == "logcat":
+                    return subprocess.CompletedProcess(argv, 0, "", "")
+                self.fail(f"Unexpected ADB command: {args}")
+
+            with mock.patch.dict(os.environ, ANDROID_HOME=str(root)), \
+                 mock.patch.object(subprocess, "run", side_effect=command), \
+                 mock.patch.object(subprocess, "Popen") as emulator:
+                emulator.return_value.poll.return_value = None
+                with self.assertRaisesRegex(RuntimeError, "fixture IPv6 failure"):
+                    run(root / "test.apk", root, avd, "0.36.0")
+                emulator.return_value.terminate.assert_called_once()
+            self.assertEqual(firewalls, ["iptables", "ip6tables"])
+            self.assertFalse((root / "cold-start").exists())
 
     def test_native_gate_rejects_incomplete_failed_and_skipped_results(self):
         with tempfile.TemporaryDirectory() as temporary:

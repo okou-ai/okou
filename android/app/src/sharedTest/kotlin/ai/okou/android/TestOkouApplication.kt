@@ -26,6 +26,7 @@ import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimeService
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlService
+import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsService
 import ai.okou.android.updates.AppUpdates
@@ -96,6 +97,7 @@ open class TestOkouApplication : OkouApplication() {
     var workflows: WorkflowService? = null
     var initialPreferences: UserPreferences? = null
     var workspaceRole = OrganizationRole.MEMBER
+    var connectorService: ConnectorService? = null
     var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null
@@ -143,6 +145,7 @@ open class TestOkouApplication : OkouApplication() {
 
             override val artifacts = (fixture ?: canonical.value).artifacts
             override val workflowService = workflows
+            override val connectors = connectorService
 
             override suspend fun usagePackCredits() =
                 (fixture ?: canonical.value).usagePackCredits()

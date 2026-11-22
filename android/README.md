@@ -407,8 +407,11 @@ shared publishing builder supplies the unsigned APK and R8 mapping. The harness
 verifies the signed payload and mapping, boots an isolated API 35 emulator and
 uses the launcher and platform UI Automator from the host to check initial startup
 and relaunch after stopping the process. CI uses the same public Sentry DSN as
-publishing. The offline emulator exercises the public unauthenticated surface
-with the production Application.
+publishing. The harness blocks outbound IPv4 and IPv6 in the disposable guest
+before installing the APK so emulator provisioning cannot restore access to live
+services. Both launches must reach the signed-out surface with the production
+Application. A third launch restores a controlled, persisted minimum-version
+decision on the same APK and must show the mandatory-update screen.
 
 To run the smoke locally on Linux x64, set up the SDK, install the emulator
 packages and run the helper from `android/`:
@@ -510,10 +513,14 @@ APK. Decompress that file with `gzip -d` before retracing a production stack tra
 Add narrowly scoped rules under `app/src/main/keepRules/*.keep` only when a
 runtime boundary such as reflection or JNI requires them.
 
-The Release smoke artifact keeps separate `cold-start/` and `relaunch/` evidence.
-Each directory records the launcher response, latest UI probe and last readable
-hierarchy from that launch. On failure CI also attempts to capture foreground
-activity state and a screenshot before the emulator stops.
+The Release smoke artifact keeps separate `cold-start/`, `relaunch/`, and
+`required-update/` evidence. Each directory records the launcher response, latest
+UI probe and last readable hierarchy from that launch. A recognized surface also
+records the tested version, expected and observed surface, and any recovered
+minimum version in `launch-outcome.json`. A mandatory-update screen during either
+signed-out launch fails immediately. The fixture file records the controlled
+decision used for the required-update launch. On failure CI also attempts to
+capture foreground activity state and a screenshot before stopping the emulator.
 
 CI retains the original Release smoke diagnostics before starting its separate
 retrace job. On failure it extracts app Java crash stacks from logcat and runs the

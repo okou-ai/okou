@@ -16,6 +16,7 @@ import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlsModel
+import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
 import ai.okou.android.preferences.MemberAppearance
@@ -76,6 +77,7 @@ data class ReadyWorkspace(
     val chatArtifacts: ArtifactCatalogModel,
     val settings: WorkspaceSettingsModel,
     val workflows: WorkflowModel?,
+    val connectors: ConnectorModel? = null,
 )
 
 sealed interface OpeningWorkspace {
@@ -532,6 +534,17 @@ class SessionModel(
                     )
                 }
             }
+        val connectors =
+            owner.connectors?.let { service ->
+                store.workspaceModel {
+                    ConnectorModel(
+                        service,
+                        connectivity,
+                        authorized = { current(ticket, snapshot) },
+                        sessionFailure = { error -> workspaceFailure(ticket, snapshot, error) },
+                    )
+                }
+            }
         mutable.value =
             mutable.value.copy(
                 stage = SessionStage.Ready,
@@ -549,7 +562,8 @@ class SessionModel(
                         opened.artifacts,
                         opened.chatArtifacts,
                         settings,
-                        workflows,
+                        workflows = workflows,
+                        connectors = connectors,
                     ),
                 working = false,
                 cachedAppearance = null,

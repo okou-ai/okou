@@ -64,6 +64,67 @@ internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSa
 }
 
 @Composable
+internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
+internal class ConnectorDirectoryState(
+    slug: String? = null,
+    category: String? = null,
+    connected: Boolean = false,
+    query: TextFieldValue = TextFieldValue(),
+) {
+    var slug by mutableStateOf(slug)
+    var category by mutableStateOf(category)
+    var connected by mutableStateOf(connected)
+    var query by mutableStateOf(query)
+        private set
+
+    var committedQuery by mutableStateOf(query)
+        private set
+
+    val hasPendingSearchInput: Boolean
+        get() = query.composition != null && query.text != committedQuery.text
+
+    fun editQuery(value: TextFieldValue) {
+        query = value
+        if (value.composition == null) committedQuery = value
+    }
+}
+
+@Composable
+internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
+    rememberSaveable(
+        saver =
+            listSaver<ConnectorDirectoryState, Any>(
+                save = {
+                    val query =
+                        it.committedQuery.takeIf { value ->
+                            value.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS
+                        } ?: TextFieldValue()
+                    listOf(
+                        it.slug.orEmpty(),
+                        it.category.orEmpty(),
+                        it.connected,
+                        query.text,
+                        query.selection.start,
+                        query.selection.end,
+                    )
+                },
+                restore = {
+                    ConnectorDirectoryState(
+                        (it[0] as String).ifEmpty { null },
+                        (it[1] as String).ifEmpty { null },
+                        it[2] as Boolean,
+                        TextFieldValue(it[3] as String, TextRange(it[4] as Int, it[5] as Int)),
+                    )
+                },
+            )
+    ) {
+        ConnectorDirectoryState()
+    }
+
+@Composable
 internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSaveableStateHolder()
 
 @Composable
@@ -180,6 +241,8 @@ internal data class WorkspaceNavigation(
     val search: SearchRoute = SearchRoute.Closed,
     val artifacts: ArtifactsDestination? = null,
     val chatResourcesId: String? = null,
+    val chatArtifactLink: String? = null,
+    val chatArtifactFocusKey: String? = null,
 )
 
 internal data class ArtifactsDestination(val sourceId: String? = null)
@@ -204,6 +267,8 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                         navigation.artifacts != null,
                         navigation.artifacts?.sourceId.orEmpty(),
                         navigation.chatResourcesId.orEmpty(),
+                        navigation.chatArtifactLink.orEmpty(),
+                        navigation.chatArtifactFocusKey.orEmpty(),
                     )
                 },
                 restore = { fields ->
@@ -229,6 +294,8 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                         search ?: SearchRoute.Closed,
                         artifacts,
                         (fields.getOrNull(6) as? String)?.ifEmpty { null },
+                        (fields.getOrNull(7) as? String)?.ifEmpty { null },
+                        (fields.getOrNull(8) as? String)?.ifEmpty { null },
                     )
                 },
             )

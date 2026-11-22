@@ -43,6 +43,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,6 +109,29 @@ class SavedUiStateTest {
         checklist.assertIsDisplayed()
         summary.assertIsDisplayed()
         feedback.assertDoesNotExist()
+    }
+
+    @Test
+    fun connectorSearchOnlyAppliesCommittedInput() {
+        val committed = TextFieldValue("Calendar", TextRange(8))
+        val composing = TextFieldValue("Calendar ri", TextRange(11), TextRange(9, 11))
+        val completed = TextFieldValue("Calendar 日", TextRange(10))
+        val route = ConnectorDirectoryState(query = committed)
+
+        route.editQuery(composing)
+        assertEquals(composing, route.query)
+        assertEquals(committed, route.committedQuery)
+        assertTrue(route.hasPendingSearchInput)
+
+        val submitted = composing.copy(composition = null)
+        route.editQuery(submitted)
+        route.editQuery(composing)
+        assertEquals(submitted, route.committedQuery)
+        assertFalse(route.hasPendingSearchInput)
+
+        route.editQuery(completed)
+        assertEquals(completed, route.query)
+        assertEquals(completed, route.committedQuery)
     }
 
     @Test

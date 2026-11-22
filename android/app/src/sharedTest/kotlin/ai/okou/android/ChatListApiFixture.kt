@@ -11,6 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -90,6 +91,8 @@ class ChatListApiFixture : Closeable {
     @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
     @Volatile var historyThreadIds = setOf(CHAT_PERSONAL, CHAT_IN_PROJECT)
 
+    @Volatile var historyReply = "**Native history** reply"
+
     private fun defaultHistory(thread: String, after: Long): List<String> =
         listOf(
                 historyEventWire(
@@ -99,7 +102,12 @@ class ChatListApiFixture : Closeable {
                     "input.prompt",
                     """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
                 ),
-                historyEventWire("output", 23, thread),
+                historyEventWire(
+                    "output",
+                    23,
+                    thread,
+                    payload = """{"content":${JsonPrimitive(historyReply)}}""",
+                ),
                 historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
             )
             .filter {

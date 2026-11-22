@@ -57,6 +57,16 @@ export function renderKotlinTypes(
   return renderKotlinModels(bindings, packageName, requestTypes);
 }
 
+function retrofitHttpMethod(method: string, request: string | undefined) {
+  return method === "DELETE" && request ? "HTTP" : method;
+}
+
+function renderHttpAnnotation(method: string, path: string) {
+  return method === "HTTP"
+    ? `@HTTP(method = "DELETE", path = ${quote(path)}, hasBody = true)`
+    : `@${method}(${quote(path)})`;
+}
+
 export function renderKotlinFiles(
   config: {
     readonly types?: readonly KotlinTypeBinding[];
@@ -137,7 +147,11 @@ export function renderKotlinFiles(
     ${identifier(`${name}Wire`)}(${[...(authenticated === false ? [] : ["token"]), ...path.arguments, ...(request ? ["body"] : []), "query.toQueryParameters()"].join(", ")})`);
         helpers.push(query.helper!);
       }
-      return `    @${route.method}(${quote(path.path)})\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
+      const annotation = renderHttpAnnotation(
+        retrofitHttpMethod(route.method, request),
+        path.path,
+      );
+      return `    ${annotation}\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
     },
   );
   const constants = {
@@ -149,7 +163,7 @@ export function renderKotlinFiles(
   };
   const imports = new Set(["retrofit2.Response", "retrofit2.http.Header"]);
   for (const [index, { route, request }] of routes.entries()) {
-    imports.add(`retrofit2.http.${route.method}`);
+    imports.add(`retrofit2.http.${retrofitHttpMethod(route.method, request)}`);
     if (request) imports.add("retrofit2.http.Body");
     if (route.pathParams) imports.add("retrofit2.http.Path");
     if (route.query)

@@ -40,8 +40,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -200,6 +202,9 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
     ): WorkspaceSession {
         val service = super.createWorkspaceSession(identity, tokens)
         return object : WorkspaceSession by service {
+            override val connectors
+                get() = connectorService
+
             override suspend fun organization(): Organization {
                 organizationResponse.await()
                 return service.organization()
@@ -232,6 +237,8 @@ class PendingWorkspaceRootTest {
     private val app
         get() = compose.activity.application as PendingWorkspaceApplication
 
+    private var connectorFixture: ConnectorApiFixture? = null
+
     @After
     fun close() {
         val application = app
@@ -244,6 +251,7 @@ class PendingWorkspaceRootTest {
             application.preferencesResponse.complete(Unit)
             application.listResponse.complete(Unit)
             runBlocking { application.chatCache.close() }
+            connectorFixture?.close()
         }
     }
 
@@ -466,6 +474,32 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithContentDescription("Settings").assertExists()
         compose.onNodeWithText("New chat").assertIsEnabled()
         assertEquals(startupBounds, searchEntry.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    fun connectorsOpensFromTheChatListAsSoonAsTheWorkspaceIsReady() {
+        val entry = compose.onNodeWithContentDescription("Connectors")
+        entry.assertIsDisplayed().assertIsNotEnabled()
+        val fixture = ConnectorApiFixture().also { connectorFixture = it }
+        compose.runOnIdle {
+            app.connectorService = fixture.service
+            app.organizationResponse.complete(Unit)
+        }
+        awaitCachedRow()
+        entry.assertIsDisplayed().assertIsNotEnabled()
+
+        compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(hasContentDescription("Connectors") and isEnabled())
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        entry.performClick()
+        compose.onNodeWithText("Discover").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        entry.assertIsDisplayed().assertIsEnabled()
+        awaitCachedRow()
     }
 
     @Test

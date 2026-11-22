@@ -10,6 +10,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
@@ -19,6 +20,156 @@ import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
+    @GET("/api/connector-catalog/discovery")
+    suspend fun `connectorDiscovery`(
+        @Header("Authorization") token: String,
+        @Query("keyword") `queryKeyword`: String? = null,
+        @Query("category") `queryCategory`: String? = null,
+    ): Response<ConnectorDiscovery>
+
+    @GET("/api/connector-catalog/{connectorSlug}")
+    suspend fun `connectorDetail`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+    ): Response<ConnectorDetail>
+
+    @GET("/api/connector-catalog/{connectorSlug}/permissions")
+    suspend fun `connectorPermissions`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+    ): Response<ConnectorPermissions>
+
+    @GET("/api/chat-connector-overview")
+    suspend fun `connectorOverview`(
+        @Header("Authorization") token: String,
+        @Query("threadId") `queryThreadId`: String? = null,
+    ): Response<ConnectorOverview>
+
+    @GET("/api/connector-account-access/defaults")
+    suspend fun `connectorAccountDefaultsWire`(
+        @Header("Authorization") token: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ConnectorAccountDefaults>
+
+    @PUT("/api/connector-account-access/{connectionId}/default-enabled")
+    suspend fun `connectorAccountDefaultUpdate`(
+        @Header("Authorization") token: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @Body body: ConnectorAccountDefaultRequest,
+    ): Response<ConnectorAccountDefault>
+
+    @GET("/api/connector-accounts/connections")
+    suspend fun `connectorAccountsWire`(
+        @Header("Authorization") token: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ConnectorAccounts>
+
+    @GET("/api/connector-accounts/{connectionId}")
+    suspend fun `connectorAccountWire`(
+        @Header("Authorization") token: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ConnectorAccount>
+
+    @POST("/api/connector-accounts/inspect")
+    suspend fun `connectorAccountInspect`(
+        @Header("Authorization") token: String,
+        @Body body: ConnectorAccountInspectionRequest,
+    ): Response<ConnectorAccountInspection>
+
+    @PATCH("/api/connector-accounts/{connectionId}")
+    suspend fun `connectorAccountRename`(
+        @Header("Authorization") token: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @Body body: ConnectorAccountRenameRequest,
+    ): Response<ConnectorAccount>
+
+    @GET("/api/connector-accounts/{connectionId}/deletion-impact")
+    suspend fun `connectorAccountImpactWire`(
+        @Header("Authorization") token: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ConnectorAccountImpact>
+
+    @HTTP(method = "DELETE", path = "/api/connector-accounts/{connectionId}", hasBody = true)
+    suspend fun `connectorAccountDelete`(
+        @Header("Authorization") token: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @Body body: ConnectorAccountTargetRequest,
+    ): Response<ConnectorAccountDeletion>
+
+    @GET("/api/connector-accounts/oauth-completions/{attemptId}")
+    suspend fun `connectorOauthCompletionWire`(
+        @Header("Authorization") token: String,
+        @Path("attemptId") `pathAttemptId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ConnectorOauthCompletion>
+
+    @POST("/api/connectors/{connectorSlug}/oauth/start")
+    suspend fun `connectorOauthStart`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Body body: ConnectorOauthStartRequest,
+    ): Response<ConnectorOauthStart>
+
+    @POST("/api/connectors/{connectorSlug}/openid/start")
+    suspend fun `connectorOpenIdStart`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Body body: ConnectorOpenIdStartRequest,
+    ): Response<ConnectorOauthStart>
+
+    @POST("/api/connectors/{connectorSlug}/automatic/start")
+    suspend fun `connectorAutomaticStart`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Body body: ConnectorAutomaticStartRequest,
+    ): Response<ConnectorAutomaticStart>
+
+    @POST("/api/connectors/{connectorSlug}/no-auth")
+    suspend fun `connectorNoAuth`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Body body: ConnectorNoAuthRequest,
+    ): Response<ConnectorGrant>
+
+    @POST("/api/connectors/{connectorSlug}/manual-grant")
+    suspend fun `connectorManual`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Body body: ConnectorManualRequest,
+    ): Response<ConnectorGrant>
+
+    @POST("/api/connectors/{connectorSlug}/oauth/device/sessions")
+    suspend fun `connectorDeviceStart`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Body body: ConnectorDeviceStartRequest,
+    ): Response<ConnectorDeviceStart>
+
+    @POST("/api/connectors/{connectorSlug}/oauth/device/sessions/{sessionId}/poll")
+    suspend fun `connectorDevicePoll`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Path("sessionId") `pathSessionId`: String,
+        @Body body: ConnectorDevicePollRequest,
+    ): Response<ConnectorDevicePoll>
+
+    @POST("/api/connectors/{connectorSlug}/external-code/sessions")
+    suspend fun `connectorExternalStart`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Body body: ConnectorExternalStartRequest,
+    ): Response<ConnectorExternalStart>
+
+    @POST("/api/connectors/{connectorSlug}/external-code/sessions/{sessionId}/complete")
+    suspend fun `connectorExternalComplete`(
+        @Header("Authorization") token: String,
+        @Path("connectorSlug") `pathConnectorSlug`: String,
+        @Path("sessionId") `pathSessionId`: String,
+        @Body body: ConnectorExternalCompleteRequest,
+    ): Response<ConnectorExternalComplete>
+
     @GET("/api/artifacts/catalog")
     suspend fun `artifactCatalogWire`(
         @Header("Authorization") token: String,
@@ -354,6 +505,268 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
         @Body body: ReorderPinnedThreadRequest,
     ): Response<Unit>
+}
+
+internal suspend fun CanonicalApi.`connectorAccountDefaults`(
+    token: String,
+    query: ConnectorAccountDefaultsQuery,
+): Response<ConnectorAccountDefaults> =
+    `connectorAccountDefaultsWire`(token, query.toQueryParameters())
+
+internal fun ConnectorAccountDefaultsQuery.toQueryParameters(): Map<String, String> {
+    val value =
+        Json.encodeToJsonElement(ConnectorAccountDefaultsQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1
+    ) {
+        "Invalid ConnectorAccountDefaultsQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
+internal suspend fun CanonicalApi.`connectorAccounts`(
+    token: String,
+    query: ConnectorAccountsQuery,
+): Response<ConnectorAccounts> = `connectorAccountsWire`(token, query.toQueryParameters())
+
+internal fun ConnectorAccountsQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(ConnectorAccountsQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all {
+                    it in
+                        setOf(
+                            "kind",
+                            "connectorSlug",
+                            "includeScopeMismatch",
+                            "cursor",
+                            "limit",
+                            "search",
+                        )
+                } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    } &&
+                    (!value.containsKey("includeScopeMismatch") ||
+                        value["includeScopeMismatch"].let { field ->
+                            (field is JsonPrimitive && field.isString && field.content == "true")
+                        }) &&
+                    (!value.containsKey("cursor") ||
+                        value["cursor"].let { field ->
+                            (field is JsonPrimitive && field.isString && field.content.length >= 1)
+                        }) &&
+                    value["limit"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() && it % 1.0 == 0.0 && it >= 1.0 && it <= 100.0
+                            } == true)
+                    } &&
+                    (!value.containsKey("search") ||
+                        value["search"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content.length >= 1 &&
+                                field.content.length <= 255)
+                        })),
+                (value.keys.all {
+                    it in setOf("kind", "customConnectorId", "cursor", "limit", "search")
+                } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                )
+                                .containsMatchIn(field.content))
+                    } &&
+                    (!value.containsKey("cursor") ||
+                        value["cursor"].let { field ->
+                            (field is JsonPrimitive && field.isString && field.content.length >= 1)
+                        }) &&
+                    value["limit"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() && it % 1.0 == 0.0 && it >= 1.0 && it <= 100.0
+                            } == true)
+                    } &&
+                    (!value.containsKey("search") ||
+                        value["search"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content.length >= 1 &&
+                                field.content.length <= 255)
+                        })),
+            )
+            .count { it } == 1
+    ) {
+        "Invalid ConnectorAccountsQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
+internal suspend fun CanonicalApi.`connectorAccount`(
+    token: String,
+    `pathConnectionId`: String,
+    query: ConnectorAccountQuery,
+): Response<ConnectorAccount> =
+    `connectorAccountWire`(token, `pathConnectionId`, query.toQueryParameters())
+
+internal fun ConnectorAccountQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(ConnectorAccountQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1
+    ) {
+        "Invalid ConnectorAccountQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
+internal suspend fun CanonicalApi.`connectorAccountImpact`(
+    token: String,
+    `pathConnectionId`: String,
+    query: ConnectorAccountImpactQuery,
+): Response<ConnectorAccountImpact> =
+    `connectorAccountImpactWire`(token, `pathConnectionId`, query.toQueryParameters())
+
+internal fun ConnectorAccountImpactQuery.toQueryParameters(): Map<String, String> {
+    val value =
+        Json.encodeToJsonElement(ConnectorAccountImpactQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1
+    ) {
+        "Invalid ConnectorAccountImpactQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
+internal suspend fun CanonicalApi.`connectorOauthCompletion`(
+    token: String,
+    `pathAttemptId`: String,
+    query: ConnectorOauthCompletionQuery,
+): Response<ConnectorOauthCompletion> =
+    `connectorOauthCompletionWire`(token, `pathAttemptId`, query.toQueryParameters())
+
+internal fun ConnectorOauthCompletionQuery.toQueryParameters(): Map<String, String> {
+    val value =
+        Json.encodeToJsonElement(ConnectorOauthCompletionQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1
+    ) {
+        "Invalid ConnectorOauthCompletionQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }
 
 internal suspend fun CanonicalApi.`artifactCatalog`(

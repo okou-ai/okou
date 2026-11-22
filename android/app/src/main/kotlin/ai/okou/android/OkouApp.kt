@@ -2,9 +2,11 @@ package ai.okou.android
 
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.artifacts.ArtifactsRoute
+import ai.okou.android.artifacts.ChatArtifactLinkPreview
 import ai.okou.android.artifacts.ChatArtifactResources
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
+import ai.okou.android.chat.ChatArtifactActions
 import ai.okou.android.chat.ChatComposerField
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
@@ -26,6 +28,8 @@ import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.conversationRunControls
+import ai.okou.android.connectors.ConnectorModel
+import ai.okou.android.connectors.ConnectorsPage
 import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
@@ -35,6 +39,7 @@ import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberArtifactPageHolder
 import ai.okou.android.state.rememberChatSearchState
+import ai.okou.android.state.rememberConnectorsOpen
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkflowsRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
@@ -121,6 +126,7 @@ internal fun OkouApp(
     onUpdateEditingChanged: (Boolean) -> Unit = {},
     startupRecovery: @Composable (() -> Unit)? = null,
     workspaceReady: Boolean = composer != null,
+    connectors: ConnectorModel? = null,
     workflows: WorkflowModel? = null,
     workflowTimezone: String = TimeZone.getDefault().id,
 ) {
@@ -131,6 +137,9 @@ internal fun OkouApp(
                     if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
             )
     var navigation by rememberWorkspaceNavigation()
+    var connectorsOpen by rememberConnectorsOpen()
+    val canOpenConnectors = connectors != null && workspaceReady
+    val showingConnectors = canOpenConnectors && connectorsOpen
     var workflowOrigin by rememberWorkspaceNavigation()
     var workflowRoute by rememberWorkflowsRoute()
     val workflowQuery = rememberChatSearchState()
@@ -139,7 +148,8 @@ internal fun OkouApp(
             WorkflowTab.entries.map { tab -> key(tab) { rememberLazyListState() } }
         }
     val workflowState = workflows?.state?.collectAsStateWithLifecycle()?.value
-    val showWorkflows = workflows != null && workflowRoute.mode == WorkflowsMode.Directory
+    val showWorkflows =
+        workflows != null && !showingConnectors && workflowRoute.mode == WorkflowsMode.Directory
     val chatFromWorkflows = workflows != null && workflowRoute.mode == WorkflowsMode.Chat
     LaunchedEffect(workflows, workflowRoute.id, showWorkflows) {
         if (showWorkflows) workflows.select(workflowRoute.id)
@@ -149,6 +159,7 @@ internal fun OkouApp(
     }
     val artifactPageState = rememberArtifactPageHolder()
     val resourcesPageState = rememberArtifactPageHolder()
+    val inlineArtifactPageState = rememberArtifactPageHolder()
     val resourcesFocus = remember { FocusRequester() }
     var restoreResourcesFocus by remember { mutableStateOf(false) }
     val artifactEntryFocus = remember { FocusRequester() }
@@ -200,13 +211,25 @@ internal fun OkouApp(
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
     val searchActive = chats != null && !artifactsOpen && navigation.search == SearchRoute.Open
+    val inlineArtifactLink =
+        navigation.chatArtifactLink.takeIf {
+            thread != null &&
+                chatArtifacts != null &&
+                settings == null &&
+                !showArtifacts &&
+                !showWorkflows &&
+                resourcesId == null &&
+                (listWidth != null || !searchActive)
+        }
     var composerFocused by
         remember(target, settings, searchActive, showArtifacts, resourcesId) {
             mutableStateOf(false)
         }
     val editing =
         showArtifacts ||
+            inlineArtifactLink != null ||
             resourcesId != null ||
+            showingConnectors ||
             searchActive ||
             settings == SettingsDestination.Instructions ||
             (showWorkflows && workflowState?.editor != null) ||
@@ -217,7 +240,12 @@ internal fun OkouApp(
     }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showChatList =
-        settings == null && showList && !searchActive && !showArtifacts && !showWorkflows
+        settings == null &&
+            showList &&
+            !searchActive &&
+            !showArtifacts &&
+            !showWorkflows &&
+            !showingConnectors
     val showWorkspaceBack =
         artifactSource != null ||
             chatFromWorkflows ||
@@ -241,6 +269,7 @@ internal fun OkouApp(
     val keyboard = LocalSoftwareKeyboardController.current
     val settingsFocus = remember { FocusRequester() }
     val searchEntryFocus = remember { FocusRequester() }
+    val connectorEntryFocus = remember { FocusRequester() }
     val workflowsFocus = remember { FocusRequester() }
     var workflowEntryFocused by remember { mutableStateOf(false) }
     var restoreWorkflowFocus by remember { mutableStateOf(false) }
@@ -250,6 +279,8 @@ internal fun OkouApp(
     var searchEntryFocused by remember { mutableStateOf(false) }
     var restoreSearchFocus by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
+    var connectorEntryFocused by remember { mutableStateOf(false) }
+    var restoreConnectorFocus by remember { mutableStateOf(false) }
 
     fun closeArtifacts(restoreFocus: Boolean) {
         restoreArtifactEntryFocus = restoreFocus
@@ -258,7 +289,19 @@ internal fun OkouApp(
         artifactPageState.removeState("artifacts")
     }
 
-    fun closeResources(returnToActions: Boolean = false) {
+    fun closeResources(returnToActions: Boolean = false, returnToCard: Boolean = false) {
+        if (navigation.chatArtifactLink != null) {
+            navigation =
+                navigation.copy(
+                    chatArtifactLink = null,
+                    chatArtifactFocusKey = navigation.chatArtifactFocusKey.takeIf { returnToCard },
+                )
+            chatArtifacts?.select(null)
+            inlineArtifactPageState.removeState("chat-artifact-link")
+        }
+        if (!returnToCard && navigation.chatArtifactFocusKey != null) {
+            navigation = navigation.copy(chatArtifactFocusKey = null)
+        }
         if (navigation.chatResourcesId == null) return
         if (!returnToActions) restoreResourcesFocus = false
         navigation = navigation.copy(chatResourcesId = null)
@@ -340,7 +383,7 @@ internal fun OkouApp(
     }
 
     val showConversationFeedback =
-        settings == null && !showChatList && !showWorkflows && thread != null
+        settings == null && !showChatList && !showWorkflows && !showingConnectors && thread != null
     val showWorkflowFeedback = showWorkflows && workflowRoute.id != null
     val showRowFeedback = showChatList || showConversationFeedback
     LaunchedEffect(chats, showChatList) { if (!showChatList) chats?.clearRowUndo() }
@@ -562,6 +605,7 @@ internal fun OkouApp(
         needsWorkflowSourceChats ||
             (settings == null &&
                 !showWorkflows &&
+                !showingConnectors &&
                 (showArtifacts ||
                     showList ||
                     (provisionalId != null && provisionalChat == null) ||
@@ -600,7 +644,10 @@ internal fun OkouApp(
     }
 
     BackHandler(
-        !showWorkflows && !showArtifacts && (settings != null || showWorkspaceBack || searchActive),
+        !showWorkflows &&
+            !showArtifacts &&
+            !showingConnectors &&
+            (settings != null || showWorkspaceBack || searchActive),
         onBack = ::back,
     )
 
@@ -633,6 +680,11 @@ internal fun OkouApp(
                 }
             },
         )
+        return
+    }
+
+    if (showingConnectors) {
+        ConnectorsPage(connectors, listWidth) { connectorsOpen = false }
         return
     }
 
@@ -833,7 +885,24 @@ internal fun OkouApp(
                     onWorkflowsFocusChanged = { workflowEntryFocused = it },
                     openArtifacts = if (artifacts == null) null else ::openArtifacts,
                     artifactFocus = artifactEntryFocus,
+                    connectorFocus = connectorEntryFocus,
+                    onConnectorFocusChanged = { connectorEntryFocused = it },
+                    openConnectors =
+                        if (canOpenConnectors) {
+                            {
+                                restoreConnectorFocus = connectorEntryFocused
+                                focus.clearFocus()
+                                keyboard?.hide()
+                                connectorsOpen = true
+                            }
+                        } else null,
                 )
+                LaunchedEffect(canOpenConnectors) {
+                    if (canOpenConnectors && restoreConnectorFocus) {
+                        restoreConnectorFocus = false
+                        connectorEntryFocus.requestFocus()
+                    }
+                }
             }
             LaunchedEffect(chatFromWorkflows) {
                 if (restoreSearchFocus) {
@@ -927,7 +996,11 @@ internal fun OkouApp(
             if (settings == null && listWidth == null && showList && !searchActive) {
                 Box(Modifier.windowInsetsPadding(TopAppBarDefaults.windowInsets)) { listToolbar() }
             } else if (
-                settings != null || listWidth == null && !searchActive && resourcesId == null
+                settings != null ||
+                    listWidth == null &&
+                        !searchActive &&
+                        resourcesId == null &&
+                        inlineArtifactLink == null
             ) {
                 detailBar()
             }
@@ -1020,6 +1093,20 @@ internal fun OkouApp(
                             Modifier.weight(1f).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) pane@{
+                            if (inlineArtifactLink != null && chatArtifacts != null) {
+                                inlineArtifactPageState.SaveableStateProvider(
+                                    "chat-artifact-link"
+                                ) {
+                                    ChatArtifactLinkPreview(
+                                        chatArtifacts,
+                                        inlineArtifactLink,
+                                        listWidth != null,
+                                    ) {
+                                        closeResources(returnToCard = true)
+                                    }
+                                }
+                                return@pane
+                            }
                             if (resourcesId != null && chatArtifacts != null) {
                                 resourcesPageState.SaveableStateProvider("chat-resources") {
                                     ChatArtifactResources(
@@ -1061,6 +1148,29 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 realtime = chats.updates.takeIf { workspaceReady },
                                                 controls = runActions,
+                                                artifactActions =
+                                                    if (chatArtifacts == null || thread == null)
+                                                        null
+                                                    else
+                                                        ChatArtifactActions(
+                                                            open = { link, key ->
+                                                                focus.clearFocus()
+                                                                keyboard?.hide()
+                                                                navigation =
+                                                                    navigation.copy(
+                                                                        chatArtifactLink = link,
+                                                                        chatArtifactFocusKey = key,
+                                                                    )
+                                                            },
+                                                            restoreKey =
+                                                                navigation.chatArtifactFocusKey,
+                                                            restored = {
+                                                                navigation =
+                                                                    navigation.copy(
+                                                                        chatArtifactFocusKey = null
+                                                                    )
+                                                            },
+                                                        ),
                                             ) { failureId ->
                                                 if (
                                                     recovery != null &&

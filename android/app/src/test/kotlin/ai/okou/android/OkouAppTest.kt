@@ -661,6 +661,7 @@ class OkouAppTest {
             val fontScale = mutableStateOf(1f)
             val requestFocus = FocusRequester()
             val workflowFocus = FocusRequester()
+            val connectorFocus = FocusRequester()
             compose.setContent {
                 CompositionLocalProvider(
                     LocalDensity provides Density(LocalDensity.current.density, fontScale.value)
@@ -673,6 +674,9 @@ class OkouAppTest {
                                 onWorkflowsFocusChanged = {},
                                 openArtifacts = {},
                                 artifactFocus = requestFocus,
+                                connectorFocus = connectorFocus,
+                                onConnectorFocusChanged = {},
+                                openConnectors = {},
                             )
                         }
                     }

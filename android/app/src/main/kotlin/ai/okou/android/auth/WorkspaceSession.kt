@@ -45,6 +45,7 @@ import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
+import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsService
 import ai.okou.android.workflows.WorkflowService
 import java.io.Closeable
@@ -80,6 +81,8 @@ interface WorkspaceSession :
     RunControlService,
     AssistantRecoveryService {
     val artifacts: ArtifactService
+    val connectors: ConnectorService?
+        get() = null
 
     val workflowService: WorkflowService?
         get() = null
@@ -113,6 +116,7 @@ class CanonicalWorkspaceSession(
 
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
+    override val connectors = ConnectorService(api)
     private val transfers = SignedTransferClient()
     override val artifacts = ArtifactService(api, transfers, identity.apiOrigin)
     private val archiveJson = Json {
