@@ -103,6 +103,7 @@ export function userPreferences({
             orgMembersMetadata.cloudBrowserEnabledByDefault,
           theme: orgMembersMetadata.theme,
           colorTheme: orgMembersMetadata.colorTheme,
+          presentationFormat: orgMembersMetadata.presentationFormat,
           captureNetworkBodiesRemaining:
             orgMembersMetadata.captureNetworkBodiesRemaining,
         })
@@ -137,6 +138,7 @@ export function userPreferences({
         chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
         theme: null,
         colorTheme: null,
+        presentationFormat: null,
         captureNetworkBodiesRemaining: 0,
         memoryInitialized,
       };
@@ -151,6 +153,7 @@ export function userPreferences({
       chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
+      presentationFormat: row.presentationFormat,
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
       memoryInitialized,
     };
@@ -240,6 +243,10 @@ function mergeUserPreferences(
     chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
     theme: preferences.theme ?? existing.theme ?? null,
     colorTheme: preferences.colorTheme ?? existing.colorTheme ?? null,
+    presentationFormat:
+      preferences.presentationFormat === undefined
+        ? existing.presentationFormat
+        : preferences.presentationFormat,
     captureNetworkBodiesRemaining:
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,
@@ -264,6 +271,9 @@ function userPreferenceUpdateColumns(
     ...(preferences.theme !== undefined && { theme: preferences.theme }),
     ...(preferences.colorTheme !== undefined && {
       colorTheme: preferences.colorTheme,
+    }),
+    ...(preferences.presentationFormat !== undefined && {
+      presentationFormat: preferences.presentationFormat,
     }),
     ...(preferences.captureNetworkBodiesRemaining !== undefined && {
       captureNetworkBodiesRemaining: preferences.captureNetworkBodiesRemaining,
@@ -309,6 +319,7 @@ export const updateUserPreferences$ = command(
         cloudBrowserEnabledByDefault: merged.cloudBrowserEnabledByDefault,
         theme: merged.theme,
         colorTheme: merged.colorTheme,
+        presentationFormat: merged.presentationFormat,
         captureNetworkBodiesRemaining: merged.captureNetworkBodiesRemaining,
         createdAt: updatedAt,
         updatedAt,

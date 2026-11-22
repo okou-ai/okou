@@ -31,6 +31,7 @@ import {
 import { loadTeamsQueuedLaunchMaterial$ } from "./teams-queued-launch-context.service";
 import { loadTelegramQueuedLaunchMaterial$ } from "./telegram-queued-launch-context.service";
 import {
+  hasPresentationFormatSelection,
   projectUserMessage,
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
@@ -130,13 +131,16 @@ export const materializeActiveInputSource$ = command(
       readonly runId: string;
     },
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<string | null> => {
     if (
       !source.userMessage ||
       (source.eventType !== "input.prompt" &&
         source.eventType !== "input.budget")
     ) {
       throw new Error("Pending active input cannot be materialized");
+    }
+    if (hasPresentationFormatSelection(source.userMessage)) {
+      return null;
     }
     if (source.contextType === null) {
       throw new Error("Pending active input is missing its context type");

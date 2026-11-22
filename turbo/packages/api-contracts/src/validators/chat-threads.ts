@@ -1,3 +1,4 @@
+import { PRESENTATION_OUTPUT_FORMATS } from "./presentation-output-format";
 import { isChatRunReference } from "../contracts/chat-run-reference";
 import {
   externalMessageSourceKinds,
@@ -545,9 +546,21 @@ const userMessageModelPartSchema = object({
   serviceTier: chatThreadServiceTierSchema.optional(),
 }).strict();
 
+export const presentationFormatSelectionPartSchema = object({
+  type: literal("presentation_format_selection"),
+  sourceRunId: uuid(),
+  sourceInputEventIds: array(uuid()).min(1),
+  presentationFormat: zEnum(PRESENTATION_OUTPUT_FORMATS),
+}).strict();
+
+export type PresentationFormatSelectionPart = zInfer<
+  typeof presentationFormatSelectionPartSchema
+>;
+
 export const userMessagePartSchema = discriminatedUnion("type", [
   ...userMessageInputPartSchema.options,
   userMessageModelPartSchema,
+  presentationFormatSelectionPartSchema,
 ]);
 
 export const userMessageDocumentSchema = object({
@@ -576,6 +589,19 @@ export const userMessageDocumentSchema = object({
         );
       },
       { message: "A user message may contain at most one model part" },
+    )
+    .refine(
+      (parts) => {
+        return (
+          parts.filter((part) => {
+            return part.type === "presentation_format_selection";
+          }).length <= 1
+        );
+      },
+      {
+        message:
+          "A user message may contain at most one presentation format selection part",
+      },
     ),
 }).strict();
 

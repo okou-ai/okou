@@ -386,6 +386,30 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     },
   );
 
+  it("preserves a confirmed presentation format through raw-row projection", () => {
+    const selection = {
+      type: "presentation_format_selection",
+      sourceRunId: "00000000-0000-4000-8000-000000000016",
+      sourceInputEventIds: ["00000000-0000-4000-8000-000000000017"],
+      presentationFormat: "pptx",
+    };
+    const userMessage = {
+      version: 1,
+      parts: [{ type: "text", text: "Continue the presentation" }, selection],
+    };
+    const row = canonicalRow({
+      eventType: "input.prompt",
+      contextType: "web",
+      payload: { userMessage },
+    });
+    const projected = chatEventResponse(
+      chatEventFromRow(
+        chatEventRowSchema.parse(JSON.parse(JSON.stringify(row))),
+      ),
+    );
+    expect(projected).toMatchObject({ eventType: "input.prompt", userMessage });
+  });
+
   it("rejects private Discord launch fields at the public ChatEvent contract", () => {
     const row = canonicalRow({
       eventType: "input.prompt",

@@ -28,6 +28,7 @@ function initialPreferences(): UserPreferencesResponse {
     chatResourcesEnabledByDefault: true,
     theme: "system",
     colorTheme: null,
+    presentationFormat: null,
     captureNetworkBodiesRemaining: 0,
     memoryInitialized: true,
   };

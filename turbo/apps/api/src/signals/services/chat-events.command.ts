@@ -29,6 +29,7 @@ import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import type {
   CodexServiceTier,
+  PresentationFormatSelectionPart,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
@@ -52,6 +53,7 @@ import {
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { command, computed, type Computed } from "ccstate";
 import {
@@ -62,6 +64,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  or,
   SQL,
   sql,
 } from "drizzle-orm";
@@ -198,6 +201,11 @@ import {
 } from "./private-artifact-storage.service";
 import { s3ObjectHead } from "../external/s3";
 import { webChatContextId } from "./web-chat-queue-context.service";
+import { CHAT_EVENT_RETENTION_DAYS } from "./chat-event-retention-policy";
+import {
+  presentationFormatContinuationEventId,
+  PresentationFormatPublicationConflict,
+} from "./presentation-format-policy";
 /** Canonical ChatEvent write commands. */
 export const chatEnqueueTiming$ = computed((get) => {
   return get(route$) === chatEventsContract.send
@@ -243,6 +251,8 @@ type OrganizationAuthContext = AuthContext & {
   readonly orgId: string;
 };
 interface NormalSendRequest {
+  /** Validated human confirmation; never accepted from an ordinary send body. */
+  readonly presentationFormatSelection?: PresentationFormatSelectionPart;
   readonly enqueueTiming?: ChatEnqueueTimingCollector;
   readonly bootstrap?: NormalSendBootstrap;
   readonly projectId?: string;
@@ -1269,27 +1279,32 @@ function existingSendThreadUpdatePlan(
     events: [...modelEvents, ...accessEvents],
   };
 }
-/** An explicit model selection also becomes the member's default for new chats. */
-function userModelPreferencePlan(
+/** Model defaults and a first presentation selection share one member write. */
+function userPreferencePlan(
   args: NormalSendArgs,
   runSettings: ThreadRunSettings,
 ) {
-  if (args.body.model === undefined) {
+  const presentationFormat =
+    args.presentationFormatSelection?.presentationFormat;
+  const hasModel = args.body.model !== undefined;
+  if (!hasModel && presentationFormat === undefined) {
     return null;
   }
-  // The captured selection: a replaced model is stored as its successor.
   const selectedModel = runSettings.selectedModel;
   // Ultrafast is scoped to this conversation.
   const serviceTier: "priority" | null =
     runSettings.codexServiceTier === "fast" ? "priority" : null;
-  const patch = runSettings.modelSettingsPatch;
+  const patch = hasModel ? runSettings.modelSettingsPatch : undefined;
+  const modelDefaults = hasModel ? { selectedModel, serviceTier } : {};
+  const formatDefaults =
+    presentationFormat === undefined ? {} : { presentationFormat };
   const nowValue = nowDate();
   return {
     values: {
       orgId: args.orgId,
       userId: args.userId,
-      selectedModel,
-      serviceTier,
+      ...modelDefaults,
+      ...formatDefaults,
       ...(patch === undefined
         ? {}
         : { modelSettings: { [patch.model]: { effort: patch.effort } } }),
@@ -1299,8 +1314,8 @@ function userModelPreferencePlan(
     conflict: {
       target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
       set: {
-        selectedModel,
-        serviceTier,
+        ...modelDefaults,
+        ...formatDefaults,
         ...(patch === undefined
           ? {}
           : {
@@ -1312,6 +1327,13 @@ function userModelPreferencePlan(
             }),
         updatedAt: nowValue,
       },
+      where:
+        presentationFormat === undefined
+          ? undefined
+          : or(
+              isNull(orgMembersMetadata.presentationFormat),
+              eq(orgMembersMetadata.presentationFormat, presentationFormat),
+            ),
     },
   };
 }
@@ -1339,7 +1361,13 @@ function normalSendUserMessage(
   args: NormalSendArgs,
   chatRunSource: ChatRunSourceAnnotation | null,
 ): UserMessageDocument {
-  const userMessage = repairUserMessageText(args.body.userMessage);
+  const repaired = repairUserMessageText(args.body.userMessage);
+  const userMessage: UserMessageDocument = args.presentationFormatSelection
+    ? {
+        version: repaired.version,
+        parts: [...repaired.parts, args.presentationFormatSelection],
+      }
+    : repaired;
   if (chatRunSource !== null) {
     return withChatRunSourceAnnotation(userMessage, chatRunSource);
   }
@@ -1538,7 +1566,7 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
         ),
       },
     },
-    preferencePlan: userModelPreferencePlan(args, thread.runSettings),
+    preferencePlan: userPreferencePlan(args, thread.runSettings),
     attachments: input.attachFileMetadata,
   };
 }
@@ -1790,6 +1818,8 @@ function normalSendSelectionWrites(
 ) {
   const { thread, event, preferencePlan } = input;
   const writes: NormalChatInputWrite[] = [];
+  const guards: NormalChatInputGuard[] = [];
+  const failures: NormalSendPublicationFailure[] = [];
   let after = previous;
   if (args.body.captureNetworkBodies) {
     writes.push({
@@ -1814,12 +1844,43 @@ function normalSendSelectionWrites(
           orgMembersMetadata,
           preferencePlan.conflict.target,
           preferencePlan.conflict.set,
+          preferencePlan.conflict.where,
         ),
       ),
     });
     after = "normal_send_preference";
   }
-  return { writes, after };
+  const selection = args.presentationFormatSelection;
+  if (selection) {
+    const token = normalSendFailureToken("PRESENTATION_FORMAT");
+    guards.push({
+      condition: sql`${normalChatInputWritten} AND (
+        NOT EXISTS (SELECT 1 FROM normal_send_preference)
+        OR NOT EXISTS (
+          SELECT 1 FROM ${agentRuns}
+          WHERE ${eq(agentRuns.id, selection.sourceRunId)}
+            AND ${eq(agentRuns.orgId, args.orgId)}
+            AND ${eq(agentRuns.userId, args.userId)}
+            AND ${eq(agentRuns.chatThreadId, thread.threadId)}
+            AND ${eq(agentRuns.triggerSource, "web")}
+            AND ${inArray(agentRuns.status, ["completed", "failed", "timeout"])}
+            AND ${isNull(agentRuns.runnerCancellationMode)}
+            AND ${agentRuns.createdAt} > (now() AT TIME ZONE 'UTC')
+              - make_interval(days => ${CHAT_EVENT_RETENTION_DAYS})
+        )
+        OR EXISTS (
+          SELECT 1 FROM ${activeAgentRuns}
+          WHERE ${eq(activeAgentRuns.chatThreadId, thread.threadId)}
+        )
+      )`,
+      token,
+    });
+    failures.push({
+      token,
+      error: new PresentationFormatPublicationConflict(),
+    });
+  }
+  return { writes, guards, failures, after };
 }
 function normalSendAssetWrites(
   args: NormalSendArgs,
@@ -1961,7 +2022,7 @@ function normalSendPreparedPublication(
       : undefined;
   return {
     createdPlan: base.createdPlan,
-    failures: [...base.failures, ...assets.failures],
+    failures: [...base.failures, ...selection.failures, ...assets.failures],
     plan: {
       orgId: args.orgId,
       userId: args.userId,
@@ -1977,7 +2038,7 @@ function normalSendPreparedPublication(
         ...assets.writes,
         ...normalSendFinalWrites(args, input, claimId, assets.after),
       ],
-      guards: [...base.guards, ...assets.guards],
+      guards: [...base.guards, ...selection.guards, ...assets.guards],
     },
   };
 }
@@ -2461,7 +2522,10 @@ export const startNormalSendBootstrap$ = command(
     if (
       !isNormalSendBody(body) ||
       isInterruptSendBody(body) ||
-      forgedMcpSource(body)
+      forgedMcpSource(body) ||
+      body.userMessage.parts.some((part) => {
+        return part.type === "presentation_format_selection";
+      })
     ) {
       return undefined;
     }
@@ -2480,6 +2544,24 @@ const prepareNormalSendContext$ = command(
   async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
     if (forgedMcpSource(request.body)) {
       return badRequestMessage("MCP source annotations are server-managed");
+    }
+    if (
+      request.body.userMessage.parts.some((part) => {
+        return part.type === "presentation_format_selection";
+      })
+    ) {
+      return badRequestMessage("Presentation selections are server-managed");
+    }
+    const selection = request.presentationFormatSelection;
+    if (
+      selection &&
+      (request.auth.tokenType !== "session" ||
+        request.body.threadId === undefined ||
+        request.body.clientEventId !==
+          presentationFormatContinuationEventId(selection.sourceRunId) ||
+        request.body.revokesEventId !== undefined)
+    ) {
+      return badRequestMessage("Invalid presentation format confirmation");
     }
     const { context, existingThread$, inputId } =
       request.bootstrap ?? createNormalSendBootstrap(request, request.body);

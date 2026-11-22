@@ -1404,6 +1404,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "presentation-format",
+    contracts: ["presentationFormatContract"],
+    bindings: [],
+  },
+  {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
     bindings: [],

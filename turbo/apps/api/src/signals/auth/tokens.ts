@@ -62,6 +62,7 @@ const CONDITIONAL_CAPABILITIES = [
   ["whatsapp:write", FeatureSwitchKey.WhatsappIntegration],
   ["email:write", FeatureSwitchKey.EmailIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
+  ["presentation-format:read", FeatureSwitchKey.PresentationOutputFormat],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
 const AGENT_EXCLUDED_CAPABILITIES = [

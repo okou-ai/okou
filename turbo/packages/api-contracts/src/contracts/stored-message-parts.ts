@@ -33,6 +33,7 @@ const messagePartTypes = {
   voice: true,
   model: true,
   source: true,
+  presentation_format_selection: true,
 } satisfies Record<UserMessagePart["type"], true>;
 
 function keepStoredPart(

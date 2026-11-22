@@ -81,6 +81,7 @@ export {
   chatFollowupsContentDocumentSchema,
   type ChatRecommendedFollowup,
   type ChatFollowupsContentDocument,
+  type PresentationFormatSelectionPart,
   parseChatFollowupsContent,
   resolveChatEventRecommendedFollowups,
   serializeChatFollowupsContent,

@@ -8,6 +8,7 @@ import {
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
+import { PRESENTATION_OUTPUT_FORMATS } from "../validators/presentation-output-format";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -47,6 +48,7 @@ export const userPreferencesResponseSchema = object({
   chatResourcesEnabledByDefault: boolean(),
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
+  presentationFormat: zEnum(PRESENTATION_OUTPUT_FORMATS).nullable(),
   captureNetworkBodiesRemaining: number().int().min(0),
   // False until this member's memory storage has a HEAD. The Web App then
   // calls the idempotent initialize route before starting runs; run creation
@@ -73,6 +75,7 @@ export const updateUserPreferencesRequestSchema = object({
   cloudBrowserEnabledByDefault: boolean().optional(),
   theme: themePreferenceSchema.optional(),
   colorTheme: colorThemeSchema.optional(),
+  presentationFormat: zEnum(PRESENTATION_OUTPUT_FORMATS).nullable().optional(),
   captureNetworkBodiesRemaining: number().int().min(0).optional(),
 }).refine(
   (data) => {
@@ -83,6 +86,7 @@ export const updateUserPreferencesRequestSchema = object({
       data.cloudBrowserEnabledByDefault !== undefined ||
       data.theme !== undefined ||
       data.colorTheme !== undefined ||
+      data.presentationFormat !== undefined ||
       data.captureNetworkBodiesRemaining !== undefined
     );
   },

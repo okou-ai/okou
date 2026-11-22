@@ -166,6 +166,15 @@ export function hasChatRunSourceAnnotation(
   return chatRunSourceAnnotation(document) !== null;
 }
 
+/** A confirmed presentation continuation belongs to the next Run, never steering. */
+export function hasPresentationFormatSelection(
+  document: UserMessageDocument,
+): boolean {
+  return document.parts.some((part) => {
+    return part.type === "presentation_format_selection";
+  });
+}
+
 /** Keep the single provenance slot authoritative for server-attributed sends. */
 export function withServerSourceAnnotation(
   document: UserMessageDocument,
@@ -529,6 +538,20 @@ function suggestionPromptContext(document: UserMessageDocument) {
  * order, while their selections are also returned for this run's shared
  * template context.
  */
+function projectAdditionalInfo(
+  part: Extract<
+    UserMessagePart,
+    { type: "additional_info" | "presentation_format_selection" }
+  >,
+): string[] {
+  if (part.type === "presentation_format_selection") {
+    return [
+      `Presentation output format selected for this task: ${part.presentationFormat.toUpperCase()}.`,
+    ];
+  }
+  return readSuggestionContext(part) ? [] : [part.text];
+}
+
 export function projectUserMessage(
   document: UserMessageDocument,
 ): UserMessageProjection {
@@ -588,10 +611,11 @@ export function projectUserMessage(
   for (const part of document.parts) {
     const followsDroppedTemplate = droppedTemplate;
     droppedTemplate = false;
-    if (part.type === "additional_info") {
-      if (!readSuggestionContext(part)) {
-        additionalInfo.push(part.text);
-      }
+    if (
+      part.type === "additional_info" ||
+      part.type === "presentation_format_selection"
+    ) {
+      additionalInfo.push(...projectAdditionalInfo(part));
       continue;
     }
     if (part.type === "feedback") {

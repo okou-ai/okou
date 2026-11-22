@@ -12,6 +12,7 @@ describe("user preferences contract", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "id-ID",
+      presentationFormat: null,
       supportedLocales: ["en-US", "pt-BR", "id-ID"],
       sendMode: "enter",
       cloudBrowserEnabledByDefault: true,
@@ -31,6 +32,7 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "ja-JP",
+        presentationFormat: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP"],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
@@ -52,6 +54,7 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "ko-KR",
+        presentationFormat: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP", "ko-KR"],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
@@ -73,6 +76,7 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "es-ES",
+        presentationFormat: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP", "es-ES"],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
@@ -96,6 +100,7 @@ describe("user preferences contract", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "it-IT",
+      presentationFormat: null,
       supportedLocales: ["en-US", "it-IT"],
       sendMode: "enter",
       cloudBrowserEnabledByDefault: true,
@@ -129,6 +134,7 @@ describe("user preferences contract", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "zh-Hant",
+      presentationFormat: null,
       supportedLocales: [...SUPPORTED_USER_LOCALES],
       sendMode: "enter",
       cloudBrowserEnabledByDefault: true,

@@ -16,7 +16,7 @@ import { retentionEventRowSelection } from "./chat-event-row-read.service";
 import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 
-const CHAT_EVENT_RETENTION_DAYS = 30;
+import { CHAT_EVENT_RETENTION_DAYS } from "./chat-event-retention-policy";
 const CHAT_EVENT_RETENTION_SCAN_LIMIT = 2500;
 const CHAT_EVENT_RETENTION_DELETE_CHUNK = 500;
 /**

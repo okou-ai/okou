@@ -3781,6 +3781,13 @@
       "when": 1795356195930,
       "tag": "1618_drop_legacy_agent_api_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 1619,
+      "version": "7",
+      "when": 1795402954060,
+      "tag": "1619_cheerful_hemingway",
+      "breakpoints": true
     }
   ]
 }

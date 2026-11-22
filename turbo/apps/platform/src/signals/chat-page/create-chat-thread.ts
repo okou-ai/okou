@@ -1056,7 +1056,10 @@ interface UserMessagePartRegistries {
 const registerUserMessageRenderPart$ = command(
   (
     { set },
-    part: Exclude<UserMessagePart, { type: "additional_info" | "voice" }>,
+    part: Exclude<
+      UserMessagePart,
+      { type: "additional_info" | "voice" | "presentation_format_selection" }
+    >,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderPart => {
     const { artifactCardSignals } = registries;
@@ -1151,7 +1154,11 @@ const registerUserMessageRenderDocument$ = command(
     });
     const parts: UserMessageRenderPart[] = readableDocument.parts.flatMap(
       (part, index) => {
-        if (part.type === "additional_info" || part.type === "voice") {
+        if (
+          part.type === "additional_info" ||
+          part.type === "voice" ||
+          part.type === "presentation_format_selection"
+        ) {
           return [];
         }
         const rendered = set(registerUserMessageRenderPart$, part, registries);

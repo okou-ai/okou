@@ -5,13 +5,15 @@ import {
   chatEventRunlessInputPredicate,
 } from "@okouai/db/schema/chat-event";
 import { command } from "ccstate";
-import { and, eq, isNotNull, notExists, or } from "drizzle-orm";
+import { and, asc, eq, isNotNull, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
 import { publishActiveInputToRunnerGroup } from "../external/realtime";
 import { settle, tapError } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
+import { hasPresentationFormatSelection } from "./chat-user-message.service";
 import type { EnqueuedChatInputFacts } from "./chat-run-preparation-facts";
 import {
   chatInputEnqueueCommits$,
@@ -62,35 +64,47 @@ export const notifyRunningChatRunOfPendingInput$ = command(
     // Only an unrevoked runless input is pending; one statement excludes the
     // revoked ones instead of reading every candidate's revokers.
     const revoker = alias(chatEvents, "pending_input_revoker");
-    const pending = await database
-      .select({ id: chatEvents.id })
-      .from(chatEvents)
-      .where(
+    const pendingCondition = and(
+      eq(chatEvents.chatThreadId, chatThreadId),
+      chatEventRunlessInputPredicate(chatEvents.runId, chatEvents.eventType),
+      or(
+        eq(chatEvents.eventType, "input.prompt"),
         and(
-          eq(chatEvents.chatThreadId, chatThreadId),
-          chatEventRunlessInputPredicate(
-            chatEvents.runId,
-            chatEvents.eventType,
-          ),
-          or(
-            eq(chatEvents.eventType, "input.prompt"),
-            and(
-              eq(chatEvents.eventType, "input.budget"),
-              eq(chatEvents.contextType, "agent_run"),
-              eq(chatEvents.contextId, run.id),
-            ),
-          ),
-          notExists(
-            database
-              .select({ id: revoker.id })
-              .from(revoker)
-              .where(eq(revoker.revokesEventId, chatEvents.id)),
-          ),
+          eq(chatEvents.eventType, "input.budget"),
+          eq(chatEvents.contextType, "agent_run"),
+          eq(chatEvents.contextId, run.id),
         ),
-      );
+      ),
+      notExists(
+        database
+          .select({ id: revoker.id })
+          .from(revoker)
+          .where(eq(revoker.revokesEventId, chatEvents.id)),
+      ),
+    );
+    const [pending] = await database
+      .select({ userMessage: canonicalChatEventUserMessage() })
+      .from(chatEvents)
+      .where(pendingCondition)
+      .orderBy(asc(chatEvents.seqId))
+      .limit(1);
     signal.throwIfAborted();
-    if (pending.length === 0) {
+    if (!pending) {
       return false;
+    }
+    if (!pending.userMessage) {
+      throw new Error("Pending active input is missing userMessage");
+    }
+    if (hasPresentationFormatSelection(pending.userMessage)) {
+      const [budget] = await database
+        .select({ id: chatEvents.id })
+        .from(chatEvents)
+        .where(and(pendingCondition, eq(chatEvents.eventType, "input.budget")))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!budget) {
+        return false;
+      }
     }
     if (run.runnerGroup) {
       await tapError(

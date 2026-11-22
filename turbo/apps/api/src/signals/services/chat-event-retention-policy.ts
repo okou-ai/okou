@@ -1,0 +1,1 @@
+export const CHAT_EVENT_RETENTION_DAYS = 30;

@@ -1,4 +1,7 @@
-import { chatEventCommandResultSchema } from "./chat-event-append.service";
+import {
+  appendCanonicalChatEventsSql,
+  chatEventCommandResultSchema,
+} from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import {
@@ -7,7 +10,21 @@ import {
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  not,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 
 import { logger } from "../../lib/log";
 import { recordTemplateUsage } from "../../lib/template-usage-log";
@@ -24,14 +41,20 @@ import {
   type ActiveInputSourceRow,
 } from "./active-input-prompt.service";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
-import { chatEventReplacementInsertSql } from "./chat-event.service";
+import {
+  chatEventReplacementInsertSql,
+  prepareChatEventReplacement,
+} from "./chat-event.service";
 import {
   pendingChatInputsReadPlan,
   pendingChatInputsFromRows,
   revokedChatEventReadPlan,
   revokedChatEventIdsFromRows,
 } from "./chat-event-queue.service";
-import { projectUserMessage } from "./chat-user-message.service";
+import {
+  hasPresentationFormatSelection,
+  projectUserMessage,
+} from "./chat-user-message.service";
 
 /*
  * Steering a pending input into a running sandbox run.
@@ -137,6 +160,50 @@ const loadActiveInputDeliveryScope$ = command(
   },
 );
 
+/** Recheck the receipt and FIFO barrier in the statement that consumes input. */
+function activeInputConsumptionEligibility(sourceEventId: string) {
+  const source = alias(chatEvents, "steering_source");
+  const earlier = alias(chatEvents, "steering_earlier_input");
+  const revoker = alias(chatEvents, "steering_earlier_revoker");
+  return exists(
+    new QueryBuilder()
+      .select({ id: source.id })
+      .from(source)
+      .where(
+        and(
+          eq(source.id, sourceEventId),
+          isNull(source.runId),
+          not(
+            sql`jsonb_path_exists(${source.payload}, '$.userMessage.parts[*] ? (@.type == "presentation_format_selection")')`,
+          ),
+          or(
+            eq(source.eventType, "input.budget"),
+            notExists(
+              new QueryBuilder()
+                .select({ id: earlier.id })
+                .from(earlier)
+                .where(
+                  and(
+                    eq(earlier.chatThreadId, source.chatThreadId),
+                    eq(earlier.eventType, "input.prompt"),
+                    isNull(earlier.runId),
+                    lt(earlier.seqId, source.seqId),
+                    sql`jsonb_path_exists(${earlier.payload}, '$.userMessage.parts[*] ? (@.type == "presentation_format_selection")')`,
+                    notExists(
+                      new QueryBuilder()
+                        .select({ id: revoker.id })
+                        .from(revoker)
+                        .where(eq(revoker.revokesEventId, earlier.id)),
+                    ),
+                  ),
+                ),
+            ),
+          ),
+        ),
+      ),
+  );
+}
+
 function replacementTarget(source: ActiveInputSourceRow) {
   return {
     id: source.id,
@@ -231,7 +298,7 @@ export const loadNextSteerableInput$ = command(
       budgetForRunId: scope.runId,
       afterSeqId,
     };
-    const [next] = await (async () => {
+    const pending = await (async () => {
       const read = pendingChatInputsReadPlan(pendingInputArgs);
       const candidates = await db
         .select(read.columns)
@@ -254,12 +321,16 @@ export const loadNextSteerableInput$ = command(
       return pendingChatInputsFromRows(candidates, revoked);
     })();
     signal.throwIfAborted();
+    const next = pending[0];
     if (!next) {
       return { outcome: "found", input: null };
     }
+    const budget = pending.find((input) => {
+      return input.eventType === "input.budget";
+    });
     const sourceChatThreadId = scope.chatThreadId;
-    const sourceEventIds = [next.id];
-    const [source] = await db
+    const sourceEventIds = budget ? [next.id, budget.id] : [next.id];
+    const sources = await db
       .select(activeInputSourceFields())
       .from(chatEvents)
       .where(
@@ -269,8 +340,27 @@ export const loadNextSteerableInput$ = command(
         ),
       );
     signal.throwIfAborted();
-    if (!source) {
+    const nextSource = sources.find((source) => {
+      return source.id === next.id;
+    });
+    if (!nextSource) {
       throw new Error("Pending steerable input disappeared from its thread");
+    }
+    // A selection blocks later prompts, not this Run's independent time warning.
+    const source =
+      nextSource.userMessage &&
+      hasPresentationFormatSelection(nextSource.userMessage)
+        ? budget
+          ? sources.find((candidate) => {
+              return candidate.id === budget.id;
+            })
+          : null
+        : nextSource;
+    if (source === null) {
+      return { outcome: "found", input: null };
+    }
+    if (!source) {
+      throw new Error("Pending budget input disappeared from its thread");
     }
     const prompt = await settle(
       set(materializeActiveInputSource$, source, scope, signal),
@@ -285,7 +375,10 @@ export const loadNextSteerableInput$ = command(
       }
       return { outcome: "found", input: null };
     }
-    if (!activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)) {
+    if (
+      prompt.value === null ||
+      !activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)
+    ) {
       return { outcome: "found", input: null };
     }
     return {
@@ -340,21 +433,29 @@ export const declareSteeredInput$ = command(
       ) {
         return { outcome: "invalid" };
       }
+      if (hasPresentationFormatSelection(source.userMessage)) {
+        return { outcome: "rejected" };
+      }
       if (append && source.runId === null) {
         const steeredInput = {
           chatThreadId: scope.chatThreadId,
           runId: scope.runId,
           userMessage: source.userMessage,
         };
+        const prepared = prepareChatEventReplacement(
+          replacementTarget(source),
+          source.eventType === "input.budget"
+            ? { ...steeredInput, eventType: "input.budget" }
+            : { ...steeredInput, eventType: "input.prompt" },
+        );
         const replacement =
           parseRawRows(
             chatEventCommandResultSchema,
             await db.execute(
-              chatEventReplacementInsertSql(
-                replacementTarget(source),
-                source.eventType === "input.budget"
-                  ? { ...steeredInput, eventType: "input.budget" }
-                  : { ...steeredInput, eventType: "input.prompt" },
+              appendCanonicalChatEventsSql(
+                [prepared.row],
+                "any",
+                activeInputConsumptionEligibility(source.id),
               ),
             ),
           )[0] ?? null;

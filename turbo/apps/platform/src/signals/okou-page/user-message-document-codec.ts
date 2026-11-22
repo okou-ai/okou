@@ -1051,7 +1051,8 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
       part.type === "source" ||
       part.type === "automation" ||
       part.type === "model" ||
-      part.type === "additional_info"
+      part.type === "additional_info" ||
+      part.type === "presentation_format_selection"
     ) {
       continue;
     }

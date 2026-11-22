@@ -6,6 +6,7 @@ import {
   timestamp,
   varchar,
 } from "drizzle-orm/pg-core";
+import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
@@ -30,6 +31,9 @@ export function orgMembersMetadataColumns() {
       .default(true),
     theme: text("theme").$type<ThemePreference>(),
     colorTheme: text("color_theme").$type<ColorTheme>(),
+    presentationFormat: text(
+      "presentation_format",
+    ).$type<PresentationOutputFormat>(),
     selectedModel: varchar("selected_model", { length: 255 })
       .default("auto")
       .notNull(),

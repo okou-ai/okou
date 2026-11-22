@@ -12,6 +12,7 @@ import {
   generationTemplateRequestSchema,
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
+  type PresentationFormatSelectionPart,
 } from "../chat-threads";
 
 describe("chat message response contract", () => {
@@ -122,6 +123,56 @@ describe("chat message response contract", () => {
         ],
       },
     });
+  });
+});
+
+describe("persisted presentation format selection", () => {
+  const selection = {
+    type: "presentation_format_selection",
+    sourceRunId: "11111111-1111-4111-8111-111111111111",
+    sourceInputEventIds: ["22222222-2222-4222-8222-222222222222"],
+    presentationFormat: "pptx",
+  } satisfies PresentationFormatSelectionPart;
+
+  it.each(["pptx", "html"] as const)(
+    "reads a server-authored %s selection without allowing it in composer input",
+    (presentationFormat) => {
+      const document = {
+        version: 1 as const,
+        parts: [
+          { type: "text" as const, text: "Continue the presentation" },
+          { ...selection, presentationFormat },
+        ],
+      };
+      expect(userMessageDocumentSchema.parse(document)).toStrictEqual(document);
+      expect(userMessageInputDocumentSchema.safeParse(document).success).toBe(
+        false,
+      );
+      expect(
+        chatEventSchema.parse({
+          id: "selection-event",
+          threadId: "selection-thread",
+          eventType: "input.prompt",
+          content: null,
+          userMessage: document,
+          seqId: 1,
+          createdAt: "2026-11-22T00:00:00.000Z",
+        }),
+      ).toMatchObject({ userMessage: document });
+    },
+  );
+
+  it("requires one bounded selection with valid source input identities", () => {
+    for (const parts of [
+      [selection, selection],
+      [{ ...selection, sourceRunId: "not-a-run-id" }],
+      [{ ...selection, sourceInputEventIds: [] }],
+      [{ ...selection, sourceInputEventIds: ["not-an-input-id"] }],
+    ]) {
+      expect(
+        userMessageDocumentSchema.safeParse({ version: 1, parts }).success,
+      ).toBe(false);
+    }
   });
 });
 

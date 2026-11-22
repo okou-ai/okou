@@ -82,6 +82,7 @@ export function normalChatInputConflictSql<T extends PgTable>(
   table: T,
   target: readonly PgColumn[],
   values: NormalInputWriteValues<T>,
+  where?: SQL,
 ): SQL {
   const set = normalChatInputUpdateSet(table, values);
   return sql`(${sql.join(
@@ -89,7 +90,7 @@ export function normalChatInputConflictSql<T extends PgTable>(
       return sql.identifier(column.name);
     }),
     sql`, `,
-  )}) DO UPDATE SET ${new PgDialect().buildUpdateSet(table, set)}`;
+  )}) DO UPDATE SET ${new PgDialect().buildUpdateSet(table, set)}${where ? sql` WHERE ${where}` : sql.empty()}`;
 }
 
 export function normalChatInputUpdateSet<T extends PgTable>(

@@ -101,6 +101,50 @@ test("A follow-up during an active run appears immediately", async () => {
   appendDeferred.resolve(undefined);
 });
 
+test("A confirmed presentation continuation hides server selection metadata", async () => {
+  const visiblePrompt = "Continue the presentation with PPTX.";
+  const sourceRunId = "c0000000-0000-4000-a000-000000000811";
+  const sourceInputEventId = "c0000000-0000-4000-a000-000000000812";
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    chatEvents: [
+      {
+        id: "b0000000-0000-4000-a000-000000000815",
+        role: "user",
+        runId: ACTIVE_RUN_ID,
+        content: visiblePrompt,
+        createdAt: "2026-08-01T10:00:00Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: visiblePrompt },
+            {
+              type: "presentation_format_selection",
+              sourceRunId,
+              sourceInputEventIds: [sourceInputEventId],
+              presentationFormat: "pptx",
+            },
+          ],
+        },
+      },
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  const prompt = await screen.findByText(visiblePrompt);
+  const message = prompt.closest('[data-role="user"]');
+  expect(message).toBeInTheDocument();
+  expect(message).toHaveTextContent(visiblePrompt);
+  expect(message).not.toHaveTextContent(sourceRunId);
+  expect(message).not.toHaveTextContent(sourceInputEventId);
+  expect(message).not.toHaveTextContent("presentation_format_selection");
+});
+
 test("A new message keeps its attachment, text, and selected model together", async () => {
   const sentRequests: {
     readonly prompt: string;
