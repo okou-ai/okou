@@ -42,6 +42,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollToIndex
@@ -113,6 +114,85 @@ class ChatListRootTest {
 
     @get:Rule val compose = createAndroidComposeRule<MainActivity>(ComposeUiTestConfig(motion))
     private var chatJob: Job? = null
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun messageLinkOpensTheNativeReadingTargetAndReturnsToTheSourceDraft() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply =
+            "Read [Project update](/chats/$CHAT_IN_PROJECT#event-output).\n\n" +
+                "[Unavailable conversation](/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)"
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        val source = compose.onNodeWithText("Read ", substring = true)
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Project update", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
+        editor.performTextInput("Source draft")
+        val sourceBounds = source.getUnclippedBoundsInRoot()
+        val link =
+            compose.onNode(
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.LinkTestMarker) and
+                    hasAnyAncestor(hasText("Project update", substring = true)),
+                useUnmergedTree = true,
+            )
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        link.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        link.performKeyInput { pressKey(Key.Enter) }
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(hasTestTag("conversation_find_hit"))
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose
+            .onNode(hasText("Project chat") and !hasAnyAncestor(hasTestTag("chat_list")))
+            .assertIsDisplayed()
+        editor.assert(hasText("Source draft").not())
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasContentDescription("Back")).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Source draft").fetchSemanticsNodes().isNotEmpty()
+        }
+        source.assertIsDisplayed()
+        assertEquals(sourceBounds, source.getUnclippedBoundsInRoot())
+        link.assertIsFocused()
+        compose.onNodeWithText("Unavailable conversation", substring = true).performFirstLinkClick()
+        compose.onNodeWithText("This conversation link is unavailable").assertIsDisplayed()
+        editor.assertTextContains("Source draft")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun webpageLinkHandsTheUrlToAndroidAndLeavesTheConversationVisible() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply = "Read [Release notes](https://example.org/releases?version=2)."
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Release notes", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        val text = compose.onNodeWithText("Release notes", substring = true)
+        text.performFirstLinkClick()
+        val intent = shadowOf(compose.activity).nextStartedActivity
+        assertEquals(android.content.Intent.ACTION_VIEW, intent.action)
+        assertEquals("https://example.org/releases?version=2", intent.dataString)
+        text.assertIsDisplayed()
+    }
 
     @Before
     fun retainActualOwnerForTeardown() {
