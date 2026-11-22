@@ -44,10 +44,11 @@ import { salesWorkflow, serveWorkflows } from "./workflow-boundary.ts";
 const context = testContext();
 
 function directory() {
-  const sales = salesWorkflow(context),
+  const executorId = crypto.randomUUID();
+  const sales = salesWorkflow(context, { agentId: executorId }),
     ops = salesWorkflow(context, {
       id: crypto.randomUUID(),
-      agentId: sales.agentId,
+      agentId: executorId,
       name: "ops-playbook",
       displayName: "Ops Playbook",
     });
@@ -55,7 +56,7 @@ function directory() {
   serveWorkflows(context, () => {
     return entries;
   });
-  return { sales, entries, base: "/workflows/" + sales.id };
+  return { sales, entries, executorId, base: "/workflows/" + sales.id };
 }
 
 function weekday(): Extract<WorkflowAutomationSummary, { kind: "schedule" }> {
@@ -758,12 +759,12 @@ test("workflows-page-036 a different owner's paused Calendar rule stays enabled 
 });
 
 test("workflows-page-037 a directory warning opens and centers its precise Calendar rule", async () => {
-  const { base, sales } = directory();
+  const { base, sales, executorId } = directory();
   const rule = calendarIssue();
   sales.automations = [weekday(), rule];
-  context.mocks.data.onboardingStatus({ defaultAgentId: sales.agentId });
+  context.mocks.data.onboardingStatus({ defaultAgentId: executorId });
   context.mocks.data.agents([
-    { agentId: sales.agentId, displayName: "Research Bot" },
+    { agentId: executorId, displayName: "Research Bot" },
   ]);
   context.mocks.api(
     workflowAutomationsContract.listWorkspace,

@@ -91,77 +91,94 @@ test.each([
     }
   },
 );
-test("integration-url-diagnostics-009 Sign-in analytics keep phone proofs out of event and person URLs while the browser retains its signed return", async () => {
-  const fields = {
-    handle: "15558884731",
-    agent: "private-assistant-argos",
-    ts: "1795059555",
-    sig: "92".repeat(32),
-  };
-  const original = destination("/settings/agentphone", fields);
-  const analytics = context.mocks.posthog();
-  const signin = await redirect(original);
-  await setupPage({
-    context: createTestRuntime(context),
-    auth: null,
-    host: signin.host,
-    path: signin.pathname + signin.search + signin.hash,
-    sharedWorkerTestTransport: "message-port",
-  });
-  await screen.findByTestId("clerk-sign-in");
-  // Page setup starts the Router. The deployed document initializes the SDK separately.
-  initPostHog();
-  const process = analytics.initializations.at(-1)?.config?.before_send;
-  if (typeof process !== "function") {
-    throw new Error("Sign-in did not initialize the analytics event filter");
-  }
-  const other = "https://docs.example.org/channels?source=phone";
-  const plain = "Opened channel preferences";
-  const event = {
-    uuid: crypto.randomUUID(),
-    event: "channel continuation",
-    properties: {
-      $current_url: signin.href,
-      $referrer: original.href,
-      $initial_referrer: original.href,
-      $set: { $last_current_url: original.href },
-      $set_once: { $initial_referrer: original.href },
-      help: other,
-      note: plain,
-    },
-    $set: { $referrer: original.href },
-    $set_once: { $initial_current_url: signin.href },
-  };
-  const before = structuredClone(event);
-  const filtered = process(event);
-  expect(event).toStrictEqual(before);
-  if (!filtered) {
-    throw new Error("Expected an analytics event");
-  }
-  expect(filtered.properties).toMatchObject({ help: other, note: plain });
-  for (const privateValue of Object.values(fields)) {
-    expect(JSON.stringify(filtered)).not.toContain(privateValue);
-  }
-  const direct = [
-    filtered.properties.$referrer,
-    filtered.properties.$initial_referrer,
-    filtered.properties.$set?.$last_current_url,
-    filtered.properties.$set_once?.$initial_referrer,
-    filtered.$set?.$referrer,
-  ];
-  for (const value of direct) {
-    publicContext(value, original.pathname);
-  }
-  for (const wrapped of [
-    filtered.properties.$current_url,
-    filtered.$set_once?.$initial_current_url,
-  ]) {
-    publicContext(
-      new URL(String(wrapped)).searchParams.get("redirect_url"),
-      original.pathname,
+const phoneFields = {
+  handle: "15558884731",
+  agent: "private-assistant-argos",
+  ts: "1795059555",
+  sig: "92".repeat(32),
+} as const;
+const callbackFields = {
+  code: "local-slack-response",
+  state: "local-consent-state",
+} as const;
+const analyticsRoutes: readonly [string, string, Record<string, string>][] = [
+  ["009", "/settings/agentphone", phoneFields],
+  ["010", "/settings/telegram", markers],
+  ["011", "/telegram/connect", markers],
+  ["012", "/SETTINGS/telegram/", markers],
+  ["013", "/connectors/slack/callback", callbackFields],
+];
+test.each(analyticsRoutes)(
+  "integration-url-diagnostics-%s %s keeps private analytics fields out of the event while preserving the browser return",
+  async (_id, path, fields) => {
+    const original = destination(path, fields);
+    if (path === "/connectors/slack/callback") {
+      original.searchParams.set("integration", "slack");
+    }
+    const analytics = context.mocks.posthog();
+    const signin = await redirect(original);
+    await setupPage({
+      context: createTestRuntime(context),
+      auth: null,
+      host: signin.host,
+      path: signin.pathname + signin.search + signin.hash,
+      sharedWorkerTestTransport: "message-port",
+    });
+    await screen.findByTestId("clerk-sign-in");
+    // Page setup starts the Router. The deployed document initializes the SDK separately.
+    initPostHog();
+    const process = analytics.initializations.at(-1)?.config?.before_send;
+    if (typeof process !== "function") {
+      throw new Error("Sign-in did not initialize the analytics event filter");
+    }
+    const other = "https://docs.example.org/channels?source=phone";
+    const plain = "Opened channel preferences";
+    const event = {
+      uuid: crypto.randomUUID(),
+      event: "channel continuation",
+      properties: {
+        $current_url: signin.href,
+        $referrer: original.href,
+        $initial_referrer: original.href,
+        $set: { $last_current_url: original.href },
+        $set_once: { $initial_referrer: original.href },
+        help: other,
+        note: plain,
+      },
+      $set: { $referrer: original.href },
+      $set_once: { $initial_current_url: signin.href },
+    };
+    const before = structuredClone(event);
+    const filtered = process(event);
+    expect(event).toStrictEqual(before);
+    if (!filtered) {
+      throw new Error("Expected an analytics event");
+    }
+    expect(filtered.properties).toMatchObject({ help: other, note: plain });
+    for (const privateValue of Object.values(fields)) {
+      expect(JSON.stringify(filtered)).not.toContain(privateValue);
+    }
+    const direct = [
+      filtered.properties.$referrer,
+      filtered.properties.$initial_referrer,
+      filtered.properties.$set?.$last_current_url,
+      filtered.properties.$set_once?.$initial_referrer,
+      filtered.$set?.$referrer,
+    ];
+    for (const value of direct) {
+      publicContext(value, original.pathname);
+    }
+    for (const wrapped of [
+      filtered.properties.$current_url,
+      filtered.$set_once?.$initial_current_url,
+    ]) {
+      publicContext(
+        new URL(String(wrapped)).searchParams.get("redirect_url"),
+        original.pathname,
+      );
+    }
+    expect(new URL(location.href).searchParams.get("redirect_url")).toBe(
+      original.href,
     );
-  }
-  expect(new URL(location.href).searchParams.get("redirect_url")).toBe(
-    original.href,
-  );
-});
+  },
+);
