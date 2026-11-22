@@ -40,7 +40,7 @@ internal class MemoryUpdateStore(var record: UpdateRecord? = null) : UpdateStore
 }
 
 internal class ControlledUpdates : UpdateService {
-    override suspend fun initialize() = Unit
+    override suspend fun initialize(retainedRelease: AndroidUpdatesRelease?) = Unit
 
     var response = AndroidUpdates(null, updateRelease())
     var heldCheck: CompletableDeferred<Unit>? = null
@@ -186,7 +186,7 @@ class AppUpdatesTest {
             runCurrent()
             assertEquals(UpdateCheck.Checked, owner.state.value.check)
             assertEquals(0, service.checks)
-            now += 86_400_000
+            now += 600_000
             owner.check(false)
             runCurrent()
             assertEquals(UpdateCheck.Checking, owner.state.value.check)
@@ -197,7 +197,7 @@ class AppUpdatesTest {
             assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
 
             service.response = AndroidUpdates(null, updateRelease("0.14.0"))
-            now += 86_400_000 - 1
+            now += 599_999
             owner.check(false)
             advanceUntilIdle()
             assertEquals("0.13.0", owner.state.value.displayedRelease?.version)
