@@ -1625,7 +1625,7 @@ jobs:
           neon-project-id: ${{ vars.NEON_PROJECT_ID }}
           branch-name: release-smoke/migrate-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Check Workflow maintenance window
+      - name: Check Workflow and feed maintenance window
         id: workflow-maintenance
         if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
         working-directory: turbo/packages/db
@@ -1642,7 +1642,9 @@ jobs:
             const [state] = await db`
               SELECT EXISTS (
                 SELECT 1 FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'workflows' AND column_name = 'agent_id'
+                WHERE table_schema = 'public' AND (table_name, column_name) IN (
+                  ('workflows', 'agent_id'), ('feed_items', 'source_type')
+                )
               ) AS pending
             `;
             const confirmed = /^[a-f0-9]{40}$/.test(process.env.RELEASE_TARGET) &&
@@ -1922,7 +1924,7 @@ jobs:
             echo "See the Worker steps above. Production traffic remains on the canonical API."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Require both runtimes before completing the Workflow cutover
+      - name: Require both runtimes before completing the Workflow and feed cutover
         if: always() && steps.workflow-maintenance.outputs.required == 'true' && steps.api-worker-verify.outcome != 'success'
         run: |
           echo "::error::Keep API traffic and scheduling paused until the API Worker passes health and release SHA verification."

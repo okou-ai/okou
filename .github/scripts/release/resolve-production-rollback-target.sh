@@ -302,14 +302,14 @@ if ! git merge-base --is-ancestor "$STAFF_SINGLE_AGENT_READER_COMMIT" "$TARGET_C
   fail "Rollback target predates staff Single Agent preparation: ${STAFF_SINGLE_AGENT_READER_COMMIT}."
 fi
 
-# The Workflow cutover removes a column used by both the API and the scheduler.
-workflow_member_scope_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- turbo/packages/db/src/migrations/1611_workspace_workflow_identity.sql | sed -n '1p')
-if [[ ! "$workflow_member_scope_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged Workflow member-scope migration on main."
+# The feed contraction follows the Workflow contraction. Both need a compatible API and scheduler.
+feed_contraction_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- turbo/packages/db/src/migrations/1612_drop_feed_source_type.sql | sed -n '1p')
+if [[ ! "$feed_contraction_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged feed storage contraction on main."
 fi
-if ! git merge-base --is-ancestor "$workflow_member_scope_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target requires the retired workflows.agent_id column: ${workflow_member_scope_commit}."
+if ! git merge-base --is-ancestor "$feed_contraction_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the feed storage contraction: ${feed_contraction_commit}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also

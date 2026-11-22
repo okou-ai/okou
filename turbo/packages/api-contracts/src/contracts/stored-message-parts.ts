@@ -1,5 +1,22 @@
 import type { FeedbackNotePart, UserMessagePart } from "./chat-threads";
 
+export const externalMessageSourceKinds = [
+  "slack",
+  "discord",
+  "wechat",
+  "feishu",
+  "lark",
+  "teams",
+  "telegram",
+  "github",
+  "agentphone",
+] as const;
+
+const messageSourceKinds = new Set<string>([
+  ...externalMessageSourceKinds,
+  "mcp",
+]);
+
 const notePartTypes = {
   text: true,
   chat_thread: true,
@@ -46,28 +63,19 @@ export function readStoredMessageParts(value: unknown): unknown {
     ...value,
     parts: parts
       .filter((part) => {
-        return keepStoredPart(part, messagePartTypes);
-      })
-      .map((part: unknown) => {
         if (
           typeof part === "object" &&
           part !== null &&
           "type" in part &&
           part.type === "source" &&
           "kind" in part &&
-          part.kind === "agent" &&
-          "runId" in part &&
-          "threadId" in part &&
-          "titleSnapshot" in part
+          typeof part.kind === "string"
         ) {
-          // Append-only events keep the old discriminator for forwarded conversations.
-          return {
-            type: "chat_thread",
-            threadId: part.threadId,
-            runId: part.runId,
-            titleSnapshot: part.titleSnapshot,
-          };
+          return messageSourceKinds.has(part.kind);
         }
+        return keepStoredPart(part, messagePartTypes);
+      })
+      .map((part: unknown) => {
         if (
           typeof part !== "object" ||
           part === null ||

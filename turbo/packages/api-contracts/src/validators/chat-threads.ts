@@ -1,5 +1,8 @@
 import { isChatRunReference } from "../contracts/chat-run-reference";
-import { readStoredMessageParts } from "../contracts/stored-message-parts";
+import {
+  externalMessageSourceKinds,
+  readStoredMessageParts,
+} from "../contracts/stored-message-parts";
 import {
   modelSettingsPatchSchema,
   modelSettingsSchema,
@@ -449,17 +452,7 @@ const feedbackRangeSchema = object({
 
 const userMessageExternalSourcePartSchema = object({
   type: literal("source"),
-  kind: zEnum([
-    "slack",
-    "discord",
-    "wechat",
-    "feishu",
-    "lark",
-    "teams",
-    "telegram",
-    "github",
-    "agentphone",
-  ]),
+  kind: zEnum(externalMessageSourceKinds),
   href: url().optional(),
 }).strict();
 
