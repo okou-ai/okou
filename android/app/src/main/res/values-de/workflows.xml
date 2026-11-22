@@ -51,7 +51,10 @@
     <string name="workflow_manual">Manuell</string>
     <string name="workflow_match_subject">Betreff enthält</string>
     <string name="workflow_meet">Google Meet</string>
-    <string name="workflow_name">Name</string>
+    <string name="workflow_name">Anzeigename</string>
+    <string name="workflow_name_required">Gib einen Anzeigenamen ein.</string>
+    <string name="workflow_field_too_long">Verwende höchstens %1$,d Zeichen.</string>
+    <string name="workflow_connect_to_save">Zum Speichern dieser Regel ist eine Verbindung mit %1$s erforderlich.</string>
     <string name="workflow_needs_connection">Verbindung erforderlich</string>
     <string name="workflow_new">Neu</string>
     <string name="workflow_next_run">Nächste Ausführung · %1$s</string>

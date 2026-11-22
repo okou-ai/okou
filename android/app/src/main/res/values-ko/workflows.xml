@@ -51,7 +51,10 @@
     <string name="workflow_manual">수동</string>
     <string name="workflow_match_subject">제목에 포함</string>
     <string name="workflow_meet">Google Meet</string>
-    <string name="workflow_name">이름</string>
+    <string name="workflow_name">표시 이름</string>
+    <string name="workflow_name_required">표시 이름을 입력하세요.</string>
+    <string name="workflow_field_too_long">%1$,d자 이하로 입력하세요.</string>
+    <string name="workflow_connect_to_save">이 규칙을 저장하려면 %1$s에 연결하세요.</string>
     <string name="workflow_needs_connection">연결 필요</string>
     <string name="workflow_new">새로 만들기</string>
     <string name="workflow_next_run">다음 실행 · %1$s</string>

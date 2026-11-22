@@ -51,7 +51,10 @@
     <string name="workflow_manual">मैन्युअल</string>
     <string name="workflow_match_subject">विषय में शामिल है</string>
     <string name="workflow_meet">Google Meet</string>
-    <string name="workflow_name">नाम</string>
+    <string name="workflow_name">प्रदर्शित नाम</string>
+    <string name="workflow_name_required">प्रदर्शित नाम दर्ज करें।</string>
+    <string name="workflow_field_too_long">अधिकतम %1$,d वर्ण डालें।</string>
+    <string name="workflow_connect_to_save">इस नियम को सेव करने के लिए %1$s से कनेक्ट करें।</string>
     <string name="workflow_needs_connection">कनेक्शन चाहिए</string>
     <string name="workflow_new">नया</string>
     <string name="workflow_next_run">अगला रन · %1$s</string>

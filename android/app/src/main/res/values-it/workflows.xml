@@ -51,7 +51,10 @@
     <string name="workflow_manual">Manuale</string>
     <string name="workflow_match_subject">L’oggetto contiene</string>
     <string name="workflow_meet">Google Meet</string>
-    <string name="workflow_name">Nome</string>
+    <string name="workflow_name">Nome visualizzato</string>
+    <string name="workflow_name_required">Inserisci un nome visualizzato.</string>
+    <string name="workflow_field_too_long">Usa al massimo %1$,d caratteri.</string>
+    <string name="workflow_connect_to_save">Collega %1$s per salvare questa regola.</string>
     <string name="workflow_needs_connection">Connessione richiesta</string>
     <string name="workflow_new">Nuovo</string>
     <string name="workflow_next_run">Prossima esecuzione · %1$s</string>

@@ -135,6 +135,15 @@ class WorkflowRootTest {
         waitForTag("workflow_detail_title")
         compose.onNodeWithText("Edit instructions").performClick()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+        val name = compose.onNodeWithContentDescription("Display name")
+        name.performTextReplacement(" ")
+        compose.onNodeWithText("Enter a display name.").assertIsDisplayed()
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+        name.performTextReplacement("x".repeat(257))
+        compose.onNodeWithText("Use 256 characters or fewer.").assertIsDisplayed()
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+        name.performTextReplacement("Release checklist")
+        compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
         compose
             .onNodeWithText(
                 "Review launch copy and product notes.\nCheck the website, email, and community assets."
@@ -156,7 +165,9 @@ class WorkflowRootTest {
         compose.onNodeWithText("Schedule").performClick()
         compose.onNodeWithText("Gmail message received").performClick()
         compose.onNodeWithContentDescription("Subject contains").performTextInput("Release")
-        compose.onNodeWithText("Gmail · Needs connection").assertIsDisplayed()
+        compose
+            .onNodeWithText("A Gmail connection is required to save this rule.")
+            .assertIsDisplayed()
         compose.onNodeWithText("View connections").assertIsDisplayed()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         back()
@@ -331,6 +342,52 @@ class WorkflowRootTest {
         }
         compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
         compose.onNodeWithTag("workflow_toggle_gmail").assertIsFocused()
+    }
+
+    @Test
+    fun connectingAnAccountPreservesTheRuleEditorAndEnablesSave() = withHardwareKeyboard {
+        val scenario = compose.activityRule.scenario
+        val releaseConnections = CountDownLatch(1)
+        app.fixture.beforeConnectionsRead = { releaseConnections.await() }
+        val save = compose.onNodeWithTag("workflow_save")
+        val connection = compose.onNodeWithText("View connections")
+        val subject = compose.onNodeWithContentDescription("Subject contains")
+
+        try {
+            openWorkflowDetail()
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            compose.onNodeWithText("Add automation").performClick()
+            compose.onNodeWithText("Schedule").performClick()
+            compose.onNodeWithText("Gmail message received").performClick()
+            subject.performTextInput("Release summary")
+            save.assertIsNotEnabled()
+            connection.assertDoesNotExist()
+        } finally {
+            releaseConnections.countDown()
+        }
+
+        waitFor("View connections")
+        save.assertIsNotEnabled()
+        val cancelBounds = compose.onNodeWithText("Cancel").getUnclippedBoundsInRoot()
+        val connectionBounds = connection.getUnclippedBoundsInRoot()
+        val saveBounds = save.getUnclippedBoundsInRoot()
+        assertTrue(
+            cancelBounds.right < connectionBounds.left && connectionBounds.right < saveBounds.left
+        )
+        connection
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+            .assertIsFocused()
+            .performClick()
+
+        scenario.moveToState(Lifecycle.State.STARTED)
+        app.fixture.gmailConnected.set(true)
+        scenario.moveToState(Lifecycle.State.RESUMED)
+
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("View connections").fetchSemanticsNodes().isEmpty()
+        }
+        subject.assertTextContains("Release summary")
+        save.assertIsEnabled().assertIsFocused()
     }
 
     @Test

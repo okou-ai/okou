@@ -71,6 +71,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -324,19 +325,24 @@ internal fun WorkflowEditor(
     val available = !state.writing && detail.canChange(activeRule?.id)
     val uriHandler = LocalUriHandler.current
     var couldNotOpen by remember { mutableStateOf(false) }
-    val connectionRequired =
-        activeRule?.let { rule ->
-            val existing = detail.automations.firstOrNull { it.id == rule.id }
-            rule.value.trigger.source.takeIf {
-                it.needsConnection(state.connections) ||
-                    existing?.needsConnection(state.connections) == true
-            }
-        }
+    val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
+    val showConnectionAction =
+        connectionRequired != null && state.connections != null && !state.offline
     val canSave =
         when (editor) {
             is WorkflowEdit.Instructions -> editor.changed && editor.value.valid
-            is WorkflowEdit.Rule -> (editor.id == null || editor.changed) && editor.value.valid
+            is WorkflowEdit.Rule -> editor.canSave
         }
+    val saveEnabled =
+        available &&
+            canSave &&
+            !state.offline &&
+            connectionRequired == null &&
+            state.issue != WorkflowWriteIssue.UncertainCreate
+    val saveFocus = remember { FocusRequester() }
+    var connectionFocused by remember { mutableStateOf(false) }
+    val restoreSaveFocus = !showConnectionAction && saveEnabled && connectionFocused
+    LaunchedEffect(showConnectionAction) { if (restoreSaveFocus) saveFocus.requestFocus() }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(
             Modifier.widthIn(max = 730.dp)
@@ -360,17 +366,33 @@ internal fun WorkflowEditor(
             )
             when (editor) {
                 is WorkflowEdit.Instructions -> {
-                    WorkflowField(R.string.workflow_name, editor.value.title, available) {
+                    val value = editor.value
+                    WorkflowField(
+                        R.string.workflow_name,
+                        value.title,
+                        available,
+                        errorMessage =
+                            if (value.title.isBlank())
+                                stringResource(R.string.workflow_name_required)
+                            else workflowLengthError(value.title, WORKFLOW_DISPLAY_NAME_LIMIT),
+                    ) {
                         model.edit(editor.copy(value = editor.value.copy(title = it)))
                     }
-                    WorkflowField(R.string.workflow_purpose, editor.value.purpose, available) {
+                    WorkflowField(
+                        R.string.workflow_purpose,
+                        value.purpose,
+                        available,
+                        errorMessage = workflowLengthError(value.purpose, WORKFLOW_PURPOSE_LIMIT),
+                    ) {
                         model.edit(editor.copy(value = editor.value.copy(purpose = it)))
                     }
                     WorkflowField(
                         R.string.workflow_instructions_heading,
-                        editor.value.instruction,
+                        value.instruction,
                         available,
                         singleLine = false,
+                        errorMessage =
+                            workflowLengthError(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
                     ) {
                         model.edit(editor.copy(value = editor.value.copy(instruction = it)))
                     }
@@ -395,7 +417,7 @@ internal fun WorkflowEditor(
             if (connectionRequired != null && !state.offline) {
                 WorkflowStatus(
                     stringResource(
-                        R.string.workflow_status_connection,
+                        R.string.workflow_connect_to_save,
                         stringResource(connectionRequired.label),
                     ),
                     MaterialTheme.colorScheme.error,
@@ -406,38 +428,31 @@ internal fun WorkflowEditor(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (connectionRequired != null && !state.offline) {
-                    WorkflowAction(
-                        stringResource(R.string.workflow_view_connection),
-                        { couldNotOpen = !openWorkflowConnections(uriHandler) },
-                        enabled = !state.writing,
-                    )
-                }
                 WorkflowAction(
                     stringResource(R.string.workflow_cancel),
                     onCancel,
                     enabled = !state.writing,
                 )
+                if (showConnectionAction) {
+                    WorkflowAction(
+                        stringResource(R.string.workflow_view_connection),
+                        { couldNotOpen = !openWorkflowConnections(uriHandler) },
+                        Modifier.onFocusChanged { connectionFocused = it.isFocused },
+                        enabled = !state.writing,
+                    )
+                }
                 WorkflowAction(
                     stringResource(R.string.workflow_save),
                     onClick = {
                         when (editor) {
                             is WorkflowEdit.Instructions ->
                                 model.updateInstructions(editor.value.changesFrom(editor.original))
-                            is WorkflowEdit.Rule ->
-                                if (editor.id == null)
-                                    model.saveRule(null, editor.value.createRequest(), null)
-                                else model.saveRule(editor.id, null, editor.value.updateRequest())
+                            is WorkflowEdit.Rule -> model.saveRule(editor)
                         }
                     },
                     primary = true,
-                    enabled =
-                        available &&
-                            canSave &&
-                            !state.offline &&
-                            connectionRequired == null &&
-                            state.issue != WorkflowWriteIssue.UncertainCreate,
-                    modifier = Modifier.testTag("workflow_save"),
+                    enabled = saveEnabled,
+                    modifier = Modifier.focusRequester(saveFocus).testTag("workflow_save"),
                 )
             }
         }
@@ -517,19 +532,26 @@ private val EditableTrigger.label: Int
         }
 
 @Composable
+private fun workflowLengthError(value: String, limit: Int): String? =
+    if (value.length > limit) stringResource(R.string.workflow_field_too_long, limit) else null
+
+@Composable
 private fun WorkflowField(
     label: Int,
     value: String,
     enabled: Boolean,
     singleLine: Boolean = true,
+    errorMessage: String? = null,
     onChange: (String) -> Unit,
 ) {
     val title = stringResource(label)
     val input = rememberJournalEditor(value, target = label)
     val interactions = remember { MutableInteractionSource() }
     val colors = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val isError = errorMessage != null
+    Column {
         WorkflowFieldLabel(title)
+        Spacer(Modifier.height(8.dp))
         BasicTextField(
             value = input.value,
             onValueChange = {
@@ -539,12 +561,15 @@ private fun WorkflowField(
             modifier =
                 Modifier.fillMaxWidth()
                     .heightIn(min = if (singleLine) 56.dp else 112.dp)
-                    .semantics { contentDescription = title },
+                    .semantics {
+                        contentDescription = title
+                        if (errorMessage != null) error(errorMessage)
+                    },
             readOnly = !enabled,
             singleLine = singleLine,
             maxLines = if (singleLine) 1 else 8,
             textStyle = workflowBodyStyle().copy(color = colors.onBackground),
-            cursorBrush = SolidColor(colors.onBackground),
+            cursorBrush = SolidColor(if (isError) colors.error else colors.onBackground),
             interactionSource = interactions,
             decorationBox = { inner ->
                 OutlinedTextFieldDefaults.DecorationBox(
@@ -555,10 +580,11 @@ private fun WorkflowField(
                     visualTransformation = VisualTransformation.None,
                     interactionSource = interactions,
                     contentPadding = PaddingValues(12.dp),
+                    isError = isError,
                     container = {
                         OutlinedTextFieldDefaults.Container(
                             enabled = true,
-                            isError = false,
+                            isError = isError,
                             interactionSource = interactions,
                             shape = RoundedCornerShape(12.dp),
                         )
@@ -566,6 +592,14 @@ private fun WorkflowField(
                 )
             },
         )
+        if (errorMessage != null) {
+            Text(
+                errorMessage,
+                Modifier.padding(top = 4.dp),
+                color = colors.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 

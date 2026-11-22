@@ -1,8 +1,6 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
-import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
@@ -275,18 +273,23 @@ internal constructor(
         changeRule(rule.id) { service.setAutomationEnabled(rule.id, !rule.enabled) }
     }
 
-    internal fun saveRule(
-        id: String?,
-        create: CreateWorkflowAutomationRequest?,
-        update: UpdateWorkflowAutomationRequest?,
-    ) {
-        if (id == null && create != null) {
+    internal fun saveRule(editor: WorkflowEdit.Rule) {
+        val state = mutable.value
+        val detail = state.detail ?: return
+        if (
+            state.editor != editor ||
+                !editor.canSave ||
+                editor.blockingConnection(detail, state.connections) != null
+        )
+            return
+        val id = editor.id
+        if (id == null) {
             mutate(creating = true) { detail ->
-                val added = service.createAutomation(detail.id, create)
+                val added = service.createAutomation(detail.id, editor.value.createRequest())
                 publishRules(detail, detail.automations + added)
             }
-        } else if (id != null && update != null) {
-            changeRule(id) { service.updateAutomation(id, update) }
+        } else {
+            changeRule(id) { service.updateAutomation(id, editor.value.updateRequest()) }
         }
     }
 

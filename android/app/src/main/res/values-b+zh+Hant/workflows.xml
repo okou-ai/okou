@@ -51,7 +51,10 @@
     <string name="workflow_manual">手動使用</string>
     <string name="workflow_match_subject">主旨包含</string>
     <string name="workflow_meet">Google Meet</string>
-    <string name="workflow_name">名稱</string>
+    <string name="workflow_name">顯示名稱</string>
+    <string name="workflow_name_required">請輸入顯示名稱。</string>
+    <string name="workflow_field_too_long">最多輸入 %1$,d 個字元。</string>
+    <string name="workflow_connect_to_save">儲存這條規則需要連線至 %1$s。</string>
     <string name="workflow_needs_connection">需連線</string>
     <string name="workflow_new">新增</string>
     <string name="workflow_next_run">下次執行 · %1$s</string>

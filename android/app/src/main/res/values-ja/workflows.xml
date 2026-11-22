@@ -51,7 +51,10 @@
     <string name="workflow_manual">手動</string>
     <string name="workflow_match_subject">件名に含む</string>
     <string name="workflow_meet">Google Meet</string>
-    <string name="workflow_name">名前</string>
+    <string name="workflow_name">表示名</string>
+    <string name="workflow_name_required">表示名を入力してください。</string>
+    <string name="workflow_field_too_long">%1$,d文字以内で入力してください。</string>
+    <string name="workflow_connect_to_save">このルールを保存するには %1$s に接続してください。</string>
     <string name="workflow_needs_connection">接続が必要</string>
     <string name="workflow_new">新規</string>
     <string name="workflow_next_run">次回の実行 · %1$s</string>

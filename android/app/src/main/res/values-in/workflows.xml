@@ -51,7 +51,10 @@
     <string name="workflow_manual">Manual</string>
     <string name="workflow_match_subject">Subjek berisi</string>
     <string name="workflow_meet">Google Meet</string>
-    <string name="workflow_name">Nama</string>
+    <string name="workflow_name">Nama tampilan</string>
+    <string name="workflow_name_required">Masukkan nama tampilan.</string>
+    <string name="workflow_field_too_long">Gunakan maksimal %1$,d karakter.</string>
+    <string name="workflow_connect_to_save">Hubungkan %1$s untuk menyimpan aturan ini.</string>
     <string name="workflow_needs_connection">Perlu koneksi</string>
     <string name="workflow_new">Baru</string>
     <string name="workflow_next_run">Eksekusi berikutnya · %1$s</string>

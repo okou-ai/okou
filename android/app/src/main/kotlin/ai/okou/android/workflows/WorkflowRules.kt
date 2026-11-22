@@ -177,8 +177,26 @@ internal sealed interface WorkflowEdit {
     ) : WorkflowEdit {
         override val changed
             get() = original != value
+
+        val canSave
+            get() = (id == null || changed) && value.valid
+
+        fun blockingConnection(detail: WorkflowDetail, connected: Set<String>?): RuleSource? {
+            val source = value.trigger.source
+            if (
+                source.connector != null && (connected == null || source.needsConnection(connected))
+            )
+                return source
+            return detail.automations
+                .firstOrNull { it.id == id && !it.canEnable(connected) }
+                ?.source
+        }
     }
 }
+
+internal const val WORKFLOW_DISPLAY_NAME_LIMIT = 256
+internal const val WORKFLOW_PURPOSE_LIMIT = 1024
+internal const val WORKFLOW_INSTRUCTION_LIMIT = 5 * 1024 * 1024
 
 internal data class InstructionsFields(
     val title: String,
@@ -187,10 +205,10 @@ internal data class InstructionsFields(
 ) {
     val valid
         get() =
-            title.isNotBlank() &&
-                title.length <= 256 &&
-                purpose.length <= 1024 &&
-                instruction.length <= 5 * 1024 * 1024
+            title.length <= WORKFLOW_DISPLAY_NAME_LIMIT &&
+                title.isNotBlank() &&
+                purpose.length <= WORKFLOW_PURPOSE_LIMIT &&
+                instruction.length <= WORKFLOW_INSTRUCTION_LIMIT
 
     fun changesFrom(original: InstructionsFields) =
         UpdateWorkflowRequest(
