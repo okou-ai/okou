@@ -1,6 +1,6 @@
 import {
   runsByIdContract,
-  runAgentEventsContract,
+  runTelemetryEventsContract,
   runsQueueContract,
   runsCancelContract,
   runContextContract,
@@ -32,8 +32,8 @@ export const apiRunsHandlers = [
     }),
   ),
 
-  // GET /api/runs/:id/telemetry/agent
-  mockApi(runAgentEventsContract.getAgentEvents, ({ respond }) =>
+  // GET /api/runs/:id/telemetry/events
+  mockApi(runTelemetryEventsContract.getTelemetryEvents, ({ respond }) =>
     respond(200, {
       events: [],
       hasMore: false,

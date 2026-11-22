@@ -4,7 +4,7 @@ import {
   type LogDetail,
 } from "@okouai/api-contracts/contracts/logs";
 import {
-  runAgentEventsContract,
+  runTelemetryEventsContract,
   runRunnerContract,
   type RunRunnerResponse,
 } from "@okouai/api-contracts/contracts/run-routes";
@@ -64,7 +64,7 @@ function mockActivities(
     );
   });
   context.mocks.api(
-    runAgentEventsContract.getAgentEvents,
+    runTelemetryEventsContract.getTelemetryEvents,
     ({ params, respond }) => {
       const fixture = fixtures[params.id];
       if (!fixture) {

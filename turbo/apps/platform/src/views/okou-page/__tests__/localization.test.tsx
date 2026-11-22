@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { expect, test } from "vitest";
 
 import {
@@ -99,39 +99,42 @@ test("French uses local number formatting", async () => {
       completedAt: "2026-01-01T12:00:01.200Z",
     });
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [
-        {
-          sequenceNumber: 1,
-          eventType: "assistant",
-          eventData: {
-            message: {
-              content: [
-                {
-                  type: "tool_use",
-                  id: "read-one",
-                  name: "Read",
-                  input: { file_path: "/tmp/one.txt" },
-                },
-                {
-                  type: "tool_use",
-                  id: "read-two",
-                  name: "Read",
-                  input: { file_path: "/tmp/two.txt" },
-                },
-              ],
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: [
+          {
+            sequenceNumber: 1,
+            eventType: "assistant",
+            eventData: {
+              message: {
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "read-one",
+                    name: "Read",
+                    input: { file_path: "/tmp/one.txt" },
+                  },
+                  {
+                    type: "tool_use",
+                    id: "read-two",
+                    name: "Read",
+                    input: { file_path: "/tmp/two.txt" },
+                  },
+                ],
+              },
             },
+            createdAt: "2026-01-01T12:00:00.500Z",
           },
-          createdAt: "2026-01-01T12:00:00.500Z",
-        },
-      ],
-      hasMore: false,
-      nextCursor: null,
-      status: "completed",
-      lastEventSequence: 1,
-    });
-  });
+        ],
+        hasMore: false,
+        nextCursor: null,
+        status: "completed",
+        lastEventSequence: 1,
+      });
+    },
+  );
   await setupPage({ context, path: `/activities/${runId}` });
   await screen.findAllByText("Read two files");
 

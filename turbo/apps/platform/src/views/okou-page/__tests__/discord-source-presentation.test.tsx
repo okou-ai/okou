@@ -1,6 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -181,14 +181,17 @@ test("Activity identifies a Discord run as its source", async () => {
       completedAt: "2026-09-24T09:00:03.000Z",
     });
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [],
-      hasMore: false,
-      status: "completed",
-      lastEventSequence: null,
-    });
-  });
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: [],
+        hasMore: false,
+        status: "completed",
+        lastEventSequence: null,
+      });
+    },
+  );
 
   await setupPage({ context, path: `/activities/${RUN_ID}` });
 
