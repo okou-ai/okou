@@ -1,4 +1,3 @@
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Download, Share2, SquarePlus, X } from "lucide-react";
@@ -29,10 +28,10 @@ export function InstallBanner() {
   const pageSignal = useGet(pageSignal$);
 
   if (!visible) {
-    return withChatScrollLayout(null);
+    return null;
   }
 
-  return withChatScrollLayout(
+  return (
     <div className="shrink-0 flex items-center gap-2 bg-primary/5 border-b border-primary/20 px-3 py-2 text-sm">
       <Download size={16} className="text-brand-text shrink-0" />
       <span className="flex-1 min-w-0 truncate text-foreground">
@@ -70,7 +69,7 @@ export function InstallBanner() {
       >
         <X size={14} />
       </Button>
-    </div>,
+    </div>
   );
 }
 
