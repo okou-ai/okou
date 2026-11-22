@@ -634,10 +634,7 @@ internal fun OkouApp(
                 )
                 if (chats != null)
                     WorkspaceToolEntries(
-                        openWorkflows =
-                            if (workflows != null && workflowState?.enabled != false)
-                                ::openWorkflows
-                            else null,
+                        openWorkflows = if (workflows != null) ::openWorkflows else null,
                         workflowsFocus = workflowsFocus,
                         onWorkflowsFocusChanged = { workflowEntryFocused = it },
                     )
@@ -647,12 +644,7 @@ internal fun OkouApp(
                     restoreSearchFocus = false
                     searchEntryFocus.requestFocus()
                 }
-                if (
-                    restoreWorkflowFocus &&
-                        !chatFromWorkflows &&
-                        workflows != null &&
-                        workflowState?.enabled != false
-                ) {
+                if (restoreWorkflowFocus && !chatFromWorkflows && workflows != null) {
                     restoreWorkflowFocus = false
                     workflowsFocus.requestFocus()
                 }

@@ -41,10 +41,6 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         requests += request
         val path = request.requestUrl?.encodedPath
         return when (path) {
-            "/api/feature-switches" ->
-                jsonResponse(
-                    """{"switches":{},"effectiveSwitches":{"androidWorkspaceWorkflows":true}}"""
-                )
             "/api/connectors/connected" ->
                 jsonResponse("""{"builtinConnectors":[],"customConnectors":[]}""")
             "/api/workflows" -> {

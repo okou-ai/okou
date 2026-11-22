@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  AndroidWorkspaceWorkflows = "androidWorkspaceWorkflows",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   VoiceMessages = "voiceMessages",
   PhoneUse = "_phoneUse",

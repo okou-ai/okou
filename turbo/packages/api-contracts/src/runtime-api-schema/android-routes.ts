@@ -1,5 +1,6 @@
 import { kotlinRouteBindings } from "../kotlin-bindings/bindings";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
+import { featureSwitchesContract } from "../contracts/feature-switches";
 import type { RuntimeApiRouteBinding } from "./routes";
 
 import { agentsMainContract } from "../contracts/agents";
@@ -13,6 +14,13 @@ const installedReaderBindings = [
   {
     name: "saveAgentDraft",
     route: agentDraftContract.patch,
+    authenticated: true,
+  },
+
+  // Keep the route in the inventory while installed Android clients still call it.
+  {
+    name: "featureSwitches",
+    route: featureSwitchesContract.get,
     authenticated: true,
   },
 ];

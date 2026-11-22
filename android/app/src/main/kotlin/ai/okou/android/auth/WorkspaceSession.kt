@@ -112,8 +112,6 @@ class CanonicalWorkspaceSession(
 
     override suspend fun chatSnapshot() = api.chatSnapshot()
 
-    override suspend fun workflowsEnabled() = api.workflowsEnabled()
-
     override suspend fun workflows() = api.workflows()
 
     override suspend fun workflow(id: String) = api.workflow(id)

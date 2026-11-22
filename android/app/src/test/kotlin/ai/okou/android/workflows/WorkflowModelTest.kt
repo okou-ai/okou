@@ -163,8 +163,6 @@ class WorkflowModelTest {
         var detailReads = 0
             private set
 
-        override suspend fun workflowsEnabled() = true
-
         override suspend fun workflows() = catalogRead()
 
         override suspend fun workflow(id: String): WorkflowDetail {

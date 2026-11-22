@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 internal data class WorkflowState(
-    val enabled: Boolean? = null,
     val catalog: List<WorkflowSummary>? = null,
     val rules: Map<String, List<WorkflowAutomation>>? = null,
     val connections: Set<String>? = null,
@@ -106,36 +105,13 @@ internal constructor(
             return
         }
         if (catalogLoad?.isActive == true) return
+        selected?.let(::loadDetail)
         catalogLoad =
             viewModelScope.launch {
-                var detailRefreshed = false
-                retryReads({ mutable.value = mutable.value.copy(catalogFailure = it) }) {
-                    val enabled = read { service.workflowsEnabled() }
-                    if (!authorized()) return@retryReads null
-                    when (enabled.getOrNull()) {
-                        false -> {
-                            detailLoad?.cancel()
-                            mutable.value =
-                                WorkflowState(enabled = false, offline = mutable.value.offline)
-                            null
-                        }
-                        true -> {
-                            mutable.value = mutable.value.copy(enabled = true)
-                            if (!detailRefreshed) {
-                                detailRefreshed = true
-                                selected?.let(::loadDetail)
-                            }
-                            loadCatalog()
-                        }
-                        null -> {
-                            val error = enabled.exceptionOrNull()
-                            if (error.denied()) {
-                                clearAccess()
-                                null
-                            } else error
-                        }
-                    }
-                }
+                retryReads(
+                    { mutable.value = mutable.value.copy(catalogFailure = it) },
+                    ::loadCatalog,
+                )
             }
     }
 
@@ -198,7 +174,6 @@ internal constructor(
         if (
             !visible ||
                 !authorized() ||
-                state.enabled != true ||
                 state.offline ||
                 state.writing ||
                 detailLoad?.isActive == true
@@ -329,7 +304,6 @@ internal constructor(
             !authorized() ||
                 !visible ||
                 !detail.canManage ||
-                state.enabled != true ||
                 state.writing ||
                 state.offline ||
                 detail.id != selected

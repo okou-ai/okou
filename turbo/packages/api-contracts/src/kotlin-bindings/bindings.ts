@@ -35,7 +35,6 @@ import { runModelsMainContract } from "../contracts/run-models";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { billingStatusContract } from "../contracts/billing";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
-import { featureSwitchesContract } from "../contracts/feature-switches";
 import { connectedConnectorsContract } from "../contracts/connected-connectors";
 import {
   workflowAutomationsContract,
@@ -123,11 +122,6 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     name: "connectedConnectors",
     response: "ConnectedConnectors",
     route: connectedConnectorsContract.list,
-  },
-  {
-    name: "featureSwitches",
-    response: "FeatureSwitches",
-    route: featureSwitchesContract.get,
   },
   {
     name: "workflows",
@@ -362,11 +356,6 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "ConnectedConnectors",
     schema: connectedConnectorsContract.list.responses[200],
-    direction: "output",
-  },
-  {
-    name: "FeatureSwitches",
-    schema: featureSwitchesContract.get.responses[200],
     direction: "output",
   },
   {

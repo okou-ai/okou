@@ -9,8 +9,6 @@ import ai.okou.android.api.generated.Workflows
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
 
 interface WorkflowService {
-    suspend fun workflowsEnabled(): Boolean
-
     suspend fun workflows(): Workflows
 
     suspend fun workflow(id: String): WorkflowDetail

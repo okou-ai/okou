@@ -24,9 +24,6 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String
     ): Response<ConnectedConnectors>
 
-    @GET("/api/feature-switches")
-    suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
-
     @GET("/api/workflows")
     suspend fun `workflowsWire`(
         @Header("Authorization") token: String,

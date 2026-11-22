@@ -209,8 +209,7 @@ internal fun WorkflowScreen(
                     )
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
-                    state.enabled == false ||
-                        state.detailFailure == WorkflowReadFailure.Unavailable ->
+                    state.detailFailure == WorkflowReadFailure.Unavailable ->
                         WorkflowPlaceholder(R.string.workflow_unavailable)
                     detail == null && state.offline ->
                         WorkflowPlaceholder(R.string.workflow_offline)
@@ -310,7 +309,6 @@ private fun WorkflowDirectory(
                 onClick = onCreate,
                 enabled =
                     canNavigate &&
-                        state.enabled == true &&
                         !state.offline &&
                         state.catalogFailure != WorkflowReadFailure.Unavailable,
                 modifier = Modifier.heightIn(min = 48.dp).testTag("workflow_create"),
@@ -325,7 +323,7 @@ private fun WorkflowDirectory(
                 Text(stringResource(R.string.workflow_new), style = workflowSmallStyle())
             }
         }
-        if (state.enabled == false || state.catalogFailure == WorkflowReadFailure.Unavailable) {
+        if (state.catalogFailure == WorkflowReadFailure.Unavailable) {
             WorkflowPlaceholder(R.string.workflow_unavailable)
             return@Column
         }

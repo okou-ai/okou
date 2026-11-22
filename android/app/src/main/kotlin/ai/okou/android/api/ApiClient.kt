@@ -160,9 +160,6 @@ class ApiClient(
 
     suspend fun organization(): Organization = execute { reads.organization(it) }
 
-    suspend fun workflowsEnabled(): Boolean =
-        execute { reads.featureSwitches(it) }.effectiveSwitches["androidWorkspaceWorkflows"] == true
-
     suspend fun workflows() = execute { reads.workflows(it, WorkflowsQuery()) }
 
     suspend fun workflow(id: String) = execute { reads.workflow(it, id) }

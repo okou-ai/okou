@@ -56,12 +56,6 @@ data class ConnectedConnectors(
 )
 
 @Serializable
-data class FeatureSwitches(
-    val `switches`: Map<String, Boolean>,
-    val `effectiveSwitches`: Map<String, Boolean>,
-)
-
-@Serializable
 enum class WorkflowSummaryVisibility {
     @SerialName("public") PUBLIC,
     @SerialName("private") PRIVATE,
