@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">Berechtigungen konnten nicht geladen werden.</string>
     <string name="connector_impact_failed">Die Nutzung dieses Kontos konnte nicht geprüft werden.</string>
     <string name="connector_offline">Offline</string>
-    <string name="connector_offline_action">Stelle eine Internetverbindung her, um Konten zu verwalten.</string>
+    <string name="connector_network_failed">Okou ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="connector_account_unavailable">Dieses Konto ist nicht mehr verfügbar.</string>
     <string name="connector_unavailable">Dieses Konto kann zurzeit nicht autorisiert werden.</string>
     <string name="connector_no_method">Für diesen Dienst ist hier keine Kontoeinrichtung verfügbar.</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">Autorisierung prüfen</string>
     <string name="connector_browser_unavailable">Kein Browser konnte die Autorisierungsseite öffnen.</string>
     <string name="connector_incomplete">Der Anbieter hat die Autorisierung noch nicht bestätigt.</string>
-    <string name="connector_verify_pending">Das Ergebnis ist noch unbestätigt. Okou prüft das Konto erneut.</string>
+    <string name="connector_verify_pending">Das Ergebnis ist noch unbestätigt.</string>
+    <string name="connector_verify_network">Das Ergebnis ist noch unbestätigt. Prüfe deine Verbindung.</string>
+    <string name="connector_authorization_unconfirmed">Die Autorisierung ist noch unbestätigt. Prüfe die Konten des Dienstes, bevor du es erneut versuchst.</string>
+    <string name="connector_submitting">Wird übermittelt…</string>
+    <string name="connector_waiting_provider">Warten auf die Bestätigung durch den Anbieter…</string>
     <string name="connector_change_failed">Aktion konnte nicht abgeschlossen werden. Prüfe das Konto und versuche es erneut.</string>
     <string name="connector_device_code">Gib diesen Code auf der Seite des Anbieters ein</string>
     <string name="connector_external_code">Autorisierungscode</string>

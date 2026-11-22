@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">Impossible de charger les autorisations.</string>
     <string name="connector_impact_failed">Impossible de vérifier où ce compte est utilisé.</string>
     <string name="connector_offline">Hors connexion</string>
-    <string name="connector_offline_action">Connectez-vous à Internet pour gérer les comptes.</string>
+    <string name="connector_network_failed">Impossible de joindre Okou. Vérifiez votre connexion et réessayez.</string>
     <string name="connector_account_unavailable">Ce compte n’est plus disponible.</string>
     <string name="connector_unavailable">L’autorisation n’est pas disponible pour ce compte.</string>
     <string name="connector_no_method">Ce service ne propose pas de configuration de compte ici.</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">Vérifier l’autorisation</string>
     <string name="connector_browser_unavailable">Aucun navigateur n’a pu ouvrir la page d’autorisation.</string>
     <string name="connector_incomplete">Le fournisseur n’a pas encore confirmé l’autorisation.</string>
-    <string name="connector_verify_pending">Le résultat reste à confirmer. Okou vérifiera de nouveau le compte.</string>
+    <string name="connector_verify_pending">Le résultat reste à confirmer.</string>
+    <string name="connector_verify_network">Le résultat reste à confirmer. Vérifiez votre connexion.</string>
+    <string name="connector_authorization_unconfirmed">L’autorisation reste à confirmer. Vérifiez les comptes du service avant de réessayer.</string>
+    <string name="connector_submitting">Envoi en cours…</string>
+    <string name="connector_waiting_provider">En attente de la confirmation de l’autorisation par le fournisseur…</string>
     <string name="connector_change_failed">Impossible de terminer cette action. Vérifiez le compte et réessayez.</string>
     <string name="connector_device_code">Saisissez ce code sur la page du fournisseur</string>
     <string name="connector_external_code">Code d’autorisation</string>

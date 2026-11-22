@@ -301,14 +301,13 @@ internal fun SettingsModal(
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
-    val centered = !fullScreen && workspaceListPaneWidth(window.width, window.height) != null
-    if (fullScreen || centered) {
+    if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
             onDismissRequest = onDismiss,
             properties =
                 DialogProperties(
                     dismissOnBackPress = dismissible,
-                    dismissOnClickOutside = dismissible,
+                    dismissOnClickOutside = dismissible && !fullScreen,
                     usePlatformDefaultWidth = false,
                 ),
         ) {
@@ -318,7 +317,7 @@ internal fun SettingsModal(
                 shape = if (fullScreen) RectangleShape else RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surface,
             ) {
-                content(centered)
+                content(true)
             }
         }
     } else {

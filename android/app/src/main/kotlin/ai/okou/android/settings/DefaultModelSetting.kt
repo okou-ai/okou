@@ -205,7 +205,7 @@ private fun DefaultModelSheet(
                 .padding(
                     start = 16.dp,
                     end = 16.dp,
-                    top = if (centered) 16.dp else 0.dp,
+                    top = if (centered && !fullScreen) 16.dp else 0.dp,
                     bottom = 16.dp,
                 )
         ) {

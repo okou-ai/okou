@@ -53,7 +53,7 @@
     <string name="connector_permissions_failed">暫時無法載入權限。</string>
     <string name="connector_impact_failed">暫時無法檢查此帳號的使用情況。</string>
     <string name="connector_offline">離線</string>
-    <string name="connector_offline_action">連上網路後即可管理帳號。</string>
+    <string name="connector_network_failed">暫時無法連線至 Okou。請檢查網路後再試。</string>
     <string name="connector_account_unavailable">此帳號已無法使用。</string>
     <string name="connector_unavailable">此帳號暫時無法授權。</string>
     <string name="connector_no_method">此服務目前沒有提供帳號連接操作。</string>
@@ -67,7 +67,11 @@
     <string name="connector_verify_authorization">檢查授權狀態</string>
     <string name="connector_browser_unavailable">沒有可開啟授權頁面的瀏覽器。</string>
     <string name="connector_incomplete">服務提供者尚未確認授權。</string>
-    <string name="connector_verify_pending">結果尚未確認。Okou 會再次核對帳號。</string>
+    <string name="connector_verify_pending">結果尚未確認。</string>
+    <string name="connector_verify_network">結果尚未確認。請檢查網路連線。</string>
+    <string name="connector_authorization_unconfirmed">授權結果尚未確認。請先檢查此服務的帳號。</string>
+    <string name="connector_submitting">正在提交…</string>
+    <string name="connector_waiting_provider">正在等待服務方完成授權…</string>
     <string name="connector_change_failed">操作未完成。請核對帳號後再試一次。</string>
     <string name="connector_device_code">請在服務提供者的頁面輸入此代碼</string>
     <string name="connector_external_code">授權碼</string>

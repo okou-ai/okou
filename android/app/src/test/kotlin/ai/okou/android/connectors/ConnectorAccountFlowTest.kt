@@ -19,10 +19,10 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
-import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isOff
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -51,7 +51,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 private const val LOAD_WHEN_ONLINE = "Content will load when you’re back online."
-private const val OFFLINE_ACCOUNT_ACTION = "Connect to the internet to manage accounts."
+private const val NETWORK_ACTION_FAILURE =
+    "Could not reach Okou. Check your connection and try again."
 
 @OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -170,22 +171,18 @@ class ConnectorAccountFlowTest {
             compose.onNodeWithText("Gmail").assertIsDisplayed()
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertIsDisplayed()
             compose.onNodeWithText("Connect account").assertDoesNotExist()
-            val offlineAction = compose.onNodeWithText(OFFLINE_ACCOUNT_ACTION)
-            offlineAction.assertDoesNotExist()
+            val networkFailure = compose.onNodeWithText(NETWORK_ACTION_FAILURE)
+            networkFailure.assertDoesNotExist()
 
             compose.runOnIdle { connectivity.value = true }
-            awaitText("Connect account")
+            compose.waitUntilAtLeastOneExists(hasText("Connect account") and isEnabled(), 10_000)
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
             val permissions = "Permissions this service can request"
             awaitText(permissions)
             compose.runOnIdle { connectivity.value = false }
-            awaitText(OFFLINE_ACCOUNT_ACTION)
-            val connect = compose.onNodeWithText("Connect account").assertIsNotEnabled()
-            assertEquals(
-                8.dp,
-                offlineAction.getUnclippedBoundsInRoot().top -
-                    connect.getUnclippedBoundsInRoot().bottom,
-            )
+            compose.waitForIdle()
+            compose.onNodeWithText("Connect account").assertIsEnabled()
+            networkFailure.assertDoesNotExist()
             compose.onNodeWithText(permissions).performClick()
             val inSheet = hasAnyAncestor(hasTestTag("connector-sheet"))
             compose.onNode(hasText(LOAD_WHEN_ONLINE) and inSheet).assertIsDisplayed()
@@ -194,7 +191,7 @@ class ConnectorAccountFlowTest {
             compose.runOnIdle { connectivity.value = true }
             awaitText("读取邮件")
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
-            offlineAction.assertDoesNotExist()
+            networkFailure.assertDoesNotExist()
         }
 
     @Test
@@ -256,19 +253,31 @@ class ConnectorAccountFlowTest {
         }
 
     @Test
-    fun changingTheDefaultSwitchUpdatesTheAccountRow() = withCalendar { _, _ ->
-        compose.onNodeWithText("工作日历").performClick()
-        val toggleLabel = "Enable by default"
-        compose.onNodeWithText(toggleLabel).assertHeightIsAtLeast(56.dp).assertIsOn().performClick()
-        compose.waitUntilAtLeastOneExists(hasText(toggleLabel) and isOff(), 10_000)
-        compose
-            .onNode(
-                hasText("Connected") and
-                    hasAnyAncestor(hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY")),
-                useUnmergedTree = true,
-            )
-            .assertExists()
-    }
+    fun theDefaultSwitchAndAccountRowKeepTheirConfirmedStateUntilTheReply() =
+        withCalendar { fixture, _ ->
+            compose.onNodeWithText("工作日历").performClick()
+            val toggleLabel = "Enable by default"
+            val toggle = compose.onNodeWithText(toggleLabel)
+            val account =
+                hasAnyAncestor(hasTestTag("connector-account-$CONNECTOR_CALENDAR_PRIMARY"))
+            val release = CountDownLatch(1)
+            fixture.defaultReplyGate = release
+            try {
+                toggle.assertHeightIsAtLeast(56.dp).assertIsOn().performClick()
+                compose.waitUntil(10_000) { fixture.defaultReplyStarted.count == 0L }
+                toggle.assertIsOn().assertIsNotEnabled()
+                compose
+                    .onNode(
+                        hasText("Connected · Enabled by default") and account,
+                        useUnmergedTree = true,
+                    )
+                    .assertExists()
+            } finally {
+                release.countDown()
+            }
+            compose.waitUntilAtLeastOneExists(hasText(toggleLabel) and isOff(), 10_000)
+            compose.onNode(hasText("Connected") and account, useUnmergedTree = true).assertExists()
+        }
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
@@ -358,7 +367,7 @@ class ConnectorAccountFlowTest {
     @Test
     fun anUnconfirmedRenameCanBeDismissedAndStillReconcilesOnReconnect() =
         withCalendar { fixture, connectivity ->
-            val pending = "The outcome is unconfirmed. Okou will check the account again."
+            val pending = "The outcome is still unconfirmed."
             compose.onNodeWithText("工作日历").performClick()
             compose.onNodeWithText("Rename").performClick()
             compose.onNodeWithTag("connector-input").performTextReplacement("Meeting calendar")
@@ -377,6 +386,58 @@ class ConnectorAccountFlowTest {
             compose.runOnIdle { connectivity.value = true }
             awaitText("Meeting calendar")
             compose.waitUntilAtLeastOneExists(hasText("Rename") and isEnabled(), 10_000)
+        }
+
+    @Test
+    fun renameShowsNetworkFailureOnlyAfterSubmitAndKeepsTheFocusedInput() =
+        withCalendar { fixture, connectivity ->
+            compose.waitUntilAtLeastOneExists(hasText("Add account") and isEnabled(), 10_000)
+            compose.runOnIdle { connectivity.value = false }
+            compose.waitForIdle()
+            compose.onNodeWithText("工作日历").performClick()
+            compose.onNodeWithText("Rename").assertIsEnabled().performClick()
+            val input =
+                compose.onNodeWithTag("connector-input").assertHeightIsAtLeast(56.dp).performClick()
+            input.performTextReplacement("Meeting calendar")
+            val save = compose.onNodeWithText("Save").assertIsEnabled()
+            compose.onNodeWithText(NETWORK_ACTION_FAILURE).assertDoesNotExist()
+
+            fixture.rejectConnection = true
+            save.performClick()
+            awaitText(NETWORK_ACTION_FAILURE)
+            input.assertIsFocused()
+            awaitText("Meeting calendar")
+            save.assertIsEnabled()
+
+            fixture.rejectConnection = false
+            compose.runOnIdle { connectivity.value = true }
+            save.performClick()
+            compose.waitUntilAtLeastOneExists(hasText("Rename") and isEnabled(), 10_000)
+            compose
+                .onNode(
+                    hasText("Meeting calendar") and hasAnyAncestor(hasTestTag("connector-sheet"))
+                )
+                .assertIsDisplayed()
+            assertEquals(1, fixture.renameRequests.get())
+        }
+
+    @Test
+    fun disconnectChecksImpactAndSubmitsEvenWhenDeviceReportsOffline() =
+        withCalendar { _, connectivity ->
+            compose.waitUntilAtLeastOneExists(hasText("Add account") and isEnabled(), 10_000)
+            compose.runOnIdle { connectivity.value = false }
+            compose.waitForIdle()
+            compose.onNodeWithText("工作日历").performClick()
+            compose.onNodeWithText("Disconnect account").assertIsEnabled().performClick()
+
+            val confirm =
+                hasText("Disconnect account") and
+                    hasAnyAncestor(isDialog()) and
+                    !hasAnyAncestor(hasTestTag("connector-sheet"))
+            awaitText("2 chats have explicitly selected this account.")
+            compose.onNode(confirm).assertIsEnabled().performClick()
+            compose.waitUntilDoesNotExist(hasText("工作日历"), 10_000)
+            compose.onNodeWithText("协作日历").assertIsDisplayed()
         }
 
     private fun withCalendar(exercise: (ConnectorApiFixture, MutableStateFlow<Boolean>) -> Unit) =
