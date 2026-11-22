@@ -8,8 +8,6 @@
     <string name="composer_restore_draft">Restaurer le brouillon conservé</string>
     <string name="controls_storage_failed">Impossible de conserver les commandes en attente.</string>
     <string name="controls_stop">Arrêter le travail en cours</string>
-    <string name="controls_queued_automation">Automatisation en attente</string>
-    <string name="controls_skip">Ignorer l’automatisation</string>
     <string name="controls_preparing">Enregistrement de la commande…</string>
     <string name="controls_sending">Envoi de la commande…</string>
     <string name="controls_accepted">Demande acceptée. Confirmation en attente.</string>
@@ -23,9 +21,6 @@
     <string name="controls_read_failed">Impossible de vérifier le résultat.</string>
     <string name="controls_recovery_failed">Le statut de récupération est indisponible.</string>
     <string name="controls_recovering">Préparation de la reprise de la conversation.</string>
-    <string name="output_live">Réponse en direct</string>
-    <string name="output_waiting">En attente de la réponse en direct</string>
-    <string name="output_catching_up">Chargement des messages enregistrés. Le texte reçu est conservé.</string>
     <string name="settings">Paramètres</string>
     <string name="back">Retour</string>
     <string name="appearance">Mode d’affichage</string>

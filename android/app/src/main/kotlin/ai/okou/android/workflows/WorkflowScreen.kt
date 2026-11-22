@@ -109,6 +109,7 @@ internal fun WorkflowScreen(
     timezone: String,
     handoffPending: Boolean,
     handoffFailed: Boolean,
+    feedback: @Composable () -> Unit,
     onClose: () -> Unit,
     onCreate: () -> Unit,
     onUse: (WorkflowDetail) -> Unit,
@@ -207,6 +208,9 @@ internal fun WorkflowScreen(
                         else stringResource(R.string.workspace_workflows),
                         ::back,
                     )
+                if (route.id != null) {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { feedback() }
+                }
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
                     state.detailFailure == WorkflowReadFailure.Unavailable ->

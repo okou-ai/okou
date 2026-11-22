@@ -57,6 +57,9 @@ internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSa
 @Composable
 internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSaveableStateHolder()
 
+@Composable
+internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
+
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 
 internal data class SearchResultAnchor(val chatId: String, val offset: Int)

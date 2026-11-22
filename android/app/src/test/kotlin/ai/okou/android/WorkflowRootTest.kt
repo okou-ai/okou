@@ -37,6 +37,7 @@ import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -292,6 +293,9 @@ class WorkflowRootTest {
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         compose.onNodeWithTag("workflow_use").performClick()
         waitForTag("message_input")
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
 
         compose.onNodeWithTag("workspace_search_entry").performClick()
         compose.onNodeWithTag("chat_search_query").performTextInput("Release")
@@ -299,8 +303,55 @@ class WorkflowRootTest {
         compose.onNodeWithTag("chat_search_query").assertDoesNotExist()
         compose.onNodeWithTag("message_input").assertIsDisplayed()
 
-        back()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun rejectedSourceChatDeletionRestoresTheRunLinkAndShowsFeedbackInHistory() {
+        val requested = CountDownLatch(1)
+        val releaseDelete = CountDownLatch(1)
+        val workflowResponse = app.fixture.chats.commandResponse
+        app.fixture.chats.commandResponse = { request ->
+            if (
+                request.method == "DELETE" &&
+                    request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL"
+            ) {
+                requested.countDown()
+                releaseDelete.await()
+                MockResponse().setResponseCode(400)
+            } else workflowResponse(request)
+        }
+        try {
+            openWorkflowDetail()
+            compose.onNodeWithTag("workflow_tab_history").performClick()
+            val source = hasText(app.fixture.ruleTitle) and hasClickAction()
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNode(source).performClick()
+            waitForTag("conversation")
+
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Delete chat").performClick()
+            compose.onNodeWithText("Delete").performClick()
+
+            compose.waitUntil(10_000) { requested.count == 0L }
+            compose.onNodeWithTag("workflow_tab_history").assertIsSelected()
+            compose.onNodeWithTag("conversation").assertDoesNotExist()
+            compose.onNode(source).assertDoesNotExist()
+
+            releaseDelete.countDown()
+            val rejected = "Could not finish changing the chat."
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(rejected).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText(rejected).assertIsDisplayed()
+            compose.onNode(source).assertIsDisplayed()
+        } finally {
+            releaseDelete.countDown()
+        }
     }
 
     private fun openWorkflowDetail() {

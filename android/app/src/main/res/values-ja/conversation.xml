@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">今日は何を進めますか？</string>
+    <string name="conversation_welcome_detail">やりたいことを Okou に伝えましょう。</string>
+    <string name="conversation_jump_latest">最新に戻る</string>
+    <string name="conversation_new_reply">新しい返信</string>
+    <string name="conversation_view_progress">進捗を確認</string>
+    <string name="conversation_processing">処理中…</string>
+    <string name="conversation_history_offline">オンラインになるとチャット履歴が表示されます。</string>
+    <string name="conversation_offline_send">送信するには接続してください。下書きは残ります。</string>
+    <string name="conversation_work">作業の経過</string>
+    <string name="conversation_reply_actions">返信の操作</string>
+    <string name="conversation_copy_reply">返信をコピー</string>
+    <string name="conversation_reply_copied">返信をコピーしました</string>
+    <string name="conversation_revoke">取り消す</string>
+    <string name="conversation_stop">停止</string>
+</resources>

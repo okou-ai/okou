@@ -8,8 +8,6 @@
     <string name="composer_restore_draft">還原保留的草稿</string>
     <string name="controls_storage_failed">待處理控制請求暫時無法儲存。</string>
     <string name="controls_stop">停止執行中的工作</string>
-    <string name="controls_queued_automation">排隊中的自動工作</string>
-    <string name="controls_skip">略過自動工作</string>
     <string name="controls_preparing">正在儲存控制請求…</string>
     <string name="controls_sending">正在傳送控制請求…</string>
     <string name="controls_accepted">請求已接受，等待確認。</string>
@@ -23,9 +21,6 @@
     <string name="controls_read_failed">無法確認控制結果。</string>
     <string name="controls_recovery_failed">暫時無法取得對話復原狀態。</string>
     <string name="controls_recovering">正在準備繼續對話。</string>
-    <string name="output_live">即時回覆</string>
-    <string name="output_waiting">等待即時回覆</string>
-    <string name="output_catching_up">正在同步已儲存的訊息。已收到的文字會保留。</string>
     <string name="settings">設定</string>
     <string name="back">返回</string>
     <string name="appearance">顯示模式</string>

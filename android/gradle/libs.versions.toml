@@ -66,6 +66,7 @@ datastore-preferences-core = { module = "androidx.datastore:datastore-preference
 sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 sqlite-host = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
 commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
+commonmarkTables = { module = "org.commonmark:commonmark-ext-gfm-tables", version.ref = "commonmark" }
 ably-device = { module = "io.ably.pubsub:device", version.ref = "ably" }
 sentry-android-core = { module = "io.sentry:sentry-android-core", version.ref = "sentry-android" }
 

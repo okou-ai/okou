@@ -8,8 +8,6 @@
     <string name="composer_restore_draft">Restore retained draft</string>
     <string name="controls_storage_failed">Pending control storage is unavailable.</string>
     <string name="controls_stop">Stop running work</string>
-    <string name="controls_queued_automation">Queued automation</string>
-    <string name="controls_skip">Skip automation</string>
     <string name="controls_preparing">Saving control request…</string>
     <string name="controls_sending">Sending control request…</string>
     <string name="controls_accepted">Request accepted. Waiting for confirmation.</string>
@@ -23,9 +21,6 @@
     <string name="controls_read_failed">Could not verify the control outcome.</string>
     <string name="controls_recovery_failed">Conversation recovery status is unavailable.</string>
     <string name="controls_recovering">Preparing the conversation to continue.</string>
-    <string name="output_live">Live response</string>
-    <string name="output_waiting">Waiting for live response</string>
-    <string name="output_catching_up">Catching up with saved messages. Received text is kept.</string>
     <string name="app_name" translatable="false">Okou</string>
     <string name="settings">Settings</string>
     <string name="back">Back</string>

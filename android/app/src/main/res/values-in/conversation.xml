@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">Apa yang ingin Anda kerjakan?</string>
+    <string name="conversation_welcome_detail">Beri tahu Okou apa yang ingin Anda lakukan.</string>
+    <string name="conversation_jump_latest">Ke pesan terbaru</string>
+    <string name="conversation_new_reply">Balasan baru</string>
+    <string name="conversation_view_progress">Lihat progres</string>
+    <string name="conversation_processing">Sedang memproses…</string>
+    <string name="conversation_history_offline">Riwayat chat akan dimuat saat Anda kembali online.</string>
+    <string name="conversation_offline_send">Sambungkan internet untuk mengirim. Draf Anda tetap di sini.</string>
+    <string name="conversation_work">Proses kerja</string>
+    <string name="conversation_reply_actions">Tindakan balasan</string>
+    <string name="conversation_copy_reply">Salin balasan</string>
+    <string name="conversation_reply_copied">Balasan disalin</string>
+    <string name="conversation_revoke">Tarik</string>
+    <string name="conversation_stop">Hentikan</string>
+</resources>
