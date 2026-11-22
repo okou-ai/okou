@@ -170,11 +170,20 @@ class ArtifactCatalogRootTest {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.pageSize = 2
         fixture.install()
+        val firstPage = CountDownLatch(1)
+        fixture.beforeCatalog = { firstPage.await() }
         app.responseGate.countDown()
-        awaitText(fixture.sourceTitle)
-        compose.onNodeWithText(fixture.sourceTitle).performClick()
-        compose.onNodeWithContentDescription("Chat actions").performClick()
-        compose.onNodeWithText("Chat resources").performClick()
+        try {
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithText(fixture.sourceTitle).performClick()
+            assertTrue(fixture.catalogScopes.isEmpty())
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Chat resources").performClick()
+            compose.onNodeWithTag("chat_artifact_resources").assertIsDisplayed()
+            compose.onNodeWithText(fixture.checklist.title).assertDoesNotExist()
+        } finally {
+            firstPage.countDown()
+        }
         awaitText(fixture.slides.title)
         assertTrue(fixture.catalogScopes.contains(CHAT_PERSONAL to null))
         assertTrue(fixture.catalogScopes.contains(CHAT_PERSONAL to "2"))
@@ -182,6 +191,7 @@ class ArtifactCatalogRootTest {
         compose.onNodeWithText(fixture.image.title).assertDoesNotExist()
         compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(72.dp).performClick()
         awaitText("Preview only", partial = true)
+        compose.onNodeWithText("Save file").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back to chat resources").performClick()
         compose.onNodeWithTag("chat_artifact_resources").assertIsDisplayed()
         awaitText(fixture.slides.title)
