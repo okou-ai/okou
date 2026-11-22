@@ -70,6 +70,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -1345,6 +1346,77 @@ class ChatListRootTest {
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Delete “Research”?").assertDoesNotExist()
         compose.onNodeWithText("Research").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun projectDeletionReportsRegroupingAfterTheChatFeedRecovers() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val deletionId = AtomicReference<String>()
+        val chatReadAvailable = AtomicBoolean(false)
+        val events = fixture.rowEventTail()
+        val readChatEvents = fixture.events
+        fixture.events = { request ->
+            if (deletionId.get() != null && !chatReadAvailable.get())
+                MockResponse().setResponseCode(503)
+            else readChatEvents(request)
+        }
+        fixture.projectEvents = { request ->
+            val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0
+            val id = deletionId.get()
+            val tail =
+                if (id == null || since >= 1) ""
+                else
+                    """{"id":"$id","seqId":1,"projectId":"$CHAT_PROJECT","kind":"deleted","name":null,"createdAt":"$CHAT_DATE"}"""
+            jsonResponse("""{"events":[$tail],"hasMore":false}""")
+        }
+        fixture.commandResponse = { request ->
+            if (
+                request.method == "DELETE" &&
+                    request.requestUrl?.encodedPath == "/api/projects/$CHAT_PROJECT"
+            ) {
+                events +=
+                    24L to
+                        chatEventWire(
+                            id = "00000024-0000-4000-8000-000000000000",
+                            seq = 24,
+                            thread = CHAT_IN_PROJECT,
+                            kind = "project_updated",
+                            extra = ",\"projectId\":null",
+                        )
+                deletionId.set(request.jsonCommandBody().getValue("eventId").jsonPrimitive.content)
+                MockResponse().setResponseCode(204)
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Research").performTouchInput { longClick() }
+        compose.onNodeWithText("Delete Project").performClick()
+        compose.onNodeWithText("Delete “Research”?").assertIsDisplayed()
+        compose.onNodeWithText("Delete Project").performClick()
+
+        compose.waitUntil(10_000) {
+            val state = currentList() ?: return@waitUntil false
+            state.projects.isEmpty() && state.projectList.deletingId == null
+        }
+        val deletionMessage = "Project deleted and its chats moved outside Projects."
+        assertEquals(
+            CHAT_PROJECT,
+            currentList()?.threads?.single { it.id == CHAT_IN_PROJECT }?.projectId,
+        )
+        compose.onNodeWithText("Project chat").assertIsDisplayed()
+        compose.onNodeWithText(deletionMessage).assertDoesNotExist()
+
+        chatReadAvailable.set(true)
+        reconnectList(app)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(deletionMessage).fetchSemanticsNodes().isNotEmpty()
+        }
+        assertNull(
+            checkNotNull(currentList()).threads.single { it.id == CHAT_IN_PROJECT }.projectId
+        )
+        compose.onNodeWithText(deletionMessage).assertIsDisplayed()
     }
 
     @Test

@@ -326,7 +326,7 @@ internal fun OkouApp(
         settings == null && !showChatList && !showingConnectors && thread != null
     val showRowFeedback = showChatList || showConversationFeedback
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
-    val deleteFeedback = list.projectList.deleteFeedback
+    val deleteFeedback = list.projectDeleteFeedback
     val deleteProject = list.projects.firstOrNull { it.id == confirmingProjectDelete }
     if (deleteProject != null && showChatList) {
         val feedback = deleteFeedback?.takeIf { it.projectId == deleteProject.id }

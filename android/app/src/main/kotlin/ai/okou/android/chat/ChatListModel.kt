@@ -118,7 +118,16 @@ enum class ChatRowAction(
 internal data class ChatProjectDestination(val id: String?, val name: String?)
 
 @ConsistentCopyVisibility
-data class ChatMoveNotice internal constructor(val eventId: String, val projectName: String?)
+data class ChatMoveNotice
+internal constructor(
+    val eventId: String,
+    val threadId: String,
+    val projectId: String?,
+    val projectName: String?,
+) {
+    internal fun matchesMembership(threads: List<ConfirmedChat>): Boolean =
+        threads.any { it.id == threadId && it.hidden != true && it.projectId == projectId }
+}
 
 class ChatRowActionFailure
 internal constructor(
@@ -196,6 +205,14 @@ data class ChatListUiState(
 
     internal val projectRenameRejection: ProjectRenameRejection?
         get() = projectList.renameRejection
+
+    // Project metadata can confirm deletion before the chat feed confirms regrouping.
+    internal val projectDeleteFeedback: ProjectDeleteFeedback?
+        get() =
+            projectList.deleteFeedback?.takeUnless { feedback ->
+                feedback.status == ProjectDeleteStatus.Confirmed &&
+                    threads.any { it.projectId == feedback.projectId }
+            }
 }
 
 internal val ChatListUiState.canRenameProject: Boolean
@@ -354,7 +371,11 @@ class ChatListModel(
                     state.copy(
                         projectList = projectList,
                         chatMoveNotice =
-                            state.chatMoveNotice.takeUnless { projectList.deletingId != null },
+                            state.chatMoveNotice?.takeIf { notice ->
+                                projectList.deletingId == null &&
+                                    (notice.projectId == null ||
+                                        projectList.rows.any { it.id == notice.projectId })
+                            },
                     )
                 )
             },
@@ -982,6 +1003,7 @@ class ChatListModel(
                 threads = rows.threads,
                 threadsByRecency = rows.byRecency,
                 acceptedNewChats = projection.acceptedNewChats,
+                chatMoveNotice = state.chatMoveNotice?.takeIf { it.matchesMembership(rows.threads) },
             )
     }
 
@@ -999,12 +1021,12 @@ class ChatListModel(
 
     private fun recordConfirmedProjectMove(edit: ChatRowEdit) {
         val state = mutable.value
-        val thread = state.threads.firstOrNull { it.id == edit.threadId && it.hidden != true }
-        // A newer membership event can supersede this receipt before the write returns.
-        if (thread == null || thread.projectId != edit.value) return
         val projectName =
             edit.value?.let { id -> state.projects.firstOrNull { it.id == id }?.name ?: return }
-        mutable.value = state.copy(chatMoveNotice = ChatMoveNotice(edit.eventId, projectName))
+        val notice = ChatMoveNotice(edit.eventId, edit.threadId, edit.value, projectName)
+        if (notice.matchesMembership(state.threads)) {
+            mutable.value = state.copy(chatMoveNotice = notice)
+        }
     }
 
     internal fun retainAcceptedNewChats(chats: List<ProvisionalChat>, restored: Boolean = false) {

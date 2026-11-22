@@ -3202,6 +3202,28 @@ class ChatListModelTest {
         }
     }
 
+    @Test
+    fun aQueuedMoveConfirmationClearsAfterTheChatMovesAgain() = runTest {
+        val source = ProjectOrganizationService()
+        source.moveResponse = source::publishMembership
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+            runCurrent()
+            assertEquals("Research", model.uiState.value.chatMoveNotice?.projectName)
+
+            source.publishMembership(CHAT_PERSONAL, null, "00000022-0000-4000-8000-000000000000")
+            model.refresh()
+            runCurrent()
+
+            val state = model.uiState.value
+            assertEquals("Research", state.projects.single().name)
+            assertNull(state.threads.single { it.id == CHAT_PERSONAL }.projectId)
+            assertNull(state.chatMoveNotice)
+        }
+    }
+
     private inner class ProjectOrganizationService : Service() {
         private val events =
             mutableListOf(
