@@ -55,4 +55,18 @@
     <string name="settings_credit_top_up">टॉप-अप क्रेडिट</string>
     <string name="settings_credit_unit">क्रेडिट</string>
     <string name="settings_credit_web">वेब पर क्रेडिट विवरण देखें</string>
+    <string name="settings_default_model">डिफ़ॉल्ट मॉडल</string>
+    <string name="settings_auto_model_detail">Okou उपलब्ध मॉडल चुनता है</string>
+    <string name="settings_model_plan_restricted">दूसरा प्लान चाहिए</string>
+    <string name="settings_model_fast">तेज़ मोड</string>
+    <string name="settings_model_fast_usage">लगभग %1$s गुना सदस्यता कोटा</string>
+    <string name="settings_model_offline">ऑफ़लाइन। कनेक्ट होने पर बदलाव सिंक होंगे।</string>
+    <string name="settings_model_save_unavailable">डिफ़ॉल्ट मॉडल सिंक नहीं हो सका।</string>
+    <string name="settings_model_effort">तर्क का स्तर</string>
+    <string name="settings_model_effort_low">कम</string>
+    <string name="settings_model_effort_medium">मध्यम</string>
+    <string name="settings_model_effort_high">उच्च</string>
+    <string name="settings_model_effort_extra">बहुत उच्च</string>
+    <string name="settings_model_effort_max">अधिकतम</string>
+    <string name="settings_model_effort_ultra">अल्ट्रा</string>
 </resources>

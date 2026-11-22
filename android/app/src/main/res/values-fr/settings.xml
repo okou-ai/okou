@@ -55,4 +55,18 @@
     <string name="settings_credit_top_up">Crédits rechargés</string>
     <string name="settings_credit_unit">crédits</string>
     <string name="settings_credit_web">Consulter le détail des crédits sur le Web</string>
+    <string name="settings_default_model">Modèle par défaut</string>
+    <string name="settings_auto_model_detail">Okou choisit un modèle disponible</string>
+    <string name="settings_model_plan_restricted">Autre abonnement requis</string>
+    <string name="settings_model_fast">Mode rapide</string>
+    <string name="settings_model_fast_usage">Utilise environ %1$s fois le quota</string>
+    <string name="settings_model_offline">Hors ligne. Les modifications seront synchronisées à la reconnexion.</string>
+    <string name="settings_model_save_unavailable">Impossible de synchroniser le modèle par défaut.</string>
+    <string name="settings_model_effort">Niveau de raisonnement</string>
+    <string name="settings_model_effort_low">Faible</string>
+    <string name="settings_model_effort_medium">Moyen</string>
+    <string name="settings_model_effort_high">Élevé</string>
+    <string name="settings_model_effort_extra">Très élevé</string>
+    <string name="settings_model_effort_max">Maximum</string>
+    <string name="settings_model_effort_ultra">Ultra</string>
 </resources>

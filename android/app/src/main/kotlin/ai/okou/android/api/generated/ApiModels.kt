@@ -5728,6 +5728,84 @@ data class RecoveryModelsModelsItem(
 @Serializable data class RecoveryModels(val `models`: List<RecoveryModelsModelsItem>)
 
 @Serializable
+enum class DefaultModelPreferenceServiceTier {
+    @SerialName("priority") PRIORITY
+}
+
+@Serializable
+enum class DefaultModelPreferenceModelSettingsValueEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+data class DefaultModelPreferenceModelSettingsValue(
+    val `effort`: DefaultModelPreferenceModelSettingsValueEffort? = null
+)
+
+@Serializable
+data class DefaultModelPreference(
+    val `selectedModel`: String?,
+    val `serviceTier`: DefaultModelPreferenceServiceTier?,
+    val `modelSettings`: Map<String, DefaultModelPreferenceModelSettingsValue>,
+)
+
+@Serializable
+enum class UpdateDefaultModelPreferenceServiceTier {
+    @SerialName("priority") PRIORITY
+}
+
+@Serializable
+enum class UpdateDefaultModelPreferenceModelSettingsPatchEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+data class UpdateDefaultModelPreferenceModelSettingsPatch(
+    val `model`: String,
+    val `effort`: UpdateDefaultModelPreferenceModelSettingsPatchEffort,
+)
+
+@Serializable
+enum class UpdateDefaultModelPreferenceSelectedImageModel {
+    @SerialName("gpt-image-1") GPT_IMAGE_1,
+    @SerialName("gpt-image-2") GPT_IMAGE_2,
+    @SerialName("gpt-image-2.5-flare") GPT_IMAGE_2_5_FLARE,
+    @SerialName("gpt-image-2.5-sunburst") GPT_IMAGE_2_5_SUNBURST,
+    @SerialName("fal-ai/flux-pro/v1.1") FAL_AI_FLUX_PRO_V1_1,
+    @SerialName("fal-ai/flux-pro/v1.1-ultra") FAL_AI_FLUX_PRO_V1_1_ULTRA,
+    @SerialName("fal-ai/flux-2-pro") FAL_AI_FLUX_2_PRO,
+    @SerialName("alibaba/qwen-image-3/text-to-image") ALIBABA_QWEN_IMAGE_3_TEXT_TO_IMAGE,
+    @SerialName("ideogram/v4") IDEOGRAM_V4,
+    @SerialName("fal-ai/bytedance/seedream/v4/text-to-image")
+    FAL_AI_BYTEDANCE_SEEDREAM_V4_TEXT_TO_IMAGE,
+    @SerialName("fal-ai/nano-banana-2") FAL_AI_NANO_BANANA_2,
+    @SerialName("google/nano-banana-2-lite") GOOGLE_NANO_BANANA_2_LITE,
+}
+
+@Serializable
+data class UpdateDefaultModelPreference(
+    val `selectedModel`: String?,
+    val `serviceTier`: UpdateDefaultModelPreferenceServiceTier?,
+    val `modelSettingsPatch`: UpdateDefaultModelPreferenceModelSettingsPatch? = null,
+    val `selectedImageModel`: CanonicalOptional<UpdateDefaultModelPreferenceSelectedImageModel?> =
+        CanonicalOptional.Absent,
+)
+
+@Serializable
 enum class RecoverySubscriptionsSubscriptionsItemType {
     @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
     @SerialName("openrouter-codex") OPENROUTER_CODEX,
