@@ -5,9 +5,7 @@ import ai.okou.android.auth.SessionModel
 import android.graphics.Point
 import android.os.SystemClock
 import android.util.Log
-import android.view.InputDevice
 import android.view.KeyEvent
-import android.view.MotionEvent
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -576,87 +574,12 @@ class NativeChatListTest {
                     start.x + (horizontal * swipeDensity).toInt(),
                     start.y + (vertical * swipeDensity).toInt(),
                 )
-            val downAt = SystemClock.uptimeMillis()
-            val finger =
-                MotionEvent.PointerProperties().apply {
-                    id = 0
-                    toolType = MotionEvent.TOOL_TYPE_FINGER
-                }
-            fun injectSwipeEvent(action: Int, point: Point): Boolean {
-                val coordinates =
-                    MotionEvent.PointerCoords().apply {
-                        x = point.x.toFloat()
-                        y = point.y.toFloat()
-                        pressure =
-                            if (
-                                action == MotionEvent.ACTION_UP ||
-                                    action == MotionEvent.ACTION_CANCEL
-                            )
-                                0f
-                            else 1f
-                        this.size = 1f
-                    }
-                val event =
-                    MotionEvent.obtain(
-                        downAt,
-                        SystemClock.uptimeMillis(),
-                        action,
-                        1, // pointerCount
-                        arrayOf(finger),
-                        arrayOf(coordinates),
-                        0, // metaState
-                        0, // buttonState
-                        1f, // xPrecision
-                        1f, // yPrecision
-                        0, // deviceId
-                        0, // edgeFlags
-                        InputDevice.SOURCE_TOUCHSCREEN,
-                        0, // flags
-                    )
-                try {
-                    return instrumentation.uiAutomation.injectInputEvent(event, true)
-                } finally {
-                    event.recycle()
-                }
-            }
-            val personalChat = By.pkg(app.packageName).text("Personal chat")
-            fun captureSwipe(displacement: Int, name: String) {
-                val point = swipePoint(displacement, 0)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
-                val targetRight = row.right + point.x - start.x
-                assertTrue(
-                    "Chat row failed to follow the $displacement dp swipe",
-                    device.wait(
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean {
-                                val right = device.findObject(personalChat)?.visibleBounds?.right
-                                if (right != null && abs(right - targetRight) <= 2) return true
-                                // Send a stationary sample if input resampling has not settled.
-                                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
-                                return false
-                            }
-                        },
-                        10_000,
-                    ),
+            assertTrue(
+                device.swipe(
+                    arrayOf(start, swipePoint(-36, 0), swipePoint(-104, 0), swipePoint(-96, 72)),
+                    16,
                 )
-                takeScreenshot().writeToTestStorage(name)
-            }
-            assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
-            var released = false
-            try {
-                captureSwipe(-36, "android-swipe-archive-icon")
-                captureSwipe(-104, "android-swipe-archive-ready")
-                val diagonal = swipePoint(-96, 72)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, diagonal))
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_UP, diagonal))
-                released = true
-            } finally {
-                if (!released) {
-                    runCatching { check(injectSwipeEvent(MotionEvent.ACTION_CANCEL, start)) }
-                        .exceptionOrNull()
-                        ?.let(failures::add)
-                }
-            }
+            )
             text("Personal chat")
             device.waitForIdle()
             assertTrue("A diagonal release must not archive the chat", rowEvents.isEmpty())

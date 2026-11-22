@@ -58,10 +58,21 @@ class ChatRowSwipeTest {
         val thresholdHaptic = HapticFeedbackType.GestureThresholdActivate
         row.performTouchInput {
             down(center)
-            moveTo(center + Offset(-40.dp.toPx(), 0f))
-            moveTo(center + Offset(-80.dp.toPx(), 0f))
-            moveTo(center + Offset(-96.dp.toPx(), 0f))
-            moveTo(center + Offset(-64.dp.toPx(), 0f))
+            moveTo(center + Offset(-36.dp.toPx(), 0f))
+        }
+        assertEquals(
+            (restingLeft - 36.dp).value,
+            foreground.getUnclippedBoundsInRoot().left.value,
+            0.5f,
+        )
+        row.performTouchInput { moveTo(center + Offset(-104.dp.toPx(), 0f)) }
+        assertEquals(
+            (restingLeft - 104.dp).value,
+            foreground.getUnclippedBoundsInRoot().left.value,
+            0.5f,
+        )
+        row.performTouchInput {
+            moveTo(center + Offset(-96.dp.toPx(), 72.dp.toPx()))
             up()
         }
         compose.runOnIdle {
