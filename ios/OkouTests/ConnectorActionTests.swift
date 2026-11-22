@@ -92,7 +92,7 @@ final class ConnectorActionTests: XCTestCase {
     for _ in 0..<80 {
       _ = store.resources.read(
         .configuration(
-          target: .builtin("slack"), agentID: FixtureData.agentID, threadID: UUID().uuidString))
+          target: .builtin("slack"), threadID: UUID().uuidString))
     }
     store.submit()
     try await waitForBusinessResult { store.active == nil }
@@ -129,8 +129,8 @@ final class ConnectorActionTests: XCTestCase {
     defer { store.close() }
     let action = try XCTUnwrap(
       ChatConnectorAction.parse(
-        "/agents/\(FixtureData.agentID)/connector-accounts/\(FixtureData.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
-        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+        "/connectors/accounts/\(FixtureData.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
+        webURL: fixture.baseURL, threadID: FixtureData.threadID))
     store.activate(action)
     try await waitForBusinessResult { store.active != nil }
     store.submit()
@@ -511,8 +511,8 @@ final class ConnectorStatusReadTests: XCTestCase {
     let first = try descriptor(fixture)
     let equivalent = try XCTUnwrap(
       ChatConnectorAction.parse(
-        "/connectors/SLACK/authorize?callbackPrompt=Another+prompt&threadId=\(FixtureData.threadID)&agentId=\(FixtureData.agentID)",
-        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+        "/connectors/SLACK/authorize?callbackPrompt=Another+prompt&threadId=\(FixtureData.threadID)",
+        webURL: fixture.baseURL, threadID: FixtureData.threadID))
     let one = Task.immediate { @MainActor in try await store.resources.read(first).load() }
     let two = Task.immediate { @MainActor in try await store.resources.read(equivalent).load() }
     addTeardownBlock { @MainActor in
@@ -730,8 +730,8 @@ extension XCTestCase {
     return try XCTUnwrap(
       ChatConnectorAction.parse(
         path
-          + "?agentId=\(FixtureData.agentID)&threadId=\(FixtureData.threadID)&callbackPrompt=\(callbackQuery)",
-        webURL: fixture.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+          + "?threadId=\(FixtureData.threadID)&callbackPrompt=\(callbackQuery)",
+        webURL: fixture.baseURL, threadID: FixtureData.threadID))
   }
   fileprivate func store(
     _ fixture: ChatHTTPFixture,
@@ -742,7 +742,7 @@ extension XCTestCase {
     let sync = ChatSync(client: fixture.client)
     let commands = ChatCommands(client: fixture.client, sync: sync)
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Connector test",
+      id: FixtureData.threadID, title: "Connector test",
       selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast, pinnedAt: nil,
       pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)

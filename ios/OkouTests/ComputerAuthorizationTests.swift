@@ -463,7 +463,6 @@ extension ChatComputerAuthorizationAction.Kind {
 
 private final class ComputerAuthorizationFixture: Sendable {
   static let threadID = "71000000-0000-4000-8000-000000000001"
-  static let agentID = "71000000-0000-4000-8000-000000000002"
   static let requestID = "71000000-0000-4000-8000-000000000003"
   static let hostID = "71000000-0000-4000-8000-000000000004"
   static let secondHostID = "71000000-0000-4000-8000-000000000005"
@@ -545,7 +544,7 @@ private final class ComputerAuthorizationFixture: Sendable {
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
             body:
-              "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":\(kind == .browser ? "null" : "\"\(Self.hostID)\""),\"cloudBrowserEnabled\":\(kind == .browser)}"
+              "{\"id\":\"\(Self.threadID)\",\"computerUseHostId\":\(kind == .browser ? "null" : "\"\(Self.hostID)\""),\"cloudBrowserEnabled\":\(kind == .browser)}"
           )
         }
         if path == threadPath + "/event-snapshot" {
@@ -644,7 +643,7 @@ private final class ComputerAuthorizationFixture: Sendable {
     let sync = ChatSync(client: http.client)
     let commands = ChatCommands(client: http.client, sync: sync)
     let thread = ChatThread(
-      id: Self.threadID, agentID: Self.agentID, title: "Access", createdAt: .now,
+      id: Self.threadID, title: "Access", createdAt: .now,
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ComputerAuthorizationStore(
       action: action, thread: thread, commands: commands, sync: sync,
@@ -672,7 +671,7 @@ private final class ComputerAuthorizationFixture: Sendable {
     let sync = ChatSync(client: http.client)
     let commands = ChatCommands(client: http.client, sync: sync)
     let thread = ChatThread(
-      id: Self.threadID, agentID: Self.agentID, title: "Access", createdAt: .now,
+      id: Self.threadID, title: "Access", createdAt: .now,
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ConversationStore(
       thread: thread, sync: sync, commands: commands, webURL: http.baseURL,

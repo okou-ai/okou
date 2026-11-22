@@ -15,10 +15,10 @@ final class ChatConnectorTests: XCTestCase {
     try XCTUnwrap(
       ChatConnectorAction.parse(
         path
-          + "?agentId=\(FixtureData.agentID)&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
-        webURL: webURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+          + "?threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
+        webURL: webURL, threadID: FixtureData.threadID))
   }
-  func testTrustedReferencesFenceOriginAgentThreadAndMalformedCallbacks() throws {
+  func testTrustedReferencesFenceOriginThreadAndMalformedCallbacks() throws {
     XCTAssertEqual(try action().kind, .connect(slug: "slack"))
     XCTAssertEqual(try action("/connectors/_internal/connect").kind, .connect(slug: "_internal"))
     XCTAssertEqual(
@@ -31,43 +31,43 @@ final class ChatConnectorTests: XCTestCase {
     ] {
       XCTAssertNil(
         ChatConnectorAction.parse(
-          origin + "/connectors/slack/connect?agentId=\(FixtureData.agentID)", webURL: webURL,
-          agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+          origin + "/connectors/slack/connect", webURL: webURL,
+          threadID: FixtureData.threadID))
     }
     for value in [
       "/connectors/slack/connect?agentId=\(FixtureData.siblingID)",
-      "/connectors/slack/connect?agentId=\(FixtureData.agentID)&threadId=\(FixtureData.siblingID)&callbackPrompt=Continue",
-      "/connectors/slack/connect?agentId=\(FixtureData.agentID)&threadId=\(FixtureData.threadID)",
-      "/connectors/slack/connect?agentId=\(FixtureData.agentID)&callbackPrompt=Continue",
-      "/connectors/slack/connect?agentId=\(FixtureData.agentID)&agentId=\(FixtureData.siblingID)",
-      "/connectors/_internal/authorize?agentId=\(FixtureData.agentID)",
-      "/connectors/slack/reconnect/not-an-id?agentId=\(FixtureData.agentID)"
+      "/connectors/slack/connect?threadId=\(FixtureData.siblingID)&callbackPrompt=Continue",
+      "/connectors/slack/connect?threadId=\(FixtureData.siblingID)",
+      "/connectors/slack/connect?callbackPrompt=Continue",
+      "/connectors/slack/connect?threadId=\(FixtureData.threadID)&threadId=\(FixtureData.siblingID)",
+      "/connectors/_internal/authorize",
+      "/connectors/slack/reconnect/not-an-id"
     ] {
       XCTAssertEqual(
         ChatConnectorAction.parse(
-          value, webURL: webURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID)?
+          value, webURL: webURL, threadID: FixtureData.threadID)?
           .kind, .unavailable, value)
     }
   }
   func testCallbackUsesFormQueryDecodingAndPreservesItsOriginalReference() throws {
     let value =
-      "/connectors/slack/connect?agentId=\(FixtureData.agentID)&threadId=\(FixtureData.threadID)"
+      "/connectors/slack/connect?threadId=\(FixtureData.threadID)"
       + "&callbackPrompt=I+connected+Slack%2BChat+%26+Docs%2E"
     let action = try XCTUnwrap(
       ChatConnectorAction.parse(
-        value, webURL: webURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+        value, webURL: webURL, threadID: FixtureData.threadID))
     XCTAssertEqual(action.kind, .connect(slug: "slack"))
     XCTAssertEqual(action.callbackPrompt, "I connected Slack+Chat & Docs.")
     XCTAssertEqual(action.id, value)
   }
   func testAccountConfirmationValidatesExactTargetAndRequiresCallback() throws {
-    let path = "/agents/\(FixtureData.agentID)/connector-accounts/\(FixtureData.accountID)/select"
+    let path = "/connectors/accounts/\(FixtureData.accountID)/select"
     let valid =
       path
       + "?kind=custom&customConnectorId=\(FixtureData.customID)&threadId=\(FixtureData.threadID)&callbackPrompt=Continue"
     XCTAssertEqual(
       ChatConnectorAction.parse(
-        valid, webURL: webURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID)?
+        valid, webURL: webURL, threadID: FixtureData.threadID)?
         .kind, .select(target: .custom(FixtureData.customID), connectionID: FixtureData.accountID))
     for suffix in [
       "?kind=builtin&connectorSlug=slack",
@@ -75,7 +75,7 @@ final class ChatConnectorTests: XCTestCase {
     ] {
       XCTAssertEqual(
         ChatConnectorAction.parse(
-          path + suffix, webURL: webURL, agentID: FixtureData.agentID,
+          path + suffix, webURL: webURL,
           threadID: FixtureData.threadID)?.kind,
         .unavailable)
     }
@@ -168,7 +168,7 @@ final class ChatConnectorTests: XCTestCase {
       } catch ChatConnectorInputError.noDefaultAccount {}
       let add = ChatConnectorAction.configuration(
         target: custom ? .custom(FixtureData.customID) : .builtin("slack"),
-        agentID: FixtureData.agentID, threadID: FixtureData.threadID)
+        threadID: FixtureData.threadID)
       let explicit = try await service.status(add)
       XCTAssertNil(try XCTUnwrap(explicit).account)
     }
@@ -348,12 +348,12 @@ final class ChatConnectorTests: XCTestCase {
     let sync = ChatSync(client: fixture.client)
     let commands = ChatCommands(client: fixture.client, sync: sync)
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Test",
+      id: FixtureData.threadID, title: "Test",
       createdAt: .distantPast,
       updatedAt: .distantPast, sortAt: .distantPast, pinnedAt: nil, pinOrder: nil)
     do {
       _ = try await commands.send(
-        thread: thread, text: "Continue", expectedAgentID: FixtureData.agentID)
+        thread: thread, text: "Continue")
       XCTFail("Expected mismatched thread rejection")
     } catch APIClientError.incompatibleData {}
   }

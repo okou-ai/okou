@@ -1,4 +1,4 @@
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
@@ -17,7 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { mockApi } from "../msw-contract.ts";
 
-export const apiAgentsHandlers = [
+export const chatThreadHandlers = [
   // GET /api/chat-drafts/composer
   mockApi(composerDraftContract.get, ({ respond }) => {
     return respond(200, {

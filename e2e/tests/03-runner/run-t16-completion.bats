@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Run completion coverage through the supported agent, chat, and run APIs.
+# Run completion coverage through the chat and run APIs.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
@@ -17,14 +17,8 @@ teardown() {
 }
 
 @test "completed chat run exposes native history and published outputs" {
-    run create_runner_agent "e2e-run-completion-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local marker="RUN_COMPLETED_${TEST_ID}"
     run runner_e2e_start_mock_shell_chat_run \
-        "$AGENT_ID" \
         "printf '${marker}\\n'"
     echo "$output"
     assert_success

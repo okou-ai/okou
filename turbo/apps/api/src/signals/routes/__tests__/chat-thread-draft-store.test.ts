@@ -24,17 +24,15 @@ const repairedText = String.raw`Keep "quotes", \ and 👒; replace � and �.`
 
 interface DraftFixture {
   readonly actor: ReturnType<typeof bdd.user>;
-  readonly agentId: string;
   readonly threadId: string;
 }
 
 async function createDraftFixture(): Promise<DraftFixture> {
   const actor = bdd.user();
-  const agent = await chat.createAgentForChatThread(actor);
   const thread = await chat.createThread(actor, {
     title: `Draft ${randomUUID()}`,
   });
-  return { actor, agentId: agent.agentId, threadId: thread.id };
+  return { actor, threadId: thread.id };
 }
 
 async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {

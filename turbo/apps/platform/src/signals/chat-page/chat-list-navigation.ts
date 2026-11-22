@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { currentChatThreadNavigationList$ } from "../agent-chat.ts";
+import { currentChatThreadNavigationList$ } from "../chat-thread-list.ts";
 import { suggestionsEnabled$ } from "../okou-page/agent-suggestion-session.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";

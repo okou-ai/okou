@@ -10,7 +10,7 @@ import {
   chatPageTaglineIndex$,
   finishChatGreetingEntrance$,
 } from "../../signals/okou-page/chat-page.ts";
-import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
+import { workspaceChatComposerSignals$ } from "../../signals/okou-page/workspace-composer-signals.ts";
 import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
 import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
@@ -18,25 +18,25 @@ import { MyOkouAvatarButton } from "./my-okou-avatar-button.tsx";
 function localizedAnonymousTaglines(t: TFunction<"common">): string[] {
   return [
     t(($) => {
-      return $.chat.agentPage.taglines.anonymous.welcomeBack;
+      return $.chat.homePage.taglines.anonymous.welcomeBack;
     }),
     t(($) => {
-      return $.chat.agentPage.taglines.anonymous.whatsTheMove;
+      return $.chat.homePage.taglines.anonymous.whatsTheMove;
     }),
     t(($) => {
-      return $.chat.agentPage.taglines.anonymous.goodToSeeYou;
+      return $.chat.homePage.taglines.anonymous.goodToSeeYou;
     }),
     t(($) => {
-      return $.chat.agentPage.taglines.anonymous.whatsOnYourMind;
+      return $.chat.homePage.taglines.anonymous.whatsOnYourMind;
     }),
     t(($) => {
-      return $.chat.agentPage.taglines.anonymous.readyToRoll;
+      return $.chat.homePage.taglines.anonymous.readyToRoll;
     }),
     t(($) => {
-      return $.chat.agentPage.taglines.anonymous.buildSomething;
+      return $.chat.homePage.taglines.anonymous.buildSomething;
     }),
     t(($) => {
-      return $.chat.agentPage.taglines.anonymous.whatAreWeWorkingOn;
+      return $.chat.homePage.taglines.anonymous.whatAreWeWorkingOn;
     }),
   ];
 }
@@ -48,103 +48,103 @@ function localizedUserTaglines(
   return [
     t(
       ($) => {
-        return $.chat.agentPage.taglines.welcomeBack;
+        return $.chat.homePage.taglines.welcomeBack;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.whatsTheMove;
+        return $.chat.homePage.taglines.whatsTheMove;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.goodToSeeYou;
+        return $.chat.homePage.taglines.goodToSeeYou;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.whatsOnYourMind;
+        return $.chat.homePage.taglines.whatsOnYourMind;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.anotherWin;
+        return $.chat.homePage.taglines.anotherWin;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.readyToBuild;
+        return $.chat.homePage.taglines.readyToBuild;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.enteredChat;
+        return $.chat.homePage.taglines.enteredChat;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.goodToSeeYou;
+        return $.chat.homePage.taglines.goodToSeeYou;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.savedYourSeat;
+        return $.chat.homePage.taglines.savedYourSeat;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.makeTodayCount;
+        return $.chat.homePage.taglines.makeTodayCount;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.coffeeReady;
+        return $.chat.homePage.taglines.coffeeReady;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.knewYouWouldCome;
+        return $.chat.homePage.taglines.knewYouWouldCome;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.whatsCooking;
+        return $.chat.homePage.taglines.whatsCooking;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.newIdeas;
+        return $.chat.homePage.taglines.newIdeas;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.rightOnTime;
+        return $.chat.homePage.taglines.rightOnTime;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.whatAreWeWorkingOn;
+        return $.chat.homePage.taglines.whatAreWeWorkingOn;
       },
       { userName },
     ),
     t(
       ($) => {
-        return $.chat.agentPage.taglines.theUsual;
+        return $.chat.homePage.taglines.theUsual;
       },
       { userName },
     ),
@@ -232,12 +232,12 @@ function GreetingTokens({
  * same page: it keeps the greeting, because the conversation is still with
  * Okou, and the composer's toolbar names the Project the chat starts in.
  */
-export function AgentComposerPage() {
+export function WorkspaceComposerPage() {
   const user = useLastResolved(user$);
   const userFirstName =
     user === undefined ? undefined : (user.firstName ?? null);
 
-  const composerSignals = useGet(agentChatComposerSignals$);
+  const composerSignals = useGet(workspaceChatComposerSignals$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
   const tagline = useTagline(userFirstName, taglineIndex);
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
@@ -267,7 +267,7 @@ export function AgentComposerPage() {
       >
         {/* The avatar fades in place while the greeting words settle.
             Only the first greeting in this App lifetime takes the entrance;
-            changing agents or opening another new chat gets no second one. */}
+            opening another new chat gets no second one. */}
         <span
           data-slot="chat-greeting-avatar"
           className={cn(
@@ -283,7 +283,11 @@ export function AgentComposerPage() {
   return <CapabilityHomePage signals={composerSignals} heading={heading} />;
 }
 
-export function AgentChatPage({ project = false }: { project?: boolean }) {
+export function HomeChatPage({ project = false }: { project?: boolean }) {
   const showChatList = useGet(pwaChatListVisible$);
-  return showChatList && !project ? <PwaChatListPage /> : <AgentComposerPage />;
+  return showChatList && !project ? (
+    <PwaChatListPage />
+  ) : (
+    <WorkspaceComposerPage />
+  );
 }

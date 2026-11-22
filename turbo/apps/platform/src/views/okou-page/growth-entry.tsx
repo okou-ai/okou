@@ -75,7 +75,7 @@ function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {
         <Coins className="text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate">
           {t(($) => {
-            return $.chat.agentPage.growth.credits;
+            return $.chat.homePage.growth.credits;
           })}
         </span>
         <span className="shrink-0 font-semibold tabular-nums">
@@ -137,7 +137,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
             <span className="text-[13px] font-medium">
               {t(
                 ($) => {
-                  return $.chat.agentPage.growth.addInSlack;
+                  return $.chat.homePage.growth.addInSlack;
                 },
                 { assistantName },
               )}
@@ -155,7 +155,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
             <PlusCircle className="text-brand-text" />
             <span className="text-[13px] font-medium">
               {t(($) => {
-                return $.chat.agentPage.growth.inviteMember;
+                return $.chat.homePage.growth.inviteMember;
               })}
             </span>
           </Button>
@@ -191,13 +191,13 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
             {slackInstalled
               ? t(
                   ($) => {
-                    return $.chat.agentPage.growth.inSlack;
+                    return $.chat.homePage.growth.inSlack;
                   },
                   { assistantName },
                 )
               : t(
                   ($) => {
-                    return $.chat.agentPage.growth.addInSlack;
+                    return $.chat.homePage.growth.addInSlack;
                   },
                   { assistantName },
                 )}
@@ -207,7 +207,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
           ) : (
             <span className="shrink-0 text-xs text-muted-foreground">
               {t(($) => {
-                return $.chat.agentPage.growth.connect;
+                return $.chat.homePage.growth.connect;
               })}
             </span>
           )}
@@ -220,7 +220,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
           <img src={telegramIconImg} alt="" className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate">
             {t(($) => {
-              return $.chat.agentPage.growth.otherChannels;
+              return $.chat.homePage.growth.otherChannels;
             })}
           </span>
         </DropdownMenuItem>
@@ -235,7 +235,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
           <PlusCircle className="text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">
             {t(($) => {
-              return $.chat.agentPage.growth.inviteMember;
+              return $.chat.homePage.growth.inviteMember;
             })}
           </span>
         </DropdownMenuItem>

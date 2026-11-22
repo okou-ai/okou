@@ -2066,47 +2066,6 @@
         }
       }
     },
-    "Agent": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Agent" }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Agent" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Agente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Agent" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "एजेंट" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Agen" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Agente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "エージェント" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "에이전트" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Agente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "智能体" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "智能體" }
-        }
-      }
-    },
     "Agent platforms": {
       "localizations": {
         "de": {
@@ -21751,47 +21710,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "此操作已不再對應此聊天中可用的連接器。" }
-        }
-      }
-    },
-    "this Agent": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "diesen Agenten" }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "this Agent" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "este agente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "cet agent" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस एजेंट" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "agen ini" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "questo agente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "このエージェント" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 에이전트" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "este agente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "此智能体" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "此智能體" }
         }
       }
     },

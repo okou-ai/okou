@@ -19,7 +19,7 @@ describe("signed subscription deletion", () => {
       const bdd = createBddApi(context);
       const runs = createRunsApi(context);
       const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       const granted = await runs.grantProEntitlement(actor, {
         tier,
         stripeTransport: "http",

@@ -36,7 +36,7 @@ final class PermissionBatchTests: XCTestCase {
     let plan = MessageRenderPlan(
       content: content, source: source,
       context: .init(
-        webURL: webURL, action: .init(agentID: nil, threadID: FixtureData.threadID),
+        webURL: webURL, action: .init(threadID: FixtureData.threadID),
         permissionMember: .init(
           userID: ChatHTTPFixture.userID, workspaceID: ChatHTTPFixture.workspaceID), artifacts: nil)
     )
@@ -489,7 +489,7 @@ final class PermissionBatchTests: XCTestCase {
     let sync = ChatSync(client: fixture.http.client)
     let commands = ChatCommands(client: fixture.http.client, sync: sync)
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: nil, title: "Batch permissions",
+      id: FixtureData.threadID, title: "Batch permissions",
       createdAt: .now,
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     let conversation = ConversationStore(

@@ -9,7 +9,7 @@ import XCTest
 
 @MainActor
 final class ChatSearchResourceTests: XCTestCase {
-  func testWorkspaceTitleSearchOrderingLimitAndCrossAgentOpeningPreservesHistory() async throws {
+  func testWorkspaceTitleSearchOrderingLimitAndThreadOpeningPreservesHistory() async throws {
     let fixture = SearchUnreadFixture()
     let store = fixture.workspace()
     defer { store.close() }
@@ -20,7 +20,6 @@ final class ChatSearchResourceTests: XCTestCase {
     let titles = store.search.titleResults(in: store.list.threads)
     XCTAssertEqual(titles.count, 25)
     XCTAssertEqual(titles.first?.id, SearchUnreadFixture.id(40))
-    XCTAssertTrue(titles.contains { $0.agentID == SearchUnreadFixture.otherAgent })
 
     let id = SearchUnreadFixture.id(2)
     store.selectChat(id)
@@ -35,7 +34,6 @@ final class ChatSearchResourceTests: XCTestCase {
     XCTAssertEqual(hits.first?.matchedMessage.seqId, 5)
     let opened = await store.openSearchResult(id)
     XCTAssertTrue(opened)
-    XCTAssertEqual(store.selectedAgentID, SearchUnreadFixture.otherAgent)
     let selected = try XCTUnwrap(store.selectedConversation)
     XCTAssertEqual(selected.thread.id, id)
     XCTAssertEqual(selected.readingPosition, position)
@@ -63,12 +61,12 @@ final class ChatSearchResourceTests: XCTestCase {
         }
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(SearchUnreadFixture.id(2))","agentId":"\(SearchUnreadFixture.otherAgent)","title":"Chat","createdAt":"\(SearchUnreadFixture.timestamp)","updatedAt":"\(SearchUnreadFixture.timestamp)","sortAt":"\(SearchUnreadFixture.timestamp)"}],"latestEventId":null,"latestSeqId":null}
+            {"chatThreads":[{"id":"\(SearchUnreadFixture.id(2))","title":"Chat","createdAt":"\(SearchUnreadFixture.timestamp)","updatedAt":"\(SearchUnreadFixture.timestamp)","sortAt":"\(SearchUnreadFixture.timestamp)"}],"latestEventId":null,"latestSeqId":null}
             """)
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+        return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -94,7 +92,6 @@ final class ChatSearchResourceTests: XCTestCase {
     await startup.value
     XCTAssertTrue(opened)
     XCTAssertEqual(store.selectedThreadID, SearchUnreadFixture.id(2))
-    XCTAssertEqual(store.selectedAgentID, SearchUnreadFixture.otherAgent)
     XCTAssertNil(store.list.error)
     XCTAssertNil(store.search.openingError)
   }
@@ -107,7 +104,6 @@ final class ChatSearchResourceTests: XCTestCase {
     let seen = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in
       if let empty = emptySearchResources(request) { return empty }
-      XCTAssertNil(query(request, "agentId"))
       XCTAssertEqual(
         request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
       let keyword = query(request, "keyword") ?? ""
@@ -176,7 +172,7 @@ final class ChatSearchResourceTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+        return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -208,7 +204,7 @@ final class ChatSearchResourceTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+        return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -258,8 +254,8 @@ final class ChatSearchResourceTests: XCTestCase {
         workflowLoads.withLock { $0 += 1 }
         return ChatHTTPResponse(
           body: """
-            [{"id":"w1","agentId":"a","name":"brand-design","displayName":"Brand Design","description":"Posters","official":null},
-             {"id":"w2","agentId":"a","name":"built-in","displayName":null,"description":null,"official":{"readOnly":true}}]
+            [{"id":"w1","name":"brand-design","displayName":"Brand Design","description":"Posters","official":null},
+             {"id":"w2","name":"built-in","displayName":null,"description":null,"official":{"readOnly":true}}]
             """)
       case "/api/artifacts/catalog":
         XCTAssertEqual(query(request, "keyword"), "brand")
@@ -355,7 +351,7 @@ final class ChatSearchResourceTests: XCTestCase {
         await workflowsGate.wait()
         return ChatHTTPResponse(
           body:
-            #"[{"id":"workflow","agentId":"agent","name":"brand-design","displayName":"Brand Design","description":"Posters","official":null}]"#
+            #"[{"id":"workflow","name":"brand-design","displayName":"Brand Design","description":"Posters","official":null}]"#
         )
       case "/api/artifacts/catalog":
         return ChatHTTPResponse(

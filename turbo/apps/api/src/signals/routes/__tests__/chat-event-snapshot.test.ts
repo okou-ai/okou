@@ -39,7 +39,6 @@ function eventsClient() {
 async function sendNoCreditMessage(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
     readonly threadId?: string;
     readonly prompt: string;
     readonly userMessage?: UserMessageDocument;
@@ -58,12 +57,9 @@ async function sendNoCreditMessage(
 describe("chat event snapshot read endpoints", () => {
   it("serves current Raw Event rows from cold-start and paired cursors", async () => {
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Row parity agent",
-    });
+
     const marker = `row-parity-${randomUUID()}`;
     const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
       prompt: `${marker} first`,
       userMessage: {
         version: 1,
@@ -80,7 +76,6 @@ describe("chat event snapshot read endpoints", () => {
       },
     });
     await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
       threadId,
       prompt: `${marker} second`,
     });

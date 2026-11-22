@@ -27,7 +27,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { createRouteMocks } from "./helpers/route-test";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -415,7 +415,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       mockNow(preparedAt);
       const { actor, automationId, formsApi } =
         await setupGoogleFormsAutomation();
-      const org = createAuthOrgAgentsBddApi(context);
+      const org = createAuthOrgBddApi(context);
       const auditor = workflows.user({
         orgId: actor.orgId,
         orgRole: "org:admin",
@@ -607,7 +607,7 @@ describe("Google Forms Pub/Sub webhook", () => {
     mockNow(preparedAt);
     const { actor, automationId, formsApi } =
       await setupGoogleFormsAutomation();
-    const org = createAuthOrgAgentsBddApi(context);
+    const org = createAuthOrgBddApi(context);
     const auditor = workflows.user({
       orgId: actor.orgId,
       orgRole: "org:admin",

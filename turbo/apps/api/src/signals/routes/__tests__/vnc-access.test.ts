@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
@@ -10,7 +8,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { agentsRoutes } from "../agents";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncAccessRoutes } from "../vnc-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
@@ -75,17 +72,6 @@ function inventory() {
 function sshConnections() {
   return setupApp({ context, routes: sshConnectionsRoutes })(
     sshConnectionsContract,
-  );
-}
-
-async function visibility(agentId: string, value: "public" | "private") {
-  await accept(
-    setupApp({ context, routes: agentsRoutes })(agentsByIdContract).update({
-      headers,
-      params: { id: agentId },
-      body: { visibility: value },
-    }),
-    [200],
   );
 }
 
@@ -420,13 +406,9 @@ describe("live chat VNC Run inventory", () => {
         )
       ).body,
     ).toStrictEqual({ hosts: [], identities: [] });
-    const bdd = createBddApi(context);
-    const laterAgent = await bdd.createAgent(bdd.user(current), {
-      displayName: "Later VNC Agent",
-    });
+
     const other = await executionApi.runtime({
       ...current,
-      agentId: laterAgent.agentId,
     });
     expect(
       (
@@ -688,10 +670,7 @@ describe("live chat VNC Run inventory", () => {
   it("isolates a shared Agent's inventory by the Run owner", async () => {
     const bdd = createBddApi(context);
     const creatorOwner = await executionApi.paidOwner();
-    const sharedAgent = await bdd.createAgent(bdd.user(creatorOwner), {
-      displayName: "Shared VNC Agent",
-      visibility: "public",
-    });
+
     const creatorHost = await accept(
       api.connections().create({ headers, body: vncConnectionBody() }),
       [201],
@@ -700,7 +679,6 @@ describe("live chat VNC Run inventory", () => {
     const creator = {
       ...(await executionApi.runtime({
         ...creatorOwner,
-        agentId: sharedAgent.agentId,
       })),
       connectionId: creatorHost.body.id,
     };
@@ -716,7 +694,6 @@ describe("live chat VNC Run inventory", () => {
       ...consumer,
       ...(await executionApi.runtime({
         ...consumer,
-        agentId: creator.agentId,
       })),
     };
     expect(
@@ -756,7 +733,6 @@ describe("live chat VNC Run inventory", () => {
         return entry.id;
       }),
     ).toStrictEqual([creator.connectionId]);
-    await visibility(creator.agentId, "private");
     api.authenticate(consumer);
     const ownedHosts = await accept(
       inventory().list({ headers: executionApi.agentHeaders(runtime) }),

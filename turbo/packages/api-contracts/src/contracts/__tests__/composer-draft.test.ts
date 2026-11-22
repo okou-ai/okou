@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  agentDraftRequestSchema,
-  agentDraftResponseSchema,
-} from "../agent-draft";
+  composerDraftRequestSchema,
+  composerDraftResponseSchema,
+} from "../composer-draft";
 
 describe("agent draft contract", () => {
   it("accepts canonical agent draft responses", () => {
@@ -15,18 +15,18 @@ describe("agent draft contract", () => {
       draftAttachments: null,
     };
 
-    expect(agentDraftResponseSchema.parse(response)).toStrictEqual(response);
+    expect(composerDraftResponseSchema.parse(response)).toStrictEqual(response);
   });
 
   it("requires userMessage for non-empty agent drafts", () => {
     expect(
-      agentDraftRequestSchema.safeParse({
+      composerDraftRequestSchema.safeParse({
         draftUserMessage: null,
         draftAttachments: null,
       }),
     ).toMatchObject({ success: true });
     expect(
-      agentDraftRequestSchema.safeParse({
+      composerDraftRequestSchema.safeParse({
         draftUserMessage: null,
         draftAttachments: [
           {

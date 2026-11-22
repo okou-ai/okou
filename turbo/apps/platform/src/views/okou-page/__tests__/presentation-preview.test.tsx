@@ -9,7 +9,7 @@ import {
   serveDeck,
 } from "./template-submission-fixtures.ts";
 
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 
 const context = testContext();
 

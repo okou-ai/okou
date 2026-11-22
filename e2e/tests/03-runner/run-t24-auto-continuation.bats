@@ -37,15 +37,9 @@ assert_auto_route() {
 }
 
 @test "auto preserves session continuity and its OpenRouter route on a successor" {
-    run create_runner_agent "e2e-auto-continuation-${TEST_ID}"
-    assert_success
-    AGENT_ID="$output"
-    run set_runner_agent_instructions "$AGENT_ID" "Auto continuation test instructions."
-    assert_success
-
     # Run and thread IDs isolate this invocation; keep live-model replies simple.
     local expected='CONTINUE_OK' first_session successor_result successor_run_id
-    run runner_chat_send "$AGENT_ID" "Reply with only the word: ${expected}" "" "auto"
+    run runner_chat_send "Reply with only the word: ${expected}" "" "auto"
     assert_success
     RUN_ID="$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")"
     THREAD_ID="$(jq -er '.threadId | select(type == "string" and length > 0)' <<<"$output")"
@@ -60,7 +54,7 @@ assert_auto_route() {
     # No explicit model on continuation: the thread keeps Auto and its session.
     local successor_expected="${expected}_NEXT"
     run runner_chat_send_after_completion \
-        "$AGENT_ID" "$THREAD_ID" "$RUN_ID" \
+        "$THREAD_ID" "$RUN_ID" \
         "Append the literal suffix _NEXT to your entire previous assistant reply, keeping every original character unchanged. Reply with only the resulting string." "$successor_expected" 180
     assert_success
     successor_result="$output"

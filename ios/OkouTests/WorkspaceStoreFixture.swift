@@ -28,7 +28,6 @@ final class HTTPResponseGate: Sendable {
 }
 
 let storeThreadID = "40000000-0000-4000-8000-000000000001"
-let storeAgentID = "40000000-0000-4000-8000-000000000002"
 let storeRunID = "40000000-0000-4000-8000-000000000003"
 let storeDate = "2026-09-17T10:00:00.000Z"
 
@@ -57,7 +56,7 @@ func threadSnapshot(title: String, threadIDs: [String] = [storeThreadID])
 {
   let threads = threadIDs.map { id in
     """
-    {"id":"\(id)","agentId":"\(storeAgentID)","title":"\(title)","sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","pinnedAt":null,"renamedAt":null,"selectedModel":"gpt-5.6-sol","serviceTier":null,"computerUseHostId":null,"cloudBrowserEnabled":false}
+    {"id":"\(id)","title":"\(title)","sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","pinnedAt":null,"renamedAt":null,"selectedModel":"gpt-5.6-sol","serviceTier":null,"computerUseHostId":null,"cloudBrowserEnabled":false}
     """
   }
   return ChatHTTPResponse(

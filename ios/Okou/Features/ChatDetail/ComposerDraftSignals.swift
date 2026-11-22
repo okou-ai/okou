@@ -3,7 +3,7 @@ import ChatDomain
 import Foundation
 import Observation
 
-/// A graph belongs to one Agent/thread draft, never to the currently visible editor.
+/// A graph belongs to one composer draft, never to the currently visible editor.
 @MainActor @Observable
 final class ComposerDraftSignals {
   struct Content {

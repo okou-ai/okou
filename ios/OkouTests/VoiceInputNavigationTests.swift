@@ -239,7 +239,7 @@ private final class VoiceEntryFixture: Sendable {
             body: """
               {"chatThreads":[{
                 "id":"\(AttachmentFlowFixture.threadID)",
-                "agentId":"\(AttachmentFlowFixture.agentID)",
+
                 "title":"Existing conversation",
                 "createdAt":"2026-11-09T00:00:00Z",
                 "updatedAt":"2026-11-09T00:00:00Z",
@@ -250,7 +250,7 @@ private final class VoiceEntryFixture: Sendable {
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case "/api/indicators":
-          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+          return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
         default: throw URLError(.unsupportedURL)
         }
       })

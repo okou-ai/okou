@@ -18,7 +18,7 @@ import { apiClientRuntime$ } from "./api-client-runtime.ts";
 /**
  * Type alias for the factory function returned by `get(apiClient$)`.
  * Useful for shared helper functions that accept the client factory
- * as a parameter (e.g. `createAgent`).
+ * as a parameter (e.g. `createThread`).
  */
 export type ApiClientFactory = <T extends ClientRouter>(
   contract: T,
@@ -65,10 +65,10 @@ function rebaseApiPath(
  * @example
  * ```ts
  * const createClient = get(apiClient$);
- * const client = createClient(agentsByIdContract);
- * const result = await client.get({ params: { id: "my-agent-id" } });
+ * const client = createClient(chatThreadByIdContract);
+ * const result = await client.get({ params: { id: threadId } });
  * if (result.status === 200) {
- *   console.log(result.body.displayName);
+ *   console.log(result.body.title);
  * }
  * ```
  */

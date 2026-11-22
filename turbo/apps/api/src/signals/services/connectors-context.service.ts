@@ -28,16 +28,12 @@ function connectorSkillVolumes(
 
 export function createConnectorsContext(
   authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>,
-  singleAgent$: Computed<Promise<boolean>>,
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
-    const [connectors, singleAgent] = await Promise.all([
-      get(authorizedConnectors$),
-      get(singleAgent$),
-    ]);
+    const connectors = await get(authorizedConnectors$);
     return {
       systemPromptVariables: {
-        connectors: connectorPrompt(connectors, singleAgent),
+        connectors: connectorPrompt(connectors),
       },
       userPromptVariables: {},
       skillVolumes: connectorSkillVolumes(connectors),
@@ -45,10 +41,7 @@ export function createConnectorsContext(
   });
 }
 
-function connectorPrompt(
-  connectors: AuthorizedConnectors,
-  singleAgent: boolean,
-): string {
+function connectorPrompt(connectors: AuthorizedConnectors): string {
   const slugs = connectors
     .filter((connector) => {
       return connector.isMcp;
@@ -74,9 +67,7 @@ function connectorPrompt(
   return [
     "# MCP Connectors",
     "",
-    singleAgent
-      ? "The following MCP connectors are authorized for this Run:"
-      : "The following MCP connectors are authorized for this Agent:",
+    "The following MCP connectors are authorized for this Run:",
     ...inventory,
     "",
     "Authorization does not guarantee that an account is connected or currently available.",

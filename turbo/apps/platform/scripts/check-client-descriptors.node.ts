@@ -10,19 +10,19 @@ import { build } from "vite";
 import { clientDescriptorsPlugin } from "./check-client-descriptors.ts";
 
 const CONTRACT_SOURCE = "packages/api-contracts/src";
-const DESCRIPTOR = `${CONTRACT_SOURCE}/client/agents.ts`;
-const FULL_CONTRACT = `${CONTRACT_SOURCE}/contracts/agents.ts`;
-const VALIDATORS = `${CONTRACT_SOURCE}/validators/agents.ts`;
+const DESCRIPTOR = `${CONTRACT_SOURCE}/client/projects.ts`;
+const FULL_CONTRACT = `${CONTRACT_SOURCE}/contracts/projects.ts`;
+const VALIDATORS = `${CONTRACT_SOURCE}/validators/projects.ts`;
 const DESCRIPTOR_SOURCE = `
-import type { agents } from "../contracts/agents.ts";
-export const agentsClient = {
-  method: "GET", path: "/api/agents", statuses: { 200: true },
-} satisfies Pick<typeof agents, "method" | "path"> & { statuses: Record<number, true> };
+import type { projects } from "../contracts/projects.ts";
+export const projectsClient = {
+  method: "GET", path: "/api/projects", statuses: { 200: true },
+} satisfies Pick<typeof projects, "method" | "path"> & { statuses: Record<number, true> };
 `;
 const MAIN_SOURCE = `
-import { agentsClient } from "./${DESCRIPTOR}";
+import { projectsClient } from "./${DESCRIPTOR}";
 import { schema } from "./${VALIDATORS}";
-globalThis.descriptor = agentsClient;
+globalThis.descriptor = projectsClient;
 globalThis.validate = schema.parse;
 `;
 
@@ -41,7 +41,7 @@ async function createFixture(context: TestContext) {
   await write(DESCRIPTOR, DESCRIPTOR_SOURCE);
   await write(
     FULL_CONTRACT,
-    'import { schema } from "../validators/agents.ts"; export const agents = { method: "GET", path: "/api/agents", schema };',
+    'import { schema } from "../validators/projects.ts"; export const projects = { method: "GET", path: "/api/projects", schema };',
   );
   await write(
     VALIDATORS,
@@ -71,7 +71,7 @@ await test("production descriptors allow type-only contracts and independent val
 
 await test("production chunks reject full HTTP contracts across modules, including lazy imports", async (context) => {
   const fixture = await createFixture(context);
-  for (const module of ["agents", "billing", "chat-threads", "workflows"]) {
+  for (const module of ["projects", "billing", "chat-threads", "workflows"]) {
     const contractPath = `${CONTRACT_SOURCE}/contracts/${module}.ts`;
     await fixture.write(
       contractPath,
@@ -93,8 +93,8 @@ await test("production chunks reject full HTTP contracts across modules, includi
 await test("descriptors reject static and dynamic runtime schema dependencies", async (context) => {
   const fixture = await createFixture(context);
   for (const schemaImport of [
-    'import "../validators/agents.ts";',
-    'void import("../validators/agents.ts");',
+    'import "../validators/projects.ts";',
+    'void import("../validators/projects.ts");',
   ]) {
     await fixture.write(DESCRIPTOR, `${schemaImport}\n${DESCRIPTOR_SOURCE}`);
     await assert.rejects(

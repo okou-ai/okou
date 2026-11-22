@@ -38,11 +38,6 @@ teardown() {
 }
 
 @test "runner refreshes workspace workflow files and mounts personal instructions" {
-    run create_runner_agent "runner-context-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     # Both turns share one member. Restore the saved version during teardown.
     run runner_api_curl "/api/instructions"
     echo "$output"
@@ -106,7 +101,7 @@ EOF
     prompt=${prompt//__WORKFLOW_NAME__/$workflow_name}
     prompt=${prompt//__OUTPUT_MARKER__/$output_marker}
 
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -178,7 +173,6 @@ EOF
     continuation_prompt=${continuation_prompt//__CONTINUATION_MARKER__/$continuation_marker}
 
     run runner_e2e_continue_chat_run \
-        "$AGENT_ID" \
         "$THREAD_ID" \
         "$continuation_prompt"
     echo "$output"

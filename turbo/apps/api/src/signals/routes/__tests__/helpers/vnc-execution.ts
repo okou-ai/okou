@@ -41,22 +41,18 @@ export function createVncExecutionApi(context: TestContext) {
   async function paidOwner() {
     const value = owner();
     const actor = bdd.user(value);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agentId = await bdd.readDefaultAgentId(actor);
-    if (!agentId) {
-      throw new Error("Expected onboarding to provide the default Agent");
-    }
     api.authenticate(value);
-    return { ...value, agentId };
+    return { ...value };
   }
 
-  async function runtime(value: Owner & { readonly agentId: string }) {
+  async function runtime(value: Owner & {}) {
     const actor = bdd.user(value);
     const runnerIdentity = {
       runnerId: randomUUID(),
@@ -67,7 +63,6 @@ export function createVncExecutionApi(context: TestContext) {
       heartbeatAuthorization: vncRunnerHeaders.authorization,
     });
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId: value.agentId,
       prompt: "Use my configured VNC desktop",
     });
     const input = await runs.executionInput(runId);

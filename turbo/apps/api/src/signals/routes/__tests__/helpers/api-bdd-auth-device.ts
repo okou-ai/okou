@@ -26,7 +26,6 @@ import { server } from "../../../../mocks/server";
 import type { RouteEntry } from "../../../route-entry";
 import { authMeRoutes } from "../../auth-me";
 import { cliAuthRoutes } from "../../cli-auth";
-import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
 import { claudeCodeDeviceAuthRoutes } from "../../claude-code-device-auth";
 import { codexDeviceAuthRoutes } from "../../codex-device-auth";
@@ -45,7 +44,6 @@ interface CliApproveBody {
 const authDeviceRoutes: readonly RouteEntry[] = [
   ...authMeRoutes,
   ...cliAuthRoutes,
-  ...agentsRoutes,
   ...billingStatusRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...codexDeviceAuthRoutes,

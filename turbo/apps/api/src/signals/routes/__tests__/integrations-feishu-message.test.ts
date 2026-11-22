@@ -34,7 +34,7 @@ import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -52,7 +52,7 @@ const TEST_APP_ROUTES = Object.freeze([
 const context = testContext();
 const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
 
@@ -83,7 +83,6 @@ async function createOnboardedFeishuInstallation(
   connected = true,
 ): Promise<{
   readonly actor: FeishuTestActor;
-  readonly agentId: string;
   readonly installationId: string;
 }> {
   const userId = `user_${randomUUID()}`;
@@ -96,11 +95,9 @@ async function createOnboardedFeishuInstallation(
   await updateFeatureSwitchesForUser(context, actor, {
     [FEISHU_PLATFORMS[platform].featureSwitch]: true,
   });
-  authOrgApi.acceptAgentStorageWrites();
-  const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Feishu CLI agent",
-  });
-  const agent = await authOrgApi.readAgent(actor, bootstrap.body.agentId);
+  authOrgApi.acceptStorageWrites();
+  await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
+
   await runsApi.grantProEntitlement(actor);
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -136,7 +133,7 @@ async function createOnboardedFeishuInstallation(
   if (connected) {
     await connectCurrentFeishuUser(actor, platform);
   }
-  return { actor, agentId: agent.agentId, installationId };
+  return { actor, installationId };
 }
 
 function requireTestValue<T>(value: T | null | undefined, message: string): T {

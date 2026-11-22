@@ -182,7 +182,6 @@ export function createVncRuntimeApi(context: TestContext) {
 export interface VncRuntimeFixture extends Owner {
   readonly runId: string;
   readonly threadId?: string;
-  readonly agentId: string;
   readonly sandboxToken: string;
   readonly runnerIdentity: {
     runnerId: string;

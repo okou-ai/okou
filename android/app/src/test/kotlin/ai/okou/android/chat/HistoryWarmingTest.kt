@@ -156,7 +156,7 @@ class HistoryWarmingTest {
         api.historyThreadIds = api.historyThreadIds + recoveringThreads
         api.indicators = {
             jsonResponse(
-                """{"agents":{},"threads":{${recoveringThreads.joinToString(",") { "\"$it\":\"active\"" }}},"unreadAt":{}}"""
+                """{"threads":{${recoveringThreads.joinToString(",") { "\"$it\":\"active\"" }}},"unreadAt":{}}"""
             )
         }
     }
@@ -536,7 +536,7 @@ class HistoryWarmingTest {
                 api.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
                 api.indicators = {
                     jsonResponse(
-                        """{"agents":{},"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"active"},"unreadAt":{}}"""
+                        """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"active"},"unreadAt":{}}"""
                     )
                 }
                 val original = api.historyCatchUp

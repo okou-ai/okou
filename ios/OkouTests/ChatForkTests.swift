@@ -181,22 +181,17 @@ private final class ForkFixture: Sendable {
         let project = projectID.map { "\"\($0)\"" } ?? "null"
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(ConversationHistoryFixture.threadID)","agentId":"\(ConversationHistoryFixture.agentID)","title":"History","projectId":\(project),"createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":"60000000-0000-4000-8000-000000000090","latestSeqId":1}
+            {"chatThreads":[{"id":"\(ConversationHistoryFixture.threadID)","title":"History","projectId":\(project),"createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":"60000000-0000-4000-8000-000000000090","latestSeqId":1}
             """)
       },
       additional: { request in
         let path = request.url?.path ?? ""
         let createdThreadID = writes.value.withLock { $0.threadID }
         switch (request.httpMethod, path) {
-        case ("GET", "/api/agents"):
-          return ChatHTTPResponse(
-            body:
-              "[{\"agentId\":\"\(ConversationHistoryFixture.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]"
-          )
         case ("GET", "/api/feature-switches"):
           return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
         case ("GET", "/api/indicators"):
-          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+          return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
         case ("GET", "/api/user-model-preference"):
           return ChatHTTPResponse(body: "{}")
         case ("GET", "/api/run-models"), ("GET", "/api/model-catalog"):
@@ -214,7 +209,7 @@ private final class ForkFixture: Sendable {
         case ("GET", "/api/chat-threads/\(createdThreadID)/metadata") where !createdThreadID.isEmpty:
           return ChatHTTPResponse(
             body:
-              "{\"id\":\"\(writes.value.withLock { $0.threadID })\",\"agentId\":\"\(ConversationHistoryFixture.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+              "{\"id\":\"\(writes.value.withLock { $0.threadID })\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
           )
         default: throw URLError(.unsupportedURL)
         }

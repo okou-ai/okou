@@ -15,11 +15,6 @@ teardown() {
 }
 
 @test "runner firewall injects the SerpApi query authentication" {
-    run create_runner_agent "runner-firewall-serpapi-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local values
     values=$(jq -nc --arg apiKey "e2e-serpapi-token-${TEST_ID}" '{apiKey: $apiKey}')
     run runner_e2e_connect_manual_connector serpapi api-token "$values"
@@ -47,7 +42,7 @@ else
 fi
 EOF
 )
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

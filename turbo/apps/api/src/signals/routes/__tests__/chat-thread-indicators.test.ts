@@ -96,24 +96,17 @@ async function prepareChatRuntime(): Promise<void> {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
 }
 
-async function createEntitledAgent(
-  actor: ApiTestUser,
-  displayName: string,
-): Promise<string> {
+async function prepareEntitledMember(actor: ApiTestUser): Promise<void> {
   await api.grantProEntitlement(actor);
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName,
-    visibility: "private",
-  });
+
   const restoreEnvironment = captureConnectorExternalState(context);
   indicatorCredentials.register(
     actor,
     publicRunOwner(context, actor, { restoreEnvironment, clockTime: now }),
   );
-  return agent.agentId;
 }
 
 function terminalEvent(
@@ -131,7 +124,6 @@ function terminalEvent(
 
 async function createCancelledThread(args: {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly prompt: string;
 }): Promise<SeededThread> {
   const sent = await chat.sendAndLaunch(args.actor, {
@@ -173,15 +165,13 @@ describe("GET /api/indicators", () => {
   it("reports unread timestamps for an Okou token without changing read state", async () => {
     await prepareChatRuntime();
     const actor = bdd.user();
-    const agentId = await createEntitledAgent(actor, "Unread indicator agent");
+    await prepareEntitledMember(actor);
     const unread = await createCancelledThread({
       actor,
-      agentId,
       prompt: "Unread indicator thread",
     });
     const read = await createCancelledThread({
       actor,
-      agentId,
       prompt: "Read indicator thread",
     });
     await chat.markThreadRead(actor, read.threadId);
@@ -212,28 +202,19 @@ describe("GET /api/indicators", () => {
     const owner = bdd.user();
     const peer = bdd.user({ orgId: orgIdOf(owner) });
     const otherOrg = bdd.user({ userId: owner.userId });
-    const ownerAgentId = await createEntitledAgent(
-      owner,
-      "Owner indicator agent",
-    );
-    const peerAgentId = await createEntitledAgent(peer, "Peer indicator agent");
-    const otherOrgAgentId = await createEntitledAgent(
-      otherOrg,
-      "Other organization indicator agent",
-    );
+    await prepareEntitledMember(owner);
+    await prepareEntitledMember(peer);
+    await prepareEntitledMember(otherOrg);
     const ownerUnread = await createCancelledThread({
       actor: owner,
-      agentId: ownerAgentId,
       prompt: "Owner unread thread",
     });
     await createCancelledThread({
       actor: peer,
-      agentId: peerAgentId,
       prompt: "Peer unread thread",
     });
     await createCancelledThread({
       actor: otherOrg,
-      agentId: otherOrgAgentId,
       prompt: "Other organization unread thread",
     });
     await seedMembership(owner);
@@ -253,15 +234,13 @@ describe("GET /api/indicators", () => {
   it("reports read-cursor changes through indicators while mark responses carry no unread snapshot", async () => {
     await prepareChatRuntime();
     const actor = bdd.user();
-    const agentId = await createEntitledAgent(actor, "Read cursor agent");
+    await prepareEntitledMember(actor);
     const toggled = await createCancelledThread({
       actor,
-      agentId,
       prompt: "Toggled read cursor thread",
     });
     const untouched = await createCancelledThread({
       actor,
-      agentId,
       prompt: "Untouched unread thread",
     });
 
@@ -283,15 +262,13 @@ describe("GET /api/indicators", () => {
   it("keeps an archived active thread unread on request until its terminal watermark is acknowledged", async () => {
     await prepareChatRuntime();
     const actor = bdd.user();
-    const agentId = await createEntitledAgent(actor, "Rerun indicator agent");
+    await prepareEntitledMember(actor);
     const rerun = await createCancelledThread({
       actor,
-      agentId,
       prompt: "Rerun indicator thread",
     });
     const unread = await createCancelledThread({
       actor,
-      agentId,
       prompt: "Still unread indicator thread",
     });
     await chat.sendAndLaunch(actor, {
@@ -364,18 +341,10 @@ describe("GET /api/indicators", () => {
     // indicator), so lift the organization concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     const actor = bdd.user();
-    const peer = bdd.user({ orgId: orgIdOf(actor) });
-    const agentId = await createEntitledAgent(
-      actor,
-      "Visible active indicator agent",
-    );
-    const hiddenAgent = await bdd.createAgent(peer, {
-      displayName: "Hidden active indicator agent",
-      visibility: "public",
-    });
+    await prepareEntitledMember(actor);
+
     const older = await createCancelledThread({
       actor,
-      agentId,
       prompt: "Older unread reply",
     });
     const restarted = await chat.sendAndLaunch(actor, {
@@ -392,9 +361,6 @@ describe("GET /api/indicators", () => {
       });
       recent[sent.threadId] = "active";
     }
-    await bdd.updateAgent(peer, hiddenAgent.agentId, {
-      visibility: "private",
-    });
     await seedMembership(actor);
 
     const headers = {

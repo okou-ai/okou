@@ -1,4 +1,4 @@
-import type { AgentDraftResponse } from "@okouai/api-contracts/contracts/agent-draft";
+import type { ComposerDraftResponse } from "@okouai/api-contracts/contracts/composer-draft";
 import type { PresentationTemplateItem } from "@okouai/core";
 import { screen, waitFor } from "@testing-library/react";
 
@@ -6,7 +6,7 @@ import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 
 export function savedPresentationDraft(
   template: PresentationTemplateItem,
-): AgentDraftResponse {
+): ComposerDraftResponse {
   return {
     draftUserMessage: {
       version: 1,

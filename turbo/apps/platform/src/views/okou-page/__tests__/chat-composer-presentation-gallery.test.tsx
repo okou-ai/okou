@@ -10,7 +10,7 @@ import {
   serveDeck,
   presentationPart,
 } from "./template-submission-fixtures.ts";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 const context = testContext();
 
 test("chat-composer-presentation-gallery-001 Deep dive is persisted with the selected template without sending", async () => {

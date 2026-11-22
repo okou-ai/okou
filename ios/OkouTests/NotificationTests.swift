@@ -94,7 +94,7 @@ final class NotificationTests: XCTestCase {
       indicators: { _ in
         started.fulfill()
         await unreadGate.enter()
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       })
     let data = workspace(fixture)
     let service = notifications()

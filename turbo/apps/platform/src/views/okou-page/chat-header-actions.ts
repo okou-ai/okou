@@ -1,5 +1,5 @@
 import { useGet } from "ccstate-react";
-import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
+import { currentChatThreadId$ } from "../../signals/chat-thread-list.ts";
 import { secondaryHeaderThreadId$ } from "../../signals/chat-page/chat-header-actions.ts";
 import { currentLeftThread$ } from "../../signals/chat-page/chat-thread-pane-state.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";

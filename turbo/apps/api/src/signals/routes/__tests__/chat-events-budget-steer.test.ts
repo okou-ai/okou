@@ -26,7 +26,7 @@ const STEER_AT_MS = 115 * 60 * 1000;
 const CRON_SECRET = "test-run-time-budget-steer-secret";
 
 async function startBudgetRun() {
-  const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+  const { actor, runnerGroup } = await entitledNativeChatActor();
   const active = await sendChatRun(actor, {
     prompt: "work until the runner's time-budget warning",
   });
@@ -38,7 +38,6 @@ async function startBudgetRun() {
   const startedAt = Date.parse(run.startedAt);
   return {
     actor,
-    agentId,
     runnerGroup,
     active,
     receivedExecution: execution,

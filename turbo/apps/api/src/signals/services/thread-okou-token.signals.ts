@@ -59,7 +59,7 @@ export function createOkouTokenInputSignals(
       email: features.email,
       featureOverrides: features.overrides,
       options: {
-        isDefaultAgent: features.personalExecution,
+        personalExecution: true,
         ...(phoneGrant
           ? {
               phoneUseDeviceId: phoneGrant.deviceId,

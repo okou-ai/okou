@@ -877,7 +877,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   ): Promise<string> {
     const bdd = createBddApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await bdd.provisionWorkspace(actor);
     await bdd.completeOnboarding(actor);
     const userId = newTelegramBotId();

@@ -60,7 +60,6 @@ function createIntegrationPrompts(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   featureSwitches$: AgentRunContextSignals["featureSwitches$"],
   threadContext: ThreadContext,
-  singleAgent$: Computed<Promise<boolean>>,
 ) {
   const framework$ = computed(async (get) => {
     const framework = await get(threadContext.providerFramework$);
@@ -73,7 +72,6 @@ function createIntegrationPrompts(
     pickedEvent$,
     featureSwitches$,
     framework$,
-    singleAgent$,
     threadContext.projectContext$,
   );
   return {
@@ -118,7 +116,6 @@ function createIntegrationPrompts(
     automation: createAutomationThreadPrompt(
       threadContext.automationSnapshot$,
       threadContext.automationPayload$,
-      singleAgent$,
     ),
   };
 }
@@ -144,9 +141,6 @@ function createSharedPromptSources(
     }
     return event.contextType;
   });
-  const singleAgent$ = computed(async (get) => {
-    return (await get(featureSwitches$)).personalExecution;
-  });
   const authorizedConnectors$ = computed(async (get) => {
     const [connectors, selection] = await Promise.all([
       get(bootstrap.authorizedConnectors$),
@@ -162,10 +156,7 @@ function createSharedPromptSources(
         : scope.allowedCustomConnectorIds.includes(connector.customConnectorId);
     });
   });
-  const connectors$ = createConnectorsContext(
-    authorizedConnectors$,
-    singleAgent$,
-  );
+  const connectors$ = createConnectorsContext(authorizedConnectors$);
   const templates$ = computed(async (get) => {
     if ((await get(contextType$)) === "automation") {
       return null;
@@ -198,7 +189,6 @@ function createSharedPromptSources(
     featureSwitches$,
     disabledPaidTools$,
     contextType$,
-    singleAgent$,
     connectors$,
     templates$,
     skillVolumes$,
@@ -224,7 +214,6 @@ export function createPromptAndSkillVolumesSignals(
   );
   const {
     contextType$,
-    singleAgent$,
     templates$,
     connectors$,
     featureSwitches$,
@@ -235,13 +224,11 @@ export function createPromptAndSkillVolumesSignals(
     pickedEvent$,
     featureSwitches$,
     threadContext,
-    singleAgent$,
   );
   const agentPrompt$ = createAgentPrompt(
     featureSwitches$,
     cloudBrowserEnabled$,
     disabledPaidTools$,
-    singleAgent$,
   );
   const suggestionsPrompt$ = createSuggestionsPrompt(
     bootstrap,

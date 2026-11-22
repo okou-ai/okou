@@ -51,7 +51,7 @@ interface TiptapInstructionsEditorProps {
   disabled?: boolean;
   ariaLabel?: string;
   placeholder?: string;
-  /** Hint shown below the editor (default copy is for agent profile instructions). */
+  /** Hint shown below the personal Instructions editor. */
   footerHint?: string | null;
   /** Visual surface for embedding the editor in either a card or a full-page canvas. */
   surface?: "card" | "canvas";

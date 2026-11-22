@@ -32,11 +32,6 @@ teardown() {
     ' <<<"$output"
     assert_success
 
-    run create_runner_agent "e2e-mock-claude-echo-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local session_id assistant_text protocol_noise prompt
     session_id="$(_runner_uuid)"
     assistant_text="echo-jsonl fixture response"
@@ -53,7 +48,7 @@ teardown() {
 EOF
 )
 
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "claude-sonnet-5-5"
+    run runner_chat_send "$prompt" "" "claude-sonnet-5-5"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -101,12 +96,7 @@ EOF
 }
 
 @test "public chat completes after draining an orphaned Claude stdout pipe" {
-    run create_runner_agent "e2e-mock-claude-orphan-pipe-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
-    run runner_chat_send "$AGENT_ID" "@orphan-pipe" "" "claude-sonnet-5-5"
+    run runner_chat_send "@orphan-pipe" "" "claude-sonnet-5-5"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

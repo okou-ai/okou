@@ -1,4 +1,4 @@
-import { SINGLE_AGENT_SCOPE_PROMPT } from "./single-agent-scope-prompt";
+import { PERSONAL_SCOPE_PROMPT } from "./personal-scope-prompt";
 import type { AVAILABLE_PAID_TOOL_IDS } from "@okouai/api-contracts/contracts/paid-tools";
 import { PLAN_UPGRADE_CLI_HINT } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -16,15 +16,8 @@ const wechatToolsGuidance = Object.freeze([
   "- When explicitly asked to send to WeChat, use `okou wechat message send --help` with the discovered conversation ID. Long text is split without truncation. Preserve partial-delivery receipts and the operation ID; confirmed chunks are not resent, and ambiguous sends are never blindly retried. `okou wechat upload-file --help` publishes a file before delivery; reuse the operation ID to inspect its recorded outcome. Use `okou wechat download-file --help` with the conversation, stored message, and attachment IDs to read a recorded attachment. Attachments are limited to 10 MiB; metadata alone is not file content.",
 ]);
 
-const instructionsAndMemoryGuidance = Object.freeze([
-  "- Before maintaining or publishing Suggestions, apply the Suggestions feedback context injected into this Run. If it is missing, unavailable or incomplete, skip Suggestions maintenance. Do not read or write feedback in personal Memory. Inspect all active cards with `okou feed list --type suggestion --all --json` and follow nextAfter with --after; the homepage displays at most ten cards. Selected options are direction signals, never proof of completion.",
-  "- Instructions and memory have different scopes. Agent instructions are team-shared behavior rules for everyone using the same agent. They define responsibilities, common workflows, and default behavior; changes can affect other team members and future runs. Use them for genuinely shared, stable team rules, not as a notebook for personal preferences or one-off task details.",
-  "- Memory captures the current user's preferences, background, experience, and historical context. It helps you understand that user and carry forward prior decisions without changing other team members' defaults. A long-lived personal preference does not necessarily belong in shared instructions.",
-  "- When a user asks you to remember something or adjust future behavior, choose between instructions and memory based on their intent, the nature and scope of the content, and its impact on other team members.",
-  "- Memory is usually the better choice for personal communication habits, work preferences, project background, and task-specific experience. Instructions are more appropriate for defining or revising common rules the whole team should follow when using this agent. Avoid turning personal preferences into team-wide defaults or leaving genuinely shared rules only in personal memory.",
-  "- Decide whom the content should affect and what purpose it serves, not whether the user used the words 'instructions' or 'memory'. Use this distinction to exercise judgment rather than requiring a named storage target or confirmation for every update; existing permissions and memory-update rules still apply.",
-  "- The workspace default agent ID cannot be replaced, and the default agent cannot be deleted. Its name, avatar, and Public visibility are fixed. Its instructions, tone, and description can be edited with the usual owner/admin permissions, including defaults provisioned with older read-only guidance. Preserve unrelated settings. Use personal memory for personal preferences and agent instructions for shared team rules.",
-]);
+const suggestionsFeedbackGuidance =
+  "- Before maintaining or publishing Suggestions, apply the Suggestions feedback context injected into this Run. If it is missing, unavailable or incomplete, skip Suggestions maintenance. Do not read or write feedback in personal Memory. Inspect all active cards with `okou feed list --type suggestion --all --json` and follow nextAfter with --after; the homepage displays at most ten cards. Selected options are direction signals, never proof of completion.";
 
 /**
  * Delivery context that holds for every trigger source. The surface-specific
@@ -61,7 +54,6 @@ function buildIntegrationToolsPrompt(
 
 /** Captured Run settings that select the agent tools prompt text. */
 export interface AgentToolsPromptInputs {
-  readonly singleAgent: boolean;
   readonly disabledPaidTools: readonly string[];
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -75,14 +67,12 @@ export interface AgentToolsPromptInputs {
 }
 
 export function buildAgentToolsPromptInputs(args: {
-  readonly singleAgent: boolean;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly cloudBrowserEnabled: boolean;
   readonly disabledPaidTools: readonly string[];
 }): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
-    singleAgent: args.singleAgent,
     artifactThreePointTimingEnabled: isFeatureEnabled(
       FeatureSwitchKey.ArtifactThreePointTiming,
       context,
@@ -247,8 +237,8 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
       : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
     "- Connector accounts: inspect the current account with `okou connector status <slug> --json` and list alternatives with `okou connector account list <slug> --json`. Use only an exact `connectionId` returned by these commands; never invent an ID or reuse one from another connector.",
-    `- Disconnect a saved connector account with \`okou connector account disconnect <selector> --connection-id <uuid>\` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account ${args.singleAgent ? "throughout this workspace" : "across all Agents"}. Read \`okou connector account disconnect --help\` for reconnection risks. Use \`okou connector account impact\` to inspect affected references first. To change only Chat access, use the Chat account allowance controls; disconnect removes the saved account globally.`,
-    `- Connector account access follows this Chat. Inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with \`okou connector account switch <slug> --connection-id <uuid>\`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with \`okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>\`. Return the exact URL and end the turn; confirmation enables only that account in this Chat and starts the callback round. Firewall permissions are shared across this member's ${args.singleAgent ? "Chats and accounts in this workspace" : "Chats, Agents and accounts"}; switching does not reset them. Listener accounts do not grant execution access.`,
+    `- Disconnect a saved connector account with \`okou connector account disconnect <selector> --connection-id <uuid>\` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account throughout this workspace. Read \`okou connector account disconnect --help\` for reconnection risks. Use \`okou connector account impact\` to inspect affected references first. To change only Chat access, use the Chat account allowance controls; disconnect removes the saved account globally.`,
+    `- Connector account access follows this Chat. Inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with \`okou connector account switch <slug> --connection-id <uuid>\`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with \`okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>\`. Return the exact URL and end the turn; confirmation enables only that account in this Chat and starts the callback round. Firewall permissions are shared across this member's Chats and accounts in this workspace; switching does not reset them. Listener accounts do not grant execution access.`,
     "- Custom connectors: when the user wants to add their own custom connector, run `okou connector custom -h` first and follow its guidance.",
     "- Model availability and provider routing are workspace model settings, separate from connectors. Use `okou model ls` to list allowed models and `okou model switch` for model-switching guidance.",
     "- Personal subscriptions: use `okou subscription list --json` and `okou subscription show <id> --json` to inspect connected Claude Code / Codex accounts, usage windows, natural reset times, and remaining reset credits. `okou subscription switch <id>` changes only the default account for that provider for subsequent unpinned runs; current runs keep their captured account. Use `okou subscription reset-link <id>` to produce a Codex Reset Card link, return the exact URL, and let the user click Reset. Generating or opening the link does not reset usage.",
@@ -272,12 +262,8 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. The exception is a Web Chat SSH or VNC access request that declares every required connector permission with `--require-permission`: only that request owns continuation. Otherwise, return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
         ]),
     "- Keep temporary downloads, synchronized chat histories, diffs, inventories and backups outside personal Memory. Store chat history caches under `/tmp/okou-chat-history` and other task scratch under `/tmp` or the workspace. Memory is saved after each Run; retain only durable knowledge and intentional evidence there, under the existing Memory authorization rules.",
-    ...(args.singleAgent
-      ? [instructionsAndMemoryGuidance[0], SINGLE_AGENT_SCOPE_PROMPT]
-      : [
-          "- Inspect yourself: `okou whoami --permissions` for identity and permissions.",
-          ...instructionsAndMemoryGuidance,
-        ]),
+    suggestionsFeedbackGuidance,
+    PERSONAL_SCOPE_PROMPT,
     `- Manage workflows with \`okou workflow --help\`. Create or update a durable workflow with \`okou workflow create|edit <name>\`, passing the workflow body via \`--instruction <text>\` or \`--instruction-file <path>\`; its \`SKILL.md\` is synthesized from the name, description, and instruction. \`--dir <path>\` uploads supplementary files only and must not contain a \`SKILL.md\` (it is rejected).`,
   ].join("\n");
 }

@@ -22,18 +22,14 @@ describe("Execution Storage URL freshness", () => {
     closeS3Clients();
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
-      const agentId = await fixture.initializeNative();
+      await fixture.initializeNative();
       fixture.installObjects();
-      const writer = await fixture.startExecution(
-        agentId,
-        "Publish nonempty Memory",
-      );
+      const writer = await fixture.startExecution("Publish nonempty Memory");
       expect(writer.memory.empty).toBeTruthy();
       const versionId = await fixture.publish(writer, [
         { path: "MEMORY.md", content: "A pinned Memory fact" },
       ]);
       const cached = await fixture.startExecution(
-        agentId,
         "Cache the accepted version URL",
       );
       expect(cached.memory).toMatchObject({ versionId, writeback: true });
@@ -72,7 +68,6 @@ describe("Execution Storage URL freshness", () => {
       expect(refreshed.memory.archiveUrl).not.toBe(cached.memory.archiveUrl);
       await fixture.cancel(refreshed);
       const reused = await fixture.startExecution(
-        agentId,
         "Reuse the published execution URL",
       );
       expect(reused.memory).toStrictEqual(refreshed.memory);
@@ -85,18 +80,18 @@ describe("Execution Storage URL freshness", () => {
     onTestFinished(clearMockNow);
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
-      const agentId = await fixture.initializeNative();
+      await fixture.initializeNative();
       fixture.installObjects();
-      const first = await fixture.startExecution(agentId, "Create Memory");
+      const first = await fixture.startExecution("Create Memory");
       const version = await fixture.publish(first, [
         { path: "MEMORY.md", content: "First version" },
       ]);
-      const cached = await fixture.startExecution(agentId, "Cache Memory");
+      const cached = await fixture.startExecution("Cache Memory");
       await fixture.cancel(cached);
       // The writer gets a fresh execution token while the cached URL is still usable.
       mockNow(startedAt + cacheRefreshAfterMs - 60_000);
       await fixture.api.configureRunnerGroup();
-      const writer = await fixture.startExecution(agentId, "Update Memory");
+      const writer = await fixture.startExecution("Update Memory");
       expect(writer.memory).toStrictEqual(cached.memory);
 
       mockNow(startedAt + cacheRefreshAfterMs + 60_000);
@@ -122,7 +117,7 @@ describe("Execution Storage URL freshness", () => {
         },
       );
       const sending = settleIncludingAbort(
-        fixture.startExecution(agentId, "Use the picked Memory"),
+        fixture.startExecution("Use the picked Memory"),
       );
       onTestFinished(async () => {
         if (!release.settled()) {
@@ -157,10 +152,7 @@ describe("Execution Storage URL freshness", () => {
         encodeURIComponent(archiveKey),
       );
       await fixture.cancel(captured);
-      const next = await fixture.startExecution(
-        agentId,
-        "Use the current Memory",
-      );
+      const next = await fixture.startExecution("Use the current Memory");
       expect(next.memory.versionId).toBe(nextVersion);
       await fixture.cancel(next);
     });

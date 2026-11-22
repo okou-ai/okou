@@ -287,7 +287,6 @@ function configureAccountAwareGoogleCalendarApiMock(args: {
 
 interface CalendarScenario {
   readonly actor: ApiTestUser & { readonly orgId: string };
-  readonly agentId: string;
   readonly runnerGroup: string;
   readonly workflowId: string;
 }
@@ -296,7 +295,7 @@ async function setupFixture(): Promise<CalendarScenario> {
   const runnerGroup = await runsApi.configureRunnerGroup();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
-  const { actor, defaultAgentId: agentId } = await wf.setupWorkflowOrg();
+  const { actor } = await wf.setupWorkflowOrg();
   await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
   if (!actor.orgId) {
@@ -309,7 +308,6 @@ async function setupFixture(): Promise<CalendarScenario> {
   context.mocks.s3.send.mockResolvedValue({});
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId,
     runnerGroup,
     workflowId,
   };

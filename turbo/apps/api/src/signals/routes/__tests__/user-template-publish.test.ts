@@ -1047,10 +1047,6 @@ describe("POST /api/user-templates", () => {
     });
     const fixture = installS3Fixture(context);
     const sendS3 = context.mocks.s3.send.getMockImplementation()!;
-    await bdd.createAgent(actor, {
-      displayName: "Template package consumer",
-      visibility: "private",
-    });
     const activeRuns = new Set<string>();
     const ownedTemplates = new Set<string>();
     const client = templateClient();

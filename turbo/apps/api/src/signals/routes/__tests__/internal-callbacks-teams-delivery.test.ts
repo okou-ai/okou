@@ -19,7 +19,7 @@ describe("Teams completion delivery", () => {
     const webhooks = createWebhookCallbackApi(context);
     await fixtures.run(async () => {
       const teams = await fixtures.create({
-        withDefaultAgent: true,
+        onboarded: true,
         paidNative: true,
       });
       server.use(

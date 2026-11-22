@@ -211,7 +211,7 @@ describe("Execution connector permissions", () => {
   it.each(["add", "revoke"] as const)(
     "applies a %s grant change made after the Run was queued",
     async (change) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
       mockGitHubConnectorOAuth();
       server.use(
         http.delete(
@@ -232,7 +232,6 @@ describe("Execution connector permissions", () => {
       });
       expect(completed.body.status).toBe("success");
       const grant = {
-        agentId,
         connectorSlug: "github" as const,
         permission: "user:read",
         action: "deny" as const,
@@ -299,7 +298,7 @@ describe("Execution connector permissions", () => {
       const expired = expiry !== "active";
       const startedAt = now();
       mockNow(startedAt);
-      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      const { actor, runnerGroup } = await entitledNativeChatActor();
       mockSlackConnectorOAuth();
       const started = await connectors.startOauth(actor, "slack", "oauth");
       const state = new URL(started.authorizationUrl).searchParams.get("state");
@@ -329,7 +328,6 @@ describe("Execution connector permissions", () => {
         run = await memory.run(async () => {
           memory.installObjects();
           const writer = await memory.startExecution(
-            agentId,
             "Publish Memory for the next Run",
           );
           expect(writer.execution.networkPolicies?.slack?.allow).toContain(
@@ -358,7 +356,7 @@ describe("Execution connector permissions", () => {
             }
             return sign(...args);
           });
-          const hydrated = await memory.startExecution(agentId, prompt);
+          const hydrated = await memory.startExecution(prompt);
           expect(hydrated.memory).toMatchObject({
             versionId,
             archiveUrl: expect.any(String),

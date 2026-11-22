@@ -6,42 +6,20 @@ import {
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import type { infer as zInfer } from "zod";
 import type { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createBddApi } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
-import { agentDraftRoutes } from "../agent-draft";
+import { composerDraftRoutes } from "../composer-draft";
 
 type UserMessageInputDocument = zInfer<typeof userMessageInputDocumentSchema>;
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const bdd = createBddApi(context);
-
-interface AgentDraftFixture {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string;
-}
-
-/** Creates an agent through the product routes. */
-async function seedAgent(): Promise<AgentDraftFixture> {
-  const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Agent draft agent",
-  });
-  if (!actor.orgId) {
-    throw new Error("Expected the seeded actor to belong to an org");
-  }
-  return { userId: actor.userId, orgId: actor.orgId, agentId: agent.agentId };
-}
-
 const CLIENT_VERSION = "0.734.0";
 
 function authHeaders() {
@@ -52,17 +30,21 @@ function authHeaders() {
 }
 
 function draftsClient() {
-  return setupApp({ context, routes: agentDraftRoutes })(agentDraftContract);
+  return setupApp({ context, routes: composerDraftRoutes })(
+    composerDraftContract,
+  );
 }
 
-describe("GET/PATCH /api/agents/:id/draft", () => {
+describe("GET/PATCH /api/chat-drafts/composer", () => {
   it("returns an empty draft when none is saved", async () => {
-    const fixture = await seedAgent();
+    const fixture = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const response = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],
@@ -74,8 +56,11 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     });
   });
 
-  it("stores and clears the current user's agent draft", async () => {
-    const fixture = await seedAgent();
+  it("stores and clears the current user's composer draft", async () => {
+    const fixture = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const attachment = {
@@ -109,7 +94,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     await accept(
       draftsClient().patch({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
         body: {
           draftUserMessage,
@@ -121,7 +105,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     const saved = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],
@@ -134,7 +117,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     for (const client of [CLIENT_TYPE_IOS, CLIENT_TYPE_ANDROID]) {
       const native = await accept(
         draftsClient().get({
-          params: { id: fixture.agentId },
           headers: authHeaders(),
           extraHeaders: { [CLIENT_TYPE_HEADER]: client },
         }),
@@ -158,7 +140,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     };
     await accept(
       draftsClient().patch({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
         body: {
           draftUserMessage: updatedDraftUserMessage,
@@ -170,7 +151,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     const updated = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],
@@ -182,7 +162,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     await accept(
       draftsClient().patch({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
         body: {
           draftUserMessage: null,
@@ -194,7 +173,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     const cleared = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],
@@ -206,7 +184,10 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
   });
 
   it("rejects attachments without a message and preserves the saved draft", async () => {
-    const fixture = await seedAgent();
+    const fixture = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
     mocks.clerk.session(fixture.userId, fixture.orgId);
     const draftUserMessage: UserMessageInputDocument = {
       version: 1,
@@ -214,7 +195,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     };
     await accept(
       draftsClient().patch({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
         body: { draftUserMessage, draftAttachments: null },
       }),
@@ -223,7 +203,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     const invalid = await accept(
       draftsClient().patch({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
         body: {
           draftUserMessage: null,
@@ -243,7 +222,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     expect(invalid.status).toBe(400);
     const saved = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],
@@ -255,7 +233,10 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
   });
 
   it("converges concurrent first writes without exposing a conflict", async () => {
-    const fixture = await seedAgent();
+    const fixture = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const concurrentDrafts: UserMessageInputDocument[] = [
@@ -273,7 +254,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
       concurrentDrafts.map(async (draftUserMessage) => {
         await accept(
           draftsClient().patch({
-            params: { id: fixture.agentId },
             headers: authHeaders(),
             body: { draftUserMessage, draftAttachments: null },
           }),
@@ -284,7 +264,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     const saved = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],
@@ -293,13 +272,15 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     expect(saved.body.draftAttachments).toBeNull();
   });
 
-  it("does not expose another user's draft on the same public agent", async () => {
-    const fixture = await seedAgent();
+  it("does not expose another user's draft on the same workspace", async () => {
+    const fixture = {
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+    };
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     await accept(
       draftsClient().patch({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
         body: {
           draftUserMessage: {
@@ -317,7 +298,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     const peerDraft = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],
@@ -333,7 +313,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     };
     await accept(
       draftsClient().patch({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
         body: {
           draftUserMessage: peerDraftUserMessage,
@@ -345,7 +324,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
 
     const savedPeerDraft = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],
@@ -358,7 +336,6 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
     mocks.clerk.session(fixture.userId, fixture.orgId);
     const ownerDraft = await accept(
       draftsClient().get({
-        params: { id: fixture.agentId },
         headers: authHeaders(),
       }),
       [200],

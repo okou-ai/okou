@@ -18,11 +18,6 @@ teardown() {
 }
 
 @test "deployed runner executes gh and reads a local page with Chromium" {
-    run create_runner_agent "e2e-runner-toolchain-browser-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local browser_marker="RUNNER_BROWSER_DOM_${TEST_ID}"
     local output_marker="RUNNER_TOOLCHAIN_OK_${TEST_ID}"
     local prompt
@@ -51,7 +46,7 @@ EOF
     prompt=${prompt//__BROWSER_MARKER__/$browser_marker}
     prompt=${prompt//__OUTPUT_MARKER__/$output_marker}
 
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

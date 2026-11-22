@@ -145,7 +145,6 @@ interface RunScopedContext {
   readonly slackWorkspaceId: string;
   readonly runId: string;
   readonly threadId: string;
-  readonly agentId: string;
 }
 
 describe("POST /api/integrations/slack/upload-file/complete", () => {
@@ -353,7 +352,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         ? await seedWithInstallation()
         : { ...(await seedBaseContext()), slackWorkspaceId: "" };
       const actor = actorFor(base);
-      const { agentId } = await scenario.prepareActor(actor);
+      await scenario.prepareActor(actor);
       const sent = await scenario.run(() => {
         return chatApi.sendAndLaunch(actor, {
           prompt: "Create a run for Slack upload completion",
@@ -363,7 +362,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       await rememberExecution(actor, sent.runId);
       return {
         ...base,
-        agentId,
         runId: sent.runId,
         threadId: sent.threadId,
       };

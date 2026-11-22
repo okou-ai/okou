@@ -399,7 +399,6 @@ final class ChatSyncRecoveryTests: XCTestCase {
 
 private final class SyncRecoveryFixture: Sendable {
   static let threadID = "61000000-0000-4000-8000-000000000001"
-  private static let agentID = "61000000-0000-4000-8000-000000000002"
   private static let date = "2026-10-24T00:00:00Z"
 
   struct Values: Sendable {
@@ -454,7 +453,7 @@ private final class SyncRecoveryFixture: Sendable {
         }
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(Self.threadID)","agentId":"\(Self.agentID)",\
+            {"chatThreads":[{"id":"\(Self.threadID)",\
             "title":"\(result.0)","sortAt":"\(Self.date)","createdAt":"\(Self.date)",\
             "updatedAt":"\(Self.date)"}],"latestEventId":null,"latestSeqId":null}
             """)
@@ -463,7 +462,7 @@ private final class SyncRecoveryFixture: Sendable {
       case "/api/chat/events/catch-up":
         return ChatHTTPResponse(body: #"{"events":{},"notFoundThreads":[]}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case "/api/chat-threads/\(Self.threadID)/event-snapshot":
         return ChatHTTPResponse(
           status: 404,

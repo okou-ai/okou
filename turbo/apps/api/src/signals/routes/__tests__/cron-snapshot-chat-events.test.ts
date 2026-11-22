@@ -274,12 +274,9 @@ describe("cron snapshot chat events", () => {
       isolatePg: true,
     });
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    await bdd.createAgent(owner, {
-      displayName: "Concurrent snapshot deletion agent",
-    });
     const marker = `snapshot-deletion-${randomUUID()}`;
     const threadIds: string[] = [];
     for (let index = 0; index < 2; index += 1) {
@@ -378,9 +375,6 @@ describe("cron snapshot chat events", () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    await bdd.createAgent(owner, {
-      displayName: "Snapshot publication agent",
-    });
     const objects = mockSnapshotStorage();
 
     const markers = [

@@ -12,7 +12,7 @@ import {
   presentationPart,
 } from "./template-submission-fixtures.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 const context = testContext();
 
 const owner = {

@@ -1,14 +1,13 @@
 import Foundation
 
 public enum ConnectorHTTPFixtures {
-  public static let agentID = "98000000-0000-4000-8000-000000000001"
   public static let threadID = "98000000-0000-4000-8000-000000000002"
   public static let accountID = "98000000-0000-4000-8000-000000000003"
   public static let siblingID = "98000000-0000-4000-8000-000000000004"
   public static let attemptID = "98000000-0000-4000-8000-000000000005"
   public static let customID = "98000000-0000-4000-8000-000000000006"
   public static let metadata = """
-    {"id":"\(threadID)","agentId":"\(agentID)","cloudBrowserEnabled":false,"computerUseHostId":null}
+    {"id":"\(threadID)","cloudBrowserEnabled":false,"computerUseHostId":null}
     """
   public static func account(
     id: String = accountID, custom: Bool = false, connected: Bool = true,

@@ -430,12 +430,9 @@ describe("retained chat input observation", () => {
   it("reports pre-Run rejection from the canonical replacement", async () => {
     const f = createPublicChatAdmissionFixture(context);
     await f.run(async () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       f.captureStorageMocks();
       await bdd.completeOnboarding(f.actor);
-      await bdd.createAgent(f.actor, {
-        displayName: "Rejected input",
-      });
       await f.activateWithoutCredits();
       await f.suspend(0);
       const eventId = randomUUID();

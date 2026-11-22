@@ -1,7 +1,4 @@
-import {
-  agentDraftContract,
-  composerDraftContract,
-} from "../contracts/agent-draft";
+import { composerDraftContract } from "../contracts/composer-draft";
 import {
   chatThreadDraftContract,
   type UserMessageInputPart,
@@ -46,7 +43,6 @@ function draftTransforms(client: ClientResponseTransform["client"]) {
     transform: legacyVoiceDraft,
   } as const;
   return {
-    agent: { ...common, path: agentDraftContract.get.path },
     composer: { ...common, path: composerDraftContract.get.path },
     thread: { ...common, path: chatThreadDraftContract.get.path },
   };

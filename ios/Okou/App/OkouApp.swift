@@ -386,8 +386,8 @@ private struct WorkspaceRootView: View {
       modelSelection: store.newModelSelection,
       connectorSelection: store.newModelSelection.connectors,
       mentionSource: ComposerMentionSource(threads: store.list.threads),
-      workflowSource: store.composerWorkflows, agentID: nil,
-      placeholder: String(localized: "Message \(store.currentAgentName)"),
+      workflowSource: store.composerWorkflows,
+      placeholder: String(localized: "Message Okou"),
       project: store.newChatProject,
       removeProject: store.removeNewChatProject
     )
@@ -399,8 +399,6 @@ private struct WorkspaceRootView: View {
       Spacer(minLength: 24)
       // Background restoration keeps the entrance; user navigation starts a fresh greeting.
       NewChatGreeting(
-        avatarURL: nil, agentName: "Okou",
-        isDefaultAgent: true,
         text: greetingText
       )
       .id(taglineIndex)
@@ -415,9 +413,6 @@ private struct WorkspaceRootView: View {
     .onTapGesture {
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    }
-    .onChange(of: store.selectedAgentID) { previous, _ in
-      if previous != nil { taglineIndex = Int.random(in: 0..<64) }
     }
     .onChange(of: store.selectedThreadID) { _, id in
       if id == nil { taglineIndex = Int.random(in: 0..<64) }

@@ -119,9 +119,9 @@ production HTTP clients use generated `client/*` descriptors. Import independent
 `validators/*` only when browser code actually parses or validates a value:
 
 ```typescript
-import { agentsMainContract } from "@okouai/api-contracts/client/agents";
-import type { AgentVisibility } from "@okouai/api-contracts/contracts/agents";
-import { agentVisibilitySchema } from "@okouai/api-contracts/validators/agents";
+import { chatThreadsContract } from "@okouai/api-contracts/client/chat-threads";
+import type { ChatThreadDraft } from "@okouai/api-contracts/contracts/chat-threads";
+import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 ```
 
 `client-contracts/prefer-client-descriptors` enforces this boundary in App

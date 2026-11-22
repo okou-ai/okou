@@ -7,7 +7,7 @@ import Observation
 @MainActor @Observable
 final class ChatForkStore: Identifiable {
   let id = UUID()
-  let agentID: String?
+
   let projectID: String?
   let composer: ComposerDraftStore
   private(set) var modelSelection: ChatModelSelectionStore
@@ -45,7 +45,7 @@ final class ChatForkStore: Identifiable {
 
   init(
     selection: ChatFeedbackSelection, sourceRunID: String, projectID: String?,
-    agentID: String?, commands: ChatCommands, models: ChatModelStore,
+    commands: ChatCommands, models: ChatModelStore,
     workflowSource: ComposerWorkflowSource, lifecycleTasks: LifecycleTasks,
     didCreate: @escaping @MainActor (ChatThread) -> Void,
     didSend: @escaping @MainActor (ChatThread) -> Void,
@@ -54,7 +54,6 @@ final class ChatForkStore: Identifiable {
     self.sourceRunID = sourceRunID
     sourceEventID = selection.eventID
     self.projectID = projectID
-    self.agentID = agentID
     self.commands = commands
     self.models = models
     self.lifecycleTasks = lifecycleTasks
@@ -66,7 +65,6 @@ final class ChatForkStore: Identifiable {
       target: .unassigned, commands: commands, didFail: didFail,
       lifecycleTasks: lifecycleTasks, preservesFeedbackNotes: true)
     modelSelection = ChatModelSelectionStore(models: models, lifecycleTasks: lifecycleTasks)
-    modelSelection.connectors.configure(agentID: agentID)
     composer.addFeedback(selection)
   }
 
@@ -142,7 +140,7 @@ final class ChatForkStore: Identifiable {
           chatThreadSortEventID: pending.sortEventID,
           modelSelection: pending.model, reasoningEffort: pending.effort,
           computerAccess: pending.computerAccess,
-          expectedAgentID: agentID, sourceRunID: pending.sourceRunID)
+          sourceRunID: pending.sourceRunID)
         try Task.checkCancellation()
         guard !closed else { return nil }
         deliveryUnconfirmed = false

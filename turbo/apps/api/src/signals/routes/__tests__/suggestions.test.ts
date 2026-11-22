@@ -96,13 +96,13 @@ function makeOption(
     ...overrides,
   };
 }
-async function primaryRun(enabled = true, secondary = false) {
+async function primaryRun(enabled = true) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
-  const defaultAgentId = await bdd.readDefaultAgentId(actor);
-  if (!actor.orgId || !defaultAgentId) {
-    throw new Error("Expected a default Agent");
+  await bdd.provisionWorkspace(actor);
+  if (!actor.orgId) {
+    throw new Error("Expected a workspace member");
   }
   await bdd.completeOnboarding(actor);
   await updateFeatureSwitchesForUser(
@@ -112,7 +112,7 @@ async function primaryRun(enabled = true, secondary = false) {
       [FeatureSwitchKey.AgentSuggestion]: enabled,
     },
   );
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
@@ -120,24 +120,14 @@ async function primaryRun(enabled = true, secondary = false) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agentId = secondary
-    ? (
-        await bdd.createAgent(actor, {
-          displayName: "Secondary",
-          visibility: "private",
-        })
-      ).agentId
-    : defaultAgentId;
   await runs.heartbeatRunner(runnerGroup);
   const run = await runs.createThreadRun(actor, {
-    agentId,
     model: "claude-fable-5-1",
     prompt: "Curate useful suggestions",
   });
   const execution = await runs.executionInput(run.runId);
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId,
     runnerGroup,
     headers: { authorization: `Bearer ${okouTokenFromExecution(execution)}` },
     prompt: execution.appendSystemPrompt ?? "",
@@ -744,19 +734,6 @@ describe("Agent suggestions", () => {
       [403],
     );
     expect(result.body.error.code).toBe("FORBIDDEN");
-  });
-  it("publishes as the member when a send includes a legacy secondary Agent ID", async () => {
-    const fixture = await primaryRun(true, true);
-    const created = await accept(
-      client().create({ headers: fixture.headers, body: input() }),
-      [200],
-    );
-    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(
-      pool.body.items.map((item) => {
-        return item.id;
-      }),
-    ).toContain(created.body.id);
   });
   it("limits homepage display while managing all concurrent cards and consumes once without replay resurrection", async () => {
     const fixture = await primaryRun();

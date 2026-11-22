@@ -17,12 +17,7 @@ teardown() {
 }
 
 @test "public run API cancels a running sandbox" {
-    run create_runner_agent "e2e-run-cancel-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" $'set -euo pipefail\nsleep 300'
+    run runner_e2e_start_mock_shell_chat_run $'set -euo pipefail\nsleep 300'
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

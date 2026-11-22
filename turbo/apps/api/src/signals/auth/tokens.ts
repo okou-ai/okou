@@ -70,7 +70,7 @@ const AGENT_EXCLUDED_CAPABILITIES = [
 ] as const satisfies readonly Capability[];
 
 interface OkouTokenOptions {
-  readonly isDefaultAgent?: boolean;
+  readonly personalExecution?: boolean;
   readonly phoneUseDeviceId?: string;
   readonly phoneUseGrantId?: string;
   readonly computerUseHostId?: string;
@@ -226,7 +226,7 @@ function isCapabilityAvailableToAgent(
     capability === "suggestion:read" ||
     capability === "suggestion:write"
   ) {
-    return options?.isDefaultAgent === true;
+    return options?.personalExecution === true;
   }
   if (
     AGENT_EXCLUDED_CAPABILITIES.some((excludedCapability) => {
@@ -485,7 +485,9 @@ function buildOkouTokenClaims(
     runId,
     orgId,
     capabilities,
-    ...(options?.isDefaultAgent === true ? { singleAgent: true as const } : {}),
+    ...(options?.personalExecution === true
+      ? { singleAgent: true as const }
+      : {}),
     ...phoneUseTokenClaims(capabilities, options),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId

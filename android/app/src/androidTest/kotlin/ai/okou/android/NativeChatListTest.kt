@@ -201,7 +201,7 @@ class NativeChatListTest {
                 requested.countDown()
                 release.await()
                 if (fail.get()) MockResponse().setResponseCode(503)
-                else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+                else jsonResponse("""{"threads":{},"unreadAt":{}}""")
             }
             val launchedAt = SystemClock.elapsedRealtime()
             launch()

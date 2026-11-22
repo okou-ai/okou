@@ -26,7 +26,7 @@ const mocks = createRouteMocks(context);
 
 async function runActor() {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
@@ -34,10 +34,8 @@ async function runActor() {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Builtin MCP Agent",
-  });
-  return { actor, agentId: agent.agentId, runnerGroup };
+
+  return { actor, runnerGroup };
 }
 
 async function connectPublic(actor: ApiTestUser) {
@@ -60,7 +58,7 @@ async function connectPublic(actor: ApiTestUser) {
 
 describe("builtin MCP Run admission", () => {
   it("pins execution input, refreshes discovery and keeps MCP credentials behind firewall auth", async () => {
-    const { actor, agentId, runnerGroup } = await runActor();
+    const { actor, runnerGroup } = await runActor();
     const publicAccountId = await connectPublic(actor);
     await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
       apiKey: "admitted-mcp-token",
@@ -73,7 +71,6 @@ describe("builtin MCP Run admission", () => {
       throw new Error("Expected the admitted manual MCP account");
     }
     const run = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use the admitted builtin MCP tools",
     });
 

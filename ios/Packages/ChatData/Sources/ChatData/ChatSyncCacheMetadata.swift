@@ -13,28 +13,16 @@ extension ChatSync {
     try await cache?.acknowledgePrefetchReport(id)
   }
 
-  public func cachedNavigation() async -> SidebarNavigationSnapshot? {
+  public func restoringWorkspaceDraft(_ storage: ChatDraftStorage?) async -> ChatDraftStorage? {
+    guard let storage else { return nil }
     do {
-      return try await cache?.loadNavigation()
+      return try await cache?.restoringWorkspaceDraft(storage) ?? storage
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
         .error(
-          "event=chat.cache.navigation.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          "event=chat.draft.migration.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
-      return nil
-    }
-  }
-
-  public func persistNavigation(_ snapshot: SidebarNavigationSnapshot) async {
-    do {
-      try Task.checkCancellation()
-      try await cache?.saveNavigation(snapshot)
-    } catch is CancellationError {
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error(
-          "event=chat.cache.navigation.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
-        )
+      return storage
     }
   }
 

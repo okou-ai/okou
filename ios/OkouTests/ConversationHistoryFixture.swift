@@ -9,7 +9,6 @@ import Synchronization
 /// Mixed variable-height messages served through the real event-decoding and replay boundary.
 final class ConversationHistoryFixture: Sendable {
   static let threadID = "60000000-0000-4000-8000-000000000001"
-  static let agentID = "60000000-0000-4000-8000-000000000002"
   let http: ChatHTTPFixture
   let requests = HistoryRequests()
   private let rows: HistoryRows
@@ -123,7 +122,7 @@ final class ConversationHistoryFixture: Sendable {
     case "/api/indicators":
       if let indicators { return try await indicators(request) }
       if let additional { return try await additional(request) }
-      return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
     case "/api/chat-threads/snapshot":
       if let threadSnapshot { return try await threadSnapshot(request) }
       return Self.threadSnapshotResponse()
@@ -132,7 +131,7 @@ final class ConversationHistoryFixture: Sendable {
         URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
         .first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
       let event = """
-        {"id":"60000000-0000-4000-8000-000000000090","seqId":1,"kind":"created","chatThreadId":"\(Self.threadID)","agentId":"\(Self.agentID)","title":"History","createdAt":"2026-10-20T00:00:00Z"}
+        {"id":"60000000-0000-4000-8000-000000000090","seqId":1,"kind":"created","chatThreadId":"\(Self.threadID)","title":"History","createdAt":"2026-10-20T00:00:00Z"}
         """
       return ChatHTTPResponse(body: "{\"events\":[\(since == 0 ? event : "")],\"hasMore\":false}")
     case "/api/ios-notifications/prefetch":
@@ -152,7 +151,7 @@ final class ConversationHistoryFixture: Sendable {
     case path + "/metadata":
       return ChatHTTPResponse(
         body:
-          "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+          "{\"id\":\"\(Self.threadID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
       )
     default: return nil
     }
@@ -210,7 +209,7 @@ final class ConversationHistoryFixture: Sendable {
   static func threadSnapshotResponse() -> ChatHTTPResponse {
     ChatHTTPResponse(
       body: """
-        {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)","title":"History","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
+        {"chatThreads":[{"id":"\(threadID)","title":"History","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
         """)
   }
 
@@ -232,7 +231,7 @@ final class ConversationHistoryFixture: Sendable {
     let sync = sharedSync ?? ChatSync(client: http.client, cache: cache)
     return ConversationStore(
       thread: ChatThread(
-        id: Self.threadID, agentID: Self.agentID, title: "History", createdAt: .now,
+        id: Self.threadID, title: "History", createdAt: .now,
         updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),

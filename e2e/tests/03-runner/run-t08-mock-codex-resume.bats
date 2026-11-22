@@ -12,7 +12,7 @@ setup_file() {
 }
 
 @test "second chat turn resumes the mock codex session" {
-    run runner_chat_start_mock_codex "" "first turn"
+    run runner_chat_start_mock_codex "first turn"
 
     assert_success
     assert_output --partial '"status":"completed"'
@@ -23,7 +23,7 @@ setup_file() {
     thread_id="$(runner_chat_field "$first_output" '.threadId')"
     first_session_id="$(runner_chat_field "$first_output" '.sessionId')"
 
-    run runner_chat_continue "" "$thread_id" "second turn"
+    run runner_chat_continue "$thread_id" "second turn"
 
     assert_success
     assert_output --partial '"status":"completed"'

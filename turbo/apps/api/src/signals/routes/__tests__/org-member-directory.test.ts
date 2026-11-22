@@ -5,10 +5,10 @@ import { array, literal, number, object, string } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 const invitationListParams = object({
   organizationId: string(),
   status: array(literal("pending")),

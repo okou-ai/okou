@@ -61,7 +61,7 @@ final class AuthenticationStartupTests: XCTestCase {
         authentication: authentication, configuration: configuration, session: fixture.api.session))
     XCTAssertEqual(data.scopeID, authentication.scopeID)
     XCTAssertEqual(store.newChatDraft, "Draft written before identity verification")
-    _ = try await resolved.client.data("/api/agents")
+    _ = try await resolved.client.data("/api/feature-switches")
   }
 
   func testUnexpectedAPIRequestFailsAtTheHTTPBoundary() async throws {

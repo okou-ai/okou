@@ -35,7 +35,7 @@ struct ThreadSnapshotArchive: Codable, Sendable {
 
 struct ThreadProjection: Codable, Sendable {
   let id: String
-  let agentId: String?
+
   let projectId: String?
   let title: String?
   let selectedModel: String?
@@ -55,7 +55,7 @@ struct ThreadProjection: Codable, Sendable {
 
   var thread: ChatThread {
     ChatThread(
-      id: id, agentID: agentId, title: title ?? "", projectId: projectId,
+      id: id, title: title ?? "", projectId: projectId,
       selectedModel: selectedModel,
       createdAt: createdAt, updatedAt: updatedAt, sortAt: sortAt,
       pinnedAt: pinnedAt, pinOrder: pinOrder, renamedAt: renamedAt,
@@ -76,8 +76,7 @@ struct ThreadEvent: Codable, Sendable {
   let seqId: Int
   let kind: ChatThreadChange.Kind
   let chatThreadId: String
-  let agentId: String?
-  let reassignedAgentId: String?
+
   let projectId: String?
   let title: String?
   let selectedModel: String?
@@ -93,8 +92,8 @@ struct ThreadEvent: Codable, Sendable {
   var change: ChatThreadChange {
     ChatThreadChange(
       kind: kind,
-      chatThreadId: chatThreadId, agentId: agentId,
-      reassignedAgentId: reassignedAgentId, projectId: projectId, title: title,
+      chatThreadId: chatThreadId,
+      projectId: projectId, title: title,
       selectedModel: selectedModel,
       pinOrder: pinOrder, hidden: hidden, muted: muted, modelSettings: modelSettings,
       modelSettingsPatch: modelSettingsPatch,
@@ -106,7 +105,7 @@ struct ThreadEvent: Codable, Sendable {
 
 struct ThreadMetadata: Decodable, Sendable {
   let id: String
-  let agentId: String?
+
   let title: String?
   let selectedModel: String?
   let computerUseHostId: String?
@@ -120,16 +119,9 @@ struct ThreadDetail: Decodable, Sendable {
 }
 
 public struct Indicators: Decodable, Sendable {
-  let agents: [String: ChatIndicator]?
   public let threads: [String: ChatIndicator]
   public let unreadAt: [String: Date]
 
-  public func unreadAgentIDs(in chatThreads: [ChatThread]) -> Set<String> {
-    if let agents {
-      return Set(agents.filter { $0.value == .unread }.map(\.key))
-    }
-    return Set(chatThreads.filter { threads[$0.id] == .unread }.compactMap(\.agentID))
-  }
 }
 
 struct ThreadReadState: Decodable, Sendable {
@@ -213,17 +205,6 @@ struct ChatEventRow: Decodable, Sendable {
       createdAt: createdAt, eventType: eventType, failureReason: failureReason, payload: payload,
       inputError: inputError, outputError: outputError)
   }
-}
-
-public struct AgentRecord: Codable, Equatable, Sendable {
-  public let agentId: String
-  public let isDefaultAgent: Bool
-  public let displayName: String?
-  public let avatarUrl: String?
-  /// The agent's responsibility, as written on its profile.
-  public var description: String?
-  /// "public" (shared with the workspace) or "private".
-  public var visibility: String?
 }
 
 public struct SidebarFeatureSwitches: Codable, Sendable {

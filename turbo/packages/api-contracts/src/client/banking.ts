@@ -4,7 +4,6 @@
 import type {
   bankingContract as OriginalBankingContract,
   bankingPublicContract as OriginalBankingPublicContract,
-  bankingUserContract as OriginalBankingUserContract,
   bankingWorkspaceContract as OriginalBankingWorkspaceContract,
 } from "../contracts/banking";
 import type { ClientDescriptor } from "./types";
@@ -67,63 +66,6 @@ export const bankingPublicContract: ClientDescriptor<
       400: true,
       401: true,
       500: true,
-      503: true,
-    },
-  },
-};
-
-export const bankingUserContract: ClientDescriptor<
-  typeof OriginalBankingUserContract
-> = {
-  accessRequestStatus: {
-    method: "GET",
-    path: "/api/banking/access-requests/:agentId",
-    statuses: {
-      200: true,
-      401: true,
-      403: true,
-      404: true,
-    },
-  },
-  createConnectSession: {
-    method: "POST",
-    path: "/api/banking/connect-sessions",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      409: true,
-      502: true,
-      503: true,
-    },
-  },
-  saveAgentGrant: {
-    method: "POST",
-    path: "/api/banking/agent-grants",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      409: true,
-      502: true,
-      503: true,
-    },
-  },
-  revokeAgentGrant: {
-    method: "POST",
-    path: "/api/banking/agent-grants/revoke",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      409: true,
-      502: true,
       503: true,
     },
   },

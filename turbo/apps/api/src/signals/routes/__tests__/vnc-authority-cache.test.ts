@@ -53,65 +53,6 @@ function notifications() {
 }
 
 describe("VNC authority and revocation", () => {
-  it.each(["configuration", "metadata"] as const)(
-    "legacy agent %s privacy changes preserve member Run authority",
-    async (entry) => {
-      const owner = await executionApi.paidOwner();
-      const actor = bdd.user(owner);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Shared VNC Agent",
-        visibility: "public",
-      });
-      const ownRun = await executionApi.runtime({
-        ...owner,
-        agentId: agent.agentId,
-      });
-      const member = { orgId: owner.orgId, userId: `user-${randomUUID()}` };
-      await runs.ensurePersonalSubscriptionModel(bdd.user(member), {
-        model: "claude-fable-5-1",
-      });
-      await bdd.completeOnboarding(bdd.user(member));
-      const memberRun = await executionApi.runtime({
-        ...member,
-        agentId: agent.agentId,
-      });
-      api.authenticate(member);
-      const desktop = await accept(
-        api
-          .connections()
-          .create({ headers: vncSessionHeaders, body: vncConnectionBody() }),
-        [201],
-      );
-      await api.enableDefault(member, "vnc", desktop.body.id);
-      expect(
-        (await check({ ...memberRun, connectionId: desktop.body.id })).body,
-      ).toStrictEqual({ outcome: "valid" });
-      context.mocks.ably.publish.mockClear();
-      if (entry === "configuration") {
-        await bdd.updateAgent(actor, agent.agentId, { visibility: "private" });
-      } else {
-        await bdd.updateAgentMetadata(actor, agent.agentId, {
-          visibility: "private",
-        });
-      }
-      expect(notifications()).toStrictEqual([]);
-      expect(
-        (await check({ ...memberRun, connectionId: desktop.body.id })).body,
-      ).toStrictEqual({ outcome: "valid" });
-      await expect(bdd.readAgent(actor, agent.agentId)).resolves.toMatchObject({
-        visibility: "private",
-      });
-      for (const value of [ownRun, memberRun]) {
-        await expect(
-          runs.readRun(bdd.user(value), value.runId),
-        ).resolves.toMatchObject({ status: "running" });
-      }
-      expect(
-        channelsPublishedTo(context.mocks, "ssh-authority-invalidated"),
-      ).toStrictEqual([]);
-    },
-  );
-
   it("requires exact current Run/Runner/configuration", async () => {
     const f = await executionApi.fixture();
     expect((await check(f)).body).toStrictEqual({

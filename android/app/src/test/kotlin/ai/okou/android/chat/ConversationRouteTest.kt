@@ -442,9 +442,9 @@ class ConversationRouteTest {
         fixture.indicators = {
             if (unread.get())
                 jsonResponse(
-                    """{"agents":{},"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
                 )
-            else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+            else jsonResponse("""{"threads":{},"unreadAt":{}}""")
         }
         val received = AtomicInteger(12)
         val model = openScrollHistory(received, showConversation)

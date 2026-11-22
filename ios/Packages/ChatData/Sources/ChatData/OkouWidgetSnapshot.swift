@@ -13,7 +13,7 @@ public struct OkouWidgetSnapshot: Codable, Equatable, Sendable {
 
     public let id: String
     public let title: String
-    /// The status emoji the agent put at the front of the title, as the sidebar shows it.
+    /// The status emoji Okou put at the front of the title, as the sidebar shows it.
     public let emoji: String?
     public let state: State
     public let isPinned: Bool

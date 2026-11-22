@@ -20,7 +20,6 @@ describe("Runner dispatch permissions", () => {
       });
 
       const run = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Execute with current connector permissions",
         model: "claude-fable-5-1",
       });
@@ -57,7 +56,6 @@ describe("Runner dispatch permissions", () => {
       });
 
       const cancelled = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Cancel this execution",
         model: "claude-fable-5-1",
       });
@@ -73,7 +71,6 @@ describe("Runner dispatch permissions", () => {
         api.readRun(owned.actor, cancelled.runId),
       ).resolves.toMatchObject({ status: "cancelled" });
       const next = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         threadId: cancelled.threadId,
         prompt: "Continue with authorized connector access",
       });

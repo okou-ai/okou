@@ -25,20 +25,15 @@ async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
   const actor = publicFixture.actor;
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Analytics refresh agent",
-    description: "Exercises Analytics refresh and reconnect.",
-    visibility: "private",
-  });
+
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "resolve Analytics firewall auth",
   });
   publicFixture.registerRun(run.runId);

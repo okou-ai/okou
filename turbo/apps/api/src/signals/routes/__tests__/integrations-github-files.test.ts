@@ -36,7 +36,6 @@ interface GitHubFileFixture {
   readonly orgId: string;
   readonly userId: string;
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly remoteInstallationId: string;
 }
 
@@ -64,10 +63,7 @@ describe("GitHub file integration routes", () => {
     if (!actor.orgId) {
       throw new Error("GitHub file fixtures require an org-scoped actor");
     }
-    const agent = await bdd.createAgent(actor, {
-      displayName: "GitHub Files Agent",
-      visibility: "private",
-    });
+
     const install = await github.installGithubApp(actor, {
       targetLogin: "bdd-files-org",
     });
@@ -75,7 +71,6 @@ describe("GitHub file integration routes", () => {
       orgId: actor.orgId,
       userId: actor.userId,
       actor,
-      agentId: agent.agentId,
       remoteInstallationId: install.remoteInstallationId,
     };
   }
@@ -93,14 +88,13 @@ describe("GitHub file integration routes", () => {
       },
     });
     return await owner.run(async () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       await api.grantProEntitlement(fixture.actor);
       await api.ensurePersonalSubscriptionModel(fixture.actor);
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
       const runnerGroup = await api.configureRunnerGroup();
       const run = await api.createThreadRun(fixture.actor, {
-        agentId: fixture.agentId,
         prompt: "deliver github file",
       });
       await api.heartbeatRunner(runnerGroup);
