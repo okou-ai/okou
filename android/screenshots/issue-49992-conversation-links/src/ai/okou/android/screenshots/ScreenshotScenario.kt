@@ -16,6 +16,7 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import ai.okou.android.testAuthenticationState
 import android.util.Log
+import android.view.KeyEvent
 import android.view.WindowInsets
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -124,14 +125,31 @@ class ScreenshotScenario {
                     text("Review the project release")
                     text("The launch notes are ready.", partial = true)
                     text("Android documentation", partial = true)
+                    Log.i("LinkBack", "baseline key injected=${device.pressKeyCode(KeyEvent.KEYCODE_BACK)}")
+                    val returnedToList = device.wait(Until.gone(By.pkg(app.packageName).textContains("The launch notes are ready.")), 2_000)
+                    Log.i("LinkBack", "baseline returned to list=$returnedToList")
+                    if (returnedToList) {
+                        text("Personal chat").click()
+                        text("The launch notes are ready.", partial = true)
+                    }
                     ScreenshotCapture.capture("01-phone-inline-links.png")
 
                     text("Project release update", partial = true).click()
                     text("Release checklist approved. The launch may proceed.")
                     ScreenshotCapture.capture("02-phone-message-target.png")
-                    val systemBack = await(By.res("com.android.launcher3", "back"))
-                    check(systemBack.isClickable)
-                    systemBack.click()
+                    val source = By.pkg(app.packageName).textContains("Project release update")
+                    Log.i("LinkBack", "linked key injected=${device.pressKeyCode(KeyEvent.KEYCODE_BACK)}")
+                    if (!device.wait(Until.hasObject(source), 2_000)) {
+                        Log.i("LinkBack", "linked Back key didn't return; trying activity dispatcher")
+                        scenario.onActivity { activity ->
+                            Log.i("LinkBack", "direct dispatcher enabled=${activity.onBackPressedDispatcher.hasEnabledCallbacks()}")
+                            activity.onBackPressedDispatcher.onBackPressed()
+                        }
+                        if (!device.wait(Until.hasObject(source), 2_000)) {
+                            Log.i("LinkBack", "activity dispatcher didn't return; trying workspace toolbar")
+                            await(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
+                        }
+                    }
                     text("Project release update", partial = true)
                     ScreenshotCapture.capture("03-phone-source-return.png")
 

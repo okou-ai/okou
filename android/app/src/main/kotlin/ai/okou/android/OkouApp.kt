@@ -737,6 +737,7 @@ internal fun OkouApp(
     }
 
     fun back() {
+        android.util.Log.i("LinkBack", "back linkReturns=${linkReturns.size} find=${findVisit != null} search=$searchActive")
         val find = findVisit
         if (settings == null && find != null) {
             if (find.target == null) closeFind(returnToActions = true) else find.returnToResults()
@@ -764,7 +765,10 @@ internal fun OkouApp(
         !showArtifacts &&
             !showingConnectors &&
             (settings != null || showWorkspaceBack || searchActive || findVisit != null),
-        onBack = { if (settings == null && searchActive) closeSearch() else back() },
+        onBack = {
+            android.util.Log.i("LinkBack", "workspace BackHandler called")
+            if (settings == null && searchActive) closeSearch() else back()
+        },
     )
 
     if (showingConnectors) {

@@ -71,6 +71,20 @@ import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val handled = super.dispatchKeyEvent(event)
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            android.util.Log.i("LinkBack", "dispatchKeyEvent action=${event.action} handled=$handled")
+        }
+        return handled
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onBackPressed() {
+        android.util.Log.i("LinkBack", "onBackPressed enabled=${onBackPressedDispatcher.hasEnabledCallbacks()}")
+        super.onBackPressed()
+    }
+
     private val updates
         get() = (application as OkouApplication).updates
 
