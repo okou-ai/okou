@@ -21,6 +21,7 @@ import ai.okou.android.chat.ConversationFindVisit
 import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.ConversationStatus
 import ai.okou.android.chat.ConversationToolbarActions
+import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.NewConversationWelcome
 import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProvisionalChat
@@ -93,6 +94,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,7 +150,8 @@ internal fun OkouApp(
             WorkspaceTarget.List
         else requestedTarget
     var findVisit by remember(chats, target) { mutableStateOf<ConversationFindVisit?>(null) }
-    val showingFind = settings == null && findVisit?.let { it.target == null } == true
+    val showingFind =
+        settings == null && !showArtifacts && findVisit?.let { it.target == null } == true
     // Window configuration changes on resize. IME insets only change the space inside the panes.
     val window = currentWindowSizeDp()
     val listWidth = workspaceListPaneWidth(window.width, window.height)
@@ -180,6 +183,27 @@ internal fun OkouApp(
     val missingChat = stringResource(R.string.history_missing)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+
+    fun closeFind() {
+        focus.clearFocus()
+        keyboard?.hide()
+        findVisit = null
+    }
+
+    val activeFind = findVisit
+    if (activeFind != null && chats != null && target is WorkspaceTarget.Chat) {
+        LaunchedEffect(chats.history, target.id, activeFind, showingFind) {
+            chats.history.uiState.first { state ->
+                state.thread?.id == target.id &&
+                    (state.phase == HistoryPhase.Missing ||
+                        activeFind.hasLoadedMessages && state.transcript == null)
+            }
+            if (findVisit === activeFind) {
+                if (showingFind) closeFind() else findVisit = null
+            }
+        }
+    }
+
     val settingsFocus = remember { FocusRequester() }
     val searchEntryFocus = remember { FocusRequester() }
     var searchEntryFocused by remember { mutableStateOf(false) }
@@ -441,7 +465,7 @@ internal fun OkouApp(
     fun back() {
         val find = findVisit
         if (settings == null && find != null) {
-            if (find.target == null) findVisit = null else find.returnToResults()
+            if (find.target == null) closeFind() else find.returnToResults()
             return
         }
         when (settings) {
@@ -840,11 +864,7 @@ internal fun OkouApp(
                             val find = findVisit
                             if (showingFind && find != null) {
                                 Box(Modifier.fillMaxSize().imePadding()) {
-                                    ConversationFind(find) {
-                                        focus.clearFocus()
-                                        keyboard?.hide()
-                                        findVisit = null
-                                    }
+                                    ConversationFind(find, onClose = ::closeFind)
                                 }
                                 return@detailPane
                             }

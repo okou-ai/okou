@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatRowAction
+import ai.okou.android.chat.HistoryPhase
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -398,6 +399,121 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         hit.assertDoesNotExist()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
+    }
+
+    @Test
+    fun findKeepsItsSnapshotDuringSyncAndClosesWhenTheConversationBecomesUnavailable() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
+        compose.onNodeWithText("Personal chat").performClick()
+        val history =
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+                    .history
+            }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { history.uiState.value.phase == HistoryPhase.Ready }
+        }
+
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        compose.onNodeWithTag("conversation_find_query").performTextInput("Native history")
+        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
+        val rows = fixture.historyRows
+        val lastRead = compose.runOnIdle { history.uiState.value.confirmation }
+        val refreshStarted = CountDownLatch(1)
+        val finishRefresh = CountDownLatch(1)
+        fixture.historyRows = { request ->
+            if (request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_PERSONAL) {
+                refreshStarted.countDown()
+                finishRefresh.await()
+            }
+            rows(request)
+        }
+        try {
+            compose.runOnIdle { history.invalidate(CHAT_PERSONAL) }
+            compose.waitUntil(10_000) { refreshStarted.count == 0L }
+            compose.onNodeWithTag("conversation_find_query").assertIsFocused()
+            compose.onNodeWithText("Native history reply").assertIsDisplayed()
+        } finally {
+            finishRefresh.countDown()
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle {
+                val current = history.uiState.value
+                current.phase == HistoryPhase.Ready && current.confirmation != lastRead
+            }
+        }
+        compose.onNodeWithText("1 matching message").assertIsDisplayed()
+
+        fixture.historyRows = { request ->
+            if (request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_PERSONAL)
+                MockResponse().setResponseCode(403)
+            else rows(request)
+        }
+        compose.runOnIdle { history.invalidate(CHAT_PERSONAL) }
+        val missing = app.getString(R.string.history_missing)
+        compose.waitUntilExactlyOneExists(hasText(missing), 10_000)
+        compose.onNodeWithTag("conversation_find").assertDoesNotExist()
+        compose.onNodeWithText("Native history reply").assertDoesNotExist()
+        compose.onNodeWithText(missing).assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w320dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun findKeepsTheMatchedTextVisibleWhenTheExcerptWraps() {
+        val app = compose.activity.application as ChatListApplication
+        val term = "M".repeat(38)
+        val reply = "W".repeat(26) + " " + term
+        app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        app.fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0
+            val thread = checkNotNull(request.requestUrl).pathSegments[2]
+            val rows =
+                if (after >= 37) ""
+                else
+                    historyEventWire(
+                        thread = thread,
+                        payload = """{"content":"$reply"}""",
+                        run = null,
+                    )
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntilExactlyOneExists(hasText(reply), 10_000)
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        compose.onNodeWithTag("conversation_find_query").performTextInput(term)
+        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
+
+        val snippet =
+            compose.onNode(
+                hasText(term, substring = true) and !hasSetTextAction(),
+                useUnmergedTree = true,
+            )
+        val layouts = mutableListOf<TextLayoutResult>()
+        snippet.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single()
+        val match = layout.layoutInput.text.spanStyles.single()
+        assertTrue(
+            "The bold match must fit in the two-line result excerpt",
+            layout.getLineEnd(layout.lineCount - 1, visibleEnd = true) >= match.end,
+        )
     }
 
     @Test
