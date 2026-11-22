@@ -48,7 +48,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -219,15 +221,28 @@ internal fun SettingsSwitchRow(
         }
         Box(Modifier.width(52.dp)) {
             if (checked != null) {
-                val outline = MaterialTheme.colorScheme.onSurfaceVariant
+                val colors = MaterialTheme.colorScheme
+                val dark = LocalOkouDarkTheme.current
+                val uncheckedTrack =
+                    colors.onSurface
+                        .copy(alpha = if (dark) 0.16f else 0.12f)
+                        .compositeOver(colors.surface)
+                val uncheckedOutline =
+                    colors.onSurface.copy(alpha = 0.64f).compositeOver(colors.surface)
                 Switch(
                     checked,
                     onCheckedChange = null,
                     enabled = onCheckedChange != null,
                     colors =
                         SwitchDefaults.colors(
-                            uncheckedThumbColor = outline,
-                            uncheckedBorderColor = outline,
+                            checkedThumbColor = if (dark) colors.onPrimary else Color.White,
+                            checkedTrackColor =
+                                if (dark) colors.primary else LocalActivityStatusColor.current,
+                            uncheckedThumbColor = uncheckedOutline,
+                            uncheckedTrackColor = uncheckedTrack,
+                            uncheckedBorderColor = uncheckedOutline,
+                            disabledUncheckedTrackColor =
+                                uncheckedTrack.copy(alpha = 0.12f).compositeOver(colors.surface),
                         ),
                 )
             }
