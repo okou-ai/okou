@@ -215,7 +215,7 @@ internal fun OkouApp(
             findVisit?.let { it.target == null } == true
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
-    val searchActive = chats != null && !artifactsOpen && navigation.search == SearchRoute.Open
+    val searchActive = chats != null && !artifactsOpen && navigation.search.isOpen
     val inlineArtifactLink =
         navigation.chatArtifactLink.takeIf {
             thread != null &&
@@ -371,7 +371,8 @@ internal fun OkouApp(
         closeResources()
         val search =
             when (navigation.search) {
-                SearchRoute.Open -> SearchRoute.Open
+                SearchRoute.Open,
+                SearchRoute.OpenBeforeLink -> SearchRoute.Open
                 SearchRoute.ReturnOnBack ->
                     if (listWidth == null) SearchRoute.Open else SearchRoute.Closed
                 SearchRoute.Closed -> SearchRoute.Closed
@@ -409,9 +410,10 @@ internal fun OkouApp(
         if (artifactSource != null && !fromLink) closeArtifacts(restoreFocus = false)
         val search =
             when {
+                fromLink && navigation.search.isOpen -> SearchRoute.OpenBeforeLink
                 fromLink -> navigation.search
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
-                !fromSearch && navigation.search == SearchRoute.Open -> SearchRoute.Open
+                !fromSearch && navigation.search.isOpen -> SearchRoute.Open
                 else -> SearchRoute.Closed
             }
         if (fromSearch) releaseSearchFocus()
@@ -419,7 +421,8 @@ internal fun OkouApp(
         when (search) {
             SearchRoute.Closed -> searchState.reset()
             SearchRoute.ReturnOnBack -> searchState.edit(searchState.query.copy(composition = null))
-            SearchRoute.Open -> Unit
+            SearchRoute.Open,
+            SearchRoute.OpenBeforeLink -> Unit
         }
         conversations.open(threadId)
         navigation =
@@ -450,7 +453,10 @@ internal fun OkouApp(
         closeResources()
         linkPosition = ConversationLinkPosition(source = source.source)
         linkFocusKey = source.source.key
-        navigation = source.navigation.copy(settings = navigation.settings)
+        val search =
+            if (navigation.search == SearchRoute.OpenBeforeLink) source.navigation.search
+            else navigation.search
+        navigation = source.navigation.copy(settings = navigation.settings, search = search)
         list.threads
             .firstOrNull { it.id == source.threadId && it.hidden != true }
             ?.let { chats?.history?.open(it) }
@@ -517,8 +523,7 @@ internal fun OkouApp(
         if (artifactSource != null) closeArtifacts(restoreFocus = false)
         activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
-        val search =
-            if (navigation.search == SearchRoute.Open) SearchRoute.Open else SearchRoute.Closed
+        val search = if (navigation.search.isOpen) SearchRoute.Open else SearchRoute.Closed
         if (search == SearchRoute.Closed) searchState.reset()
         navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId), search = search)
     }
@@ -659,7 +664,7 @@ internal fun OkouApp(
                     linkReturns.isNotEmpty() -> returnFromLink()
                     artifactSource != null ->
                         navigation = navigation.copy(artifacts = ArtifactsDestination())
-                    navigation.search == SearchRoute.Open -> closeSearch()
+                    navigation.search.isOpen -> closeSearch()
                     else -> returnToList()
                 }
         }
@@ -669,7 +674,15 @@ internal fun OkouApp(
         !showArtifacts &&
             !showingConnectors &&
             (settings != null || showWorkspaceBack || searchActive || findVisit != null),
-        onBack = { if (settings == null && searchActive) closeSearch() else back() },
+        onBack = {
+            if (
+                settings == null &&
+                    searchActive &&
+                    (listWidth == null || navigation.search == SearchRoute.Open)
+            )
+                closeSearch()
+            else back()
+        },
     )
 
     if (showingConnectors) {
