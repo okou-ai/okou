@@ -57,6 +57,20 @@ export function renderKotlinTypes(
   return renderKotlinModels(bindings, packageName, requestTypes);
 }
 
+function retrofitMethodAnnotation(
+  method: string,
+  path: string,
+  hasBody: boolean,
+) {
+  if (method === "DELETE" && hasBody) {
+    return {
+      name: "HTTP",
+      source: `@HTTP(method = "DELETE", path = ${quote(path)}, hasBody = true)`,
+    };
+  }
+  return { name: method, source: `@${method}(${quote(path)})` };
+}
+
 export function renderKotlinFiles(
   config: {
     readonly types?: readonly KotlinTypeBinding[];
@@ -85,6 +99,7 @@ export function renderKotlinFiles(
   });
   if (new Set(names).size !== names.length)
     throw new Error("Duplicate Retrofit method");
+  const imports = new Set(["retrofit2.Response", "retrofit2.http.Header"]);
   const methods = routes.map(
     ({ name, response, request, route, authenticated }, index) => {
       if (!/^(GET|POST|PUT|PATCH|DELETE)$/u.test(route.method)) {
@@ -137,11 +152,13 @@ export function renderKotlinFiles(
     ${identifier(`${name}Wire`)}(${[...(authenticated === false ? [] : ["token"]), ...path.arguments, ...(request ? ["body"] : []), "query.toQueryParameters()"].join(", ")})`);
         helpers.push(query.helper!);
       }
-      const annotation =
-        route.method === "DELETE" && request
-          ? `@HTTP(method = "DELETE", path = ${quote(path.path)}, hasBody = true)`
-          : `@${route.method}(${quote(path.path)})`;
-      return `    ${annotation}\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
+      const annotation = retrofitMethodAnnotation(
+        route.method,
+        path.path,
+        Boolean(request),
+      );
+      imports.add(`retrofit2.http.${annotation.name}`);
+      return `    ${annotation.source}\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
     },
   );
   const constants = {
@@ -151,11 +168,7 @@ export function renderKotlinFiles(
     SESSION_HEADER: CLIENT_SESSION_ID_HEADER,
     REQUEST_HEADER: CLIENT_REQUEST_ID_HEADER,
   };
-  const imports = new Set(["retrofit2.Response", "retrofit2.http.Header"]);
   for (const [index, { route, request }] of routes.entries()) {
-    imports.add(
-      `retrofit2.http.${route.method === "DELETE" && request ? "HTTP" : route.method}`,
-    );
     if (request) imports.add("retrofit2.http.Body");
     if (route.pathParams) imports.add("retrofit2.http.Path");
     if (route.query)
