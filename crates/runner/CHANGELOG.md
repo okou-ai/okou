@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.92](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.91...runner-rs-v0.249.92) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** share http stream callback ownership checks ([#49900](https://github.com/okou-ai/okou/issues/49900)) ([8ccc9b6](https://github.com/okou-ai/okou/commit/8ccc9b6b86fbe5e192393019ea5ba9e20e69735d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.91](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.90...runner-rs-v0.249.91) (2026-11-22)
 
 ### Release Dependencies

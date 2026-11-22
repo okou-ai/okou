@@ -1187,7 +1187,21 @@ class ConversationHistoryTest {
         assertTrue(numbered.text.contains("3. first"))
         assertTrue(numbered.text.contains("7. nested"))
         assertTrue(numbered.text.contains("4. second"))
-        val table = renderHistoryMarkdown("| Check | Status |\n| --- | --- |\n| Links | Done |")
-        assertEquals("Check\tStatus\nLinks\tDone", table.text.trim())
+        val table =
+            conversationMarkdownForCopy("| Check | Status |\n| --- | --- |\n| Links | Done |")
+        assertEquals("Check\tStatus\nLinks\tDone", table)
+    }
+
+    @Test
+    fun artifactMarkdownKeepsTightListsAndParagraphBreaks() {
+        val source = "1. First\n2. Second\n\nA paragraph.\n\nAnother paragraph."
+        assertEquals(
+            "1. First\n2. Second\n\nA paragraph.\n\nAnother paragraph.",
+            renderHistoryMarkdown(source, compactLists = true).text,
+        )
+        assertTrue(renderHistoryMarkdown(source).text.contains("First\n\n2. Second"))
+        assertTrue(
+            renderHistoryMarkdown("# Checklist", compactLists = true).spanStyles.isNotEmpty()
+        )
     }
 }

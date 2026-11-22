@@ -76,6 +76,15 @@ internal fun HistoryMarkdown(source: String, style: TextStyle) =
     }
 
 @Composable
+internal fun HistoryMarkdown(source: String, compactLists: Boolean = false) {
+    val rendered by
+        produceState<AnnotatedString?>(null, source, compactLists) {
+            value = withContext(Dispatchers.Default) { renderHistoryMarkdown(source, compactLists) }
+        }
+    Text(rendered ?: AnnotatedString(source))
+}
+
+@Composable
 private fun HistoryMarkdownBlocks(
     blocks: List<HistoryMarkdownBlock>,
     style: TextStyle,
@@ -133,6 +142,8 @@ private data class HistoryMarkdownListItem(
 
 private val historyMarkdownParser =
     Parser.builder().extensions(listOf(TablesExtension.create())).build()
+
+private val artifactMarkdownParser = Parser.builder().build()
 
 private fun historyMarkdownBlocks(source: String): List<HistoryMarkdownBlock> =
     historyMarkdownParser.parse(source).children().map(Node::historyMarkdownBlock).toList()
@@ -221,10 +232,26 @@ private fun HistoryMarkdownTable(rows: List<List<HistoryMarkdownCell>>) {
     }
 }
 
-internal fun renderHistoryMarkdown(source: String): AnnotatedString =
-    renderHistoryMarkdownNode(historyMarkdownParser.parse(source))
+internal fun conversationMarkdownForCopy(source: String): String =
+    renderHistoryMarkdownNode(historyMarkdownParser.parse(source)).text.trimEnd()
 
-private fun renderHistoryMarkdownNode(node: Node): AnnotatedString = buildAnnotatedString {
+internal fun renderHistoryMarkdown(source: String, compactLists: Boolean = false): AnnotatedString {
+    val text =
+        renderHistoryMarkdownNode(artifactMarkdownParser.parse(source), styleHeadings = true) {
+            paragraph ->
+            val item = paragraph.parent as? ListItem
+            val list = item?.parent as? ListBlock
+            val beforeNewBlock = paragraph.next == null && item?.next == null && list?.next != null
+            if (compactLists && list?.isTight == true && !beforeNewBlock) "\n" else "\n\n"
+        }
+    return if (compactLists) text.subSequence(0, text.text.trimEnd('\n').length) else text
+}
+
+private fun renderHistoryMarkdownNode(
+    node: Node,
+    styleHeadings: Boolean = false,
+    paragraphBreak: (Paragraph) -> String = { if (it.parent is ListItem) "\n" else "\n\n" },
+): AnnotatedString = buildAnnotatedString {
     val builder = this
     node.accept(
         object : AbstractVisitor() {
@@ -246,7 +273,7 @@ private fun renderHistoryMarkdownNode(node: Node): AnnotatedString = buildAnnota
 
             override fun visit(node: Paragraph) {
                 visitChildren(node)
-                append(if (node.parent is ListItem) "\n" else "\n\n")
+                append(paragraphBreak(node))
             }
 
             override fun visit(node: SoftLineBreak) {
@@ -291,7 +318,12 @@ private fun renderHistoryMarkdownNode(node: Node): AnnotatedString = buildAnnota
             }
 
             override fun visit(node: Heading) {
+                if (styleHeadings)
+                    pushStyle(
+                        SpanStyle(fontWeight = FontWeight.Bold, fontSize = (26 - node.level).sp)
+                    )
                 visitChildren(node)
+                if (styleHeadings) pop()
                 append("\n\n")
             }
 

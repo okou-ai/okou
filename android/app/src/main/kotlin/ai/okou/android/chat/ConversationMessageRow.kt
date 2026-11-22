@@ -275,9 +275,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
                                                 withContext(Dispatchers.Default) {
                                                     selected.blocks.joinToString("\n\n") {
                                                         if (it.kind == HistoryBlockKind.Text)
-                                                            renderHistoryMarkdown(it.text)
-                                                                .text
-                                                                .trimEnd()
+                                                            conversationMarkdownForCopy(it.text)
                                                         else it.text
                                                     }
                                                 }

@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -105,6 +106,41 @@ class ChatListRootTest {
                     .viewModelScope
                     .coroutineContext[Job]
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w320dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun workspaceToolEntriesAreVisibleWithArtifactsEnabled() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val entries =
+            listOf("Workflows", "Connectors", "Artifacts").map {
+                val entry = compose.onNodeWithContentDescription(it).assertIsDisplayed()
+                if (it == "Artifacts") entry.assertIsEnabled()
+                else entry.assertIsNotEnabled().assertHasNoClickAction()
+                entry
+            }
+        val search = compose.onNodeWithContentDescription("Search workspace")
+        val searchBounds = search.getUnclippedBoundsInRoot()
+        val entryBounds = entries.map { it.getUnclippedBoundsInRoot() }
+        assertTrue(entryBounds.all { it.top >= searchBounds.bottom && it.bottom - it.top >= 48.dp })
+        assertTrue(entryBounds.zipWithNext().all { (start, end) -> start.right < end.left })
+        val connectorLabel = "Connectors"
+        val connectorLayouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(connectorLabel, useUnmergedTree = true).performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult
+        ) {
+            it(connectorLayouts)
+        }
+        val connectorLayout = connectorLayouts.single()
+        assertEquals(connectorLabel.length, connectorLayout.getLineEnd(0, visibleEnd = true))
+        assertTrue(connectorLayout.size.width >= connectorLayout.multiParagraph.maxIntrinsicWidth)
+        search.performClick()
+        entries.forEach { it.assertDoesNotExist() }
+        compose.onNodeWithContentDescription("Back").performClick()
+        entries.forEach { it.assertIsDisplayed() }
     }
 
     @Test

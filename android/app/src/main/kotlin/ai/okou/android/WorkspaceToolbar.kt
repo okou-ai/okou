@@ -10,13 +10,16 @@ import android.os.Build
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -58,6 +61,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusTarget
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -73,8 +77,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -138,19 +145,20 @@ internal fun WorkspaceSearchField(
     focused: Boolean? = null,
     onClick: (() -> Unit)? = null,
     hasTrailingAction: Boolean = false,
+    shape: Shape = CircleShape,
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val outline =
         when (focused) {
-            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, CircleShape)
-            false -> Modifier.border(1.dp, colors.outline, CircleShape)
+            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, shape)
+            false -> Modifier.border(1.dp, colors.outline, shape)
             null -> Modifier
         }
     Row(
         modifier
             .heightIn(min = workspaceSearchControlHeight())
-            .clip(CircleShape)
+            .clip(shape)
             .background(colors.surfaceVariant)
             .then(outline)
             .then(
@@ -216,6 +224,97 @@ internal fun WorkspaceListToolbar(
         },
         actions = actions,
     )
+}
+
+@Composable
+internal fun WorkspaceToolEntries(openArtifacts: (() -> Unit)?, artifactFocus: FocusRequester) {
+    val stackBelow = with(LocalDensity.current) { 16.sp.toDp() * 19 }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val stacked = maxWidth <= stackBelow
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            WorkspaceToolEntry(
+                R.drawable.ic_account_tree,
+                R.string.workspace_workflows,
+                stacked,
+                Modifier.weight(1f),
+            )
+            WorkspaceToolEntry(
+                R.drawable.ic_extension,
+                R.string.workspace_connectors,
+                stacked,
+                Modifier.weight(1f),
+            )
+            WorkspaceToolEntry(
+                R.drawable.ic_inventory_2,
+                R.string.workspace_artifacts,
+                stacked,
+                Modifier.weight(1f).focusRequester(artifactFocus),
+                onClick = openArtifacts,
+            )
+        }
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+}
+
+@Composable
+private fun WorkspaceToolEntry(
+    @DrawableRes icon: Int,
+    @StringRes label: Int,
+    stacked: Boolean,
+    modifier: Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    val title = stringResource(label)
+    val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (onClick == null) 0.4f else 1f)
+    val interaction =
+        if (onClick != null) {
+            Modifier.clickable(role = Role.Button, onClick = onClick).clearAndSetSemantics {
+                contentDescription = title
+            }
+        } else {
+            Modifier.clearAndSetSemantics {
+                contentDescription = title
+                role = Role.Button
+                disabled()
+            }
+        }
+    val entry =
+        modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .then(interaction)
+            .padding(horizontal = 4.dp, vertical = 4.dp)
+    val content: @Composable () -> Unit = {
+        Icon(painterResource(icon), null, Modifier.size(18.dp), tint = color)
+        Text(
+            title,
+            color = color,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
+        )
+    }
+    if (stacked) {
+        Column(
+            entry,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+        ) {
+            content()
+        }
+    } else {
+        FlowRow(
+            entry,
+            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            content()
+        }
+    }
 }
 
 @Composable
