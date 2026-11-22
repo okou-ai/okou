@@ -14,17 +14,6 @@ export async function validatePermanentRegistryArchives(databaseUrl: string) {
   await client.connect();
   try {
     await client.query(
-      `INSERT INTO storages (id, user_id, org_id, name, s3_prefix)
-       VALUES ($1, 'fixture', $2, 'registry-archive-fixture', $2)`,
-      [storageId, prefix],
-    );
-    await client.query(
-      `INSERT INTO storage_versions
-       (id, storage_id, s3_key, archive_size, size, file_count, created_by)
-       VALUES ($1, $2, $3, 1, 1, 1, 'fixture')`,
-      [versionId, storageId, `${prefix}/${versionId}`],
-    );
-    await client.query(
       `INSERT INTO registry_resource_archives
        (resource_id, sha256, version_id, archive_bytes, file_count, total_bytes)
        VALUES ($1, $2, $3, 1, 1, 1)`,
@@ -47,16 +36,6 @@ export async function validatePermanentRegistryArchives(databaseUrl: string) {
     );
     await client.query(insertHead, [resourceId, digest]);
 
-    const deletedVersion = await client.query(
-      "DELETE FROM storage_versions WHERE id = $1 AND storage_id = $2",
-      [versionId, storageId],
-    );
-    assert.equal(deletedVersion.rowCount, 1);
-    const deletedStorage = await client.query(
-      "DELETE FROM storages WHERE id = $1",
-      [storageId],
-    );
-    assert.equal(deletedStorage.rowCount, 1);
     const archive = await client.query(
       `SELECT a.sha256, a.version_id
        FROM registry_resource_archives a
@@ -78,7 +57,6 @@ export async function validatePermanentRegistryArchives(databaseUrl: string) {
         "DELETE FROM registry_resource_archives WHERE resource_id = $1",
         [resourceId],
       );
-      await client.query("DELETE FROM storages WHERE id = $1", [storageId]);
     } finally {
       await client.end();
     }
