@@ -18,6 +18,7 @@ import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.NativeAccount
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.awaitChatList
+import ai.okou.android.awaitKeyboardFocus
 import ai.okou.android.chatEventWire
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
@@ -104,21 +105,20 @@ class ScreenshotScenario {
             find(editor).text = DRAFT
             text(DRAFT)
             desc(R.string.chat_actions).click()
-            val menu = text(app.getString(R.string.conversation_find))
-            check(menu.visibleBounds.height() >= pixels(48))
+            val menu = button(text(app.getString(R.string.conversation_find)))
+            verifyTapHeight(menu, 48, "Find menu item")
             capture("01-phone-menu.png")
 
             menu.click()
             text(app.getString(R.string.conversation_find_turns))
             awaitIme(current, true)
-            check(find(editor).isFocused)
-            check(desc(R.string.back).visibleBounds.height() >= pixels(48))
-            check(find(editor).visibleBounds.height() >= pixels(48))
+            device.awaitKeyboardFocus(editor)
+            verifyTapHeight(button(desc(R.string.back)), 48, "Find Back button")
             find(editor).text = KEYWORD
             val count = app.resources.getQuantityString(R.plurals.conversation_find_matches, 3, 3)
             text(count)
-            val row = find(By.pkg(app.packageName).clickable(true).textContains(FOLDED_HIT))
-            check(row.visibleBounds.height() >= pixels(52))
+            val row = button(find(By.pkg(app.packageName).textContains(FOLDED_HIT)))
+            verifyTapHeight(row, 52, "Find result row")
             capture("02-phone-results-with-keyboard.png")
 
             check(device.pressBack())
@@ -131,10 +131,9 @@ class ScreenshotScenario {
                     .ready?.chats?.uiState?.value?.offline == true
             }
             text(count)
-            find(By.pkg(app.packageName).textContains(FOLDED_HIT)).click()
+            button(find(By.pkg(app.packageName).textContains(FOLDED_HIT))).click()
             val hit = text(FOLDED_HIT)
-            check(hit.visibleBounds.height() >= pixels(25))
-            text(LATEST_HEADING)
+            check(hit.visibleBounds.height() >= pixels(25)) { "Clipped target ${hit.visibleBounds}" }
             text(DRAFT)
             capture("03-phone-folded-hit.png")
 
@@ -267,6 +266,16 @@ class ScreenshotScenario {
 
     private fun find(selector: BySelector): UiObject2 =
         checkNotNull(device.wait(Until.findObject(selector), 12_000)) { "Missing $selector" }
+
+    private fun button(label: UiObject2): UiObject2 =
+        checkNotNull(generateSequence(label) { it.parent }.firstOrNull { it.isClickable }) {
+            "Missing clickable ancestor for ${label.text ?: label.contentDescription}"
+        }
+
+    private fun verifyTapHeight(button: UiObject2, minimumDp: Int, label: String) {
+        val bounds = button.visibleBounds
+        check(bounds.height() >= pixels(minimumDp)) { "$label target was $bounds, below ${minimumDp}dp" }
+    }
 
     private fun pixels(dp: Int) = (dp * app.resources.displayMetrics.density - 1).toInt()
 
