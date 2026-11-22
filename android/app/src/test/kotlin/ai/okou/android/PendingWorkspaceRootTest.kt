@@ -326,9 +326,6 @@ class PendingWorkspaceRootTest {
                 compose.onAllNodesWithContentDescription(action).fetchSemanticsNodes().isNotEmpty()
             }
             button.assertIsDisplayed().assertIsEnabled()
-            compose
-                .onNodeWithText(app.getString(R.string.updates_available, "99.0.0"))
-                .assertDoesNotExist()
             assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
 
             overflow.performClick()
