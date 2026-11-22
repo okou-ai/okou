@@ -4,6 +4,7 @@ import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -61,6 +64,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val HistoryFeedbackDelayMillis = 250L
@@ -85,6 +89,7 @@ internal fun ConversationRoute(
     historyAvailable: Boolean = true,
     realtime: ChatUpdatesModel? = null,
     controls: ConversationRunControls? = null,
+    findTarget: ConversationFindTarget? = null,
     recovery: @Composable (failureId: String) -> Unit = {},
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
@@ -245,6 +250,8 @@ internal fun ConversationRoute(
         var restored by remember { mutableStateOf(false) }
         var restoredAnchor by remember { mutableStateOf<ConversationAnchor?>(null) }
         var positioned by remember { mutableStateOf(false) }
+        var findPositioned by remember(findTarget) { mutableStateOf(false) }
+        var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
         val previewId = content.lastOrNull()?.takeIf { it.deliveryStatus != null }?.message?.id
@@ -280,21 +287,37 @@ internal fun ConversationRoute(
             restoredAnchor = model.restoreReadingAnchor(threadId)
             restored = true
         }
-        LaunchedEffect(restored, positioned, timeline, state.phase, list.offline) {
+        val foundIndex =
+            remember(findTarget, timeline) {
+                if (findTarget == null) -1
+                else
+                    timeline.indexOfFirst {
+                        it is ConversationMessage && it.includes(findTarget.id)
+                    }
+            }
+        LaunchedEffect(restored, positioned, timeline, state.phase, list.offline, findTarget) {
             if (!restored || positioned || (!hasContent && !missing)) return@LaunchedEffect
             val anchor = restoredAnchor
             val index =
                 timeline.indexOfFirst { it is ConversationMessage && it.includes(anchor?.eventId) }
             // A cached checkpoint can be older than the saved anchor. Give catch-up a chance first.
-            if (anchor != null && index < 0 && state.phase == HistoryPhase.Loading && !list.offline)
+            if (
+                (findTarget != null && foundIndex < 0 || anchor != null && index < 0) &&
+                    state.phase == HistoryPhase.Loading &&
+                    !list.offline
+            )
                 return@LaunchedEffect
-            if (index >= 0 && anchor != null) {
+            if (foundIndex >= 0) {
+                position.scrollToItem(foundIndex + 1)
+            } else if (index >= 0 && anchor != null) {
                 position.scrollToItem(index + 1, with(density) { anchor.offsetDp.dp.roundToPx() })
             } else {
                 position.scrollToItem(0)
             }
             positioned = true
         }
+        val awaitingFindPosition = foundIndex >= 0 && !findPositioned
+        val readingReady = positioned && !awaitingFindPosition
         LaunchedEffect(positioned, previewId) {
             // A newly submitted local preview is an action in this chat. A restored preview
             // belongs to the original attempt and should leave the restored reading position.
@@ -317,12 +340,12 @@ internal fun ConversationRoute(
                 }
             }
         val displayedConfirmation =
-            state.confirmation.takeIf { positioned && atEnd && latestDisplayed && !list.offline }
+            state.confirmation.takeIf { readingReady && atEnd && latestDisplayed && !list.offline }
         LaunchedEffect(visit, displayedConfirmation) {
             displayedConfirmation?.let { visit?.confirmDisplayed(it) }
         }
         SideEffect {
-            if (positioned) {
+            if (readingReady) {
                 if (atEnd && visible && latestDisplayed) {
                     hasSeenLatest = true
                     newReply = false
@@ -333,8 +356,8 @@ internal fun ConversationRoute(
             }
             lastReply = newestReply
         }
-        LaunchedEffect(model, thread?.id, position, positioned, visible, density) {
-            if (!positioned || !visible || thread == null) return@LaunchedEffect
+        LaunchedEffect(model, thread?.id, position, readingReady, visible, density) {
+            if (!readingReady || !visible || thread == null) return@LaunchedEffect
             snapshotFlow {
                     when {
                         position.isScrollInProgress -> null
@@ -355,7 +378,7 @@ internal fun ConversationRoute(
         }
         val jump =
             when {
-                !positioned || atEnd || !position.canScrollBackward -> null
+                !readingReady || atEnd || !position.canScrollBackward -> null
                 newReply || (!hasSeenLatest && list.isUnread(threadId)) ->
                     R.string.conversation_new_reply
                 !pastJumpThreshold -> null
@@ -364,7 +387,13 @@ internal fun ConversationRoute(
             }
         Box(modifier.fillMaxSize()) {
             LazyColumn(
-                Modifier.fillMaxSize().testTag("conversation"),
+                Modifier.fillMaxSize()
+                    .testTag("conversation")
+                    .then(
+                        if (awaitingFindPosition)
+                            Modifier.onGloballyPositioned { findViewport = it }
+                        else Modifier
+                    ),
                 state = position,
                 reverseLayout = true,
                 contentPadding =
@@ -409,6 +438,39 @@ internal fun ConversationRoute(
                                 ConversationActivity(entry.label, runningFrame = runningFrame)
                             }
                         is ConversationMessage -> {
+                            val highlight =
+                                findTarget
+                                    ?.takeIf { positioned && entry.includes(it.id) }
+                                    ?.let {
+                                        ConversationFindHighlight(
+                                            it,
+                                            reveal =
+                                                if (awaitingFindPosition) {
+                                                    { hit ->
+                                                        val viewport =
+                                                            snapshotFlow {
+                                                                    findViewport?.takeIf {
+                                                                        it.isAttached
+                                                                    }
+                                                                }
+                                                                .filterNotNull()
+                                                                .first()
+                                                        val bounds =
+                                                            viewport.localBoundingBoxOf(
+                                                                hit,
+                                                                clipBounds = false,
+                                                            )
+                                                        val targetTop =
+                                                            (viewport.size.height - bounds.height)
+                                                                .coerceAtLeast(0f) / 2f
+                                                        // The timeline scrolls in reverse layout
+                                                        // order.
+                                                        position.scrollBy(targetTop - bounds.top)
+                                                        findPositioned = true
+                                                    }
+                                                } else null,
+                                        )
+                                    }
                             // Keep a message's lower edge independent of a new reply below it.
                             Column(
                                 trackSize.padding(
@@ -418,6 +480,7 @@ internal fun ConversationRoute(
                                 ConversationMessageRow(
                                     entry,
                                     revoke = controls?.revoke(entry.message.id),
+                                    findHighlight = highlight,
                                 )
                                 if (entry.message.status == "run.failed") recovery(entry.message.id)
                             }
@@ -466,6 +529,16 @@ internal fun ConversationRoute(
                             )
                             .padding(bottom = 4.dp, end = if (window.height < 480) 12.dp else 0.dp),
                     onClick = { scope.launch { position.scrollToItem(0) } },
+                )
+            }
+            if (positioned && findTarget != null && foundIndex < 0) {
+                Text(
+                    stringResource(R.string.conversation_find_unavailable),
+                    Modifier.align(Alignment.TopCenter)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }
