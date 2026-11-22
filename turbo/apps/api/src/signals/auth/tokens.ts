@@ -1,4 +1,3 @@
-import { singleAgentRuntimeContextSchema } from "@okouai/api-contracts/contracts/single-agent";
 import { createHmac, hkdfSync } from "node:crypto";
 
 import {
@@ -117,7 +116,6 @@ const agentCapabilitiesSchema = array(string().min(1))
   .readonly();
 
 const okouTokenPayloadSchema = jwtBaseSchema.extend({
-  ...singleAgentRuntimeContextSchema.shape,
   scope: literal("okou"),
   runId: string().min(1),
   orgId: string().min(1),
@@ -361,7 +359,6 @@ export function verifyOkouToken(token: string): AgentAuth | null {
     runId: parsed.data.runId,
     orgId: parsed.data.orgId,
     capabilities: parsed.data.capabilities,
-    ...singleAgentRuntimeContextSchema.parse(parsed.data),
     ...(parsed.data.phoneUseDeviceId && parsed.data.phoneUseGrantId
       ? {
           phoneUseDeviceId: parsed.data.phoneUseDeviceId,
@@ -485,9 +482,6 @@ function buildOkouTokenClaims(
     runId,
     orgId,
     capabilities,
-    ...(options?.personalExecution === true
-      ? { singleAgent: true as const }
-      : {}),
     ...phoneUseTokenClaims(capabilities, options),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId

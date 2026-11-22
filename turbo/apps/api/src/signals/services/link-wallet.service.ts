@@ -83,7 +83,6 @@ export interface WalletOwner {
   readonly orgId: string;
   readonly userId: string;
   // Initiating-agent provenance for existing chat clients, never wallet ownership.
-  readonly agentId?: string | null;
 }
 interface WalletRunOwner extends WalletOwner {
   readonly runId?: string;
