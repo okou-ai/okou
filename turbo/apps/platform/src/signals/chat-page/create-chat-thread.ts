@@ -2335,10 +2335,12 @@ function createEventChangeEffects({
     latestRunFinishCreatedAt$: projections.latestRunFinishCreatedAt$,
     locallyMarkedReadAt$,
   });
+  const hadOptimisticUserMessage$ = state(false);
   const updateEventPresentation$ = command(
     async (
       { set },
       followLatest: boolean,
+      localSendLayout: boolean,
       signal: AbortSignal,
     ): Promise<void> => {
       await set(syncVisibleEventTrees$, true, signal);
@@ -2356,7 +2358,9 @@ function createEventChangeEffects({
           scrollPosition,
           // WebKit can clamp scrollTop while replacing transcript rows. Keep
           // the requested tail through both frames unless the reader moves.
-          scrollPosition === null ? "preserve-layout" : "instant",
+          localSendLayout && scrollPosition === null
+            ? "preserve-layout"
+            : "instant",
           signal,
         ),
         Reason.Deferred,
@@ -2374,11 +2378,21 @@ function createEventChangeEffects({
       const hasOptimisticUserMessage = get(
         chatEvents.hasOptimisticUserMessage$,
       );
+      // The server echo can remove and reinsert the optimistic row in separate
+      // renders. Protect its alignment only if the reader is still at the tail.
+      const localSendLayout =
+        hasOptimisticUserMessage || get(hadOptimisticUserMessage$);
+      set(hadOptimisticUserMessage$, hasOptimisticUserMessage);
       // Only a local optimistic send explicitly requests the tail. Ordinary
       // batches use current captured intent after presentation, without reading
       // the empty or hidden DOM or assuming an older saved atom is still current.
       await Promise.all([
-        set(updateEventPresentation$, hasOptimisticUserMessage, signal),
+        set(
+          updateEventPresentation$,
+          hasOptimisticUserMessage,
+          localSendLayout,
+          signal,
+        ),
         set(markThreadReadIfNeeded$, signal),
       ]);
       signal.throwIfAborted();
