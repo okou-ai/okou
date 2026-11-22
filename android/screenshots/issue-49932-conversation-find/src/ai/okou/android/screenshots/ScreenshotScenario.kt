@@ -25,6 +25,7 @@ import ai.okou.android.jsonResponse
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
 import android.app.LocaleManager
+import android.graphics.Rect
 import android.view.WindowInsets
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -33,6 +34,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -132,8 +134,10 @@ class ScreenshotScenario {
             }
             text(count)
             button(find(By.pkg(app.packageName).textContains(FOLDED_HIT))).click()
-            val hit = text(FOLDED_HIT)
-            check(hit.visibleBounds.height() >= pixels(25)) { "Clipped target ${hit.visibleBounds}" }
+            check(device.wait(Until.gone(textSelector(count)), 12_000)) { "Find results remained open" }
+            desc(R.string.chat_actions)
+            val hit = currentBounds(textSelector(FOLDED_HIT))
+            check(hit.height() >= pixels(25)) { "Clipped target $hit" }
             text(DRAFT)
             capture("03-phone-folded-hit.png")
 
@@ -144,8 +148,8 @@ class ScreenshotScenario {
             desc(R.string.chat_search_clear).click()
             awaitIme(current, true)
             text(app.getString(R.string.conversation_find_turns))
-            val newest = text(SECOND_PROMPT).visibleBounds
-            val older = text(FIRST_PROMPT).visibleBounds
+            val newest = currentBounds(textSelector(SECOND_PROMPT))
+            val older = currentBounds(textSelector(FIRST_PROMPT))
             check(newest.top < older.top)
             check(device.pressBack())
             awaitIme(current, false)
@@ -157,7 +161,7 @@ class ScreenshotScenario {
             app.connectivity.value = true
             setWindow("1180x820", "160")
             awaitWindow(current, 1100..1200)
-            val list = device.awaitChatList(app)
+            device.awaitChatList(app)
             text(LATEST_HEADING)
             desc(R.string.chat_actions).click()
             text(app.getString(R.string.conversation_find)).click()
@@ -166,7 +170,8 @@ class ScreenshotScenario {
             text(count)
             check(device.pressBack())
             awaitIme(current, false)
-            check(list.visibleBounds.right < find(editor).visibleBounds.left)
+            val list = device.awaitChatList(app).visibleBounds
+            check(list.right < currentBounds(editor).left)
             capture("05-wide-results.png")
         } catch (failure: Throwable) {
             runCatching { capture("99-diagnostic.png") }.exceptionOrNull()?.let(failure::addSuppressed)
@@ -260,12 +265,30 @@ class ScreenshotScenario {
 
     private fun runId(label: String) = UUID.nameUUIDFromBytes(label.encodeToByteArray()).toString()
 
-    private fun text(value: String) = find(By.pkg(app.packageName).text(value))
+    private fun textSelector(value: String) = By.pkg(app.packageName).text(value)
+
+    private fun text(value: String) = find(textSelector(value))
 
     private fun desc(label: Int) = find(By.pkg(app.packageName).desc(app.getString(label)))
 
     private fun find(selector: BySelector): UiObject2 =
         checkNotNull(device.wait(Until.findObject(selector), 12_000)) { "Missing $selector" }
+
+    private fun currentBounds(selector: BySelector): Rect {
+        var bounds: Rect? = null
+        val measured = object : Condition<UiDevice, Boolean> {
+            override fun apply(device: UiDevice): Boolean {
+                bounds = try {
+                    device.findObject(selector)?.visibleBounds?.takeUnless { it.isEmpty }
+                } catch (_: StaleObjectException) {
+                    null
+                }
+                return bounds != null
+            }
+        }
+        check(device.wait(measured, 12_000)) { "Could not measure $selector" }
+        return checkNotNull(bounds)
+    }
 
     private fun button(label: UiObject2): UiObject2 =
         checkNotNull(generateSequence(label) { it.parent }.firstOrNull { it.isClickable }) {
