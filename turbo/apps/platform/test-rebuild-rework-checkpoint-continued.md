@@ -2900,3 +2900,15 @@ The fixed intake remains 30 frozen owners and 292 IDs. At opening commit `24798b
 Historical first acceptances: **1,904**. Currently complete: **1,880**. New registrations are reconciled by expanded Vitest title. Previous regressions and the two existing late-evidence gaps retain their prior status.
 
 [All 292 GWT, ID results and controls](https://app.okou.ai/artifacts/xc7qd84a93.tsv). [Remaining IDs by frozen file](https://app.okou.ai/artifacts/nxcr22skzm.md). [Runnable probes, source and raw results](https://app.okou.ai/artifacts/214b7c9kp0.zip).
+
+## Batch 79 continuation checkpoint-6
+
+The fixed intake remains 30 frozen owners and 292 IDs. At opening commit `24798bd2c3`, 103 IDs were already accepted. This run has verified 39 additional IDs through this checkpoint. The batch now has **142 accepted / 150 open**. Of the open IDs, 112 await implementation and 38 have recorded gaps or changed prerequisites. Main is synchronized through `d4f1bad001`.
+
+| Complete owners | Partially accepted | Wholly blocked | Awaiting implementation |
+| ---: | ---: | ---: | ---: |
+| 4 | 21 | 5 | 0 |
+
+Historical first acceptances: **1,913**. Currently complete: **1,889**. New registrations are reconciled by expanded Vitest title. Previous regressions and the two existing late-evidence gaps retain their prior status.
+
+[All 292 GWT, ID results and controls](https://app.okou.ai/artifacts/sg2nhr32jn.tsv). [Remaining IDs by frozen file](https://app.okou.ai/artifacts/27ho2omb8d.md). [Runnable probes, source and raw results](https://app.okou.ai/artifacts/d68bhu3n2g.zip).
