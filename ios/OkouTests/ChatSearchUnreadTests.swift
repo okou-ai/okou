@@ -16,7 +16,6 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { store.close() }
     await store.prepareWorkspaceComposer()
     await store.refresh()
-    let agent = SearchUnreadFixture.agent
     let otherThread = try XCTUnwrap(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(2) })
     let started = expectation(description: "Bulk read reached the API")
@@ -425,7 +424,6 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.prepareWorkspaceComposer()
     await store.refresh()
     store.sidebar.select(.unread)
-    let agent = SearchUnreadFixture.agent
     XCTAssertEqual(
       store.list.threads(
         archived: false, onlyUnread: store.sidebar.filter == .unread

@@ -4,7 +4,7 @@
 export const clientContractImportManifest = [
   {
     module: "agent-draft",
-    contracts: ["agentDraftContract", "composerDraftContract"],
+    contracts: ["composerDraftContract"],
     bindings: [
       {
         name: "agentDraftResponseSchema",

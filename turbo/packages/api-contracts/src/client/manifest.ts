@@ -4,7 +4,7 @@
 export const clientDescriptorManifest = [
   {
     module: "agent-draft",
-    contracts: ["agentDraftContract", "composerDraftContract"],
+    contracts: ["composerDraftContract"],
   },
   {
     module: "agents",

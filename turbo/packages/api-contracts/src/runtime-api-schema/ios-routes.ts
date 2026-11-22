@@ -1,9 +1,5 @@
 import { array } from "zod";
-import {
-  agentDraftContract,
-  composerDraftContract,
-} from "../contracts/agent-draft";
-import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
+import { composerDraftContract } from "../contracts/agent-draft";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import {
@@ -555,26 +551,15 @@ export const iosClientContracts: readonly {
   },
 ];
 
-// Keep checking the server contracts used by installed builds until the mobile
-// version floor excludes them. New Swift calls use iosClientContracts only.
-const installedIosAgentContracts = [
-  { id: "ios.agentDraftContract.get", route: agentDraftContract.get },
-  { id: "ios.agentDraftContract.patch", route: agentDraftContract.patch },
-  { id: "ios.agentsByIdContract.get", route: agentsByIdContract.get },
-  { id: "ios.agentsMainContract.list", route: agentsMainContract.list },
-];
-
-export const iosRouteBindings: readonly RuntimeApiRouteBinding[] = [
-  ...iosClientContracts,
-  ...installedIosAgentContracts,
-].map(({ id, route }) => {
-  return {
-    id,
-    owner: "ios",
-    // The global compatibility middleware can answer 426 before route matching.
-    route: {
-      ...route,
-      responses: { ...route.responses, 426: iosUpgradeRequiredSchema },
-    },
-  };
-});
+export const iosRouteBindings: readonly RuntimeApiRouteBinding[] =
+  iosClientContracts.map(({ id, route }) => {
+    return {
+      id,
+      owner: "ios",
+      // The global compatibility middleware can answer 426 before route matching.
+      route: {
+        ...route,
+        responses: { ...route.responses, 426: iosUpgradeRequiredSchema },
+      },
+    };
+  });

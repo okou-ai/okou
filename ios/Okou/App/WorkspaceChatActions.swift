@@ -267,7 +267,7 @@ final class WorkspaceChatActions {
   func deleteThread(_ id: String) async -> Bool {
     guard let workspace else { return false }
     guard !closed, !needsUpgrade, workspace.list.canUpdate(id),
-      let thread = workspace.list.threads.first(where: { $0.id == id })
+      workspace.list.threads.contains(where: { $0.id == id })
     else { return false }
     return await deleteThread(
       id, eventID: UUID().uuidString.lowercased())

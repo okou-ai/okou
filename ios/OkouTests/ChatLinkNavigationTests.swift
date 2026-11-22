@@ -235,8 +235,8 @@ final class ChatLinkFixture: Sendable {
             {"automations":[{"chatThreadId":"\(Self.sourceID)"},{"chatThreadId":"\(Self.sourceID)"}]}
             """)
       case "/api/chat-threads/snapshot":
-        let identities = [(Self.homeID, Self.agentID), (Self.sourceID, Self.otherAgentID)]
-        let threads = identities.map { id, agent in
+        let identities = [Self.homeID, Self.sourceID]
+        let threads = identities.map { id in
           """
           {"id":"\(id)","title":"Source chat","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}
           """

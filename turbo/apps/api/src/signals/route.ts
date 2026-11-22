@@ -9,11 +9,7 @@ import { marketingHandoffsRoutes } from "./routes/marketing-handoffs";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
 import type { RouteEntry } from "./route-entry";
-import {
-  agentDraftRoutes,
-  composerDraftRoutes,
-  projectAgentDraftRoutes,
-} from "./routes/agent-draft";
+import { composerDraftRoutes } from "./routes/composer-draft";
 import { feedRoutes } from "./routes/feed";
 import { instructionsRoutes } from "./routes/instructions";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
@@ -328,7 +324,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronSyncSkillsRoutes,
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
-  ...agentDraftRoutes,
   ...composerDraftRoutes,
   ...feedRoutes,
   ...agentInstructionsRoutes,
@@ -352,7 +347,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...bankingRoutes,
   ...projectRoutes,
   ...projectChatRoutes,
-  ...projectAgentDraftRoutes,
   ...chatThreadRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,

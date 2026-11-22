@@ -5,11 +5,8 @@
 
 import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
-import {
-  agentDraftContract as OriginalAgentDraftContract,
-  composerDraftContract as OriginalComposerDraftContract,
-} from "../contracts/agent-draft";
-import { agentDraftContract, composerDraftContract } from "./agent-draft";
+import { composerDraftContract as OriginalComposerDraftContract } from "../contracts/agent-draft";
+import { composerDraftContract } from "./agent-draft";
 import {
   agentInstructionsContract as OriginalAgentInstructionsContract,
   agentsByIdContract as OriginalAgentsByIdContract,
@@ -803,7 +800,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ClientRouter,
   AppRouter,
 ])[] = [
-  [agentDraftContract, OriginalAgentDraftContract],
   [composerDraftContract, OriginalComposerDraftContract],
   [agentInstructionsContract, OriginalAgentInstructionsContract],
   [agentsByIdContract, OriginalAgentsByIdContract],

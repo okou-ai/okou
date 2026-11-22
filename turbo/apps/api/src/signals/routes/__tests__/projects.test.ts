@@ -13,7 +13,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { projectRoutes } from "../projects";
 import { chatThreadRoutes } from "../chat-threads";
-import { composerDraftRoutes } from "../agent-draft";
+import { composerDraftRoutes } from "../composer-draft";
 import {
   createBddApi,
   type ApiTestUser,
@@ -75,10 +75,7 @@ async function configureChatModel(actor: ApiTestUser) {
   );
   await runs.updateUserModelPreference(actor, "claude-sonnet-5-5");
 }
-async function thread(
-  actor: ApiTestUser,
-  projectId?: string,
-) {
+async function thread(actor: ApiTestUser, projectId?: string) {
   return (
     await accept(
       threads().create({
