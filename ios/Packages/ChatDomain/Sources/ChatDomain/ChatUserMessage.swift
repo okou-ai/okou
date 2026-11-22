@@ -10,6 +10,15 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     self.parts = parts
   }
 
+  private enum CodingKeys: CodingKey { case version, parts }
+
+  public init(from decoder: Decoder) throws {
+    let fields = try decoder.container(keyedBy: CodingKeys.self)
+    version = try fields.decode(Int.self, forKey: .version)
+    parts = try Part.readStoredParts(
+      from: fields.superDecoder(forKey: .parts), types: Part.messageTypes)
+  }
+
   public var annotation: Part? {
     parts.first { ["source", "automation"].contains($0.type) || $0.isForwardedChat }
   }
@@ -88,11 +97,47 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     public let eventId: String?
     public let range: FeedbackRange?
     public let quote: String?
-    public let note: [Part]?
+    public var note: [Part]? { storedNote?.parts }
+    private let storedNote: StoredFeedbackNote?
     public let source: FeedbackSource?
     public let selectedModel: String?
     public let serviceTier: String?
     public let annotatedFileId: String?
+
+    private enum CodingKeys: String, CodingKey {
+      case type, text, titleSnapshot, nameSnapshot, fileId, contentType, filenameSnapshot
+      case workflowName, kind, href, clientName, threadId, projectId, runId, workflowId
+      case automationBrief, eventId, range, quote, source, selectedModel, serviceTier,
+        annotatedFileId
+      case storedNote = "note"
+    }
+
+    fileprivate static let noteTypes: Set<String> = ["text", "chat_thread", "project", "template"]
+    fileprivate static let messageTypes = noteTypes.union([
+      "additional_info", "automation", "feedback", "file", "voice", "model", "source"
+    ])
+    private static let sourceKinds: Set<String> = [
+      "slack", "discord", "wechat", "feishu", "lark", "teams", "telegram", "github", "agentphone",
+      "mcp"
+    ]
+
+    fileprivate static func readStoredParts(from decoder: Decoder, types: Set<String>) throws
+      -> [Part]
+    {
+      var items = try decoder.unkeyedContainer()
+      var parts: [Part] = []
+      while !items.isAtEnd {
+        let item = try items.superDecoder()
+        let fields = try item.container(keyedBy: CodingKeys.self)
+        let type = try fields.decode(String.self, forKey: .type)
+        guard types.contains(type) else { continue }
+        if type == "source", !sourceKinds.contains(try fields.decode(String.self, forKey: .kind)) {
+          continue
+        }
+        parts.append(try Part(from: item))
+      }
+      return parts
+    }
 
     public init(
       type: String, text: String? = nil, titleSnapshot: String? = nil,
@@ -125,7 +170,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       self.eventId = eventId
       self.range = range
       self.quote = quote
-      self.note = note
+      self.storedNote = note.map(StoredFeedbackNote.init(parts:))
       self.source = source
       self.selectedModel = selectedModel
       self.serviceTier = serviceTier
@@ -165,13 +210,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
           throw ChatError.invalidContract("Invalid quoted feedback source.")
         }
       case "model": valid = present(selectedModel)
-      case "source":
-        switch kind {
-        case "slack", "discord", "wechat", "feishu", "lark", "teams", "telegram", "github",
-          "agentphone", "mcp":
-          valid = true
-        default: valid = false
-        }
+      case "source": valid = kind.map(Self.sourceKinds.contains) == true
       default: valid = true
       }
       guard valid else {
@@ -190,6 +229,17 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     public let id: String
     public let status: String
     public let sentId: String?
+  }
+}
+
+private struct StoredFeedbackNote: Decodable, Equatable, Sendable {
+  let parts: [ChatUserMessage.Part]
+}
+
+extension StoredFeedbackNote {
+  init(from decoder: Decoder) throws {
+    parts = try ChatUserMessage.Part.readStoredParts(
+      from: decoder, types: ChatUserMessage.Part.noteTypes)
   }
 }
 
