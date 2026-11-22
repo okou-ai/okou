@@ -161,21 +161,34 @@ class WorkflowRootTest {
         val originalTitle = app.fixture.releaseTitle
         waitFor(originalTitle)
         compose.onNodeWithText("Official launch workflow").assertDoesNotExist()
-        compose.onNodeWithText(originalTitle).performClick()
-        waitFor("View workflow details")
-        compose.onNodeWithText("View workflow details").performClick()
-        waitForTag("workflow_detail_title")
-        compose.onNodeWithText("Edit instructions").performClick()
+
+        val catalogRequested = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        app.fixture.beforeCatalog = {
+            catalogRequested.countDown()
+            releaseCatalog.await()
+        }
         val renamed = "Launch planning"
-        compose.onNodeWithText(originalTitle).performTextReplacement(renamed)
-        compose.onNodeWithTag("workflow_save").performClick()
-        compose.waitUntil(10_000) { app.fixture.releaseTitle == renamed }
-        waitForTag("workflow_detail_title")
-        compose.onNodeWithTag("workflow_detail_title").assertTextContains(renamed)
-        back()
-        query.assertTextContains("launch")
-        scope.assertIsSelected()
-        compose.onNodeWithText(originalTitle).assertDoesNotExist()
+        try {
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+            compose.onNodeWithText("Edit instructions").performClick()
+            compose.onNodeWithText(originalTitle).performTextReplacement(renamed)
+            compose.onNodeWithTag("workflow_save").performClick()
+            waitForTag("workflow_detail_title")
+            compose.onNodeWithTag("workflow_detail_title").assertTextContains(renamed)
+
+            back()
+            query.assertTextContains("launch")
+            scope.assertIsSelected()
+            compose.onNodeWithText(renamed).assertIsDisplayed()
+            compose.onNodeWithText(originalTitle).assertDoesNotExist()
+        } finally {
+            releaseCatalog.countDown()
+        }
         compose.onNodeWithText(renamed).performClick()
         waitFor("Add to new chat draft")
         compose.onNodeWithText("Add to new chat draft").performClick()

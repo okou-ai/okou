@@ -330,6 +330,7 @@ internal fun OkouApp(
             if (state?.enabled != false) {
                 workspaceSearch?.refreshWorkflows(
                     state?.catalog?.map { it.toSearchHit() },
+                    detail = state?.detail?.toSearchHit(),
                     retainConfirmed = state?.detailFailure != WorkflowDetailFailure.Unavailable,
                 )
             }

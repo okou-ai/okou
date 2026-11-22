@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
@@ -66,6 +67,9 @@ data class SearchWorkflowHit(
 }
 
 internal fun WorkflowSummary.toSearchHit() =
+    SearchWorkflowHit(id, agentId, name, displayName, description, shadowedBy == null)
+
+internal fun WorkflowDetail.toSearchHit() =
     SearchWorkflowHit(id, agentId, name, displayName, description, shadowedBy == null)
 
 data class SearchArtifactHit(val id: String, val title: String, val kind: ArtifactKind) {
@@ -190,13 +194,30 @@ internal constructor(
         visibleType.value = null
     }
 
-    internal fun refreshWorkflows(catalog: List<SearchWorkflowHit>?, retainConfirmed: Boolean) {
+    internal fun refreshWorkflows(
+        catalog: List<SearchWorkflowHit>?,
+        detail: SearchWorkflowHit?,
+        retainConfirmed: Boolean,
+    ) {
         val state = mutable.value
         if (!authorized() || !online || state.keyword.isEmpty()) return
         searches.remove(WorkspaceSearchType.Workflows)?.cancel()
         workflowCatalog = catalog
         if (catalog == null) {
-            if (!retainConfirmed) mutable.value = state.copy(workflows = SearchRead.Loading)
+            val previous = state.workflows
+            val retained =
+                when {
+                    !retainConfirmed -> SearchRead.Loading
+                    detail != null && previous is SearchRead.Ready ->
+                        SearchRead.Ready(
+                            previous.rows.mapNotNull { hit ->
+                                if (hit.id == detail.id) detail.takeIf { it.matches(state.keyword) }
+                                else hit
+                            }
+                        )
+                    else -> previous
+                }
+            mutable.value = state.copy(workflows = retained)
             requestWorkflows(state.keyword)
         } else {
             mutable.value =
