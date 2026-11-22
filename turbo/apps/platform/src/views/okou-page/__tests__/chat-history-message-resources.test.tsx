@@ -93,8 +93,11 @@ test("Loading older messages restores mention names and attachment navigation", 
   Object.defineProperties(container, {
     clientHeight: { configurable: true, value: 300 },
     scrollHeight: { configurable: true, value: 2400 },
-    scrollTop: { configurable: true, value: 40, writable: true },
+    scrollTop: { configurable: true, value: 2100, writable: true },
   });
+  fireEvent.scroll(container);
+  fireEvent.wheel(container, { deltaY: -2060 });
+  container.scrollTop = 40;
   fireEvent.scroll(container);
 
   await screen.findByText("Ada");
