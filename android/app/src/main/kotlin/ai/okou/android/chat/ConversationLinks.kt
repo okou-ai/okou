@@ -38,6 +38,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
@@ -121,6 +122,7 @@ internal data class ConversationLinkActions(
 )
 
 private const val ChatLinkIcon = "chat-link-icon"
+private const val ChatLinkEndInset = "chat-link-end-inset"
 
 @Composable
 internal fun ConversationLinkText(
@@ -165,9 +167,8 @@ internal fun ConversationLinkText(
                                         color =
                                             if (chat) colors.onSecondaryContainer
                                             else colors.onSurface,
-                                        textDecoration =
-                                            if (chat) TextDecoration.None
-                                            else TextDecoration.Underline,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textDecoration = TextDecoration.Underline,
                                     ),
                                 focusedStyle = SpanStyle(background = focusFill),
                                 pressedStyle =
@@ -180,6 +181,7 @@ internal fun ConversationLinkText(
                     ) {
                         if (chat) appendInlineContent(ChatLinkIcon, "\u2060")
                         append(text.subSequence(range.start, range.end))
+                        if (chat) appendInlineContent(ChatLinkEndInset, "\u2060")
                     }
                     start = range.end
                 }
@@ -201,7 +203,7 @@ internal fun ConversationLinkText(
                     InlineTextContent(
                         with(density) {
                             Placeholder(
-                                20.dp.toSp(),
+                                24.dp.toSp(),
                                 16.dp.toSp(),
                                 PlaceholderVerticalAlign.TextCenter,
                             )
@@ -210,10 +212,20 @@ internal fun ConversationLinkText(
                         Icon(
                             painterResource(R.drawable.ic_chat),
                             contentDescription = null,
-                            modifier = Modifier.padding(end = 4.dp),
+                            modifier = Modifier.padding(horizontal = 4.dp),
                             tint = colors.onSecondaryContainer,
                         )
-                    }
+                    },
+                ChatLinkEndInset to
+                    InlineTextContent(
+                        with(density) {
+                            Placeholder(
+                                4.dp.toSp(),
+                                16.dp.toSp(),
+                                PlaceholderVerticalAlign.TextCenter,
+                            )
+                        }
+                    ) {},
             )
         }
     LaunchedEffect(actions.restoreKey, key) {
@@ -227,15 +239,12 @@ internal fun ConversationLinkText(
         modifier.focusRequester(focus).focusGroup().drawWithContent {
             val measured = layout
             val corner = CornerRadius(4.dp.toPx())
+            val chipHeight = style.fontSize.toPx() + 4.dp.toPx()
             if (measured != null)
                 for (range in chatRanges) {
                     measured.forEachLinkLine(range.start, range.end) { bounds ->
-                        drawRoundRect(
-                            colors.secondaryContainer,
-                            bounds.topLeft,
-                            bounds.size,
-                            corner,
-                        )
+                        val chip = bounds.limitHeight(chipHeight)
+                        drawRoundRect(colors.secondaryContainer, chip.topLeft, chip.size, corner)
                     }
                 }
             drawContent()
@@ -245,10 +254,11 @@ internal fun ConversationLinkText(
                 for (span in measured.layoutInput.text.spanStyles) {
                     if (span.item.background != focusFill) continue
                     measured.forEachLinkLine(span.start, span.end) { bounds ->
+                        val outline = bounds.limitHeight(chipHeight).inflate(2.dp.toPx())
                         drawRoundRect(
                             focusColor,
-                            bounds.topLeft,
-                            bounds.size,
+                            outline.topLeft,
+                            outline.size,
                             corner,
                             style = Stroke(2.dp.toPx()),
                         )
@@ -260,6 +270,11 @@ internal fun ConversationLinkText(
         inlineContent = icons,
         onTextLayout = { layout = it },
     )
+}
+
+private fun Rect.limitHeight(height: Float): Rect {
+    val inset = (this.height - height).coerceAtLeast(0f) / 2
+    return Rect(left, top + inset, right, bottom - inset)
 }
 
 private inline fun TextLayoutResult.forEachLinkLine(start: Int, end: Int, draw: (Rect) -> Unit) {
