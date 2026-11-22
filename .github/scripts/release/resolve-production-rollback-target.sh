@@ -1263,6 +1263,23 @@ if ! git merge-base --is-ancestor "$agent_connector_schema_floor" "$TARGET_COMMI
   fail "Rollback target predates the Agent connector schema retirement: ${agent_connector_schema_floor}."
 fi
 
+# #49933 removed every API reader of the Agent profile copy and metadata
+# function that migration 1616 created. API 2.103.1 and 2.103.2 still query
+# them, so neither can serve after that storage is dropped.
+agent_api_profile_floor_path=.github/rollback-floors/agent-api-profile-independent-api
+if ! agent_api_profile_floor=$(git show "origin/main:${agent_api_profile_floor_path}"); then
+  fail "Cannot read the Agent API profile rollback floor from main."
+fi
+if [[ ! "$agent_api_profile_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Agent API profile rollback floor."
+fi
+if ! git merge-base --is-ancestor "$agent_api_profile_floor" origin/main; then
+  fail "Agent API profile rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$agent_api_profile_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Agent API profile retirement: ${agent_api_profile_floor}."
+fi
+
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
   --data-urlencode "teamId=${VERCEL_ORG_ID}" \
