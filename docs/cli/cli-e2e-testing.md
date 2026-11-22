@@ -14,7 +14,7 @@ entry points. The current suite covers:
   including public usage attribution;
 - active-run cancellation through the public run and chat-events APIs;
 - ordinary and empty chat attachments across continuation, plus runner-mounted
-  workflow files and agent instructions;
+  workflow files and personal instructions;
 - connector firewall placeholder and authentication behavior through the
   deployed preview API, runner, sandbox, and proxy.
 - raw network protocol, DNS, connector diagnostic, browser classification, and
@@ -114,7 +114,7 @@ uses its own retry and failure trace. Two failed attempts fail the case.
 
 Runner BATS files live in `e2e/tests/03-runner`. They share the accounts and
 public device-flow tokens prepared by the runner E2E workflow, then create and
-clean up their own agents, threads, and connector connections through public
+clean up their own threads, and connector connections through public
 `/api/*` endpoints.
 
 Name runner BATS files `run-tNN-<behavior>.bats`, using the next unused `NN`.
@@ -126,7 +126,7 @@ The workflow uses three fresh user/organization identities:
 - Mock native (`runner-mock-claude`) hosts the behavioral cases and personal
   Claude regressions.
 - Ordinary real Auto (`runner-real-codex`) hosts steering, product-default smoke,
-  and continuation. Each case owns its agents, threads, and runs.
+  and continuation. Each case owns its threads and runs.
 - Real Auto billing (`runner-real-codex-built-in`) hosts only billing. Usage
   settlement processes pending events across an organization, so other cases
   must not share this identity.

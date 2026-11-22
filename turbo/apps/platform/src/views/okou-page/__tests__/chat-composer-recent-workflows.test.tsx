@@ -15,12 +15,17 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import {
   composerWorkflow,
   findComposerEditor,
   createChatComposerHelpers,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import {
+  continuityThread,
+  installContinuityWorkspace,
+} from "./chat-continuity-test-helpers.ts";
 
 const context = testContext();
 const { mockBillingCapabilities, mockPersonalModelRoutes } =
@@ -888,6 +893,199 @@ test("Flag ON imports valid deduplicated legacy IDs and displays only the refetc
   expect(storage.get("okou_other-workspace-data")).toBe("keep");
 });
 
+test("The first slash send waits for legacy import before the accepted message", async () => {
+  const workflows = mockWorkflows();
+  const zulu = workflows[0];
+  if (!zulu) {
+    throw new Error("Expected workflow fixture");
+  }
+  const legacy = JSON.stringify([zulu.id]);
+  const storage = mockLocalHistory(legacy);
+  const importRequested = context.mocks.deferred<void>();
+  const imported = context.mocks.deferred<void>();
+  context.mocks.api(
+    workflowsCollectionContract.migrateRecency,
+    async ({ respond }) => {
+      importRequested.resolve();
+      await imported.promise;
+      mockHistory(workflows, [zulu.id]);
+      return respond(200, { migrated: true });
+    },
+  );
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    onSendRequest() {
+      expect(imported.settled()).toBeTruthy();
+    },
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    auth: { user: BINGJIE },
+    featureSwitches: { [FeatureSwitchKey.WorkflowRecency]: true },
+  });
+  const editor = await findComposerEditor();
+  await fill(editor, "/zulu please");
+  await importRequested.promise;
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  click(button("Send"));
+  await waitFor(() => {
+    expect(button("Send")).toBeDisabled();
+  });
+  expect(editor).toHaveTextContent("/zulu please");
+  imported.resolve();
+  await waitFor(() => {
+    expect(editor.textContent).toBe("");
+  });
+  expect(storage.get(RECENT_WORKFLOWS_KEY)).toBe(legacy);
+});
+
+test("Two mounted composers keep independent queries while sharing a pending import", async () => {
+  const workflows = mockWorkflows();
+  const zulu = workflows[0];
+  if (!zulu) {
+    throw new Error("Expected workflow fixture");
+  }
+  mockLocalHistory(JSON.stringify([zulu.id]));
+  const main = continuityThread(872, 1, "Main workflow conversation");
+  const side = continuityThread(872, 2, "Side workflow conversation");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 872,
+    threads: [main, side],
+    chatEventRows: [],
+  });
+  const importRequested = context.mocks.deferred<void>();
+  const imported = context.mocks.deferred<void>();
+  context.mocks.api(
+    workflowsCollectionContract.migrateRecency,
+    async ({ respond }) => {
+      importRequested.resolve();
+      await imported.promise;
+      mockHistory(workflows, [zulu.id]);
+      return respond(200, { migrated: true });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${main.id}?sidebar=${side.id}`,
+    ...workspace.pageOptions,
+    auth: { ...workspace.pageOptions.auth, user: BINGJIE },
+    featureSwitches: { [FeatureSwitchKey.WorkflowRecency]: true },
+  });
+  const editors = await waitFor(() => {
+    const elements = document.querySelectorAll<HTMLElement>(
+      '[data-slot="chat-composer-card"] [contenteditable="true"]',
+    );
+    expect(elements).toHaveLength(2);
+    return [...elements];
+  });
+  const [mainEditor, sideEditor] = editors;
+  if (!mainEditor || !sideEditor) {
+    throw new Error("Expected both composer editors");
+  }
+  await fill(mainEditor, "/zu");
+  await importRequested.promise;
+  await screen.findByRole("status", { name: "Loading workflows..." });
+  await fill(sideEditor, "/ec");
+  await screen.findByRole("status", { name: "Loading workflows..." });
+  expect(workflowNames()).toStrictEqual([]);
+  imported.resolve();
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual(["/echo"]);
+  });
+  await userEvent.setup().keyboard("{Enter}");
+  expect(sideEditor).toHaveTextContent("/echo");
+  expect(mainEditor).toHaveTextContent("/zu");
+  await fill(mainEditor, "/zu");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual(["/zulu"]);
+  });
+  await userEvent.setup().keyboard("{Enter}");
+  expect(mainEditor).toHaveTextContent("/zulu");
+  expect(sideEditor).toHaveTextContent("/echo");
+});
+
+test("Refocusing each composer highlights the authorized names refreshed by another composer", async () => {
+  const original = mockWorkflows()[0];
+  if (!original) {
+    throw new Error("Expected workflow fixture");
+  }
+  mockLocalHistory("[]");
+  let catalog = [original];
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(200, catalog);
+  });
+  const main = continuityThread(873, 1, "Main workflow conversation");
+  const side = continuityThread(873, 2, "Side workflow conversation");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 873,
+    threads: [main, side],
+    chatEventRows: [],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${main.id}?sidebar=${side.id}`,
+    ...workspace.pageOptions,
+    auth: { ...workspace.pageOptions.auth, user: BINGJIE },
+    featureSwitches: { [FeatureSwitchKey.WorkflowRecency]: true },
+  });
+  const editors = await waitFor(() => {
+    const elements = document.querySelectorAll<HTMLElement>(
+      '[data-slot="chat-composer-card"] [contenteditable="true"]',
+    );
+    expect(elements).toHaveLength(2);
+    return [...elements];
+  });
+  const [mainEditor, sideEditor] = editors;
+  if (!mainEditor || !sideEditor) {
+    throw new Error("Expected both composer editors");
+  }
+  const highlightedNames = (editor: HTMLElement) => {
+    return Array.from(
+      editor.querySelectorAll("span.text-brand-text"),
+      (span) => {
+        return span.textContent;
+      },
+    );
+  };
+  const draft = "Run /zulu and /renamed please";
+  await fill(mainEditor, draft);
+  await waitFor(() => {
+    expect(highlightedNames(mainEditor)).toStrictEqual(["/zulu"]);
+  });
+  await fill(sideEditor, draft);
+  await waitFor(() => {
+    expect(highlightedNames(sideEditor)).toStrictEqual(["/zulu"]);
+  });
+
+  // A remote rename is discovered by a genuine query opening, not local CRUD.
+  catalog = [{ ...original, name: "renamed" }];
+  const user = userEvent.setup();
+  await user.keyboard(" /");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual(["/renamed"]);
+  });
+  click(button("/renamed"));
+  expect(sideEditor).toHaveTextContent(`${draft} /renamed`);
+
+  await user.click(mainEditor);
+  await waitFor(() => {
+    expect(highlightedNames(mainEditor)).toStrictEqual(["/renamed"]);
+  });
+  await user.keyboard(" again");
+  expect(highlightedNames(mainEditor)).toStrictEqual(["/renamed"]);
+
+  await user.click(sideEditor);
+  await waitFor(() => {
+    expect(highlightedNames(sideEditor)).toStrictEqual([
+      "/renamed",
+      "/renamed",
+    ]);
+  });
+});
+
 test("Flag ON existing DB history ignores local priority and accepted sends leave legacy storage unchanged", async () => {
   const workflows = mockWorkflows();
   const [zulu, , echo] = workflows;
@@ -1077,6 +1275,75 @@ test.each([false, true])(
         "/delta",
       ]);
     });
+  },
+);
+
+test.each(["account", "workspace", "session"] as const)(
+  "A delayed workflow token cannot cross a %s change before Clerk notifies the app",
+  async (scope) => {
+    const workflows = mockWorkflows("first-");
+    mockChatLifecycle(context, { threadId: THREAD_ID });
+    const editor = await openComposer();
+    await userEvent.setup().keyboard("{Escape}");
+    const tokenRequested = context.mocks.deferred<void>();
+    const token = context.mocks.deferred<string>();
+    const requestedTokens: (string | null)[] = [];
+    context.mocks.api(
+      workflowsCollectionContract.composer,
+      ({ request, respond }) => {
+        requestedTokens.push(request.headers.get("authorization"));
+        return respond(200, workflows);
+      },
+    );
+    mockedClerk.sessionGetToken.mockImplementationOnce(() => {
+      tokenRequested.resolve();
+      return token.promise;
+    });
+    await fill(editor, "/first");
+    await tokenRequested.promise;
+    await screen.findByRole("status", { name: "Loading workflows..." });
+    const clerk = context.mocks.clerk();
+    act(() => {
+      if (scope === "workspace") {
+        clerk.organization({
+          activeOrg: { id: "delayed-token-org", name: "Next Workspace" },
+          memberships: [{ id: "delayed-token-org" }],
+        });
+      } else {
+        clerk.user(
+          scope === "account"
+            ? { id: "delayed-token-user", fullName: "Next User" }
+            : BINGJIE,
+          { id: "delayed-token-session", token: "next-token" },
+        );
+      }
+      // Deliberately delay the SDK notification: token guards must inspect
+      // actual Clerk resources rather than only the reactive session key.
+    });
+    token.resolve("old-owner-token");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("status", { name: "Loading workflows..." }),
+      ).not.toBeInTheDocument();
+    });
+    expect(workflowNames()).toStrictEqual([]);
+    expect(requestedTokens).toStrictEqual([]);
+    act(() => {
+      clerk.stateChanged();
+    });
+    const nextEditor = await findComposerEditor();
+    await fill(nextEditor, "/first");
+    await waitFor(() => {
+      expect(workflowNames()).toStrictEqual([
+        "/first-alpha",
+        "/first-beta",
+        "/first-charlie",
+        "/first-delta",
+        "/first-echo",
+        "/first-zulu",
+      ]);
+    });
+    expect(requestedTokens).not.toContain("Bearer old-owner-token");
   },
 );
 

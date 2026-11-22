@@ -16,7 +16,7 @@ import { env, mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { billingCreditCheckoutRoutes } from "../../billing-credit-checkout";
-import { createBddApi, type ApiTestUser } from "./api-bdd";
+import type { ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { createRouteMocks } from "./route-test";
@@ -130,7 +130,6 @@ export async function launchPublicToolRun(
   actor: ApiTestUser,
   registerCleanup: (cleanup: () => Promise<void>) => void,
 ) {
-  const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -138,10 +137,7 @@ export async function launchPublicToolRun(
   const personal = await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Public paid-tool actor",
-    visibility: "private",
-  });
+
   const owned: { runId?: string; sandboxToken?: string } = {};
   let released = false;
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
@@ -173,7 +169,6 @@ export async function launchPublicToolRun(
   };
   registerCleanup(cleanup);
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     model: "claude-fable-5-1",
     prompt: "Use a paid tool",
   });

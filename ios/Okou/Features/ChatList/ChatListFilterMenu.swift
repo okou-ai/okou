@@ -73,7 +73,7 @@ struct ChatListFilterMenu: UIViewRepresentable {
     let list = store.list
     let enabled =
       !list.markingAllRead && list.updatingThreads.isEmpty
-      && (!list.unreadAgentIDs.isEmpty
+      && (!list.unreadThreadIDs.isEmpty
         || list.threads.contains {
           !$0.isMuted && $0.indicator == .unread
         })

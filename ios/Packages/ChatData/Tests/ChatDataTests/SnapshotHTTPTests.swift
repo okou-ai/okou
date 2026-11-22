@@ -262,12 +262,12 @@ private final class SnapshotLoopbackServer: Sendable {
     case "/api/chat-threads/events":
       body = Data(
         """
-        {"events":[{"id":"30000000-0000-4000-8000-000000000005","seqId":3,"kind":"renamed","chatThreadId":"\(Self.threadID)","agentId":"30000000-0000-4000-8000-000000000002","title":"Updated chat","selectedModel":null,"pinOrder":null,"createdAt":"2026-09-17T10:00:01.000Z"}],"hasMore":false}
+        {"events":[{"id":"30000000-0000-4000-8000-000000000005","seqId":3,"kind":"renamed","chatThreadId":"\(Self.threadID)","title":"Updated chat","selectedModel":null,"pinOrder":null,"createdAt":"2026-09-17T10:00:01.000Z"}],"hasMore":false}
         """.utf8)
       contentHeaders = "Content-Type: application/json\r\n"
     case "/api/indicators":
       body = Data(
-        "{\"agents\":{},\"unreadAt\":{},\"threads\":{\"\(Self.threadID)\":\"unread\"},\"unreadAt\":{}}"
+        "{\"unreadAt\":{},\"threads\":{\"\(Self.threadID)\":\"unread\"},\"unreadAt\":{}}"
           .utf8)
       contentHeaders = "Content-Type: application/json\r\n"
     case "/api/chat-threads/\(Self.threadID)/event-snapshot":

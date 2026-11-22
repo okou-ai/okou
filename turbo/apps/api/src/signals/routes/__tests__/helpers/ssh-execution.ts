@@ -15,7 +15,6 @@ interface Owner {
 }
 
 interface RuntimeOptions {
-  readonly agentId?: string;
   readonly group?: string;
   readonly runnerIdentity?: {
     readonly runnerId: string;
@@ -40,13 +39,12 @@ export function createSshExecutionApi(
   >();
 
   async function runtime(owner: Owner, runtimeOptions: RuntimeOptions = {}) {
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     if (!paidOrganizations.has(owner.orgId)) {
       const bootstrapActor = bdd.user({ ...owner, orgRole: "org:admin" });
       await runs.grantProEntitlement(bootstrapActor);
-      await bdd.provisionWorkspace(bootstrapActor);
       paidOrganizations.add(owner.orgId);
     }
     const actor = bdd.user({ ...owner, orgRole: "org:member" });
@@ -56,14 +54,7 @@ export function createSshExecutionApi(
     // The paid organization is shared, but each Run owner needs their own memory.
     await bdd.completeOnboarding(actor);
     // Each omitted Agent is a distinct public Agent, matching the ordinary fixture.
-    const agentId =
-      runtimeOptions.agentId ??
-      (
-        await bdd.createAgent(actor, {
-          displayName: "SSH execution Agent",
-          visibility: "public",
-        })
-      ).agentId;
+
     const group =
       runtimeOptions.group ??
       (await runs.configureRunnerGroup({ registerRunner: false }));
@@ -77,7 +68,6 @@ export function createSshExecutionApi(
       heartbeatAuthorization: options.runnerHeaders.authorization,
     });
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use my configured SSH hosts",
       model: "claude-sonnet-5-5",
     });
@@ -102,7 +92,6 @@ export function createSshExecutionApi(
     const guestHeaders = { authorization: `Bearer ${agentToken}` };
     return {
       ...owner,
-      agentId,
       runId,
       threadId,
       runnerIdentity,

@@ -125,3 +125,26 @@ test("does not accept failed publishers, non-main runs, or expired TestFlight bu
     );
   }
 });
+
+test("recovers verified steps from the same carried-forward publisher execution", async () => {
+  const data = evidence();
+  const original =
+    data["actions/runs/2/jobs?filter=latest&per_page=100"].jobs[0];
+  Object.assign(original, {
+    run_attempt: 2,
+    head_sha: newSha,
+    started_at: "2026-10-29T23:55:00Z",
+    completed_at: "2026-10-30T00:01:00Z",
+  });
+  data["actions/runs/2/jobs?filter=all&per_page=100"] = { jobs: [original] };
+  data["actions/runs/2/jobs?filter=latest&per_page=100"] = {
+    jobs: [{ ...original, run_attempt: 3, steps: [] }],
+  };
+  await withGithub(data, async (options) =>
+    assert.equal(await publishedIosVersion(options), "0.22.6"),
+  );
+  original.started_at = "2026-10-29T12:00:00Z";
+  await withGithub(data, async (options) =>
+    assert.equal(await publishedIosVersion(options), "0.22.5"),
+  );
+});

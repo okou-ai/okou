@@ -12,9 +12,6 @@ import XCTest
 final class MentionNavigationFixture: Sendable {
   let http: ChatHTTPFixture
   let paths: MentionRequestLog
-  static func agent(_ index: Int) -> String {
-    String(format: "73000000-0000-4000-8000-%012d", index)
-  }
   static func thread(_ index: Int) -> String {
     String(format: "74000000-0000-4000-8000-%012d", index)
   }
@@ -24,7 +21,7 @@ final class MentionNavigationFixture: Sendable {
       .object(["type": .string("text"), "text": .string("Before ")]),
       .object([
         "type": .string("chat_thread"), "threadId": .string(thread(31)),
-        "titleSnapshot": .string("Cross Agent archived plan")
+        "titleSnapshot": .string("Archived plan")
       ]),
       .object(["type": .string("text"), "text": .string(" and ")]),
       .object([
@@ -45,52 +42,31 @@ final class MentionNavigationFixture: Sendable {
       case "/api/workflows/for-composer":
         guard let workflows else { throw URLError(.unsupportedURL) }
         return try await workflows(request)
-      case "/api/agents":
-        let names = [
-          "Planner", "Research Agent", "Notes", "Release",
-          "研究 Agent — Long workspace name with 中文 and 🌷 to check native truncation and accessibility"
-        ]
-        let others = names.enumerated().map { index, name in
-          ["agentId": Self.agent(index + 1), "displayName": name, "isDefaultAgent": false]
-            as [String: Any]
-        }
-        let values =
-          [
-            [
-              "agentId": AttachmentFlowFixture.agentID, "displayName": "Okou",
-              "isDefaultAgent": true
-            ] as [String: Any]
-          ] + others
-        return ChatHTTPResponse(
-          body: try JSONSerialization.string(withJSONObject: values))
-
       case "/api/feature-switches":
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot":
         var threads: [[String: Any]] = (1...30).map {
           Self.row(
-            id: Self.thread($0), title: String(format: "Project %02d", $0), day: $0,
-            agent: Self.agent(2))
+            id: Self.thread($0), title: String(format: "Project %02d", $0), day: $0)
         }
         threads.append(
           Self.row(
-            id: Self.thread(31), title: "Cross Agent archived plan", day: 31, agent: Self.agent(1),
+            id: Self.thread(31), title: "Archived plan", day: 31,
             archived: true))
         threads.append(
           Self.row(
-            id: Self.thread(32), title: "Hidden plan", day: 31, agent: Self.agent(1), hidden: true))
-        threads.append(Self.row(id: Self.thread(33), title: "", day: 31, agent: Self.agent(1)))
+            id: Self.thread(32), title: "Hidden plan", day: 31, hidden: true))
+        threads.append(Self.row(id: Self.thread(33), title: "", day: 31))
         threads.append(
           Self.row(
-            id: AttachmentFlowFixture.threadID, title: "Current conversation", day: 1,
-            agent: AttachmentFlowFixture.agentID))
+            id: AttachmentFlowFixture.threadID, title: "Current conversation", day: 1))
         threads.append(
           Self.row(
-            id: Self.thread(34), title: "Pinned older", day: 1, agent: Self.agent(1), pinOrder: "a0"
+            id: Self.thread(34), title: "Pinned older", day: 1, pinOrder: "a0"
           ))
         threads.append(
           Self.row(
-            id: Self.thread(35), title: "Pinned recent", day: 2, agent: Self.agent(1),
+            id: Self.thread(35), title: "Pinned recent", day: 2,
             pinOrder: "a1"))
         return ChatHTTPResponse(
           body: try JSONSerialization.string(withJSONObject: [
@@ -99,19 +75,19 @@ final class MentionNavigationFixture: Sendable {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+        return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
   }
 
   private static func row(
-    id: String, title: String, day: Int, agent: String, archived: Bool = false,
+    id: String, title: String, day: Int, archived: Bool = false,
     hidden: Bool = false, pinOrder: String? = nil
   ) -> [String: Any] {
     let date = String(format: "2026-10-%02dT10:00:00Z", day)
     return [
-      "id": id, "agentId": agent, "title": title, "createdAt": date, "updatedAt": date,
+      "id": id, "title": title, "createdAt": date, "updatedAt": date,
       "sortAt": date,
       "archived": archived, "hidden": hidden, "pinnedAt": pinOrder == nil ? NSNull() : date as Any,
       "pinOrder": pinOrder as Any? ?? NSNull()

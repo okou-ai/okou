@@ -24,7 +24,6 @@ interface Owner {
 
 interface PublicRemoteAccessRun extends Owner {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runId: string;
   readonly threadId: string;
   readonly runnerGroup: string;
@@ -33,7 +32,6 @@ interface PublicRemoteAccessRun extends Owner {
 interface OwnedRun {
   readonly actor: ApiTestUser;
   readonly restoreStorage: () => void;
-  agentId?: string;
   runId?: string;
   sandboxToken?: string;
   acknowledged: boolean;
@@ -61,7 +59,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     const bootstrapActor = bdd.user({ ...owner, orgRole: "org:admin" });
     const actor = bdd.user({ ...owner, orgRole: "org:member" });
     useSecretKmsProbe();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     installDurableUserExportStorage(context, { prefixes: [""] });
@@ -90,17 +88,12 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Remote access lifecycle Agent",
-      visibility: "public",
-    });
-    state.agentId = agent.agentId;
+
     const runnerGroup = await runs.configureRunnerGroup();
     let runId: string;
     let threadId: string;
     if (source === "web") {
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Use my configured remote hosts",
         model: "claude-fable-5-1",
       });
@@ -168,7 +161,6 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     return {
       ...owner,
       actor,
-      agentId: agent.agentId,
       runId,
       threadId,
       runnerGroup,

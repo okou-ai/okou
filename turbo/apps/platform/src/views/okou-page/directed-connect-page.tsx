@@ -538,7 +538,7 @@ function DirectedConnectCardContent({
   icon,
   connectorLabel,
   connectorDescription,
-  agentName,
+  assistantName,
   isLoading,
   isConnected,
   isConnecting,
@@ -549,7 +549,7 @@ function DirectedConnectCardContent({
   readonly icon: ReactNode;
   readonly connectorLabel: string;
   readonly connectorDescription: string;
-  readonly agentName: string;
+  readonly assistantName: string;
   readonly isLoading: boolean;
   readonly isConnected: boolean;
   readonly isConnecting: boolean;
@@ -573,7 +573,7 @@ function DirectedConnectCardContent({
               ($) => {
                 return $.connectors.directed.needsConnector;
               },
-              { agent: agentName, connector: connectorLabel },
+              { assistantName, connector: connectorLabel },
             )
       }
       description={connectorDescription}
@@ -666,7 +666,7 @@ function DirectedConnectCard() {
         icon={<ConnectorIcon icon={item?.icon} size={20} />}
         connectorLabel={connectorLabel}
         connectorDescription={connectorDescription}
-        agentName={assistantName}
+        assistantName={assistantName}
         isLoading={isLoading}
         isConnected={isConnected}
         isConnecting={isConnecting}
@@ -814,7 +814,7 @@ function CustomDirectedConnectCard({
         }
         connectorLabel={connector?.displayName ?? connectorSlug}
         connectorDescription={connector ? customConnectorTarget(connector) : ""}
-        agentName={assistantName}
+        assistantName={assistantName}
         isLoading={
           connectorsLoadable.state === "loading" ||
           connectedLoadable.state === "loading"

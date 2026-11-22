@@ -38,7 +38,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      id: FixtureData.threadID, title: "Remote work",
       selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
@@ -67,7 +67,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
 
     await store.refresh()
 
@@ -102,7 +101,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
     await store.refresh()
     _ = try await remoteValue(store)
     XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [FixtureData.accountID])
@@ -140,13 +138,13 @@ final class ComposerConnectorStoreTests: XCTestCase {
         let hostID = selection.withLock { $0.map { "\"\($0)\"" } ?? "null" }
         return ChatHTTPResponse(
           body: """
-            {"id":"\(FixtureData.threadID)","agentId":"\(FixtureData.agentID)","cloudBrowserEnabled":false,"computerUseHostId":\(hostID)}
+            {"id":"\(FixtureData.threadID)","cloudBrowserEnabled":false,"computerUseHostId":\(hostID)}
             """)
       }
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      id: FixtureData.threadID, title: "Remote work",
       selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
@@ -165,30 +163,18 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertNil(access.computerUseHostId)
   }
 
-  func testPendingChoicesBelongToTheirAgentWithoutCreatingAConversation() async throws {
+  func testPendingChoicesResetAfterStartingAConversation() async throws {
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path == "/api/agents/\(FixtureData.siblingID)" {
-        return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.siblingID)\"}")
-      }
       return try composerResponse(request)
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
     await store.refresh()
     let host = try XCTUnwrap(store.hosts(.ssh).first)
     await store.setRemote(host, protocol: .ssh, enabled: true)
     await store.setComputerAccess(ChatComputerAccess(cloudBrowserEnabled: true))
-    store.configure(agentID: FixtureData.siblingID)
-    XCTAssertTrue(store.pendingOptions.initialRemoteAccessOverrides.isEmpty)
-    await store.setRemote(host, protocol: .ssh, enabled: false)
-    store.configure(agentID: FixtureData.agentID)
     XCTAssertEqual(store.pendingOptions.initialRemoteAccessOverrides.first?.enabled, true)
-    XCTAssertEqual(store.pendingOptions.computerAccess?.cloudBrowserEnabled, true)
-    store.configure(agentID: FixtureData.siblingID)
-    store.consumeNewChatOptions(agentID: FixtureData.agentID)
-    XCTAssertEqual(store.pendingOptions.initialRemoteAccessOverrides.first?.enabled, false)
-    store.configure(agentID: FixtureData.agentID)
+    store.consumeNewChatOptions()
     XCTAssertTrue(store.pendingOptions.initialRemoteAccessOverrides.isEmpty)
   }
 
@@ -217,7 +203,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let first = try resources.store.get(resources.connected)
     let second = try resources.store.get(resources.connected)
@@ -258,7 +243,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let pending = try resources.requests()
     addTeardownBlock {
@@ -278,7 +262,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     XCTAssertTrue(connected.isEmpty)
   }
 
-  func testAgentReplacementCancelsBothOriginalReadsAndRejectsTheirLateResults() async throws {
+  func testComposerReplacementCancelsBothOriginalReadsAndRejectsTheirLateResults() async throws {
     let old = Mutex(true)
     let started = expectation(description: "Both original HTTP reads started")
     started.expectedFulfillmentCount = 2
@@ -302,9 +286,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
           cancelled.fulfill()
         }
       }
-      if path == "/api/agents/\(FixtureData.siblingID)" {
-        return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.siblingID)\"}")
-      }
       if path == "/api/connectors/connected" {
         return ChatHTTPResponse(
           body:
@@ -315,7 +296,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let pending = try resources.requests()
     addTeardownBlock {
@@ -327,11 +307,13 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 3)
     old.withLock { $0 = false }
-    store.configure(agentID: FixtureData.siblingID)
+    store.close()
+    let replacement = makeStore(fixture)
+    defer { replacement.close() }
     await fulfillment(of: [cancelled], timeout: 3)
-    await store.refresh()
-    XCTAssertEqual(store.connectors.first?.label, "New service")
-    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, FixtureData.accountID)
+    await replacement.refresh()
+    XCTAssertEqual(replacement.connectors.first?.label, "New service")
+    XCTAssertEqual(replacement.hosts(.ssh).first?.connectionId, FixtureData.accountID)
     connectedResponse.open()
     remoteResponse.open()
     if case .success = await pending.connected.result {
@@ -340,7 +322,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     if case .success = await pending.remote.result {
       XCTFail("The retired remote read returned data")
     }
-    XCTAssertEqual(store.connectors.first?.label, "New service")
+    XCTAssertEqual(replacement.connectors.first?.label, "New service")
   }
 
   func testCancellingOneConsumerDoesNotCancelTheSharedRemoteRead() async throws {
@@ -355,7 +337,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let shared = try resources.store.get(resources.remote)
     let waiter = Task { try await shared.value }
@@ -394,7 +375,6 @@ final class ComposerConnectorStoreTests: XCTestCase {
     }
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
     let resources = try XCTUnwrap(store.resources)
     let pending = try resources.store.get(resources.remote)
     addTeardownBlock {
@@ -442,7 +422,7 @@ final class ComposerConnectorWritebackTests: XCTestCase {
       return response
     }
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      id: FixtureData.threadID, title: "Remote work",
       selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
@@ -518,7 +498,7 @@ final class ComposerConnectorWritebackTests: XCTestCase {
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      id: FixtureData.threadID, title: "Remote work",
       selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
@@ -582,7 +562,7 @@ final class ComposerConnectorWritebackTests: XCTestCase {
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      id: FixtureData.threadID, title: "Remote work",
       selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
@@ -628,7 +608,7 @@ final class ComposerConnectorWritebackTests: XCTestCase {
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      id: FixtureData.threadID, title: "Remote work",
       selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
@@ -643,11 +623,10 @@ final class ComposerConnectorWritebackTests: XCTestCase {
       write.cancel()
     }
     await reading.wait()
-    store.configure(agentID: FixtureData.siblingID)
+    store.close()
     resume.open()
     await write.value
     XCTAssertEqual(writes.withLock { $0 }, 0)
-    XCTAssertTrue(store.canSend)
   }
 
   func testPartialReadbackCannotConfirmAnUnknownWriteOrReplayIt() async throws {
@@ -682,7 +661,7 @@ final class ComposerConnectorWritebackTests: XCTestCase {
       return try composerResponse(request)
     }
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Remote work",
+      id: FixtureData.threadID, title: "Remote work",
       selectedModel: nil,
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
       pinnedAt: nil, pinOrder: nil, indicator: nil)
@@ -735,8 +714,6 @@ extension XCTestCase {
 private func composerResponse(_ request: URLRequest) throws -> ChatHTTPResponse {
   typealias FixtureData = ConnectorHTTPFixtures
   switch request.url!.path {
-  case "/api/agents/\(FixtureData.agentID)":
-    return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.agentID)\"}")
   case "/api/connectors/connected":
     return ChatHTTPResponse(body: "{\"builtinConnectors\":[],\"customConnectors\":[]}")
   case "/api/connector-account-access/defaults":

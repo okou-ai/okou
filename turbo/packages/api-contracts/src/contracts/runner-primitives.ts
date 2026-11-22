@@ -80,3 +80,12 @@ export const runnerGroupSchema = string().regex(
   /^[a-z0-9-]+\/[a-z0-9-]+$/,
   "Runner group must be in vm0/<name> format (e.g., vm0/production)",
 );
+
+export const MOUNT_PATH_TEMPLATE = "${{ working_dir }}";
+
+export function expandMountPath(mountPath: string | undefined): string {
+  if (mountPath === undefined || mountPath === MOUNT_PATH_TEMPLATE) {
+    return CANONICAL_WORKING_DIR;
+  }
+  return mountPath;
+}

@@ -62,7 +62,7 @@ const GMAIL_HTML_BODY =
   '<div>Mail body <strong>before</strong></div><img src="cid:email-test-illustration" alt="Cheerful envelope illustration"><ul><li>Mail body after</li></ul><a href="https://example.com/review">Review</a>';
 
 async function createOutlookMailFixture() {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const owner = createPublicConnectorActor(context, {
     optionalEnvironmentNames: [
       "MICROSOFT_OAUTH_CLIENT_ID",
@@ -187,10 +187,6 @@ async function createOutlookMailFixture() {
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    const agent = await bdd.createAgent(owner.actor, {
-      displayName: "Outlook Mail agent",
-      visibility: "private",
-    });
     const thread = await chat.createThread(owner.actor, {
       title: "Outlook review",
     });
@@ -211,13 +207,12 @@ async function createOutlookMailFixture() {
         headers: authHeaders(),
         body: {
           threadId: thread.id,
-          agentId: agent.agentId,
           provider: "outlook",
           outlookMessageId,
         },
       });
     };
-    return { ...owner, agent, thread, state, message, link };
+    return { ...owner, thread, state, message, link };
   });
 }
 
@@ -964,13 +959,8 @@ async function seedGmailMailCardFixture(
     throw new Error("Expected an org-scoped actor");
   }
   const actorWithOrg = { ...actor, orgId: actor.orgId };
-  bdd.acceptAgentStorageWrites();
-  const agentBody = {
-    displayName: "Nova Mail agent",
-    visibility: "private",
-  } as const;
+  bdd.acceptStorageWrites();
   mocks.clerk.session(actor.userId, actorWithOrg.orgId, actor.orgRole);
-  const agent = await bdd.createAgent(actor, agentBody);
 
   const thread = await chat.createThread(actor, {
     title: "Mail review",
@@ -993,13 +983,13 @@ async function seedGmailMailCardFixture(
   });
   const gmail = await connectors.readDefaultBuiltinAccount(actor, "gmail");
   mocks.clerk.session(actor.userId, actorWithOrg.orgId);
-  return { actor, agent, thread, gmail };
+  return { actor, thread, gmail };
 }
 
 async function createPublicGmailMailCardFixture(
   scopes: readonly string[] = [GMAIL_MODIFY_SCOPE],
 ) {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   mockGmailConnectorOAuth({
     accessToken: "gmail-mail-card-token",
     email: "sender@example.com",
@@ -1025,12 +1015,6 @@ async function createPublicGmailMailCardFixture(
   });
   const { actor, run: own } = owner;
   return await own(async () => {
-    const agent = await own(() => {
-      return bdd.createAgent(actor, {
-        displayName: "Nova Mail agent",
-        visibility: "private",
-      });
-    });
     const thread = await own(() => {
       return chat.createThread(actor, {
         title: "Mail review",
@@ -1055,7 +1039,6 @@ async function createPublicGmailMailCardFixture(
     mocks.clerk.session(actor.userId, actor.orgId);
     return {
       actor,
-      agent,
       thread,
       gmail,
       run: own,
@@ -1093,7 +1076,6 @@ async function readThreadSelections(
 
 async function linkDraft(
   fixture: {
-    readonly agent: { readonly agentId: string };
     readonly thread: { readonly id: string };
   },
   headers = authHeaders(),
@@ -1103,7 +1085,6 @@ async function linkDraft(
       headers,
       body: {
         threadId: fixture.thread.id,
-        agentId: fixture.agent.agentId,
         gmailDraftId: GMAIL_DRAFT_ID,
       },
     }),
@@ -1220,7 +1201,6 @@ describe("POST /api/mail/drafts/link", () => {
             headers: authHeaders(),
             body: {
               threadId: otherThread.id,
-              agentId: fixture.agent.agentId,
               gmailDraftId: GMAIL_DRAFT_ID,
             },
           }),
@@ -1290,7 +1270,6 @@ describe("POST /api/mail/drafts/link", () => {
         headers: authHeaders(),
         body: {
           threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
           gmailDraftId: GMAIL_DRAFT_ID,
         },
       }),
@@ -1315,7 +1294,6 @@ describe("POST /api/mail/drafts/link", () => {
         headers: authHeaders(),
         body: {
           threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
           gmailDraftId: GMAIL_DRAFT_ID,
         },
       }),
@@ -1339,7 +1317,6 @@ describe("POST /api/mail/drafts/link", () => {
         headers: authHeaders(),
         body: {
           threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
           gmailDraftId: GMAIL_DRAFT_ID,
         },
       });
@@ -1412,7 +1389,6 @@ describe("POST /api/mail/drafts/link", () => {
             headers: authHeaders(),
             body: {
               threadId: fixture.thread.id,
-              agentId: fixture.agent.agentId,
               gmailDraftId: GMAIL_DRAFT_ID,
             },
           }),
@@ -1436,7 +1412,6 @@ describe("POST /api/mail/drafts/link", () => {
         headers: authHeaders(),
         body: {
           threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
           gmailDraftId: GMAIL_DRAFT_ID,
         },
       }),
@@ -1461,7 +1436,6 @@ describe("POST /api/mail/drafts/link", () => {
         headers: authHeaders(),
         body: {
           threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
           gmailDraftId: GMAIL_DRAFT_ID,
         },
       }),
@@ -1553,7 +1527,6 @@ describe("POST /api/mail/drafts/link", () => {
             headers: authHeaders(),
             body: {
               threadId: newThread.id,
-              agentId: fixture.agent.agentId,
               gmailDraftId: GMAIL_DRAFT_ID,
             },
           }),
@@ -1684,7 +1657,6 @@ describe("POST /api/mail/drafts/link", () => {
       });
       const fixture = {
         actor: owned.actor,
-        agent: { agentId: owned.agentId },
         thread: { id: source.threadId },
         gmail: await connectors.readDefaultBuiltinAccount(owned.actor, "gmail"),
       };
@@ -1701,7 +1673,6 @@ describe("POST /api/mail/drafts/link", () => {
           headers: { authorization: `Bearer ${okouToken}` },
           body: {
             threadId: otherThread.id,
-            agentId: owned.agentId,
             gmailDraftId: GMAIL_DRAFT_ID,
           },
         }),
@@ -2517,7 +2488,6 @@ describe("POST /api/mail/drafts/link", () => {
         headers: authHeaders(),
         body: {
           threadId: fixture.thread.id,
-          agentId: fixture.agent.agentId,
           gmailDraftId: GMAIL_DRAFT_ID,
         },
       }),
@@ -2584,7 +2554,6 @@ describe("POST /api/mail/drafts/link", () => {
         headers: authHeaders(),
         body: {
           threadId: otherThread.id,
-          agentId: fixture.agent.agentId,
           gmailDraftId: GMAIL_DRAFT_ID,
         },
       }),

@@ -15,7 +15,6 @@ interface AppHomeViewOptions {
   readonly isLinked: boolean;
   readonly userId?: string;
   readonly userEmail?: string;
-  readonly agentName?: string;
   readonly loginUrl?: string;
   readonly botUserId: string;
 }
@@ -34,7 +33,7 @@ function appHomeIntroBlocks(): SlackAnyBlock[] {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "Chat with your workspace's default agent in Slack through direct messages and mentions.",
+        text: "Chat with Okou in Slack through direct messages and mentions.",
       },
     },
     { type: "divider" },
@@ -84,47 +83,17 @@ function connectedStatusBlock(options: AppHomeViewOptions): SlackKnownBlock {
   };
 }
 
-function appHomeAgentBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
-  const agentHeading = ":robot_face: *Workspace Agent*";
-  const blocks: SlackAnyBlock[] = [
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: agentHeading,
-      },
-    },
-  ];
-
-  if (!options.agentName) {
-    return [
-      ...blocks,
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "_No agent configured yet._",
-        },
-      },
-    ];
-  }
-
-  const settingsButton = {
-    type: "button" as const,
-    text: { type: "plain_text" as const, text: "Settings" },
-    url: `${options.appUrl}/works`,
-    action_id: "home_environment_setup",
-  };
-  const agentBlock: SlackKnownBlock = {
+export function buildWorkspaceSettingsBlock(appUrl: string): SlackKnownBlock {
+  return {
     type: "section",
-    text: {
-      type: "mrkdwn",
-      text: `Default agent: *${options.agentName}*`,
+    text: { type: "mrkdwn", text: "Manage your workspace connections." },
+    accessory: {
+      type: "button",
+      text: { type: "plain_text", text: "Settings" },
+      url: `${appUrl}/works`,
+      action_id: "home_environment_setup",
     },
-    accessory: settingsButton,
   };
-  blocks.push(agentBlock);
-  return blocks;
 }
 
 function appHomeHelpBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
@@ -149,7 +118,7 @@ function appHomeHelpBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Usage*\nSend a DM or mention ${botMention} in any channel to chat with your workspace's default agent.`,
+        text: `*Usage*\nSend a DM or mention ${botMention} in any channel to chat with Okou.`,
       },
     },
   ];
@@ -200,7 +169,7 @@ export function buildAppHomeView(options: AppHomeViewOptions): SlackView {
   blocks.push(
     connectedStatusBlock(options),
     { type: "divider" },
-    ...appHomeAgentBlocks(options),
+    buildWorkspaceSettingsBlock(options.appUrl),
     { type: "divider" },
     ...appHomeHelpBlocks(options),
     { type: "divider" },
@@ -213,52 +182,16 @@ export function buildAppHomeView(options: AppHomeViewOptions): SlackView {
   };
 }
 
-export function buildWelcomeMessage(
-  botUserId: string,
-  agentName?: string,
-): SlackAnyBlock[] {
-  const botMention = officialSlackBotMention(botUserId);
-  const blocks: SlackAnyBlock[] = [
+export function buildWelcomeMessage(botUserId: string): SlackAnyBlock[] {
+  return [
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `:wave: *Hi! I'm ${botMention}.*\n\nI can connect you to AI agents to help with your tasks.`,
+        text: `:wave: *Hi! I'm ${officialSlackBotMention(botUserId)}.*\n\nSend me a message or mention me in a channel to get started.`,
       },
-    },
-    {
-      type: "divider",
     },
   ];
-
-  if (agentName) {
-    blocks.push(
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Workspace Agent*\n\u2022 \`${agentName}\``,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*How to Use*\n\u2022 Just describe what you need help with",
-        },
-      },
-    );
-  } else {
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "_No workspace agent configured yet._",
-      },
-    });
-  }
-
-  return blocks;
 }
 
 export function buildSuccessMessage(message: string): SlackAnyBlock[] {

@@ -99,7 +99,7 @@ final class ComposerConnectorAccountTests: XCTestCase {
     XCTAssertNil(after.nextCursor)
   }
 
-  func testClosingReadOwnerCancelsHTTPAndCannotActForTheNextAgent() async throws {
+  func testClosingReadOwnerCancelsHTTPAndCannotActForTheNextEditor() async throws {
     let gate = ModelResponseGate()
     let started = expectation(description: "Search reached HTTP")
     let cancelled = expectation(description: "Search HTTP cancelled")
@@ -126,7 +126,7 @@ final class ComposerConnectorAccountTests: XCTestCase {
       _ = await pending.result
     }
     await fulfillment(of: [started], timeout: 3)
-    composer.configure(agentID: FixtureData.attemptID)
+    composer.closeAccounts()
     await fulfillment(of: [cancelled], timeout: 3)
     gate.open()
     if case .success = await pending.result { XCTFail("A retired owner returned account data") }
@@ -336,7 +336,7 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let value =
       thread
       ? ChatThread(
-        id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Accounts",
+        id: FixtureData.threadID, title: "Accounts",
         selectedModel: nil,
         createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
         pinnedAt: nil, pinOrder: nil, indicator: nil) : nil
@@ -344,7 +344,6 @@ final class ComposerConnectorAccountTests: XCTestCase {
       service: ChatComposerAccess(client: fixture.http.client),
       authorizationService: ChatConnectorService(client: fixture.http.client),
       webURL: fixture.http.baseURL, thread: value, didFail: { _ in })
-    if !thread { composer.configure(agentID: FixtureData.agentID) }
     await composer.refresh()
     return composer
   }

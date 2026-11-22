@@ -53,7 +53,6 @@ import { array, literal, object, string } from "zod";
 import { migrationTimestamp } from "./migration-timestamp";
 import { applyPendingMigrations } from "./migration-runner";
 import { validateChatThreadEventExecutorRetirement } from "./test-chat-thread-event-executor-retirement";
-import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialWorkflowStorageRetirement } from "./test-official-workflow-storage-retirement";
@@ -87,7 +86,10 @@ import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
 import { validateEmailIntegrationMigration } from "./test-email-integration-migration";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validateCustomConnectorCloudflareStorage } from "./test-custom-connector-cloudflare-storage-permanent";
-import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
+import {
+  validateLegacyStorageRetirement,
+  validateRetiredStorageSchema,
+} from "./test-legacy-storage-retirement";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
 import { validateWorkspaceWorkflowIdentity } from "./test-workspace-workflow-identity";
@@ -2889,6 +2891,10 @@ async function main(): Promise<void> {
       await migrationTimestamp("1615_drop_chat_thread_event_executor"),
       await migrationTimestamp("1616_retire_agents_table"),
     );
+    await validateLegacyStorageRetirement(
+      dbUrl1,
+      await migrationTimestamp("1617_retire_legacy_storage_registry"),
+    );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
 
@@ -2931,8 +2937,7 @@ async function main(): Promise<void> {
     await validatePermanentProjectStorage(dbUrl1);
     await validateUserNotificationStorage(dbUrl1);
     await validateFeedItemStorage(dbUrl1);
-    await validatePermanentStorageLineage(dbUrl1);
-    await validatePermanentAgentInstructions(dbUrl1);
+    await validateRetiredStorageSchema(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
@@ -2987,8 +2992,7 @@ async function main(): Promise<void> {
     await validatePermanentProjectStorage(dbUrl2);
     await validateUserNotificationStorage(dbUrl2);
     await validateFeedItemStorage(dbUrl2);
-    await validatePermanentStorageLineage(dbUrl2);
-    await validatePermanentAgentInstructions(dbUrl2);
+    await validateRetiredStorageSchema(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);
     await validateRestrictiveRunReferences(dbUrl2);
     await validatePermanentArtifactThreadCatalog(dbUrl2);

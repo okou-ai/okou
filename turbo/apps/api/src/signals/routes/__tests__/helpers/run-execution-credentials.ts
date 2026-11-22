@@ -5,7 +5,7 @@ import { now } from "../../../../lib/time";
 import { settleIncludingAbort } from "../../../utils";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createAuthDeviceSupportApi } from "./api-bdd-auth-device-support";
-import { createAuthOrgAgentsBddApi } from "./api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./api-bdd-auth-org";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import { captureConnectorExternalState } from "./public-connector-actor";
@@ -20,7 +20,6 @@ export function createRunExecutionCredentials(context: TestContext) {
       readonly sandboxToken: string;
       readonly runId: string;
       readonly threadId: string;
-      readonly agentId: string;
     }
   >();
   const owners = new Map<string, ReturnType<typeof publicRunOwner>[]>();
@@ -74,13 +73,12 @@ export function createRunExecutionCredentials(context: TestContext) {
     const previousOpenrouterKey = optionalEnv("OPENROUTER_API_KEY");
     const token = await owner.run(async () => {
       const result = await settleIncludingAbort(async () => {
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const runnerGroup = await runs.configureRunnerGroup();
         mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
-        // Default Agent onboarding requires an administrator. Keep the caller's
-        // member role unchanged when obtaining its own Run credentials.
+        // The admin funds this workspace. Issue Run credentials to the actual member.
         const admin =
           actor.orgRole === "org:member"
             ? bdd.user({ orgId: actor.orgId, orgRole: "org:admin" })
@@ -90,16 +88,12 @@ export function createRunExecutionCredentials(context: TestContext) {
           await bdd.completeOnboarding(actor);
         }
         await createAuthDeviceSupportApi(context).initializePreferences(actor);
-        const agent = await bdd.createAgent(actor, {
-          displayName: "API caller credential",
-          visibility: "private",
-        });
+
         const thread = await createChatFilesBddApi(context).createThread(
           actor,
           { model: null },
         );
         const run = await runs.createThreadRun(actor, {
-          agentId: agent.agentId,
           threadId: thread.id,
           prompt: "Exercise the caller's API access",
         });
@@ -114,7 +108,6 @@ export function createRunExecutionCredentials(context: TestContext) {
           sandboxToken: execution.sandboxToken,
           runId: run.runId,
           threadId: run.threadId,
-          agentId: agent.agentId,
         };
       });
       restoreAccepted = captureConnectorExternalState(context);
@@ -147,7 +140,7 @@ export function createRunExecutionCredentials(context: TestContext) {
         throw new Error("Launch a Run before revoking its member");
       }
       // Release this actor's accepted work while its credentials still exist.
-      const auth = createAuthOrgAgentsBddApi(context);
+      const auth = createAuthOrgBddApi(context);
       const actor = auth.user(identity);
       const admin =
         survivingAdmin ??

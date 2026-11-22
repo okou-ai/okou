@@ -163,7 +163,7 @@ final class ChatModelResourceTests: XCTestCase {
     XCTAssertEqual(observed, expected)
   }
 
-  func testModelSelectionDoesNotRequestAnAgentProfile() async throws {
+  func testModelSelectionLoadsOnlyItsRequiredResources() async throws {
     let requests = Mutex<[String: Int]>([:])
     let fixture = ChatHTTPFixture { request in
       let path = request.url!.path

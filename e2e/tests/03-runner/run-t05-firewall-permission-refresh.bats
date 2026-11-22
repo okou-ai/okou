@@ -27,11 +27,6 @@ apply_postmark_permission() {
 }
 
 @test "runner refreshes connector permissions during an active run" {
-    run create_runner_agent "runner-firewall-permission-refresh-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local values
     values=$(jq -nc \
         --arg serverToken "00000000-0000-4000-8000-000000000000" \
@@ -102,7 +97,6 @@ EOF
     continuation_script=${continuation_script//__TEST_ID__/$TEST_ID}
 
     run runner_e2e_start_mock_checkpointed_chat_run \
-        "$AGENT_ID" \
         "$checkpoint_script" \
         "$continuation_script"
     echo "$output"

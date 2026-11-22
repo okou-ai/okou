@@ -21,14 +21,13 @@ export async function terminalPredecessor(
     runner: { runnerIdentity: { runnerId, heartbeatGeneration: 7 } },
   });
   const api = createRunsApi(context);
-  const { actor, agentId, runnerGroup: group } = owned;
+  const { actor, runnerGroup: group } = owned;
   const run = await owned.run(() => {
     return api.createThreadRun(actor, {
-      agentId,
       prompt: "Preserve terminal home state",
     });
   });
-  const fixture = { api, owned, actor, agentId, group, run, runnerId, clock };
+  const fixture = { api, owned, actor, group, run, runnerId, clock };
   const execution = await owned.executionInput(run.runId);
   await owned.run(async () => {
     const webhooks = createWebhookCallbackApi(context);
@@ -105,7 +104,6 @@ export async function heartbeat(
 export async function continuation(f: Fixture, model?: string) {
   return await f.owned.run(() => {
     return f.api.createThreadRun(f.actor, {
-      agentId: f.agentId,
       threadId: f.run.threadId,
       prompt: "Continue after terminal cleanup",
       ...(model === undefined ? {} : { model }),

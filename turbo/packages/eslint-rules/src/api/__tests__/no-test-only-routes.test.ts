@@ -23,7 +23,7 @@ tester.run("no-test-only-routes", noTestOnlyRoutes, {
   valid: [
     {
       filename: productionRoute,
-      code: 'const path = "/api/agents"; const route = { route: c.list, handler: list$ };',
+      code: 'const path = "/api/chat-threads"; const route = { route: c.list, handler: list$ };',
     },
     {
       filename: join(
@@ -34,7 +34,7 @@ tester.run("no-test-only-routes", noTestOnlyRoutes, {
     },
     {
       filename: routeTest,
-      code: 'const origin = "http://api.test/api/agents"; const latest = "/api/testing-tools";',
+      code: 'const origin = "http://api.test/api/chat-threads"; const latest = "/api/testing-tools";',
     },
     {
       filename: routeTest,

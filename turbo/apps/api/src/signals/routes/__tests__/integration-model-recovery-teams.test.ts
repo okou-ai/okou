@@ -25,7 +25,7 @@ describe("integration model recovery in Teams", () => {
     const chat = createChatFilesBddApi(context);
     await fixtures.run(async () => {
       const fixture = await fixtures.create({
-        withDefaultAgent: true,
+        onboarded: true,
         paidNative: true,
       });
       await fixtures.dispatch(fixture, "Recover this Teams model");

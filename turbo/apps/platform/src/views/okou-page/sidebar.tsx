@@ -156,7 +156,7 @@ function useFooterNavItems() {
         ($) => {
           return $.appShell.sidebar.navigation.works;
         },
-        { agentName: assistantName },
+        { assistantName },
       ),
     };
   });

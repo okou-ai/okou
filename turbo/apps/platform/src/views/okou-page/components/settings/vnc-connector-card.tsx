@@ -1,5 +1,5 @@
 import { useGet } from "ccstate-react";
-import { currentChatThreadId$ } from "../../../../signals/agent-chat.ts";
+import { currentChatThreadId$ } from "../../../../signals/chat-thread-list.ts";
 import { Plus, Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../../../signals/route-paths.ts";

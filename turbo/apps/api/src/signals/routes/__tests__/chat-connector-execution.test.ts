@@ -59,19 +59,18 @@ function session(actor: ApiTestUser) {
 
 async function owner() {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const { agentId } = await bdd.createAgent(actor, { visibility: "private" });
+
   const thread = await chat.createThread(actor, {});
-  return { actor, agentId, threadId: thread.id, runnerGroup };
+  return { actor, threadId: thread.id, runnerGroup };
 }
 async function start(value: Awaited<ReturnType<typeof owner>>) {
   const run = await runs.createThreadRun(value.actor, {
-    agentId: value.agentId,
     threadId: value.threadId,
     prompt: "Use this Chat's current connector account",
   });

@@ -3,10 +3,8 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import { createWorkflowTokenMatcher } from "@okouai/core/workflow-slash-token";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import {
-  reloadComposerWorkflowQuery$,
-  workflowRecencyEnabled$,
-} from "./composer-workflows.ts";
+import { workflowRecencyEnabled$ } from "./composer-workflows.ts";
+import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import {
   readRecentWorkflowIds,
   recentWorkflowStorage,
@@ -151,7 +149,7 @@ export function createWorkflowQuerySnapshot(
     readonly owner: string | null;
     readonly enabled: Promise<boolean>;
     readonly range: SlashWorkflowRange;
-    readonly workflows: Promise<readonly ComposerWorkflow[]> | null;
+    readonly workflows: Promise<readonly ComposerWorkflow[]>;
   } | null>(null);
   const ownedSnapshot$ = computed((get) => {
     const snapshot = get(snapshot$);
@@ -184,8 +182,7 @@ export function createWorkflowQuerySnapshot(
         previous.enabled === enabled &&
         previous.range.start === range.start &&
         previous.range.end === range.end &&
-        previous.range.query === range.query &&
-        previous.workflows !== null
+        previous.range.query === range.query
       ) {
         return;
       }
@@ -196,7 +193,7 @@ export function createWorkflowQuerySnapshot(
       // A new opening also repairs a missed notification. Query edits reuse
       // the request unless a local send or realtime event invalidated it.
       if (!previous || previous.owner !== owner) {
-        set(reloadComposerWorkflowQuery$);
+        set(reloadWorkflowData$);
       }
       const workflows = set(loadWorkflows$, signal);
       detach(workflows, Reason.DomCallback, "composer workflow query");

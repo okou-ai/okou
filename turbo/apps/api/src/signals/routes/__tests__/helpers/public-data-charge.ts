@@ -64,14 +64,10 @@ export async function chargePublicDataUsage(
     context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation();
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await bdd.completeOnboarding(actor);
-  await bdd.createAgent(actor, {
-    displayName: "Data billing fixture",
-    visibility: "private",
-  });
   const runnerGroup = await runs.configureRunnerGroup();
   const clientEventId = randomUUID();
   const sent = await createChatFilesBddApi(context).requestSendEvent(

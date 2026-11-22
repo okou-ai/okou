@@ -77,7 +77,6 @@ type FollowupsEvent = Extract<ChatEvent, { eventType: "output.followups" }>;
 
 interface EntitledChatActor {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runnerGroup: string;
   readonly providerId: string;
   readonly storage: {
@@ -103,12 +102,8 @@ async function entitledChatActor(
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "BDD chat callback agent",
-    description: "Exercises chat callback terminal processing.",
-    visibility: "private",
-  });
-  return { actor, agentId: agent.agentId, runnerGroup, providerId, storage };
+
+  return { actor, runnerGroup, providerId, storage };
 }
 
 async function configureClaudeCodeSubscriptionProvider(
@@ -125,7 +120,6 @@ async function configureClaudeCodeSubscriptionProvider(
 async function startChatRun(
   actor: ApiTestUser,
   body: {
-    readonly agentId?: string;
     readonly prompt: string;
     readonly clientEventId?: string;
     readonly threadId?: string;
@@ -186,7 +180,6 @@ async function startChatRun(
 async function queueChatEvent(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
     readonly threadId: string;
     readonly prompt: string;
     readonly userMessage?: UserMessageInputDocument;
@@ -502,7 +495,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 describe("CHAT-02: completed chat callback", () => {
   it("persists assistant output, reorders threads, titles the thread, recommends follow-ups, notifies, and auto-sends the queued template message", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const titlePrompts: string[] = [];
     const sentinelPrompt = "unrelated sentinel run";
@@ -543,7 +536,6 @@ describe("CHAT-02: completed chat callback", () => {
       });
     }
     const first = await startChatRun(actor, {
-      agentId,
       prompt,
       selectedModel: "claude-fable-5-1",
     });
@@ -573,7 +565,6 @@ describe("CHAT-02: completed chat callback", () => {
       ],
     };
     await queueChatEvent(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "queued next turn",
       userMessage: queuedUserMessage,
@@ -588,7 +579,6 @@ describe("CHAT-02: completed chat callback", () => {
     // Sentinel thread with a later lastMessageAt than thread X, so the
     // run-end bump on X is observable through thread-list reordering.
     const sentinel = await startChatRun(actor, {
-      agentId,
       prompt: sentinelPrompt,
     });
     await api.requestCancelRun(actor, sentinel.runId, [200]);
@@ -792,10 +782,9 @@ describe("CHAT-02: completed chat callback", () => {
   }, 90_000);
 
   it("omits the API clock for a chat run picked from the queue", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "hold the thread while the next message queues",
     });
     const firstHeaders = await runExecution(runnerGroup, first.runId);
@@ -808,7 +797,6 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     await queueChatEvent(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: queuedPrompt,
     });
@@ -854,7 +842,7 @@ describe("CHAT-02: completed chat callback", () => {
   }, 90_000);
 
   it("uses the optimized prompt and userMessage semantics for recommended follow-ups", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -878,7 +866,6 @@ describe("CHAT-02: completed chat callback", () => {
     const templatePrompt = `[Template #1: ${style.title} (illustration)]`;
 
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "stale first legacy request",
       userMessage: firstUserMessage,
     });
@@ -916,7 +903,6 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const second = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "stale second legacy request",
       userMessage: {
@@ -1008,7 +994,7 @@ describe("CHAT-02: completed chat callback", () => {
   }, 90_000);
 
   it("recommends workflow and email follow-ups for ordinary members", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const followupSystemPrompts: string[] = [];
     const workflow = {
       prompt: "Save this reconciliation as a workflow",
@@ -1035,7 +1021,6 @@ describe("CHAT-02: completed chat callback", () => {
       return "Reconciliation summary";
     });
     const run = await startChatRun(actor, {
-      agentId,
       prompt:
         "Reconcile these invoices and draft an email asking about the discrepancies",
     });
@@ -1065,7 +1050,7 @@ describe("CHAT-02: completed chat callback", () => {
   });
 
   it("accepts a retried recommended follow-up send as a duplicate", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockVertexCompletions((body) => {
@@ -1082,7 +1067,6 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Recommend a follow-up to retry",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -1110,7 +1094,6 @@ describe("CHAT-02: completed chat callback", () => {
 
     const clientEventId = randomUUID();
     const followupBody = {
-      agentId,
       threadId: run.threadId,
       prompt: "Retry the recommended follow-up",
       clientEventId,
@@ -1174,7 +1157,7 @@ describe("CHAT-02: completed chat callback", () => {
   }, 60_000);
 
   it("silently degrades all four callback features while delivering the generic notification", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization");
     }
@@ -1203,7 +1186,6 @@ describe("CHAT-02: completed chat callback", () => {
       });
     });
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Keep the main answer",
     });
     await flushWaitUntilForTest();
@@ -1267,7 +1249,7 @@ describe("CHAT-02: completed chat callback", () => {
       },
     },
   ])("omits recommended follow-ups for $name", async ({ response }) => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockVertexCompletions((body) => {
       const system = body.messages[0]?.content ?? "";
@@ -1287,7 +1269,6 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Keep the main answer",
     });
     await flushWaitUntilForTest();
@@ -1356,7 +1337,7 @@ describe("CHAT-02: completed chat callback", () => {
       },
     },
   ])("omits recommended follow-ups after $name", async ({ response }) => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockVertexCompletions((body) => {
       const system = body.messages[0]?.content ?? "";
@@ -1371,7 +1352,6 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Keep the main answer",
     });
     await flushWaitUntilForTest();
@@ -1401,7 +1381,7 @@ describe("CHAT-02: completed chat callback", () => {
   });
 
   it("absorbs title and summary storage failures without losing the round", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     // PostgreSQL rejects NUL in text. This induces a real write failure using
     // a provider response, without DB mocks or changing shared schema/state.
@@ -1421,7 +1401,6 @@ describe("CHAT-02: completed chat callback", () => {
       return "Task finished";
     });
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Keep storage errors visible",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -1458,11 +1437,10 @@ describe("CHAT-02: completed chat callback", () => {
   ] as const)(
     "$status Web push observes $presence foreground presence while native alerts are delivered",
     async ({ status, presence }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
       const provider = await createApnsFixture(context);
       await registerIosPush(context, { ...actor, orgId: actor.orgId! });
       const run = await startChatRun(actor, {
-        agentId,
         prompt: "Notify my org",
       });
       await chatCallbacks.registerPushSubscription(actor);
@@ -1520,10 +1498,10 @@ describe("CHAT-02: completed chat callback", () => {
   );
 
   it("delivers native alerts when the Web foreground query fails", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
-    const run = await startChatRun(actor, { agentId, prompt: "Notify me" });
+    const run = await startChatRun(actor, { prompt: "Notify me" });
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     chatCallbacks.mockVertexCompletions(() => {
@@ -1553,8 +1531,8 @@ describe("CHAT-02: completed chat callback", () => {
   });
 
   it("keeps the completed output after a push delivery failure", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const run = await startChatRun(actor, { agentId, prompt: "Notify me" });
+    const { actor, runnerGroup } = await entitledChatActor();
+    const run = await startChatRun(actor, { prompt: "Notify me" });
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
@@ -1795,7 +1773,7 @@ describe("CHAT-02: completed chat callback", () => {
   );
 
   it("keeps muted runs active but suppresses terminal unread, push and automatic unarchive", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     async function readIndicators() {
@@ -1807,7 +1785,6 @@ describe("CHAT-02: completed chat callback", () => {
     }
     for (const status of ["completed", "failed"] as const) {
       const run = await startChatRun(actor, {
-        agentId,
         prompt: `Muted ${status}`,
       });
       const headers = await runExecution(runnerGroup, run.runId);
@@ -1858,9 +1835,9 @@ describe("CHAT-02: completed chat callback", () => {
   });
 
   it("unarchives the thread when a completed or failed run makes it unread, but not on cancellation", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     async function startArchivedRun(prompt: string) {
-      const run = await startChatRun(actor, { agentId, prompt });
+      const run = await startChatRun(actor, { prompt });
       await chat.requestSetThreadArchived(actor, run.threadId, true, [204]);
       return run;
     }
@@ -1934,7 +1911,7 @@ describe("CHAT-02: completed chat callback", () => {
   }, 90_000);
 
   it("pins the model, reasoning effort, and token budget of every fast-path completion", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const requestsBySite = new Map<
       string,
@@ -1974,7 +1951,6 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Explain how token budgets interact with reasoning",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -2018,7 +1994,7 @@ describe("CHAT-02: completed chat callback", () => {
   });
 
   it("pushes a token-limited notification summary instead of discarding it", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const truncatedSummary = "The task finished by writing the migration pl";
     let notificationRequests = 0;
@@ -2039,7 +2015,7 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const prompt = "Summarize the migration plan";
-    const run = await startChatRun(actor, { agentId, prompt });
+    const run = await startChatRun(actor, { prompt });
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
 
@@ -2068,7 +2044,7 @@ describe("CHAT-02: completed chat callback", () => {
   });
 
   it("falls back to the fixed notification copy when the token-limited summary strips to nothing", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockVertexCompletions((body) => {
@@ -2088,7 +2064,7 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const prompt = "Summarize the emptied notification";
-    const run = await startChatRun(actor, { agentId, prompt });
+    const run = await startChatRun(actor, { prompt });
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
 
@@ -2120,7 +2096,7 @@ describe("CHAT-02: completed chat callback", () => {
   });
 
   it("leaves the thread untitled when the title completion is token-limited", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     let titleRequests = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
@@ -2137,7 +2113,6 @@ describe("CHAT-02: completed chat callback", () => {
     });
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Plan the token budget migration",
     });
     await flushWaitUntilForTest();
@@ -2154,22 +2129,19 @@ describe("CHAT-02: completed chat callback", () => {
   });
 
   it("keeps an auto-sent follow-up pending until org concurrency frees a slot", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
 
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "finish before auto-send meets the org cap",
     });
     const blocker = await startChatRun(actor, {
-      agentId,
       prompt: "hold org concurrency open",
     });
     await waitForRunStatus(actor, first.runId, "running");
     await waitForRunStatus(actor, blocker.runId, "running");
 
     const queuedEventId = await queueChatEvent(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "queued while org cap is full",
     });
@@ -2217,15 +2189,13 @@ describe("CHAT-02: completed chat callback", () => {
 
 describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
   it("redrives lifecycle-first recovery after a partial side-effect failure", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "cancel before the recovery completion",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
     await expectCancellationRecoveryPending(actor, run.threadId, false);
     const queuedEventId = await queueChatEvent(actor, {
-      agentId,
       threadId: run.threadId,
       prompt: "wait for cancellation recovery",
     });
@@ -2313,14 +2283,12 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
   }, 90_000);
 
   it("records recovery when completion with native history follows cancellation", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "race completion with cancellation",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
     const queuedEventId = await queueChatEvent(actor, {
-      agentId,
       threadId: run.threadId,
       prompt: "continue after the concurrent completion",
     });
@@ -2356,14 +2324,12 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
 
 describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   it("uses durable assistant output for queued auto-send", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "stream before queued follow-up",
     });
     await queueChatEvent(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "queued after streamed output",
     });
@@ -2426,10 +2392,9 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   }, 90_000);
 
   it("uses every acknowledged DB assistant event", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "partial streamed output",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -2488,10 +2453,9 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   }, 90_000);
 
   it("keeps repeated DB event batches idempotent", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "repeat DB output",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -2531,10 +2495,9 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   }, 90_000);
 
   it("persists normalized Claude text blocks independently across tool-only sequences", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "persist normalized Claude blocks",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -2631,9 +2594,8 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   }, 90_000);
 
   it("persists concurrent event batches instead of skipping output projection", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "saturate live projection admission",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -2674,9 +2636,8 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   }, 30_000);
 
   it("keeps rejected event reservations as sequence gaps", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "repeat an accepted event batch",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -2784,10 +2745,9 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   });
 
   it("completes no-output runs and preserves the newest result-only output across retries", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const silent = await startChatRun(actor, {
-      agentId,
       prompt: "silent streamed run",
     });
     const silentHeaders = await runExecution(runnerGroup, silent.runId);
@@ -2830,7 +2790,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     await flushWaitUntilForTest();
 
     const resultOnly = await startChatRun(actor, {
-      agentId,
       threadId: silent.threadId,
       prompt: "result-only streamed run",
     });
@@ -2898,10 +2857,9 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   }, 90_000);
 
   it("excludes stored result output above the terminal event boundary", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "exclude future result output",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -2937,10 +2895,9 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   }, 90_000);
 
   it("completes when no output materialization exists", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "complete without projected output",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -2962,10 +2919,9 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
   }, 90_000);
 
   it("extracts assistant output from Codex items and result fallbacks, skips non-events, and handles heartbeats without reading events", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "progress probe",
     });
     const firstHeaders = await runExecution(runnerGroup, first.runId);
@@ -3038,7 +2994,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     ).toStrictEqual(["final fallback answer"]);
 
     const second = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "codex turn",
     });
@@ -3068,7 +3023,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     ).toStrictEqual(["Codex answer"]);
 
     const third = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "streamed turn",
     });
@@ -3115,7 +3069,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockVertexFailure();
     const fourth = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "title failure turn",
     });
@@ -3159,10 +3112,9 @@ describe("CHAT-02: failed chat callbacks", () => {
   ] as const)(
     "presents $name using persisted ownership across chat and detail reads",
     async (scenario) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const run = await startChatRun(actor, {
-        agentId,
         prompt: scenario.name,
         selectedModel: scenario.builtIn ? null : "claude-fable-5-1",
       });
@@ -3212,13 +3164,12 @@ describe("CHAT-02: failed chat callbacks", () => {
   ])(
     "protects built-in=%s multi-block=%s billing events and network exports while preserving ordinary output",
     async (builtIn, multipleBlocks) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
       await api.updateUserModelPreference(
         actor,
         builtIn ? null : "claude-fable-5-1",
       );
       const run = await startChatRun(actor, {
-        agentId,
         prompt: "export balance failure evidence",
       });
       const headers = await runExecution(runnerGroup, run.runId);
@@ -3554,7 +3505,7 @@ describe("CHAT-02: failed chat callbacks", () => {
   ] as const)(
     "keeps subscription recovery on $source for $label (structured=$structured)",
     async ({ source, model, label, structured }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
       await integrations.configureNativeSubscriptionModels(actor);
       await api.updateUserModelPreference(actor, model);
       const nativeMessage =
@@ -3566,7 +3517,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       let sandboxHeaders: { readonly authorization: string };
       if (source === "web") {
         const run = await startChatRun(actor, {
-          agentId,
           prompt: "Finish my report",
         });
         runId = run.runId;
@@ -3661,7 +3611,7 @@ describe("CHAT-02: failed chat callbacks", () => {
   );
 
   it("formats failed-run errors and notifies, without auto-sending", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     await integrations.configureNativeSubscriptionModels(actor);
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     await chatCallbacks.registerPushSubscription(actor);
@@ -3762,7 +3712,6 @@ describe("CHAT-02: failed chat callbacks", () => {
     const runIds: string[] = [];
     for (const round of rounds) {
       const run = await startChatRun(actor, {
-        agentId,
         prompt: round.prompt,
         ...(threadId === undefined ? {} : { threadId }),
         ...(round.selectedModel === undefined
@@ -3934,9 +3883,8 @@ describe("CHAT-02: failed chat callbacks", () => {
   }, 90_000);
 
   it("stores insufficient credits failures as the billing recovery marker", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "post-dispatch billing failure",
     });
     const sandboxHeaders = await runExecution(runnerGroup, run.runId);
@@ -3965,12 +3913,11 @@ describe("CHAT-02: failed chat callbacks", () => {
   }, 90_000);
 
   it("presents overload from its reason without forwarding the raw run error", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const rawOverloadError =
       "API Error: 529 Overloaded. This is a server-side issue, usually temporary - try again in a moment. If it persists, check https://status.claude.com.";
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "trigger claude overload",
       selectedModel: "claude-fable-5-1",
     });
@@ -4022,7 +3969,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       const fixture = await entitledChatActor();
       await configureClaudeCodeSubscriptionProvider(fixture);
       const run = await startChatRun(fixture.actor, {
-        agentId: fixture.agentId,
         prompt: "Exercise captured subscription recovery",
         selectedModel: "claude-opus-5-5",
       });
@@ -4060,7 +4006,6 @@ describe("CHAT-02: failed chat callbacks", () => {
           [200],
         );
         const retry = await startChatRun(fixture.actor, {
-          agentId: fixture.agentId,
           threadId: run.threadId,
           prompt:
             "Retry after replacing the captured Claude subscription token",
@@ -4085,10 +4030,9 @@ describe("CHAT-02: auto-send after failures", () => {
   it.each(["completed", "failed"] as const)(
     "preserves dense %s output and continuation across event pages",
     async (status) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
 
       const anchor = await startChatRun(actor, {
-        agentId,
         prompt: "successful history before the dense round",
       });
       const anchorHeaders = await runExecution(runnerGroup, anchor.runId);
@@ -4098,7 +4042,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
       const densePrompt = "request producing a dense assistant output tail";
       const dense = await startChatRun(actor, {
-        agentId,
         threadId: anchor.threadId,
         prompt: densePrompt,
       });
@@ -4144,7 +4087,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
       const probePrompt = "inspect context after the dense round";
       const probe = await startChatRun(actor, {
-        agentId,
         threadId: anchor.threadId,
         prompt: probePrompt,
       });
@@ -4186,10 +4128,9 @@ describe("CHAT-02: auto-send after failures", () => {
   );
 
   it("uses structured failed messages for normal and queued incomplete-round context", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const anchor = await startChatRun(actor, {
-      agentId,
       prompt: "successful structured context anchor",
       selectedModel: "claude-fable-5-1",
     });
@@ -4228,7 +4169,6 @@ describe("CHAT-02: auto-send after failures", () => {
       "> The failed response omitted the owner\n\nName the responsible owner";
 
     const failedForNormal = await startChatRun(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: "stale failed legacy request",
       userMessage,
@@ -4245,7 +4185,6 @@ describe("CHAT-02: auto-send after failures", () => {
     await flushWaitUntilForTest();
 
     const normal = await startChatRun(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: "normal incomplete context probe",
     });
@@ -4259,7 +4198,6 @@ describe("CHAT-02: auto-send after failures", () => {
     await flushWaitUntilForTest();
 
     const failedForQueue = await startChatRun(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: "second stale failed legacy request",
       userMessage,
@@ -4270,7 +4208,6 @@ describe("CHAT-02: auto-send after failures", () => {
     );
     const queuedPrompt = "queued incomplete context probe";
     await queueChatEvent(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: queuedPrompt,
     });
@@ -4313,10 +4250,8 @@ describe("CHAT-02: auto-send after failures", () => {
   it.each(["direct", "queued"] as const)(
     "preserves a failed request and its attachment in the public %s run context",
     async (entrypoint) => {
-      const { actor, agentId, runnerGroup, storage } =
-        await entitledChatActor();
+      const { actor, runnerGroup, storage } = await entitledChatActor();
       const anchor = await startChatRun(actor, {
-        agentId,
         prompt: "successful history before the failed request",
       });
       const anchorHeaders = await runExecution(runnerGroup, anchor.runId);
@@ -4340,7 +4275,6 @@ describe("CHAT-02: auto-send after failures", () => {
       const file = await chat.completeUpload(actor, { id: upload.id });
       const failedPrompt = "preserve this request and its attachment";
       const failed = await startChatRun(actor, {
-        agentId,
         threadId: anchor.threadId,
         prompt: failedPrompt,
         userMessage: {
@@ -4363,13 +4297,11 @@ describe("CHAT-02: auto-send after failures", () => {
       let probeRunId: string;
       if (entrypoint === "queued") {
         const blocker = await startChatRun(actor, {
-          agentId,
           threadId: anchor.threadId,
           prompt: "hold the queued context probe",
         });
         const blockerHeaders = await runExecution(runnerGroup, blocker.runId);
         const queuedEventId = await queueChatEvent(actor, {
-          agentId,
           threadId: anchor.threadId,
           prompt: probePrompt,
         });
@@ -4386,7 +4318,6 @@ describe("CHAT-02: auto-send after failures", () => {
       } else {
         probeRunId = (
           await startChatRun(actor, {
-            agentId,
             threadId: anchor.threadId,
             prompt: probePrompt,
           })
@@ -4414,12 +4345,11 @@ describe("CHAT-02: auto-send after failures", () => {
   );
 
   it("preserves the successful round boundary when a published follow-up is revoked", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     let followupRequests = 0;
 
     const anchor = await startChatRun(actor, {
-      agentId,
       prompt: "successful boundary anchor",
     });
     const anchorHeaders = await runExecution(runnerGroup, anchor.runId);
@@ -4451,7 +4381,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
     const firstFailedPrompt = "failed before the late successful follow-up";
     const firstFailed = await startChatRun(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: firstFailedPrompt,
     });
@@ -4485,7 +4414,6 @@ describe("CHAT-02: auto-send after failures", () => {
     await flushWaitUntilForTest();
 
     const revokingFailure = await startChatRun(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: "revoke the late successful follow-up",
       revokesEventId: lateFollowup.id,
@@ -4506,7 +4434,6 @@ describe("CHAT-02: auto-send after failures", () => {
     });
 
     const probe = await startChatRun(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: "probe the revoked boundary",
     });
@@ -4519,10 +4446,9 @@ describe("CHAT-02: auto-send after failures", () => {
   }, 90_000);
 
   it("auto-sends the queued message after a failure with attachments, incomplete-round context, and fresh native intent", async () => {
-    const { actor, agentId, runnerGroup, storage } = await entitledChatActor();
+    const { actor, runnerGroup, storage } = await entitledChatActor();
 
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "start the session",
       selectedModel: "claude-fable-5-1",
     });
@@ -4554,7 +4480,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
     const longPrompt = `Refine the analysis ${"x".repeat(4200)}`;
     const second = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: longPrompt,
       userMessage: {
@@ -4587,7 +4512,6 @@ describe("CHAT-02: auto-send after failures", () => {
     });
     const queuedContent = "queued with files";
     await queueChatEvent(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "queued with files",
       userMessage: {
@@ -4665,7 +4589,6 @@ describe("CHAT-02: auto-send after failures", () => {
     expect(context.mocks.webpush.sendNotification.mock.calls).toHaveLength(1);
 
     await queueChatEvent(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "queued after duplicate failed callback",
     });
@@ -4711,10 +4634,9 @@ describe("CHAT-02: auto-send after failures", () => {
   }, 90_000);
 
   it("keeps only the newest 20 incomplete rounds despite late older output for normal and queued callback sends", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const anchor = await startChatRun(actor, {
-      agentId,
       prompt: "successful frontier anchor",
       selectedModel: "claude-fable-5-1",
     });
@@ -4734,7 +4656,6 @@ describe("CHAT-02: auto-send after failures", () => {
       | undefined;
     for (const [index, prompt] of historyPrompts.entries()) {
       const round = await startChatRun(actor, {
-        agentId,
         threadId: anchor.threadId,
         prompt,
       });
@@ -4802,7 +4723,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
     const normalPrompt = "normal frontier probe";
     const normal = await startChatRun(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: normalPrompt,
     });
@@ -4819,7 +4739,6 @@ describe("CHAT-02: auto-send after failures", () => {
 
     const queuedPrompt = "queued callback frontier probe";
     await queueChatEvent(actor, {
-      agentId,
       threadId: anchor.threadId,
       prompt: queuedPrompt,
     });
@@ -4873,7 +4792,7 @@ describe("CHAT-02: auto-send after failures", () => {
 describe("CHAT-02: auto-send across a model switch", () => {
   it("rejects a queued message whose model the workspace no longer offers", async () => {
     const fixture = await entitledChatActor();
-    const { actor, agentId, runnerGroup } = fixture;
+    const { actor, runnerGroup } = fixture;
     // Opus runs on the native Claude Code Runner through the personal Claude
     // subscription.
     await configureClaudeCodeSubscriptionProvider(fixture);
@@ -4891,7 +4810,6 @@ describe("CHAT-02: auto-send across a model switch", () => {
 
     const firstPrompt = `How do I parse JSON? ${"p".repeat(4200)}`;
     const first = await startChatRun(actor, {
-      agentId,
       prompt: firstPrompt,
       selectedModel: "claude-opus-5-5",
     });
@@ -4904,13 +4822,11 @@ describe("CHAT-02: auto-send across a model switch", () => {
     });
 
     const second = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "And stringify?",
     });
     const secondHeaders = await runExecution(runnerGroup, second.runId);
     await queueChatEvent(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "queued before policy removal",
     });
@@ -4968,13 +4884,12 @@ describe("CHAT-02: auto-send across a model switch", () => {
 
   it("resumes the CLI session by default when the queued model stays within the same family", async () => {
     const fixture = await entitledChatActor();
-    const { actor, agentId, runnerGroup } = fixture;
+    const { actor, runnerGroup } = fixture;
     // Opus runs on the native Claude Code Runner through the personal Claude
     // subscription.
     await configureClaudeCodeSubscriptionProvider(fixture);
 
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "start on opus before queueing a Claude family switch",
       selectedModel: "claude-opus-5-5",
     });
@@ -4983,7 +4898,6 @@ describe("CHAT-02: auto-send across a model switch", () => {
     await completeChatRunOk(first.runId, firstHeaders);
 
     const second = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "keep the opus session active",
     });
@@ -4994,7 +4908,6 @@ describe("CHAT-02: auto-send across a model switch", () => {
       "claude-fable-5-1",
     );
     await queueChatEvent(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "queue a Fable follow-up",
     });
@@ -5037,10 +4950,9 @@ describe("CHAT-02: auto-send across a model switch", () => {
 
 describe("CHAT-02: thread deletion while a run is active", () => {
   it("skips terminal processing when the thread is gone", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "delete this thread",
     });
     await runExecution(runnerGroup, run.runId);
@@ -5064,7 +4976,7 @@ describe("CHAT-02: thread deletion while a run is active", () => {
 
 describe("CHAT-02: push notification gating", () => {
   it("reuses the native signing token until its fifty-minute lifetime ends", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
     const startedAt = Math.floor(now() / 1000) * 1000;
@@ -5073,7 +4985,6 @@ describe("CHAT-02: push notification gating", () => {
       mockNow(startedAt + minutes * 60_000);
       await api.registerDirectRunner(runnerGroup);
       const run = await startChatRun(actor, {
-        agentId,
         prompt: `Native signing token at minute ${minutes}`,
       });
       chatCallbacks.mockChatOutputEvents([]);
@@ -5098,7 +5009,7 @@ describe("CHAT-02: push notification gating", () => {
   }, 60_000);
 
   it("delivers native completion without VAPID, uses a versioned envelope, and retires only invalid tokens", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     const registration = await registerIosPush(context, {
       ...actor,
@@ -5118,7 +5029,6 @@ describe("CHAT-02: push notification gating", () => {
     });
     const received = provider.nextRequest();
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "native completion",
     });
     chatCallbacks.mockChatOutputEvents([]);
@@ -5169,7 +5079,6 @@ describe("CHAT-02: push notification gating", () => {
     // The old 410 must preserve the fresh binding; a later 410 for that exact binding disables it.
     provider.responses.push({ status: 410, reason: "Unregistered" });
     const third = await startChatRun(actor, {
-      agentId,
       prompt: "fresh token receives failures",
     });
     await failChatRun(
@@ -5191,7 +5100,6 @@ describe("CHAT-02: push notification gating", () => {
       okou: { notificationId: `${third.runId}:failed` },
     });
     const fourth = await startChatRun(actor, {
-      agentId,
       prompt: "invalid token stays disabled",
     });
     chatCallbacks.mockChatOutputEvents([]);
@@ -5204,7 +5112,7 @@ describe("CHAT-02: push notification gating", () => {
   }, 60_000);
 
   it("keeps legacy alerts and retires notification-state support when registration advances", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     const registration = await registerIosPush(
       context,
@@ -5217,7 +5125,6 @@ describe("CHAT-02: push notification gating", () => {
       items: [{ clientId: actor.userId, connectionId: "web" }],
     });
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Legacy notification client",
     });
     chatCallbacks.mockChatOutputEvents([]);
@@ -5246,7 +5153,6 @@ describe("CHAT-02: push notification gating", () => {
     // A delayed handshake cannot opt a newer legacy registration into badges.
     await reconcileIosNotifications(context, identity, registration);
     const later = await startChatRun(actor, {
-      agentId,
       prompt: "Legacy registration advanced",
     });
     chatCallbacks.mockChatOutputEvents([]);
@@ -5263,11 +5169,10 @@ describe("CHAT-02: push notification gating", () => {
   }, 60_000);
 
   it("updates the icon badge after reads, unread changes, muting, and bulk reads without another alert", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "Badge lifecycle",
     });
     chatCallbacks.mockChatOutputEvents([]);
@@ -5308,7 +5213,7 @@ describe("CHAT-02: push notification gating", () => {
   }, 60_000);
 
   it("keeps acknowledged chats out of later alert and badge-only pushes on that device", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const identity = { ...actor, orgId: actor.orgId! };
     const startedAt = now();
     mockNow(startedAt);
@@ -5319,7 +5224,6 @@ describe("CHAT-02: push notification gating", () => {
       deviceToken: "cd".repeat(32),
     });
     const old = await startChatRun(actor, {
-      agentId,
       prompt: "Before opening",
     });
     chatCallbacks.mockChatOutputEvents([]);
@@ -5356,7 +5260,6 @@ describe("CHAT-02: push notification gating", () => {
 
     mockNow(startedAt + 2000);
     const fresh = await startChatRun(actor, {
-      agentId,
       prompt: "After opening",
     });
     await completeChatRunOk(
@@ -5382,7 +5285,7 @@ describe("CHAT-02: push notification gating", () => {
   }, 60_000);
 
   it("uses sandbox credentials and the sandbox APNs destination independently of production", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context, "sandbox");
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
     await registerIosPush(
@@ -5391,7 +5294,6 @@ describe("CHAT-02: push notification gating", () => {
       { environment: "sandbox" },
     );
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "sandbox delivery",
     });
     chatCallbacks.mockChatOutputEvents([]);
@@ -5414,11 +5316,10 @@ describe("CHAT-02: push notification gating", () => {
   it.each(["revoked", "muted", "membership"] as const)(
     "withholds native run alerts for %s eligibility",
     async (scenario) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
       const provider = await createApnsFixture(context);
       await registerIosPush(context, { ...actor, orgId: actor.orgId! });
       const run = await startChatRun(actor, {
-        agentId,
         prompt: "native eligibility",
       });
       if (scenario === "revoked") {
@@ -5457,7 +5358,7 @@ describe("CHAT-02: push notification gating", () => {
   );
 
   it("uses the Okou VAPID contact identity for every subscription", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     chatCallbacks.enableVapid();
     const endpoints = [
       await chatCallbacks.registerPushSubscription(actor),
@@ -5465,7 +5366,6 @@ describe("CHAT-02: push notification gating", () => {
     ];
 
     const run = await startChatRun(actor, {
-      agentId,
       prompt: "verify branded VAPID contacts",
     });
     chatCallbacks.mockChatOutputEvents([]);
@@ -5492,11 +5392,10 @@ describe("CHAT-02: push notification gating", () => {
   }, 60_000);
 
   it("withholds pushes without VAPID keys and deletes stale subscriptions after gone responses", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledChatActor();
     const endpoint = await chatCallbacks.registerPushSubscription(actor);
 
     const first = await startChatRun(actor, {
-      agentId,
       prompt: "no vapid yet",
     });
     const firstHeaders = await runExecution(runnerGroup, first.runId);
@@ -5522,7 +5421,6 @@ describe("CHAT-02: push notification gating", () => {
       new WebPushError("Gone", 410, {}, "", endpoint),
     );
     const second = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "now with vapid",
     });
@@ -5541,7 +5439,6 @@ describe("CHAT-02: push notification gating", () => {
     await flushWaitUntilForTest();
 
     const third = await startChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "after stale cleanup",
     });

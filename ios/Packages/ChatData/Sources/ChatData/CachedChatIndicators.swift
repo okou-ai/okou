@@ -7,26 +7,15 @@ public struct CachedChatIndicators: Codable, Sendable {
   public internal(set) var revision: Int
   public internal(set) var savedAt: Date
   public internal(set) var unreadAt: [String: Date]
-  public internal(set) var unreadAgentIDs: Set<String>
-  var threadAgentIDs: [String: String]
 
   public var indicators: Indicators {
     Indicators(
-      agents: Dictionary(uniqueKeysWithValues: unreadAgentIDs.map { ($0, .unread) }),
       threads: unreadAt.mapValues { _ in .unread }, unreadAt: unreadAt)
   }
 
   mutating func markRead(threadID: String, through watermark: Date) {
     guard let timestamp = unreadAt[threadID], timestamp <= watermark else { return }
     unreadAt[threadID] = nil
-    // An unknown thread can account for another unread under this Agent. Never
-    // clear the Agent merely because its remaining chats are not cached locally.
-    if let agentID = threadAgentIDs[threadID],
-      unreadAt.keys.allSatisfy({ threadAgentIDs[$0] != nil }),
-      !unreadAt.keys.contains(where: { threadAgentIDs[$0] == agentID })
-    {
-      unreadAgentIDs.remove(agentID)
-    }
   }
 }
 
@@ -62,11 +51,7 @@ struct ChatIndicatorCacheState: Codable {
     appliedRequestID = request.requestID
     snapshot = CachedChatIndicators(
       revision: (snapshot?.revision ?? 0) + 1, savedAt: Date(),
-      unreadAt: indicators.unreadAt.filter { indicators.threads[$0.key] == .unread },
-      unreadAgentIDs: indicators.unreadAgentIDs(in: threads),
-      threadAgentIDs: Dictionary(
-        uniqueKeysWithValues: threads.filter { indicators.unreadAt[$0.id] != nil }
-          .compactMap { thread in thread.agentID.map { (thread.id, $0) } }))
+      unreadAt: indicators.unreadAt.filter { indicators.threads[$0.key] == .unread })
     return true
   }
 
@@ -77,9 +62,6 @@ struct ChatIndicatorCacheState: Codable {
   mutating func change(_ change: ChatReadStateChange, threads: [ChatThread] = []) {
     mutationRevision += 1
     guard var snapshot else { return }
-    for thread in threads where snapshot.unreadAt[thread.id] != nil {
-      snapshot.threadAgentIDs[thread.id] = thread.agentID
-    }
     snapshot.revision += 1
     switch change {
     case .read(let threadID, let watermark):

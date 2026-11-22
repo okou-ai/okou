@@ -88,7 +88,10 @@ import {
   TEMPLATE_ATTACHMENT_NODE_NAME,
   type EditorDocumentSnapshot,
 } from "./user-message-document-codec.ts";
-import { createComposerWorkflows } from "./composer-workflows.ts";
+import {
+  composerWorkflowsNeedLoad$,
+  loadComposerWorkflows$,
+} from "./composer-workflows.ts";
 import type { OpenTemplatePickerDialogCommand } from "./chat-composer.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -323,15 +326,14 @@ export interface ComposerTemplateAttachment {
   readonly previewImageUrl?: string;
 }
 
-function createComposerWorkflowResources(
+function createComposerWorkflowNames(
   editor: Editor,
   hasInput$: Computed<boolean>,
-) {
-  const resources = createComposerWorkflows();
-  const sync$ = createSyncWorkflowNamesCommand(editor, resources.load$);
+): ComposerWorkflowNames {
+  const sync$ = createSyncWorkflowNamesCommand(editor, loadComposerWorkflows$);
   const syncForInput$ = command(
     ({ get, set }, mountSignal: AbortSignal): void => {
-      if (!get(hasInput$) || get(resources.needsLoad$)) {
+      if (!get(hasInput$) || get(composerWorkflowsNeedLoad$)) {
         detach(
           set(sync$, mountSignal, mountSignal),
           Reason.Daemon,
@@ -340,12 +342,7 @@ function createComposerWorkflowResources(
       }
     },
   );
-  const workflowNames: ComposerWorkflowNames = { sync$, syncForInput$ };
-  return {
-    workflowNames,
-    mountWorkflows$: resources.mount$,
-    loadWorkflows$: resources.load$,
-  };
+  return { sync$, syncForInput$ };
 }
 
 function connectComposerFeedback(
@@ -2312,7 +2309,6 @@ interface MountEditorOptions {
   openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"];
   caretIndex$: State<number>;
   mountComposition$: Command<void, [AbortSignal]>;
-  mountWorkflows$: Command<Promise<void>, [AbortSignal]>;
   syncWorkflowQuery$: Command<void, [AbortSignal]>;
   editorInteractionActiveState$: State<boolean>;
   suggestionMenu: ReturnType<typeof createSuggestionMenuBoundary>;
@@ -2423,6 +2419,7 @@ function createBindMountedSuggestionInteractionsCommand(
     editorInteractionActiveState$,
     suggestionMenu,
     syncWorkflowQuery$,
+    workflowNames,
   }: Pick<
     MountEditorOptions,
     | "caretIndex$"
@@ -2431,6 +2428,7 @@ function createBindMountedSuggestionInteractionsCommand(
     | "editorInteractionActiveState$"
     | "suggestionMenu"
     | "syncWorkflowQuery$"
+    | "workflowNames"
   >,
 ) {
   return command(({ set }, signal: AbortSignal) => {
@@ -2445,6 +2443,13 @@ function createBindMountedSuggestionInteractionsCommand(
       set(editorInteractionActiveState$, true);
       set(caretIndex$, focusedEditor.state.selection.head);
       set(syncWorkflowQuery$, signal);
+      // Another composer can refresh the shared list without updating this
+      // editor's decorations. Reuse that list when this editor regains focus.
+      detach(
+        set(workflowNames.sync$, signal, signal),
+        Reason.DomCallback,
+        "focused composer workflow names",
+      );
     };
     runtime.pointerUp = runtime.focus;
     runtime.blur = (event) => {
@@ -2467,7 +2472,6 @@ function createMountEditorCommand({
   openTemplatePicker$,
   caretIndex$,
   mountComposition$,
-  mountWorkflows$,
   syncWorkflowQuery$,
   editorInteractionActiveState$,
   suggestionMenu,
@@ -2488,11 +2492,11 @@ function createMountEditorCommand({
       editorInteractionActiveState$,
       suggestionMenu,
       syncWorkflowQuery$,
+      workflowNames,
     },
   );
   return onRef(
     command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      const mountingWorkflows = set(mountWorkflows$, signal);
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
         set(templateSelection.sync$);
@@ -2583,10 +2587,7 @@ function createMountEditorCommand({
         set(syncWorkflowQuery$, signal);
         editor.unmount();
       });
-      await Promise.all([
-        mountingWorkflows,
-        set(workflowNames.sync$, signal, signal),
-      ]);
+      await set(workflowNames.sync$, signal, signal);
     }),
   );
 }
@@ -3402,8 +3403,7 @@ export function createWorkflowComposerSignals(
   const compositionGate = createCompositionGate();
   const editor = createWorkflowEditor(runtime);
   connectComposerFeedback(feedback, editor);
-  const { workflowNames, mountWorkflows$, loadWorkflows$ } =
-    createComposerWorkflowResources(editor, draft.hasInput$);
+  const workflowNames = createComposerWorkflowNames(editor, draft.hasInput$);
   const templates = createTemplateSignals(editor, draft, openDialog$);
   const activeSlashRange$ = createActiveSlashRange(
     editor,
@@ -3414,7 +3414,7 @@ export function createWorkflowComposerSignals(
   );
   const querySnapshot = createWorkflowQuerySnapshot(
     activeSlashRange$,
-    loadWorkflows$,
+    loadComposerWorkflows$,
   );
   const mountComposition$ = createMountCompositionCommand(
     editor,
@@ -3442,7 +3442,6 @@ export function createWorkflowComposerSignals(
     openTemplatePicker$: templates.commands.openTemplatePicker$,
     caretIndex$,
     mountComposition$,
-    mountWorkflows$,
     syncWorkflowQuery$: querySnapshot.sync$,
     editorInteractionActiveState$,
     suggestionMenu,
@@ -3469,7 +3468,7 @@ export function createWorkflowComposerSignals(
     chatThreadSuggestions$: createComposerChatThreadSuggestions(
       activeChatThreadSuggestionRange$,
     ),
-    loadWorkflows$,
+    loadWorkflows$: loadComposerWorkflows$,
     queryWorkflows$: querySnapshot.workflows$,
     recentWorkflowIds$: createRecentWorkflowIds(querySnapshot.range$),
     reloadWorkflows$: reloadMountedComposerWorkflows$,

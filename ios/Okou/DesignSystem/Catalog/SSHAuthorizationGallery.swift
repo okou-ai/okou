@@ -22,7 +22,7 @@
             MessageBodyView(
               text: preview.message, baseURL: preview.origin, markdown: preview.markdown,
               actionContext: MessageActionContext(
-                agentID: preview.thread.agentID, threadID: preview.thread.id),
+                threadID: preview.thread.id),
               connectorActions: preview.connectors, approvals: preview.approvals, loadsActions: true
             )
           case .failure(let error):
@@ -62,7 +62,7 @@
       let commands = ChatCommands(client: client, sync: sync)
       thread = ChatThread(
         id: SSHAuthorizationPreviewTransport.threadID,
-        agentID: "74000000-0000-4000-8000-000000000001", title: "SSH preview",
+        title: "SSH preview",
         createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
       approvals = ApprovalCardRegistry(
         thread: thread, commands: commands, sync: sync, didFail: { _ in }, didContinue: {})

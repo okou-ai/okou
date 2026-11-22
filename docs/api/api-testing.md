@@ -16,7 +16,7 @@ Place route tests under the API route test directory:
 
 ```text
 turbo/apps/api/src/signals/routes/__tests__/
-+-- agents-list.test.ts
++-- composer-draft.test.ts
 ```
 
 API service-directory tests are prohibited; there are no file exceptions. A
@@ -29,55 +29,29 @@ boundary; its setup, execution, and assertions must all use those entry points.
 ## Route Test Structure
 
 ```typescript
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-
+import { randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { composerDraftRoutes } from "../composer-draft";
 import { createRouteMocks } from "./helpers/route-test";
-import { agentsRoutes } from "../agents";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
 
-function authHeaders() {
-  return { authorization: "Bearer clerk-session" };
-}
-
-function apiClient() {
-  return setupApp({ context, routes: agentsRoutes })(agentsMainContract);
-}
-
-describe("GET /api/agents", () => {
-  it("returns an agent created through POST /api/agents", async () => {
-    mocks.clerk.session("user_api_test", "org_api_test");
-    context.mocks.s3.send.mockResolvedValue({});
-
-    const created = await accept(
-      apiClient().create({
-        headers: authHeaders(),
-        body: {
-          displayName: "Listed Agent",
-          description: "desc",
-          sound: "friendly",
-        },
-      }),
-      [201],
-    );
-
-    const listed = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(listed.body).toContainEqual(
-      expect.objectContaining({
-        agentId: created.body.agentId,
-        ownerId: "user_api_test",
-        displayName: "Listed Agent",
-        description: "desc",
-        sound: "friendly",
-      }),
-    );
+describe("member composer draft", () => {
+  it("reads the draft saved by the current workspace member", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    const drafts = setupApp({ context, routes: composerDraftRoutes })(composerDraftContract);
+    const headers = { authorization: "Bearer clerk-session" };
+    const body = {
+      draftUserMessage: { version: 1 as const, parts: [{ type: "text" as const, text: "Hello" }] },
+      draftAttachments: null,
+    };
+    await accept(drafts.patch({ headers, body }), [204]);
+    const saved = await accept(drafts.get({ headers }), [200]);
+    expect(saved.body).toStrictEqual(body);
   });
 });
 ```
@@ -189,12 +163,11 @@ Clerk, S3, Resend, and Stripe mocks at the external provider boundary remain
 valid. Basic app setup and per-case database isolation do not fabricate a
 business scenario; fixture methods that seed business rows or force workers do.
 
-For example, the agent create/list example above uses
-[`agentsMainContract`](../../turbo/packages/api-contracts/src/contracts/agents.ts)
-and [`agentsRoutes`](../../turbo/apps/api/src/signals/routes/agents.ts) for both
-construction and observation. See
-[`agents-list.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agents-list.test.ts)
-for the integration test. Apply that same standard to usage reports, storage,
+The composer example writes and reads through the same member-scoped API.
+See the [HTTP contract](../../turbo/packages/api-contracts/src/contracts/composer-draft.ts),
+[route implementation](../../turbo/apps/api/src/signals/routes/composer-draft.ts), and
+[route tests](../../turbo/apps/api/src/signals/routes/__tests__/composer-draft.test.ts).
+Apply that same standard to usage reports, storage,
 and automation lifecycles.
 
 ### Apply the Boundary to the Complete Lifecycle
@@ -577,7 +550,7 @@ exists, so remove an entry together with the file or the case that needed it.
 Run route-focused tests from `turbo`:
 
 ```shell
-pnpm -F api exec vitest run src/signals/routes/__tests__/agents-list.test.ts
+pnpm -F api exec vitest run src/signals/routes/__tests__/composer-draft.test.ts
 pnpm -F api lint
 pnpm -F api check-types
 ```

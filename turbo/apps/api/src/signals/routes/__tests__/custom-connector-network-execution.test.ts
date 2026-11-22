@@ -151,7 +151,7 @@ test("chat account startup preserves HTTP/MCP network bindings and unbound Direc
   });
   await fixture.run(async () => {
     const actor = fixture.actor;
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
@@ -160,9 +160,7 @@ test("chat account startup preserves HTTP/MCP network bindings and unbound Direc
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
     });
-    const { agentId } = await bdd.createAgent(actor, {
-      displayName: "Bound connector execution",
-    });
+
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const config = (
       await accept(
@@ -231,7 +229,6 @@ test("chat account startup preserves HTTP/MCP network bindings and unbound Direc
       }
     }
     const run = await runs.createThreadRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "Use my protected and direct HTTP/MCP accounts",
     });
@@ -348,7 +345,6 @@ test("chat account startup preserves HTTP/MCP network bindings and unbound Direc
       [FeatureSwitchKey.CustomConnectorCloudflareAccess]: false,
     });
     const disabled = await runs.createThreadRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt:
         "Keep bound connectors unavailable while network support is disabled",

@@ -4,7 +4,7 @@ import type { Root } from "hast";
 import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { navigateToNewChat$ } from "../okou-page/nav.ts";
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import {
   chatThreadArchiveContract,
   chatThreadMuteContract,

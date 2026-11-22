@@ -821,7 +821,6 @@ describe("Run phase observation transport", () => {
           },
         );
         const run = await createRunsApi(context).createThreadRun(owned.actor, {
-          agentId: owned.agentId,
           prompt: "Create the phase transport example",
           model: "claude-fable-5-1",
         });
@@ -938,7 +937,6 @@ describe("Run phase start and completion transport", () => {
         });
       }
       const run = await runs.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Complete a normally authenticated Run",
         model: owned.model,
       });

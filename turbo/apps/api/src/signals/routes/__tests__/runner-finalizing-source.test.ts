@@ -415,7 +415,6 @@ describe("Independent finalizing resource dispatch", () => {
         heartbeat: { totalVcpu: 32, totalMemoryMb: 65_536 },
       });
       const next = await f.api.createThreadRun(f.actor, {
-        agentId: f.agentId,
         threadId: thread.id,
         prompt: "Start independent work",
       });
@@ -469,7 +468,6 @@ describe("Independent finalizing resource dispatch", () => {
     });
     const next = await f.owned.run(() => {
       return f.api.createThreadRun(f.actor, {
-        agentId: f.agentId,
         threadId: firstThread.id,
         prompt: "Use the Home at the end of the accepted inventory",
       });
@@ -489,7 +487,6 @@ describe("Independent finalizing resource dispatch", () => {
     await heartbeat(f, { snapshotSequence: 3, heldHomeStates: [] });
     const cleared = await f.owned.run(() => {
       return f.api.createThreadRun(f.actor, {
-        agentId: f.agentId,
         threadId: secondThread.id,
         prompt: "Start after the advertised Home was removed",
       });

@@ -9,7 +9,6 @@ const event = {
   id: "00000000-0000-4000-8000-000000000001",
   seqId: 4,
   chatThreadId: "00000000-0000-4000-8000-000000000002",
-  agentId: "00000000-0000-4000-8000-000000000003",
   kind: "project_updated",
   projectId,
   title: null,

@@ -3,48 +3,6 @@
 
 export const clientContractImportManifest = [
   {
-    module: "agent-draft",
-    contracts: ["agentDraftContract", "composerDraftContract"],
-    bindings: [
-      {
-        name: "agentDraftResponseSchema",
-        source: "validators/chat-threads",
-        imported: "composerDraftSchema",
-      },
-    ],
-  },
-  {
-    module: "agent-setup-prompts",
-    contracts: ["agentSetupPromptsContract"],
-    bindings: [
-      {
-        name: "AGENT_SETUP_RESPONSIBILITY_MAX_CHARS",
-        source: "validators/agent-setup-prompts",
-        imported: "AGENT_SETUP_RESPONSIBILITY_MAX_CHARS",
-      },
-    ],
-  },
-  {
-    module: "agents",
-    contracts: [
-      "agentInstructionsContract",
-      "agentsByIdContract",
-      "agentsMainContract",
-    ],
-    bindings: [
-      {
-        name: "agentResponseSchema",
-        source: "validators/agents",
-        imported: "agentResponseSchema",
-      },
-      {
-        name: "agentVisibilitySchema",
-        source: "validators/agents",
-        imported: "agentVisibilitySchema",
-      },
-    ],
-  },
-  {
     module: "android-updates",
     contracts: ["androidUpdatesContract"],
     bindings: [],
@@ -122,7 +80,6 @@ export const clientContractImportManifest = [
     contracts: [
       "bankingContract",
       "bankingPublicContract",
-      "bankingUserContract",
       "bankingWorkspaceContract",
     ],
     bindings: [],
@@ -511,6 +468,17 @@ export const clientContractImportManifest = [
     module: "codex-device-auth",
     contracts: ["codexDeviceAuthContract"],
     bindings: [],
+  },
+  {
+    module: "composer-draft",
+    contracts: ["composerDraftContract"],
+    bindings: [
+      {
+        name: "composerDraftResponseSchema",
+        source: "validators/chat-threads",
+        imported: "composerDraftSchema",
+      },
+    ],
   },
   {
     module: "computer-use",

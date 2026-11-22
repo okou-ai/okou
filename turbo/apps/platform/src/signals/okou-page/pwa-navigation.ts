@@ -2,21 +2,19 @@ import { command, computed, state } from "ccstate";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../../views/okou-page/sidebar-breakpoint.ts";
 
 const mobileViewport$ = state(false);
-const agentComposeRequested$ = state(false);
+const composeRequested$ = state(false);
 
 export const mobileChatViewport$ = computed((get) => {
   return get(mobileViewport$);
 });
 
 export const pwaChatListVisible$ = computed((get) => {
-  return get(mobileViewport$) && !get(agentComposeRequested$);
+  return get(mobileViewport$) && !get(composeRequested$);
 });
 
-// Prompt and template links still open their prepared composer. A bare agent
-// chat URL is the list; starting a new chat opens its existing thread route.
-export function isPwaAgentComposeRequested(
-  searchParams: URLSearchParams,
-): boolean {
+// Prompt and template links still open their prepared composer. The chat home
+// URL is the list; starting a new chat opens its existing thread route.
+export function isPwaComposeRequested(searchParams: URLSearchParams): boolean {
   return Boolean(
     searchParams.get("prompt") ||
     searchParams.get("handoff") ||
@@ -25,9 +23,9 @@ export function isPwaAgentComposeRequested(
   );
 }
 
-export const setPwaAgentComposeRequested$ = command(
+export const setPwaComposeRequested$ = command(
   ({ set }, requested: boolean) => {
-    set(agentComposeRequested$, requested);
+    set(composeRequested$, requested);
   },
 );
 

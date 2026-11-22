@@ -171,13 +171,9 @@ export function createPublicChatAdmissionFixture(context: TestContext) {
       await runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor, { customerId, subscriptionId });
       await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "BDD chat messages agent",
-        description: "Exercises the web chat send route.",
-        visibility: "private",
-      });
+
       await runs.updateUserModelPreference(actor, "claude-fable-5-1");
-      return { actor, agentId: agent.agentId };
+      return { actor };
     },
     async suspend(credits: 0 | 20_000): Promise<void> {
       await webhooks.postStripeEvent(

@@ -105,7 +105,6 @@ final class AppLifecycleTests: XCTestCase {
     await workspace.start()
     await waiter.value
 
-    XCTAssertEqual(workspace.store.currentAgentName, "Okou")
     XCTAssertEqual(workspace.store.newChatDraft, "Input entered before navigation completes")
   }
 
@@ -191,7 +190,6 @@ final class AppLifecycleTests: XCTestCase {
     gate.open()
     await startup.value
 
-    XCTAssertEqual(current.store.currentAgentName, "Okou")
     XCTAssertEqual(current.store.newChatDraft, "Current workspace input")
     XCTAssertEqual(fixture.indicatorWorkspaces.first, "org_one")
     XCTAssertEqual(fixture.indicatorWorkspaces.last, "org_two")
@@ -392,7 +390,7 @@ private final class LifecycleHTTPFixture: Sendable {
           let workspace = try Self.workspace(request)
           state.indicatorWorkspaces.withLock { $0.append(workspace) }
           await beforeIndicators?()
-          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+          return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
         case "/api/chat-thread-drafts":
           return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
         case "/api/projects/events":

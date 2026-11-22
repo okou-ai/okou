@@ -72,6 +72,7 @@ data class ReadyWorkspace(
     val controls: RunControlsModel,
     val recovery: AssistantRecoveryModel,
     val artifacts: ArtifactCatalogModel,
+    val chatArtifacts: ArtifactCatalogModel,
     val settings: WorkspaceSettingsModel,
 )
 
@@ -90,6 +91,7 @@ sealed interface OpeningWorkspace {
         val controls: RunControlsModel,
         val recovery: AssistantRecoveryModel,
         val artifacts: ArtifactCatalogModel,
+        val chatArtifacts: ArtifactCatalogModel,
     ) : OpeningWorkspace
 }
 
@@ -367,6 +369,11 @@ class SessionModel(
                                     workspaceFailure(ticket, snapshot, it)
                                 }
                             },
+                            store.workspaceModel("chat-artifacts") {
+                                ArtifactCatalogModel(owner.artifacts, connectivity) {
+                                    workspaceFailure(ticket, snapshot, it)
+                                }
+                            },
                         )
                     mutable.value = mutable.value.copy(memberships = memberships, opening = opened)
                     preparation?.let(chats::restoreStartupCache)
@@ -528,6 +535,7 @@ class SessionModel(
                         opened.controls,
                         opened.recovery,
                         opened.artifacts,
+                        opened.chatArtifacts,
                         settings,
                     ),
                 working = false,
@@ -700,5 +708,6 @@ private fun Exception.bootstrapRetryAfterMillis(): Long? =
     }
 
 private inline fun <reified T : ViewModel> ViewModelStore.workspaceModel(
-    crossinline create: () -> T
-): T = ViewModelProvider(this, viewModelFactory { initializer { create() } })[T::class.java]
+    key: String = T::class.java.name,
+    crossinline create: () -> T,
+): T = ViewModelProvider(this, viewModelFactory { initializer { create() } })[key, T::class.java]

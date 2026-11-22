@@ -13,13 +13,13 @@ import { createDeferredPromise } from "../../utils";
 import { computerUseRoutes } from "../computer-use";
 import { orgReadRoutes } from "../org-read";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 const membershipUrl =
   "https://api.clerk.com/v1/users/:userId/organization_memberships";
 

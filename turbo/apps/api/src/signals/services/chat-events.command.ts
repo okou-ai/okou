@@ -203,7 +203,7 @@ import {
   composerWorkflows,
   workflowIdsInUserMessage,
 } from "./workflow-composer.service";
-import { workflowRecencyWritePlan } from "./workflow-recency-sql";
+import { workflowRecencyFields } from "./workflow-recency-sql";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -1817,11 +1817,7 @@ function normalSendSelectionWrites(
     after = "normal_send_capture";
   }
   const recency = args.recentWorkflowIds?.length
-    ? workflowRecencyWritePlan({
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowIds: args.recentWorkflowIds,
-      })
+    ? workflowRecencyFields(args.recentWorkflowIds)
     : null;
   if (preferencePlan || recency) {
     // One target-row writer also preserves an explicit model preference in the
@@ -1834,13 +1830,16 @@ function normalSendSelectionWrites(
           orgId: args.orgId,
           userId: args.userId,
           ...preferencePlan?.values,
-          ...recency?.values,
+          ...(recency ? { recentWorkflows: recency.initial } : {}),
         },
         normalChatInputWriteGate(after),
         normalChatInputConflictSql(
           orgMembersMetadata,
           [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-          { ...preferencePlan?.conflict.set, ...recency?.conflict.set },
+          {
+            ...preferencePlan?.conflict.set,
+            ...(recency ? { recentWorkflows: recency.merged } : {}),
+          },
         ),
       ),
     });

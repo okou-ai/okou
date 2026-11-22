@@ -11,7 +11,7 @@ import {
   currentChatThreadList$,
   unreadChatThreadListSignals$,
   type ChatThreadListSignals,
-} from "../agent-chat.ts";
+} from "../chat-thread-list.ts";
 import {
   listedThreadIds,
   threadRowKey,

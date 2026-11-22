@@ -35,7 +35,7 @@ const mocks = createRouteMocks(context);
 const chatFixture = createChatEventsFixture(context);
 
 function headers(actor: ApiTestUser) {
-  // This suite exercises per-Agent Workflow distribution and visibility.
+  // This suite exercises member Workflow distribution and visibility.
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
 }
@@ -48,10 +48,9 @@ function detailClient() {
 
 async function fixture(
   framework: "claude-code" | "codex" | "pi" = "claude-code",
-  retained = false,
 ) {
   const actor = bdd.user({ orgRole: "org:admin" });
-  const { defaultAgentId } = await runs.grantProEntitlement(actor);
+  await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
@@ -64,15 +63,9 @@ async function fixture(
     );
   }
   const group = await runs.configureRunnerGroup();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const s3 = installWorkflowVolumeS3Fixture(context);
-  const agent = retained
-    ? await bdd.createAgent(actor, {
-        displayName: "Retained Workflow owner",
-        visibility: "public",
-      })
-    : { agentId: defaultAgentId };
-  return { actor, agent, group, s3 };
+  return { actor, group, s3 };
 }
 
 function saveInstructions(actor: ApiTestUser, content: string) {
@@ -126,7 +119,7 @@ test.each([
 ] as const)(
   "pins complete $framework Workflow bundles at dispatch, including Workflows added while queued",
   async ({ framework, root }) => {
-    const { actor, agent, group, s3 } = await fixture(framework);
+    const { actor, group, s3 } = await fixture(framework);
     await saveInstructions(actor, "Dispatch-time personal Instructions");
     const workflow = await createWorkflow(actor, {
       files: [{ path: "reference.md", content: "old attachment" }],
@@ -209,7 +202,6 @@ test.each([
     );
     await finish(run.runId, execution.sandboxToken);
     const next = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the next published version",
     });
     const subsequent = await runs.executionInput(next.runId);
@@ -296,7 +288,7 @@ test("re-evaluates private/public precedence without exposing another member's p
 test.each(["sharing withdrawal", "rename", "deletion"] as const)(
   "keeps the accepted Workflow after %s during startup",
   async (change) => {
-    const { actor, agent, s3 } = await fixture();
+    const { actor, s3 } = await fixture();
     const owner = publicRunOwner(context, actor);
     await owner.run(async () => {
       if (change === "rename") {
@@ -391,7 +383,6 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
       await finish(runId, accepted.sandboxToken);
 
       const next = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         threadId: sent.body.threadId,
         prompt: "Continue with the remaining authorized workflows",
       });
@@ -429,7 +420,7 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
 );
 
 test("invokes the caller's Private Workflow when Public and foreign Private Workflows share its slug", async () => {
-  const { actor, agent, group, s3 } = await fixture();
+  const { actor, group, s3 } = await fixture();
   const name = `invoked-${randomUUID().slice(0, 8)}`;
   await createWorkflow(actor, {
     name,
@@ -445,7 +436,6 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
     instruction: "private body",
   });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: `/${name} summarize today`,
   });
   await runs.heartbeatRunner(group);
@@ -631,11 +621,10 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
 });
 
 test("keeps a large non-ASCII Workflow in its complete package without truncation", async () => {
-  const { actor, agent, group, s3 } = await fixture();
+  const { actor, group, s3 } = await fixture();
   const instruction = "指令\n".repeat(800_000);
   const workflow = await createWorkflow(actor, { instruction });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
@@ -653,12 +642,11 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
 });
 
 test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {
-  const { actor, agent, group } = await fixture("claude-code", true);
+  const { actor, group } = await fixture("claude-code");
   const workflow = await createWorkflow(actor, {
     files: [{ path: "keep.md", content: "execution attachment" }],
   });
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
@@ -694,7 +682,6 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "running",
   });
-  await bdd.expectAgentDeleteUnavailable(actor, agent.agentId);
   await runs.requestCancelRun(actor, run.runId, [200]);
   await flushWaitUntilForTest();
   await finish(run.runId, execution.sandboxToken);

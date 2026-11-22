@@ -22,12 +22,8 @@ function mergeRecentWorkflows(stored: SQL, accepted: SQL): SQL {
 }
 
 /** Use the accepted normal-message input exposed by the inserted CTE. */
-export function workflowRecencyWritePlan(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly workflowIds: readonly string[];
-}) {
-  const ids = JSON.stringify([...new Set(args.workflowIds)]);
+export function workflowRecencyFields(workflowIds: readonly string[]) {
+  const ids = JSON.stringify(workflowIds);
   const accepted = sql`(
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'workflowId', workflow_id,
@@ -38,19 +34,10 @@ export function workflowRecencyWritePlan(args: {
       AS accepted_workflow(workflow_id)
   )`;
   return {
-    values: {
-      orgId: args.orgId,
-      userId: args.userId,
-      recentWorkflows: mergeRecentWorkflows(sql`'[]'::jsonb`, accepted),
-    },
-    conflict: {
-      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-      set: {
-        recentWorkflows: mergeRecentWorkflows(
-          sql`${orgMembersMetadata.recentWorkflows}`,
-          accepted,
-        ),
-      },
-    },
+    initial: mergeRecentWorkflows(sql`'[]'::jsonb`, accepted),
+    merged: mergeRecentWorkflows(
+      sql`${orgMembersMetadata.recentWorkflows}`,
+      sql`EXCLUDED.recent_workflows`,
+    ),
   };
 }

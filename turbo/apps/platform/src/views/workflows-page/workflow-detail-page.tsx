@@ -1384,7 +1384,7 @@ function WorkflowChatButton({
     ($) => {
       return $.workflows.detail.refineWith;
     },
-    { agent: "Okou" },
+    { assistantName: "Okou" },
   );
 
   return (

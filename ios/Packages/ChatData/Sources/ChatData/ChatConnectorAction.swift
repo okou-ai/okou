@@ -28,26 +28,26 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
   }
   public let id: String
   public let kind: Kind
-  public let agentID: String?
+
   public let threadID: String?
   public let callbackPrompt: String?
 
   public static func configuration(
-    target: ChatConnectorTarget, agentID: String?, threadID: String?, connectionID: String? = nil
+    target: ChatConnectorTarget, threadID: String?, connectionID: String? = nil
   ) -> Self {
     Self(
       id: UUID().uuidString, kind: .configuration(target: target, connectionID: connectionID),
-      agentID: agentID, threadID: threadID, callbackPrompt: nil)
+      threadID: threadID, callbackPrompt: nil)
   }
 
   public func confirming(accountID: String?) -> Self {
     guard case .configuration(let target, _) = kind, let accountID else { return self }
     return Self(
       id: id, kind: .configuration(target: target, connectionID: accountID),
-      agentID: agentID, threadID: threadID, callbackPrompt: nil)
+      threadID: threadID, callbackPrompt: nil)
   }
 
-  public static func parse(_ value: String, webURL: URL, agentID: String, threadID: String)
+  public static func parse(_ value: String, webURL: URL, threadID: String)
     -> Self?
   {
     guard let url = URL(string: value, relativeTo: webURL)?.absoluteURL,
@@ -61,8 +61,8 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       path.count >= 4 && path[1] == "connectors"
       && ["connect", "authorize", "reconnect"].contains(String(path[3]))
     let accountPath =
-      path.count == 6 && path[1] == "agents"
-      && path[3] == "connector-accounts" && path[5] == "select"
+      path.count == 5 && path[1] == "connectors"
+      && path[2] == "accounts" && path[4] == "select"
     guard connectorPath || accountPath else { return nil }
     // Match URLSearchParams form decoding without changing percent-encoded literal plus signs.
     components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
@@ -70,18 +70,18 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
     let query = components.queryItems ?? []
     func param(_ key: String) -> String? { query.first { $0.name == key }?.value }
     func invalid() -> Self {
-      Self(id: value, kind: .unavailable, agentID: agentID, threadID: threadID, callbackPrompt: nil)
+      Self(id: value, kind: .unavailable, threadID: threadID, callbackPrompt: nil)
     }
     guard Set(query.map(\.name)).count == query.count,
-      UUID(uuidString: agentID) != nil, UUID(uuidString: threadID) != nil,
-      (connectorPath ? param("agentId") : String(path[2]))?.lowercased() == agentID.lowercased()
+      UUID(uuidString: threadID) != nil, param("agentId") == nil
     else { return invalid() }
     let prompt = param("callbackPrompt")
     let callbackThread = param("threadId")
     guard
-      (prompt == nil && callbackThread == nil)
+      callbackThread == nil || callbackThread?.lowercased() == threadID.lowercased(),
+      prompt == nil
         || (prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-          && callbackThread?.lowercased() == threadID.lowercased())
+          && callbackThread != nil)
     else { return invalid() }
     let kind: Kind
     if connectorPath {
@@ -99,7 +99,7 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
         kind = .connect(slug: slug)
       }
     } else {
-      guard prompt != nil, callbackThread != nil, UUID(uuidString: String(path[4])) != nil else {
+      guard prompt != nil, callbackThread != nil, UUID(uuidString: String(path[3])) != nil else {
         return invalid()
       }
       let target: ChatConnectorTarget
@@ -115,8 +115,8 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       } else {
         return invalid()
       }
-      kind = .select(target: target, connectionID: String(path[4]).lowercased())
+      kind = .select(target: target, connectionID: String(path[3]).lowercased())
     }
-    return Self(id: value, kind: kind, agentID: agentID, threadID: threadID, callbackPrompt: prompt)
+    return Self(id: value, kind: kind, threadID: threadID, callbackPrompt: prompt)
   }
 }

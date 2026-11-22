@@ -3,7 +3,6 @@ import {
   DEFAULT_IMAGE_MODEL,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
-import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import { userPreferenceChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import type {
   UpdateUserModelPreferenceRequest,
@@ -69,31 +68,18 @@ export const updateUserModelPreference$ = command(
   },
 );
 
-function payloadRequestsKindsReloadFor(
-  payload: unknown,
-  kinds: UserPreferenceChangedPayload["kinds"],
-): boolean {
-  const parsed = userPreferenceChangedPayloadSchema.safeParse(payload);
-  if (!parsed.success) {
-    return false;
-  }
-  return parsed.data.kinds.some((kind) => {
-    return kinds.includes(kind);
-  });
-}
-
 const handleUserPreferenceChanged$ = command(
   async ({ set }, payload: unknown, signal: AbortSignal): Promise<boolean> => {
     signal.throwIfAborted();
-    if (
-      payloadRequestsKindsReloadFor(payload, [
-        "defaultModel",
-        "defaultImageModel",
-      ])
-    ) {
+    const parsed = userPreferenceChangedPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return false;
+    }
+    const { kinds } = parsed.data;
+    if (kinds.includes("defaultModel") || kinds.includes("defaultImageModel")) {
       set(reloadUserModelPreference$);
     }
-    if (payloadRequestsKindsReloadFor(payload, ["workflowRecency"])) {
+    if (kinds.includes("workflowRecency")) {
       await set(reloadComposerWorkflowRecency$, signal);
     }
     return false;

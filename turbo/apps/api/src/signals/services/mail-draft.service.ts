@@ -2145,7 +2145,6 @@ const resolveMailLinkConnection$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly threadId: string;
-      readonly agentId?: string;
       readonly runId?: string;
       readonly provider: MailProvider;
       readonly snapshot: ConnectorRuntimeSelection;

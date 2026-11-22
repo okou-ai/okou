@@ -41,11 +41,6 @@ collect_connector_refresh_firewall_logs() {
 }
 
 @test "continued runner session refreshes replaced connector credentials" {
-    run create_runner_agent "runner-connector-refresh-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local initial_secret="e2e-bentoml-initial-$(_runner_uuid)"
     local updated_secret="e2e-bentoml-updated-$(_runner_uuid)"
     # Scope the synthetic connector rule to a read-only path on each Okou host.
@@ -94,7 +89,7 @@ EOF
 
     local first_output_prefix="BENTOML_INITIAL_REQUEST_${TEST_ID}_"
     local first_prompt="${probe_template//__OUTPUT_PREFIX__/$first_output_prefix}"
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$first_prompt"
+    run runner_e2e_start_mock_shell_chat_run "$first_prompt"
     echo "$output"
     assert_success
     local first_send_response="$output"
@@ -158,7 +153,6 @@ EOF
     local updated_output_prefix="BENTOML_UPDATED_REQUEST_${TEST_ID}_"
     local updated_prompt="${probe_template//__OUTPUT_PREFIX__/$updated_output_prefix}"
     run runner_e2e_continue_chat_run \
-        "$AGENT_ID" \
         "$THREAD_ID" \
         "$updated_prompt"
     echo "$output"

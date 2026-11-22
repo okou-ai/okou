@@ -1,0 +1,153 @@
+import { hydrateProjects$ } from "../projects/projects.ts";
+import { resetProjectUi$ } from "../projects/project-ui.ts";
+import {
+  loadMarketingHandoff$,
+  createMarketingHandoffDraft$,
+  finishMarketingHandoff$,
+} from "../prompt-page/marketing-handoff.ts";
+import { command } from "ccstate";
+import { createElement } from "react";
+import { HomeChatPage } from "../../views/okou-page/home-chat-page.tsx";
+import { updateDocumentTitle$ } from "../document-title.ts";
+import { updatePage$ } from "../react-router.ts";
+import { searchParams$, updateSearchParams$ } from "../route.ts";
+
+import { setTalkDraft$, talkDraft$ } from "./chat-draft.ts";
+import { hideAppSkeleton$ } from "../app-skeleton.ts";
+import {
+  resetChatPageModelSelection$,
+  startChatGreetingVisit$,
+} from "./chat-page.ts";
+import { ensureDraft$, type WorkspaceDraftEntry } from "./workspace-draft.ts";
+import {
+  workspaceChatComposerSignals$,
+  setWorkspaceComposerContext$,
+} from "./workspace-composer-signals.ts";
+import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
+import { checkUnifiedSettingsParam$ } from "./settings/settings-dialog.ts";
+import { setupChatKeyboardShortcuts$ } from "./chat-keyboard.ts";
+import {
+  isPwaComposeRequested,
+  setPwaComposeRequested$,
+} from "./pwa-navigation.ts";
+import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
+import { i18n } from "../../i18n/index.ts";
+import { detach, Reason } from "../utils.ts";
+import {
+  setAgentPhoneConnectDialogOpen$,
+  watchAgentPhoneConnection$,
+} from "./agentphone.ts";
+
+const restoreMarketingWorkspaceDraft$ = command(
+  async (
+    { get, set },
+    workspaceDraft: WorkspaceDraftEntry,
+    signal: AbortSignal,
+  ) => {
+    const params = get(searchParams$);
+    const handoff = await set(loadMarketingHandoff$, signal);
+    if (!handoff) {
+      await set(workspaceDraft.load$, signal);
+      return;
+    }
+    const imported = await set(
+      createMarketingHandoffDraft$,
+      handoff.hash,
+      signal,
+    );
+    if (!imported) {
+      await set(workspaceDraft.load$, signal);
+      return;
+    }
+    const targetDraft = workspaceDraft.draft;
+    await set(
+      targetDraft.seed$,
+      {
+        content: handoff.manifest.prompt,
+        userMessage: null,
+        generationTemplate: undefined,
+        attachments: get(imported.attachments$),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    await set(workspaceDraft.queueDraftSync$, signal);
+    signal.throwIfAborted();
+    set(finishMarketingHandoff$, handoff);
+    const next = new URLSearchParams(params);
+    next.delete("handoff");
+    set(updateSearchParams$, next);
+  },
+);
+
+export const setupHomeChatPage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const workspaceDraft: WorkspaceDraftEntry = await set(ensureDraft$, signal);
+    set(resetProjectUi$);
+    set(setPwaComposeRequested$, isPwaComposeRequested(get(searchParams$)));
+    set(setWorkspaceComposerContext$, { workspaceDraft });
+    set(get(workspaceChatComposerSignals$).setup$, signal);
+    set(setTalkDraft$, workspaceDraft.draft);
+    set(startChatGreetingVisit$);
+    set(resetChatPageModelSelection$);
+    set(setAgentPhoneConnectDialogOpen$, false);
+    set(updatePage$, createElement(HomeChatPage), "sidebar");
+    // Keep the phone link current while Get started can open its connect
+    // dialog here, so a link made from the phone closes it the way it does on
+    // the pages that also offer the link. Link status never delays the chat,
+    // so the watch runs beside setup.
+    detach(
+      set(watchAgentPhoneConnection$, signal),
+      Reason.Daemon,
+      "get started phone link",
+    );
+
+    await set(hideAppSkeleton$, signal);
+
+    set(
+      updateDocumentTitle$,
+      i18n.t(($) => {
+        return $.chat.documentTitle;
+      }),
+    );
+    set(setupChatKeyboardShortcuts$, signal);
+    await set(hydrateProjects$, signal);
+    await set(checkUnifiedSettingsParam$, signal);
+
+    const params = get(searchParams$);
+    const prompt = params.get("handoff") ? null : params.get("prompt");
+    if (params.get("handoff")) {
+      await set(restoreMarketingWorkspaceDraft$, workspaceDraft, signal);
+    }
+    const queue = params.get("queue");
+    const templatePicker = parseTemplatePickerEntryCategory(
+      params.get("templatePicker"),
+    );
+    if (workspaceDraft && !prompt && !params.get("handoff")) {
+      await set(workspaceDraft.load$, signal);
+    }
+    if (prompt) {
+      const targetDraft = workspaceDraft?.draft ?? get(talkDraft$);
+      set(targetDraft.clear$);
+      set(targetDraft.setInput$, prompt);
+      set(get(workspaceChatComposerSignals$).editor.focus$);
+      const next = new URLSearchParams(params);
+      next.delete("prompt");
+      set(updateSearchParams$, next);
+    }
+    if (templatePicker) {
+      const composerSignals = get(workspaceChatComposerSignals$);
+      set(composerSignals.template.setTemplatePickerSearch$, "");
+      set(composerSignals.template.clearPresentationTemplatePreviews$);
+      set(composerSignals.template.setTemplatePickerReferenceValue$, null);
+      set(composerSignals.template.setTemplatePickerCategory$, templatePicker);
+      set(composerSignals.template.setTemplatePickerOpen$, true);
+      const next = new URLSearchParams(get(searchParams$));
+      next.delete("templatePicker");
+      set(updateSearchParams$, next);
+    }
+    if (queue === "1") {
+      set(openQueueDrawer$);
+    }
+  },
+);

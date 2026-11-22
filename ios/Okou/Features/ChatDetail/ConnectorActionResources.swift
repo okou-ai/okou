@@ -36,7 +36,7 @@ final class ConnectorActionResources {
         account = nil
       }
       components = [
-        kind, action.agentID?.lowercased(), action.threadID?.lowercased(), target?.kind,
+        kind, action.threadID?.lowercased(), target?.kind,
         target?.connectorSlug, target?.customConnectorId?.lowercased(),
         account?.lowercased()
       ]

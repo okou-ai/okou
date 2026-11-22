@@ -65,7 +65,7 @@ public actor ChatCommands {
       }
     }
     return ChatThread(
-      id: created.id, agentID: nil, title: created.title ?? "", projectId: projectID,
+      id: created.id, title: created.title ?? "", projectId: projectID,
       selectedModel: created.selectedModel, createdAt: created.createdAt,
       updatedAt: created.createdAt, sortAt: created.createdAt,
       pinnedAt: nil, pinOrder: nil,
@@ -113,7 +113,7 @@ public actor ChatCommands {
     chatThreadSortEventID: String = UUID().uuidString,
     modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil,
     computerAccess: ChatComputerAccess? = nil,
-    expectedAgentID: String? = nil, sourceRunID: String? = nil
+    sourceRunID: String? = nil
   )
     async throws -> SendReceipt
   {
@@ -131,7 +131,7 @@ public actor ChatCommands {
     defer { sendingThreads.remove(thread.id) }
 
     let metadata = try await loadThreadSettings(
-      threadID: thread.id, expectedAgentID: expectedAgentID)
+      threadID: thread.id)
     let body = SendBody(
       threadId: thread.id,
       prompt: prompt.isEmpty
@@ -307,7 +307,7 @@ public actor ChatCommands {
     try await client.data("/api/chat-threads/\(threadID)/rename", method: "POST", body: body)
   }
 
-  private func loadThreadSettings(threadID: String, expectedAgentID: String?) async throws
+  private func loadThreadSettings(threadID: String) async throws
     -> ThreadMetadata
   {
     let metadata: ThreadMetadata = try await client.request(

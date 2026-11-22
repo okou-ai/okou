@@ -31,21 +31,12 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 
-async function createAgentForNoCreditAdmission(actor: ApiTestUser): Promise<{
-  readonly agentId: string;
-}> {
+async function prepareNoCreditAdmission(actor: ApiTestUser): Promise<void> {
   const bdd = createBddApi(context);
-  bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
-    displayName: "BDD run agent",
-    description: "Exercises run and cron API integration tests.",
-    visibility: "private",
-  });
+  bdd.acceptStorageWrites();
 
   const api = createRunsApi(context);
   await api.ensurePersonalSubscriptionModel(actor);
-
-  return { agentId: agent.agentId };
 }
 
 describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", () => {
@@ -53,11 +44,10 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
-    const { agentId } = await createAgentForNoCreditAdmission(actor);
+    await prepareNoCreditAdmission(actor);
 
     await expect(
       api.readThreadRunRejection(actor, {
-        agentId,
         prompt: "Produce a concise status report.",
       }),
     ).resolves.toBe("insufficient_credits");

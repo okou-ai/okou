@@ -4,26 +4,5 @@
     "claim-source-reconstruction",
     "direct-execution-source-owner-rename"
   ],
-  "sites": [
-    {
-      "file": "turbo/packages/db/src/schema/storage-version-lineage.ts",
-      "uses": 2,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/packages/db/src/schema/storage-version-lineage.ts",
-      "dependency": "sql:storage_version_lineage",
-      "uses": 1
-    },
-    {
-      "file": "turbo/packages/db/src/schema/storage.ts",
-      "dependency": "sql:storage_versions",
-      "uses": 1
-    },
-    {
-      "file": "turbo/packages/db/src/schema/storage.ts",
-      "dependency": "sql:storages",
-      "uses": 1
-    }
-  ]
+  "sites": []
 }

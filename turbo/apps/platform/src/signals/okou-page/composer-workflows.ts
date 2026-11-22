@@ -4,16 +4,16 @@ import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { BrowserClerk } from "@clerk/shared/types";
 import { accept } from "../../lib/accept.ts";
-import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { workflowReloadVersion$ } from "../workflows-page/workflow-reload.ts";
+import { apiClient$ } from "../api-client.ts";
+import {
+  reloadWorkflowData$,
+  workflowReloadVersion$,
+} from "../workflows-page/workflow-reload.ts";
 import { authenticatedSessionKey$, clerk$ } from "../auth.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { rootSignal$, rootVersion$ } from "../root-signal.ts";
-import { resetSignal } from "../utils.ts";
+import { resetSignal, waitForToken } from "../utils.ts";
 import { readLegacyWorkflowIdsForMigration$ } from "./legacy-workflow-recency.ts";
-
-const recencyVersion$ = state(0);
-const queryVersion$ = state(0);
 
 export const workflowRecencyEnabled$ = computed(async (get) => {
   return (await get(featureSwitches$))[FeatureSwitchKey.WorkflowRecency];
@@ -28,21 +28,11 @@ export const reloadComposerWorkflowRecency$ = command(
     if (owner !== get(authenticatedSessionKey$)) {
       throw new DOMException("Workflow recency owner changed", "AbortError");
     }
-    if (!enabled) {
-      return;
+    if (enabled) {
+      set(reloadWorkflowData$);
     }
-    set(recencyVersion$, (version) => {
-      return version + 1;
-    });
   },
 );
-
-/** Reopening retries failed catalog reads in both switch modes. */
-export const reloadComposerWorkflowQuery$ = command(({ set }) => {
-  set(queryVersion$, (version) => {
-    return version + 1;
-  });
-});
 
 function isCurrentOwner(clerk: BrowserClerk, owner: string | null): boolean {
   return (
@@ -55,255 +45,153 @@ function isCurrentOwner(clerk: BrowserClerk, owner: string | null): boolean {
   );
 }
 
-function createWorkflowRecencyClient(
-  createClient: ApiClientFactory,
-  assertCurrent: () => void,
-) {
-  return createClient(workflowsCollectionContract, {
-    getTokenGuard: () => {
-      assertCurrent();
-      return assertCurrent;
-    },
-  });
-}
-
-interface WorkflowRecencyOwnerResource {
-  readonly client: ReturnType<typeof createWorkflowRecencyClient>;
-  readonly assertCurrent: () => void;
-  readonly signal: AbortSignal;
-}
-
-/** Session-bound HTTP ownership shared by the current owner's requests. */
-function createWorkflowRecencyOwnerResource(owner: string | null) {
-  const resource$ = state<Promise<WorkflowRecencyOwnerResource> | null>(null);
-  const resetOwner$ = resetSignal();
-  const initialize$ = command(async ({ get, set }, signal: AbortSignal) => {
-    let initialized = false;
-    using _initialization = {
-      [Symbol.dispose]() {
-        if (!initialized) {
-          set(resource$, null);
+/** One list load, including its optional import, for the current auth/root. */
+function createComposerWorkflowList(owner: string | null) {
+  const importChecked$ = state(false);
+  const resetLoad$ = resetSignal();
+  const request$ = state<{
+    readonly version: number;
+    readonly enabled: Promise<boolean>;
+    readonly result: Promise<readonly ComposerWorkflow[]>;
+  } | null>(null);
+  const read$ = command(
+    async (
+      { get, set },
+      previous: Promise<readonly ComposerWorkflow[]> | undefined,
+      enabled: Promise<boolean>,
+      signal: AbortSignal,
+    ): Promise<readonly ComposerWorkflow[]> => {
+      // Refreshes serialize behind the whole GET/import/GET operation. No
+      // earlier GET can publish a pre-import response after the import ends.
+      // A failed previous opening does not prevent the next opening's retry.
+      if (previous) {
+        await waitForToken(Promise.allSettled([previous]), signal);
+      }
+      const loadSignal = set(resetLoad$, signal);
+      const clerk = await get(clerk$);
+      signal.throwIfAborted();
+      const assertCurrent = () => {
+        loadSignal.throwIfAborted();
+        if (!isCurrentOwner(clerk, owner)) {
+          throw new DOMException(
+            "Workflow recency owner changed",
+            "AbortError",
+          );
         }
-      },
-    };
-    const createClient = get(apiClient$);
-    const clerk = await get(clerk$);
-    signal.throwIfAborted();
-    const ownerSignal = set(resetOwner$, signal);
-    const assertCurrent = () => {
-      ownerSignal.throwIfAborted();
+      };
+      assertCurrent();
+      using _subscription = {
+        unsubscribe: clerk.addListener(() => {
+          // Transitional undefined resources must not poison the session;
+          // the token guard still rejects requests during that transition.
+          if (
+            clerk.user !== undefined &&
+            clerk.organization !== undefined &&
+            clerk.session !== undefined &&
+            !isCurrentOwner(clerk, owner)
+          ) {
+            set(resetLoad$);
+          }
+        }),
+        [Symbol.dispose]() {
+          this.unsubscribe();
+        },
+      };
+      const client = get(apiClient$)(workflowsCollectionContract, {
+        // Check actual Clerk state on both sides of delayed token acquisition;
+        // the reactive session key may not have caught up with Clerk yet.
+        getTokenGuard: () => {
+          assertCurrent();
+          return assertCurrent;
+        },
+      });
+      const readWorkflows = async () => {
+        const result = await accept(
+          client.composer({ query: {}, fetchOptions: { signal: loadSignal } }),
+          [200],
+          loadSignal,
+        );
+        assertCurrent();
+        return result.body;
+      };
+      const recencyEnabled = await enabled;
+      signal.throwIfAborted();
+      assertCurrent();
+      const workflows = await readWorkflows();
+      signal.throwIfAborted();
+      if (!recencyEnabled || get(importChecked$)) {
+        return workflows;
+      }
+      if (
+        workflows.some((workflow) => {
+          return typeof workflow.lastUsedAt === "string";
+        })
+      ) {
+        set(importChecked$, true);
+        return workflows;
+      }
+      const workflowIds = set(readLegacyWorkflowIdsForMigration$);
+      if (workflowIds.length === 0) {
+        return workflows;
+      }
+      await accept(
+        client.migrateRecency({
+          body: { workflowIds },
+          fetchOptions: { signal: loadSignal },
+        }),
+        [200],
+        loadSignal,
+      );
+      signal.throwIfAborted();
+      assertCurrent();
+      // Also remember an atomic no-op: server history can be outside the
+      // visible catalog. Never delete or rewrite the legacy browser key.
+      set(importChecked$, true);
+      return await readWorkflows();
+    },
+  );
+  return {
+    needsLoad$: computed((get) => {
+      const request = get(request$);
+      return (
+        request?.version !== get(workflowReloadVersion$) ||
+        request.enabled !== get(workflowRecencyEnabled$)
+      );
+    }),
+    load$: command(async ({ get, set }, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      const version = get(workflowReloadVersion$);
+      const enabled = get(workflowRecencyEnabled$);
+      let request = get(request$);
+      if (request?.version !== version || request.enabled !== enabled) {
+        const result = set(read$, request?.result, enabled, get(rootSignal$));
+        request = { version, enabled, result };
+        set(request$, request);
+      }
+      // The shared HTTP operation belongs to the root, not the first editor
+      // to request it. Unmount cancels only that consumer, not other editors.
+      const workflows = await waitForToken(request.result, signal);
+      const clerk = await get(clerk$);
+      signal.throwIfAborted();
       if (!isCurrentOwner(clerk, owner)) {
         throw new DOMException("Workflow recency owner changed", "AbortError");
       }
-    };
-    assertCurrent();
-    const unsubscribe = clerk.addListener(() => {
-      // Transitive undefined resources do not replace a still-owned session.
-      // Token guards reject during that transition without poisoning it.
-      if (
-        clerk.user === undefined ||
-        clerk.organization === undefined ||
-        clerk.session === undefined
-      ) {
-        return;
-      }
-      if (!isCurrentOwner(clerk, owner)) {
-        set(resetOwner$);
-      }
-    });
-    ownerSignal.addEventListener("abort", unsubscribe, { once: true });
-    const client = createWorkflowRecencyClient(createClient, assertCurrent);
-    initialized = true;
-    return {
-      client,
-      assertCurrent,
-      signal: ownerSignal,
-    };
-  });
-  const open$ = command(async ({ get, set }, signal: AbortSignal) => {
-    let resource = get(resource$);
-    if (!resource) {
-      resource = set(initialize$, signal);
-      set(resource$, resource);
-    }
-    const result = await resource;
-    signal.throwIfAborted();
-    result.assertCurrent();
-    return result;
-  });
-  return open$;
-}
-
-/** One bounded request and migration graph per authenticated owner/app root. */
-function createWorkflowRecencyOwner(owner: string | null) {
-  const open$ = createWorkflowRecencyOwnerResource(owner);
-  const checked$ = state(false);
-  const migrationRevision$ = state(0);
-  const migration$ = state<Promise<void> | null>(null);
-  const readComposer$ = command(
-    async ({ get, set }, consumerSignal: AbortSignal) => {
-      const resource = await set(open$, get(rootSignal$));
-      const signal = AbortSignal.any([resource.signal, consumerSignal]);
-      signal.throwIfAborted();
-      resource.assertCurrent();
-      const result = await accept(
-        resource.client.composer({
-          query: {},
-          fetchOptions: { signal },
-        }),
-        [200],
-        signal,
-      );
-      signal.throwIfAborted();
-      resource.assertCurrent();
-      return result.body;
-    },
-  );
-  const migrate$ = command(
-    async ({ set }, workflowIds: string[], signal: AbortSignal) => {
-      // Only in-flight work is released. Failure remains retryable on the next
-      // genuine opening; success (including an atomic no-op) belongs to owner.
-      using _pending = {
-        [Symbol.dispose]() {
-          set(migration$, null);
-        },
-      };
-      const resource = await set(open$, signal);
-      signal.throwIfAborted();
-      await accept(
-        resource.client.migrateRecency({
-          body: { workflowIds },
-          fetchOptions: { signal: resource.signal },
-        }),
-        [200],
-        resource.signal,
-      );
-      signal.throwIfAborted();
-      resource.assertCurrent();
-      set(checked$, true);
-      set(migrationRevision$, (revision) => {
-        return revision + 1;
-      });
-    },
-  );
-  return {
-    open$,
-    load$: command(
-      async (
-        { get, set },
-        enabled: boolean,
-        signal: AbortSignal,
-      ): Promise<readonly ComposerWorkflow[]> => {
-        const revision = get(migrationRevision$);
-        const workflows = await set(readComposer$, signal);
-        if (!enabled) {
-          return workflows;
-        }
-        const pending = get(migration$);
-        if (pending) {
-          await pending;
-          signal.throwIfAborted();
-          return await set(readComposer$, signal);
-        }
-        // A GET started before another composer imported history must not
-        // publish pre-import data after that import finishes.
-        if (revision !== get(migrationRevision$)) {
-          return await set(readComposer$, signal);
-        }
-        if (get(checked$)) {
-          return workflows;
-        }
-        if (
-          workflows.some((workflow) => {
-            return typeof workflow.lastUsedAt === "string";
-          })
-        ) {
-          set(checked$, true);
-          return workflows;
-        }
-        const legacyIds = set(readLegacyWorkflowIdsForMigration$);
-        if (legacyIds.length === 0) {
-          return workflows;
-        }
-        const migration = set(migrate$, legacyIds, get(rootSignal$));
-        set(migration$, migration);
-        await migration;
-        signal.throwIfAborted();
-        return await set(readComposer$, signal);
-      },
-    ),
+      return workflows;
+    }),
   };
 }
 
-const recencyOwner$ = computed((get) => {
+const composerWorkflowList$ = computed((get) => {
   get(rootVersion$);
-  return createWorkflowRecencyOwner(get(authenticatedSessionKey$));
+  return createComposerWorkflowList(get(authenticatedSessionKey$));
 });
 
-interface ComposerWorkflowRequestKey {
-  readonly owner: ReturnType<typeof createWorkflowRecencyOwner>;
-  readonly enabled: Promise<boolean>;
-}
+export const composerWorkflowsNeedLoad$ = computed((get) => {
+  return get(get(composerWorkflowList$).needsLoad$);
+});
 
-export function createComposerWorkflows() {
-  const requestKey$ = computed((get): ComposerWorkflowRequestKey => {
-    get(recencyVersion$);
-    get(queryVersion$);
-    get(workflowReloadVersion$);
-    return {
-      owner: get(recencyOwner$),
-      enabled: get(workflowRecencyEnabled$),
-    };
-  });
-  const mountVersion$ = state(0);
-  const request$ = state<{
-    readonly key: ComposerWorkflowRequestKey;
-    readonly result: Promise<readonly ComposerWorkflow[]>;
-  } | null>(null);
-  const loadRequest$ = command(
-    async ({ set }, key: ComposerWorkflowRequestKey, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const enabled = await key.enabled;
-      signal.throwIfAborted();
-      return await set(key.owner.load$, enabled, signal);
-    },
-  );
-  return {
-    mount$: command(async ({ get, set }, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const version = get(mountVersion$) + 1;
-      set(mountVersion$, version);
-      set(request$, null);
-      signal.addEventListener(
-        "abort",
-        () => {
-          if (get(mountVersion$) === version) {
-            set(request$, null);
-          }
-        },
-        { once: true },
-      );
-      await set(get(recencyOwner$).open$, get(rootSignal$));
-      signal.throwIfAborted();
-    }),
-    load$: command(
-      (
-        { get, set },
-        signal: AbortSignal,
-      ): Promise<readonly ComposerWorkflow[]> => {
-        signal.throwIfAborted();
-        const key = get(requestKey$);
-        const current = get(request$);
-        if (current?.key === key) {
-          return current.result;
-        }
-        const result = set(loadRequest$, key, signal);
-        set(request$, { key, result });
-        return result;
-      },
-    ),
-    needsLoad$: computed((get) => {
-      return get(request$)?.key !== get(requestKey$);
-    }),
-  };
-}
+export const loadComposerWorkflows$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    return await set(get(composerWorkflowList$).load$, signal);
+  },
+);

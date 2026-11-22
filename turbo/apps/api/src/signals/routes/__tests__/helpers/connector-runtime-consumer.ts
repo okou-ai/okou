@@ -50,16 +50,13 @@ export async function withConnectorRuntime(
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const firewall = createFirewallApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, options);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Connector credential consumer",
-    visibility: "private",
-  });
+
   const owned: { runId?: string } = {};
   let cleanupPromise: Promise<void> | undefined;
   async function cleanupOwnedResources(): Promise<void> {
@@ -76,7 +73,6 @@ export async function withConnectorRuntime(
   onTestFinished(cleanup);
 
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Use the connected account",
     ...(options.model === undefined ? {} : { model: options.model }),
   });

@@ -651,7 +651,6 @@ describe("template usage Axiom transport", () => {
       mockNow(committedAt);
       const sourceEventId = randomUUID();
       const body = {
-        agentId: owned.agentId,
         prompt: "Prepare an invoice and an illustration",
         clientEventId: sourceEventId,
         userMessage: {

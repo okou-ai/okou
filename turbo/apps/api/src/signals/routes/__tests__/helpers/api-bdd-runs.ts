@@ -52,7 +52,6 @@ import { env, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { mockStripeClient } from "../../../external/stripe-client";
-import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
 import { billingUsagePackCreditsRoutes } from "../../billing-usage-pack-credits";
 import { cliAuthRoutes } from "../../cli-auth";
@@ -136,7 +135,6 @@ const runRoutes = [
   ...runDetailRoutes,
   ...runsRoutes,
   ...runsCancelRoutes,
-  ...agentsRoutes,
   ...userModelPreferenceRoutes,
 ] as const;
 
@@ -384,32 +382,20 @@ export function createRunsApi(context: TestContext) {
   async function createThreadRun(
     actor: ApiTestUser,
     body: {
-      readonly agentId?: string;
       readonly prompt: string;
       /**
        * An explicit send model (null is Auto); omitted, the thread or member
        * selection applies.
        */
       readonly model?: string | null;
-      /** Continue an existing thread, which resumes its Agent session. */
+      /** Continue an existing thread, which resumes its runtime session. */
       readonly threadId?: string;
       /** Request staff-only network body capture for the run. */
       readonly captureNetworkBodies?: boolean;
     },
   ) {
     const chat = createChatFilesBddApi(context);
-    let threadId = body.threadId;
-    if (threadId === undefined && body.agentId !== undefined) {
-      const defaultAgentId =
-        await createBddApi(context).readDefaultAgentId(actor);
-      if (body.agentId !== defaultAgentId) {
-        // Exercise legacy clients that create the thread before sending.
-        const thread = await chat.createThread(actor, {
-          model: body.model,
-        });
-        threadId = thread.id;
-      }
-    }
+    const { threadId } = body;
     const clientEventId = randomUUID();
     const sent = await chat.requestSendEvent(
       actor,
@@ -461,7 +447,6 @@ export function createRunsApi(context: TestContext) {
   async function readThreadRunRejection(
     actor: ApiTestUser,
     body: {
-      readonly agentId: string;
       readonly prompt: string;
       /** Null selects Auto. */
       readonly model?: string | null;
@@ -636,7 +621,6 @@ export function createRunsApi(context: TestContext) {
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
-      readonly defaultAgentId: string;
       readonly credits: number;
     }> {
       const run =
@@ -802,16 +786,11 @@ export function createRunsApi(context: TestContext) {
         );
       }
 
-      // Bootstrap only after the paid entitlement exists. Onboarding status
-      // then creates a default agent without granting limited-free credits or
-      // replacing metadata on an existing default agent.
+      // Complete onboarding after the paid entitlement is visible.
       const bdd = createBddApi(context);
-      const onboardingAgentId = await run(() => {
-        return bdd.readDefaultAgentId(actor);
+      await run(() => {
+        return bdd.provisionWorkspace(actor);
       });
-      if (!onboardingAgentId) {
-        throw new Error("Expected paid onboarding to create a default agent");
-      }
       const completed = await run(() => {
         return bdd.completeOnboarding(actor);
       });
@@ -826,7 +805,6 @@ export function createRunsApi(context: TestContext) {
         customerId,
         subscriptionId,
         invoiceId,
-        defaultAgentId: onboardingAgentId,
         credits: billingStatus.body.credits,
       };
     },

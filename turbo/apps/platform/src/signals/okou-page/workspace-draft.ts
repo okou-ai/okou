@@ -1,7 +1,7 @@
 import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed, state, type Command } from "ccstate";
 import { currentOrgInfo$, currentUserInfo$ } from "../auth.ts";
-import { composerDraftContract } from "@okouai/api-contracts/client/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/client/composer-draft";
 import type {
   PersistedAttachment,
   UserMessageDocument,

@@ -12,7 +12,6 @@ stdout_file="${tmp_dir}/stdout"
 stderr_file="${tmp_dir}/stderr"
 expected_file="${tmp_dir}/expected"
 attempts_file="${tmp_dir}/curl-attempts"
-agent_payload_file="${tmp_dir}/agent-payload"
 printf '0' >"$attempts_file"
 
 fail() {
@@ -70,7 +69,7 @@ curl() {
     local fail_with_body_enabled=false
     local saw_fail_with_body=false
     local saw_vercel_write_out=false
-    local write_out='' connect_timeout='' max_time='' request_payload=''
+    local write_out='' connect_timeout='' max_time=''
     local attempt
     attempt="$(record_curl_attempt)"
 
@@ -99,10 +98,6 @@ curl() {
             --max-time)
                 shift
                 max_time="$1"
-                ;;
-            -d)
-                shift
-                request_payload="$1"
                 ;;
         esac
         shift
@@ -150,34 +145,6 @@ curl() {
             echo "Vercel logs: $MOCK_CURL_EXPECTED_VERCEL_URL" >&2
             return 28
             ;;
-        agent-no-response | agent-no-response-then-success | agent-http-error | agent-mismatched-id)
-            jq -e '.clientAgentId | test("^[0-9a-f-]{36}$")' \
-                <<<"$request_payload" >/dev/null || return 99
-            if ((attempt == 1)); then
-                printf '%s' "$request_payload" >"$agent_payload_file"
-            else
-                [[ "$request_payload" == "$(<"$agent_payload_file")" ]] || {
-                    echo "Agent retry changed the creation payload" >&2
-                    return 100
-                }
-            fi
-            if [[ "$MOCK_CURL_MODE" == agent-http-error ]]; then
-                printf '{"error":{"code":"CONFLICT"}}'
-                return 22
-            fi
-            if [[ "$MOCK_CURL_MODE" == agent-mismatched-id ]]; then
-                printf '{"agentId":"different-agent"}'
-                return 0
-            fi
-            if [[ "$MOCK_CURL_MODE" == agent-no-response-then-success ]] &&
-                ((attempt > 1)); then
-                jq -c '{agentId: .clientAgentId}' <<<"$request_payload"
-                return 0
-            fi
-            printf '{"partial":'
-            echo "curl: (28) Operation timed out" >&2
-            return 28
-            ;;
         *)
             echo "unexpected mock curl mode: $MOCK_CURL_MODE" >&2
             return 97
@@ -195,14 +162,6 @@ run_request() {
 
 run_wait_for_run() {
     if runner_wait_for_run "$1" 2 >"$stdout_file" 2>"$stderr_file"; then
-        request_status=0
-    else
-        request_status=$?
-    fi
-}
-
-run_agent_create() {
-    if create_runner_agent "Retry Agent" >"$stdout_file" 2>"$stderr_file"; then
         request_status=0
     else
         request_status=$?
@@ -309,48 +268,12 @@ run_request "/api/chat/events" -d "$payload"
 assert_status 28
 assert_curl_attempts 1
 
-# Agent creation has an API-enforced client identity. Both attempts reuse it,
-# and a partial timed-out response must not contaminate the recovered Agent ID.
-MOCK_CURL_EXPECTED_URL="https://pr-27981-api.vm6.ai/api/agents"
-MOCK_CURL_EXPECTED_VERCEL_WRITE_OUT='%{onerror}%{stderr}Vercel logs: https://vercel.com/okou/vm0-api/logs?search=requestHost%%3Apr-27981-api.vm6.ai+requestPath%%3A%%2Fapi%%2Fagents+status%%3A%{http_code}&timeline=past12Hours\n'
-MOCK_CURL_EXPECTED_CONNECT_TIMEOUT=5
-MOCK_CURL_EXPECTED_MAX_TIME=5
-MOCK_CURL_MODE=agent-no-response-then-success
-reset_curl_attempts
-run_agent_create
-assert_status 0
-assert_curl_attempts 2
-assert_file_equals "$(jq -r '.clientAgentId' "$agent_payload_file")"$'\n' "$stdout_file"
-assert_file_equals '' "$stderr_file"
-
-MOCK_CURL_MODE=agent-no-response
-reset_curl_attempts
-run_agent_create
-assert_status 28
-assert_curl_attempts 2
-assert_file_equals '' "$stdout_file"
-assert_file_excludes "$stderr_file" "$E2E_API_TOKEN"
-assert_file_excludes "$stderr_file" "$VERCEL_AUTOMATION_BYPASS_SECRET"
-
-MOCK_CURL_MODE=agent-http-error
-reset_curl_attempts
-run_agent_create
-assert_status 22
-assert_curl_attempts 1
-
-MOCK_CURL_MODE=agent-mismatched-id
-reset_curl_attempts
-run_agent_create
-assert_status 4
-assert_curl_attempts 1
-assert_file_equals '' "$stdout_file"
-
 # Existing caller overrides still apply to each eligible attempt.
-MOCK_CURL_MODE=agent-no-response-then-success
+MOCK_CURL_MODE=no-response-then-success
 MOCK_CURL_EXPECTED_CONNECT_TIMEOUT=2
 MOCK_CURL_EXPECTED_MAX_TIME=3
 reset_curl_attempts
-E2E_CURL_CONNECT_TIMEOUT_SECONDS=2 E2E_CURL_MAX_TIME_SECONDS=3 run_agent_create
+E2E_CURL_CONNECT_TIMEOUT_SECONDS=2 E2E_CURL_MAX_TIME_SECONDS=3 run_request "/api/chat/events"
 assert_status 0
 assert_curl_attempts 2
 

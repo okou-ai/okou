@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_resources">대화 자료</string>
+    <string name="chat_resources_back">대화 자료로 돌아가기</string>
     <string name="artifact_title">결과물</string>
     <string name="artifact_search">결과물 검색</string>
     <string name="artifact_return_workspace">워크스페이스로 돌아가기</string>

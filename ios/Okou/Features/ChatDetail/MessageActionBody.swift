@@ -29,7 +29,7 @@ enum MessageActionBody {
     return nil
   }
   static func blocks(
-    _ content: AttributedString, webURL: URL, agentID: String?, threadID: String,
+    _ content: AttributedString, webURL: URL, threadID: String,
     permissionMember: WorkspaceMemberID?
   )
     -> [Block]
@@ -50,7 +50,7 @@ enum MessageActionBody {
         candidates = [(run.range, link.absoluteString)]
       } else {
         let text = String(content[run.range].characters)
-        let matches = text.ranges(of: #/https?://[^\s<>"`]+|/(?:connectors|agents)/[^\s<>"`]+/#)
+        let matches = text.ranges(of: #/https?://[^\s<>"`]+|/connectors/[^\s<>"`]+/#)
         candidates = matches.map { range in
           let value = String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;!"))
           let start = content.characters.index(
@@ -63,9 +63,7 @@ enum MessageActionBody {
       for (range, value) in candidates {
         guard range.lowerBound >= cursor else { continue }
         let block: Block
-        if let agentID,
-          let action = otherAction(value, webURL: webURL, agentID: agentID, threadID: threadID)
-        {
+        if let action = otherAction(value, webURL: webURL, threadID: threadID) {
           block = action
         } else if let permissionMember,
           let url = ChatPermissionAction.trustedURL(value, webURL: webURL)
@@ -110,7 +108,7 @@ enum MessageActionBody {
     return blocks
   }
 
-  private static func otherAction(_ value: String, webURL: URL, agentID: String, threadID: String)
+  private static func otherAction(_ value: String, webURL: URL, threadID: String)
     -> Block?
   {
     if let approval = approvalBlock(value, webURL: webURL) { return approval }
@@ -119,7 +117,7 @@ enum MessageActionBody {
     }
     let computer = ChatComputerAuthorizationAction.parse(value, webURL: webURL, threadID: threadID)
     if let computer { return .computerAuthorization(computer) }
-    return ChatConnectorAction.parse(value, webURL: webURL, agentID: agentID, threadID: threadID)
+    return ChatConnectorAction.parse(value, webURL: webURL, threadID: threadID)
       .map(Block.connector)
   }
 

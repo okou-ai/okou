@@ -85,7 +85,7 @@ extension OkouChatRowLabel where Status == EmptyView {
 struct OkouChatStates: OptionSet {
   let rawValue: Int
 
-  /// The agent is running in the chat.
+  /// Okou is running in the chat.
   static let working = OkouChatStates(rawValue: 1 << 0)
   /// The chat sends no notifications and shows no unread dot.
   static let muted = OkouChatStates(rawValue: 1 << 1)
@@ -125,7 +125,7 @@ struct OkouChatStates: OptionSet {
 /// The one mark a chat row's trailing column draws.
 enum OkouChatTrailing: Equatable {
   case none
-  /// `OkouRunningSpinner`: the agent is working.
+  /// `OkouRunningSpinner`: Okou is working.
   case working
   /// A quiet `bell-off`: the chat is muted.
   case muted

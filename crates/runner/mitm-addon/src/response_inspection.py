@@ -9,6 +9,7 @@ batch limit; zlib and identity output deliveries are hard chunk-bounded.
 
 import asyncio
 from collections.abc import Callable, Generator, Iterator
+from functools import partial
 from typing import Protocol
 
 # Each step is at most one bounded row/event (including accounting), or a
@@ -125,7 +126,16 @@ def json_steps(inspector: _JsonFeed, chunk: bytes) -> Generator[None]:
         yield
 
 
-def decoded_steps(
+def inspect_decoded_response(
+    iter_chunks: Callable[[bytes], Iterator[bytes]],
+    feed_steps: Callable[[bytes], Iterator[None]],
+    fail: Callable[[str], None],
+) -> CooperativeResponseInspection:
+    """Bind one streaming decoder and parser to a cooperative inspection owner."""
+    return CooperativeResponseInspection(partial(_decoded_steps, iter_chunks, feed_steps), fail)
+
+
+def _decoded_steps(
     iter_chunks: Callable[[bytes], Iterator[bytes]],
     feed_steps: Callable[[bytes], Iterator[None]],
     chunk: bytes,

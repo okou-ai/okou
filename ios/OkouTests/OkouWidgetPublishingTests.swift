@@ -14,7 +14,7 @@ final class OkouWidgetPublishingTests: XCTestCase {
   ) -> ChatThread {
     let sortAt = base.addingTimeInterval(-minutesAgo * 60)
     return ChatThread(
-      id: String(format: "00000000-0000-0000-0000-%012d", id), agentID: "okou", title: title,
+      id: String(format: "00000000-0000-0000-0000-%012d", id), title: title,
       createdAt: sortAt, updatedAt: sortAt, sortAt: sortAt,
       pinnedAt: pinned ? sortAt : nil, isArchived: archived, indicator: indicator,
       unreadAt: indicator == .unread ? sortAt : nil, isMuted: muted)

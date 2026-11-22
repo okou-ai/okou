@@ -12,7 +12,6 @@ final class UnreadPersistenceTests: XCTestCase {
     let hasThread = Mutex(false)
     let failing = Mutex(false)
     let threadID = ConversationHistoryFixture.threadID
-    let agentID = ConversationHistoryFixture.agentID
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/chat-threads/snapshot":
@@ -22,7 +21,7 @@ final class UnreadPersistenceTests: XCTestCase {
         let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
           .queryItems?.first { $0.name == "sinceSeqId" }?.value
         let event = """
-          {"id":"67000000-0000-4000-8000-000000000001","seqId":1,"kind":"created","chatThreadId":"\(threadID)","agentId":"\(agentID)","title":"New answer","createdAt":"2026-11-09T00:00:00Z"}
+          {"id":"67000000-0000-4000-8000-000000000001","seqId":1,"kind":"created","chatThreadId":"\(threadID)","title":"New answer","createdAt":"2026-11-09T00:00:00Z"}
           """
         let events = hasThread.withLock { $0 } && (since == nil || since == "0") ? event : ""
         return ChatHTTPResponse(body: "{\"events\":[\(events)],\"hasMore\":false}")
@@ -82,7 +81,6 @@ final class UnreadPersistenceTests: XCTestCase {
     offline.withLock { $0 = true }
     await mounted.list.restoreCached()
     XCTAssertEqual(mounted.list.threads.first?.indicator, .unread)
-    XCTAssertEqual(mounted.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
 
     let cold = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL,
@@ -91,7 +89,6 @@ final class UnreadPersistenceTests: XCTestCase {
     await cold.list.restoreCached()
     XCTAssertEqual(cold.list.threads.first?.indicator, .unread)
     XCTAssertTrue(cold.list.hasUnreadThreads)
-    XCTAssertEqual(cold.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
   }
 
   func testFailedUnreadReadsKeepThePresentationWithoutAUserFacingError() async throws {
@@ -118,7 +115,6 @@ final class UnreadPersistenceTests: XCTestCase {
     await store.list.refresh()
     await store.list.refreshIndicators()
     XCTAssertEqual(store.list.threads.first?.indicator, .unread)
-    XCTAssertEqual(store.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
     XCTAssertNil(store.list.syncError)
     XCTAssertNil(store.error)
   }
@@ -126,10 +122,10 @@ final class UnreadPersistenceTests: XCTestCase {
 
 private func unreadPresentation(_ unread: Bool) -> ChatHTTPResponse {
   guard unread else {
-    return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+    return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
   }
   return ChatHTTPResponse(
     body: """
-      {"agents":{"\(ConversationHistoryFixture.agentID)":"unread"},"threads":{"\(ConversationHistoryFixture.threadID)":"unread"},"unreadAt":{"\(ConversationHistoryFixture.threadID)":"2026-11-09T00:00:00Z"}}
+      {"threads":{"\(ConversationHistoryFixture.threadID)":"unread"},"unreadAt":{"\(ConversationHistoryFixture.threadID)":"2026-11-09T00:00:00Z"}}
       """)
 }

@@ -28,7 +28,6 @@ describe("chat indicator realtime signal", () => {
     await owned.run(async () => {
       context.mocks.ably.publish.mockClear();
       const run = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "summarize the release checklist",
         model: "claude-fable-5-1",
       });
@@ -91,7 +90,6 @@ describe("chat indicator realtime signal", () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const run = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "cancel this before a Runner starts it",
       });
       context.mocks.ably.publish.mockClear();

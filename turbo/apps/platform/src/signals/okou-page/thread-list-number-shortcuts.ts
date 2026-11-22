@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { currentChatThreadListIds$ } from "../agent-chat.ts";
+import { currentChatThreadListIds$ } from "../chat-thread-list.ts";
 import { currentLeftThread$ } from "../chat-page/chat-thread-panes.ts";
 import { loadLeftThread$ } from "../chat-page/chat-thread-pane-navigation.ts";
 import { onDomEventFn, onRef } from "../utils.ts";

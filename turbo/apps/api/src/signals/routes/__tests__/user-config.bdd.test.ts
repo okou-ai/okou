@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { expectApiError } from "./helpers/api-bdd";
@@ -28,7 +28,7 @@ credentials come from device authorization.
 */
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 const cfg = createUserConfigBddApi(context);
 
 afterEach(() => {
@@ -46,21 +46,18 @@ function slug(prefix: string): string {
 async function onboardAdmin(
   admin: ApiTestUser,
   options: { readonly slug?: string } = {},
-): Promise<string> {
+): Promise<void> {
   const orgState: { slug?: string } = {};
   if (options.slug !== undefined) {
     orgState.slug = options.slug;
   }
   api.mockClerkOrg(admin, orgState);
-  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
-    displayName: "BDD User Config Agent",
-  });
+  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin);
   if (bootstrap.status !== 200) {
     throw new Error(
       `Expected onboarding bootstrap to succeed, got ${bootstrap.status}`,
     );
   }
-  return bootstrap.body.agentId;
 }
 
 describe("AUTH-03 user model preference", () => {
@@ -388,7 +385,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     let carrier:
       | {
           actor: ApiTestUser;
-          agentId: string;
           kmsKeyId: string | undefined;
           storageBucket: string;
           runId?: string;
@@ -430,7 +426,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       const owned = await fixture.entitledNativeChatActor();
       const activeCarrier: NonNullable<typeof carrier> = {
         actor: owned.actor,
-        agentId: owned.agentId,
         kmsKeyId: env("SECRETS_KMS_KEY_ID"),
         storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
       };

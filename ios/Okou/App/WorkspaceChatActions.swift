@@ -267,20 +267,20 @@ final class WorkspaceChatActions {
   func deleteThread(_ id: String) async -> Bool {
     guard let workspace else { return false }
     guard !closed, !needsUpgrade, workspace.list.canUpdate(id),
-      let thread = workspace.list.threads.first(where: { $0.id == id })
+      workspace.list.threads.contains(where: { $0.id == id })
     else { return false }
     return await deleteThread(
-      id, agentID: thread.agentID, eventID: UUID().uuidString.lowercased())
+      id, eventID: UUID().uuidString.lowercased())
   }
 
-  private func deleteThread(_ id: String, agentID: String?, eventID: String) async -> Bool {
+  private func deleteThread(_ id: String, eventID: String) async -> Bool {
     guard let workspace else { return false }
     guard !closed, !needsUpgrade else { return false }
     // Earlier feedback for this chat (Undo archive) has nothing left to act on.
     if threadFeedback?.threadID == id { threadFeedback = nil }
     var failure: String?
     let deleted = await workspace.list.delete(
-      id, agentID: agentID, eventID: eventID, onFailure: { failure = $0 })
+      id, eventID: eventID, onFailure: { failure = $0 })
     guard !closed, !needsUpgrade else { return false }
     if deleted {
       workspace.notificationReadStateChanged()
@@ -291,7 +291,7 @@ final class WorkspaceChatActions {
         actionTitle: String(localized: "Retry"), persists: true, actsOnHiddenChat: true,
         kind: .error
       ) { [weak self] in
-        _ = await self?.deleteThread(id, agentID: agentID, eventID: eventID)
+        _ = await self?.deleteThread(id, eventID: eventID)
       }
     }
     return deleted
@@ -335,7 +335,7 @@ final class WorkspaceChatActions {
     else { return }
     fork = ChatForkStore(
       selection: selection, sourceRunID: runID, projectID: conversation.thread.projectId,
-      agentID: nil, commands: commands, models: workspace.modelStore,
+      commands: commands, models: workspace.modelStore,
       workflowSource: workspace.composerWorkflows,
       lifecycleTasks: lifecycleTasks,
       didCreate: { [weak self] thread in self?.workspace?.list.insertCreated(thread) },

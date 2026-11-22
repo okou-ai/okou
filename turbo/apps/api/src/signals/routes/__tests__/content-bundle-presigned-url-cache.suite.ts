@@ -44,7 +44,6 @@ describe("content bundle presigned URL cache", () => {
 
   async function entitledWorkflowActor(): Promise<{
     readonly actor: ApiTestUser;
-    readonly agentId: string;
     readonly runnerGroup: string;
   }> {
     const bdd = createBddApi(context);
@@ -53,11 +52,11 @@ describe("content bundle presigned URL cache", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = await api.configureRunnerGroup();
-    const { defaultAgentId } = await api.grantProEntitlement(actor);
+    await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    return { actor, agentId: defaultAgentId, runnerGroup };
+    return { actor, runnerGroup };
   }
 
   beforeEach(() => {
@@ -70,7 +69,7 @@ describe("content bundle presigned URL cache", () => {
   });
 
   async function workflowCacheFixture() {
-    const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
+    const { actor, runnerGroup } = await entitledWorkflowActor();
     const misc = createMiscRoutesApi(context);
     const chats = createChatEventsFixture(context);
     installWorkflowVolumeS3Fixture(context);
@@ -98,7 +97,6 @@ describe("content bundle presigned URL cache", () => {
     };
     return {
       actor,
-      agentId,
       runnerGroup,
       workflow: workflow.body,
       misc,
@@ -108,7 +106,7 @@ describe("content bundle presigned URL cache", () => {
   }
 
   it("issues and reuses two-day URLs for Connector Skill bundles", async () => {
-    const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
+    const { actor, runnerGroup } = await entitledWorkflowActor();
     if (!actor.orgId) {
       throw new Error("Expected readonly cache test actor to have an org");
     }
@@ -143,7 +141,6 @@ describe("content bundle presigned URL cache", () => {
     mockUniquePresignedUrls();
     const createExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
-        agentId,
         prompt,
       });
       await api.heartbeatRunner(runnerGroup);
@@ -319,7 +316,7 @@ describe("content bundle presigned URL cache", () => {
   });
 
   it("retains the newer URL when an older cold signer publishes last", async () => {
-    const { actor, agentId, chats, readWorkflowExecution } =
+    const { actor, chats, readWorkflowExecution } =
       await workflowCacheFixture();
     const api = createRunsApi(context);
     const startedAt = Math.floor(now() / 1000) * 1000;
@@ -336,7 +333,6 @@ describe("content bundle presigned URL cache", () => {
     });
     const oldExecution = withMockNowForTest(startedAt, () => {
       return api.createThreadRun(actor, {
-        agentId,
         prompt: "Older cache publisher",
       });
     });

@@ -84,7 +84,6 @@ public enum ChatThreadReplay {
     if event.kind == .created {
       threads[event.chatThreadId] = ChatThread(
         id: event.chatThreadId,
-        agentID: event.agentId,
         title: event.title ?? "",
         projectId: event.projectId,
         selectedModel: event.selectedModel,
@@ -145,7 +144,6 @@ public enum ChatThreadReplay {
       thread.computerUseHostId = event.computerUseHostId
       thread.cloudBrowserEnabled = event.cloudBrowserEnabled ?? false
     case .sortTouched:
-      thread.agentID = event.reassignedAgentId ?? thread.agentID
       if event.createdAt > thread.sortAt { thread.sortAt = event.createdAt }
       threads[event.chatThreadId] = thread
       return
@@ -175,9 +173,8 @@ public enum ChatThreadReplay {
     }
 
     // An explicit rank moves a pinned thread without changing activity or
-    // updated time. Canonical agent reassignment applies to every thread.
+    // updated time.
     if let rank = event.pinOrder {
-      thread.agentID = event.reassignedAgentId ?? thread.agentID
       if thread.pinnedAt != nil {
         thread.pinOrder = rank
       }

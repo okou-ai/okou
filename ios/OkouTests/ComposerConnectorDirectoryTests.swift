@@ -220,7 +220,6 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
       old.close()
       gate.open()
     }
-    old.configure(agentID: "same-agent")
     old.openDirectory()
     let retired = try XCTUnwrap(old.directory)
     let pending = try own(retired.store.get(retired.catalog))
@@ -233,7 +232,6 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
     }
     let next = makeComposer(nextFixture)
     defer { next.close() }
-    next.configure(agentID: "same-agent")
     next.openDirectory()
     let resources = try XCTUnwrap(next.directory)
     let current = try own(resources.store.get(resources.catalog))
@@ -244,7 +242,7 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
     if case .success = await pending.result { XCTFail("A retired workspace published its result") }
     let reused = try await resources.store.get(resources.catalog).value
     XCTAssertEqual(reused.connectors.first?.label, "New workspace")
-    next.configure(agentID: "another-agent")
+    next.closeDirectory()
     XCTAssertThrowsError(try resources.store.get(resources.catalog))
   }
 

@@ -79,18 +79,15 @@ async function setupCustomOAuthFirewall(
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
   const actor = publicFixture.actor;
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Custom OAuth refresh agent",
-  });
+
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "resolve custom OAuth firewall auth",
   });
   publicFixture.registerRun(run.runId);

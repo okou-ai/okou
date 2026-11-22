@@ -26,7 +26,6 @@ final class ChatIndicatorRefreshTests: XCTestCase {
     fixture.state.values.withLock { $0.indicator = "unread" }
     await workspace.refresh([.indicators])
     XCTAssertTrue(workspace.list.threads.first?.isUnread == true)
-    XCTAssertEqual(workspace.list.unreadAgentIDs, [fixture.agentID])
     XCTAssertEqual(fixture.reads("/api/indicators"), initialIndicatorReads + 1)
     XCTAssertEqual(fixture.reads("/api/chat-threads/events"), listReads)
   }
@@ -73,7 +72,7 @@ final class ChatIndicatorRefreshTests: XCTestCase {
       await refresh.value
     }
     await fulfillment(of: [began], timeout: 3)
-    try await waitForBusinessResult { workspace.list.unreadAgentIDs.contains(fixture.agentID) }
+    try await waitForBusinessResult { workspace.list.activeThreadIDs.contains(fixture.threadID) }
     gate.open()
     await refresh.value
     XCTAssertEqual(workspace.list.threads.first?.id, fixture.threadID)
@@ -92,13 +91,11 @@ private final class IndicatorListFixture: Sendable {
   }
   let state = State()
   let threadID = UUID().uuidString.lowercased()
-  let agentID = UUID().uuidString.lowercased()
   let http: ChatHTTPFixture
 
   init(beforeRead: @escaping @Sendable (String) async -> Void = { _ in }) {
     let state = state
     let threadID = threadID
-    let agentID = agentID
     http = ChatHTTPFixture { request in
       let path = request.url!.path
       let current = state.values.withLock { value in
@@ -110,7 +107,7 @@ private final class IndicatorListFixture: Sendable {
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(threadID)","agentId":"\(agentID)",\
+            {"chatThreads":[{"id":"\(threadID)",\
             "title":"\(current.0)","createdAt":"2026-11-13T00:00:00Z",\
             "updatedAt":"2026-11-13T00:00:00Z",\
             "sortAt":"2026-11-13T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
@@ -120,7 +117,7 @@ private final class IndicatorListFixture: Sendable {
       case "/api/indicators":
         return ChatHTTPResponse(
           body: """
-            {"agents":{"\(agentID)":"unread"},"threads":{"\(threadID)":"\(current.1)"},\
+            {"threads":{"\(threadID)":"\(current.1)"},\
             "unreadAt":{"\(threadID)":"2026-11-13T00:00:00Z"}}
             """)
       case "/api/chat/events/catch-up":

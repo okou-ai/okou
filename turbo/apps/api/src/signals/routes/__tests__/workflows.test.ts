@@ -1101,7 +1101,7 @@ describe("workflows", () => {
     "rejects an older %s Workflow upload after a newer update publishes",
     async (visibility) => {
       const actor = user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
 
       const s3 = installVolumeS3Fixture();
       const workflow = await createWorkflow(actor, {

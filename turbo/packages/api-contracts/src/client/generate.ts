@@ -1,14 +1,9 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import ts from "typescript";
 
-import {
-  agentInstructionsContract,
-  agentsByIdContract,
-  agentsMainContract,
-} from "../contracts/agents";
 import type { AppRoute, AppRouter } from "../contracts/trpc-contract";
 import {
   discoverClientContractImportModules,
@@ -240,21 +235,6 @@ export function renderClientDescriptorModule({
   return lines.join("\n");
 }
 
-/** Kept for callers of the original agents-only generation API. */
-export function renderAgentsClientDescriptors(): string {
-  return renderClientDescriptorModule({
-    module: "agents",
-    contracts: [
-      {
-        name: "agentInstructionsContract",
-        contract: agentInstructionsContract,
-      },
-      { name: "agentsByIdContract", contract: agentsByIdContract },
-      { name: "agentsMainContract", contract: agentsMainContract },
-    ],
-  });
-}
-
 export function renderClientDescriptorManifest(
   modules: readonly ClientContractModule[],
 ): string {
@@ -431,60 +411,51 @@ export async function generateClientDescriptors({
   check = false,
   outputDirectory = clientDirectory,
   sourceDirectory = contractsDirectory,
-  outputPath,
 }: {
   check?: boolean;
   outputDirectory?: string;
   sourceDirectory?: string;
-  /** Legacy agents-only fixture output. Default generation always covers all modules. */
-  outputPath?: string;
 } = {}): Promise<void> {
-  const modules = outputPath
-    ? []
-    : await discoverClientContractModules({ sourceDirectory });
-  const outputs: readonly (readonly [string, string])[] = outputPath
-    ? [[outputPath, renderAgentsClientDescriptors()]]
-    : [
-        ...modules.map((module) => {
-          return [
-            join(outputDirectory, `${module.module}.ts`),
-            renderClientDescriptorModule(module),
-          ] as const;
+  const modules = await discoverClientContractModules({ sourceDirectory });
+  const outputs: readonly (readonly [string, string])[] = [
+    ...modules.map((module) => {
+      return [
+        join(outputDirectory, `${module.module}.ts`),
+        renderClientDescriptorModule(module),
+      ] as const;
+    }),
+    [
+      join(outputDirectory, "manifest.ts"),
+      renderClientDescriptorManifest(modules),
+    ],
+    [
+      join(outputDirectory, "testing.ts"),
+      renderClientDescriptorTestingRegistry(modules),
+    ],
+    [
+      join(outputDirectory, "imports.ts"),
+      renderClientContractImportManifest(
+        await discoverClientContractImportModules({
+          modules,
+          sourceDirectory,
         }),
-        [
-          join(outputDirectory, "manifest.ts"),
-          renderClientDescriptorManifest(modules),
-        ],
-        [
-          join(outputDirectory, "testing.ts"),
-          renderClientDescriptorTestingRegistry(modules),
-        ],
-        [
-          join(outputDirectory, "imports.ts"),
-          renderClientContractImportManifest(
-            await discoverClientContractImportModules({
-              modules,
-              sourceDirectory,
-            }),
-          ),
-        ],
-      ];
+      ),
+    ],
+  ];
   const stale: string[] = [];
   for (const [path, expected] of outputs) {
     if ((await readGeneratedFile(path)) !== expected) {
       stale.push(path);
     }
   }
-  const obsolete = outputPath
-    ? []
-    : await findObsoleteGeneratedFiles(
-        outputDirectory,
-        new Set(
-          outputs.map(([path]) => {
-            return path;
-          }),
-        ),
-      );
+  const obsolete = await findObsoleteGeneratedFiles(
+    outputDirectory,
+    new Set(
+      outputs.map(([path]) => {
+        return path;
+      }),
+    ),
+  );
   if (check && (stale.length > 0 || obsolete.length > 0)) {
     throw new Error(
       `Generated client descriptors are out of date (${[...stale, ...obsolete]
@@ -497,7 +468,7 @@ export async function generateClientDescriptors({
     );
   }
   if (!check) {
-    await mkdir(outputPath ? dirname(outputPath) : outputDirectory, {
+    await mkdir(outputDirectory, {
       recursive: true,
     });
     for (const [path, expected] of outputs) {

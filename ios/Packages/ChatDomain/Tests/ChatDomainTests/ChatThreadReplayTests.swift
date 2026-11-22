@@ -4,26 +4,24 @@ import XCTest
 
 private let replayThread = "10000000-0000-4000-8000-000000000101"
 private let replayOtherThread = "10000000-0000-4000-8000-000000000102"
-private let replayAgent = "10000000-0000-4000-8000-000000000103"
 
 final class ChatThreadReplayTests: XCTestCase {
 
-  func testProjectMembershipMovesAndLeavesWithoutChangingAgentOrActivity() throws {
+  func testProjectMembershipMovesAndLeavesWithoutChangingActivity() throws {
     let original = try XCTUnwrap(
       ChatThreadReplay.replay(
         snapshot: [], events: [event(.created, at: 1, title: "Planning")]
       ).first)
     let project = "10000000-0000-4000-8000-000000000071"
     let moved = ChatThreadChange(
-      kind: .projectUpdated, chatThreadId: replayThread, agentId: replayAgent,
+      kind: .projectUpdated, chatThreadId: replayThread,
       projectId: project, createdAt: date(10))
     let member = try XCTUnwrap(ChatThreadReplay.replay(snapshot: [original], events: [moved]).first)
     XCTAssertEqual(member.projectId, project)
-    XCTAssertEqual(member.agentID, original.agentID)
     XCTAssertEqual(member.sortAt, original.sortAt)
     XCTAssertEqual(member.title, original.title)
     let leave = ChatThreadChange(
-      kind: .projectUpdated, chatThreadId: replayThread, agentId: replayAgent,
+      kind: .projectUpdated, chatThreadId: replayThread,
       projectId: nil, createdAt: date(11))
     XCTAssertNil(ChatThreadReplay.replay(snapshot: [member], events: [leave]).first?.projectId)
     XCTAssertEqual(
@@ -131,7 +129,7 @@ final class ChatThreadReplayTests: XCTestCase {
     original.unreadAt = date(5)
     original.indicator = .active
     let muted = ChatThreadChange(
-      kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
+      kind: .sortTouched, chatThreadId: replayThread,
       muted: true, createdAt: date(10))
     let result = try XCTUnwrap(ChatThreadReplay.replay(snapshot: [original], events: [muted]).first)
     XCTAssertTrue(result.isMuted)
@@ -140,7 +138,7 @@ final class ChatThreadReplayTests: XCTestCase {
     XCTAssertEqual(result.sortAt, original.sortAt)
     XCTAssertEqual(result.updatedAt, original.updatedAt)
     let unmuted = ChatThreadChange(
-      kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
+      kind: .sortTouched, chatThreadId: replayThread,
       muted: false, createdAt: date(11))
     XCTAssertEqual(ChatThreadReplay.replay(snapshot: [result], events: [unmuted]), [original])
   }
@@ -149,10 +147,10 @@ final class ChatThreadReplayTests: XCTestCase {
     let snapshot = ChatThreadReplay.replay(
       snapshot: [], events: [event(.created, at: 1, title: "Brief")])
     let hide = ChatThreadChange(
-      kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
+      kind: .sortTouched, chatThreadId: replayThread,
       hidden: true, createdAt: date(10))
     let show = ChatThreadChange(
-      kind: .sortTouched, chatThreadId: replayThread, agentId: replayAgent,
+      kind: .sortTouched, chatThreadId: replayThread,
       hidden: false, createdAt: date(11))
     XCTAssertTrue(ChatThreadReplay.replay(snapshot: snapshot, events: [hide]).isEmpty)
     XCTAssertEqual(ChatThreadReplay.replay(snapshot: snapshot, events: [hide, show]), snapshot)
@@ -195,11 +193,11 @@ final class ChatThreadReplayTests: XCTestCase {
   func testSnapshotTailPreservesActivityTimeAndManualPinMove() throws {
     let snapshot = [
       ChatThread(
-        id: replayThread, agentID: replayAgent, title: "Snapshot", selectedModel: "claude-opus-5-5",
+        id: replayThread, title: "Snapshot", selectedModel: "claude-opus-5-5",
         createdAt: date(0), updatedAt: date(0), sortAt: date(0),
         modelSettings: ["claude-opus-5-5": .init(effort: "high")]),
       ChatThread(
-        id: replayOtherThread, agentID: replayAgent, title: "Deleted",
+        id: replayOtherThread, title: "Deleted",
         createdAt: date(0), updatedAt: date(0), sortAt: date(0))
     ]
     let events = [
@@ -241,36 +239,19 @@ final class ChatThreadReplayTests: XCTestCase {
       ChatThreadReplay.sidebarOrder(replayed).map(\.id), [replayOtherThread, replayThread])
   }
 
-  func testCanonicalAgentReassignmentSurvivesLaterActivityFromTheOldAgent() throws {
-    let newAgent = "10000000-0000-4000-8000-000000000105"
-    let events = [
-      event(.created, at: 1),
-      event(.sortTouched, at: 2, reassignedAgentId: newAgent),
-      event(.sortTouched, at: 3)
-    ]
-    let thread = try XCTUnwrap(ChatThreadReplay.replay(snapshot: [], events: events).first)
-
-    XCTAssertEqual(thread.agentID, newAgent)
-    XCTAssertEqual(thread.sortAt, date(3))
-    XCTAssertEqual(thread.updatedAt, date(1))
-  }
-
   func testManualOrderingTouchReassignsPinnedAndUnpinnedThreadsWithoutActivity() throws {
-    let newAgent = "10000000-0000-4000-8000-000000000105"
     let events = [
       event(.created, at: 1),
       event(.created, thread: replayOtherThread, at: 1),
       event(.pinned, at: 2, pinOrder: "a1"),
-      event(.sortTouched, at: 3, reassignedAgentId: newAgent, pinOrder: "a0"),
+      event(.sortTouched, at: 3, pinOrder: "a0"),
       event(
-        .sortTouched, thread: replayOtherThread, at: 3, reassignedAgentId: newAgent, pinOrder: "a0")
+        .sortTouched, thread: replayOtherThread, at: 3, pinOrder: "a0")
     ]
     let threads = ChatThreadReplay.replay(snapshot: [], events: events)
     let pinned = try XCTUnwrap(threads.first(where: { $0.id == replayThread }))
     let unpinned = try XCTUnwrap(threads.first(where: { $0.id == replayOtherThread }))
 
-    XCTAssertEqual(pinned.agentID, newAgent)
-    XCTAssertEqual(unpinned.agentID, newAgent)
     XCTAssertEqual(pinned.pinOrder, "a0")
     XCTAssertNil(unpinned.pinOrder)
     XCTAssertEqual(pinned.sortAt, date(1))
@@ -285,13 +266,13 @@ final class ChatThreadReplayTests: XCTestCase {
 
   private func event(
     _ kind: ChatThreadChange.Kind, thread: String = replayThread, at seconds: TimeInterval,
-    reassignedAgentId: String? = nil, title: String? = nil, selectedModel: String? = nil,
+    title: String? = nil, selectedModel: String? = nil,
     pinOrder: String? = nil, modelSettings: [String: ThreadModelSetting]? = nil,
     modelSettingsPatch: ThreadModelSettingsPatch? = nil, serviceTier: String? = nil,
     computerUseHostId: String? = nil, cloudBrowserEnabled: Bool? = nil
   ) -> ChatThreadChange {
     ChatThreadChange(
-      kind: kind, chatThreadId: thread, agentId: replayAgent, reassignedAgentId: reassignedAgentId,
+      kind: kind, chatThreadId: thread,
       title: title, selectedModel: selectedModel, pinOrder: pinOrder, modelSettings: modelSettings,
       modelSettingsPatch: modelSettingsPatch, serviceTier: serviceTier,
       computerUseHostId: computerUseHostId, cloudBrowserEnabled: cloudBrowserEnabled,

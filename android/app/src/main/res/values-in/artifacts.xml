@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_resources">Sumber daya chat</string>
+    <string name="chat_resources_back">Kembali ke sumber daya chat</string>
     <string name="artifact_title">Artefak</string>
     <string name="artifact_search">Cari artefak</string>
     <string name="artifact_return_workspace">Kembali ke ruang kerja</string>

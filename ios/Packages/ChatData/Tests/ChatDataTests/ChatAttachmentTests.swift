@@ -7,7 +7,6 @@ import XCTest
 @testable import ChatData
 
 private let fileID = "41000000-0000-4000-8000-000000000001"
-private let agentID = "41000000-0000-4000-8000-000000000002"
 private let threadID = "41000000-0000-4000-8000-000000000003"
 
 @MainActor
@@ -48,7 +47,7 @@ final class ChatAttachmentTests: XCTestCase {
       case let path where path.hasSuffix("/metadata"):
         return ChatHTTPResponse(
           body:
-            "{\"id\":\"\(threadID)\",\"agentId\":\"\(agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+            "{\"id\":\"\(threadID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
         )
       case "/api/chat/events":
         sent.withLock { $0 = chatRequestBody(request) }
@@ -61,7 +60,7 @@ final class ChatAttachmentTests: XCTestCase {
       file: file, filename: "invoice.pdf", contentType: "application/pdf")
     let date = Date()
     let thread = ChatThread(
-      id: threadID, agentID: agentID, title: "Invoice",
+      id: threadID, title: "Invoice",
       createdAt: date, updatedAt: date, sortAt: date)
     _ = try await commands.send(thread: thread, text: "   ", attachments: [attachment])
     let message = try JSONDecoder().decode(SentMessage.self, from: XCTUnwrap(sent.withLock { $0 }))

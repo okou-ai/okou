@@ -6,7 +6,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -31,9 +31,7 @@ ORG-01/02/03, TEAM, and AGENT-02 integration chains:
 */
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
-const DEFAULT_AGENT_AVATAR_URL =
-  "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
+const api = createAuthOrgBddApi(context);
 
 class ClerkApiResponseTestError extends Error {
   static readonly kind = "ClerkAPIResponseError";
@@ -64,11 +62,10 @@ function orgIdOf(actor: ApiTestUser): string {
 async function onboardAdmin(
   admin: ApiTestUser,
   options: {
-    readonly displayName?: string;
     readonly slug?: string;
     readonly name?: string;
   } = {},
-): Promise<string> {
+): Promise<void> {
   const orgState: { slug?: string; name?: string } = {};
   if (options.slug !== undefined) {
     orgState.slug = options.slug;
@@ -77,15 +74,12 @@ async function onboardAdmin(
     orgState.name = options.name;
   }
   api.mockClerkOrg(admin, orgState);
-  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
-    displayName: options.displayName ?? "BDD Org Team Agent",
-  });
+  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin);
   if (bootstrap.status !== 200) {
     throw new Error(
       `Expected onboarding bootstrap to succeed, got ${bootstrap.status}`,
     );
   }
-  return bootstrap.body.agentId;
 }
 
 function pngLogoFile(): File {
@@ -315,7 +309,7 @@ describe("ORG-01: org update and delete error matrix", () => {
 
     const admin = api.user();
     const baseSlug = slug("bdd-r5-org");
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     await onboardAdmin(admin, { slug: baseSlug, name: "BDD R5 Org" });
     api.mockClerkOrg(admin, { slug: baseSlug, name: "BDD R5 Org" });
 
@@ -391,7 +385,7 @@ describe("ORG-01: org update and delete error matrix", () => {
   ])("does not retry Clerk %s mutation failures", async (_name, failure) => {
     const admin = api.user();
     const baseSlug = slug("bdd-r5-org-mutation");
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     await onboardAdmin(admin, { slug: baseSlug, name: "BDD R5 Org" });
     context.mocks.clerk.organizations.updateOrganization.mockClear();
     context.mocks.clerk.organizations.updateOrganization.mockRejectedValue(
@@ -649,7 +643,7 @@ describe("ORG-02: membership admin matrix", () => {
       orgRole: "org:member",
       email: `requester-${shortId()}@example.test`,
     });
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     await onboardAdmin(admin, { slug: slug("bdd-r5-members") });
 
     const orgMembers = [
@@ -820,7 +814,7 @@ describe("ORG-02: member cleanup detaches Slack connections", () => {
       orgRole: "org:member",
       email: `member2-${shortId()}@example.test`,
     });
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     integrations.configureSlackAppMocks();
     await onboardAdmin(admin, { slug: slug("bdd-r5-slack") });
     const install = await integrations.installSlackWorkspace(admin);
@@ -911,91 +905,18 @@ describe("ORG-02: member cleanup detaches Slack connections", () => {
   });
 });
 
-describe("ORG-01/AGENT-02: agent listing", () => {
-  it("lists org-visible agents only [TEAM-E]", async () => {
-    const unauthenticated = await api.requestListAgents(null, [401]);
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const noOrg = api.user({ orgId: null });
-    const noOrgAgents = await api.requestListAgents(noOrg, [401]);
-    expect(noOrgAgents.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
-      },
-    });
-
-    const crossOrgAdmin = api.user();
-    await expect(api.listAgents(crossOrgAdmin)).resolves.toStrictEqual([]);
-
-    const admin = api.user();
-    const peerAdmin = api.user({
-      orgId: admin.orgId,
-      email: `peer-admin-${shortId()}@example.test`,
-    });
-    api.acceptAgentStorageWrites();
-    const defaultAgentId = await onboardAdmin(admin, {
-      slug: slug("bdd-r5-team"),
-      displayName: "BDD Team Default",
-    });
-
-    const listedAgents = await api.listAgents(admin);
-    const defaultEntry = listedAgents.find((entry) => {
-      return entry.agentId === defaultAgentId;
-    });
-    expect(defaultEntry).toMatchObject({
-      agentId: defaultAgentId,
-      ownerId: admin.userId,
-      displayName: "Okou",
-      description: null,
-      sound: "professional",
-      avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      visibility: "public",
-    });
-    // Private agents are visible to their owner only; public agents to the
-    // whole org; nothing leaks across orgs.
-    const ownPrivate = await api.createAgent(admin, {
-      displayName: "BDD Own Private",
-      visibility: "private",
-    });
-    const peerPrivate = await api.createAgent(peerAdmin, {
-      displayName: "BDD Peer Private",
-      visibility: "private",
-    });
-    const adminAgentIds = (await api.listAgents(admin)).map((entry) => {
-      return entry.agentId;
-    });
-    expect(adminAgentIds).toContain(defaultAgentId);
-    expect(adminAgentIds).toContain(ownPrivate.agentId);
-    expect(adminAgentIds).not.toContain(peerPrivate.agentId);
-    const peerAgentIds = (await api.listAgents(peerAdmin)).map((entry) => {
-      return entry.agentId;
-    });
-    expect(peerAgentIds).toContain(defaultAgentId);
-    expect(peerAgentIds).toContain(peerPrivate.agentId);
-    expect(peerAgentIds).not.toContain(ownPrivate.agentId);
-    await expect(api.listAgents(crossOrgAdmin)).resolves.toStrictEqual([]);
-  });
-});
-
 describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
   it("serves the org read to a dispatched Run's agent token and rejects member reads and org writes [ORG-TOKEN-G]", async () => {
     const runs = createRunsApi(context);
     const admin = api.user();
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(admin);
     await runs.ensurePersonalSubscriptionModel(admin);
-    const agent = await api.createAgent(admin, {
-      displayName: "BDD Org Token Agent",
-      visibility: "private",
-    });
 
     const created = await runs.createThreadRun(admin, {
-      agentId: agent.agentId,
       prompt: "exercise org reads with the run Okou token",
     });
     await runs.heartbeatRunner(runnerGroup);

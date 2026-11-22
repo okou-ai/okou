@@ -179,7 +179,7 @@ describe("Runner disk telemetry HTTP", () => {
     mockSecretKmsHttp();
     const fixture = createDiskTelemetryFixture(context);
     const { bdd, runs, webhooks, actor } = fixture;
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -190,15 +190,9 @@ describe("Runner disk telemetry HTTP", () => {
         model: "claude-fable-5-1",
       });
     });
-    const agent = await fixture.run(() => {
-      return bdd.createAgent(actor, {
-        displayName: "Disk telemetry",
-        visibility: "private",
-      });
-    });
+
     const run = await fixture.run(async () => {
       const created = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Observe disk independently",
       });
       fixture.owned.runId = created.runId;

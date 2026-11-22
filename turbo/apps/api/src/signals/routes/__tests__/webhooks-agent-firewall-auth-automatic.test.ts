@@ -91,15 +91,13 @@ describe("builtin Automatic firewall credential destinations", () => {
     const firewall = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "MCP identity refresh",
-    });
+
     const automatic = setupApp({
       context,
       routes: builtinConnectorsAutomaticRoutes,
@@ -154,7 +152,6 @@ describe("builtin Automatic firewall credential destinations", () => {
       )
     ).body.connectionId;
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the refreshed MCP identity",
     });
     await runs.heartbeatRunner(runnerGroup);
@@ -248,15 +245,13 @@ describe("builtin Automatic firewall credential destinations", () => {
     const firewall = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "MCP concurrent registration retirement",
-    });
+
     const automatic = setupApp({
       context,
       routes: builtinConnectorsAutomaticRoutes,
@@ -331,7 +326,6 @@ describe("builtin Automatic firewall credential destinations", () => {
       throw new Error("Expected reconnect state");
     }
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use a live DCR registration",
     });
     await runs.heartbeatRunner(runnerGroup);
@@ -485,15 +479,13 @@ describe("builtin Automatic firewall credential destinations", () => {
       const firewall = createFirewallApi(context);
       const connectors = createConnectorBddApi(context);
       const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = await runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "MCP omitted refresh fields",
-      });
+
       const automatic = setupApp({
         context,
         routes: builtinConnectorsAutomaticRoutes,
@@ -548,7 +540,6 @@ describe("builtin Automatic firewall credential destinations", () => {
         )
       ).body.connectionId;
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Use persisted Automatic refresh tokens",
       });
       await runs.heartbeatRunner(runnerGroup);
@@ -785,15 +776,13 @@ describe("builtin Automatic firewall credential destinations", () => {
     const firewall = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: `MCP refresh ${outcomeKind}`,
-    });
+
     const automatic = setupApp({
       context,
       routes: builtinConnectorsAutomaticRoutes,
@@ -848,7 +837,6 @@ describe("builtin Automatic firewall credential destinations", () => {
     );
     const connectionId = receipt.body.connectionId;
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the selected MCP account",
     });
     const outcome = await settleIncludingAbort(

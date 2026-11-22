@@ -51,9 +51,9 @@ async function preferenceRun(suggestions = true) {
   const owned = await publicChatActor(context);
   return await owned.run(async () => {
     const { actor } = owned;
-    const defaultAgentId = await bdd.readDefaultAgentId(actor);
-    if (!actor.orgId || !defaultAgentId) {
-      throw new Error("Expected a workspace primary Agent");
+    await bdd.provisionWorkspace(actor);
+    if (!actor.orgId) {
+      throw new Error("Expected a workspace member");
     }
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
     owned.ownsFeatureSwitches();

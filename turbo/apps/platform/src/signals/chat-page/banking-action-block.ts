@@ -1,7 +1,7 @@
 import { bankingWorkspaceContract } from "@okouai/api-contracts/client/banking";
 import type {
   BankingWorkspaceStatus,
-  BankingConnectSessionRequest,
+  WorkspaceBankingConnectSessionRequest,
   BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
 import { command, computed, state, type Command, type Computed } from "ccstate";
@@ -35,7 +35,7 @@ export interface BankingActionDescriptor {
 type BankingCardAction =
   | {
       readonly type: "connect";
-      readonly mode: BankingConnectSessionRequest["mode"];
+      readonly mode: WorkspaceBankingConnectSessionRequest["mode"];
       readonly institutionLoginId?: string;
     }
   | {
@@ -128,7 +128,7 @@ function createBankingMutationSignals(
     async (
       { get, set },
       args: {
-        readonly mode: BankingConnectSessionRequest["mode"];
+        readonly mode: WorkspaceBankingConnectSessionRequest["mode"];
         readonly institutionLoginId?: string;
       },
       signal: AbortSignal,

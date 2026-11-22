@@ -3771,8 +3771,15 @@
     {
       "idx": 1617,
       "version": "7",
-      "when": 1795337641406,
-      "tag": "1617_member_workflow_recency",
+      "when": 1795337263972,
+      "tag": "1617_retire_legacy_storage_registry",
+      "breakpoints": true
+    },
+    {
+      "idx": 1618,
+      "version": "7",
+      "when": 1795342352623,
+      "tag": "1618_member_workflow_recency",
       "breakpoints": true
     }
   ]

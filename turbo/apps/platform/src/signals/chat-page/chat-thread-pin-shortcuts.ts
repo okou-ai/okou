@@ -3,7 +3,7 @@ import { projectOrderShortcutOwner } from "../../lib/project-order-shortcut-owne
 import { selectedProjectId$ } from "../projects/project-navigation.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import { shouldHandleShortcutPress } from "../okou-page/nav.ts";
 import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
 import {
