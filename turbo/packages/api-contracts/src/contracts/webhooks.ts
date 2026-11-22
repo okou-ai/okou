@@ -580,6 +580,21 @@ export const webhookHeartbeatContract = c.router({
   },
 });
 
+export const runWebhookContract = c.router({
+  events: {
+    ...webhookEventsContract.send,
+    path: "/api/webhooks/run/events",
+  },
+  complete: {
+    ...webhookCompleteContract.complete,
+    path: "/api/webhooks/run/complete",
+  },
+  heartbeat: {
+    ...webhookHeartbeatContract.send,
+    path: "/api/webhooks/run/heartbeat",
+  },
+});
+
 const filesystemCounterSchema = number()
   .int()
   .nonnegative()

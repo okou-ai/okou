@@ -75,7 +75,7 @@ async fn pi_finalization_reports_full_combined_completion_payload() {
 
     let complete = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(
                 json!({
                     "runId": "test-run-001",
@@ -128,7 +128,7 @@ async fn combined_finalization_accepts_terminal_acknowledgement_without_finaliza
     guest_agent::paths::write_private(session_id_file(), session_id).unwrap();
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(
                 r#"{"completion":{"cliAgentSessionHistoryDisposition":"native_only"}}"#,
             );
@@ -213,7 +213,7 @@ async fn explicit_runtime_with_conflicting_process_env_child() {
 
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(r#"{"runId":"captured-run"}"#)
             .json_body_includes(r#"{"completion":{"cliAgentType":"claude-code"}}"#)
             .json_body_includes(r#"{"completion":{"cliAgentSessionId":"captured-session"}}"#);

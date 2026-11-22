@@ -194,7 +194,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
             });
             let request = server.mock(|when, then| {
                 when.method(POST)
-                    .path("/api/webhooks/agent/events")
+                    .path("/api/webhooks/run/events")
                     .is_true(move |request| {
                         if overflow != Some(1) {
                             return request.body_ref()
@@ -290,7 +290,7 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
 
         let request = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/events")
+                .path("/api/webhooks/run/events")
                 .is_true(move |request| {
                     let mut payload: Value = serde_json::from_slice(request.body_ref()).unwrap();
                     let mut actual = std::mem::take(&mut payload["events"][0]);
@@ -351,7 +351,7 @@ async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() 
     .unwrap();
     let request = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .json_body_includes(r#"{"events":[{"sequenceNumber":20}]}"#);
         then.status(200);
     });
@@ -436,7 +436,7 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
     let captured = seen.clone();
     let request = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .is_true(move |request| {
                 captured.lock().unwrap().push(request.body_vec());
                 request.body_ref().len() <= LIMIT
@@ -494,7 +494,7 @@ async fn delivery_request_log_names_the_delivered_record_type() {
     ] {
         let server = MockServer::start_async().await;
         let request = server.mock(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/events");
+            when.method(POST).path("/api/webhooks/run/events");
             then.status(200);
         });
         let http = HttpClient::with_api_config(

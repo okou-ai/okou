@@ -20,7 +20,7 @@ async fn cancellation_fallback_posts_full_payload_when_metadata_present() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .header("Authorization", "Bearer test-token-abc123")
             .json_body(json!({
                 "runId": TEST_RUN_ID,
@@ -55,7 +55,7 @@ async fn cancellation_fallback_omits_metadata_when_env_absent() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body(json!({
                 "runId": TEST_RUN_ID,
                 "exitCode": 1,
@@ -75,7 +75,7 @@ async fn cancellation_fallback_swallows_server_error() {
     let server = api.server();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/complete");
+        when.method(POST).path("/api/webhooks/run/complete");
         then.status(500);
     });
 
@@ -103,7 +103,7 @@ async fn cancellation_fallback_swallows_4xx_auth_error() {
     let server = api.server();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/complete");
+        when.method(POST).path("/api/webhooks/run/complete");
         then.status(401).json_body(json!({
             "error": { "message": "Run expired", "code": "UNAUTHORIZED" }
         }));

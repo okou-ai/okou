@@ -38,7 +38,7 @@ async fn irreducible_single_event_is_skipped_while_cli_completes()
     let system_log = tmp.path().join("system.log");
     let _log = common::SystemLogOverrideGuard::set(&system_log);
     let events = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200);
     });
 

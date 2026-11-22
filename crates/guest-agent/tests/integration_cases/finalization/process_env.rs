@@ -29,7 +29,7 @@ async fn success_finalization_uses_captured_startup_environment() {
 
     let complete = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .header("authorization", "Bearer startup-token")
             .json_body_includes(r#"{"runId":"startup-run"}"#)
             .json_body_includes(r#"{"completion":{"cliAgentType":"claude-code"}}"#)

@@ -196,7 +196,7 @@ async fn respond(
         let run = value.get("runId").and_then(Value::as_str).ok_or_else(|| io::Error::other("native request has no original run"))?.to_string();
         uuid::Uuid::parse_str(&run)?;
         match path {
-            "/api/webhooks/agent/complete" => {
+            "/api/webhooks/run/complete" => {
                 if value.pointer("/completion/cliAgentSessionHistoryDisposition").and_then(Value::as_str) != Some("native_only") || !value.get("exitCode").is_some_and(Value::is_i64) {
                     return Err(io::Error::other("native completion is missing current identity metadata").into());
                 }
@@ -224,7 +224,7 @@ async fn respond(
                 }
                 Ok(Reply::Json(json!({"success": true, "versionId": typed.version_id, "storageName": "workspace", "size": typed.files.iter().map(|f| f.size).sum::<u64>(), "fileCount": typed.files.len()})))
             }
-            "/api/webhooks/agent/events" | "/api/webhooks/agent/heartbeat" | "/api/webhooks/agent/telemetry" => Ok(Reply::Json(json!({}))),
+            "/api/webhooks/run/events" | "/api/webhooks/run/heartbeat" | "/api/webhooks/agent/telemetry" => Ok(Reply::Json(json!({}))),
             _ => Err(io::Error::other(format!("unexpected native synthetic route: {path}")).into()),
         }
     }.await;

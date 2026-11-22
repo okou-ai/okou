@@ -150,7 +150,7 @@ async fn memory_conflict_finalization_requires_merge_inputs_and_reports_the_comm
         });
         let complete = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/complete")
+                .path("/api/webhooks/run/complete")
                 .json_body_includes(
                     json!({
                         "exitCode": 0,

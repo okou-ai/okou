@@ -10,9 +10,7 @@ import {
   runnersSteerContract,
 } from "../contracts/runners";
 import {
-  webhookCompleteContract,
-  webhookEventsContract,
-  webhookHeartbeatContract,
+  runWebhookContract,
   webhookSessionOutputContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
@@ -119,8 +117,8 @@ export const rustRouteBindings = [
     rustConstName: "CREATE",
   },
   {
-    route: webhookEventsContract.send,
-    rustModulePath: ["webhooks", "agent", "events"],
+    route: runWebhookContract.events,
+    rustModulePath: ["webhooks", "run", "events"],
     rustConstName: "SEND",
   },
   {
@@ -129,13 +127,13 @@ export const rustRouteBindings = [
     rustConstName: "SEND",
   },
   {
-    route: webhookCompleteContract.complete,
-    rustModulePath: ["webhooks", "agent", "complete"],
+    route: runWebhookContract.complete,
+    rustModulePath: ["webhooks", "run", "complete"],
     rustConstName: "COMPLETE",
   },
   {
-    route: webhookHeartbeatContract.send,
-    rustModulePath: ["webhooks", "agent", "heartbeat"],
+    route: runWebhookContract.heartbeat,
+    rustModulePath: ["webhooks", "run", "heartbeat"],
     rustConstName: "SEND",
   },
   {

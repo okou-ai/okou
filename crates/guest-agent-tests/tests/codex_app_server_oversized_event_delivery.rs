@@ -257,7 +257,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     let requests = server
         .into_requests()?
         .into_iter()
-        .filter(|request| request.path == "/api/webhooks/agent/events")
+        .filter(|request| request.path == "/api/webhooks/run/events")
         .collect::<Vec<_>>();
     assert!(!requests.is_empty());
     assert!(

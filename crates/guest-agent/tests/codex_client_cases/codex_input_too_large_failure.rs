@@ -31,13 +31,13 @@ async fn oversized_codex_input_writes_actionable_structured_failure()
         },
     )?;
     let _heartbeat = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/heartbeat");
+        when.method(POST).path("/api/webhooks/run/heartbeat");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
     });
     let _events = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
@@ -51,7 +51,7 @@ async fn oversized_codex_input_writes_actionable_structured_failure()
 
     let complete = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .body_excludes(PROMPT_SENTINEL)
             .body_excludes(UPSTREAM_ERROR_SENTINEL)
             .body_excludes("execution: Codex input is too large")

@@ -6,6 +6,7 @@ import {
   runnersHeartbeatContract,
 } from "../contracts/runners";
 import {
+  runWebhookContract,
   webhookCompleteContract,
   webhookEventsContract,
   webhookFirewallAuthContract,
@@ -80,14 +81,29 @@ const runtimeServiceRouteBindings = [
     route: webhookEventsContract.send,
   },
   {
+    id: "webhooks.run.events",
+    owner: "guest-agent",
+    route: runWebhookContract.events,
+  },
+  {
     id: "webhooks.agent.complete",
     owner: "guest-agent",
     route: webhookCompleteContract.complete,
   },
   {
+    id: "webhooks.run.complete",
+    owner: "guest-agent",
+    route: runWebhookContract.complete,
+  },
+  {
     id: "webhooks.agent.heartbeat",
     owner: "guest-agent",
     route: webhookHeartbeatContract.send,
+  },
+  {
+    id: "webhooks.run.heartbeat",
+    owner: "guest-agent",
+    route: runWebhookContract.heartbeat,
   },
   {
     id: "webhooks.agent.telemetry",
