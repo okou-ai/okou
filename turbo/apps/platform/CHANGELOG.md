@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1163.2](https://github.com/okou-ai/okou/compare/app-v0.1163.1...app-v0.1163.2) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.100.1
+    * @okouai/core bumped to 8.859.2
+    * @okouai/ui bumped to 1.21.89
+
 ## [0.1163.1](https://github.com/okou-ai/okou/compare/app-v0.1163.0...app-v0.1163.1) (2026-11-22)
 
 

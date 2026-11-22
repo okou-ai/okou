@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.10.259](https://github.com/okou-ai/okou/compare/app-worker-v1.10.258...app-worker-v1.10.259) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.100.1
+    * @okouai/core bumped to 8.859.2
+
 ## [1.10.258](https://github.com/okou-ai/okou/compare/app-worker-v1.10.257...app-worker-v1.10.258) (2026-11-22)
 
 
