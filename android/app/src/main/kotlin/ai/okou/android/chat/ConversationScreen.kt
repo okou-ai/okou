@@ -180,7 +180,7 @@ internal fun ConversationRoute(
                 } ?: content.lastOrNull { it.message.runId == runId }
             }
         }
-    val timeline =
+    val incomingTimeline =
         remember(content, activity, activeMessage) {
             val messages = content.asReversed()
             if (activity == null || messages.isEmpty()) messages
@@ -223,6 +223,19 @@ internal fun ConversationRoute(
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
     key(model, threadId) {
         val position = rememberLazyListState()
+        val holdTimeline by
+            remember(position) {
+                derivedStateOf {
+                    position.isScrollInProgress &&
+                        position.canScrollBackward &&
+                        position.firstVisibleRowIsStatus()
+                }
+            }
+        // Compose anchors to the first row's key. If that key is a status row, defer row changes
+        // until its message can be re-anchored without cancelling the reader's gesture.
+        var presentedTimeline by remember { mutableStateOf(incomingTimeline) }
+        val timeline = if (holdTimeline) presentedTimeline else incomingTimeline
+        SideEffect { presentedTimeline = timeline }
         val runningRows =
             if (activity == R.string.conversation_processing) setOf(TimelineActivity)
             else emptySet()
@@ -462,10 +475,13 @@ private data class ReadingPosition(val anchor: ConversationAnchor?)
 private fun LazyListState.firstVisibleMessage(): LazyListItemInfo? =
     layoutInfo.visibleItemsInfo.firstOrNull { it.key !in TimelineFixedKeys }
 
+private fun LazyListState.firstVisibleRowIsStatus(): Boolean {
+    val index = firstVisibleItemIndex
+    return layoutInfo.visibleItemsInfo.any { it.index == index && it.key in TimelineFixedKeys }
+}
+
 private fun LazyListState.keepMessageWhenStatusMoves(timeline: List<ConversationTimelineRow>) {
-    if (isScrollInProgress) return
-    val first = layoutInfo.visibleItemsInfo.firstOrNull { it.index == firstVisibleItemIndex }
-    if (first?.key !in TimelineFixedKeys) return
+    if (isScrollInProgress || !firstVisibleRowIsStatus()) return
     val message = firstVisibleMessage() ?: return
     val newIndex = timeline.indexOfFirst { it.key == message.key } + 1
     // Compose would otherwise anchor to the status row while it moves to a different message.

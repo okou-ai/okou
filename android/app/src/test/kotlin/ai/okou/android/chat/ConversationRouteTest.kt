@@ -21,6 +21,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -380,6 +381,53 @@ class ConversationRouteTest {
         receiveFirstReply(model, received)
         assertEquals(reading, anchor.getUnclippedBoundsInRoot())
         assertEquals(readCount, fixture.readRequests.get())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun anIncomingReplyFollowsTheEndWithoutAJumpAction() {
+        val received = AtomicInteger(12)
+        val model = openScrollHistory(received)
+        val readCount = fixture.readRequests.get()
+        received.incrementAndGet()
+        compose.runOnIdle { model.history.refresh() }
+        compose.waitUntilExactlyOneExists(hasText("The first reply"), 10_000)
+        compose.onNodeWithText("The first reply").assertIsDisplayed()
+        compose.onNodeWithTag("conversation_jump").assertDoesNotExist()
+        compose.waitUntil(10_000) { fixture.readRequests.get() > readCount }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun firstReplyPreservesTheMessageUnderAnActiveDrag() {
+        val received = AtomicInteger(12)
+        val model = openScrollHistory(received)
+        val readCount = fixture.readRequests.get()
+        val conversation = compose.onNodeWithTag("conversation")
+        val anchor = compose.onNodeWithTag("message_${scrollEventId(12)}").assertIsDisplayed()
+        val latest = anchor.getUnclippedBoundsInRoot()
+        conversation.performTouchInput {
+            down(center)
+            moveBy(Offset(x = 0f, y = 22.dp.toPx()))
+        }
+        val afterDrag =
+            try {
+                val reading = anchor.getUnclippedBoundsInRoot()
+                assertTrue(reading.bottom > latest.bottom)
+                receiveFirstReply(model, received)
+                assertEquals(reading, anchor.getUnclippedBoundsInRoot())
+                conversation.performTouchInput { moveBy(Offset(x = 0f, y = 4.dp.toPx())) }
+                val moved = anchor.getUnclippedBoundsInRoot()
+                assertEquals(4f, (moved.bottom - reading.bottom).value, 1f)
+                moved
+            } finally {
+                conversation.performTouchInput { cancel() }
+            }
+        assertEquals(afterDrag, anchor.getUnclippedBoundsInRoot())
+        assertEquals(readCount, fixture.readRequests.get())
+        compose.onNodeWithTag("conversation_jump").performClick()
+        compose.onNodeWithText("The first reply").assertIsDisplayed()
+        compose.waitUntil(10_000) { fixture.readRequests.get() == readCount + 1 }
     }
 
     private fun scrollEventId(sequence: Int) =
