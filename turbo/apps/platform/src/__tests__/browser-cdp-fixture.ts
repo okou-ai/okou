@@ -163,7 +163,12 @@ export function mockBrowserCdp(
     }
   }
 
-  function frame(data: string, sessionId?: string, rasterWidth?: number) {
+  function frame(
+    data: string,
+    sessionId?: string,
+    rasterWidth?: number,
+    frameNumber = 1,
+  ) {
     sessionId ??= [...capturing].reverse().find((id) => {
       return sessionTargets.get(id) === "example-page";
     });
@@ -193,7 +198,7 @@ export function mockBrowserCdp(
       "Page.screencastFrame",
       {
         data,
-        sessionId: 1,
+        sessionId: frameNumber,
         metadata: {
           timestamp: 2,
           offsetTop: 0,
@@ -851,12 +856,13 @@ export function mockBrowserCdp(
     });
     return {
       received: requested.promise,
-      release(data = "AAAA") {
+      release(data = "AAAA", frameNumber = 1) {
         if (!receivedSession) {
           throw new Error("No screencast request received for the held frame");
         }
         heldFrames.delete(key);
-        frame(data, receivedSession);
+        frame(data, receivedSession, undefined, frameNumber);
+        return receivedSession;
       },
     };
   }

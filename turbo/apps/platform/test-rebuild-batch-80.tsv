@@ -55,7 +55,7 @@ Original test `An unavailable saved connection cannot show a success screen`. [R
 - **Given** The user opens an SSH saved-connection URL for a connection that is unavailable.
 - **When** The saved step loads.
 - **Then** An alert says the configuration is unavailable or access has been lost, and no Connection added screen appears."
-remote-control-guided-setup-013	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	372	pending					"## remote-control-guided-setup-013
+remote-control-guided-setup-013	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	372	first-verified	remote-control-guided-setup-013 The Tailscale-only preparation guide closes back through the two distinct setup pages	turbo/apps/platform/src/views/okou-page/__tests__/remote-login-edits-from-the-directory.test.ts	stage9-new.json	guides-and-discarded-secrets-red.json	"## remote-control-guided-setup-013
 
 Original test `A saved computer-setup link can return from network creation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L372).
 
@@ -132,7 +132,7 @@ Original test `Manual SSH chooses a saved Tailscale SSH route and saves without 
 - **Given** Manual SSH setup offers Office and Home Tailscale networks, a Cloudflare Access network, and Tailscale SSH routes; the user enters address 100.64.0.25 and selects Home network’s Tailscale SSH route with system username ubuntu.
 - **When** They switch between Cloudflare and the Tailscale SSH route, then save.
 - **Then** Switching routes preserves the entered address and the relevant SSH credentials; Tailscale SSH disables the password and port controls and does not show an alert. The saved connection uses address 100.64.0.25, port 22, username ubuntu, and Home network’s Tailscale SSH route, without SSH credentials."
-remote-control-guided-setup-033	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	942	pending					"## remote-control-guided-setup-033
+remote-control-guided-setup-033	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	942	first-verified	remote-control-guided-setup-033 Reopening network settings discards the revealed replacement secret	turbo/apps/platform/src/views/okou-page/__tests__/remote-login-edits-from-the-directory.test.ts	stage9-new.json	guides-and-discarded-secrets-red.json	"## remote-control-guided-setup-033
 
 Original test `tailscale settings allow optional credential replacement without fetching saved secrets`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L942).
 
@@ -188,7 +188,7 @@ Original test `tailscale network deletion explains its ssh dependency beside the
 - **Given** A Tailscale network is used by an SSH host, so its Delete Tailscale action is disabled.
 - **When** The user opens the explanation for why the network cannot be deleted.
 - **Then** The explanation says SSH or VNC hosts still use the network and must be rebound or deleted first; it appears beside the disabled action in the dialog, and dismissing the dialog returns focus to the explanation control."
-remote-control-guided-setup-050	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1488	pending					"## remote-control-guided-setup-050
+remote-control-guided-setup-050	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1488	first-verified	remote-control-guided-setup-050 Switching to private networks abandons an unfinished SSH login	turbo/apps/platform/src/views/okou-page/__tests__/remote-login-edits-from-the-directory.test.ts	stage9-new.json	guides-and-discarded-secrets-red.json	"## remote-control-guided-setup-050
 
 Original test `Changing category abandons setup and returns to management`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1488).
 
@@ -216,35 +216,35 @@ Original test `A rejected SSH save retains the entered name and does not show a 
 - **Given** The user is adding direct SSH and has entered a connection name, address, username, and password.
 - **When** The server rejects the save because the host is invalid.
 - **Then** An alert appears, the entered name remains, the Add connection action is enabled for another attempt, and no success state is shown."
-remote-control-guided-setup-056	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1702	pending					"## remote-control-guided-setup-056
+remote-control-guided-setup-056	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1702	first-verified	remote-control-guided-setup-056 An edited certificate name clears the first validation alert and a second rejection is visible	turbo/apps/platform/src/views/okou-page/__tests__/reviewing-an-encrypted-desktop.test.ts	stage9-new.json	second-validation-response-withheld-red.json,vnc-review-outcomes-red.json	"## remote-control-guided-setup-056
 
 Original test `VNC clears a rejected save when users edit and validates again on retry`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1702).
 
 - **Given** The user is on the VNC review step and a save was rejected for an invalid host.
 - **When** They edit the VNC certificate name and retry saving.
 - **Then** The first alert clears when they edit, but retrying shows the invalid-host alert again and no connection-added success state appears."
-remote-control-guided-setup-058	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1748	pending					"## remote-control-guided-setup-058
+remote-control-guided-setup-058	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1748	first-verified	remote-control-guided-setup-058 An invalid-host alert clears on earlier steps while the name and address survive a second review	turbo/apps/platform/src/views/okou-page/__tests__/reviewing-an-encrypted-desktop.test.ts	stage9-new.json	second-validation-response-withheld-red.json,vnc-review-outcomes-red.json	"## remote-control-guided-setup-058
 
 Original test `VNC clears a rejected save between steps without losing the draft or skipping validation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1748).
 
 - **Given** The user is on the VNC review step after an invalid-host save rejection, with the address and connection name already entered.
 - **When** They go back through the setup steps and return to review without changing the draft, then save again.
 - **Then** The rejection alert clears on earlier steps and during continued navigation, while the entered address and name remain. The retry is validated and shows the invalid-host alert again without a success state."
-remote-control-guided-setup-059	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1790	pending					"## remote-control-guided-setup-059
+remote-control-guided-setup-059	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1790	first-verified	remote-control-guided-setup-059 A rejection arriving after Back unlocks the earlier step and preserves the original hostname	turbo/apps/platform/src/views/okou-page/__tests__/reviewing-an-encrypted-desktop.test.ts	stage9-new.json	vnc-review-outcomes-red.json	"## remote-control-guided-setup-059
 
 Original test `VNC does not show a late save rejection on earlier setup steps`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1790).
 
 - **Given** The user is saving a VNC connection and the request is still pending.
 - **When** They go back to an earlier setup step before the request returns an invalid-host rejection.
 - **Then** The save control is initially disabled as Saving; after the rejection arrives, no alert appears on the earlier steps, and the entered device address remains in the draft."
-remote-control-guided-setup-062	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1904	pending					"## remote-control-guided-setup-062
+remote-control-guided-setup-062	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1904	first-verified	remote-control-guided-setup-062 An uncertain service error stays attached to the locked review after backward and forward navigation	turbo/apps/platform/src/views/okou-page/__tests__/reviewing-an-encrypted-desktop.test.ts	stage9-new.json	vnc-review-outcomes-red.json	"## remote-control-guided-setup-062
 
 Original test `VNC keeps 500 failure notices on the save step while preserving the locked draft`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1904).
 
 - **Given** The user is saving a VNC connection and the server returns HTTP 500.
 - **When** They go back from the save step and then continue to review again.
 - **Then** The save step shows “Save failed.”; the alert is absent on the earlier step while the connection-name draft is locked. On returning to review, the same alert remains and Save is disabled."
-remote-control-guided-setup-065	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1969	pending					"## remote-control-guided-setup-065
+remote-control-guided-setup-065	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1969	first-verified	remote-control-guided-setup-065 Back retains an encrypted desktop draft and a new setup starts with blank fields	turbo/apps/platform/src/views/okou-page/__tests__/reviewing-an-encrypted-desktop.test.ts	stage9-new.json	vnc-review-outcomes-red.json	"## remote-control-guided-setup-065
 
 Original test `Restarting VNC setup clears the previous draft but Back within setup preserves it`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1969).
 
@@ -286,21 +286,21 @@ Original test `The Cloudflare network list and connections dialog stay visible d
 - **Given** The Cloudflare network list shows Office network with one SSH connection, and its connections dialog is open.
 - **When** A background refresh begins and then returns an updated server name.
 - **Then** The network and dialog remain visible while refresh is pending with the old server name; the dialog then shows the updated server name."
-remote-control-guided-setup-085	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2629	pending					"## remote-control-guided-setup-085
+remote-control-guided-setup-085	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2629	first-verified	remote-control-guided-setup-085 Saved logins have their own directory and explain disabled deletion for in-use credentials	turbo/apps/platform/src/views/okou-page/__tests__/remote-login-edits-from-the-directory.test.ts	stage9-new.json	guides-and-discarded-secrets-red.json	"## remote-control-guided-setup-085
 
 Original test `Credentials have a separate page without adding controls to the connection list`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L2629).
 
 - **Given** The remote-connections list contains SSH and VNC connections with saved credentials in use.
 - **When** The user opens Manage credentials, switches to VNC credentials, and returns to remote connections.
 - **Then** Credentials have a separate page showing login details for each protocol. Deletion is disabled for credentials in use, its explanatory message appears on request and closes on Escape, and the remote-connections list remains reachable without adding credential controls to it."
-remote-control-guided-setup-086	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2667	pending					"## remote-control-guided-setup-086
+remote-control-guided-setup-086	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2667	first-verified	remote-control-guided-setup-086 A discarded password replacement reopens empty while the saved login remains visible	turbo/apps/platform/src/views/okou-page/__tests__/remote-login-edits-from-the-directory.test.ts	stage9-new.json	guides-and-discarded-secrets-red.json	"## remote-control-guided-setup-086
 
 Original test `Editing ssh credentials keeps secrets hidden until replacement is selected`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L2667).
 
 - **Given** A saved SSH credential is being edited and its saved password is hidden.
 - **When** The user selects Change login details, enters a replacement password, hides the replacement fields, and selects them again.
 - **Then** The replacement password field is required, masked, and initially blank; hiding removes it and reopening it starts blank. The existing login details remain visible and cancel closes the dialog."
-remote-control-guided-setup-087	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2667	pending					"## remote-control-guided-setup-087
+remote-control-guided-setup-087	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2667	first-verified	remote-control-guided-setup-087 A discarded password replacement reopens empty while the saved login remains visible	turbo/apps/platform/src/views/okou-page/__tests__/remote-login-edits-from-the-directory.test.ts	stage9-new.json	guides-and-discarded-secrets-red.json	"## remote-control-guided-setup-087
 
 Original test `Editing vnc credentials keeps secrets hidden until replacement is selected`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L2667).
 
@@ -1257,7 +1257,7 @@ Original test `A reusable credential explains bound-host impact and only replace
 - **Given** A reusable VNC credential is bound to two hosts.
 - **When** I open its edit form and explicitly enable changing login details, then enter a new password and save.
 - **Then** The edit explains the impact on the second bound host, does not initially expose the saved password, and disables credential deletion. Saving sends the new password with revision 3, and the password field is cleared."
-vnc-settings-051	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2459	pending					"## vnc-settings-051
+vnc-settings-051	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	2459	first-verified	vnc-settings-051 A lost create response preserves and locks the reviewed password and device name	turbo/apps/platform/src/views/okou-page/__tests__/reviewing-an-encrypted-desktop.test.ts	stage9-new.json	vnc-review-outcomes-red.json	"## vnc-settings-051
 
 Original test `An uncertain host creation preserves its frozen draft`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L2459).
 
@@ -1616,35 +1616,35 @@ Original test `Invalid explicit input does not become a search`. [Registration](
 - **Given** A remote browser is open.
 - **When** The user enters “///invalid” and submits the address.
 - **Then** Open address is disabled, an alert appears, and the input remains “///invalid”; it is not turned into a search."
-browser-automatic-recovery-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	393	pending					"## browser-automatic-recovery-004
+browser-automatic-recovery-004	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	393	probe-insufficient	One terminal protocol report includes HTTP 409/CONFLICT. With the test clock slowed the apparent additional record instead reports the test-mode heartbeat loop ceiling. There is no independent ordered descriptor-error report.	recovery-and-startup-final.ts.txt; round9-terminal-probes.json; round9-first.json			"## browser-automatic-recovery-004
 
 Original test `A successful image attempt preserves a current terminal descriptor error`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L393).
 
 - **Given** The selected tab is recovering after a successful image frame, and revalidation receives a terminal 409 conflict because the assigned window was lost.
 - **When** The user reconnects after the unavailable-view state appears.
 - **Then** The terminal descriptor error and one final protocol recovery report are preserved in order. Reconnect restores the viewer without adding reports."
-browser-automatic-recovery-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	483	pending					"## browser-automatic-recovery-008
+browser-automatic-recovery-008	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	483	probe-insufficient	The first held recapture arrived at the 65-second boundary. Its failed frame at 66 seconds did not establish exhaustion or the last replacement attempt. Production uses a 180-second deadline. The earlier frozen-owner probe also lacked an acknowledged four-second interval after exhaustion.	recovery-and-startup-final.ts.txt; round9-all.json; archived batch 73/74 checkpoint notes			"## browser-automatic-recovery-008
 
 Original test `A same-window endpoint replacement keeps the original recovery deadline`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L483).
 
 - **Given** Three failed image attempts have consumed 65 seconds, and the last attempt begins with one second remaining in the original recovery deadline.
 - **When** The endpoint is replaced in the same window, the deadline expires, and the replacement frame fails.
 - **Then** Recovery is exhausted and no further automatic attempt starts, even after four seconds. Manual reconnect restores input on the replacement endpoint without adding a report."
-browser-automatic-recovery-018	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	795	pending					"## browser-automatic-recovery-018
+browser-automatic-recovery-018	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	795	first-verified	browser-automatic-recovery-018 A retained connection admits input only when both the refreshed descriptor and its tab are ready	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	native-desktop-boundaries-red.json	"## browser-automatic-recovery-018
 
 Original test `Recovery waits for a pending descriptor and selection without reporting its remembered failure`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L795).
 
 - **Given** Image recovery is pending, and a session descriptor revalidation is held while tab initialization is also pending.
 - **When** The descriptor and initialization complete after time advances during recovery.
 - **Then** The input stays disabled until the tab is ready, then recovery status clears. Only one descriptor read and one connection are used, and no failure is reported."
-browser-automatic-recovery-019	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	844	pending					"## browser-automatic-recovery-019
+browser-automatic-recovery-019	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	844	first-verified	browser-automatic-recovery-019 A locally edited address survives settings and retained-tab readmission during image recovery	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	native-desktop-boundaries-red.json	"## browser-automatic-recovery-019
 
 Original test `Retained input readmission completes recovery after toolbar interaction`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L844).
 
 - **Given** Image recovery is pending, and a session update readmits the retained selected tab while another tab is added in the background.
 - **When** The user edits the address and opens then dismisses browser settings before the retained tab is readmitted.
 - **Then** The draft remains visible during recovery and is retained when the viewer becomes ready. The selected tab accepts input, and a later image failure recovers without extra connections or reports."
-browser-automatic-recovery-022	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	970	pending					"## browser-automatic-recovery-022
+browser-automatic-recovery-022	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	970	probe-insufficient	New tab is disabled after the recovery recapture starts. Beginning tab creation before the frame failure let selection of Other succeed and the pending operation release the New tab control, but the external browser retained zero blank tabs after supersession. The expected two distinct blank tabs were not demonstrated.	recovery-and-startup-final.ts.txt; round9-terminal-probes.json; round9-policy-probe.json			"## browser-automatic-recovery-022
 
 Original test `An explicit selection supersedes pending creation during image recovery`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L970).
 
@@ -1672,14 +1672,14 @@ Original test `A clean address selection survives binding replacement and releas
 - **Given** The address field shows the selected tab's URL, with the caret after its second character, when the browser connection drops.
 - **When** The binding is replaced during recovery, then the user blurs the address field and selects a different address.
 - **Then** The original address and caret survive recovery until blur; blur updates the displayed address to the sibling tab. Submitting the new address navigates that sibling, not the original tab."
-browser-automatic-recovery-030	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1207	pending					"## browser-automatic-recovery-030
+browser-automatic-recovery-030	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1207	first-verified	browser-automatic-recovery-030 A recovered address submission cannot change the successor tab	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	native-desktop-boundaries-red.json	"## browser-automatic-recovery-030
 
 Original test `Interacting with a recovered submission cannot transfer it to an automatic successor (type=false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1207).
 
 - **Given** An address submission is pending when the connection drops, recovery restores the viewer, and the selected tab is then moved out of scope.
 - **When** The user focuses the address field and presses Enter without typing.
 - **Then** The successor tab remains selected and its address is not changed by the old submission."
-browser-automatic-recovery-031	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1207	pending					"## browser-automatic-recovery-031
+browser-automatic-recovery-031	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1207	first-verified	browser-automatic-recovery-031 A recovered address submission cannot change the successor tab	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	native-desktop-boundaries-red.json	"## browser-automatic-recovery-031
 
 Original test `Interacting with a recovered submission cannot transfer it to an automatic successor (type=true)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1207).
 
@@ -1700,7 +1700,7 @@ Original test `Definitive authorization loss during attempt clears the picture a
 - **Given** A picture is visible while automatic recovery is trying to reconnect.
 - **When** The recovery attempt receives HTTP 403 authorization denial.
 - **Then** The picture is cleared, the reconnecting notice ends, input stays disabled, and recovery stops as terminal without a second retry."
-browser-automatic-recovery-043	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1577	pending					"## browser-automatic-recovery-043
+browser-automatic-recovery-043	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1577	first-verified	browser-automatic-recovery-043 Exhausted service errors expose manual reconnect and the restored service accepts input	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	native-desktop-boundaries-red.json	"## browser-automatic-recovery-043
 
 Original test `Exhausted automatic recovery stops after three attempts and permits a fresh manual operation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1577).
 
@@ -1714,21 +1714,21 @@ Original test `Manual recovery serializes its transient failures with automatic 
 - **Given** Initial browser loading fails with HTTP 403 and the viewer offers manual reconnect.
 - **When** The user reconnects while the service changes from a transient HTTP 500 failure to success.
 - **Then** The manual failure is serialized with recovery policy; the reconnect button is disabled during the transient failure and readiness returns after the next attempt."
-browser-automatic-recovery-053	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1980	pending					"## browser-automatic-recovery-053
+browser-automatic-recovery-053	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1980	first-verified	browser-automatic-recovery-053 A delayed frame from the former selected tab cannot repaint the new one	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	clearing-live-view-on-late-frame-red.json	"## browser-automatic-recovery-053
 
 Original test `Selecting another tab cancels held automatic image recovery and old pixels`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1980).
 
 - **Given** Automatic image recovery is holding a replacement frame for the selected original tab.
 - **When** The user selects another tab and the held old frame is released later.
 - **Then** The new tab becomes ready and later input goes to that tab; the old recovery does not replace the selection."
-browser-automatic-recovery-054	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2009	pending					"## browser-automatic-recovery-054
+browser-automatic-recovery-054	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2009	probe-insufficient	The same-page binding replacement rendered Other and accepted input with the old version reply released. Holding the bootstrap attachment instead and requiring the app to retire its identified late session failed: main-tab-session-5 never appeared among detached sessions. Input alone cannot witness processing.	recovery-and-startup-final.ts.txt; round9-all.json; round9-final-probe.json			"## browser-automatic-recovery-054
 
 Original test `A binding replacement cancels a held automatic bootstrap`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2009).
 
 - **Given** Automatic recovery is holding a browser bootstrap for the current binding.
 - **When** The binding is replaced and the new tab becomes ready before the old bootstrap is released.
 - **Then** The old bootstrap does not clear the new picture or disrupt the new selection, which continues to accept input."
-browser-automatic-recovery-055	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2009	pending					"## browser-automatic-recovery-055
+browser-automatic-recovery-055	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2009	probe-insufficient	Browser Back replaced the chat and rendered the new window. Delivering the old bootstrap did not demonstrate App consumption: the expected cleanup of the specific main-tab-session-5 attachment was absent. The new picture and later text are insufficient evidence.	recovery-and-startup-final.ts.txt; round9-all.json; round9-final-probe.json			"## browser-automatic-recovery-055
 
 Original test `A chat replacement cancels a held automatic bootstrap`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2009).
 
@@ -1742,14 +1742,14 @@ Original test `Automatic recovery never replays uncertain navigation after conne
 - **Given** A navigation action to next.example has been sent but its completion is uncertain.
 - **When** The browser connection drops and automatic recovery restores readiness.
 - **Then** The navigation is not replayed; the address remains at next.example, and a later fresh input is accepted without errors or reports."
-browser-automatic-recovery-065	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2224	pending					"## browser-automatic-recovery-065
+browser-automatic-recovery-065	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2224	first-verified	browser-automatic-recovery-065 A failed minute lease is processed while the same remote browser still accepts input	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	native-desktop-boundaries-red.json	"## browser-automatic-recovery-065
 
 Original test `A healthy static viewer survives a failed HTTP heartbeat without reconnecting`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2224).
 
 - **Given** The static browser viewer is healthy and its HTTP lease heartbeat fails once with HTTP 503.
 - **When** The user waits 61 seconds and enters text.
 - **Then** The viewer remains connected and accepts the text without opening another connection."
-browser-automatic-recovery-066	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2267	pending					"## browser-automatic-recovery-066
+browser-automatic-recovery-066	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2267	first-verified	browser-automatic-recovery-066 A transient native tab read leaves the selected document on its existing connection	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	native-recovery-withheld-red.json	"## browser-automatic-recovery-066
 
 Original test `A transient native read recovers the selected tab on the existing control connection`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2267).
 
@@ -1763,14 +1763,14 @@ Original test `Rejected navigation remains local and does not trigger resource r
 - **Given** The browser is healthy and a navigation to unreachable.example is rejected by name resolution.
 - **When** The user submits that navigation and later enters text.
 - **Then** The failure remains local to the rejected navigation: it is not replayed, the browser stays connected, later text input works, and one navigation fault is reported."
-browser-automatic-recovery-074	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2522	pending					"## browser-automatic-recovery-074
+browser-automatic-recovery-074	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2522	first-verified	browser-automatic-recovery-074 Native selection remains active after an image failure and transport loss	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	native-desktop-boundaries-red.json	"## browser-automatic-recovery-074
 
 Original test `Remote tab activation replaces the target restored by pending automatic recovery`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2522).
 
 - **Given** The browser is ready on the original page and automatic recovery is pending after a missing frame.
 - **When** A remote event selects the Other tab, then the browser disconnects and recovers.
 - **Then** Other remains selected, the address becomes https://other.example, and text entered afterward is sent through that tab’s remote session."
-browser-automatic-recovery-075	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2578	pending					"## browser-automatic-recovery-075
+browser-automatic-recovery-075	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2578	probe-insufficient	Explicit shared transport restored input after control loss during recapture. A second near-expiry episode held the replacement frame and attempted to withhold the bootstrap across the original 180-second deadline, but did not reach an acknowledged exhaustion at that deadline. Readiness cannot distinguish continuation of a budget from resetting it.	recovery-and-startup-final.ts.txt; round9-terminal-probes.json; round9-policy-probe.json			"## browser-automatic-recovery-075
 
 Original test `Control loss during shared image retry continues the same recovery budget`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2578).
 
@@ -1784,14 +1784,14 @@ Original test `A background creation readmits the selected page before the remai
 - **Given** The first owned tab is selected and ready, and a background tab is being created while membership checks are pending.
 - **When** The first tab is readmitted, then the user types “during background discovery” while the background tab’s proof remains pending.
 - **Then** Input is disabled during readmission and becomes usable after the first tab is admitted; the text is sent. The background tab appears after its proof is released."
-browser-discovery-startup-023	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	624	pending					"## browser-discovery-startup-023
+browser-discovery-startup-023	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	624	first-verified	browser-discovery-startup-023 A late first frame cannot displace the surviving tab after its owner leaves the window	turbo/apps/platform/src/views/browser-session/__tests__/browser-recovery-through-the-viewer.test.ts	stage9-new.json	clearing-live-view-on-late-frame-red.json	"## browser-discovery-startup-023
 
 Original test `Moving an initializing retained tab cancels its late readiness (painted: false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L624).
 
 - **Given** The first owned tab is initializing behind a membership gate, and its initial frame has not yet arrived.
 - **When** The first tab moves to another window, then the proof and late frame are released.
 - **Then** The first tab is absent, the later owned tab remains ready, and input is sent to the later tab."
-browser-discovery-startup-027	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	724	pending					"## browser-discovery-startup-027
+browser-discovery-startup-027	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.bdd.md	724	probe-insufficient	The first document read and subsequent membership revalidation reached their gates. Selecting Other before releasing the second frame-tree read allowed text on Other. Holding that read indefinitely produced the same observable result; no completion signal identifies the obsolete read.	recovery-and-startup-final.ts.txt; round9-final-probe.json; discovery-document-withheld.json			"## browser-discovery-startup-027
 
 Original test `Changing selection cancels a revalidated initial document read`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L724).
 
