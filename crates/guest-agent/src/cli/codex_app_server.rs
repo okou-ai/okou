@@ -922,13 +922,7 @@ impl CodexAppServerClient {
     }
 
     async fn write_message(&mut self, message: &Value) -> Result<(), CodexAppServerError> {
-        if let Some(message) = self.stream_unusable_reason.clone() {
-            self.kill_unusable_stream_process_if_needed();
-            return Err(CodexAppServerError::Protocol(message));
-        }
-        if self.outbound_write_in_progress {
-            return Err(self.poison_stream("previous app-server write did not complete"));
-        }
+        self.ensure_outbound_stream_usable()?;
         if self.stdin.is_none() {
             return Err(CodexAppServerError::Protocol(
                 "app-server stdin is closed".to_string(),
@@ -951,13 +945,7 @@ impl CodexAppServerClient {
     }
 
     fn ensure_stream_usable(&mut self) -> Result<(), CodexAppServerError> {
-        if let Some(message) = self.stream_unusable_reason.clone() {
-            self.kill_unusable_stream_process_if_needed();
-            return Err(CodexAppServerError::Protocol(message));
-        }
-        if self.outbound_write_in_progress {
-            return Err(self.poison_stream("previous app-server write did not complete"));
-        }
+        self.ensure_outbound_stream_usable()?;
         if self.stdin.is_none() {
             return Err(self.poison_stream("app-server stdin is closed"));
         }
@@ -966,6 +954,17 @@ impl CodexAppServerClient {
         }
         if self.in_flight_request_id.is_some() {
             return Err(self.poison_stream("previous app-server request did not complete"));
+        }
+        Ok(())
+    }
+
+    fn ensure_outbound_stream_usable(&mut self) -> Result<(), CodexAppServerError> {
+        if let Some(message) = self.stream_unusable_reason.clone() {
+            self.kill_unusable_stream_process_if_needed();
+            return Err(CodexAppServerError::Protocol(message));
+        }
+        if self.outbound_write_in_progress {
+            return Err(self.poison_stream("previous app-server write did not complete"));
         }
         Ok(())
     }
@@ -982,11 +981,7 @@ impl CodexAppServerClient {
     }
 
     fn poison_stream(&mut self, message: impl Into<String>) -> CodexAppServerError {
-        let message = message.into();
-        self.mark_stream_unusable(message.clone());
-        self.close_io_handles();
-        self.sigkill_process_group();
-        CodexAppServerError::Protocol(message)
+        self.poison_error(CodexAppServerError::Protocol(message.into()))
     }
 
     fn mark_stream_unusable(&mut self, message: String) {
