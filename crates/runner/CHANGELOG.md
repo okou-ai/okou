@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.93](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.92...runner-rs-v0.249.93) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** share model-provider firewall namespace recognition ([#49911](https://github.com/okou-ai/okou/issues/49911)) ([3556d20](https://github.com/okou-ai/okou/commit/3556d20bd153561da209667292548ad186a20427))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.92](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.91...runner-rs-v0.249.92) (2026-11-22)
 
 
