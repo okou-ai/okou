@@ -111,6 +111,12 @@ internal enum class DefaultModelFailure {
     Save,
 }
 
+private enum class SaveVerification {
+    ReadyToWrite,
+    NeedsReadback,
+    ReadbackBlocked,
+}
+
 internal data class DefaultModelState(
     val preference: DefaultModelPreference? = null,
     val options: DefaultModelOptions? = null,
@@ -156,7 +162,7 @@ internal class DefaultModelSettings(
     val state = mutable.asStateFlow()
     private var visible = false
     private var refreshRequested = false
-    private var needsReadback = false
+    private var saveVerification = SaveVerification.ReadyToWrite
     private var work: Job? = null
     private var retryWait: Job? = null
     private var readFailures = 0
@@ -166,6 +172,7 @@ internal class DefaultModelSettings(
         if (visible == active) return
         visible = active
         refreshRequested = active
+        if (active) resumeReadback()
         if (!active) resetReadFailures()
         val current = mutable.value
         if (!active && current.pending == null) {
@@ -189,7 +196,10 @@ internal class DefaultModelSettings(
             resetReadFailures()
             retryWait?.cancel()
             if (current.pending == null) work?.cancel()
-        } else if (visible) refreshRequested = true
+        } else {
+            resumeReadback()
+            if (visible) refreshRequested = true
+        }
         synchronize()
     }
 
@@ -232,14 +242,27 @@ internal class DefaultModelSettings(
 
     private fun submit(change: UpdateDefaultModelPreference) {
         if (!authorized()) return
-        mutable.value = mutable.value.copy(pending = change, failure = null)
+        val current = mutable.value
+        mutable.value =
+            current.copy(
+                pending = change,
+                failure =
+                    current.failure.takeIf { saveVerification == SaveVerification.ReadbackBlocked },
+            )
         synchronize()
+    }
+
+    private fun resumeReadback() {
+        if (saveVerification == SaveVerification.ReadbackBlocked) {
+            saveVerification = SaveVerification.NeedsReadback
+        }
     }
 
     private fun synchronize() {
         if (
             !authorized() ||
                 mutable.value.offline ||
+                saveVerification == SaveVerification.ReadbackBlocked ||
                 work != null ||
                 (mutable.value.pending == null && !refreshRequested)
         )
@@ -251,7 +274,8 @@ internal class DefaultModelSettings(
                     while (authorized() && !mutable.value.offline) {
                         val pending = mutable.value.pending
                         if (pending == null && !refreshRequested) break
-                        val readback = pending != null && needsReadback
+                        val readback =
+                            pending != null && saveVerification == SaveVerification.NeedsReadback
                         try {
                             if (pending == null) {
                                 refreshRequested = false
@@ -261,7 +285,7 @@ internal class DefaultModelSettings(
                                 val confirmed =
                                     if (readback) service.defaultModelPreference()
                                     else {
-                                        needsReadback = true
+                                        saveVerification = SaveVerification.NeedsReadback
                                         service.updateDefaultModelPreference(pending)
                                     }
                                 currentCoroutineContext().ensureActive()
@@ -270,7 +294,7 @@ internal class DefaultModelSettings(
                                 val fulfilled =
                                     if (readback) current.pending?.matches(confirmed) == true
                                     else current.pending == pending
-                                needsReadback = false
+                                saveVerification = SaveVerification.ReadyToWrite
                                 val awaitingWrite = readback && !fulfilled
                                 if (!awaitingWrite) saveFailures = 0
                                 mutable.value =
@@ -297,7 +321,13 @@ internal class DefaultModelSettings(
                                 if (pending != null) DefaultModelFailure.Save
                                 else current.failure ?: DefaultModelFailure.Read
                             if (!retryable) {
-                                needsReadback = false
+                                if (readback) {
+                                    // A rejected read cannot establish whether the PUT committed.
+                                    saveVerification = SaveVerification.ReadbackBlocked
+                                    mutable.value = current.copy(failure = DefaultModelFailure.Save)
+                                    break
+                                }
+                                saveVerification = SaveVerification.ReadyToWrite
                                 mutable.value =
                                     current.copy(
                                         pending = current.pending.takeUnless { it == pending },

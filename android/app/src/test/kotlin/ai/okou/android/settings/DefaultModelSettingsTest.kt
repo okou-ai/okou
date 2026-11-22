@@ -8,6 +8,7 @@ import ai.okou.android.api.generated.DefaultModelPreferenceServiceTier
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.jsonResponse
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -230,6 +231,49 @@ class DefaultModelSettingsTest {
             assertTrue(saved.fast)
             assertFalse(saved.failed)
             assertEquals(JsonPrimitive("priority"), fixture.writes.single()["serviceTier"])
+        }
+    }
+
+    @Test
+    fun rejectedReadbackKeepsTheUnconfirmedChoiceUntilReconnect() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = DefaultModelApiFixture(api)
+            val respond = api.commandResponse
+            val blockReadback = AtomicBoolean(true)
+            val blockedReads = AtomicInteger()
+            api.commandResponse = { request ->
+                val response = respond(request)
+                when {
+                    request.requestUrl?.encodedPath != "/api/user-model-preference" -> response
+                    request.method == "PUT" -> jsonResponse("{}")
+                    blockReadback.get() && fixture.writes.isNotEmpty() -> {
+                        blockedReads.incrementAndGet()
+                        jsonResponse("{}").setResponseCode(403)
+                    }
+                    else -> response
+                }
+            }
+            val model = DefaultModelSettings(backgroundScope, api.service, { true }, {})
+            model.visible(true)
+            assertFalse(model.state.first { it.options != null }.fast)
+            model.fast(true)
+
+            val blocked = model.state.first { it.failure == DefaultModelFailure.Save }
+            assertTrue(blocked.pending != null)
+            assertTrue(blocked.fast)
+            assertEquals(JsonPrimitive("priority"), fixture.writes.single()["serviceTier"])
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(1, blockedReads.get())
+            assertEquals(1, fixture.writes.size)
+
+            model.online(false)
+            blockReadback.set(false)
+            model.online(true)
+            val confirmed = model.state.first { it.pending == null }
+            assertTrue(confirmed.fast)
+            assertFalse(confirmed.failed)
+            assertEquals(1, fixture.writes.size)
         }
     }
 
