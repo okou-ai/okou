@@ -1,7 +1,6 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowSummary
@@ -246,12 +245,6 @@ internal constructor(
         }
     }
 
-    internal fun updateInstructions(request: UpdateWorkflowRequest) = mutate { before ->
-        val detail = service.updateWorkflow(before.id, request)
-        if (detail.id != before.id) throw ApiFailure.IncompatibleResponse()
-        publishDetail(detail)
-    }
-
     internal fun edit(value: WorkflowEdit?) {
         val state = mutable.value
         val ruleId = (value as? WorkflowEdit.Rule)?.id
@@ -273,15 +266,30 @@ internal constructor(
         changeRule(rule.id) { service.setAutomationEnabled(rule.id, !rule.enabled) }
     }
 
-    internal fun saveRule(editor: WorkflowEdit.Rule) {
+    internal fun save(editor: WorkflowEdit) {
         val state = mutable.value
         val detail = state.detail ?: return
         if (
             state.editor != editor ||
                 !editor.canSave ||
-                editor.blockingConnection(detail, state.connections) != null
+                state.issue == WorkflowWriteIssue.UncertainCreate
         )
             return
+        when (editor) {
+            is WorkflowEdit.Instructions ->
+                mutate { before ->
+                    val request = editor.value.changesFrom(editor.original)
+                    val confirmed = service.updateWorkflow(before.id, request)
+                    if (confirmed.id != before.id) throw ApiFailure.IncompatibleResponse()
+                    publishDetail(confirmed)
+                }
+            is WorkflowEdit.Rule -> {
+                if (editor.blockingConnection(detail, state.connections) == null) saveRule(editor)
+            }
+        }
+    }
+
+    private fun saveRule(editor: WorkflowEdit.Rule) {
         val id = editor.id
         if (id == null) {
             mutate(creating = true) { detail ->

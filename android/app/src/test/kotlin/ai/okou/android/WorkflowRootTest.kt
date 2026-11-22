@@ -304,6 +304,41 @@ class WorkflowRootTest {
     }
 
     @Test
+    fun calendarRuleComparesAndValidatesTheSavedCalendarId() {
+        app.fixture.calendarId = "primary"
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        val ruleTag = "workflow_rule_calendar-created"
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithTag("workflow_toggle_calendar-created")
+                .fetchSemanticsNodes()
+                .any { !it.config.contains(SemanticsProperties.Disabled) }
+        }
+        val edit = compose.onNode(hasText("Edit") and hasAnyAncestor(hasTestTag(ruleTag)))
+        val save = compose.onNodeWithTag("workflow_save")
+        val calendar = compose.onNodeWithContentDescription("Calendar ID")
+        edit.assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
+        waitForTag("workflow_save")
+        calendar.performTextReplacement("  primary ")
+        save.assertIsNotEnabled()
+        back()
+        save.assertDoesNotExist()
+
+        edit.assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
+        waitForTag("workflow_save")
+        val longestId = "c".repeat(1024)
+        calendar.performTextReplacement(" ${longestId}x ")
+        save.assertIsNotEnabled()
+        compose.onNodeWithText("Use 1,024 characters or fewer.").assertIsDisplayed()
+        calendar.performTextReplacement(" $longestId ")
+        compose.onNodeWithText("Use 1,024 characters or fewer.").assertDoesNotExist()
+        save.assertIsEnabled().performClick()
+        waitForTag(ruleTag)
+        assertEquals(longestId, app.fixture.calendarId)
+    }
+
+    @Test
     fun keyboardArrowsSelectAndFocusTheAdjacentDetailTabs() = withHardwareKeyboard {
         openWorkflowDetail()
         val instructions = compose.onNodeWithTag("workflow_tab_instructions")

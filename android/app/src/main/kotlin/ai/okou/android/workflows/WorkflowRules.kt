@@ -160,6 +160,7 @@ internal fun WorkflowDetail.canChange(ruleId: String?): Boolean =
 
 internal sealed interface WorkflowEdit {
     val changed: Boolean
+    val canSave: Boolean
 
     data class Instructions(
         val original: InstructionsFields,
@@ -167,6 +168,9 @@ internal sealed interface WorkflowEdit {
     ) : WorkflowEdit {
         override val changed
             get() = original != value
+
+        override val canSave
+            get() = changed && value.valid
     }
 
     data class Rule(
@@ -176,9 +180,15 @@ internal sealed interface WorkflowEdit {
         val enabled: Boolean = false,
     ) : WorkflowEdit {
         override val changed
-            get() = original != value
+            get() =
+                if (
+                    original.trigger == EditableTrigger.Calendar &&
+                        value.trigger == original.trigger
+                )
+                    original.trimmedCalendarId != value.trimmedCalendarId
+                else original != value
 
-        val canSave
+        override val canSave
             get() = (id == null || changed) && value.valid
 
         fun blockingConnection(detail: WorkflowDetail, connected: Set<String>?): RuleSource? {
@@ -197,6 +207,7 @@ internal sealed interface WorkflowEdit {
 internal const val WORKFLOW_DISPLAY_NAME_LIMIT = 256
 internal const val WORKFLOW_PURPOSE_LIMIT = 1024
 internal const val WORKFLOW_INSTRUCTION_LIMIT = 5 * 1024 * 1024
+internal const val WORKFLOW_CALENDAR_ID_LIMIT = 1024
 
 internal data class InstructionsFields(
     val title: String,
@@ -240,12 +251,16 @@ internal data class RuleFields(
     val subject: String = "",
     val calendarId: String = "primary",
 ) {
+    val trimmedCalendarId: String
+        get() = calendarId.trim()
+
     val valid
         get() =
             when (trigger) {
                 EditableTrigger.Schedule -> ruleTime.matches(time) && timezone.isNotBlank()
                 EditableTrigger.Gmail -> subject.isNotBlank()
-                EditableTrigger.Calendar -> calendarId.isNotBlank() && calendarId.length <= 1024
+                EditableTrigger.Calendar ->
+                    trimmedCalendarId.length in 1..WORKFLOW_CALENDAR_ID_LIMIT
             }
 
     private fun cron(): String {
@@ -289,7 +304,7 @@ internal data class RuleFields(
                     CreateWorkflowAutomationRequestVariant11EventConfig(
                         CreateWorkflowAutomationRequestVariant11EventConfigProvider.GOOGLE_CALENDAR,
                         CreateWorkflowAutomationRequestVariant11EventConfigEvent.EVENT_CREATED,
-                        calendarId.trim(),
+                        trimmedCalendarId,
                     ),
                     enabled = false,
                 )
@@ -326,7 +341,7 @@ internal data class RuleFields(
                             .GOOGLE_CALENDAR,
                         UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Event
                             .EVENT_CREATED,
-                        calendarId.trim(),
+                        trimmedCalendarId,
                     )
                 )
         }

@@ -27,6 +27,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     @Volatile var githubAppInstalled: Boolean? = null
     @Volatile var githubAccountConnected = false
     @Volatile var hasSharedSchedule = false
+    @Volatile var calendarId: String? = null
     @Volatile var beforeCatalog: () -> Unit = {}
     @Volatile var beforeConnectionsRead: () -> Unit = {}
     @Volatile var beforeDraftRead: () -> Unit = {}
@@ -56,6 +57,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                 val connectors = buildList {
                     if (gmailConnected.get()) add(connector("gmail", "Gmail"))
                     if (githubAccountConnected) add(connector("github", "GitHub"))
+                    if (calendarId != null) add(connector("google-calendar", "Google Calendar"))
                 }
                 jsonResponse(
                     """{"builtinConnectors":[${connectors.joinToString()}],"customConnectors":[]}"""
@@ -112,6 +114,18 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                         .jsonPrimitive
                         .content
                 jsonResponse(sharedSchedule())
+            }
+            "/api/workflow-automations/calendar-created" -> {
+                val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                val savedId =
+                    body
+                        .getValue("eventConfig")
+                        .jsonObject
+                        .getValue("calendarId")
+                        .jsonPrimitive
+                        .content
+                calendarId = savedId
+                jsonResponse(calendar(savedId))
             }
             "/api/workflow-automations/github/enable" -> {
                 if (githubAppInstalled == true) {
@@ -212,8 +226,16 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     private fun github() =
         """{"id":"github","ownerUserId":"user-a","enabled":${githubEnabled.get()},"chatThreadId":null,"nextRunAt":null,"lastRunAt":null,"official":null,"kind":"event","eventType":"github-pull-request","eventConfig":{"provider":"github","event":"pull_request","repository":"example/release","action":"opened","filters":{}},"schedule":null,"scheduleSummary":null}"""
 
+    private fun calendar(id: String) =
+        """{"id":"calendar-created","ownerUserId":"user-a","enabled":false,"chatThreadId":null,"nextRunAt":null,"lastRunAt":null,"official":null,"kind":"event","eventType":"google-calendar-event-created","eventConfig":{"provider":"google-calendar","event":"event_created","calendarId":${Json.encodeToString(id)}},"schedule":null,"scheduleSummary":null}"""
+
     private fun releaseRules() =
-        listOfNotNull(schedule(), gmail(), githubAppInstalled?.let { github() })
+        listOfNotNull(
+            schedule(),
+            gmail(),
+            githubAppInstalled?.let { github() },
+            calendarId?.let(::calendar),
+        )
 
     private fun connector(slug: String, label: String) =
         """{"slug":"$slug","label":"$label","icon":{"url":"/$slug.svg","invertInDarkMode":false},"hasPermissions":true}"""

@@ -329,14 +329,9 @@ internal fun WorkflowEditor(
     val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
     val showConnectionAction =
         connectionRequired != null && state.connections != null && !state.offline
-    val canSave =
-        when (editor) {
-            is WorkflowEdit.Instructions -> editor.changed && editor.value.valid
-            is WorkflowEdit.Rule -> editor.canSave
-        }
     val saveEnabled =
         available &&
-            canSave &&
+            editor.canSave &&
             !state.offline &&
             connectionRequired == null &&
             state.issue != WorkflowWriteIssue.UncertainCreate
@@ -444,13 +439,7 @@ internal fun WorkflowEditor(
                 }
                 WorkflowAction(
                     stringResource(R.string.workflow_save),
-                    onClick = {
-                        when (editor) {
-                            is WorkflowEdit.Instructions ->
-                                model.updateInstructions(editor.value.changesFrom(editor.original))
-                            is WorkflowEdit.Rule -> model.saveRule(editor)
-                        }
-                    },
+                    onClick = { model.save(editor) },
                     primary = true,
                     enabled = saveEnabled,
                     modifier = Modifier.focusRequester(saveFocus).testTag("workflow_save"),
@@ -511,7 +500,13 @@ private fun WorkflowRuleFields(
                 onChange(fields.copy(subject = it))
             }
         EditableTrigger.Calendar ->
-            WorkflowField(R.string.workflow_calendar_id, fields.calendarId, enabled) {
+            WorkflowField(
+                R.string.workflow_calendar_id,
+                fields.calendarId,
+                enabled,
+                errorMessage =
+                    workflowLengthError(fields.trimmedCalendarId, WORKFLOW_CALENDAR_ID_LIMIT),
+            ) {
                 onChange(fields.copy(calendarId = it))
             }
     }

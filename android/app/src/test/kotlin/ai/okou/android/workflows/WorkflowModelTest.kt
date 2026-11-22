@@ -85,14 +85,53 @@ class WorkflowModelTest {
         assertNull(model.state.value.catalog)
 
         holdCatalog = false
-        model.updateInstructions(
-            UpdateWorkflowRequest(instruction = CanonicalOptional.Present("Confirmed"))
-        )
+        val opened = checkNotNull(model.state.value.detail).editableInstructions()
+        val edited = opened.copy(value = opened.value.copy(instruction = "Confirmed"))
+        model.edit(edited)
+        model.save(edited)
         runCurrent()
 
         assertEquals("Confirmed", model.state.value.detail?.instruction)
         assertEquals(listOf(service.summary), model.state.value.catalog)
         assertTrue(model.state.value.rules?.isEmpty() == true)
+    }
+
+    @Test
+    fun instructionSaveUsesTheCurrentEditor() = check { service, model ->
+        model.select(service.summary.id)
+        model.visibilityChanged(true)
+        runCurrent()
+        val opened = checkNotNull(model.state.value.detail).editableInstructions()
+        val previous = opened.copy(value = opened.value.copy(instruction = "Older edit"))
+        val current = opened.copy(value = opened.value.copy(instruction = "Current edit"))
+        model.edit(previous)
+        model.edit(current)
+        model.save(previous)
+        runCurrent()
+
+        assertEquals(current, model.state.value.editor)
+        assertNull(model.state.value.detail?.instruction)
+        model.save(current)
+        runCurrent()
+        assertEquals("Current edit", model.state.value.detail?.instruction)
+        assertNull(model.state.value.editor)
+    }
+
+    @Test
+    fun uncertainCreationIgnoresAnotherSaveFromTheSameEditor() = check { service, model ->
+        model.select(service.summary.id)
+        model.visibilityChanged(true)
+        runCurrent()
+        val editor = WorkflowEdit.Rule(id = null, original = RuleFields(timezone = "UTC"))
+        model.edit(editor)
+        model.save(editor)
+        runCurrent()
+
+        assertEquals(WorkflowWriteIssue.UncertainCreate, model.state.value.issue)
+        assertEquals(editor, model.state.value.editor)
+        model.save(editor)
+        runCurrent()
+        assertEquals(1, service.createAttempts)
     }
 
     private fun check(action: suspend TestScope.(Service, WorkflowModel) -> Unit) = runTest {
@@ -157,6 +196,9 @@ class WorkflowModelTest {
         var detailReads = 0
             private set
 
+        var createAttempts = 0
+            private set
+
         override suspend fun workflows() = catalogRead()
 
         override suspend fun workflow(id: String): WorkflowDetail {
@@ -180,7 +222,10 @@ class WorkflowModelTest {
         override suspend fun createAutomation(
             workflowId: String,
             request: CreateWorkflowAutomationRequest,
-        ) = error("Unexpected automation creation")
+        ): Nothing {
+            createAttempts++
+            throw ApiFailure.Network(IOException("Automation response was lost"))
+        }
 
         override suspend fun updateAutomation(
             id: String,
