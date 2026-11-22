@@ -2197,3 +2197,38 @@ The [first Semgrep check](https://github.com/okou-ai/okou/actions/runs/450053566
 [Synchronized main](https://github.com/okou-ai/okou/commit/c56a8e9ee73ebfcea289fb6a0039d613338f4ed4) included a For You illustration URL, Android chat resources and a runner refactor. [Final checks for this PR](https://github.com/okou-ai/okou/pull/48906/checks) report the App shards and required checks on the published head.
 
 The [final phone selectors](https://github.com/okou-ai/okou/commit/a15b9d05370743de519c95cbdf76554eff0f78ef) use the complete accessible name, including the offline suffix when present. All five phone rows passed with this literal selector.
+
+## Batch 77 intake
+
+Opening PR head `fb333e2619`. All 160 retained registrations in the 30 fixed frozen files below had complete BDD records, open paths, and no earlier first acceptance. Batch 76 used a disjoint set of files. Opening main `8778e1d662` updated the For You artwork. Historical first acceptances are 1,576 and current complete coverage is 1,552.
+
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx` · 001, 002, 005, 006, 007, 008, 016, 017, 018, 019, 020, 023, 024, 025.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-selection-actions.test.tsx` · 001, 002, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-send-read-status.test.tsx` · 002, 004, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-session-output-stream.test.tsx` · 002, 003, 004, 006, 009, 010, 011.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-sync-recovery.test.tsx` · 001, 003, 006.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-thread-sidebar-resize.test.tsx` · 001, 004, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-whitespace-drafts.test.tsx` · 001, 003, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/composer-pasted-text.test.tsx` · 002, 003, 004, 006, 009.
+- `turbo/apps/platform/src/views/okou-page/__tests__/composer-task-chips.test.tsx` · 001, 002, 006, 007, 011, 012, 015, 017, 018, 019.
+- `turbo/apps/platform/src/views/okou-page/__tests__/composer-tools.test.tsx` · 001, 002, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/composer-visualization-preferences.test.tsx` · 001, 003, 004, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/custom-default-reconnect.test.tsx` · 003, 004, 006, 007, 009, 010.
+- `turbo/apps/platform/src/views/okou-page/__tests__/debug-learning.test.tsx` · 001, 002, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/debug-morning-brief.test.tsx` · 001, 003, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/debug-openrouter-preset.test.tsx` · 001, 002, 006.
+- `turbo/apps/platform/src/views/okou-page/__tests__/desktop-shell-authorization.test.tsx` · 001, 002, 006, 007, 008, 009, 015, 016, 019, 021, 023, 024, 025, 027.
+- `turbo/apps/platform/src/views/okou-page/__tests__/feature-guides.test.tsx` · 002, 003, 004, 005, 007, 008, 012.
+- `turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx` · 001, 002, 003, 005, 006, 009, 010, 011, 015, 017, 018, 022, 023, 024, 026, 027, 033, 036, 037, 038, 042.
+- `turbo/apps/platform/src/views/okou-page/__tests__/growth-entry.test.tsx` · 002, 003, 005, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/ideas-page.test.tsx` · 003, 006, 009, 010, 011, 012.
+- `turbo/apps/platform/src/views/okou-page/__tests__/lark-official.test.tsx` · 004, 005, 006.
+- `turbo/apps/platform/src/views/okou-page/__tests__/markdown-parser-isolation.test.tsx` · 002, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/marketing-checkout.test.tsx` · 001, 003.
+- `turbo/apps/platform/src/views/okou-page/__tests__/marketing-handoff-recovery.test.tsx` · 001, 007, 008, 010, 012, 015, 016, 017, 018.
+- `turbo/apps/platform/src/views/okou-page/__tests__/paid-media-creation.test.tsx` · 002, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/proactive-learning-settings.test.tsx` · 001, 002.
+- `turbo/apps/platform/src/views/okou-page/__tests__/proactive-suggestions-settings.test.tsx` · 001, 002.
+- `turbo/apps/platform/src/views/okou-page/__tests__/project-cache.test.tsx` · 002, 006, 007, 008.
+- `turbo/apps/platform/src/views/okou-page/__tests__/project-chat-list.test.tsx` · 001, 005, 007, 009, 010, 011.
+- `turbo/apps/platform/src/views/okou-page/__tests__/project-order.test.tsx` · 002, 003, 006.
