@@ -153,6 +153,7 @@ internal fun ConversationToolbarActions(
             )
         if (delete && thread != null)
             DeleteChatDialog(
+                chatName = thread.title,
                 enabled = !busy && ChatRowAction.Delete in actions,
                 dismiss = { delete = false },
                 confirm = {

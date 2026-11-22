@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">채팅을 보관 해제했습니다</string>
     <string name="chat_undo_marked_read">채팅을 읽음으로 표시했습니다</string>
     <string name="chat_undo">실행 취소</string>
-    <string name="chat_undo_offline">%1$s\n온라인 상태에서 실행 취소할 수 있습니다.</string>
+    <string name="chat_undo_connection_failed">변경 사항을 실행 취소하지 못했습니다. 연결을 확인한 후 다시 시도하세요.</string>
+    <string name="chat_action_connection_failed">연결하지 못했습니다. 연결을 확인한 후 다시 시도하세요.</string>
     <string name="chat_undo_checking">실행 취소 결과 확인 중…</string>
     <string name="chat_undo_failed">변경 사항을 실행 취소할 수 없었습니다.</string>
     <string name="chat_undo_unconfirmed">실행 취소 결과를 확인할 수 없었습니다.</string>
@@ -24,6 +25,9 @@
     <string name="chat_inbox">받은편지함</string>
     <string name="chat_mark_all_read">모두 읽음으로 표시</string>
     <string name="chat_mark_all_read_unconfirmed">일부 채팅이 아직 읽지 않은 상태일 수 있습니다.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="other">채팅 %2$d개 중 %1$d개를 읽음으로 표시했습니다.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">채팅 %1$d개를 읽음으로 표시했습니다.</item>
     </plurals>
@@ -67,7 +71,7 @@
     <string name="chat_rename_cancel">취소</string>
     <string name="chat_delete">채팅 삭제</string>
     <string name="chat_delete_title">채팅을 삭제하시겠습니까?</string>
-    <string name="chat_delete_description">이 채팅을 영구 삭제합니다. 현재 실행 중인 작업은 즉시 중단됩니다. 연결된 자동화는 일시 중지됩니다. 이 작업은 되돌릴 수 없습니다.</string>
+    <string name="chat_delete_description">‘%1$s’의 메시지와 초안이 영구 삭제됩니다. 실행 중인 작업은 중단되고 연결된 자동화는 일시 중지됩니다.</string>
     <string name="chat_delete_confirm">삭제</string>
     <string name="chat_rename_project">프로젝트 이름 변경</string>
     <string name="chat_project_name">프로젝트 이름</string>
@@ -82,8 +86,8 @@
     <string name="chat_project_moved_named">%1$s(으)로 이동했어요</string>
     <string name="chat_project_moved_outside">프로젝트 밖으로 이동했어요</string>
     <string name="chat_project_delete">프로젝트 삭제</string>
-    <string name="chat_project_delete_title">‘%1$s’을(를) 삭제할까요?</string>
-    <string name="chat_project_delete_description">이 프로젝트의 채팅은 프로젝트 밖으로 이동합니다. 실행 중인 작업은 계속됩니다.</string>
+    <string name="chat_project_delete_title">프로젝트를 삭제할까요?</string>
+    <string name="chat_project_delete_description">‘%1$s’의 채팅은 프로젝트 밖으로 이동합니다. 실행 중인 작업은 계속됩니다.</string>
     <string name="chat_project_delete_pending">프로젝트 삭제 중…</string>
     <string name="chat_project_deleted">프로젝트를 삭제하고 채팅을 프로젝트 밖으로 이동했어요.</string>
     <string name="chat_project_delete_rejected">프로젝트를 삭제할 수 없어요.</string>

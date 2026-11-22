@@ -50,6 +50,9 @@ import ai.okou.android.chat.plainDraftDocument
 import ai.okou.android.updates.isAndroidVersion
 import java.io.Closeable
 import java.io.IOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.UnknownHostException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
@@ -89,7 +92,14 @@ sealed class ApiFailure(message: String, cause: Throwable? = null) : Exception(m
         val retryAfterSeconds: Long?,
     ) : ApiFailure("API request failed with HTTP $status")
 
-    class Network(cause: IOException) : ApiFailure("API transport failed", cause)
+    class Network(cause: IOException) : ApiFailure("API transport failed", cause) {
+        // The mutation transport disables connection retries and redirects. Timeouts and
+        // interrupted response bodies still leave delivery uncertain.
+        internal val connectionFailed =
+            cause is ConnectException ||
+                cause is NoRouteToHostException ||
+                cause is UnknownHostException
+    }
 
     class IncompatibleResponse(cause: Throwable? = null) :
         ApiFailure("Incompatible API response", cause)
