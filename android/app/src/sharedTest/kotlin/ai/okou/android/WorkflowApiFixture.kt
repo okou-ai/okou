@@ -22,8 +22,11 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     val gmailEnabled = AtomicBoolean(false)
     val gmailConnected = AtomicBoolean(false)
     private val githubEnabled = AtomicBoolean(false)
+    private val sharedScheduleEnabled = AtomicBoolean(true)
+    @Volatile private var sharedScheduleCron = "0 9 * * 1-5"
     @Volatile var githubAppInstalled: Boolean? = null
     @Volatile var githubAccountConnected = false
+    @Volatile var hasSharedSchedule = false
     @Volatile var beforeCatalog: () -> Unit = {}
     @Volatile var beforeConnectionsRead: () -> Unit = {}
     @Volatile var beforeDraftRead: () -> Unit = {}
@@ -72,16 +75,19 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             }
             "/api/workflows/$WORKFLOW_SHARED" ->
                 jsonResponse(
-                    detail(shared(), if (chinese) "整理发布发现。" else "Collect launch findings.", "[]")
+                    detail(
+                        shared(),
+                        if (chinese) "整理发布发现。" else "Collect launch findings.",
+                        if (hasSharedSchedule) "[${sharedSchedule()}]" else "[]",
+                    )
                 )
             "/api/workflow-automations" -> {
-                val rules =
-                    releaseRules().joinToString { automation ->
-                        """{"workflow":${release()},"automation":$automation}"""
-                    }
-                jsonResponse(
-                    """[$rules,{"workflow":${feedback()},"automation":${schedule(id = "feedback", enabled = true)}}]"""
-                )
+                val rules = buildList {
+                    releaseRules().forEach { add(automationEntry(release(), it)) }
+                    if (hasSharedSchedule) add(automationEntry(shared(), sharedSchedule()))
+                    add(automationEntry(feedback(), schedule(id = "feedback", enabled = true)))
+                }
+                jsonResponse(rules.joinToString(prefix = "[", postfix = "]"))
             }
             "/api/workflow-automations/weekday/enable" -> {
                 active.set(true)
@@ -90,6 +96,22 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             "/api/workflow-automations/weekday/disable" -> {
                 active.set(false)
                 jsonResponse(schedule())
+            }
+            "/api/workflow-automations/shared-weekday/enable",
+            "/api/workflow-automations/shared-weekday/disable" -> {
+                sharedScheduleEnabled.set(path.endsWith("/enable"))
+                jsonResponse(sharedSchedule())
+            }
+            "/api/workflow-automations/shared-weekday" -> {
+                val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                sharedScheduleCron =
+                    body
+                        .getValue("schedule")
+                        .jsonObject
+                        .getValue("cronExpression")
+                        .jsonPrimitive
+                        .content
+                jsonResponse(sharedSchedule())
             }
             "/api/workflow-automations/github/enable" -> {
                 if (githubAppInstalled == true) {
@@ -142,6 +164,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             if (chinese) "整理发布表现和回访待办。" else "Review launch performance and follow-up tasks.",
             visibility = "public",
             manage = false,
+            owner = "user-b",
         )
 
     private fun feedback() =
@@ -160,17 +183,28 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         purpose: String,
         visibility: String = "private",
         manage: Boolean = true,
+        owner: String = "user-a",
     ) =
-        """{"id":"$id","name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"user-a","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
+        """{"id":"$id","name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"$owner","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
 
     private fun detail(summary: String, instruction: String, automations: String) =
         summary.dropLast(1) +
             ""","createdByUserId":"user-a","updatedByUserId":"user-a","updatedAt":"$CHAT_DATE","instruction":${Json.encodeToString(instruction)},"files":null,"fileContents":null,"automations":$automations}"""
 
-    private fun schedule(id: String = "weekday", enabled: Boolean = active.get()): String {
+    private fun schedule(
+        id: String = "weekday",
+        enabled: Boolean = active.get(),
+        cron: String = "0 9 * * 1-5",
+    ): String {
         val next = if (enabled) """"2026-11-23T01:00:00.000Z"""" else "null"
-        return """{"id":"$id","ownerUserId":"user-a","enabled":$enabled,"chatThreadId":"$CHAT_PERSONAL","nextRunAt":$next,"lastRunAt":"2026-11-20T01:00:00.000Z","official":null,"kind":"schedule","schedule":{"type":"cron","cronExpression":"0 9 * * 1-5","timezone":"Asia/Shanghai"},"scheduleSummary":"Weekdays at 09:00"}"""
+        return """{"id":"$id","ownerUserId":"user-a","enabled":$enabled,"chatThreadId":"$CHAT_PERSONAL","nextRunAt":$next,"lastRunAt":"2026-11-20T01:00:00.000Z","official":null,"kind":"schedule","schedule":{"type":"cron","cronExpression":"$cron","timezone":"Asia/Shanghai"},"scheduleSummary":"Weekdays at 09:00"}"""
     }
+
+    private fun sharedSchedule() =
+        schedule("shared-weekday", sharedScheduleEnabled.get(), sharedScheduleCron)
+
+    private fun automationEntry(workflow: String, rule: String) =
+        """{"workflow":$workflow,"automation":$rule}"""
 
     private fun gmail() =
         """{"id":"gmail","ownerUserId":"user-a","enabled":${gmailEnabled.get()},"chatThreadId":null,"nextRunAt":null,"lastRunAt":null,"official":null,"kind":"event","eventType":"gmail-new-message","eventConfig":{"provider":"gmail","event":"new_message","match":{"subject":{"contains":"${if (chinese) "发布" else "Release"}"}}},"schedule":null,"scheduleSummary":null}"""

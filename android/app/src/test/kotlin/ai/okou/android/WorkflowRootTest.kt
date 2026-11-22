@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import android.os.Looper
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -25,9 +26,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
@@ -223,6 +226,7 @@ class WorkflowRootTest {
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
+        compose.onNodeWithText("example/release").assertIsDisplayed()
 
         compose
             .onNodeWithTag("workflow_toggle_github")
@@ -265,35 +269,68 @@ class WorkflowRootTest {
     }
 
     @Test
-    fun returningWithAConnectedAccountKeepsFocusOnTheSameRule() {
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun memberCanPauseEditAndEnableTheirRuleOnASharedWorkflow() {
+        app.fixture.hasSharedSchedule = true
+        openWorkflowDetail(WORKFLOW_SHARED)
+        compose.onNodeWithText("Edit instructions").assertDoesNotExist()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        waitFor("Weekdays at 09:00")
+        compose.onNodeWithText("Add automation").assertDoesNotExist()
+
+        val toggle = compose.onNodeWithTag("workflow_toggle_shared-weekday")
+        toggle.assertIsDisplayed().assertIsEnabled().performClick()
+        waitFor("Paused")
+        compose
+            .onNode(hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_shared-weekday")))
+            .performClick()
+        compose.onNodeWithContentDescription("Time (HH:mm)").performTextReplacement("10:00")
+        compose.onNodeWithTag("workflow_save").assertIsEnabled().performClick()
+        waitFor("Weekdays at 10:00")
+        toggle.assertIsEnabled().performClick()
+        waitFor("Enabled")
+        compose.onNodeWithText("Weekdays at 10:00").assertIsDisplayed()
+    }
+
+    @Test
+    fun keyboardArrowsSelectAndFocusTheAdjacentDetailTabs() = withHardwareKeyboard {
+        openWorkflowDetail()
+        val instructions = compose.onNodeWithTag("workflow_tab_instructions")
+        val automations = compose.onNodeWithTag("workflow_tab_automations")
+        val history = compose.onNodeWithTag("workflow_tab_history")
+
+        instructions.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        instructions.performKeyInput { pressKey(Key.DirectionRight) }
+        automations.assertIsSelected().assertIsFocused()
+        automations.performKeyInput { pressKey(Key.MoveEnd) }
+        history.assertIsSelected().assertIsFocused()
+        history.performKeyInput { pressKey(Key.DirectionRight) }
+        instructions.assertIsSelected().assertIsFocused()
+    }
+
+    @Test
+    fun returningWithAConnectedAccountKeepsFocusOnTheSameRule() = withHardwareKeyboard {
         val scenario = compose.activityRule.scenario
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        instrumentation.setInTouchMode(false)
-        try {
-            scenario.recreate()
-            app.fixture.gmailEnabled.set(true)
-            openWorkflowDetail()
-            compose.onNodeWithTag("workflow_tab_automations").performClick()
-            waitFor("Enabled · Needs connection")
-            compose.onNodeWithTag("workflow_toggle_gmail").assertIsEnabled()
-            compose
-                .onNodeWithText("View connections")
-                .performSemanticsAction(SemanticsActions.RequestFocus)
-                .assertIsFocused()
-                .performClick()
+        app.fixture.gmailEnabled.set(true)
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        waitFor("Enabled · Needs connection")
+        compose.onNodeWithTag("workflow_toggle_gmail").assertIsEnabled()
+        compose
+            .onNodeWithText("View connections")
+            .performSemanticsAction(SemanticsActions.RequestFocus)
+            .assertIsFocused()
+            .performClick()
 
-            scenario.moveToState(Lifecycle.State.STARTED)
-            app.fixture.gmailConnected.set(true)
-            scenario.moveToState(Lifecycle.State.RESUMED)
+        scenario.moveToState(Lifecycle.State.STARTED)
+        app.fixture.gmailConnected.set(true)
+        scenario.moveToState(Lifecycle.State.RESUMED)
 
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("View connections").fetchSemanticsNodes().isEmpty()
-            }
-            compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
-            compose.onNodeWithTag("workflow_toggle_gmail").assertIsFocused()
-        } finally {
-            instrumentation.resetInTouchMode()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("View connections").fetchSemanticsNodes().isEmpty()
         }
+        compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+        compose.onNodeWithTag("workflow_toggle_gmail").assertIsFocused()
     }
 
     @Test
@@ -409,12 +446,24 @@ class WorkflowRootTest {
         }
     }
 
-    private fun openWorkflowDetail() {
+    private fun openWorkflowDetail(id: String = WORKFLOW_RELEASE) {
         app.gate.countDown()
         compose.onNodeWithContentDescription("Workflows").performClick()
-        waitFor("Release checklist")
-        compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
+        val row = "workflow_row_$id"
+        waitForTag(row)
+        compose.onNodeWithTag(row).performClick()
         waitForTag("workflow_detail_title")
+    }
+
+    private fun withHardwareKeyboard(run: () -> Unit) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            run()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
     }
 
     private fun selectScope(label: String) =

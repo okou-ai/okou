@@ -14,6 +14,7 @@ import ai.okou.android.state.ChatSearchState
 import ai.okou.android.state.WorkflowScope
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
+import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -23,7 +24,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,11 +53,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
@@ -75,7 +79,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -93,6 +103,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -672,7 +684,6 @@ private fun WorkflowDetailPane(
                         WorkflowRuleRow(
                             rule = rule,
                             state = state,
-                            canManage = detail.canManage,
                             actionsEnabled = !handoffPending,
                             timezone = timezone,
                             onEdit = onEditRule,
@@ -774,23 +785,57 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
-        Row(Modifier.selectableGroup()) {
-            for (tab in WorkflowTab.entries) {
-                val chosen = tab == current
-                Box(
-                    Modifier.weight(1f)
-                        .heightIn(min = 48.dp)
-                        .selectable(chosen, role = Role.Tab, onClick = { pick(tab) })
-                        .testTag("workflow_tab_${tab.name.lowercase()}"),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(
-                        Modifier.width(IntrinsicSize.Max).padding(horizontal = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
+    val colors = MaterialTheme.colorScheme
+    val accent = LocalActivityStatusColor.current
+    val tabs = WorkflowTab.entries
+    val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
+    val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
+    Column(Modifier.fillMaxWidth().background(colors.background)) {
+        PrimaryTabRow(
+            selectedTabIndex = current.ordinal,
+            containerColor = colors.background,
+            indicator = {
+                TabRowDefaults.PrimaryIndicator(
+                    Modifier.tabIndicatorOffset(current.ordinal, matchContentSize = true),
+                    width = Dp.Unspecified,
+                    height = 3.dp,
+                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
+                    color = accent,
+                )
+            },
+            divider = { WorkflowDivider() },
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                Tab(
+                    selected = tab == current,
+                    onClick = { pick(tab) },
+                    modifier =
+                        Modifier.focusRequester(tabFocus[index])
+                            .updateFocusOutline(RoundedCornerShape(8.dp), accent)
+                            .onPreviewKeyEvent { event ->
+                                val next =
+                                    when (event.key) {
+                                        Key.DirectionLeft ->
+                                            (index - stepRight + tabs.size) % tabs.size
+                                        Key.DirectionRight ->
+                                            (index + stepRight + tabs.size) % tabs.size
+                                        Key.MoveHome -> 0
+                                        Key.MoveEnd -> tabs.lastIndex
+                                        else -> return@onPreviewKeyEvent false
+                                    }
+                                if (event.type == KeyEventType.KeyDown) {
+                                    tabFocus[next].requestFocus()
+                                    pick(tabs[next])
+                                }
+                                true
+                            }
+                            .testTag("workflow_tab_${tab.name.lowercase()}"),
+                    selectedContentColor = colors.onBackground,
+                    unselectedContentColor = colors.onSurfaceVariant,
+                    text = {
                         Text(
                             stringResource(
                                 when (tab) {
@@ -799,32 +844,18 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                                     WorkflowTab.History -> R.string.workflow_history
                                 }
                             ),
-                            Modifier.padding(vertical = 12.dp),
                             style =
                                 MaterialTheme.typography.bodyMedium.copy(
                                     fontSize = 14.sp,
                                     lineHeight = 20.sp,
                                     fontWeight = FontWeight(550),
                                 ),
-                            color =
-                                if (chosen) MaterialTheme.colorScheme.onBackground
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         )
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                                .background(
-                                    if (chosen) LocalActivityStatusColor.current
-                                    else MaterialTheme.colorScheme.background
-                                )
-                        )
-                    }
-                }
+                    },
+                )
             }
         }
-        WorkflowDivider()
         Spacer(Modifier.height(16.dp))
     }
 }

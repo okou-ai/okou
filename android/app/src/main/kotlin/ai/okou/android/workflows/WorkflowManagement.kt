@@ -86,7 +86,6 @@ import java.util.TimeZone
 internal fun WorkflowRuleRow(
     rule: WorkflowAutomation,
     state: WorkflowState,
-    canManage: Boolean,
     actionsEnabled: Boolean,
     timezone: String,
     onEdit: (WorkflowEdit.Rule) -> Unit,
@@ -154,7 +153,7 @@ internal fun WorkflowRuleRow(
             ruleDescription(rule, connectionRequired)?.let { WorkflowSecondary(it, small = true) }
             if (nextRun != null) WorkflowSecondary(nextRun, small = true)
         }
-        if (canManage && rule.official == null) {
+        if (rule.official == null) {
             val toggleFocus = remember { FocusRequester() }
             var connectionFocused by remember { mutableStateOf(false) }
             val showSeparateConnection = connectionRequired && rule.enabled
@@ -248,7 +247,7 @@ private fun ruleDescription(rule: WorkflowAutomation, connectionRequired: Boolea
         is WorkflowAutomationVariant11 -> rule.eventConfig.calendarId
         is WorkflowAutomationVariant12 -> rule.eventConfig.calendarId
         is WorkflowAutomationVariant13 -> rule.eventConfig.calendarId
-        else -> stringResource(rule.source.label)
+        else -> rule.githubRepositorySummary() ?: stringResource(rule.source.label)
     }
 }
 
@@ -321,11 +320,12 @@ internal fun WorkflowEditor(
     onCancel: () -> Unit,
 ) {
     val horizontalPadding = if (wide) 32.dp else 20.dp
-    val available = !state.writing && detail.canManage
+    val activeRule = editor as? WorkflowEdit.Rule
+    val available = !state.writing && detail.canChange(activeRule?.id)
     val uriHandler = LocalUriHandler.current
     var couldNotOpen by remember { mutableStateOf(false) }
     val connectionRequired =
-        (editor as? WorkflowEdit.Rule)?.let { rule ->
+        activeRule?.let { rule ->
             val existing = detail.automations.firstOrNull { it.id == rule.id }
             rule.value.trigger.source.takeIf {
                 it.needsConnection(state.connections) ||

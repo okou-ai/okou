@@ -141,6 +141,23 @@ internal fun WorkflowAutomation.needsConnection(connected: Set<String>?): Boolea
 internal fun WorkflowAutomation.canEnable(connected: Set<String>?): Boolean =
     (source.connector == null || connected != null) && !needsConnection(connected)
 
+internal fun WorkflowAutomation.githubRepositorySummary(): String? =
+    when (this) {
+            is WorkflowAutomationVariant5 -> eventConfig.filters.repositories
+            is WorkflowAutomationVariant6 -> eventConfig.filters.repositories
+            is WorkflowAutomationVariant7 -> listOf(eventConfig.repository)
+            is WorkflowAutomationVariant8 -> eventConfig.filters.repositories
+            is WorkflowAutomationVariant9 -> eventConfig.filters.repositories
+            is WorkflowAutomationVariant10 -> eventConfig.filters.repositories
+            else -> null
+        }
+        ?.takeIf { it.isNotEmpty() }
+        ?.joinToString()
+
+// The workflow detail endpoint includes only the caller's automations.
+internal fun WorkflowDetail.canChange(ruleId: String?): Boolean =
+    if (ruleId == null) canManage else automations.any { it.id == ruleId && it.official == null }
+
 internal sealed interface WorkflowEdit {
     val changed: Boolean
 

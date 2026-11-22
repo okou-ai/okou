@@ -256,7 +256,12 @@ internal constructor(
 
     internal fun edit(value: WorkflowEdit?) {
         val state = mutable.value
-        if (!authorized() || state.writing || value != null && state.detail?.canManage != true)
+        val ruleId = (value as? WorkflowEdit.Rule)?.id
+        if (
+            !authorized() ||
+                state.writing ||
+                value != null && state.detail?.canChange(ruleId) != true
+        )
             return
         val issue = state.issue.takeIf { it == WorkflowWriteIssue.UncertainCreate && value != null }
         mutable.value = state.copy(editor = value, issue = issue)
@@ -285,32 +290,26 @@ internal constructor(
         }
     }
 
-    private fun changeRule(id: String, change: suspend () -> WorkflowAutomation) {
-        val current = mutable.value
-        if (current.detail?.automations?.none { it.id == id && it.official == null } == true) {
-            if (authorized() && !current.writing)
-                mutable.value = current.copy(issue = WorkflowWriteIssue.Failed)
-            return
-        }
-        mutate { detail ->
+    private fun changeRule(id: String, change: suspend () -> WorkflowAutomation) =
+        mutate(ruleId = id) { detail ->
             val confirmed = change()
             if (confirmed.id != id) throw ApiFailure.IncompatibleResponse()
             publishRules(detail, detail.automations.map { if (it.id == id) confirmed else it })
         }
-    }
 
-    private fun mutate(creating: Boolean = false, action: suspend (WorkflowDetail) -> Unit) {
+    private fun mutate(
+        creating: Boolean = false,
+        ruleId: String? = null,
+        action: suspend (WorkflowDetail) -> Unit,
+    ) {
         val state = mutable.value
         val detail = state.detail ?: return
-        if (
-            !authorized() ||
-                !visible ||
-                !detail.canManage ||
-                state.writing ||
-                state.offline ||
-                detail.id != selected
-        )
+        if (!authorized() || !visible || state.writing || state.offline || detail.id != selected)
             return
+        if (!detail.canChange(ruleId)) {
+            if (ruleId != null) mutable.value = state.copy(issue = WorkflowWriteIssue.Failed)
+            return
+        }
         refreshAfterWrite = catalogLoad?.isActive == true || detailLoad?.isActive == true
         catalogLoad?.cancel()
         detailLoad?.cancel()
