@@ -136,7 +136,9 @@ test("ordered private recordings share one Vertex request and one credit settlem
     [200],
   );
   expect(recording.headers.get("cache-control")).toBe("private, no-store");
-  expect(await (await fetch(recording.body.url)).text()).toBe(recordings[0]);
+  await expect((await fetch(recording.body.url)).text()).resolves.toBe(
+    recordings[0],
+  );
   const calls: string[][] = [];
   server.use(
     http.post(VERTEX_VOICE_URL, async ({ request }) => {
