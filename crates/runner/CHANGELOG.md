@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.249.101](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.100...runner-rs-v0.249.101) (2026-11-22)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.100](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.99...runner-rs-v0.249.100) (2026-11-22)
+
+
+### Refactoring
+
+* move rust run callbacks to run webhook paths ([#50022](https://github.com/okou-ai/okou/issues/50022)) ([ea009d1](https://github.com/okou-ai/okou/commit/ea009d1a44ab6b2a7164f03033a47a043ed09355))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.99](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.98...runner-rs-v0.249.99) (2026-11-22)
 
 

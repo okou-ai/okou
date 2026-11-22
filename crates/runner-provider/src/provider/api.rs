@@ -629,7 +629,7 @@ impl ApiClient {
     async fn complete(&self, sandbox_token: &str, request: &CompleteRequest) -> ProviderResult<()> {
         let resp = send_api(
             self.http
-                .request_route(routes::webhooks::agent::complete::COMPLETE, sandbox_token)
+                .request_route(routes::webhooks::run::complete::COMPLETE, sandbox_token)
                 .json(request)
                 .retry_transient(3, Duration::from_secs(2)),
             "complete",

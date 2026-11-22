@@ -189,7 +189,7 @@ async fn for_config_uses_config_api_url_for_webhook_routes()
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .header("Authorization", "Bearer test-token-abc123")
             .json_body_includes(r#"{"runId": "test-run-001"}"#)
             .body_includes(r#""sequenceNumber":7"#);
@@ -641,12 +641,12 @@ async fn post_json_uses_explicit_api_config_without_env_api_url() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .header("Authorization", "Bearer explicit-token");
         then.status(200).json_body(json!({}));
     });
 
-    let url = format!("{}/api/webhooks/agent/events", server.base_url());
+    let url = format!("{}/api/webhooks/run/events", server.base_url());
     let result = http.post_json(&url, &json!({"events": []}), 1).await;
 
     mock.assert_calls_async(1).await;
@@ -834,12 +834,12 @@ async fn send_event_uses_explicit_api_config_route_instead_of_env_route()
     let explicit_server = MockServer::start();
 
     let env_mock = env_server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200);
     });
     let explicit_mock = explicit_server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .header("Authorization", "Bearer explicit-token")
             .body_includes(r#""sequenceNumber":3"#);
         then.status(200);

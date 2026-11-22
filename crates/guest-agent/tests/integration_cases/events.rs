@@ -30,7 +30,7 @@ async fn send_event_correct_payload() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .json_body_includes(r#"{"runId": "test-run-001"}"#)
             .body_includes(r#""sequenceNumber":42"#);
         then.status(200);
@@ -51,7 +51,7 @@ async fn send_event_masks_secrets() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .body_includes(r#""tool_input":{"***":"contains *** here"}"#)
             .body_excludes("super-secret-value");
         then.status(200);
@@ -98,7 +98,7 @@ async fn send_event_masks_lowercase_percent_encoded_secret() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .body_includes(r#""data":"contains *** here""#);
         then.status(200);
     });
@@ -128,7 +128,7 @@ async fn send_event_captures_session_metadata_before_masking() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .body_includes(r#""session_id":"***""#)
             .body_excludes(session_id);
         then.status(200);
@@ -198,7 +198,7 @@ async fn send_event_preserves_rejected_claude_session_ids_without_finalization_m
     let sid_file = session_id_file();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200);
     });
 
@@ -233,7 +233,7 @@ async fn send_event_keeps_existing_session_id_file() {
 
     let mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .body_includes(r#""session_id":"second-session""#);
         then.status(200);
     });
@@ -267,7 +267,7 @@ async fn send_event_keeps_existing_claude_session_id_for_ordinary_events() {
     let session_id = "session-repair";
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200);
     });
 
@@ -300,7 +300,7 @@ async fn send_event_extracts_claude_session_id() {
     let sid_file = session_id_file();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200);
     });
 
@@ -332,7 +332,7 @@ async fn send_event_rejects_unsafe_claude_session_id() {
     let invalid_session_ids = ["../escape", "nested/id", "nested\\id", ".", "..", "bad\nid"];
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200);
     });
 
@@ -366,7 +366,7 @@ async fn send_event_skips_session_id_for_non_init() {
     let sid_file = session_id_file();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200);
     });
 
@@ -393,7 +393,7 @@ async fn send_event_failure_returns_error() {
     let server = api.server();
 
     let _mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(500);
     });
 
@@ -412,7 +412,7 @@ async fn send_event_accepts_success_without_parsing_response_body() {
     let server = api.server();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(204).body("not valid JSON");
     });
 

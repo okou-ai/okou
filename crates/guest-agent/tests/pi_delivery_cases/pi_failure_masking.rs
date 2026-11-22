@@ -73,16 +73,15 @@ async fn pi_extension_failure_masks_error_file_and_recovery_completion()
     )?;
     std::fs::set_permissions(&host, std::fs::Permissions::from_mode(0o700))?;
 
-    let _background = ["heartbeat", "events", "telemetry"].map(|endpoint| {
+    let _background = ["run/heartbeat", "run/events", "agent/telemetry"].map(|endpoint| {
         server.mock(|when, then| {
-            when.method(POST)
-                .path(format!("/api/webhooks/agent/{endpoint}"));
+            when.method(POST).path(format!("/api/webhooks/{endpoint}"));
             then.status(200).json_body(json!({}));
         })
     });
     let complete = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .body_excludes(SECRET)
             .body_excludes(MASKED_ERROR)
             .json_body_includes(

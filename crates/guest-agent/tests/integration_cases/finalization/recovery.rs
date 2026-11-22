@@ -19,7 +19,7 @@ async fn native_finalization_keeps_history_and_publishes_identity_after_acknowle
             let path = claude_history_path(dir.path(), session_id);
             let complete = api.server().mock(|when, then| {
                 when.method(POST)
-                    .path("/api/webhooks/agent/complete")
+                    .path("/api/webhooks/run/complete")
                     .json_body_includes(
                         json!({
                             "exitCode": if recovery { 1 } else { 0 },
@@ -83,7 +83,7 @@ async fn recovery_completion_accepts_missing_local_history_without_publishing_ho
     let dir = write_retained_session_history(&mut runtime, "missing-history", b"{}").unwrap();
     std::fs::remove_file(claude_history_path(dir.path(), "missing-history")).unwrap();
     let complete = api.server().mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/complete")
+        when.method(POST).path("/api/webhooks/run/complete")
             .json_body_includes(r#"{"exitCode":1,"completion":{"cliAgentSessionHistoryDisposition":"native_only"}}"#);
         then.status(200).json_body(json!({"success":true,"status":"failed"}));
     });

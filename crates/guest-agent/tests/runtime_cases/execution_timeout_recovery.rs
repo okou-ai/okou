@@ -34,14 +34,14 @@ async fn execution_timeout_preserves_the_resumable_session_before_exit()
 
     let _heartbeat = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/heartbeat")
+            .path("/api/webhooks/run/heartbeat")
             .json_body_includes(format!(r#"{{"runId":"{RUN_ID}"}}"#));
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
     });
     let _events = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
@@ -55,7 +55,7 @@ async fn execution_timeout_preserves_the_resumable_session_before_exit()
 
     let complete = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(format!(
                 r#"{{"exitCode":{},"completion":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#,
                 AGENT_EXECUTION_TIMEOUT_EXIT_CODE

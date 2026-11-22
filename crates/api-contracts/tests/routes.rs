@@ -2,11 +2,11 @@ use api_contracts::{Method, ResolvedRoute, RouteTemplate, generated::routes};
 
 #[test]
 fn exposes_generated_webhook_route_constants() {
-    let route = routes::webhooks::agent::events::SEND;
+    let route = routes::webhooks::run::events::SEND;
 
     assert_eq!(route.method, Method::Post);
     assert_eq!(route.method.as_str(), "POST");
-    assert_eq!(route.path, "/api/webhooks/agent/events");
+    assert_eq!(route.path, "/api/webhooks/run/events");
 }
 
 #[test]

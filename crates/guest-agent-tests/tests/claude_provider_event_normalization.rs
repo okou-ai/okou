@@ -121,7 +121,7 @@ async fn claude_content_blocks_are_masked_and_sequenced_in_source_order()
     let delivered = server
         .requests()?
         .into_iter()
-        .filter(|request| request.path == "/api/webhooks/agent/events")
+        .filter(|request| request.path == "/api/webhooks/run/events")
         .map(|request| serde_json::from_str::<Value>(&request.body))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()

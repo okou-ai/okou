@@ -86,7 +86,7 @@ async fn codex_app_server_delivers_notification_above_former_stdout_limit()
     let mut delivered_command = false;
     let mut delivered_completion = false;
     for request in requests {
-        if request.path != "/api/webhooks/agent/events" {
+        if request.path != "/api/webhooks/run/events" {
             continue;
         }
         assert!(request.body.len() <= 4 * 1024 * 1024);

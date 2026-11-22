@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import type { HomeReuseResult } from "@okouai/api-contracts/contracts/runner-primitives";
 import {
+  runWebhookContract,
   webhookHeartbeatContract,
   webhookTelemetryContract,
   webhookUsageEventContract,
@@ -1052,6 +1053,10 @@ const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const webhooksAgentHealthUsageTelemetryRoutes: readonly RouteEntry[] = [
+  {
+    route: runWebhookContract.heartbeat,
+    handler: heartbeat$,
+  },
   {
     route: webhookHeartbeatContract.send,
     handler: heartbeat$,

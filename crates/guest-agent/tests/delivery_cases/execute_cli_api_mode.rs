@@ -116,7 +116,7 @@ async fn api_mode_execute_cli_captures_session_metadata_and_sends_events()
     );
     let mut delivered_events = Vec::new();
     for request in requests {
-        assert_eq!(request.path, "/api/webhooks/agent/events");
+        assert_eq!(request.path, "/api/webhooks/run/events");
         assert_eq!(request.authorization.as_deref(), Some("Bearer test-token"));
         assert_eq!(request.content_type.as_deref(), Some("application/json"));
         let body: Value = serde_json::from_str(&request.body)?;

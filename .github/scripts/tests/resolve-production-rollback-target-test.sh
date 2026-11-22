@@ -333,6 +333,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7" ]; then
+      [ "${MOCK_RUN_WEBHOOK_PATHS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5858585858585858585858585858585858585858" ]; then
       [ "${MOCK_HOSTED_SITE_URL_ROUTING_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4343434343434343434343434343434343434343" ]; then
@@ -492,6 +494,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_MEMORY_RETIRED_COMMIT-6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
+    elif [[ "$*" == *run-webhook-paths* ]]; then
+      printf '%s\n' "${MOCK_RUN_WEBHOOK_PATHS_COMMIT-a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7}"
     elif [[ "$*" == *hosted-site-url-routing* ]]; then
       printf '%s\n' "${MOCK_HOSTED_SITE_URL_ROUTING_COMMIT-5858585858585858585858585858585858585858}"
     elif [[ "$*" == *computer-use-command-notifications* ]]; then
@@ -1754,6 +1758,18 @@ assert_failure "Rollback target predates the Browser session mutation contract" 
 [ ! -s "${tmp_dir}/browser-session-mutations-floor.output" ] || fail "incompatible Browser mutation API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Browser mutation floor must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Cannot resolve the merged Run webhook paths" \
+  run_resolver "${tmp_dir}/run-webhook-paths-history.output" "MOCK_RUN_WEBHOOK_PATHS_COMMIT=invalid"
+[ ! -s "${tmp_dir}/run-webhook-paths-history.output" ] || fail "invalid Run webhook history must not publish outputs"
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Run webhook paths" \
+  run_resolver "${tmp_dir}/run-webhook-paths-floor.output" MOCK_RUN_WEBHOOK_PATHS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/run-webhook-paths-floor.output" ] || fail "incompatible Run webhook API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Run webhook floor must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

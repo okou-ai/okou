@@ -206,7 +206,7 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
                     }
                     assert!(!preview.contains("memory.md"));
                 }
-                "/api/webhooks/agent/events" => {
+                "/api/webhooks/run/events" => {
                     let events = body["events"].as_array().ok_or("missing events")?;
                     for event in events {
                         sequences.push(event["sequenceNumber"].as_u64().ok_or("missing sequence")?);

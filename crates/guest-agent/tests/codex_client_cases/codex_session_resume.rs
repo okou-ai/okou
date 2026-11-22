@@ -204,7 +204,7 @@ fn recovery_finalization_resolves_history_from_codex_sessions_root() -> TestResu
 
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(format!(
                 r#"{{"exitCode":1,"completion":{{"cliAgentSessionId":"{thread_id}"}}}}"#
             ));

@@ -439,7 +439,7 @@ async fn telemetry_preserves_runtime_session_id_and_masks_secrets() {
     let secret = "actual-telemetry-secret-123";
     let event_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .body_includes(format!(r#""session_id":"{session_id}""#));
         then.status(200);
     });
