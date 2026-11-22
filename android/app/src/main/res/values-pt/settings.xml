@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">Navegador na nuvem</string>
     <string name="settings_cloud_browser_detail">Para novos chats</string>
     <string name="settings_account_security">Conta e segurança</string>
+    <string name="settings_account_email">E-mail</string>
     <string name="settings_account_web">Gerenciar conta na Web</string>
     <string name="settings_model_accounts">Contas de modelos</string>
     <string name="settings_accounts_scope">Escolha as contas de assinatura usadas em “%1$s”.</string>

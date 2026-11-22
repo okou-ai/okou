@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">Cloud Browser</string>
     <string name="settings_cloud_browser_detail">For new chats</string>
     <string name="settings_account_security">Account and security</string>
+    <string name="settings_account_email">Email</string>
     <string name="settings_account_web">Manage account on Web</string>
     <string name="settings_model_accounts">Model accounts</string>
     <string name="settings_accounts_scope">Choose the subscription accounts you use in “%1$s”.</string>

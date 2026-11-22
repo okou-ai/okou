@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">云端浏览器</string>
     <string name="settings_cloud_browser_detail">用于新聊天</string>
     <string name="settings_account_security">账号与安全</string>
+    <string name="settings_account_email">邮箱</string>
     <string name="settings_account_web">在 Web 管理账号</string>
     <string name="settings_model_accounts">模型账号</string>
     <string name="settings_accounts_scope">选择你在「%1$s」使用的订阅账号。</string>

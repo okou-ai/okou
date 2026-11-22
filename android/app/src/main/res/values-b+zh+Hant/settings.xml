@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">雲端瀏覽器</string>
     <string name="settings_cloud_browser_detail">用於新對話</string>
     <string name="settings_account_security">帳號與安全</string>
+    <string name="settings_account_email">電子郵件</string>
     <string name="settings_account_web">在 Web 管理帳號</string>
     <string name="settings_model_accounts">模型帳號</string>
     <string name="settings_accounts_scope">選擇你在「%1$s」使用的訂閱帳號。</string>

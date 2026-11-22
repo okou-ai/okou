@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">क्लाउड ब्राउज़र</string>
     <string name="settings_cloud_browser_detail">नई चैट के लिए</string>
     <string name="settings_account_security">खाता और सुरक्षा</string>
+    <string name="settings_account_email">ईमेल</string>
     <string name="settings_account_web">वेब पर खाता प्रबंधित करें</string>
     <string name="settings_model_accounts">मॉडल खाते</string>
     <string name="settings_accounts_scope">वे सदस्यता खाते चुनें जिनका आप “%1$s” में इस्तेमाल करते हैं।</string>

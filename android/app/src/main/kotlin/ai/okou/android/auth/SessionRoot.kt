@@ -453,7 +453,11 @@ private fun InstructionsSetting(instructionsOpen: Boolean, openInstructions: () 
 private fun AccountSettings(account: NativeAccount?, signOut: () -> Unit) {
     SettingsGroup {
         if (account != null) {
-            SettingsRow(account.email, leading = { SettingsIcon(R.drawable.ic_mail) })
+            SettingsRow(
+                stringResource(R.string.settings_account_email),
+                leading = { SettingsIcon(R.drawable.ic_mail) },
+                value = account.email,
+            )
             HorizontalDivider()
         }
         SettingsRow(

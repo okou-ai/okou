@@ -442,11 +442,15 @@ private fun CreditBalance(
     if (showWorkspaceCredits) {
         SettingsSection(stringResource(R.string.settings_credit_workspace)) {
             if (shared != null) {
+                val byCategory =
+                    shared.creditBreakdown
+                        .groupingBy { it.category }
+                        .fold(0.0) { credits, item -> credits + item.credits }
                 CreditCard(
                     shared.credits,
-                    shared.creditBreakdown.map { item ->
+                    byCategory.map { (category, credits) ->
                         val label =
-                            when (item.category) {
+                            when (category) {
                                 RecoveryBillingCreditBreakdownItemCategory.PLAN ->
                                     R.string.settings_credit_plan
                                 RecoveryBillingCreditBreakdownItemCategory.FREE ->
@@ -456,7 +460,7 @@ private fun CreditBalance(
                                 RecoveryBillingCreditBreakdownItemCategory.PAYASYOUGO ->
                                     R.string.settings_credit_top_up
                             }
-                        stringResource(label) to item.credits
+                        stringResource(label) to credits
                     },
                 )
             } else CreditReadState(state.offline || state.workspaceCredits.unavailable)

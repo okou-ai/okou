@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">Browser cloud</string>
     <string name="settings_cloud_browser_detail">Untuk chat baru</string>
     <string name="settings_account_security">Akun dan keamanan</string>
+    <string name="settings_account_email">Email</string>
     <string name="settings_account_web">Kelola akun di web</string>
     <string name="settings_model_accounts">Akun model</string>
     <string name="settings_accounts_scope">Pilih akun langganan yang Anda gunakan di “%1$s”.</string>

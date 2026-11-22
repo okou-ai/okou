@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">Cloud-Browser</string>
     <string name="settings_cloud_browser_detail">Für neue Chats</string>
     <string name="settings_account_security">Konto und Sicherheit</string>
+    <string name="settings_account_email">E-Mail</string>
     <string name="settings_account_web">Konto im Web verwalten</string>
     <string name="settings_model_accounts">Modellkonten</string>
     <string name="settings_accounts_scope">Wähle die Abokonten für „%1$s“.</string>

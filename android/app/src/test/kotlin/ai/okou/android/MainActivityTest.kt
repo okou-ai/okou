@@ -35,7 +35,9 @@ class MainActivityTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Account and security").performScrollTo().performClick()
         compose.onNodeWithText("other@okou.test").assertDoesNotExist()
+        compose.onNodeWithText("Email").assertDoesNotExist()
         compose.runOnIdle { auth.account.value = NativeAccount("user-a", "current@okou.test") }
+        compose.onNodeWithText("Email").assertIsDisplayed()
         compose.onNodeWithText("current@okou.test").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Sign out").performScrollTo().performClick()
         compose.onNodeWithText("Sign out?").assertIsDisplayed()

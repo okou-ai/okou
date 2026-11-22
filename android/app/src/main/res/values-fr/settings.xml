@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">Navigateur cloud</string>
     <string name="settings_cloud_browser_detail">Pour les nouvelles conversations</string>
     <string name="settings_account_security">Compte et sécurité</string>
+    <string name="settings_account_email">Adresse e-mail</string>
     <string name="settings_account_web">Gérer le compte sur le Web</string>
     <string name="settings_model_accounts">Comptes de modèle</string>
     <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans « %1$s ».</string>

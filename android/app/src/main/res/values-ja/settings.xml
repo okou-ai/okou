@@ -8,6 +8,7 @@
     <string name="settings_cloud_browser">クラウドブラウザー</string>
     <string name="settings_cloud_browser_detail">新しいチャットに適用</string>
     <string name="settings_account_security">アカウントとセキュリティ</string>
+    <string name="settings_account_email">メールアドレス</string>
     <string name="settings_account_web">Web でアカウントを管理</string>
     <string name="settings_model_accounts">モデルアカウント</string>
     <string name="settings_accounts_scope">「%1$s」で使用するサブスクリプションアカウントを選択します。</string>
