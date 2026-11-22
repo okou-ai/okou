@@ -95,6 +95,7 @@ open class TestOkouApplication : OkouApplication() {
     var chatService: ChatListService = TestChatService()
     var workflows: WorkflowService? = null
     var initialPreferences: UserPreferences? = null
+    var workspaceRole = OrganizationRole.MEMBER
     var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null
@@ -143,6 +144,12 @@ open class TestOkouApplication : OkouApplication() {
             override val artifacts = (fixture ?: canonical.value).artifacts
             override val workflowService = workflows
 
+            override suspend fun usagePackCredits() =
+                (fixture ?: canonical.value).usagePackCredits()
+
+            override suspend fun activateModelAccount(accountId: String) =
+                (fixture ?: canonical.value).activateModelAccount(accountId)
+
             override suspend fun sendControl(request: SendRequest) =
                 checkNotNull(controlService) { "No control backend in this external fixture" }
                     .sendControl(request)
@@ -153,7 +160,8 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun updatePersonalInstructions(content: String, ifVersion: String) =
                 checkNotNull(instructionsService).updatePersonalInstructions(content, ifVersion)
 
-            override suspend fun organization() = testOrganization(identity.workspaceId)
+            override suspend fun organization() =
+                testOrganization(identity.workspaceId).copy(role = workspaceRole)
 
             override suspend fun preferences() = stored()
 
@@ -174,6 +182,9 @@ open class TestOkouApplication : OkouApplication() {
                             theme =
                                 update.theme?.let { UserPreferencesTheme.valueOf(it.name) }
                                     ?: stored().theme,
+                            cloudBrowserEnabledByDefault =
+                                update.cloudBrowserEnabledByDefault
+                                    ?: stored().cloudBrowserEnabledByDefault,
                         )
                 preferences[key] = updated
                 return updated

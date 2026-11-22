@@ -43,7 +43,6 @@
     <string name="auth_workspace">मौजूदा वर्कस्पेस</string>
     <string name="auth_switch_workspace">कार्यक्षेत्र बदलें</string>
     <string name="auth_browser_unavailable">कार्यक्षेत्र सेट अप करने के लिए ब्राउज़र इंस्टॉल करें।</string>
-    <string name="preferences_title">दिखावट और क्षेत्र</string>
     <string name="preference_save_failed">आपकी प्राथमिकताएँ सेव नहीं हो सकीं। आपके चुनाव अब भी लागू हैं।</string>
     <string name="preference_refresh_failed">प्राथमिकताएँ रीफ़्रेश नहीं हो सकीं। फिर कोशिश करें।</string>
     <string name="preference_color_theme">कलर थीम</string>
@@ -151,7 +150,6 @@
     <string name="updates_waiting_to_download">डाउनलोड का इंतज़ार</string>
     <string name="instructions_placeholder">आप चाहते हैं कि Okou किन बातों का ध्यान रखे?</string>
     <string name="instructions_save_when_online">बदलाव सहेजने के लिए इंटरनेट से कनेक्ट करें।</string>
-    <string name="settings_conversation">बातचीत</string>
     <string name="settings_timezone">समय क्षेत्र</string>
     <string name="settings_timezone_hint">नई शेड्यूल की गई गतिविधियों का डिफ़ॉल्ट समय क्षेत्र।</string>
     <string name="settings_timezone_utc">समन्वित सार्वभौमिक समय</string>

@@ -68,6 +68,11 @@ class SessionModelTest {
         private val canonical = CanonicalWorkspaceSession(identity, tokens)
         override val artifacts = canonical.artifacts
 
+        override suspend fun usagePackCredits() = canonical.usagePackCredits()
+
+        override suspend fun activateModelAccount(accountId: String) =
+            canonical.activateModelAccount(accountId)
+
         override suspend fun sendControl(request: SendRequest): AcceptedInput =
             error("No control backend in this fixture")
 

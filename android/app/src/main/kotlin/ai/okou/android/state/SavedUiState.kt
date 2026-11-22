@@ -31,6 +31,9 @@ internal sealed interface WorkspaceTarget {
 internal enum class SettingsDestination {
     Overview,
     Instructions,
+    ModelAccounts,
+    CreditBalance,
+    Account,
 }
 
 internal enum class SearchRoute {
@@ -47,6 +50,11 @@ internal fun rememberUpdateDetailsOpen(): MutableState<Boolean> = rememberSaveab
 @Composable
 internal fun rememberSettingsFlag(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
+}
+
+@Composable
+internal fun rememberSettingsReturnFocus(): MutableState<SettingsDestination?> = rememberSaveable {
+    mutableStateOf(null)
 }
 
 @Composable
@@ -178,15 +186,10 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                             "new" -> WorkspaceTarget.NewChat((id as String).ifEmpty { null })
                             else -> WorkspaceTarget.List
                         }
+                    // Earlier versions saved only whether Settings was open.
                     val destination =
-                        when (settings) {
-                            // Earlier versions saved only whether Settings was open.
-                            true,
-                            SettingsDestination.Overview.name -> SettingsDestination.Overview
-                            SettingsDestination.Instructions.name ->
-                                SettingsDestination.Instructions
-                            else -> null
-                        }
+                        if (settings == true) SettingsDestination.Overview
+                        else SettingsDestination.entries.firstOrNull { it.name == settings }
                     val search = SearchRoute.entries.firstOrNull { it.name == fields.getOrNull(3) }
                     val artifacts =
                         if (fields.getOrNull(4) == true) {

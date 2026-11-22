@@ -60,11 +60,10 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
         onDispose { model.settingsVisibilityChanged(false) }
     }
     val dark = state.theme.resolveDark(isSystemInDarkTheme())
-    SettingsSection(stringResource(R.string.preferences_title)) {
+    SettingsSection(stringResource(R.string.settings_appearance_group)) {
         SettingsGroup {
             val appearanceTitle = stringResource(R.string.appearance)
             val colorTitle = stringResource(R.string.preference_color_theme)
-            val languageTitle = stringResource(R.string.preference_language)
             SettingsPickerRow(
                 appearanceTitle,
                 value = stringResource(appearanceLabel(state.theme)),
@@ -95,7 +94,11 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
                     }
                 }
             }
-            HorizontalDivider()
+        }
+    }
+    SettingsSection(stringResource(R.string.settings_region)) {
+        SettingsGroup {
+            val languageTitle = stringResource(R.string.preference_language)
             SettingsPickerRow(
                 languageTitle,
                 value = stringResource(languageLabel(state.locale)),
@@ -117,7 +120,7 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
             HorizontalDivider()
             TimezonePicker(state.timezone, model::selectTimezone)
         }
-        PreferenceFeedback(state, model::retry)
+        if (state.pending?.cloudBrowser == null) PreferenceFeedback(state, model::retry)
     }
 }
 
@@ -186,7 +189,7 @@ private fun TimezonePicker(current: String, onSelect: (String) -> Unit) {
 }
 
 @Composable
-private fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit) {
+internal fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit) {
     if (state.recovering) return
     val message =
         when (state.status) {

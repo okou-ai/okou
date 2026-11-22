@@ -248,7 +248,9 @@ class OkouAppTest {
                                 projectExpansion = null,
                                 settingsContent = { _, _, _ ->
                                     SettingsScreen(
-                                        conversation = {},
+                                        models = {},
+                                        tools = {},
+                                        myOkou = {},
                                         workspacePreferences = {
                                             MemberPreferencesSettings(models.second)
                                         },
@@ -712,7 +714,7 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
         selectAppearance("Dunkel", row = "Anzeigemodus")
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
-        compose.onNodeWithText("Darstellung und Region").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Region").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Zeitzone").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Chats").assertIsDisplayed()

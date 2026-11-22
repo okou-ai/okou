@@ -10213,7 +10213,9 @@ data class RecoverySubscriptionsSubscriptionsItem(
     val `subscriptionResetPeriod`: String? = null,
     val `subscriptionNextResetAt`: String? = null,
     val `subscriptionUsage`: RecoverySubscriptionsSubscriptionsItemSubscriptionUsage? = null,
-    val `subscriptionCredits`: RecoverySubscriptionsSubscriptionsItemSubscriptionCredits? = null,
+    val `subscriptionCredits`:
+        CanonicalOptional<RecoverySubscriptionsSubscriptionsItemSubscriptionCredits?> =
+        CanonicalOptional.Absent,
     val `subscriptionResetSupported`: Boolean? = null,
     val `subscriptionResetCredits`: Long? = null,
     val `subscriptionResetCreditsNextExpiresAt`: String? = null,
@@ -10341,6 +10343,17 @@ data class RecoveryBilling(
     val `concurrencyLimit`: Long,
     val `concurrencySubscriptions`: List<RecoveryBillingConcurrencySubscriptionsItem>,
 )
+
+@Serializable
+data class UsagePackCredits(
+    val `totalCredits`: Long,
+    val `purchasedCredits`: Long,
+    val `bonusCredits`: Long,
+)
+
+@Serializable data object ActivateModelAccountRequest
+
+@Serializable data class ActivatedModelAccount(val `id`: String, val `isActive`: Boolean? = null)
 
 @Serializable data class ResetSubscriptionRequest(val `idempotencyKey`: String)
 

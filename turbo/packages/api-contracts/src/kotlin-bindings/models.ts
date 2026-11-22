@@ -450,6 +450,7 @@ export function renderKotlinModels(
   let requestBinding = false;
   let currentBinding: KotlinTypeBinding | undefined;
   const reusableOutputs = new Map<object, string>();
+  let preserveOptionalNullable: readonly string[] = [];
   const integerLiterals = new Set<number>();
   const booleanLiterals = new Set<boolean>();
   const imports = new Set([
@@ -678,7 +679,7 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
         }
         if (
           optional &&
-          requestBinding &&
+          (requestBinding || preserveOptionalNullable.includes(field)) &&
           schemaObject(schema) &&
           nullableSchema(schema, `${name}${suffix(field)}`) !== undefined
         ) {
@@ -994,9 +995,10 @@ ${types
   for (const binding of bindings) {
     currentBinding = binding;
     requestBinding = requestTypes.has(binding.name);
+    preserveOptionalNullable = binding.preserveOptionalNullable ?? [];
     const name = kotlinTypeName(binding.name);
     const result = render(
-      toJSONSchema(binding.schema, {
+      toJSONSchema(binding.readSchema ?? binding.schema, {
         io: binding.direction,
         override: ({ zodSchema, jsonSchema }) => {
           const shared =

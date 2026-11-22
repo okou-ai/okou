@@ -84,6 +84,12 @@ interface WorkspaceSession :
     val workflowService: WorkflowService?
         get() = null
 
+    suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits
+
+    suspend fun activateModelAccount(
+        accountId: String
+    ): ai.okou.android.api.generated.ActivatedModelAccount
+
     suspend fun organization(): Organization
 
     suspend fun preferences(): UserPreferences
@@ -199,6 +205,11 @@ class CanonicalWorkspaceSession(
     override suspend fun recoverySubscriptions() = api.recoverySubscriptions()
 
     override suspend fun recoveryBilling() = api.recoveryBilling()
+
+    override suspend fun usagePackCredits() = api.usagePackCredits()
+
+    override suspend fun activateModelAccount(accountId: String) =
+        api.activateModelAccount(accountId)
 
     override suspend fun resetSubscription(accountId: String, idempotencyKey: String) =
         api.resetSubscription(accountId, idempotencyKey)

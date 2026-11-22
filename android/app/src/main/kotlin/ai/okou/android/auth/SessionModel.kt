@@ -3,6 +3,7 @@ package ai.okou.android.auth
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.OrganizationRole
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.ChatCacheStore
@@ -21,6 +22,7 @@ import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.PreferenceChange
 import ai.okou.android.preferences.appearance
+import ai.okou.android.settings.WorkspaceSettingsModel
 import ai.okou.android.workflows.WorkflowModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -66,6 +68,7 @@ data class ReadyWorkspace(
     val controls: RunControlsModel,
     val recovery: AssistantRecoveryModel,
     val artifacts: ArtifactCatalogModel,
+    val settings: WorkspaceSettingsModel,
     val workflows: WorkflowModel?,
 )
 
@@ -487,6 +490,16 @@ class SessionModel(
                     { workspaceFailure(ticket, snapshot, it) },
                 )
             }
+        val settings =
+            store.workspaceModel {
+                WorkspaceSettingsModel(
+                    owner,
+                    opened.organization.role == OrganizationRole.ADMIN,
+                    { current(ticket, snapshot) },
+                    { workspaceFailure(ticket, snapshot, it) },
+                    connectivity,
+                )
+            }
         val workflows =
             owner.workflowService?.let { service ->
                 store.workspaceModel {
@@ -512,6 +525,7 @@ class SessionModel(
                         opened.controls,
                         opened.recovery,
                         opened.artifacts,
+                        settings,
                         workflows,
                     ),
                 working = false,
