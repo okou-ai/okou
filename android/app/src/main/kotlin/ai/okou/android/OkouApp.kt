@@ -135,7 +135,7 @@ internal fun OkouApp(
     val resourcesPageState = rememberArtifactPageHolder()
     val inlineArtifactPageState = rememberArtifactPageHolder()
     val resourcesFocus = remember { FocusRequester() }
-    var restoreResourcesFocus by remember { mutableStateOf(false) }
+    var restoreConversationActionsFocus by remember { mutableStateOf(false) }
     val artifactEntryFocus = remember { FocusRequester() }
     var restoreArtifactEntryFocus by remember { mutableStateOf(false) }
     val artifactsOpen = navigation.artifacts != null
@@ -242,11 +242,13 @@ internal fun OkouApp(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
 
-    fun closeFind() {
-        if (findVisit?.inputFocused == true) {
+    fun closeFind(returnToActions: Boolean = false) {
+        val find = findVisit ?: return
+        if (find.inputFocused) {
             focus.clearFocus()
             keyboard?.hide()
         }
+        if (returnToActions) restoreConversationActionsFocus = find.restoreActionsFocus
         findVisit = null
     }
 
@@ -294,7 +296,7 @@ internal fun OkouApp(
             navigation = navigation.copy(chatArtifactFocusKey = null)
         }
         if (navigation.chatResourcesId == null) return
-        if (!returnToActions) restoreResourcesFocus = false
+        if (!returnToActions) restoreConversationActionsFocus = false
         navigation = navigation.copy(chatResourcesId = null)
         chatArtifacts?.select(null)
         resourcesPageState.removeState("chat-resources")
@@ -551,7 +553,7 @@ internal fun OkouApp(
     fun back() {
         val find = findVisit
         if (settings == null && find != null) {
-            if (find.target == null) closeFind() else find.returnToResults()
+            if (find.target == null) closeFind(returnToActions = true) else find.returnToResults()
             return
         }
         when (settings) {
@@ -703,7 +705,7 @@ internal fun OkouApp(
                         ?.takeIf { chatArtifacts != null }
                         ?.let { id ->
                             { restore ->
-                                restoreResourcesFocus = restore
+                                restoreConversationActionsFocus = restore
                                 focus.clearFocus()
                                 keyboard?.hide()
                                 navigation = navigation.copy(chatResourcesId = id)
@@ -722,18 +724,29 @@ internal fun OkouApp(
                 settingsFocus = if (listWidth == null) settingsFocus else resourcesFocus,
                 onFind =
                     thread?.let { selected ->
-                        {
-                            val history = chats?.history
-                            val messages =
-                                history
-                                    ?.uiState
-                                    ?.value
-                                    ?.takeIf { it.thread?.id == selected.id }
-                                    ?.transcript
-                                    ?.messages
-                                    .orEmpty()
-                            val rows = history?.checkpoint(selected.id)?.rows.orEmpty()
-                            findVisit = ConversationFindVisit(messages, rows, chatArtifacts != null)
+                        { restoreFocus ->
+                            val find = findVisit
+                            if (find != null) {
+                                find.returnToResults()
+                            } else {
+                                val history = chats?.history
+                                val messages =
+                                    history
+                                        ?.uiState
+                                        ?.value
+                                        ?.takeIf { it.thread?.id == selected.id }
+                                        ?.transcript
+                                        ?.messages
+                                        .orEmpty()
+                                val rows = history?.checkpoint(selected.id)?.rows.orEmpty()
+                                findVisit =
+                                    ConversationFindVisit(
+                                        messages,
+                                        rows,
+                                        chatArtifacts != null,
+                                        restoreFocus,
+                                    )
+                            }
                         }
                     },
             )
@@ -742,8 +755,8 @@ internal fun OkouApp(
                     restoreSettingsFocus = false
                     settingsFocus.requestFocus()
                 }
-                if (restoreResourcesFocus && thread != null) {
-                    restoreResourcesFocus = false
+                if (restoreConversationActionsFocus && thread != null) {
+                    restoreConversationActionsFocus = false
                     (if (listWidth == null) settingsFocus else resourcesFocus).requestFocus()
                 }
             }
@@ -1026,7 +1039,10 @@ internal fun OkouApp(
                             val find = findVisit
                             if (showingFind && find != null) {
                                 Box(Modifier.fillMaxSize().imePadding()) {
-                                    ConversationFind(find, onClose = ::closeFind)
+                                    ConversationFind(
+                                        find,
+                                        onClose = { closeFind(returnToActions = true) },
+                                    )
                                 }
                                 return@detailPane
                             }

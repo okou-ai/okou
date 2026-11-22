@@ -46,7 +46,7 @@ internal fun ConversationToolbarActions(
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
     openResources: ((restoreFocus: Boolean) -> Unit)? = null,
     settingsFocus: FocusRequester? = null,
-    onFind: (() -> Unit)? = null,
+    onFind: ((restoreFocus: Boolean) -> Unit)? = null,
 ) {
     val actions = thread?.let { state.rowActions(it) }.orEmpty()
     if (actions.isEmpty() && openSettings == null && openResources == null && onFind == null) return
@@ -84,7 +84,7 @@ internal fun ConversationToolbarActions(
                                 R.drawable.ic_search,
                             ) {
                                 menu = false
-                                find()
+                                find(restoreFocus)
                             }
                         },
                         openResources?.let { open ->

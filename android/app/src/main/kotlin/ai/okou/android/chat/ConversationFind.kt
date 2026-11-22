@@ -81,6 +81,7 @@ internal class ConversationFindVisit(
     private val messages: List<HistoryMessage>,
     private val rows: List<HistoryEvent>,
     private val artifactCards: Boolean,
+    val restoreActionsFocus: Boolean,
 ) {
     val hasLoadedMessages: Boolean
         get() = messages.isNotEmpty()
@@ -101,6 +102,13 @@ internal class ConversationFindVisit(
 
     var focusedResult by mutableStateOf<String?>(null)
         private set
+
+    var focusPending = true
+        private set
+
+    fun focusRestored() {
+        focusPending = false
+    }
 
     fun onInputFocusChanged(focused: Boolean) {
         inputFocused = focused
@@ -131,6 +139,7 @@ internal class ConversationFindVisit(
     }
 
     fun returnToResults() {
+        focusPending = true
         target = null
     }
 }
@@ -281,8 +290,8 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
         }
     val results = filtered?.takeIf { it.first == keyword }?.second
     LaunchedEffect(visit) {
-        if (visit.focusedResult == null) {
-            inputFocus.requestFocus()
+        if (visit.focusPending && visit.focusedResult == null && inputFocus.requestFocus()) {
+            visit.focusRestored()
             keyboard?.show()
         }
     }
@@ -439,7 +448,12 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                             FindExcerpt(result, keyword.length, summaryStyle)
                         }
                     }
-                    if (restoreFocus) LaunchedEffect(message.id) { resultFocus.requestFocus() }
+                    if (restoreFocus) {
+                        LaunchedEffect(message.id) {
+                            if (visit.focusPending && resultFocus.requestFocus())
+                                visit.focusRestored()
+                        }
+                    }
                 }
             }
         }

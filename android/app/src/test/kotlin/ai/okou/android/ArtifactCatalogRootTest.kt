@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
@@ -122,6 +123,42 @@ class ArtifactCatalogRootTest {
         compose.onNodeWithText("Native history reply").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back to artifact preview").performClick()
         awaitText("View source conversation")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun returningFromTheWorkspaceCatalogKeepsFindWithoutReplayingItsFocusRequests() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText("Native history reply")
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.assertIsFocused().performTextReplacement("Native history")
+        awaitText("1 matching message")
+
+        val artifacts = compose.onNodeWithContentDescription("Artifacts")
+        val backToWorkspace = compose.onNodeWithContentDescription("Back to workspace")
+        artifacts.performClick()
+        backToWorkspace.performClick()
+        query.assertTextContains("Native history").assertIsNotFocused()
+        awaitText("1 matching message")
+
+        val result = compose.onNodeWithText("Native history reply")
+        result.performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
+        compose.onNodeWithContentDescription("Back").performClick()
+        awaitText("1 matching message")
+        result.assertIsFocused()
+
+        artifacts.performClick()
+        backToWorkspace.performClick()
+        query.assertTextContains("Native history").assertIsNotFocused()
+        awaitText("1 matching message")
+        result.assertIsNotFocused()
     }
 
     @Test

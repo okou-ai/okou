@@ -548,6 +548,38 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun openingFindFromTheHitRestoresTheResultsAndClosingItReturnsToTheKeyboardTrigger() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Native history reply"), 10_000)
+
+        val actions = compose.onNodeWithContentDescription("Chat actions")
+        actions.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        actions.performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.assertIsFocused().performTextInput("Native history")
+        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
+        val result = compose.onNodeWithText("Native history reply")
+        result.performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
+
+        actions.performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        query.assertTextContains("Native history")
+        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
+        result.assertIsFocused()
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        actions.assertIsFocused()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
     fun findAndWorkspaceSearchKeepTheirOwnBackAndFocus() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
