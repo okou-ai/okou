@@ -11,7 +11,10 @@ import {
   mockBrowserCdp,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
 export function arrangeNativePage(
@@ -87,4 +90,15 @@ export async function expectStreamingAt(address: string) {
       screen.getByRole("img", { name: "Live browser view" }),
     ).toBeInTheDocument();
   });
+}
+
+export function browserTab(title: string) {
+  return (
+    queryAllByRoleFast("tab").find((tab) => {
+      return (
+        tab.getAttribute("aria-label") === title ||
+        tab.textContent?.trim() === title
+      );
+    }) ?? null
+  );
 }
