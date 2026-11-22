@@ -70,6 +70,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -86,6 +87,9 @@ internal class ConversationFindVisit(
 
     val position = LazyListState()
     val input = TextFieldState()
+    var inputFocused by mutableStateOf(false)
+        private set
+
     var index by mutableStateOf<List<FindMessage>?>(null)
         private set
 
@@ -97,6 +101,10 @@ internal class ConversationFindVisit(
 
     var focusedResult by mutableStateOf<String?>(null)
         private set
+
+    fun onInputFocusChanged(focused: Boolean) {
+        inputFocused = focused
+    }
 
     suspend fun prepareIndex() {
         if (index == null) {
@@ -127,7 +135,21 @@ internal class ConversationFindVisit(
     }
 }
 
-internal data class ConversationFindTarget(val id: String, val markdownBlock: Int?)
+internal class ConversationFindTarget(val id: String, val markdownBlock: Int?) {
+    var highlighted by mutableStateOf(true)
+        private set
+
+    suspend fun expireHighlight() {
+        if (!highlighted) return
+        try {
+            delay(FindHighlightDurationMillis)
+        } finally {
+            highlighted = false
+        }
+    }
+}
+
+private const val FindHighlightDurationMillis = 2_000L
 
 private val findWhitespace = Regex("[\\s\\p{Z}]+")
 
@@ -233,7 +255,6 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
     val focusColor = LocalActivityStatusColor.current
     val keyboardMode = LocalInputModeManager.current.inputMode == InputMode.Keyboard
     val rowShape = RoundedCornerShape(8.dp)
-    var inputFocused by remember { mutableStateOf(false) }
     LaunchedEffect(visit) { visit.prepareIndex() }
     LaunchedEffect(visit) {
         snapshotFlow { visit.input.text.toString().takeIf { visit.input.composition == null } }
@@ -283,7 +304,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                         modifier =
                             modifier
                                 .focusRequester(inputFocus)
-                                .onFocusChanged { inputFocused = it.isFocused }
+                                .onFocusChanged { visit.onInputFocusChanged(it.isFocused) }
                                 .testTag("conversation_find_query")
                                 .semantics { contentDescription = label },
                         textStyle = titleStyle.copy(color = colors.onSurface),
@@ -294,7 +315,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                         decorator = { input ->
                             WorkspaceSearchField(
                                 Modifier.fillMaxWidth(),
-                                focused = inputFocused,
+                                focused = visit.inputFocused,
                                 hasTrailingAction = visit.input.text.isNotEmpty(),
                             ) {
                                 Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
