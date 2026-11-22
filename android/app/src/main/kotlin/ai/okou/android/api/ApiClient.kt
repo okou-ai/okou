@@ -344,6 +344,8 @@ class ApiClient(
         api.updateDefaultModelPreference(it, update)
     }
 
+    suspend fun featureSwitches() = execute { reads.featureSwitches(it) }
+
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
         execute {
             api.initializePreferences(it, body)

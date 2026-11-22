@@ -242,6 +242,9 @@ internal interface CanonicalApi {
         @Body body: UpdateDefaultModelPreference,
     ): Response<DefaultModelPreference>
 
+    @GET("/api/feature-switches")
+    suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
+
     @GET("/api/me/3rd-party-subscriptions")
     suspend fun `recoverySubscriptions`(
         @Header("Authorization") token: String

@@ -43,7 +43,11 @@ internal data class DefaultModelOptions(
         id?.let { replacements[it] }?.takeUnless { it == "auto" || it == "okou-1.0" }
 }
 
-private fun modelOptions(models: RecoveryModels, catalog: RecoveryCatalog): DefaultModelOptions {
+private fun modelOptions(
+    models: RecoveryModels,
+    catalog: RecoveryCatalog,
+    codexExecution: Boolean,
+): DefaultModelOptions {
     val available = models.models.associateBy { it.model }
     val choices =
         catalog.models
@@ -67,6 +71,7 @@ private fun modelOptions(models: RecoveryModels, catalog: RecoveryCatalog): Defa
                         .sortedBy { it.priority }
                 val subscription = run.subscriptionOptions
                 val admitted = subscription?.efforts?.map { it.name }
+                val usesPi = !codexExecution && routes.any { it.piRuntimeCapable == true }
                 val efforts =
                     routes
                         .flatMap { route -> route.efforts }
@@ -74,7 +79,9 @@ private fun modelOptions(models: RecoveryModels, catalog: RecoveryCatalog): Defa
                             ModelEffort.entries.find { it.name.equals(wire, ignoreCase = true) }
                         }
                         .filter {
-                            it != ModelEffort.ULTRACODE && (admitted == null || it.name in admitted)
+                            it != ModelEffort.ULTRACODE &&
+                                (!usesPi || it != ModelEffort.ULTRA) &&
+                                (admitted == null || it.name in admitted)
                         }
                         .distinct()
                 val defaultEffort = routes.firstNotNullOfOrNull { it.defaultEffort }
@@ -94,13 +101,21 @@ private fun modelOptions(models: RecoveryModels, catalog: RecoveryCatalog): Defa
     return DefaultModelOptions(choices, catalog.models.associate { it.model to it.resolvedModel })
 }
 
+internal enum class DefaultModelFailure {
+    Read,
+    Save,
+}
+
 internal data class DefaultModelState(
     val preference: DefaultModelPreference? = null,
     val options: DefaultModelOptions? = null,
     val pending: UpdateDefaultModelPreference? = null,
     val offline: Boolean = false,
-    val failed: Boolean = false,
+    val failure: DefaultModelFailure? = null,
 ) {
+    val failed: Boolean
+        get() = failure != null
+
     val selected: DefaultModelChoice?
         get() {
             val id =
@@ -143,7 +158,12 @@ internal class DefaultModelSettings(
         if (visible == active) return
         visible = active
         refreshRequested = active
-        if (!active && mutable.value.pending == null) work?.cancel()
+        val current = mutable.value
+        if (!active && current.pending == null) {
+            work?.cancel()
+            if (current.failure == DefaultModelFailure.Save)
+                mutable.value = current.copy(failure = null)
+        }
         synchronize()
     }
 
@@ -194,7 +214,7 @@ internal class DefaultModelSettings(
 
     private fun submit(change: UpdateDefaultModelPreference) {
         if (!authorized()) return
-        mutable.value = mutable.value.copy(pending = change, failed = false)
+        mutable.value = mutable.value.copy(pending = change, failure = null)
         synchronize()
     }
 
@@ -218,6 +238,7 @@ internal class DefaultModelSettings(
                             if (pending == null) {
                                 refreshRequested = false
                                 refresh()
+                                failures = 0
                             } else {
                                 val confirmed =
                                     if (readback) service.defaultModelPreference()
@@ -232,14 +253,15 @@ internal class DefaultModelSettings(
                                     if (readback) current.pending?.matches(confirmed) == true
                                     else current.pending == pending
                                 needsReadback = false
+                                val awaitingWrite = readback && !fulfilled
+                                if (!awaitingWrite) failures = 0
                                 mutable.value =
                                     current.copy(
                                         preference = confirmed,
                                         pending = current.pending.takeUnless { fulfilled },
-                                        failed = false,
+                                        failure = current.failure.takeIf { awaitingWrite },
                                     )
                             }
-                            failures = 0
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (error: Exception) {
@@ -248,21 +270,25 @@ internal class DefaultModelSettings(
                             if (!authorized()) break
                             val retryable =
                                 error is ApiFailure.Network ||
+                                    pending != null && error is ApiFailure.IncompatibleResponse ||
                                     error is ApiFailure.Http &&
                                         (error.status >= 500 || error.status in setOf(408, 429))
+                            val current = mutable.value
+                            val failure =
+                                if (pending != null) DefaultModelFailure.Save
+                                else current.failure ?: DefaultModelFailure.Read
                             if (!retryable) {
                                 needsReadback = false
-                                val current = mutable.value
                                 mutable.value =
                                     current.copy(
                                         pending = current.pending.takeUnless { it == pending },
-                                        failed = true,
+                                        failure = failure,
                                     )
                                 if (mutable.value.pending == null) break
                             } else {
                                 failures += 1
                                 if (pending == null) refreshRequested = visible
-                                if (failures >= 2) mutable.value = mutable.value.copy(failed = true)
+                                if (failures >= 2) mutable.value = current.copy(failure = failure)
                                 delay(if (failures == 1) 5_000 else 30_000)
                             }
                         }
@@ -281,11 +307,31 @@ internal class DefaultModelSettings(
         val catalog = async { service.recoveryCatalog() }
         val models = async { service.recoveryModels() }
         val confirmed = preference.await()
-        val options = modelOptions(models.await(), catalog.await())
+        val available = models.await()
+        val currentCatalog = catalog.await()
+        val hasPiUltra =
+            currentCatalog.routes.any { route ->
+                route.piRuntimeCapable == true &&
+                    "ultra" in route.efforts &&
+                    available.models.any { run ->
+                        run.model == route.model &&
+                            run.memberEffective.availability !=
+                                RecoveryModelsModelsItemMemberEffectiveAvailability.PLAN_RESTRICTED
+                    }
+            }
+        val codexExecution =
+            hasPiUltra && service.featureSwitches().effectiveSwitches["_codexExecution"] == true
+        val options = modelOptions(available, currentCatalog, codexExecution)
         currentCoroutineContext().ensureActive()
-        if (authorized())
+        if (authorized()) {
+            val current = mutable.value
             mutable.value =
-                mutable.value.copy(preference = confirmed, options = options, failed = false)
+                current.copy(
+                    preference = confirmed,
+                    options = options,
+                    failure = current.failure.takeIf { it == DefaultModelFailure.Save },
+                )
+        }
     }
 
     private fun UpdateDefaultModelPreference.matches(preference: DefaultModelPreference): Boolean =

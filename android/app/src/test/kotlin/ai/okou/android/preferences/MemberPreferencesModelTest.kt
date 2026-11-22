@@ -52,6 +52,9 @@ class MemberPreferencesModelTest {
             ai.okou.android.api.generated.DefaultModelPreference =
             error("Default model is outside this fixture")
 
+        override suspend fun featureSwitches(): ai.okou.android.api.generated.FeatureSwitches =
+            error("Feature switches are outside this fixture")
+
         override suspend fun updateDefaultModelPreference(
             update: ai.okou.android.api.generated.UpdateDefaultModelPreference
         ): ai.okou.android.api.generated.DefaultModelPreference =
