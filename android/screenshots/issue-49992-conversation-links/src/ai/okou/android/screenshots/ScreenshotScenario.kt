@@ -206,6 +206,35 @@ class ScreenshotScenario {
                     text("Project release update", partial = true)
                     awaitSavedDraft()
                     ScreenshotCapture.capture("04-wide-inline-links.png")
+
+                    await(By.pkg(app.packageName).desc(app.getString(R.string.chat_search_workspace)))
+                        .click()
+                    await(By.copy(editor).focused(true)).setText("personal")
+                    val searchQuery = By.copy(editor).text("personal")
+                    await(searchQuery)
+                    text("Project release update", partial = true).click()
+                    text(targetReply)
+                    await(searchQuery)
+                    val keyboardHidden =
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice): Boolean {
+                                var hidden = false
+                                scenario.onActivity { activity ->
+                                    hidden = activity.window.decorView.rootWindowInsets
+                                        ?.isVisible(WindowInsets.Type.ime()) == false
+                                }
+                                return hidden
+                            }
+                        }
+                    check(device.wait(keyboardHidden, 12_000)) { "The search keyboard remained open" }
+                    check(device.pressBack())
+                    text("Project release update", partial = true)
+                    await(searchQuery)
+                    awaitSavedDraft()
+                    ScreenshotCapture.capture("07-wide-search-return.png")
+                    check(device.pressBack())
+                    device.awaitChatList(app)
+
                     text("Project release update", partial = true).click()
                     text(targetReply)
                     device.awaitChatList(app)
