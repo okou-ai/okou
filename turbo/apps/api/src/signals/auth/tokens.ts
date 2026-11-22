@@ -361,7 +361,6 @@ export function verifyOkouToken(token: string): AgentAuth | null {
     runId: parsed.data.runId,
     orgId: parsed.data.orgId,
     capabilities: parsed.data.capabilities,
-    ...singleAgentRuntimeContextSchema.parse(parsed.data),
     ...(parsed.data.phoneUseDeviceId && parsed.data.phoneUseGrantId
       ? {
           phoneUseDeviceId: parsed.data.phoneUseDeviceId,

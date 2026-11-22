@@ -14,6 +14,7 @@ import { projectRoutes } from "../projects";
 import { chatEventsRoutes } from "../chat-events";
 import {
   createChatEventsFixture,
+  okouTokenFromExecution,
   userMessages,
 } from "./helpers/chat-events-fixture";
 
@@ -157,4 +158,31 @@ test("prepares queued inputs from current membership while preserving an already
   expect((await fixture.api.executionInput(nextId)).appendSystemPrompt).toBe(
     next.appendSystemPrompt,
   );
+});
+
+test("lets a started Run create and read its member's Projects with the issued Run token", async () => {
+  const { actor } = await fixture.entitledNativeChatActor();
+  const run = await fixture.sendChatRun(actor, {
+    prompt: "Organize this work into a Project",
+  });
+  const { execution } = await fixture.runExecution(run.runId);
+  const runHeaders = {
+    authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+  };
+  const id = operation();
+  await accept(
+    projects().create({
+      headers: runHeaders,
+      body: { id, eventId: id, name: "Run research" },
+    }),
+    [201],
+  );
+  const listed = await accept(projects().list({ headers: runHeaders }), [200]);
+  expect(listed.body.projects).toMatchObject([{ id, name: "Run research" }]);
+  const owned = await accept(
+    projects().get({ headers: fixture.sessionHeaders(actor), params: { id } }),
+    [200],
+  );
+  expect(owned.body).toMatchObject({ id, name: "Run research" });
+  await fixture.cancelChatRun(actor, run.runId);
 });

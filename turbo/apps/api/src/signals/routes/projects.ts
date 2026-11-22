@@ -23,10 +23,6 @@ import { chatThreadOrganizationPredicate } from "../services/chat-thread-organiz
 import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
-export const personalProjectAccess$ = computed((get) => {
-  const auth = get(organizationAuthContext$);
-  return auth.tokenType !== "agent" || auth.singleAgent === true;
-});
 const unavailable = notFound("Project not found");
 const conflict = Object.freeze({
   status: 409 as const,
@@ -39,18 +35,12 @@ const conflict = Object.freeze({
   },
 });
 const list$ = computed(async (get) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   return {
     status: 200 as const,
     body: { projects: await get(projectList(get(organizationAuthContext$))) },
   };
 });
 const read$ = computed(async (get) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   const project = await get(
     projectById(
       get(organizationAuthContext$),
@@ -60,9 +50,6 @@ const read$ = computed(async (get) => {
   return project ? { status: 200 as const, body: project } : unavailable;
 });
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   const body = await get(bodyResultOf(projectsContract.create));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -88,9 +75,6 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 201 as const, body: project };
 });
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   const body = await get(bodyResultOf(projectsContract.update));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -117,9 +101,6 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: project };
 });
 const reorder$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   const body = await get(bodyResultOf(projectsContract.reorder));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -141,9 +122,6 @@ const reorder$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   const body = await get(bodyResultOf(projectsContract.delete));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -168,9 +146,6 @@ const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 const membership$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   const body = await get(bodyResultOf(projectsContract.membership));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -195,9 +170,6 @@ const membership$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 const threads$ = computed(async (get) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   const owner = get(organizationAuthContext$);
   const id = get(pathParamsOf(projectsContract.threads)).id;
   if (!(await get(projectById(owner, id)))) {
@@ -242,9 +214,6 @@ const threads$ = computed(async (get) => {
   };
 });
 const snapshot$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   return {
     status: 200 as const,
     body: await set(
@@ -255,9 +224,6 @@ const snapshot$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 const events$ = computed(async (get) => {
-  if (!get(personalProjectAccess$)) {
-    return unavailable;
-  }
   const owner = get(organizationAuthContext$);
   const q = get(queryOf(projectsContract.events));
   if (await get(projectCursorExpired(owner, q.sinceSeqId))) {

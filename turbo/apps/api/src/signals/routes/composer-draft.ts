@@ -13,8 +13,6 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { notFound } from "../../lib/error";
-import { canWriteProjectReferences } from "../services/project-reference.service";
 import type { RouteEntry } from "../route-entry";
 
 const getComposerDraft$ = computed(async (get) => {
@@ -51,10 +49,6 @@ const patchComposerDraft$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    if (!canWriteProjectReferences(auth, bodyResult.data.draftUserMessage)) {
-      return notFound("Projects unavailable");
-    }
-    signal.throwIfAborted();
 
     const draftAttachments = bodyResult.data.draftAttachments ?? null;
     const draftUserMessage = bodyResult.data.draftUserMessage;

@@ -230,6 +230,44 @@ describe("auth tokens", () => {
     });
   });
 
+  it("authorizes a run token the same way with or without the singleAgent claim", () => {
+    const issued = issueOkouToken(
+      "user_okou",
+      "run_okou",
+      "org_okou",
+      undefined,
+      { personalExecution: true },
+    );
+    // The previous API build still requires the claim on issued tokens.
+    expect(decodeOkouTokenPayloadForTest(issued)).toMatchObject({
+      singleAgent: true,
+    });
+    const authorized = verifyOkouToken(issued);
+    if (!authorized) {
+      throw new Error("Expected the issued run token to verify");
+    }
+    expect(authorized).toMatchObject({
+      capabilities: expect.arrayContaining([
+        "instructions:read",
+        "instructions:write",
+        "project:read",
+        "project:write",
+      ]),
+    });
+
+    const nowSeconds = currentSecond();
+    const withoutClaim = signSandboxJwtForTests({
+      scope: "okou",
+      userId: "user_okou",
+      orgId: "org_okou",
+      runId: "run_okou",
+      capabilities: [...authorized.capabilities],
+      iat: nowSeconds,
+      exp: nowSeconds + 60,
+    });
+    expect(verifyOkouToken(withoutClaim)).toStrictEqual(authorized);
+  });
+
   it("rejects expired tokens and mismatched scopes", () => {
     const nowSeconds = currentSecond();
     const expiredToken = signPatJwtForTests({

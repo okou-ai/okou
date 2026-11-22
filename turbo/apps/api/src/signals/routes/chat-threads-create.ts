@@ -1,4 +1,3 @@
-import { personalProjectAccess$ } from "./projects";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { clerk$ } from "../external/clerk";
 import { db$ } from "../external/db";
@@ -334,8 +333,7 @@ const createWithProject$ = command(
     }
     if (
       body.data.projectId !== undefined &&
-      (!get(personalProjectAccess$) ||
-        !(await get(projectById(auth, body.data.projectId))))
+      !(await get(projectById(auth, body.data.projectId)))
     ) {
       return notFound("Project not found");
     }

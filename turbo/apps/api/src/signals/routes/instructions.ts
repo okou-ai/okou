@@ -27,10 +27,6 @@ const personalModeAllowed$ = command(
     const auth = get(organizationAuthContext$);
     set(setResHeader$, "Cache-Control", "private, no-store");
     if (auth.tokenType === "agent") {
-      // A signed Run snapshot never changes mode with the live member override.
-      if (auth.singleAgent !== true) {
-        return false;
-      }
       const [run] = await get(db$)
         .select({ id: agentRuns.id })
         .from(agentRuns)

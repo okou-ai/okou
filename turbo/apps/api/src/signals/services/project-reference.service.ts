@@ -43,12 +43,7 @@ export function captureProjectReferences(
       if (projectIds.length === 0) {
         return [];
       }
-      if (
-        !auth.orgId ||
-        (references.length > 0 &&
-          auth.tokenType === "agent" &&
-          auth.singleAgent !== true)
-      ) {
+      if (!auth.orgId) {
         return null;
       }
       const rows = await get(db$)
@@ -63,15 +58,5 @@ export function captureProjectReferences(
         );
       return rows.length === projectIds.length ? rows : null;
     },
-  );
-}
-
-export function canWriteProjectReferences(
-  auth: AuthContext,
-  document: UserMessageDocument | null | undefined,
-) {
-  return (
-    projectReferences(document).length === 0 ||
-    (!!auth.orgId && (auth.tokenType !== "agent" || auth.singleAgent === true))
   );
 }
