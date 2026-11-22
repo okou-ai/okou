@@ -300,8 +300,12 @@ internal fun ConnectorDetails(
                         Modifier.fillMaxWidth().semantics { contentDescription = label },
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        ChatSkeletonBlock(Modifier.widthIn(max = 220.dp).fillMaxWidth().height(24.dp))
-                        ChatSkeletonBlock(Modifier.widthIn(max = 300.dp).fillMaxWidth().height(14.dp))
+                        ChatSkeletonBlock(
+                            Modifier.widthIn(max = 220.dp).fillMaxWidth().height(24.dp)
+                        )
+                        ChatSkeletonBlock(
+                            Modifier.widthIn(max = 300.dp).fillMaxWidth().height(14.dp)
+                        )
                     }
                 }
             } else {
