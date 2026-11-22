@@ -3,11 +3,13 @@ package ai.okou.android
 import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
 import android.graphics.Point
+import android.graphics.Rect
 import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Window
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -24,6 +26,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -568,12 +571,14 @@ class NativeChatListTest {
                     start.x + (horizontal * swipeDensity).toInt(),
                     start.y + (vertical * swipeDensity).toInt(),
                 )
-            val downAt = SystemClock.uptimeMillis()
+            var downAt = 0L
             val finger =
                 MotionEvent.PointerProperties().apply {
                     id = 0
                     toolType = MotionEvent.TOOL_TYPE_FINGER
                 }
+            val injected = mutableListOf<String>()
+            val delivered = ConcurrentLinkedQueue<String>()
             fun injectSwipeEvent(action: Int, point: Point): Boolean {
                 val coordinates =
                     MotionEvent.PointerCoords().apply {
@@ -588,10 +593,11 @@ class NativeChatListTest {
                             else 1f
                         this.size = 1f
                     }
+                val eventAt = SystemClock.uptimeMillis()
                 val event =
                     MotionEvent.obtain(
                         downAt,
-                        SystemClock.uptimeMillis(),
+                        eventAt,
                         action,
                         1, // pointerCount
                         arrayOf(finger),
@@ -608,6 +614,7 @@ class NativeChatListTest {
                 try {
                     return instrumentation.uiAutomation.injectInputEvent(event, true)
                 } finally {
+                    injected.add("${MotionEvent.actionToString(action)}@${eventAt}ms=$point")
                     event.recycle()
                 }
             }
@@ -616,23 +623,56 @@ class NativeChatListTest {
                 val point = swipePoint(displacement, 0)
                 assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
                 val targetRight = row.right + point.x - start.x
-                assertTrue(
-                    "Chat row failed to follow the $displacement dp swipe",
+                val observed = mutableListOf<Rect?>()
+                val followed =
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean =
-                                device.findObject(personalChat)?.visibleBounds?.right?.let {
-                                    abs(it - targetRight) <= 2
-                                } == true
+                            override fun apply(device: UiDevice): Boolean {
+                                val bounds = device.findObject(personalChat)?.visibleBounds
+                                observed.add(bounds)
+                                return bounds != null && abs(bounds.right - targetRight) <= 2
+                            }
                         },
                         10_000,
-                    ),
-                )
+                    )
+                val details =
+                    "${displacement}dp density=$swipeDensity resting=$row expectedRight=$targetRight " +
+                        "observed=${observed.distinct()} injected=$injected delivered=$delivered"
+                Log.i("OkouNativeSwipe", details)
+                if (!followed) {
+                    val error = AssertionError("Chat row failed to follow the swipe. $details")
+                    runCatching { takeScreenshot().writeToTestStorage("$name-timeout") }
+                        .exceptionOrNull()
+                        ?.let(error::addSuppressed)
+                    throw error
+                }
                 takeScreenshot().writeToTestStorage(name)
             }
-            assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
+            lateinit var originalCallback: Window.Callback
+            scenario.onActivity { activity ->
+                val window = activity.window
+                originalCallback = window.callback
+                window.callback =
+                    object : Window.Callback by originalCallback {
+                        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                            val history =
+                                (0 until event.historySize).map { index ->
+                                    val time = event.getHistoricalEventTime(index)
+                                    "${event.getHistoricalX(index)},${event.getHistoricalY(index)}@${time}ms"
+                                }
+                            val action = MotionEvent.actionToString(event.actionMasked)
+                            val time = event.eventTime
+                            delivered.add(
+                                "$action@${time}ms=${event.rawX},${event.rawY} history=$history"
+                            )
+                            return originalCallback.dispatchTouchEvent(event)
+                        }
+                    }
+            }
             var released = false
             try {
+                downAt = SystemClock.uptimeMillis()
+                assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
                 captureSwipe(-36, "android-swipe-archive-icon")
                 captureSwipe(-104, "android-swipe-archive-ready")
                 val diagonal = swipePoint(-96, 72)
@@ -645,6 +685,13 @@ class NativeChatListTest {
                         .exceptionOrNull()
                         ?.let(failures::add)
                 }
+                runCatching {
+                        scenario.onActivity { activity ->
+                            activity.window.callback = originalCallback
+                        }
+                    }
+                    .exceptionOrNull()
+                    ?.let(failures::add)
             }
             text("Personal chat")
             device.waitForIdle()
