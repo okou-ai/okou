@@ -20,6 +20,7 @@ import okhttp3.HttpUrl
 
 internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
 private const val RECENT_READ_LIMIT = 8
+private const val ACCOUNT_READBACK_LIMIT = 3
 
 internal data class ConnectorBrowseFilter(val keyword: String?, val category: String?) {
     companion object {
@@ -498,11 +499,21 @@ class ConnectorModel(
         val accounts = service.accounts(change.target.slug)
         invalidateConnectionReads()
         publishAccounts(change.target.slug, accounts)
-        pendingChange = null
         if (change.matches(accounts.find { it.id == change.target.connectionId })) {
+            pendingChange = null
             complete(change.target, change.result)
-        } else {
-            updateAction { it.copy(reconciling = false, problem = ConnectorProblem.Failed) }
+            return
+        }
+
+        // The read can race a commit after a lost response. Keep checking the original account.
+        change.unmatchedReads++
+        val keepChecking = change.unmatchedReads < ACCOUNT_READBACK_LIMIT
+        if (!keepChecking) {
+            pendingChange = null
+            verificationFailures = 0
+        }
+        updateAction {
+            it.copy(reconciling = keepChecking, problem = ConnectorProblem.VerificationPending)
         }
     }
 
@@ -926,11 +937,13 @@ class ConnectorModel(
             publish = publish,
         )
 
-    private data class PendingChange(
+    private class PendingChange(
         val target: ConnectorAccountTarget,
         val result: ConnectorResult?,
         val matches: (ConnectorSavedAccount?) -> Boolean,
-    )
+    ) {
+        var unmatchedReads = 0
+    }
 }
 
 private fun <K, V> LinkedHashMap<K, V>.rememberRead(key: K, value: V) {

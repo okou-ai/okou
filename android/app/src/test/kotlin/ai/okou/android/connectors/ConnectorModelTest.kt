@@ -333,6 +333,54 @@ class ConnectorModelTest {
         }
 
     @Test
+    fun renameRemainsUnconfirmedWhenReadbackPrecedesTheCommit() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            fixture.deferRenameCommit = true
+            val originalName =
+                model.uiState.value.accounts.data
+                    ?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }
+                    ?.displayName
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+
+            val firstCheck = model.await { it.action?.problem != null && !it.action.busy }
+            assertEquals(ConnectorProblem.VerificationPending, firstCheck.action?.problem)
+            assertFalse(firstCheck.canChangeAccounts)
+            assertEquals(
+                originalName,
+                firstCheck.accounts.data
+                    ?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }
+                    ?.displayName,
+            )
+
+            fixture.commitDeferredRename()
+            val confirmed = model.await { it.action?.result == ConnectorResult.Renamed }
+            assertEquals(
+                "Meeting calendar",
+                confirmed.accounts.data?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }?.displayName,
+            )
+            assertEquals(1, fixture.renameRequests.get())
+        }
+
+    @Test
+    fun repeatedUnmatchedReadbacksLeaveTheOutcomeUnconfirmedAndRestoreEditing() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            fixture.deferRenameCommit = true
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+            model.await { it.action?.reconciling == true && !it.action.busy }
+
+            repeat(2) {
+                model.resume()
+                model.await { it.action?.busy == false }
+            }
+
+            val unresolved = model.uiState.value
+            assertTrue(unresolved.canChangeAccounts)
+            assertEquals(ConnectorProblem.VerificationPending, unresolved.action?.problem)
+            assertNull(unresolved.action?.result)
+            assertEquals(1, fixture.renameRequests.get())
+        }
+
+    @Test
     fun renameReplyDoesNotPromoteTheOverviewToAnExactAccountReadAfterReselection() =
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
             model.await { it.connected.data != null }

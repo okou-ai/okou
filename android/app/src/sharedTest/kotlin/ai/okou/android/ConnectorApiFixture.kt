@@ -43,6 +43,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var failDiscovery = false
     @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
+    @Volatile var deferRenameCommit = false
     @Volatile var renameReplyGate: CountDownLatch? = null
     val defaultReplyStarted = CountDownLatch(1)
     @Volatile var defaultReplyGate: CountDownLatch? = null
@@ -52,6 +53,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var loseManualReply = false
     val renameRequests = AtomicInteger()
     val manualRequests = AtomicInteger()
+    private var pendingRename: Pair<String, String?>? = null
     private val entries = buildList {
         add(
             CatalogEntry(
@@ -205,6 +207,14 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
 
     fun removeAccount(id: String) {
         synchronized(accounts) { accounts.remove(id) }
+    }
+
+    fun commitDeferredRename() {
+        synchronized(accounts) {
+            val (id, name) = checkNotNull(pendingRename)
+            accounts.getValue(id).name = name
+            pendingRename = null
+        }
     }
 
     private fun respond(request: RecordedRequest): MockResponse {
@@ -428,7 +438,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         val requestBody = body(request)
                         if (requestBody["target"] != target(account.slug)) return rejected(400)
                         renameRequests.incrementAndGet()
-                        account.name = requestBody["displayName"]?.jsonPrimitive?.contentOrNull
+                        val name = requestBody["displayName"]?.jsonPrimitive?.contentOrNull
+                        if (deferRenameCommit) {
+                            pendingRename = id to name
+                            return rejected(503)
+                        }
+                        account.name = name
                         if (loseRenameReply) rejected(503) else json(account.row(id))
                     }
                     "DELETE" -> {
