@@ -275,7 +275,7 @@ jobs:
         with:
           name: ios-ci-products-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ios-native-products/
-          compression-level: 1
+          compression-level: 0
           if-no-files-found: error
           retention-days: 1
       - name: Run isolated Swift package tests
@@ -402,24 +402,12 @@ jobs:
       - name: Build app and run isolated simulator tests
         if: env.IOS_PARALLEL_SIMULATOR_BUILD != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
         run: bash ios/scripts/run-ci-tests.sh
-      - name: Boot the simulator while the package runner compiles
-        if: env.IOS_PARALLEL_SIMULATOR_BUILD == 'true'
-        run: |
-          started=$SECONDS
-          python3 ios/scripts/preboot-simulator.py
-          echo "iOS simulator preparation: $((SECONDS - started)) seconds"
-      - name: Await the current producer's App test products
+      - name: Prepare the simulator and receive its test products concurrently
         id: simulator-products
         if: env.IOS_PARALLEL_SIMULATOR_BUILD == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 ios/scripts/wait-ci-test-artifact.py products
-      - name: Receive built App test products
-        if: env.IOS_PARALLEL_SIMULATOR_BUILD == 'true'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ steps.simulator-products.outputs.name }}
-          path: ${{ runner.temp }}/ios-native-products
+        run: bash ios/scripts/prepare-parallel-simulator.sh
       - name: Run the complete App suite on the prepared simulator
         if: env.IOS_PARALLEL_SIMULATOR_BUILD == 'true'
         env:

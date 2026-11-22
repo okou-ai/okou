@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Verify same-run native product transfer, including reruns and executable bundles."""
 
+import hashlib
 import importlib.util
+import io
 import os
 import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -50,8 +53,8 @@ class ArtifactTests(unittest.TestCase):
             ),
             patch.object(waiter.time, "sleep"),
         ):
-            waiter.wait("products")
-        self.assertEqual(self.output.read_text(), f"name={name}\n")
+            selected = waiter.wait("products")
+        self.assertEqual(selected, artifacts["artifacts"][0])
 
     def test_rejects_failure_or_another_head_before_receiving_products(self):
         for change in ({"conclusion": "failure"}, {"head_sha": "other"}):
@@ -64,6 +67,86 @@ class ArtifactTests(unittest.TestCase):
                 ):
                     waiter.wait("products")
         self.assertFalse(self.output.exists())
+
+    def test_checks_archive_identity_and_sha_before_unpacking(self):
+        names = [
+            "products.tar.zst",
+            "product-identity",
+            "product-toolchain.json",
+            "Package.resolved.before",
+            "package-sources.gitconfig",
+        ]
+        for damage in ["", "digest", "layout", "size"]:
+            with self.subTest(damage=damage):
+                out = io.BytesIO()
+                with zipfile.ZipFile(out, "w") as archive:
+                    for name in names:
+                        archive.writestr(name, b"known content")
+                    if damage == "layout":
+                        archive.writestr("extra", b"unexpected")
+                data = out.getvalue()
+                digest = hashlib.sha256(
+                    data if damage != "digest" else b"other"
+                ).hexdigest()
+                artifact = {
+                    "id": 36,
+                    "digest": "sha256:" + digest,
+                    "size_in_bytes": len(data) + int(damage == "size"),
+                }
+
+                def download(path, *, output, timeout, contents=data):
+                    self.assertEqual(path, "repos/owner/repo/actions/artifacts/36/zip")
+                    output.write(contents)
+
+                destination = self.output.parent / ("products-" + damage)
+                with (
+                    patch.dict(os.environ, self.env),
+                    patch.object(waiter, "github_api", download),
+                ):
+                    if damage:
+                        with self.assertRaises(ValueError):
+                            waiter.receive_products(artifact, destination)
+                        self.assertEqual(list(destination.iterdir()), [])
+                    else:
+                        waiter.receive_products(artifact, destination)
+                        self.assertEqual(
+                            (destination / names[0]).read_bytes(), b"known content"
+                        )
+
+
+class PreparationTests(unittest.TestCase):
+    def test_boot_and_transfer_overlap_and_both_must_succeed(self):
+        fixture = """import os, pathlib, sys, time
+role, other = ("boot", "receive") if "preboot" in __file__ else ("receive", "boot")
+root = pathlib.Path(os.environ["RUNNER_TEMP"])
+(root / role).touch()
+for _ in range(300):
+    if (root / other).exists():
+        break
+    time.sleep(.01)
+else:
+    sys.exit(99)
+sys.exit(7 if role == os.environ["FAIL_ROLE"] else 0)
+"""
+        for failure in ("", "boot", "receive"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                scripts = root / "ios/scripts"
+                scripts.mkdir(parents=True)
+                for name in ("preboot-simulator.py", "wait-ci-test-artifact.py"):
+                    (scripts / name).write_text(fixture)
+                run = subprocess.run(
+                    ["bash", str(SCRIPTS / "prepare-parallel-simulator.sh")],
+                    cwd=tmp,
+                    check=False,
+                    env=os.environ | {"RUNNER_TEMP": tmp, "FAIL_ROLE": failure},
+                    capture_output=True,
+                    timeout=10,
+                )
+                self.assertEqual(run.returncode, 7 if failure else 0, run.stderr)
+                self.assertTrue(
+                    all((root / role).exists() for role in ("boot", "receive"))
+                )
 
 
 class ProductTests(unittest.TestCase):

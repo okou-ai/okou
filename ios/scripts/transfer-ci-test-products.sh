@@ -18,8 +18,10 @@ case "${1:-}" in
     identity > "$transfer/product-identity"
     cp "${IOS_PRODUCT_TOOLCHAIN:?}" "$transfer/product-toolchain.json"
     cp "$root/Package.resolved.before" "$root/package-sources.gitconfig" "$transfer/"
-    tar -cf "$transfer/products.tar" -C "$root" DerivedData/Build/Products
-    du -h "$transfer/products.tar"
+    # Preserve all products, links, permissions, and symbols in one compressed stream.
+    tar -cf - -C "$root" DerivedData/Build/Products |
+      zstd -q --single-thread -5 --long=28 -o "$transfer/products.tar.zst"
+    du -h "$transfer/products.tar.zst"
     ;;
   unpack)
     mkdir -p "$root"
@@ -27,7 +29,7 @@ case "${1:-}" in
     cmp "$transfer/product-identity" <(identity)
     cmp "$transfer/product-toolchain.json" "${IOS_PRODUCT_TOOLCHAIN:?}"
     cmp "$transfer/Package.resolved.before" "$lock"
-    tar -xf "$transfer/products.tar" -C "$root"
+    zstd -qdc --long=28 "$transfer/products.tar.zst" | tar -xf - -C "$root"
     cp "$transfer/Package.resolved.before" "$transfer/package-sources.gitconfig" "$root/"
     ;;
   *)
