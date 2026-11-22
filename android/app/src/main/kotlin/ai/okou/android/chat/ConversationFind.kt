@@ -135,8 +135,15 @@ internal class ConversationFindVisit(
 }
 
 internal class ConversationFindTarget(val id: String, val markdownBlock: Int?) {
+    var positioned by mutableStateOf(false)
+        private set
+
     var highlighted by mutableStateOf(true)
         private set
+
+    fun finishPositioning() {
+        positioned = true
+    }
 
     suspend fun expireHighlight() {
         if (!highlighted) return

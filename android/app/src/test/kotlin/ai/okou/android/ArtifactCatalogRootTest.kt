@@ -9,14 +9,19 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
@@ -226,6 +231,77 @@ class ArtifactCatalogRootTest {
         compose.runOnIdle { app.connectivity.value = true }
         compose.waitUntil(10_000) { fixture.catalogScopes.size > onlinePages }
         compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
+    }
+
+    @Test
+    fun chatResourcesReturnsToTheReadingPositionAndFindQuery() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val target = "Find the launch checklist"
+        val earlier = "Earlier reading marker 4"
+        val history = app.fixture
+        history.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        history.historyRows = { request ->
+            val url = checkNotNull(request.requestUrl)
+            val after = url.queryParameter("sinceSeqId")?.toLong() ?: 0
+            val rows =
+                (1L..20L)
+                    .filter { it > after }
+                    .joinToString(",") { seq ->
+                        val id =
+                            if (seq == 20L) HISTORY_LAST_EVENT
+                            else "aaaaaaaa-aaaa-4aaa-8aaa-${seq.toString().padStart(12, '0')}"
+                        val text = if (seq == 20L) target else "Earlier reading marker $seq"
+                        historyEventWire(
+                            id,
+                            seq,
+                            url.pathSegments[2],
+                            payload = """{"content":"$text"}""",
+                            run = null,
+                        )
+                    }
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":20},"hasMore":false}"""
+            )
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(target)
+        val actions = compose.onNodeWithContentDescription("Chat actions")
+        actions.performClick()
+        val find = compose.onNodeWithText("Find messages")
+        val resources = compose.onNodeWithText("Chat resources")
+        assertTrue(find.getUnclippedBoundsInRoot().top < resources.getUnclippedBoundsInRoot().top)
+        find.performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.performTextReplacement("launch checklist")
+        awaitText("1 matching message")
+        compose.onNodeWithText(target).performClick()
+        val focusedHit = hasTestTag("conversation_find_hit") and isFocused()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(focusedHit).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        compose.onNodeWithTag("conversation").performScrollToNode(hasText(earlier))
+        val marker = compose.onNodeWithText(earlier)
+        val readingTop = marker.assertIsDisplayed().getUnclippedBoundsInRoot().top
+        val jump = hasTestTag("conversation_jump")
+        compose.waitUntil(10_000) { compose.onAllNodes(jump).fetchSemanticsNodes().isNotEmpty() }
+
+        actions.performClick()
+        resources.performClick()
+        compose.onNodeWithTag("chat_artifact_resources").assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("chat_artifact_resources").assertDoesNotExist()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(jump or focusedHit).fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals(readingTop, marker.assertIsDisplayed().getUnclippedBoundsInRoot().top)
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        query.assertTextContains("launch checklist")
+        awaitText("1 matching message")
     }
 
     @Test
