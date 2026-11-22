@@ -22,6 +22,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.ActionMode
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -71,6 +72,11 @@ import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        NativeSwipeTrace.motion(event)
+        return super.dispatchTouchEvent(event)
+    }
+
     private val updates
         get() = (application as OkouApplication).updates
 

@@ -549,6 +549,7 @@ class NativeChatListTest {
                 device.awaitChatList(app)
                 text("Native history reply")
             } finally {
+                instrumentation.runOnMainSync(NativeSwipeTrace::start)
                 device.executeShellCommand("wm size ${originalSize ?: "reset"}")
                 device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
             }
@@ -564,7 +565,6 @@ class NativeChatListTest {
             val row = text("Personal chat").visibleBounds
             val swipeDensity = app.resources.displayMetrics.density
             val start = Point(row.centerX(), row.centerY())
-            Log.i("OkouSwipeTrace", "test initial bounds=$row start=$start density=$swipeDensity display=${device.displayWidth}x${device.displayHeight}")
             fun swipePoint(horizontal: Int, vertical: Int) =
                 Point(
                     start.x + (horizontal * swipeDensity).toInt(),
@@ -614,28 +614,24 @@ class NativeChatListTest {
                 }
             }
             val personalChat = By.pkg(app.packageName).text("Personal chat")
+            val observations = mutableListOf<String>()
             fun captureSwipe(displacement: Int, name: String) {
                 val point = swipePoint(displacement, 0)
                 assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
                 val targetRight = row.right + point.x - start.x
-                Log.i("OkouSwipeTrace", "test move target=$point expectedRight=$targetRight")
-                var lastBounds: Rect? = null
-                assertTrue(
-                    "Chat row failed to follow the $displacement dp swipe",
+                var observed: Rect? = null
+                val reached =
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
                             override fun apply(device: UiDevice): Boolean {
-                                val bounds = device.findObject(personalChat)?.visibleBounds
-                                if (bounds != lastBounds) {
-                                    Log.i("OkouSwipeTrace", "test observed bounds=$bounds targetRight=$targetRight")
-                                    lastBounds = bounds
-                                }
-                                return bounds?.right?.let { abs(it - targetRight) <= 2 } == true
+                                observed = device.findObject(personalChat)?.visibleBounds
+                                return observed?.right?.let { abs(it - targetRight) <= 2 } == true
                             }
                         },
                         10_000,
-                    ),
-                )
+                    )
+                observations.add("test target=$point expectedRight=$targetRight observed=$observed")
+                assertTrue("Chat row failed to follow the $displacement dp swipe", reached)
                 takeScreenshot().writeToTestStorage(name)
             }
             assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
@@ -653,6 +649,12 @@ class NativeChatListTest {
                         .exceptionOrNull()
                         ?.let(failures::add)
                 }
+                Log.i(
+                    "OkouSwipeTrace",
+                    "test bounds=$row start=$start at=$downAt density=$swipeDensity display=${device.displayWidth}x${device.displayHeight}",
+                )
+                observations.forEach { Log.i("OkouSwipeTrace", it) }
+                instrumentation.runOnMainSync(NativeSwipeTrace::finish)
             }
             text("Personal chat")
             device.waitForIdle()
