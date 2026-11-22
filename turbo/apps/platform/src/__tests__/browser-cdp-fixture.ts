@@ -858,6 +858,12 @@ export function mockBrowserCdp(
     },
     targets,
     input,
+    inputForTarget(targetId: string) {
+      return input.filter(
+        ({ sessionId }) =>
+          sessionId !== undefined && sessionTargets.get(sessionId) === targetId,
+      );
+    },
     detached,
     captures,
     viewport,
