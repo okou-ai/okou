@@ -3152,7 +3152,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       const integrations = createBddIntegrationApi(context);
       const ap = createAgentPhoneBddApi(context);
       const owner = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       context.mocks.ably.publish.mockResolvedValue(undefined);
       integrations.configureAgentPhoneProvider();
       integrations.configureAgentPhoneWebhook();
@@ -4174,7 +4174,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       id: actor.orgId,
       name: "Operations workspace",
     });
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     context.mocks.ably.publish.mockResolvedValue(undefined);
     integrations.configureAgentPhoneProvider();
     integrations.configureAgentPhoneWebhook();
@@ -6289,7 +6289,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const ap = createAgentPhoneBddApi(context);
 
     const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     context.mocks.ably.publish.mockResolvedValue(undefined);
     integrations.configureAgentPhoneProvider();
     integrations.configureAgentPhoneWebhook();

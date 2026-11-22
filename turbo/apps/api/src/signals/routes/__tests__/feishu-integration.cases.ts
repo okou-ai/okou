@@ -1200,7 +1200,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         [FeatureSwitchKey.OkouDebug]: true,
       });
     });
-    authOrgApi.acceptAgentStorageWrites();
+    authOrgApi.acceptStorageWrites();
     await authOrgApi.provisionWorkspace(actor);
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
@@ -1229,7 +1229,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         [FeatureSwitchKey.OkouDebug]: true,
       });
     });
-    authOrgApi.acceptAgentStorageWrites();
+    authOrgApi.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     installWorkflowVolumeS3Fixture(context, new Map(), {
       bundlesOnly: true,
@@ -1883,7 +1883,7 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
@@ -2081,7 +2081,7 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
@@ -2243,7 +2243,7 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
@@ -2316,7 +2316,7 @@ export function registerFeishuIntegrationTests(
             orgId: `org_${randomUUID()}`,
             orgRole: "org:admin",
           });
-          authOrgApi.acceptAgentStorageWrites();
+          authOrgApi.acceptStorageWrites();
           await own(() => {
             return enableFeishuIntegration(platform, actor);
           });
@@ -2456,7 +2456,7 @@ export function registerFeishuIntegrationTests(
       );
 
       it("keeps a concurrently registered Feishu app in its winning organization", async () => {
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         const owners: {
           readonly actor: ApiTestUser;
         }[] = [];
@@ -2596,7 +2596,7 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
@@ -2737,7 +2737,7 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
@@ -2833,7 +2833,7 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
@@ -2959,7 +2959,7 @@ export function registerFeishuIntegrationTests(
           orgId: admin.orgId,
           orgRole: "org:member",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         context.mocks.s3.send.mockImplementation((command: unknown) => {
           if (
             command instanceof HeadObjectCommand &&
@@ -3723,7 +3723,7 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
@@ -3828,7 +3828,7 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });

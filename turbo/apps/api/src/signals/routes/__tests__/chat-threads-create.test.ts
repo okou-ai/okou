@@ -65,7 +65,7 @@ interface AgentFixture {
 /** Creates an agent with caller-owned subscriptions and a saved member model. */
 async function seedAgent(): Promise<AgentFixture> {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await api.ensurePersonalSubscriptionModel(actor, {
     model: WORKSPACE_DEFAULT_MODEL,
   });
@@ -536,7 +536,7 @@ describe("POST /api/chat-threads", () => {
   it("refreshes builtin and custom selection authorization after Chat allowance changes", async () => {
     const actor = bdd.user();
 
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const builtin = await connectorApi.connectManualGrant(
       actor,
       "openai",

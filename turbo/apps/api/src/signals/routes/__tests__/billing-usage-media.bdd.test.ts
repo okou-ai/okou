@@ -58,7 +58,7 @@ function testActors() {
   const api = createBillingMediaApi(context);
   const admin = base.user();
   const member = base.user({ orgId: admin.orgId, orgRole: "org:member" });
-  base.acceptAgentStorageWrites();
+  base.acceptStorageWrites();
   return { api, admin, member };
 }
 

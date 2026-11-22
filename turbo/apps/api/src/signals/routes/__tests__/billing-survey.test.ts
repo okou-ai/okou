@@ -580,7 +580,7 @@ describe("/api/billing/survey", () => {
   it("does not reward a free member while starter credits are still available", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await bdd.bootstrapLimitedFreeOnboarding(actor);
     await enableSurvey(actor);
     signIn(actor);

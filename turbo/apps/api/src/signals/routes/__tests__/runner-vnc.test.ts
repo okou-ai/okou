@@ -148,14 +148,13 @@ describe("private Runner VNC authority", () => {
       throw new Error("Expected a VNC owner organization");
     }
     const owner = { orgId: actor.orgId, userId: actor.userId };
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    await bdd.provisionWorkspace(actor);
     api.authenticate(owner);
     const connection = await accept(
       api.connections().create({

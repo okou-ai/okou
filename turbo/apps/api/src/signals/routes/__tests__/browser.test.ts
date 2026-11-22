@@ -7234,7 +7234,7 @@ async function setupBrowserScenario() {
   callbacks.acceptChatObjectStorage();
   callbacks.disableVapid();
   callbacks.failIfChatCallbackRouteIsFetched();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();

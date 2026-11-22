@@ -92,7 +92,7 @@ describe("onboarding recommendations", () => {
   it.each([false, true])(
     "preserves authorized context when another source fails (Gmail revoked during read: %s)",
     async (revokeGmail) => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       const actor = bdd.user({
         userId: `user_onboarding_recommendation_context_${randomUUID()}`,
         orgId: `org_onboarding_recommendation_context_${randomUUID()}`,

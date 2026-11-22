@@ -338,7 +338,7 @@ export async function createPublicAnnotationIngress(
     throw new Error("Expected the annotation owner's organization");
   }
   const actor = { ...candidate, orgId: candidate.orgId };
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const group = await runs.configureRunnerGroup();
@@ -346,7 +346,6 @@ export async function createPublicAnnotationIngress(
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  await bdd.provisionWorkspace(actor);
 
   await runs.heartbeatRunner(group);
 

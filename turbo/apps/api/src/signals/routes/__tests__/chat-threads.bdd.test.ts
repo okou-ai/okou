@@ -1440,7 +1440,7 @@ describe("CHAT-01 chat thread read state", () => {
 
   it("tails thread event rows after a sequence cursor", async () => {
     const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
 
     const threadId = await sendNoCreditMessage(owner, {
       prompt: "cursor round one",

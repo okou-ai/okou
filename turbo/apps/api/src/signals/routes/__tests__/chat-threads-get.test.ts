@@ -25,7 +25,7 @@ interface ChatThreadFixture {
 /** Creates an agent and chat thread through the product routes. */
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const thread = await chat.createThread(actor, {
     title,
   });

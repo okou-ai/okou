@@ -35,7 +35,7 @@ function accounts() {
   );
 }
 async function ownerWithThread({ actor = bdd.user() } = {}) {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
 
   const thread = await chat.createThread(actor, {});
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);

@@ -62,7 +62,7 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
     throw new Error("Wallet carrier needs an organization");
   }
   mocks.clerk.session(actor.userId, actor.orgId);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   const runnerGroup = await api.configureRunnerGroup();

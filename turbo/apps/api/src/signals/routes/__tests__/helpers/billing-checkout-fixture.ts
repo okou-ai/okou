@@ -271,7 +271,7 @@ export function createBillingCheckoutFixture() {
       },
     });
     return await owner.run(async () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = await runs.configureRunnerGroup();

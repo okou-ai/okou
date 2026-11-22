@@ -78,7 +78,7 @@ function completion(content = "**Launch checklist**", finishReason = "stop") {
 
 async function prepareShare(content = selectedContent) {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await runs.configureRunnerGroup();
@@ -261,7 +261,7 @@ describe("optional shared-thread titles", () => {
 
   it("removes forwarded chat provenance from the public snapshot", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();

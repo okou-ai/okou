@@ -23,7 +23,7 @@ async function launchFixture() {
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
   const callbacks = createChatCallbacksApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   callbacks.acceptChatObjectStorage();

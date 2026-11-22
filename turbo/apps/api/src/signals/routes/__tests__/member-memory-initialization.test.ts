@@ -298,7 +298,7 @@ describe("member memory account initialization", () => {
     const owner = createPublicComputerUseScenario(context);
     const actor = owner.user({ orgRole: "org:member" });
     await owner.run(async () => {
-      api.acceptAgentStorageWrites();
+      api.acceptStorageWrites();
       await prepareReadablePreferences(actor);
       await expect(memoryInitialized(actor)).resolves.toBeFalsy();
       const deliveries = await Promise.allSettled([
@@ -330,7 +330,7 @@ describe("member memory account initialization", () => {
       const owner = createPublicComputerUseScenario(context);
       const actor = owner.user({ orgRole });
       await owner.run(async () => {
-        api.acceptAgentStorageWrites();
+        api.acceptStorageWrites();
         await prepareReadablePreferences(actor);
         await expect(memoryInitialized(actor)).resolves.toBeFalsy();
         const completions = await Promise.allSettled([
@@ -402,7 +402,7 @@ describe("member memory account initialization", () => {
       orgRole: "org:member",
     });
     await owner.run(async () => {
-      api.acceptAgentStorageWrites();
+      api.acceptStorageWrites();
       const memories = [];
       for (const actor of [first, anotherOrg, anotherMember]) {
         await prepareReadablePreferences(actor);

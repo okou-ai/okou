@@ -32,7 +32,7 @@ afterEach(() => {
 
 async function prepareExportOwner() {
   const bdd = createBddApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const runs = createRunsApi(context);
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();

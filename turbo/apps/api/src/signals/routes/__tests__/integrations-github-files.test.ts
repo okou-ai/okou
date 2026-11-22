@@ -88,7 +88,7 @@ describe("GitHub file integration routes", () => {
       },
     });
     return await owner.run(async () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       await api.grantProEntitlement(fixture.actor);
       await api.ensurePersonalSubscriptionModel(fixture.actor);
       api.acceptStorageDownloads();

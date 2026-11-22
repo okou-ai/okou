@@ -603,7 +603,7 @@ async function entitledRunActor(
   const bdd = createBddApi(context);
   const api = createRunsApi(context);
   const actor = bdd.user(userOptions);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   const runnerGroup = await api.configureRunnerGroup();
@@ -2318,7 +2318,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const actor = bdd.user();
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         await api.configureRunnerGroup();
 
         const completed = await bdd.completeOnboarding(actor);
@@ -2500,7 +2500,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         // An org that never went through onboarding has no billing state at all,
         // so built-in model runs are refused before provider resolution.
         const uninitialized = bdd.user();
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         await api.configureRunnerGroup();
 
         await expect(
@@ -2530,7 +2530,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const orgId = `org_${randomUUID()}`;
         const actor = bdd.user({ orgId });
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
         const runnerGroup = await api.configureRunnerGroup();
@@ -2594,7 +2594,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const chat = createChatFilesBddApi(context);
         const misc = createMiscRoutesApi(context);
         const actor = bdd.user();
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
 
@@ -2706,7 +2706,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const actor = bdd.user();
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
         await api.configureRunnerGroup();
@@ -3048,7 +3048,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const actor = bdd.user();
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
         const runnerGroup = await api.configureRunnerGroup();
@@ -8000,7 +8000,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const actor = bdd.user();
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
         const runnerGroup = await api.configureRunnerGroup();
@@ -8060,7 +8060,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!actor.orgId) {
           throw new Error("Agent runner context requires an organization");
         }
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
         const runnerGroup = await api.configureRunnerGroup();

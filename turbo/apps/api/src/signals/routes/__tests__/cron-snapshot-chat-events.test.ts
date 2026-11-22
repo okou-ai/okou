@@ -274,7 +274,7 @@ describe("cron snapshot chat events", () => {
       isolatePg: true,
     });
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     const marker = `snapshot-deletion-${randomUUID()}`;

@@ -1122,7 +1122,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   return {
     bdd: {
-      acceptAgentStorageWrites: bdd.acceptAgentStorageWrites,
+      acceptStorageWrites: bdd.acceptStorageWrites,
       completeOnboarding: bdd.completeOnboarding,
       provisionWorkspace: bdd.provisionWorkspace,
       readMe: bdd.readMe,

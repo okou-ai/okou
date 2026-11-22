@@ -320,7 +320,7 @@ describe("email-native signup", () => {
         return Promise.resolve(organization);
       },
     );
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const group = await runs.configureRunnerGroup();
@@ -690,7 +690,7 @@ async function entitledActor(email?: string) {
     orgId,
     ...(email ? { email } : {}),
   });
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const group = await runs.configureRunnerGroup();
@@ -2486,7 +2486,7 @@ describe("Email integration", () => {
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
     });
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const group = await runs.configureRunnerGroup();

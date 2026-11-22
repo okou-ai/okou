@@ -73,13 +73,12 @@ export function createRunExecutionCredentials(context: TestContext) {
     const previousOpenrouterKey = optionalEnv("OPENROUTER_API_KEY");
     const token = await owner.run(async () => {
       const result = await settleIncludingAbort(async () => {
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const runnerGroup = await runs.configureRunnerGroup();
         mockOptionalEnv("OPENROUTER_API_KEY", "bdd-issued-credential-key");
-        // Default Agent onboarding requires an administrator. Keep the caller's
-        // member role unchanged when obtaining its own Run credentials.
+        // The admin funds this workspace. Issue Run credentials to the actual member.
         const admin =
           actor.orgRole === "org:member"
             ? bdd.user({ orgId: actor.orgId, orgRole: "org:admin" })

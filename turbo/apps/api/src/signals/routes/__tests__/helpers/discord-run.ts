@@ -10,7 +10,7 @@ export async function launchPublicDiscordTestRun(
 ) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await runs.grantProEntitlement(actor);

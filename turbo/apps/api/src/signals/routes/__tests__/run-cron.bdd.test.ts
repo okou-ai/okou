@@ -33,7 +33,7 @@ const context = testContext();
 
 async function prepareNoCreditAdmission(actor: ApiTestUser): Promise<void> {
   const bdd = createBddApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
 
   const api = createRunsApi(context);
   await api.ensurePersonalSubscriptionModel(actor);

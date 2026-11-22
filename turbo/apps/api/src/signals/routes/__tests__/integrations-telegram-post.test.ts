@@ -466,7 +466,7 @@ async function postWebhook(args: {
 async function configureCanonicalTelegramRunner(): Promise<string> {
   const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   return runnerGroup;

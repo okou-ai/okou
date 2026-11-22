@@ -560,7 +560,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       advertisedMethods,
       requestedMethod,
     }) => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = await runs.configureRunnerGroup();
@@ -852,7 +852,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
   );
 
   it("discovers Automatic no-auth accounts without offering OAuth reauthorization", async () => {
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();

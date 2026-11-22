@@ -117,7 +117,7 @@ describe("Member connector permissions", () => {
 
   it("starts from connector defaults, shares rules across Chats/Agents and preserves deny, expiry and reset", async () => {
     const actor = member();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const firstChat = await chat.createThread(actor, {});
     const secondChat = await chat.createThread(actor, {});
     mockSlackConnectorOAuth();
@@ -238,7 +238,7 @@ describe("Member connector permissions", () => {
 
   it("shares custom rules across accounts and permits editing with all accounts disabled", async () => {
     const actor = member();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const thread = await chat.createThread(actor, {});
     const definition = await connectors.createCustomConnector(
       actor,
@@ -415,7 +415,7 @@ describe("Member connector permissions", () => {
     const actor = member();
     await addOpenAi(actor);
 
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const token = await tokenFor(actor);
     await accept(
       client().apply({

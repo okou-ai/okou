@@ -2289,7 +2289,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("connects HTTP and MCP no-auth definitions with local credential-free accounts", async () => {
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const { actor: admin, run: own } = createPublicConnectorActor(context);
     const httpDefinition = {
       displayName: "BDD Public HTTP",
@@ -3283,7 +3283,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     mockEnv("APP_URL", "https://app.okou.test");
     const provider = mockCustomConnectorOAuth2Provider(context);
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const admin = bdd.user({ orgRole: "org:admin" });
     const member = bdd.user({
       orgId: admin.orgId,
@@ -4768,7 +4768,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("creates, patches, connects, and deletes a custom connector through APIs", async () => {
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
 
     const admin = bdd.user({ orgRole: "org:admin" });
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
@@ -5866,7 +5866,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("saves a connector proposal before required values are configured", async () => {
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const owner = createPublicConnectorActor(context);
     const admin = owner.actor;
     const own = owner.run;
@@ -6414,7 +6414,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("manages MCP definitions and credentials", async () => {
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const admin = bdd.user({ orgRole: "org:admin" });
     const initialDefinition = manualMcpConnectorBody({
       displayName: "BDD MCP Management",
@@ -8121,7 +8121,7 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
     const installationId = String(randomInt(100_000_000, 999_999_999));
 
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const owner = createPublicConnectorActor(context, {
       optionalEnvironmentNames: [
         "GH_OAUTH_CLIENT_ID",

@@ -94,7 +94,7 @@ export function createPublicRunnerMemory(
     );
   }
   async function initializeNative() {
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     await api.configureRunnerGroup();

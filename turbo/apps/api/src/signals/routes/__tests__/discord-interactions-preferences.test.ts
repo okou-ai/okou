@@ -425,7 +425,7 @@ beforeEach(() => {
   mockEnv("DISCORD_BOT_TOKEN", randomBytes(32).toString("hex"));
   mockEnv("DISCORD_GATEWAY_SECRET", randomBytes(32).toString("hex"));
   mockDiscordApplication(0);
-  accountApi.acceptAgentStorageWrites();
+  accountApi.acceptStorageWrites();
 });
 
 describe("Discord account preferences through private controls", () => {

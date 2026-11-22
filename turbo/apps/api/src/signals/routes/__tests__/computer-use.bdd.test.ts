@@ -960,7 +960,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
             },
           ),
         );
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const { runnerGroup } = await scenario.prepareActor(actor);

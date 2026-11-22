@@ -89,7 +89,7 @@ async function fixture() {
       totalCount: 1,
     },
   );
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();

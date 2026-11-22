@@ -39,13 +39,12 @@ export function createSshExecutionApi(
   >();
 
   async function runtime(owner: Owner, runtimeOptions: RuntimeOptions = {}) {
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     if (!paidOrganizations.has(owner.orgId)) {
       const bootstrapActor = bdd.user({ ...owner, orgRole: "org:admin" });
       await runs.grantProEntitlement(bootstrapActor);
-      await bdd.provisionWorkspace(bootstrapActor);
       paidOrganizations.add(owner.orgId);
     }
     const actor = bdd.user({ ...owner, orgRole: "org:member" });

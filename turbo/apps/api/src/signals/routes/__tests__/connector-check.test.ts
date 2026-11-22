@@ -187,7 +187,7 @@ async function connectReap(
 async function createOwnedRun(
   actor: ApiTestUser,
 ): Promise<{ readonly runId: string }> {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   await runsApi.configureRunnerGroup();
@@ -350,7 +350,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
 
   it("retains encoded API prefixes during global catalog selection", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await bdd.provisionWorkspace(actor);
     await connectReap(actor, "https://prod.api.reap.global/v%31");
     const result = await checkWithSession(actor, {
@@ -1172,7 +1172,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
         configureCloudflareOAuth();
         mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
         mockClerkMembership(context, owner, "org:admin");
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         context.mocks.ably.publish.mockResolvedValue(undefined);
         server.use(
           http.post("https://dash.cloudflare.com/oauth2/revoke", () => {
@@ -1461,7 +1461,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
 
     it("requires an explicit identity for shared custom prefixes and retains deletion isolation", async () => {
       const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       await bdd.provisionWorkspace(actor);
       const prefix = `https://${randomUUID()}.shared-custom.test/v1/`;
       const definitions = [];

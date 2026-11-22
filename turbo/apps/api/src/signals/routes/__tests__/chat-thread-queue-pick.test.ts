@@ -141,7 +141,7 @@ async function createWebhookAutomation(actor: ApiTestUser): Promise<{
   readonly token: string;
   readonly secret: string;
 }> {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const workflowId = await wf.createWorkflow(actor, {
     name: WORKFLOW_NAME,
   });

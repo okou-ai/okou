@@ -33,7 +33,7 @@ describe("system storage presigned URL cache", () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = await api.configureRunnerGroup();

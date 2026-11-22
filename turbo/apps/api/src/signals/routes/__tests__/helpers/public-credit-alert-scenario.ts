@@ -653,7 +653,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   const checkout = setupApp({ context, routes: billingCheckoutRoutes })(
     billingUsagePackCheckoutContract,
   );
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await owner.run(async () => {
     await bdd.completeOnboarding(admin);
     await bdd.provisionWorkspace(admin);

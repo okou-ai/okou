@@ -95,7 +95,7 @@ async function createOnboardedFeishuInstallation(
   await updateFeatureSwitchesForUser(context, actor, {
     [FEISHU_PLATFORMS[platform].featureSwitch]: true,
   });
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
 
   await runsApi.grantProEntitlement(actor);

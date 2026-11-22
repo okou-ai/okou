@@ -71,7 +71,7 @@ describe("Okou Official Lark bot", () => {
     if (!actor.orgId) {
       throw new Error("Expected workspace");
     }
-    authOrg.acceptAgentStorageWrites();
+    authOrg.acceptStorageWrites();
     await authOrg.provisionWorkspace(actor);
     await authOrg.completeOnboarding(actor);
     await updateFeatureSwitchesForUser(

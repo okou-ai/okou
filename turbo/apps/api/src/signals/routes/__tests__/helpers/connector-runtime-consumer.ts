@@ -50,7 +50,7 @@ export async function withConnectorRuntime(
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const firewall = createFirewallApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();

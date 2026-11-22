@@ -63,7 +63,7 @@ async function fixture(
     );
   }
   const group = await runs.configureRunnerGroup();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const s3 = installWorkflowVolumeS3Fixture(context);
   return { actor, group, s3 };
 }

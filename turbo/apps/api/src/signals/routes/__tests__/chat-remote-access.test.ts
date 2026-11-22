@@ -39,7 +39,7 @@ function sshClient() {
 }
 
 async function ownerWithThread(actor = bdd.user()) {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
 
   const thread = await chat.createThread(actor, {});
   if (!actor.orgId) {

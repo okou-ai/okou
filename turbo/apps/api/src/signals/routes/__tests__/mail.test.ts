@@ -62,7 +62,7 @@ const GMAIL_HTML_BODY =
   '<div>Mail body <strong>before</strong></div><img src="cid:email-test-illustration" alt="Cheerful envelope illustration"><ul><li>Mail body after</li></ul><a href="https://example.com/review">Review</a>';
 
 async function createOutlookMailFixture() {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const owner = createPublicConnectorActor(context, {
     optionalEnvironmentNames: [
       "MICROSOFT_OAUTH_CLIENT_ID",
@@ -959,7 +959,7 @@ async function seedGmailMailCardFixture(
     throw new Error("Expected an org-scoped actor");
   }
   const actorWithOrg = { ...actor, orgId: actor.orgId };
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   mocks.clerk.session(actor.userId, actorWithOrg.orgId, actor.orgRole);
 
   const thread = await chat.createThread(actor, {
@@ -989,7 +989,7 @@ async function seedGmailMailCardFixture(
 async function createPublicGmailMailCardFixture(
   scopes: readonly string[] = [GMAIL_MODIFY_SCOPE],
 ) {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   mockGmailConnectorOAuth({
     accessToken: "gmail-mail-card-token",
     email: "sender@example.com",

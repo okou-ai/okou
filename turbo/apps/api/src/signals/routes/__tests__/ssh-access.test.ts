@@ -97,7 +97,7 @@ describe("live chat SSH Run inventory", () => {
       throw new Error("Expected an SSH inventory owner organization");
     }
     const owner = { userId: actor.userId, orgId: actor.orgId };
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const secret = "d".repeat(64);
@@ -113,7 +113,6 @@ describe("live chat SSH Run inventory", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    await bdd.provisionWorkspace(actor);
     // Keep this owner host-free so first-host defaults remain the behavior under test.
     const { runId, threadId } = await runs.createThreadRun(actor, {
       prompt: "List my enabled SSH hosts",

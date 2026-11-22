@@ -548,7 +548,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
             errors.push(cancellation.error);
           }
           // Cancellation releases slots and can launch queued chat inputs.
-          // Settle those picks before deleting their workspace and Agent.
+          // Settle those picks before deleting their workspace.
           const terminalWork = await settleIncludingAbort(
             flushWaitUntilForTest,
           );

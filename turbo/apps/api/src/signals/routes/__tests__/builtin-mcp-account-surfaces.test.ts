@@ -220,7 +220,7 @@ describe("builtin MCP account surfaces", () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
     const connected = await accept(

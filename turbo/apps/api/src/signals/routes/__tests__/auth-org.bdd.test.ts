@@ -89,7 +89,7 @@ describe("AUTH-01 and ORG-03", () => {
     const admin = api.user();
     const noOrg = api.user({ orgId: null });
     const orgSlug = slug("bdd-chain");
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     api.mockClerkOrg(admin, { slug: orgSlug, name: "BDD Chain Org" });
 
     const me = await api.readMe(admin);
@@ -469,7 +469,7 @@ describe("ORG-03 onboarding status mapping", () => {
       hasOrg: true,
     });
 
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     const adminBeforeSetup = await api.readOnboardingStatus(admin);
     expect(adminBeforeSetup).toMatchObject({
       needsOnboarding: true,

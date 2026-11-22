@@ -24,7 +24,7 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user(options);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const identity = {
@@ -112,7 +112,7 @@ async function directFixture(runCounts: readonly number[]) {
       await flushWaitUntilForTest();
     }
   });
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const identity = {

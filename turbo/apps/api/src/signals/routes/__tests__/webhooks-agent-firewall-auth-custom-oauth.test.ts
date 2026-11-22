@@ -79,7 +79,7 @@ async function setupCustomOAuthFirewall(
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
   const actor = publicFixture.actor;
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();

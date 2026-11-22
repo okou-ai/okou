@@ -50,7 +50,7 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user(options);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();

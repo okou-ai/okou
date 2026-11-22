@@ -35,7 +35,7 @@ function detail() {
 }
 async function fixture() {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await bdd.bootstrapLimitedFreeOnboarding(actor);
   const s3 = installWorkflowVolumeS3Fixture(context);
   const body = {

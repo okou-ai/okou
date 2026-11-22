@@ -32,7 +32,7 @@ const DAY_MS = 86_400_000;
 beforeEach(() => {
   mockEnv("ENV", "development");
   mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
 });

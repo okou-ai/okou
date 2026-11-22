@@ -30,7 +30,7 @@ export function createPublicFirewallConnections(context: TestContext) {
 
   async function run() {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();

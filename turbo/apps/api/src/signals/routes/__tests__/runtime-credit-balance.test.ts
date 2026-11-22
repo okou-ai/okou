@@ -24,7 +24,7 @@ async function fundedFreeRuns() {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     pi.mockPiObjectStore();

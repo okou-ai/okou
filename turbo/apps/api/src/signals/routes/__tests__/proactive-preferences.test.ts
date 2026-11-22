@@ -53,7 +53,7 @@ async function preferenceRun(suggestions = true) {
     const { actor } = owned;
     await bdd.provisionWorkspace(actor);
     if (!actor.orgId) {
-      throw new Error("Expected a workspace primary Agent");
+      throw new Error("Expected a workspace member");
     }
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
     owned.ownsFeatureSwitches();

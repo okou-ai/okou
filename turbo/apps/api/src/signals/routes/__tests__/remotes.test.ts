@@ -133,7 +133,7 @@ describe("GET /api/remotes/overview", () => {
 
   it("keeps member browser defaults distinct from thread Computer Use and browser selections", async () => {
     const actor = owner();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await bdd.bootstrapLimitedFreeOnboarding(actor);
     const thread = await chat.createThread(actor, {});
     const host = await startHost(actor, "Selected Desktop");
@@ -190,7 +190,7 @@ describe("GET /api/remotes/overview", () => {
   it("returns independent SSH and VNC host defaults, not thread overrides or credentials", async () => {
     useSecretKmsProbe();
     const actor = owner();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const thread = await chat.createThread(actor, {});
     const sshId = await createSshHost(actor, "SSH server");
     vnc.authenticate(actor);

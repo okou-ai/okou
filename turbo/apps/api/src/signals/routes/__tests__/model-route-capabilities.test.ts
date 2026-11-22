@@ -20,7 +20,7 @@ async function connectedActor() {
   if (!actor.orgId) {
     throw new Error("Expected organization member");
   }
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   await authOrgApi.provisionWorkspace(actor);
   await bdd.completeOnboarding(actor);
   await expect(api.readBillingStatus(actor)).resolves.toMatchObject({

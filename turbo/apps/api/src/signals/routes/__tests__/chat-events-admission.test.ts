@@ -694,7 +694,7 @@ describe("CHAT-02: admission without spendable credits", () => {
     await fixture.run(async () => {
       mockEnv("APP_URL", "https://app.okou.ai");
       const actor = fixture.actor;
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       fixture.captureStorageMocks();
       const completed = await bdd.completeOnboarding(actor);
       expect(completed.status).toBe(200);

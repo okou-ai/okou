@@ -179,7 +179,7 @@ describe("Runner disk telemetry HTTP", () => {
     mockSecretKmsHttp();
     const fixture = createDiskTelemetryFixture(context);
     const { bdd, runs, webhooks, actor } = fixture;
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();

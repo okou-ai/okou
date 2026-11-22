@@ -983,7 +983,7 @@ async function setupConnectedTeamsBotActor(
   });
   const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
@@ -1298,7 +1298,7 @@ async function readHistoricalTeamsDownloadExecution(
   const { actor, fixture } = owned;
   const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   authOrgApi.mockClerkUsers([actor]);
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
@@ -2198,7 +2198,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
     const runnerGroup = await runsApi.configureRunnerGroup();
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    authOrgApi.acceptAgentStorageWrites();
+    authOrgApi.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
@@ -2885,7 +2885,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         orgRole: "org:admin",
       });
       context.mocks.ably.publish.mockResolvedValue(undefined);
-      authOrgApi.acceptAgentStorageWrites();
+      authOrgApi.acceptStorageWrites();
       await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
 
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
@@ -3091,7 +3091,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       });
       const runnerGroup = await runsApi.configureRunnerGroup();
       context.mocks.ably.publish.mockResolvedValue(undefined);
-      authOrgApi.acceptAgentStorageWrites();
+      authOrgApi.acceptStorageWrites();
       runsApi.acceptStorageDownloads();
       runsApi.acceptTelemetryIngest();
       const ownedRuns = publicRunOwner(context, actor);

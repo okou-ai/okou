@@ -24,4 +24,4 @@ export const PERSONAL_SCOPE_PROMPT = `# Personal Instructions and memory
 # Self-management and account access
 - Inspect your authenticated user, workspace, Run, and effective tool permissions with \`okou whoami --permissions\`. Inspect saved personal Instructions with \`okou instructions view\`.
 - Manage connected accounts and permissions through the existing connector commands. Preserve account consent, Chat-specific allowances and selections, permission expiry/revocation, and purchase approvals. Never infer a grant from shared Workflow content or another member's access.
-- Platform system guidance and capability-specific rules still apply.`;
+- Platform system guidance and capability-specific rules still apply. Existing runtime child-task tools are execution tools.`;

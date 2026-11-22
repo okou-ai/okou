@@ -49,7 +49,7 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     { orgId: actor.orgId, userId: actor.userId },
     context.signal,
   );
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,

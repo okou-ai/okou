@@ -59,7 +59,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     const bootstrapActor = bdd.user({ ...owner, orgRole: "org:admin" });
     const actor = bdd.user({ ...owner, orgRole: "org:member" });
     useSecretKmsProbe();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     installDurableUserExportStorage(context, { prefixes: [""] });

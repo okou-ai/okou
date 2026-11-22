@@ -29,7 +29,7 @@ interface ChatThreadFixture {
 /** Creates an agent and chat thread through the product routes. */
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
 
   const thread = await chat.createThread(actor, {
     title,
@@ -105,7 +105,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
 
   it("keeps the metadata title aligned with concurrent ordered rename events", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const thread = await chat.createThread(actor, {
       title: "Original title",
     });
@@ -148,7 +148,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
 
   it("retains a caller's event identity when the same rename is delivered twice", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const thread = await chat.createThread(actor, {
       title: "Original title",
     });

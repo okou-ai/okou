@@ -39,7 +39,7 @@ async function pendingConnect() {
   if (!actor.orgId) {
     throw new Error("Banking requires an organization");
   }
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await updateFeatureSwitchesForUser(
     context,
     { userId: actor.userId, orgId: actor.orgId },

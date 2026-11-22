@@ -261,7 +261,7 @@ export function createPublicComputerUseScenario(
     let existing = prepared.get(key);
     if (!existing) {
       existing = run(async () => {
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const runnerGroup = await runs.configureRunnerGroup();
@@ -332,7 +332,7 @@ export function createPublicComputerUseScenario(
         // caller's screenshot adapter, including its existing bytes, afterwards.
         const restoreStorage = captureSessionStorageMocks(context);
         const result = await settleIncludingAbort(async () => {
-          bdd.acceptAgentStorageWrites();
+          bdd.acceptStorageWrites();
           runs.acceptStorageDownloads();
           const setup = await prepareActor(actor);
           mockOptionalEnv("RUNNER_DEFAULT_GROUP", setup.runnerGroup);

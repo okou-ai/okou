@@ -151,7 +151,7 @@ async function firewallRun(
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
@@ -260,7 +260,7 @@ async function withPublicFirewallRun(
   await fixture.run(async () => {
     const bdd = createBddApi(context);
     const runsApi = createRunsApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     const runnerGroup = await runsApi.configureRunnerGroup();
@@ -900,7 +900,7 @@ describe("FW-3: billable firewall lease", () => {
     const webhooks = createWebhookCallbackApi(context);
     const fw = createFirewallApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     const runnerGroup = await runsApi.configureRunnerGroup();
@@ -966,7 +966,7 @@ describe("FW-3: billable firewall lease", () => {
     const runsApi = createRunsApi(context);
     const fw = createFirewallApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     const runnerGroup = await runsApi.configureRunnerGroup();

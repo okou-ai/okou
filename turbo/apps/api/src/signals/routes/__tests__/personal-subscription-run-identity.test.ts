@@ -154,7 +154,7 @@ async function connect(
 async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
   const bdd = createBddApi(context);
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
@@ -381,7 +381,7 @@ describe("personal subscription run identity", () => {
         },
       });
       await owner.run(async () => {
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         // Run creation requires the member memory that onboarding initializes.
         await owner.initialize();
         runs.acceptStorageDownloads();

@@ -111,7 +111,7 @@ describe("POST /api/integrations/slack/message", () => {
       orgRole: "org:admin",
       email: `${base.userId}@example.test`,
     };
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await api.grantProEntitlement(actor);
 
     await api.ensurePersonalSubscriptionModel(actor, {

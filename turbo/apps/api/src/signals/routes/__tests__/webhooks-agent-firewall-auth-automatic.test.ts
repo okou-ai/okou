@@ -91,7 +91,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     const firewall = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
@@ -245,7 +245,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     const firewall = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
@@ -479,7 +479,7 @@ describe("builtin Automatic firewall credential destinations", () => {
       const firewall = createFirewallApi(context);
       const connectors = createConnectorBddApi(context);
       const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = await runs.configureRunnerGroup();
@@ -776,7 +776,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     const firewall = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();

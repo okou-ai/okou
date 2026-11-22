@@ -64,7 +64,7 @@ export async function chargePublicDataUsage(
     context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation();
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await bdd.completeOnboarding(actor);

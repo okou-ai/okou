@@ -456,7 +456,7 @@ function useExecutionFixture() {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const bootstrapActor = bdd.user({ ...o, orgRole: "org:admin" });
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerIdentity: {
@@ -474,7 +474,6 @@ function useExecutionFixture() {
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
-    await bdd.provisionWorkspace(bootstrapActor);
     // Public host configuration and execution retain the original ordinary-member role.
     const actor = { ...bootstrapActor, orgRole: "org:member" as const };
     const configured = await configuredOwnerFixture(o);

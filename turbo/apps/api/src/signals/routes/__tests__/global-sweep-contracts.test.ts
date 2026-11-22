@@ -80,7 +80,7 @@ describe("production-global sweep route contracts", () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", `snapshot-${randomUUID()}`);
     const objects = new Map<string, Buffer>();
     context.mocks.s3.send.mockImplementation((request: unknown) => {

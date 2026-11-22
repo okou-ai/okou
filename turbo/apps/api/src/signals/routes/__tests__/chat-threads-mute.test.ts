@@ -11,7 +11,7 @@ const chat = createChatFilesBddApi(context);
 
 async function fixture() {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await bdd.provisionWorkspace(actor);
   const thread = await chat.createThread(actor, {
     title: "Keep this title",

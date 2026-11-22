@@ -46,7 +46,7 @@ async function prepareChatTitle() {
   const runs = createRunsApi(context);
   const chat = createChatFilesBddApi(context);
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await runs.configureRunnerGroup();

@@ -309,7 +309,7 @@ describe("ORG-01: org update and delete error matrix", () => {
 
     const admin = api.user();
     const baseSlug = slug("bdd-r5-org");
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     await onboardAdmin(admin, { slug: baseSlug, name: "BDD R5 Org" });
     api.mockClerkOrg(admin, { slug: baseSlug, name: "BDD R5 Org" });
 
@@ -385,7 +385,7 @@ describe("ORG-01: org update and delete error matrix", () => {
   ])("does not retry Clerk %s mutation failures", async (_name, failure) => {
     const admin = api.user();
     const baseSlug = slug("bdd-r5-org-mutation");
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     await onboardAdmin(admin, { slug: baseSlug, name: "BDD R5 Org" });
     context.mocks.clerk.organizations.updateOrganization.mockClear();
     context.mocks.clerk.organizations.updateOrganization.mockRejectedValue(
@@ -643,7 +643,7 @@ describe("ORG-02: membership admin matrix", () => {
       orgRole: "org:member",
       email: `requester-${shortId()}@example.test`,
     });
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     await onboardAdmin(admin, { slug: slug("bdd-r5-members") });
 
     const orgMembers = [
@@ -814,7 +814,7 @@ describe("ORG-02: member cleanup detaches Slack connections", () => {
       orgRole: "org:member",
       email: `member2-${shortId()}@example.test`,
     });
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     integrations.configureSlackAppMocks();
     await onboardAdmin(admin, { slug: slug("bdd-r5-slack") });
     const install = await integrations.installSlackWorkspace(admin);
@@ -909,7 +909,7 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
   it("serves the org read to a dispatched Run's agent token and rejects member reads and org writes [ORG-TOKEN-G]", async () => {
     const runs = createRunsApi(context);
     const admin = api.user();
-    api.acceptAgentStorageWrites();
+    api.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();

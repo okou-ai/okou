@@ -151,7 +151,7 @@ test("chat account startup preserves HTTP/MCP network bindings and unbound Direc
   });
   await fixture.run(async () => {
     const actor = fixture.actor;
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();

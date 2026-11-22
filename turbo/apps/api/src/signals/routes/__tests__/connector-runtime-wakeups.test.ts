@@ -22,7 +22,7 @@ const runs = createRunsApi(context);
 async function prepareActor(tier: "pro" | "team" = "pro") {
   mockEnv("ABLY_API_KEY", "test.key:secret");
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor, { tier });

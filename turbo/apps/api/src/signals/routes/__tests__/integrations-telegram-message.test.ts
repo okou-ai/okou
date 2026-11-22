@@ -69,7 +69,7 @@ async function linkTelegramTestSender(
   telegramUserId: string,
 ) {
   const bdd = createBddApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await bdd.provisionWorkspace(actor);
   await bdd.completeOnboarding(actor);
   await createBddIntegrationApi(context).requestLinkTelegram(
@@ -182,7 +182,7 @@ function sendExecutionModelMessage(model: FooterModel) {
   });
   return owner
     .run(async () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
       mockOptionalEnv("OPENROUTER_API_KEY", undefined);

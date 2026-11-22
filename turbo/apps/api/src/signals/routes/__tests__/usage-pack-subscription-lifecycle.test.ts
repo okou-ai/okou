@@ -1273,7 +1273,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
-    authOrgApi.acceptAgentStorageWrites();
+    authOrgApi.acceptStorageWrites();
     authOrgApi.mockClerkOrg(actor);
     await authOrgApi.provisionWorkspace(actor);
     await authOrgApi.completeOnboarding(actor);

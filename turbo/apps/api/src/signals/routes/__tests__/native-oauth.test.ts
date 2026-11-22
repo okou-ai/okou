@@ -67,7 +67,7 @@ async function project(actor: ApiTestUser, name: string) {
 }
 
 async function thread(actor: ApiTestUser) {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   return await chat.createThread(actor, {
     model: null,
   });
@@ -136,7 +136,7 @@ describe("native organization OAuth grants", () => {
 
   it("creates one owned thread for repeated requests with the same client thread ID", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const authorize = mcp.authorize(actor);
     const token = authorize({ scope: "okou:chat:send okou:chat:read" });
     const readOnlyToken = authorize({

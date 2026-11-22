@@ -44,7 +44,7 @@ describe("chat search publication", () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     await createRunsApi(context).configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     await bdd.provisionWorkspace(owner);
     await bdd.completeOnboarding(owner);
@@ -123,7 +123,7 @@ describe("chat search publication", () => {
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
     await createRunsApi(context).configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       return Promise.resolve(
         request instanceof ListObjectsV2Command
@@ -326,7 +326,7 @@ describe("chat search publication", () => {
       const chat = createChatFilesBddApi(context);
       const mcp = createMcpWebApi(context);
       await createRunsApi(context).configureRunnerGroup();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       const owner = bdd.user({ orgId: `org_${randomUUID()}` });
       await bdd.provisionWorkspace(owner);
       await bdd.completeOnboarding(owner);
@@ -486,7 +486,7 @@ describe("chat search publication", () => {
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
     await createRunsApi(context).configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       return Promise.resolve(
         request instanceof ListObjectsV2Command

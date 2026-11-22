@@ -155,7 +155,7 @@ export function createBddApi(context: TestContext) {
     return authHeaders(nextUser);
   }
 
-  function acceptAgentStorageWrites(): void {
+  function acceptStorageWrites(): void {
     context.mocks.s3.send.mockResolvedValue({
       ContentLength: 1024,
       UploadId: randomUUID(),
@@ -170,7 +170,7 @@ export function createBddApi(context: TestContext) {
 
   return {
     user,
-    acceptAgentStorageWrites,
+    acceptStorageWrites,
 
     async readMe(nextUser: ApiTestUser): Promise<{
       readonly userId: string;

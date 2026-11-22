@@ -175,7 +175,7 @@ export function createWorkflowsBddApi(context: TestContext) {
       await runs.ensurePersonalSubscriptionModel(actor, {
         model: options.model,
       });
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       return { actor, ...entitlement };
     },
 

@@ -82,7 +82,7 @@ export async function setupConnectedDiscordActor(
   const actor = authOrgApi.user({ userId, orgId, orgRole: "org:admin" });
   const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   if (!options.reuseOrganization) {
     await runsApi.grantProEntitlement(actor);

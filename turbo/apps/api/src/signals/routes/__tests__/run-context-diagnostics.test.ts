@@ -18,7 +18,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function diagnosticFixture() {
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   await api.configureRunnerGroup();

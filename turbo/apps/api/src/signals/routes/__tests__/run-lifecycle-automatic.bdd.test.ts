@@ -154,7 +154,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const fw = createFirewallApi(context);
       const bdd = createBddApi(context);
       const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
       const runnerGroup = await api.configureRunnerGroup();

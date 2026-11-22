@@ -3072,7 +3072,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   describe("with a configured Slack workspace", () => {
     async function prepareScenario() {
       const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       integrations.configureSlackAppMocks();
@@ -3220,7 +3220,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("forks Slack DM threads without replacing the main session", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     integrations.configureSlackAppMocks();
@@ -4406,7 +4406,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("prompts disconnected Slack users and filters non-actionable messages", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     integrations.configureSlackAppMocks();
     const { teamId } = await integrations.installSlackWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
@@ -4562,10 +4562,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("serves Slack help, connect, and disconnect commands", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     integrations.configureSlackAppMocks();
     await bdd.bootstrapLimitedFreeOnboarding(actor);
-    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -4670,7 +4669,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("prompts for login for an unsupported command without a Slack connection", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     integrations.configureSlackAppMocks();
     await bdd.bootstrapLimitedFreeOnboarding(actor);
     const { teamId } = await integrations.installSlackWorkspace(actor);
@@ -4690,7 +4689,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("keeps App Home, welcome and account lifecycle behavior", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     integrations.configureSlackAppMocks();
     await bdd.readMe(actor);
     await bdd.provisionWorkspace(actor);
@@ -4910,7 +4909,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("retries a rejected DM welcome when the connected user opens Messages and stops after successful delivery", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     integrations.configureSlackAppMocks();
     await bdd.bootstrapLimitedFreeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();
@@ -4965,7 +4964,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     const owner = publicRunOwner(context, actor);
     await owner.run(async () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       integrations.configureSlackAppMocks();
       await bdd.completeOnboarding(actor);
       const plan = publicPlanLifecycle(context, actor);
@@ -5419,7 +5418,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await bdd.provisionWorkspace(actor);
     await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -5571,7 +5569,7 @@ describe("INT-02: Telegram integration", () => {
   });
 
   it("offers billing recovery when a running Telegram task runs out of credits", async () => {
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
@@ -5650,7 +5648,7 @@ describe("INT-02: Telegram integration", () => {
 
   it("keeps Telegram reply and outbound attribution consistent across model changes", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();

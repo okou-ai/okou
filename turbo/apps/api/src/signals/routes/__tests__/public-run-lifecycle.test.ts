@@ -22,7 +22,7 @@ const api = createAuthOrgBddApi(context);
 // Actor IDs isolate business state; this helper uses shared PostgreSQL.
 async function onboardIsolatedActor(actor: ApiTestUser) {
   api.mockClerkUsers([actor]);
-  api.acceptAgentStorageWrites();
+  api.acceptStorageWrites();
   const app = await setupApp({
     context,
     routes: onboardingCompleteRoutes,

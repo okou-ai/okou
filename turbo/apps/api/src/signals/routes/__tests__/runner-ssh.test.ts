@@ -182,7 +182,7 @@ function useExecutionFixture() {
       throw new Error("Expected an SSH owner organization");
     }
     const owner = { orgId: actor.orgId, userId: actor.userId };
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerIdentity = {
@@ -197,7 +197,6 @@ function useExecutionFixture() {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    await bdd.provisionWorkspace(actor);
     authenticate(owner);
     const connection = await accept(
       config().create({

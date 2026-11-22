@@ -22,7 +22,7 @@ function headers(actor: ApiTestUser) {
 
 test("rejects a prepared copy after the source Workflow changes", async () => {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await bdd.bootstrapLimitedFreeOnboarding(actor);
   const copier = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
   const s3 = installWorkflowVolumeS3Fixture(context);
@@ -96,7 +96,7 @@ test("rejects a prepared copy after the source Workflow changes", async () => {
 test("rejects a prepared member copy after its public source is deleted", async () => {
   const admin = bdd.user({ orgRole: "org:admin" });
   const owner = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await bdd.bootstrapLimitedFreeOnboarding(admin);
   const s3 = installWorkflowVolumeS3Fixture(context);
   const name = `revoked-copy-${randomUUID().slice(0, 8)}`;

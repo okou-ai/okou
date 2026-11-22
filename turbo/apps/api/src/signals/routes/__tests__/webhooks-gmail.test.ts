@@ -568,7 +568,7 @@ async function setupFixture(
     throw new Error("Expected Gmail webhook fixture actor to have an org");
   }
 
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await bdd.provisionWorkspace(actor);
   await bdd.bootstrapLimitedFreeOnboarding(actor);
   await grantVisibleCredits({ ...actor, orgId: actor.orgId });

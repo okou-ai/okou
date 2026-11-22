@@ -48,7 +48,7 @@ const mcp = createMcpWebApi(context);
 
 async function fixture() {
   const actor = bdd.user({ orgId: `org_${randomUUID()}` });
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await createRunsApi(context).configureRunnerGroup({ registerRunner: false });
   await bdd.bootstrapLimitedFreeOnboarding(actor);
   const token = mcp.authorize(actor);

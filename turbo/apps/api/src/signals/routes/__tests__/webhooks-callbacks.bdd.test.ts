@@ -147,7 +147,7 @@ function orgOf(actor: ApiTestUser): string {
 async function createLimitedFreeOrgFromClerk(): Promise<ApiTestUser> {
   const bdd = createBddApi(context);
   api.configureClerkWebhookSecret();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
 
   const admin = bdd.user();
   api.verifyNextClerkWebhook({
@@ -2909,7 +2909,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const billing = createBillingMediaApi(context);
     const actor = bdd.user();
     const orgId = orgOf(actor);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -3443,7 +3443,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const billing = createBillingMediaApi(context);
     const actor = bdd.user();
     const orgId = orgOf(actor);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -4930,7 +4930,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const connectors = createConnectorBddApi(context);
     const gh = createGithubBddApi(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
@@ -5066,7 +5066,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
 
@@ -5112,7 +5112,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const runs = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -5208,7 +5208,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const workflows = createWorkflowsBddApi(context);
     const mocks = createRouteMocks(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const doomed = bdd.user();
     const otherWorkspace = bdd.user({ userId: doomed.userId });
     const auditor = bdd.user({ orgId: orgOf(doomed), orgRole: "org:admin" });
@@ -5275,7 +5275,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       const bdd = createBddApi(context);
       const runs = createRunsApi(context);
       api.configureClerkWebhookSecret();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = await runs.configureRunnerGroup();
@@ -5327,7 +5327,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
           restoreSetupWebhook?.();
         },
       });
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       await own(() => {
@@ -5589,7 +5589,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();

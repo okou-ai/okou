@@ -71,7 +71,7 @@ async function entitledActor(
   tier?: "pro" | "team",
 ): Promise<ApiTestUser> {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   await api.configureRunnerGroup();
@@ -578,7 +578,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       mockEnv("S3_ENDPOINT", undefined);
       mockEnv("S3_PUBLIC_ENDPOINT", undefined);
       const actor = fixture.actor;
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
       await api.configureRunnerGroup();

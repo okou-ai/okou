@@ -145,7 +145,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
         },
       ),
     );
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
   });

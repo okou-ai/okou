@@ -22,7 +22,7 @@ const chat = createChatFilesBddApi(context);
 
 async function seedChatThread(title: string) {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const thread = await chat.createThread(actor, {
     title,
   });

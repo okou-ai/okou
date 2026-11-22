@@ -126,7 +126,7 @@ describe("Lark integration", () => {
       [FeatureSwitchKey.LarkIntegration]: true,
       [FeatureSwitchKey.FeishuIntegration]: true,
     });
-    authOrgApi.acceptAgentStorageWrites();
+    authOrgApi.acceptStorageWrites();
     await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
 
     await runsApi.grantProEntitlement(actor);

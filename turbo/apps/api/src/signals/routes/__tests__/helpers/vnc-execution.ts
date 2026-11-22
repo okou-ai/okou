@@ -41,14 +41,13 @@ export function createVncExecutionApi(context: TestContext) {
   async function paidOwner() {
     const value = owner();
     const actor = bdd.user(value);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    await bdd.provisionWorkspace(actor);
     api.authenticate(value);
     return { ...value };
   }

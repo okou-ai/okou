@@ -30,7 +30,7 @@ describe("runner environment ownership", () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();

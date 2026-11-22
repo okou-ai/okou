@@ -10,7 +10,7 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
 async function completedRun(actor: ApiTestUser) {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();

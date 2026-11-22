@@ -65,7 +65,7 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   if (!actor.orgId) {
     throw new Error("Banking fixtures require an org-scoped actor");
   }
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   const runnerGroup = await api.configureRunnerGroup();
@@ -612,7 +612,7 @@ describe("banking access request lifecycle", () => {
 
   it("reuses each owner connection while keeping users and organizations separate", async () => {
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const firstOwner = bdd.user();
     const owners = [
       firstOwner,
@@ -728,7 +728,7 @@ describe("banking access request lifecycle", () => {
     if (!owner.orgId) {
       throw new Error("Banking requires an org-scoped actor");
     }
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await updateFeatureSwitchesForUser(
       context,
       { userId: owner.userId, orgId: owner.orgId },
@@ -912,7 +912,7 @@ describe("banking access request lifecycle", () => {
     if (!actor.orgId) {
       throw new Error("Banking requires an org-scoped actor");
     }
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await updateFeatureSwitchesForUser(
       context,
       { userId: actor.userId, orgId: actor.orgId },

@@ -48,7 +48,7 @@ describe("MCP OAuth foundations", () => {
     });
     const bdd = createBddApi(context);
     const connectors = createConnectorBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const actor = bdd.user({ orgRole: "org:admin" });
 
     const connector = await connectors.createCustomConnector(actor, {
@@ -660,7 +660,7 @@ describe("MCP OAuth foundations", () => {
     const runs = createRunsApi(context);
     const firewall = createFirewallApi(context);
     const actor = bdd.user({ orgRole: "org:admin" });
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerIdentity = {

@@ -112,7 +112,7 @@ async function primaryRun(enabled = true) {
       [FeatureSwitchKey.AgentSuggestion]: enabled,
     },
   );
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();

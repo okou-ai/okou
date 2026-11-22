@@ -395,7 +395,7 @@ async function setupConnectedTeamsActor(
   const runnerGroup = await runsApi.configureRunnerGroup();
 
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   // The paid entitlement helper already bootstraps and completes onboarding.
