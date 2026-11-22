@@ -30,6 +30,7 @@ import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -131,36 +132,38 @@ class NativeRealtimeTest {
             fun reveal(value: String) {
                 val target = label(value)
                 val scrollable = By.pkg(app.packageName).scrollable(true)
-                var foundContainer: UiObject2? = null
+                val jumpInset = (56 * app.resources.displayMetrics.density).roundToInt()
+                val visible =
+                    object : Condition<UiObject2, Boolean> {
+                        override fun apply(unused: UiObject2) = device.hasObject(target)
+                    }
+                var traversed = false
                 check(
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
                             override fun apply(device: UiDevice): Boolean {
                                 if (device.hasObject(target)) return true
-                                foundContainer = device.findObject(scrollable)
-                                return foundContainer != null
+                                if (traversed) return false
+                                val container = device.findObject(scrollable) ?: return false
+                                return try {
+                                    // Start above the jump button. Re-read virtual nodes if the
+                                    // transcript changes while a gesture is in progress.
+                                    container.setGestureMargins(0, 0, 0, jumpInset)
+                                    val found =
+                                        container.scrollUntil(Direction.UP, visible) ||
+                                            container.scrollUntil(Direction.DOWN, visible)
+                                    traversed = !found
+                                    found
+                                } catch (_: StaleObjectException) {
+                                    false
+                                }
                             }
                         },
                         10_000,
                     )
                 ) {
-                    "Native reply and its scroll container are both unavailable"
+                    "Native reply was not visible: $value"
                 }
-                val container = foundContainer
-                if (container != null && !device.hasObject(target)) {
-                    // Start swipes above the floating conversation jump button.
-                    val jumpInset = (56 * app.resources.displayMetrics.density).roundToInt()
-                    container.setGestureMargins(0, 0, 0, jumpInset)
-                    val visible =
-                        object : Condition<UiObject2, Boolean> {
-                            // Compose exposes virtual descendants through the current window.
-                            override fun apply(unused: UiObject2) = device.hasObject(target)
-                        }
-                    if (!container.scrollUntil(Direction.UP, visible)) {
-                        container.scrollUntil(Direction.DOWN, visible)
-                    }
-                }
-                text(value)
             }
             fun condition(description: String = "Native realtime condition", check: () -> Boolean) {
                 step = description

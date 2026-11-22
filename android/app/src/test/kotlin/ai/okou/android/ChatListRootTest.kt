@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -43,6 +44,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollToIndex
@@ -57,7 +59,9 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
@@ -74,6 +78,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -114,6 +119,264 @@ class ChatListRootTest {
 
     @get:Rule val compose = createAndroidComposeRule<MainActivity>(ComposeUiTestConfig(motion))
     private var chatJob: Job? = null
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun messageLinkOpensTheNativeReadingTargetAndReturnsToTheSourceDraft() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply =
+            "Read [Project update](/chats/$CHAT_IN_PROJECT#event-output).\n\n" +
+                "[Unavailable conversation](/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)"
+        // Keep background warming from supplying the target before the held read.
+        app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        val destinationRequested = CountDownLatch(1)
+        val destinationResponse = CountDownLatch(1)
+        val historyRows = app.fixture.historyRows
+        app.fixture.historyRows = { request ->
+            if (request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_IN_PROJECT) {
+                destinationRequested.countDown()
+                destinationResponse.await()
+            }
+            historyRows(request)
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            compose.onNodeWithText("Personal chat").performClick()
+            val source = compose.onNodeWithText("Read ", substring = true)
+            val link = awaitInlineLink("Project update")
+            val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
+            editor.performTextInput("Source draft")
+            val sourceBounds = source.getUnclippedBoundsInRoot()
+            link.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            link.performKeyInput { pressKey(Key.Enter) }
+            val destination = hasText("Project chat") and !hasAnyAncestor(hasTestTag("chat_list"))
+            compose.waitUntilExactlyOneExists(destination, 10_000)
+            compose.waitUntil(10_000) { destinationRequested.count == 0L }
+            compose.onNodeWithTag("conversation_find_hit").assertDoesNotExist()
+
+            compose.activityRule.scenario.recreate()
+            compose.waitUntilExactlyOneExists(destination, 10_000)
+            destinationResponse.countDown()
+            compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
+            compose.onNodeWithTag("chat_list").assertIsDisplayed()
+            editor.assert(hasText("Source draft").not())
+
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Source draft").fetchSemanticsNodes().isNotEmpty()
+            }
+            source.assertIsDisplayed()
+            assertEquals(sourceBounds, source.getUnclippedBoundsInRoot())
+            link.assertIsFocused()
+            awaitInlineLink("Unavailable conversation")
+            compose
+                .onNodeWithText("Unavailable conversation", substring = true)
+                .performFirstLinkClick()
+            compose.onNodeWithText("This conversation link is unavailable").assertIsDisplayed()
+            editor.assertTextContains("Source draft")
+        } finally {
+            destinationResponse.countDown()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun linkedConversationReturnsToSourceWhenTheDestinationIsDeletedElsewhere() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT)"
+        val remoteEvents = app.fixture.rowEventTail()
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        awaitInlineLink("Project update")
+        val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
+        editor.performTextInput("Source draft")
+        compose.onNodeWithText("Project update", substring = true).performFirstLinkClick()
+        val detailTitle = !hasAnyAncestor(hasTestTag("chat_list"))
+        compose.waitUntilExactlyOneExists(hasText("Project chat") and detailTitle, 10_000)
+
+        remoteEvents.add(
+            24L to chatEventWire(UUID.randomUUID().toString(), 24, CHAT_IN_PROJECT, "deleted")
+        )
+        reconnectList(app)
+        compose.waitUntil(10_000) {
+            currentList()?.threads?.none { it.id == CHAT_IN_PROJECT } == true
+        }
+        compose.waitUntilExactlyOneExists(hasText("This conversation link is unavailable"), 10_000)
+        compose.onNode(hasText("Personal chat") and detailTitle).assertIsDisplayed()
+        editor.assertTextContains("Source draft")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun offlineMessageLinkUsesCachedHistoryAndReturnsToSourceWhenHistoryIsUnavailable() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT#event-output)"
+        app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        val historyRows = app.fixture.historyRows
+        app.fixture.historyRows = { request ->
+            if (
+                !app.connectivity.value &&
+                    request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_IN_PROJECT
+            )
+                MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+            else historyRows(request)
+        }
+        fun setConnected(value: Boolean) {
+            compose.runOnIdle { app.connectivity.value = value }
+            compose.waitUntil(10_000) { currentList()?.offline == !value }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        awaitInlineLink("Project update")
+        val link = compose.onNodeWithText("Project update", substring = true)
+        val hit = hasTestTag("conversation_find_hit")
+        val unavailable = hasText("This conversation link is unavailable")
+
+        setConnected(false)
+        link.performFirstLinkClick()
+        compose.waitUntilExactlyOneExists(unavailable, 10_000)
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+
+        setConnected(true)
+        awaitInlineLink("Project update")
+        link.performFirstLinkClick()
+        compose.waitUntilExactlyOneExists(hit, 10_000)
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        awaitInlineLink("Project update")
+
+        setConnected(false)
+        link.performFirstLinkClick()
+        compose.waitUntilExactlyOneExists(hit, 10_000)
+        compose.onNodeWithText("Project chat").assertIsDisplayed()
+        compose.onNode(unavailable).assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun returningThroughAnInlineLinkPreservesTheWorkspaceSearch() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT)"
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val query = compose.onNodeWithTag("chat_search_query")
+        query.performTextInput("personal")
+        compose.waitUntilExactlyOneExists(hasText("Personal chat"), 10_000)
+        compose.onNodeWithText("Personal chat").performClick()
+        val link = hasText("Project update", substring = true)
+        awaitInlineLink("Project update")
+        compose.onNode(link).performFirstLinkClick()
+        compose.waitUntilExactlyOneExists(hasText("Project chat"), 10_000)
+
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntilExactlyOneExists(link, 10_000)
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        query.assertIsDisplayed().assertTextContains("personal")
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun systemBackRespectsTheOrderOfWideSearchAndConversationLinks() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT)"
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        awaitInlineLink("Project update")
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val query = compose.onNodeWithTag("chat_search_query")
+        query.performTextInput("personal")
+        val detail = !hasAnyAncestor(hasTestTag("chat_list") or hasTestTag("chat_search"))
+        val source = compose.onNode(hasText("Personal chat") and detail)
+        val destination = compose.onNode(hasText("Project chat") and detail)
+        source.assertIsDisplayed()
+        val link = compose.onNodeWithText("Project update", substring = true)
+        link.performFirstLinkClick()
+        destination.assertIsDisplayed()
+        query.assertTextContains("personal")
+
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+        source.assertIsDisplayed()
+        query.assertIsDisplayed().assertTextContains("personal")
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        query.assertDoesNotExist()
+        source.assertIsDisplayed()
+
+        awaitInlineLink("Project update")
+        link.performFirstLinkClick()
+        destination.assertIsDisplayed()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        query.performTextInput("project")
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        query.assertDoesNotExist()
+        destination.assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        source.assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun webpageLinksOpenFromParagraphsAndQuotedTablesWithoutLeavingTheConversation() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply =
+            """
+            Read [Release notes](https://example.org/releases?version=2).
+
+            > | Check | Result |
+            > | --- | --- |
+            > | Build | [Build details](https://example.org/build/42) |
+            """
+                .trimIndent()
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        awaitInlineLink("Release notes")
+        val text = compose.onNodeWithText("Release notes", substring = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single().layoutInput
+        assertEquals(16.sp, layout.style.fontSize)
+        assertEquals(28.sp, layout.style.lineHeight)
+        val linkStyle =
+            checkNotNull(
+                layout.text.getLinkAnnotations(0, layout.text.length).single().item.styles?.style
+            )
+        assertEquals(FontWeight.SemiBold, linkStyle.fontWeight)
+        assertEquals(TextDecoration.Underline, linkStyle.textDecoration)
+        text.performFirstLinkClick()
+        val intent = shadowOf(compose.activity).nextStartedActivity
+        assertEquals(android.content.Intent.ACTION_VIEW, intent.action)
+        assertEquals("https://example.org/releases?version=2", intent.dataString)
+        text.assertIsDisplayed()
+
+        awaitInlineLink("Build details")
+        val quoted = compose.onNodeWithText("Build details", substring = true)
+        quoted.performFirstLinkClick()
+        val quotedIntent = shadowOf(compose.activity).nextStartedActivity
+        assertEquals(android.content.Intent.ACTION_VIEW, quotedIntent.action)
+        assertEquals("https://example.org/build/42", quotedIntent.dataString)
+        quoted.assertIsDisplayed()
+    }
+
+    private fun awaitInlineLink(label: String): SemanticsNodeInteraction {
+        val link =
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.LinkTestMarker) and
+                hasAnyAncestor(hasText(label, substring = true))
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(link, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+        }
+        return compose.onNode(link, useUnmergedTree = true)
+    }
 
     @Before
     fun retainActualOwnerForTeardown() {

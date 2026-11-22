@@ -204,6 +204,7 @@ androidComponents.onVariants { variant ->
 dependencies {
     implementation(libs.sentry.android.core)
     implementation(libs.appcompat)
+    implementation(libs.browser)
     implementation(libs.clerk.ui)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
