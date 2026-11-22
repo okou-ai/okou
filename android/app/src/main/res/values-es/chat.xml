@@ -1,4 +1,7 @@
 <resources>
+    <string name="workspace_workflows">Flujos de trabajo</string>
+    <string name="workspace_connectors">Conectores</string>
+    <string name="workspace_artifacts">Artefactos</string>
     <string name="chat_undo_archived">Chat archivado</string>
     <string name="chat_undo_unarchived">Chat desarchivado</string>
     <string name="chat_undo_marked_read">Chat marcado como leído</string>
