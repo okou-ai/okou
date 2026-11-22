@@ -106,7 +106,6 @@ use tokio_util::task::AbortOnDropHandle;
 const LOG_TAG: &str = "sandbox:guest-agent";
 const AGENT_LOG_BUFFER_BYTES: usize = 8 * 1024;
 const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
-const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
 const WEB_SEARCH_TOOL_NAME: &str = "WebSearch";
 const MAX_EVENT_SEQUENCE_NUMBER: u32 = i32::MAX as u32;
@@ -358,8 +357,8 @@ impl<'a> CliRuntimeConfig<'a> {
         } else {
             None
         };
-        let disable_builtin_web_search = config.user_env.contains_key(OKOU_AGENT_ID_ENV_KEY)
-            && user_env_value(&config.user_env, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR) != "true";
+        let disable_builtin_web_search =
+            user_env_value(&config.user_env, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR) != "true";
         let disallowed_tools = disallowed_tools_with_builtin_web_search_disabled(
             &config.disallowed_tools,
             disable_builtin_web_search,

@@ -5,12 +5,12 @@ import {
   composerDraftResponseSchema,
 } from "../composer-draft";
 
-describe("agent draft contract", () => {
-  it("accepts canonical agent draft responses", () => {
+describe("composer draft contract", () => {
+  it("accepts canonical composer draft responses", () => {
     const response = {
       draftUserMessage: {
         version: 1 as const,
-        parts: [{ type: "text" as const, text: "Resume agent work" }],
+        parts: [{ type: "text" as const, text: "Resume work" }],
       },
       draftAttachments: null,
     };
@@ -18,7 +18,7 @@ describe("agent draft contract", () => {
     expect(composerDraftResponseSchema.parse(response)).toStrictEqual(response);
   });
 
-  it("requires userMessage for non-empty agent drafts", () => {
+  it("requires userMessage for non-empty composer drafts", () => {
     expect(
       composerDraftRequestSchema.safeParse({
         draftUserMessage: null,

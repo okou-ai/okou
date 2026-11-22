@@ -103,13 +103,11 @@ async fn artifact_snapshot_preflight_error(mount: &std::path::Path) -> String {
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::with_override(&telemetry_path).await;
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let upload = server.mock(|when, then| {
@@ -263,13 +261,11 @@ async fn artifact_snapshot_missing_mount_fails_before_storage_api_calls() {
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let upload = server.mock(|when, then| {
@@ -352,13 +348,11 @@ async fn artifact_snapshot_enforces_manifest_boundaries_before_storage_api_calls
     sandbox_ops_guard.install_override(&telemetry_path);
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let upload = server.mock(|when, then| {
@@ -517,13 +511,11 @@ async fn artifact_snapshot_explicit_fail_policy_missing_mount_fails() {
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(
@@ -561,13 +553,11 @@ async fn artifact_snapshot_later_missing_mount_fails_before_any_storage_api_call
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(
@@ -679,13 +669,11 @@ async fn artifact_snapshot_preserve_policy_missing_mount_preserves_parent_versio
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(
@@ -731,13 +719,11 @@ async fn artifact_snapshot_policy_still_fails_on_non_not_found_root_error() {
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::lock().await;
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(

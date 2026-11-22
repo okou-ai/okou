@@ -102,8 +102,7 @@ async fn snapshot_rejects_empty_prepare_response_before_upload_or_commit() -> Re
     let files = archive::collect_file_metadata(root.to_str().unwrap()).unwrap();
 
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200);
     });
     let upload = server.mock(|when, then| {
@@ -111,8 +110,7 @@ async fn snapshot_rejects_empty_prepare_response_before_upload_or_commit() -> Re
         then.status(200);
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -166,8 +164,7 @@ async fn snapshot_rejects_shape_invalid_prepare_response_before_upload_or_commit
     let _sandbox_ops_guard = crate::SandboxOpsTestGuard::with_override(&telemetry_path).await;
 
     let prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(serde_json::json!({
             "existing": false,
             "uploads": {
@@ -191,8 +188,7 @@ async fn snapshot_rejects_shape_invalid_prepare_response_before_upload_or_commit
         then.status(200);
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -570,8 +566,7 @@ async fn snapshot_archive_upload_failure_skips_manifest_and_commit() -> Result<(
         then.status(200);
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -669,8 +664,7 @@ async fn snapshot_manifest_upload_failure_skips_commit() -> Result<(), AgentErro
         then.status(403);
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
@@ -995,8 +989,7 @@ async fn snapshot_requires_upload_urls_for_new_version() -> Result<(), AgentErro
         }));
     });
     let commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/run/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200)
             .json_body(serde_json::json!({ "success": true }));
     });
