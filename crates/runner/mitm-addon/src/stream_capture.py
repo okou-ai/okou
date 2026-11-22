@@ -2,13 +2,28 @@
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
 from mitmproxy import http
 
 import flow_metadata_keys as metadata_keys
 
 type StreamCallback = Callable[[bytes], bytes | Iterable[bytes]]
+
+
+class StreamByteCount(TypedDict):
+    total_bytes: int
+
+
+def empty_stream_byte_count() -> StreamByteCount:
+    return {"total_bytes": 0}
+
+
+def streamed_byte_count(state: StreamByteCount | None) -> int | None:
+    """Project an observed count, including zero, from optional stream state."""
+    if state is None:
+        return None
+    return int(state["total_bytes"])
 
 
 class CapturedStreamBody(NamedTuple):
