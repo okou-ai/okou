@@ -35,7 +35,7 @@ class ComposerApiFixture : Closeable {
     @Volatile var rejectSend = false
     @Volatile var beforeCreateReturn: () -> Unit = {}
     @Volatile var beforeSendReturn: () -> Unit = {}
-    @Volatile var beforeListReturn: () -> Unit = {}
+    @Volatile var beforeListReturn: (containsCreatedChat: Boolean) -> Unit = {}
     @Volatile var beforeHistoryReturn: (String) -> Unit = {}
     @Volatile var beforeContextReturn: () -> Unit = {}
     @Volatile var beforeInputStatusReturn: () -> Unit = {}
@@ -183,6 +183,7 @@ class ComposerApiFixture : Closeable {
                             )
                         )
                         .jsonObject
+            val existingRows = rows.size
             created.forEachIndexed { index, body ->
                 val seq = 30L + index
                 if (seq > since)
@@ -199,7 +200,7 @@ class ComposerApiFixture : Closeable {
                             )
                             .jsonObject
             }
-            beforeListReturn()
+            beforeListReturn(rows.size > existingRows)
             json("""{"events":${JsonArray(rows)},"hasMore":false}""")
         }
         chats.historyRows = ::rows
