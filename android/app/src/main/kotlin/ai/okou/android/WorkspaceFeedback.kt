@@ -2,9 +2,13 @@ package ai.okou.android
 
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListUiState
+import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatUndoPhase
+import ai.okou.android.chat.DeleteProjectDialog
+import ai.okou.android.chat.ProjectDeleteStatus
+import ai.okou.android.chat.canDeleteProject
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -38,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -129,6 +134,137 @@ internal fun ChatUndoFeedback(
             chats.dismissRowUndo(undo)
         }
     }
+}
+
+@Composable
+internal fun WorkspaceChatFeedback(
+    chats: ChatListModel,
+    listState: State<ChatListUiState>,
+    snackbar: SnackbarHostState,
+    showChatList: Boolean,
+    showRowFeedback: Boolean,
+    showRowActionFailure: Boolean,
+    confirmingProjectDelete: String?,
+    dismissProjectDelete: () -> Unit,
+) {
+    val list = listState.value
+    val deleteFeedback = list.projectDeleteFeedback
+    val deleteProject = list.projects.firstOrNull { it.id == confirmingProjectDelete }
+    if (deleteProject != null && showChatList) {
+        val feedback = deleteFeedback?.takeIf { it.projectId == deleteProject.id }
+        DeleteProjectDialog(
+            projectName = deleteProject.name,
+            pending = list.projectList.deletingId == deleteProject.id,
+            status = feedback?.status,
+            offline = list.offline,
+            enabled = list.canDeleteProject,
+            dismiss = {
+                dismissProjectDelete()
+                if (feedback?.status == ProjectDeleteStatus.Rejected)
+                    chats.dismissProjectDeleteFeedback(feedback)
+            },
+            confirm = {
+                if (feedback?.status == ProjectDeleteStatus.Unconfirmed)
+                    chats.retryProjectDelete(feedback)
+                else chats.deleteProject(deleteProject.id)
+            },
+        )
+    } else if (confirmingProjectDelete != null && list.projectsPhase == ChatReadPhase.Ready) {
+        LaunchedEffect(confirmingProjectDelete) { dismissProjectDelete() }
+    }
+    LaunchedEffect(chats, showChatList) { if (!showChatList) chats.clearRowUndo() }
+    if (showRowFeedback) ChatUndoFeedback(chats, list, snackbar)
+    if (showRowFeedback && list.rowUndo == null) {
+        list.chatMoveNotice?.let { notice ->
+            val message =
+                notice.projectName?.let { stringResource(R.string.chat_project_moved_named, it) }
+                    ?: stringResource(R.string.chat_project_moved_outside)
+            LaunchedEffect(chats, notice, message) {
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Short)
+                chats.dismissChatMoveNotice(notice)
+            }
+        }
+        deleteFeedback
+            ?.takeUnless { it.projectId == deleteProject?.id }
+            ?.let { feedback ->
+                val unconfirmed = feedback.status == ProjectDeleteStatus.Unconfirmed
+                val message =
+                    stringResource(
+                        when (feedback.status) {
+                            ProjectDeleteStatus.Confirmed -> R.string.chat_project_deleted
+                            ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
+                            ProjectDeleteStatus.Unconfirmed ->
+                                R.string.chat_project_delete_unconfirmed
+                        }
+                    )
+                val retry =
+                    if (unconfirmed && list.canDeleteProject) stringResource(R.string.retry)
+                    else null
+                LaunchedEffect(chats, feedback, message, retry) {
+                    val result =
+                        snackbar.showSnackbar(
+                            message,
+                            actionLabel = retry,
+                            withDismissAction = unconfirmed,
+                            duration =
+                                if (unconfirmed) SnackbarDuration.Indefinite
+                                else SnackbarDuration.Short,
+                        )
+                    if (result == SnackbarResult.ActionPerformed) chats.retryProjectDelete(feedback)
+                    else chats.dismissProjectDeleteFeedback(feedback)
+                }
+            }
+    }
+    list.failedRowAction
+        ?.takeIf { list.rowUndo == null }
+        ?.let { failure ->
+            val action = failure.action
+            val message =
+                stringResource(
+                    when {
+                        failure.rejected -> R.string.chat_row_action_rejected
+                        action.updatesChat -> R.string.chat_row_action_failed
+                        else -> R.string.chat_read_action_failed
+                    }
+                )
+            val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
+            LaunchedEffect(chats, failure, message, showRowActionFailure) {
+                if (
+                    showRowActionFailure &&
+                        snackbar.showSnackbar(
+                            message,
+                            actionLabel = refreshLabel,
+                            withDismissAction = !failure.rejected,
+                            duration =
+                                if (failure.rejected) SnackbarDuration.Short
+                                else SnackbarDuration.Indefinite,
+                        ) == SnackbarResult.ActionPerformed
+                ) {
+                    if (action.updatesChat) chats.reloadAfterRowActionFailure()
+                    else chats.refreshIndicators()
+                }
+                chats.dismissRowActionFailure(failure)
+            }
+        }
+    list.markAllReadResult
+        ?.takeIf { list.rowUndo == null }
+        ?.let { result ->
+            val message =
+                if (result.confirmed == result.requested) {
+                    pluralStringResource(
+                        R.plurals.chat_mark_all_read_success,
+                        result.confirmed,
+                        result.confirmed,
+                    )
+                } else {
+                    stringResource(R.string.chat_mark_all_read_unconfirmed)
+                }
+            LaunchedEffect(chats, result, message, showChatList) {
+                if (showChatList)
+                    snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                chats.dismissMarkAllReadResult(result)
+            }
+        }
 }
 
 @Composable
