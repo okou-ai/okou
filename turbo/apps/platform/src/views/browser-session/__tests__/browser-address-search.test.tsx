@@ -147,7 +147,6 @@ test.each([
     "https://www.google.com/search?q=example..com",
   ],
   ["070", host64, complete, "http://" + host64 + "/"],
-  ["071", longHost, complete, "http://" + longHost + "/"],
   [
     "072",
     "https://example.com/report?q=1#total",
@@ -184,6 +183,17 @@ test.each([
     await arrived(url);
   },
 );
+
+test("browser-address-search-071 Ctrl+Enter opens the long registered host and the overlength-label variant directly", async () => {
+  const { address, arrived } = await openAddress();
+  // The registration names four 63-character labels; its Given also describes a label over 63.
+  for (const host of [longHost, "b".repeat(64) + "." + longHost]) {
+    await fill(address, host);
+    expect(address).toHaveValue(host);
+    await userEvent.keyboard(complete);
+    await arrived("http://" + host + "/");
+  }
+});
 
 test.each([
   [
