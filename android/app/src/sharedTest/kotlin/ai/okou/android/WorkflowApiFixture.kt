@@ -20,6 +20,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     val requests = CopyOnWriteArrayList<RecordedRequest>()
     val active = AtomicBoolean(false)
     @Volatile var beforeCatalog: () -> Unit = {}
+    @Volatile var beforeDraftRead: () -> Unit = {}
     @Volatile var previousDraft = if (chinese) "保留原有草稿" else "Keep my existing draft"
     @Volatile
     var instruction =
@@ -76,9 +77,10 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                     """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}"""
                 )
             "/api/chat-drafts/composer" -> {
-                if (request.method == "GET")
+                if (request.method == "GET") {
+                    beforeDraftRead()
                     jsonResponse(plainDraftDocument(previousDraft).toString())
-                else {
+                } else {
                     previousDraft =
                         Json.parseToJsonElement(request.body.clone().readUtf8())
                             .jsonObject["draftUserMessage"]

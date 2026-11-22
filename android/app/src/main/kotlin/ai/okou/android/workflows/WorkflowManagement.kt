@@ -84,6 +84,7 @@ internal fun WorkflowRuleRow(
     rule: WorkflowAutomation,
     state: WorkflowState,
     canManage: Boolean,
+    actionsEnabled: Boolean,
     timezone: String,
     onEdit: (WorkflowEdit.Rule) -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
@@ -149,6 +150,7 @@ internal fun WorkflowRuleRow(
                     WorkflowAction(
                         stringResource(R.string.workflow_view_connection),
                         ::viewConnections,
+                        enabled = actionsEnabled,
                     )
                 val needsRecovery = connectionRequired && !rule.enabled
                 WorkflowAction(
@@ -162,7 +164,7 @@ internal fun WorkflowRuleRow(
                     {
                         if (needsRecovery) viewConnections() else if (!state.writing) onToggle(rule)
                     },
-                    enabled = needsRecovery || !state.offline,
+                    enabled = actionsEnabled && (needsRecovery || !state.offline),
                     modifier =
                         if (needsRecovery) Modifier
                         else Modifier.testTag("workflow_toggle_${rule.id}"),
@@ -171,7 +173,7 @@ internal fun WorkflowRuleRow(
                     WorkflowAction(
                         stringResource(R.string.workflow_edit),
                         { onEdit(editable) },
-                        enabled = !state.offline && !state.writing,
+                        enabled = actionsEnabled && !state.offline && !state.writing,
                     )
             }
         }
@@ -241,6 +243,7 @@ internal fun WorkflowHistoryRow(
     rule: WorkflowAutomation,
     timezone: String,
     sourceChatAvailable: (String) -> Boolean,
+    sourceNavigationEnabled: Boolean,
     onOpenChat: (String) -> Unit,
 ) {
     val source = rule.chatThreadId?.takeIf(sourceChatAvailable)
@@ -249,7 +252,10 @@ internal fun WorkflowHistoryRow(
             .heightIn(min = 52.dp)
             .clip(RoundedCornerShape(8.dp))
             .then(
-                if (source != null) Modifier.clickable(role = Role.Button) { onOpenChat(source) }
+                if (source != null)
+                    Modifier.clickable(enabled = sourceNavigationEnabled, role = Role.Button) {
+                        onOpenChat(source)
+                    }
                 else Modifier
             )
             .padding(horizontal = 12.dp, vertical = 8.dp),

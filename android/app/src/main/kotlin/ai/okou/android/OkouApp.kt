@@ -565,12 +565,14 @@ internal fun OkouApp(
             onUse = { workflowDraft("/${it.name} ") },
             sourceChatAvailable = { id -> list.threads.any { it.id == id && it.hidden != true } },
             onOpenChat = { id ->
-                list.threads
-                    .firstOrNull { it.id == id && it.hidden != true }
-                    ?.let {
-                        openChat(it)
-                        workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Chat)
-                    }
+                if (!handoffPending) {
+                    list.threads
+                        .firstOrNull { it.id == id && it.hidden != true }
+                        ?.let {
+                            openChat(it)
+                            workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Chat)
+                        }
+                }
             },
         )
         return

@@ -6,10 +6,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -152,6 +156,44 @@ class WorkflowRootTest {
         compose.onNodeWithText("Enabled").assertIsDisplayed()
         back()
         compose.onNodeWithTag("workflow_query").assertTextContains("/release-review")
+    }
+
+    @Test
+    fun pendingDraftHandoffDisablesSourceNavigationAndRuleActions() {
+        app.gate.countDown()
+        waitFor("Personal chat")
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        waitFor("Release checklist")
+        compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
+        waitForTag("workflow_detail_title")
+        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val source = hasText(app.fixture.ruleTitle) and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(source).assertIsEnabled()
+
+        val requested = CountDownLatch(1)
+        val releaseDraft = CountDownLatch(1)
+        app.fixture.beforeDraftRead = {
+            requested.countDown()
+            releaseDraft.await()
+        }
+        try {
+            compose.onNodeWithTag("workflow_use").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { requested.count == 0L } }
+            compose.onNode(source).assertIsNotEnabled()
+
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            compose.onNodeWithTag("workflow_toggle_weekday").assertIsNotEnabled()
+            compose
+                .onNode(hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_weekday")))
+                .assertIsNotEnabled()
+        } finally {
+            releaseDraft.countDown()
+        }
+        waitForTag("message_input")
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
     }
 
     @Test

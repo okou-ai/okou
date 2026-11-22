@@ -665,12 +665,13 @@ private fun WorkflowDetailPane(
                     }
                     items(detail.automations, key = { it.id }) { rule ->
                         WorkflowRuleRow(
-                            rule,
-                            state,
-                            detail.canManage,
-                            timezone,
-                            onEditRule,
-                            onToggle,
+                            rule = rule,
+                            state = state,
+                            canManage = detail.canManage,
+                            actionsEnabled = !handoffPending,
+                            timezone = timezone,
+                            onEdit = onEditRule,
+                            onToggle = onToggle,
                         )
                         if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
                     }
@@ -686,7 +687,13 @@ private fun WorkflowDetailPane(
                             WorkflowSecondary(stringResource(R.string.workflow_no_recent_runs))
                     }
                     items(latest, key = { it.id }) {
-                        WorkflowHistoryRow(it, timezone, sourceChatAvailable, onOpenChat)
+                        WorkflowHistoryRow(
+                            rule = it,
+                            timezone = timezone,
+                            sourceChatAvailable = sourceChatAvailable,
+                            sourceNavigationEnabled = !handoffPending,
+                            onOpenChat = onOpenChat,
+                        )
                     }
                 }
             }
