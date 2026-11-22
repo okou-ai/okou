@@ -70,7 +70,7 @@ async fn claude_code_event_delivery_byte_overload_keeps_recent_events()
         .await
     });
     let first = server.next_request(Duration::from_secs(5)).await?;
-    common::wait_for_file_contains(
+    cli_test_support::readiness::wait_for_appended_file_contains(
         std::path::Path::new(&agent_log_file),
         "byte-overload-finished",
         Duration::from_secs(5),
