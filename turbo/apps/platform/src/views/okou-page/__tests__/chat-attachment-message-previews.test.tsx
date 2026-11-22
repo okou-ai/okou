@@ -219,3 +219,35 @@ test("chat-attachment-message-previews-015 typed image syntax remains an ordered
   ).toBeNull();
   expect(queryAction("link", "Preview slope.png", row!)).toBeNull();
 });
+
+test("Voice message clips open the selected recording in playback order", async () => {
+  const first = attachment("first.wav", "audio/wav");
+  const second = attachment("second.wav", "audio/wav");
+  serveUploaded(context, [first, second]);
+  await conversation(context, {
+    chatEvents: [
+      userRow([
+        { type: "voice", clips: [{ fileId: first.id }, { fileId: second.id }] },
+      ]),
+    ],
+  });
+  const firstClip = await findAction(
+    "button",
+    "Open audio preview for Voice clip 1",
+  );
+  const secondClip = await findAction(
+    "button",
+    "Open audio preview for Voice clip 2",
+  );
+  expect(
+    firstClip.compareDocumentPosition(secondClip) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  click(secondClip);
+  await waitFor(() => {
+    return expect(document.querySelector("audio")).toHaveAttribute(
+      "src",
+      second.url,
+    );
+  });
+});

@@ -252,6 +252,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
+    name: "transcribe",
+    description:
+      "Transcribe ordered private audio clips with a multimodal model",
+    load: async () => {
+      return (await import("./commands/transcribe")).transcribeCommand;
+    },
+  },
+  {
     name: "credit",
     description: "View or buy credits",
     load: async () => {

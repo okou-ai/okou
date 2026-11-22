@@ -41,7 +41,21 @@ export const chatNormalSendBodyShape = {
    */
   model: selectedModelRequestSchema.nullable().optional(),
   runOptions: chatRunOptionsRequestSchema.optional(),
-  userMessage: userMessageDocumentSchema,
+  userMessage: userMessageDocumentSchema.refine(
+    (document) => {
+      return document.parts.every((part) => {
+        return (
+          part.type !== "file" ||
+          (part.annotatedFileId === undefined) ===
+            (part.annotations === undefined)
+        );
+      });
+    },
+    {
+      message:
+        "Annotated user-message files require annotatedFileId and annotations together",
+    },
+  ),
   computerUseHostId: uuid().nullable().optional(),
   cloudBrowserEnabled: boolean().optional(),
   hasTextContent: boolean(),
@@ -68,22 +82,6 @@ export const chatEventNormalSendBodySchema = object({
     {
       message: "Cloud browser and Computer Use cannot both be enabled",
       path: ["cloudBrowserEnabled"],
-    },
-  )
-  .refine(
-    (body) => {
-      return body.userMessage.parts.every((part) => {
-        return (
-          part.type !== "file" ||
-          (part.annotatedFileId === undefined) ===
-            (part.annotations === undefined)
-        );
-      });
-    },
-    {
-      message:
-        "Annotated user-message files require annotatedFileId and annotations together",
-      path: ["userMessage"],
     },
   );
 
