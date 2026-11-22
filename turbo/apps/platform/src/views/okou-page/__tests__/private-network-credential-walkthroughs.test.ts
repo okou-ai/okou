@@ -76,7 +76,6 @@ test("remote-control-guided-setup-111 The three Cloudflare steps and dashboard l
 });
 test("remote-control-guided-setup-112 The Tailscale guide copies the drafted tags and Write permission and preserves the network draft", async () => {
   await add("tailscale");
-  const clipboard = context.mocks.browser.clipboardWriteText();
   const tags = "tag:studio, tag:design";
   await fill(field("Network name"), "Design network");
   await fill(field("Allowed tags"), tags);
@@ -87,6 +86,7 @@ test("remote-control-guided-setup-112 The Tailscale guide copies the drafted tag
   await within(guide).findByText("Set permissions and tags");
   const value = await within(guide).findByText(tags);
   expect(value).toBeVisible();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   await press("Copy Tags", guide);
   await waitFor(() => {
     return expect(clipboard.writes).toContain(tags);
