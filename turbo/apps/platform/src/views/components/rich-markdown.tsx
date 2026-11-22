@@ -1,5 +1,4 @@
 import { detach, Reason } from "../../signals/utils.ts";
-import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import {
   useGet,
   useLastLoadable,
@@ -902,7 +901,7 @@ function MarkdownTreeFrame({
   mediaPreview = false,
   tree,
 }: MarkdownTreeFrameProps) {
-  return withChatScrollLayout(
+  return (
     <MarkdownFrame className={className} style={style}>
       {toJsxRuntime(tree, {
         Fragment,
@@ -918,7 +917,7 @@ function MarkdownTreeFrame({
         passKeys: true,
         passNode: true,
       })}
-    </MarkdownFrame>,
+    </MarkdownFrame>
   );
 }
 

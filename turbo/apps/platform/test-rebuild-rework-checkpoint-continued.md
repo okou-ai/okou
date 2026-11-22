@@ -1877,3 +1877,40 @@ The authoring sources were the frozen GWT, current production entry points, `AGE
 - `turbo/apps/platform/src/views/okou-page/__tests__/chat-offline-cache.test.tsx` · 003, 004.
 - `turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx` · 001, 002, 005, 007.
 - `turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx` · 001, 003.
+
+## Batch 76 intake and main synchronization
+
+The original 30 distinct paths below have 115 retained IDs at opening head eabfe3b5fd. The complete BDD and freeze register at 4855592c were checked against the historical ledger. All 115 enter this batch pending. No batch 75 file is repeated.
+
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-browser-shutdown.test.tsx` · 001, 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx` · 002, 004, 006, 007, 009, 011.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx` · 002, 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-isolation.test.tsx` · 001, 002.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-codex-execution.test.tsx` · 001, 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx` · 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-accounts.test.tsx` · 005, 006, 007, 008, 010.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx` · 001, 003, 007, 008, 009.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx` · 001, 002, 003, 005, 008, 009.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ime.test.tsx` · 002.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx` · 002, 003, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx` · 003, 005, 006, 007, 010.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx` · 001, 003, 004, 005, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx` · 001, 002, 003, 004, 007, 010, 011.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx` · 001, 002, 003, 007, 010, 012, 013.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx` · 001, 002, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx` · 002, 003, 004, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-history.test.tsx` · 001, 003, 006.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx` · 001, 003, 004, 006, 011, 013, 014.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx` · 001, 002, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx` · 003, 004, 005, 006, 007, 010.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx` · 002, 003.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-expected-failures.test.tsx` · 001, 003.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx` · 001, 004, 006, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx` · 001, 002, 004, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-member-model-route.test.tsx` · 003, 004, 005.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx` · 002, 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-offline-cache.test.tsx` · 003, 004.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx` · 001, 002, 005, 007.
+- `turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx` · 001, 003.
+
+Main d9f5bb7159 includes #49936 (Chats is active on a project page) and #49924 (reader-initiated scroll and two-frame alignment). Four withdrawn files keep their BDD and three independently rewritten files keep their implementations. The attachment history regression now waits for the rendered bottom, then scrolls upward with wheel input. First probe: an isolated wheel with no directional offset did not load Question 5. Restored user gesture: 19/19 rows across four complete suites, shuffled seed 76001. New upstream scroll scenarios (layout/tap, both render frames and reader motion between frames) and project rail coverage remain attributed to upstream. Historical and current counts at intake are 1,495 and 1,471.

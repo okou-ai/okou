@@ -9,6 +9,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+import { mockChatGeometry } from "./chat-conversation-locator-test-helpers.ts";
 import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
@@ -102,6 +103,7 @@ test("A restored historical turn opens both saved attachments", async () => {
       publicUrl: null,
     });
   });
+  mockChatGeometry();
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
@@ -118,11 +120,12 @@ test("A restored historical turn opens both saved attachments", async () => {
   if (!viewport) {
     throw new Error("Missing conversation scroll viewport");
   }
-  Object.defineProperties(viewport, {
-    clientHeight: { configurable: true, value: 360 },
-    scrollHeight: { configurable: true, value: 2800 },
-    scrollTop: { configurable: true, writable: true, value: 60 },
+  await waitFor(() => {
+    expect(viewport.scrollTop).toBeGreaterThan(60);
   });
+  fireEvent.scroll(viewport);
+  fireEvent.wheel(viewport, { deltaX: 0, deltaY: -240 });
+  viewport.scrollTop = 60;
   fireEvent.scroll(viewport);
 
   const question = await screen.findByText(`Question ${REFERENCE_TURN}`);
