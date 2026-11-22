@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.2](https://github.com/okou-ai/okou/compare/android-v0.37.1...android-v0.37.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* **mobile:** prepare native clients for workspace apis without agent ids ([#49889](https://github.com/okou-ai/okou/issues/49889)) ([acc1180](https://github.com/okou-ai/okou/commit/acc1180b74cc5401511eb40984f43c64db058604))
+
 ## [0.37.1](https://github.com/okou-ai/okou/compare/android-v0.37.0...android-v0.37.1) (2026-11-21)
 
 

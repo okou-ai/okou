@@ -69,11 +69,11 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
             case .array(let note) = $0["note"]
           else { return false }
           return note.allSatisfy {
-            ["text", "chat_thread", "agent", "template"].contains($0["type"]?.string ?? "")
+            ["text", "chat_thread", "template"].contains($0["type"]?.string ?? "")
           }
         }
         return [
-          "text", "file", "chat_thread", "agent", "template", "source", "additional_info",
+          "text", "file", "chat_thread", "template", "source", "additional_info",
           "automation", "feedback"
         ].contains(type)
       }
@@ -84,7 +84,7 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
       if part["type"]?.string == "text" {
         return !(part["text"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       }
-      return ["agent", "chat_thread", "feedback"].contains(part["type"]?.string ?? "")
+      return ["chat_thread", "feedback"].contains(part["type"]?.string ?? "")
     }
   }
 
@@ -92,7 +92,6 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
     parts.compactMap { part in
       switch part["type"]?.string {
       case "text", "file": return nil
-      case "agent": return part["nameSnapshot"]?.string
       case "chat_thread", "template": return part["titleSnapshot"]?.string
       case "feedback": return nil
       case "source": return "Source context"

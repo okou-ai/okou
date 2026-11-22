@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_EVENT
 import ai.okou.android.CHAT_IN_PROJECT
@@ -531,7 +530,7 @@ class HistoryWarmingTest {
                 }
                 api.archive = {
                     jsonResponse(
-                        """{"chatThreads":[${ids.joinToString(",") { id -> """{"id":"$id","agentId":"$CHAT_AGENT","title":"History","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"hidden":${id == hidden},"renamedAt":null}""" }}]}"""
+                        """{"chatThreads":[${ids.joinToString(",") { id -> """{"id":"$id","title":"History","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"hidden":${id == hidden},"renamedAt":null}""" }}]}"""
                     )
                 }
                 api.events = { jsonResponse("""{"events":[],"hasMore":false}""") }

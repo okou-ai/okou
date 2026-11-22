@@ -26,7 +26,8 @@ final class ChatDraftDocumentTests: XCTestCase {
       "clientId": .string("client"), "clientName": .string("Research")
     ])
     let reference: MessageJSON = .object([
-      "type": .string("agent"), "agentId": .string("agent"), "nameSnapshot": .string("Agent")
+      "type": .string("chat_thread"), "threadId": .string("thread"),
+      "titleSnapshot": .string("Chat")
     ])
     let spacing: MessageJSON = .object([
       "type": .string("text"), "text": .string(" \n  Keep this spacing. \n ")
@@ -58,14 +59,14 @@ final class ChatDraftDocumentTests: XCTestCase {
 
   func testTextEditsPreserveRichPartsAndUnicodePositions() throws {
     let data = Data(
-      #"{"version":1,"parts":[{"type":"text","text":"Hello "},{"type":"agent","agentId":"agent","nameSnapshot":"Agent"},{"type":"text","text":"🌷 world"},{"type":"file","fileId":"file","filenameSnapshot":"notes.txt","contentType":"text/plain","annotations":{"version":1,"marks":[]}}]}"#
+      #"{"version":1,"parts":[{"type":"text","text":"Hello "},{"type":"chat_thread","threadId":"thread","titleSnapshot":"Chat"},{"type":"text","text":"🌷 world"},{"type":"file","fileId":"file","filenameSnapshot":"notes.txt","contentType":"text/plain","annotations":{"version":1,"marks":[]}}]}"#
         .utf8)
     var document = try JSONDecoder().decode(ChatDraftDocument.self, from: data)
     let rich = document.parts.filter { $0["type"]?.string != "text" }
     document.replaceText("Hello 🌷 friend")
     XCTAssertEqual(document.text, "Hello 🌷 friend")
     XCTAssertEqual(document.parts.filter { $0["type"]?.string != "text" }, rich)
-    XCTAssertEqual(document.parts[1]["type"]?.string, "agent")
+    XCTAssertEqual(document.parts[1]["type"]?.string, "chat_thread")
     document.replaceText("")
     XCTAssertEqual(document.parts, rich)
     document.replaceText("New text")

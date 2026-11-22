@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.249.90](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.89...runner-rs-v0.249.90) (2026-11-22)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.89](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.88...runner-rs-v0.249.89) (2026-11-21)
+
+
+### Refactoring
+
+* **runner:** centralize registry observation publication ([#49887](https://github.com/okou-ai/okou/issues/49887)) ([6794d49](https://github.com/okou-ai/okou/commit/6794d49aaaee14c79cb82f75a9e62428a705a7b3))
+
 ## [0.249.88](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.87...runner-rs-v0.249.88) (2026-11-21)
 
 ### Release Dependencies

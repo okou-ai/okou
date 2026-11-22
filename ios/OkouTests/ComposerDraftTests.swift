@@ -602,7 +602,7 @@ final class ComposerRichDraftTests: XCTestCase {
     restoredNote.deleteBackward()
     try await waitForBusinessResult {
       reopened.editorBlocks.first(where: \.isFeedback)?.content.parts.contains {
-        $0["type"]?.string == "agent"
+        $0["threadId"]?.string == "74000000-0000-4000-8000-000000000001"
       } == false
     }
     restoredNote.undoManager?.undo()
@@ -758,7 +758,7 @@ private func quotedRichDraft() throws -> ComposerDraft {
   let quote = try JSONDecoder().decode(
     MessageJSON.self,
     from: Data(
-      #"{"type":"feedback","quote":"PWA passage","eventId":"pwa-event","range":{"start":3,"end":14},"source":{"type":"mail","id":"mail","status":"sent","sentId":"sent"},"note":[{"type":"text","text":"Compare "},{"type":"agent","agentId":"73000000-0000-4000-8000-000000000001","nameSnapshot":"Planner"},{"type":"text","text":"now"}]}"#
+      #"{"type":"feedback","quote":"PWA passage","eventId":"pwa-event","range":{"start":3,"end":14},"source":{"type":"mail","id":"mail","status":"sent","sentId":"sent"},"note":[{"type":"text","text":"Compare "},{"type":"chat_thread","threadId":"74000000-0000-4000-8000-000000000001","titleSnapshot":"Planner"},{"type":"text","text":"now"}]}"#
         .utf8))
   return ComposerDraft(
     document: ChatDraftDocument(

@@ -23,9 +23,6 @@ internal interface CanonicalApi {
         @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
     ): Response<Indicators>
 
-    @GET("/api/agents")
-    suspend fun `agents`(@Header("Authorization") token: String): Response<Agents>
-
     @GET("/api/projects")
     suspend fun `projects`(@Header("Authorization") token: String): Response<Projects>
 }

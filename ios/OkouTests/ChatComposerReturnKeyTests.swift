@@ -15,7 +15,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
-    let source = ComposerMentionSource(agentID: AttachmentFlowFixture.agentID, threads: [])
+    let source = ComposerMentionSource(threads: [])
     let host = UIHostingController(
       rootView: MentionComposerHarness(conversation: conversation, source: source)
         .environment(\.composerPreferences, preferences))
@@ -167,7 +167,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
-    let source = ComposerMentionSource(agentID: AttachmentFlowFixture.agentID, threads: [])
+    let source = ComposerMentionSource(threads: [])
     let host = UIHostingController(
       rootView: MentionComposerHarness(conversation: conversation, source: source)
         .environment(\.composerPreferences, preferences))
@@ -202,7 +202,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
-    let source = ComposerMentionSource(agentID: AttachmentFlowFixture.agentID, threads: [])
+    let source = ComposerMentionSource(threads: [])
     let host = UIHostingController(
       rootView: MentionComposerHarness(conversation: conversation, source: source)
         .environment(\.composerPreferences, preferences))

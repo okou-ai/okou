@@ -1348,6 +1348,35 @@ async fn populate_storage_plan(
     result.map_err(Into::into)
 }
 
+async fn apply_sequential_storage(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    mut plan: StoragePlan,
+    telemetry: &mut JobTelemetry,
+    deferred: &mut Option<crate::storage_cache::DeferredBackgroundFill>,
+) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
+    let files = plan.take_decoded();
+    let guest_manifest = plan.into_guest_manifest();
+    let started = Instant::now();
+    let result = super::storage::download_storages_with_files(
+        sandbox,
+        context,
+        guest_manifest,
+        &files,
+        telemetry,
+    )
+    .await;
+    telemetry.record(
+        "runner_storage_manifest_guest_storage_apply",
+        started.elapsed(),
+        result.is_ok(),
+        result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
+    );
+    // Cancellation before this point leaves deferred fill owned by the caller.
+    let deferred = deferred.take();
+    result.map(|_| deferred)
+}
+
 /// Both futures stay borrowed by this accepted preparation phase. First failure
 /// signals its sibling, but the result is not returned until both owners settle.
 async fn apply_prepared_storage(
@@ -1601,7 +1630,7 @@ async fn prepare_guest_storage(
                     let _ = prepared_storage.take();
                     return Ok(deferred);
                 }
-                let deferred = populate_storage_plan(
+                let mut deferred = populate_storage_plan(
                     &mut prepared.plan,
                     Some(&mut prepared.delivery),
                     sandbox,
@@ -1610,29 +1639,12 @@ async fn prepare_guest_storage(
                     Some(cache_started),
                 )
                 .await?;
-                let mut prepared = prepared_storage.take().ok_or_else(|| {
+                let prepared = prepared_storage.take().ok_or_else(|| {
                     RunnerError::Internal(
                         "prepared storage disappeared after cache population".into(),
                     )
                 })?;
-                let files = prepared.plan.take_decoded();
-                let guest_manifest = prepared.plan.into_guest_manifest();
-                let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(
-                    sandbox,
-                    context,
-                    guest_manifest,
-                    &files,
-                    telemetry,
-                )
-                .await;
-                telemetry.record(
-                    "runner_storage_manifest_guest_storage_apply",
-                    download_started.elapsed(),
-                    download_result.is_ok(),
-                    download_result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
-                );
-                download_result.map(|_| deferred)
+                apply_sequential_storage(sandbox, context, prepared.plan, telemetry, &mut deferred).await
             }
         } else {
             let mut plan = build_storage_plan(manifest, previous)?;
@@ -1653,26 +1665,9 @@ async fn prepare_guest_storage(
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
                 Ok(None)
             } else {
-                let deferred =
+                let mut deferred =
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry, None).await?;
-                let files = plan.take_decoded();
-                let guest_manifest = plan.into_guest_manifest();
-                let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(
-                    sandbox,
-                    context,
-                    guest_manifest,
-                    &files,
-                    telemetry,
-                )
-                .await;
-                telemetry.record(
-                    "runner_storage_manifest_guest_storage_apply",
-                    download_started.elapsed(),
-                    download_result.is_ok(),
-                    download_result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
-                );
-                download_result.map(|_| deferred)
+                apply_sequential_storage(sandbox, context, plan, telemetry, &mut deferred).await
             }
         }
     }

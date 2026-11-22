@@ -47,6 +47,7 @@ class ComposerJournalStore(
     private val editors = mutableMapOf<String, ChatComposerOwner>()
     private var closed = false
     private val json = Json {
+        ignoreUnknownKeys = true
         encodeDefaults = false
         explicitNulls = true
     }
@@ -123,16 +124,13 @@ class ComposerJournalStore(
             return ComposerJournal()
         return file
             .openRead()
-            .use { json.decodeFromStream<ComposerJournal>(it) }
+            .use { stream -> json.decodeFromStream<ComposerJournal>(stream) }
             .also {
                 if (
                     it.format !in 1..3 ||
                         it.format == 1 &&
                             it.entries.values.any { entry -> entry.recovery != null } ||
-                        it.format < 3 &&
-                            (it.drafts.isNotEmpty() ||
-                                it.retainedDrafts.isNotEmpty() ||
-                                it.defaultAgentId != null)
+                        it.format < 3 && (it.drafts.isNotEmpty() || it.retainedDrafts.isNotEmpty())
                 )
                     throw IOException("Unsupported composer journal format")
             }
