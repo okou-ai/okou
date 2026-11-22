@@ -3,9 +3,13 @@ package ai.okou.android.settings
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.DefaultModelApiFixture
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.DefaultModelPreference
+import ai.okou.android.api.generated.DefaultModelPreferenceServiceTier
+import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.jsonResponse
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
@@ -113,11 +117,13 @@ class DefaultModelSettingsTest {
     fun cachedOptionsReportAReadFailureOnlyAfterThreeAttemptsAndThirtySeconds() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
-            val preference = api.service.defaultModelPreference()
+            var preference = api.service.defaultModelPreference()
             val catalog = api.service.recoveryCatalog()
             val models = api.service.recoveryModels()
             var unavailable = false
             val attempts = mutableListOf<Long>()
+            val saving = CompletableDeferred<Unit>()
+            val completeSave = CompletableDeferred<Unit>()
             val service =
                 object : WorkspaceSession by api.service {
                     override suspend fun recoveryCatalog() = catalog
@@ -129,6 +135,18 @@ class DefaultModelSettingsTest {
                             attempts += currentTime
                             throw ApiFailure.Http(503, null, null, null)
                         } else preference
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference
+                    ): DefaultModelPreference {
+                        saving.complete(Unit)
+                        completeSave.await()
+                        preference =
+                            preference.copy(
+                                serviceTier = DefaultModelPreferenceServiceTier.PRIORITY
+                            )
+                        return preference
+                    }
                 }
             val model = DefaultModelSettings(backgroundScope, service, { true }, {})
             model.visible(true)
@@ -156,10 +174,22 @@ class DefaultModelSettingsTest {
             assertEquals(DefaultModelFailure.Read, model.state.value.failure)
             assertEquals("gpt-test", model.state.value.selected?.id)
 
+            model.fast(true)
+            runCurrent()
+            assertTrue(saving.isCompleted)
+            model.online(false)
+            model.online(true)
+            completeSave.complete(Unit)
+            runCurrent()
+            assertNull(model.state.value.pending)
+            assertEquals(4, attempts.size)
+            assertFalse(model.state.value.failed)
+
             unavailable = false
             advanceTimeBy(5_000)
             runCurrent()
             assertFalse(model.state.value.failed)
+            assertTrue(model.state.value.fast)
         }
     }
 

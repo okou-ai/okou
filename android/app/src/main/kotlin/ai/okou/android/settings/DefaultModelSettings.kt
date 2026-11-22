@@ -159,11 +159,14 @@ internal class DefaultModelSettings(
     private var needsReadback = false
     private var work: Job? = null
     private var retryWait: Job? = null
+    private var readFailures = 0
+    private var readFailureWindow: Job? = null
 
     fun visible(active: Boolean) {
         if (visible == active) return
         visible = active
         refreshRequested = active
+        if (!active) resetReadFailures()
         val current = mutable.value
         if (!active && current.pending == null) {
             work?.cancel()
@@ -182,6 +185,8 @@ internal class DefaultModelSettings(
                 failure = current.failure.takeUnless { online && it == DefaultModelFailure.Read },
             )
         if (!online) {
+            // A pending save can keep this worker alive across a network change.
+            resetReadFailures()
             retryWait?.cancel()
             if (current.pending == null) work?.cancel()
         } else if (visible) refreshRequested = true
@@ -241,14 +246,7 @@ internal class DefaultModelSettings(
             return
         val job =
             scope.launch(start = CoroutineStart.LAZY) {
-                var readFailures = 0
-                var readFailureWindow: Job? = null
                 var saveFailures = 0
-                fun resetReadFailures() {
-                    readFailures = 0
-                    readFailureWindow?.cancel()
-                    readFailureWindow = null
-                }
                 try {
                     while (authorized() && !mutable.value.offline) {
                         val pending = mutable.value.pending
@@ -288,6 +286,7 @@ internal class DefaultModelSettings(
                             currentCoroutineContext().ensureActive()
                             onFailure(error)
                             if (!authorized()) break
+                            if (pending == null && !visible) continue
                             val retryable =
                                 error is ApiFailure.Network ||
                                     pending != null && error is ApiFailure.IncompatibleResponse ||
@@ -339,20 +338,24 @@ internal class DefaultModelSettings(
                                         mutable.value = current.copy(failure = failure)
                                     if (saveFailures == 1) 5_000L else 30_000L
                                 }
-                            if (!waitForRetry(retryMillis, refreshing = pending == null)) {
-                                resetReadFailures()
+                            if (!waitForRetry(retryMillis, refreshing = pending == null))
                                 saveFailures = 0
-                            }
                         }
                     }
                 } finally {
-                    readFailureWindow?.cancel()
+                    resetReadFailures()
                     work = null
                     if (authorized()) synchronize()
                 }
             }
         work = job
         job.start()
+    }
+
+    private fun resetReadFailures() {
+        readFailures = 0
+        readFailureWindow?.cancel()
+        readFailureWindow = null
     }
 
     private fun showReadFailure() {
