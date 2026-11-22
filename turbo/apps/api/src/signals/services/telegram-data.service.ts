@@ -1,10 +1,10 @@
+import { selectedExecutionAgent } from "./execution-agent";
 import { computed, type Computed } from "ccstate";
 import type {
   TelegramBot,
   TelegramLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { and, eq } from "drizzle-orm";
 
@@ -73,16 +73,15 @@ function getOrgAgent(args: {
 }
 
 function defaultAgentId(args: {
+  readonly userId: string;
   readonly orgId: string;
 }): Computed<Promise<string | null>> {
   return computed(async (get) => {
     const db = get(db$);
     const [row] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
-    return row?.defaultAgentId ?? null;
+      .select()
+      .from(selectedExecutionAgent(args.orgId, args.userId));
+    return row?.id ?? null;
   });
 }
 
@@ -96,7 +95,7 @@ function officialCompose(args: {
   }>
 > {
   return computed(async (get) => {
-    const defaultId = await get(defaultAgentId({ orgId: args.orgId }));
+    const defaultId = await get(defaultAgentId(args));
     if (!defaultId) {
       return { agent: null, usesDefaultAgent: true };
     }

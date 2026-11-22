@@ -1,9 +1,9 @@
+import { selectedExecutionAgent } from "../services/execution-agent";
 import { waitUntil } from "../context/wait-until";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq, and } from "drizzle-orm";
 import { array, number, object, string } from "zod";
 import {
@@ -752,12 +752,10 @@ const installGithubOauth$ = command(
     const userId = auth.userId;
     const db = get(db$);
     const [metadata] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, auth.orgId))
-      .limit(1);
+      .select()
+      .from(selectedExecutionAgent(auth.orgId, userId));
     signal.throwIfAborted();
-    const composeId = query.composeId ?? metadata?.defaultAgentId;
+    const composeId = query.composeId ?? metadata?.id;
     if (!composeId) {
       return worksErrorRedirect(
         "Finish workspace setup to initialize Okou before connecting GitHub.",

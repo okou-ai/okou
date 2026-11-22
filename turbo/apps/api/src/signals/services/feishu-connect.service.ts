@@ -1,3 +1,4 @@
+import { executionAgentId } from "./execution-agent";
 import type { FeishuDisconnectArgs } from "./feishu-disconnect-plan";
 import { feishuDisconnectPublicationSql } from "./feishu-disconnect-publication";
 import { object, uuid } from "zod";
@@ -16,7 +17,6 @@ import {
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
 import { logger } from "../../lib/log";
@@ -237,10 +237,12 @@ export const feishuConnectStatus = (args: {
       .select(installationPlan.columns)
       .from(feishuOrgInstallations)
       .leftJoin(
-        orgMetadata,
-        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
+        agents,
+        eq(
+          agents.id,
+          executionAgentId(feishuOrgInstallations.orgId, args.userId),
+        ),
       )
-      .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
       .where(installationPlan.condition)
       .orderBy(asc(feishuOrgInstallations.createdAt));
     const orgId = args.orgId;

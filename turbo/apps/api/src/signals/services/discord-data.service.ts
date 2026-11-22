@@ -1,10 +1,10 @@
+import { executionAgentId } from "./execution-agent";
 import { command, computed, type Computed } from "ccstate";
 import { and, count, eq, gte, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { agents } from "@okouai/db/schema/agent";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { discordSnowflakeSchema } from "../external/discord-client";
 import type { ApiOrgRole } from "../../types/auth";
@@ -492,18 +492,10 @@ export const disconnectDiscordBinding$ = command(
   },
 );
 
-function discordDefaultAgentReadPlan(orgId: string) {
-  return {
-    columns: { defaultAgentId: orgMetadata.defaultAgentId },
-    from: orgMetadata,
-    where: eq(orgMetadata.orgId, orgId),
-  };
-}
-
-function discordAccessibleAgentReadPlan(
-  identity: { readonly orgId: string; readonly userId: string },
-  agentId: string,
-) {
+function discordAccessibleAgentReadPlan(identity: {
+  readonly orgId: string;
+  readonly userId: string;
+}) {
   return {
     columns: {
       id: agents.id,
@@ -512,7 +504,7 @@ function discordAccessibleAgentReadPlan(
     },
     from: agents,
     where: and(
-      eq(agents.id, agentId),
+      eq(agents.id, executionAgentId(identity.orgId, identity.userId)),
       eq(agents.orgId, identity.orgId),
       or(eq(agents.visibility, "public"), eq(agents.owner, identity.userId)),
     ),
@@ -525,16 +517,7 @@ function discordEffectiveAgent(
   return computed(async (get) => {
     const args = get(input);
     const db = get(db$);
-    const metadataPlan = discordDefaultAgentReadPlan(args.orgId);
-    const [metadata] = await db
-      .select(metadataPlan.columns)
-      .from(metadataPlan.from)
-      .where(metadataPlan.where);
-    const agentId = metadata?.defaultAgentId;
-    if (!agentId) {
-      return null;
-    }
-    const agentPlan = discordAccessibleAgentReadPlan(args, agentId);
+    const agentPlan = discordAccessibleAgentReadPlan(args);
     const [agent] = await db
       .select(agentPlan.columns)
       .from(agentPlan.from)
@@ -550,16 +533,7 @@ export const readDiscordEffectiveAgent$ = command(
     args: { readonly orgId: string; readonly userId: string },
   ) => {
     const db = get(db$);
-    const metadataPlan = discordDefaultAgentReadPlan(args.orgId);
-    const [metadata] = await db
-      .select(metadataPlan.columns)
-      .from(metadataPlan.from)
-      .where(metadataPlan.where);
-    const agentId = metadata?.defaultAgentId;
-    if (!agentId) {
-      return null;
-    }
-    const agentPlan = discordAccessibleAgentReadPlan(args, agentId);
+    const agentPlan = discordAccessibleAgentReadPlan(args);
     const [agent] = await db
       .select(agentPlan.columns)
       .from(agentPlan.from)

@@ -1,9 +1,9 @@
+import { executionAgentId } from "./execution-agent";
 import { command } from "ccstate";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -32,20 +32,8 @@ export const loadProactiveWorkflowsEligibility$ = command(
         .limit(1),
       get(db$)
         .select({ id: agents.id })
-        .from(orgMetadata)
-        .innerJoin(
-          agents,
-          and(
-            eq(agents.id, orgMetadata.defaultAgentId),
-            eq(agents.orgId, orgMetadata.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(orgMetadata.orgId, owner.orgId),
-            or(eq(agents.visibility, "public"), eq(agents.owner, owner.userId)),
-          ),
-        )
+        .from(agents)
+        .where(eq(agents.id, executionAgentId(owner.orgId, owner.userId)))
         .limit(1),
     ]);
     signal.throwIfAborted();

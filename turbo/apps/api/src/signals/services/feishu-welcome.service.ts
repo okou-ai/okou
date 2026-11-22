@@ -1,8 +1,8 @@
+import { executionAgentId } from "./execution-agent";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
 import { buildFeishuWelcomeMessage } from "../../lib/feishu-message-card";
@@ -39,10 +39,15 @@ export const notifyFeishuConnect$ = command(
         eq(feishuOrgInstallations.id, feishuOrgConnections.installationId),
       )
       .leftJoin(
-        orgMetadata,
-        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
+        agents,
+        eq(
+          agents.id,
+          executionAgentId(
+            feishuOrgInstallations.orgId,
+            feishuOrgConnections.userId,
+          ),
+        ),
       )
-      .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
       .where(
         and(
           eq(feishuOrgConnections.id, args.connectionId),

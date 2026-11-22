@@ -1,3 +1,4 @@
+import { selectedExecutionAgent } from "../services/execution-agent";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import {
@@ -6,7 +7,6 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import type { infer as zInfer } from "zod";
 
@@ -239,11 +239,9 @@ const linkOfficialInner$ = command(
       const composeId = await (async (): Promise<string | null> => {
         const auth = args.auth;
         const [metadata] = await db
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, auth.orgId))
-          .limit(1);
-        const defaultAgentId = metadata?.defaultAgentId ?? null;
+          .select()
+          .from(selectedExecutionAgent(auth.orgId, auth.userId));
+        const defaultAgentId = metadata?.id ?? null;
         if (!defaultAgentId) {
           return null;
         }
@@ -304,11 +302,9 @@ const linkOfficialInner$ = command(
       const composeId = await (async (): Promise<string | null> => {
         const auth = args.auth;
         const [metadata] = await db
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, auth.orgId))
-          .limit(1);
-        const defaultAgentId = metadata?.defaultAgentId ?? null;
+          .select()
+          .from(selectedExecutionAgent(auth.orgId, auth.userId));
+        const defaultAgentId = metadata?.id ?? null;
         if (!defaultAgentId) {
           return null;
         }

@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   notionChildPageCreatedEventConfigSchema,
   notionDatabaseItemCreatedEventConfigSchema,
@@ -1511,7 +1512,7 @@ const loadDueNotionAutomationRow$ = command(
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(

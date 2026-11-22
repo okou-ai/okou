@@ -1,5 +1,4 @@
 import type { WorkflowUpdateRequest } from "@okouai/api-contracts/contracts/workflows";
-import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, exists, isNull, or, sql } from "drizzle-orm";
@@ -132,33 +131,18 @@ export const updateWorkflow$ = command(
           and(
             eq(workflows.id, workflow.id),
             eq(workflows.orgId, workflow.orgId),
-            eq(workflows.agentId, workflow.agentId),
             eq(workflows.ownerUserId, workflow.ownerUserId),
             eq(workflows.visibility, workflow.visibility),
             isNull(workflows.officialDefinitionName),
             // Reject a concurrent edit even when its values or clock timestamp
             // match the observed row.
             sql`${workflows}.xmin::text = ${args.observedXmin}`,
-            exists(
-              db
-                .select({ id: agents.id })
-                .from(agents)
-                .where(
-                  and(
-                    eq(agents.id, workflow.agentId),
-                    eq(agents.orgId, workflow.orgId),
-                    workflow.visibility === "private"
-                      ? eq(workflows.ownerUserId, args.member.userId)
-                      : or(
-                          eq(workflows.ownerUserId, args.member.userId),
-                          eq(agents.owner, args.member.userId),
-                          and(
-                            eq(agents.visibility, "public"),
-                            sql`${args.member.role === "admin"}`,
-                          ),
-                        ),
-                  ),
-                ),
+            or(
+              eq(workflows.ownerUserId, args.member.userId),
+              and(
+                eq(workflows.visibility, "public"),
+                sql`${args.member.role === "admin"}`,
+              ),
             ),
             exists(
               db
