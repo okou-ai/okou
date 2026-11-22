@@ -138,7 +138,25 @@ class ScreenshotScenario {
                     By.pkg(app.packageName).scrollable(true).hasDescendant(By.text("Workspace")),
                     "authorization scroll body",
                 )
-            checkNotNull(scrollBody.scrollUntil(Direction.DOWN, Until.findObject(By.text("Notes"))))
+            val body = scrollBody.visibleBounds
+            val lastField = By.pkg(app.packageName).text("Notes")
+            // Compose may omit scroll event positions, so the gesture helper can return
+            // early even while this body still has more fields below the viewport.
+            for (swipe in 1..12) {
+                if (device.hasObject(lastField)) break
+                assertTrue(
+                    "Could not scroll the authorization body on swipe $swipe",
+                    device.swipe(
+                        body.centerX(),
+                        body.bottom - 12,
+                        body.centerX(),
+                        body.top + 12,
+                        24,
+                    ),
+                )
+                device.waitForIdle()
+            }
+            text("Notes")
             assertEquals(titleBounds, text(titleLabel).visibleBounds)
             assertEquals(cancelBounds, action("取消").visibleBounds)
             assertEquals(submitBounds, action("连接账号", enabled = false).visibleBounds)
