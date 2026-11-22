@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.2](https://github.com/okou-ai/okou/compare/ios-v0.53.1...ios-v0.53.2) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
 ## [0.53.1](https://github.com/okou-ai/okou/compare/ios-v0.53.0...ios-v0.53.1) (2026-11-22)
 
 
