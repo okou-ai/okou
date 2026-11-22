@@ -165,6 +165,25 @@ class ConnectorAccountFlowTest {
         }
 
     @Test
+    fun removingAnAccountDoesNotCarryItsDisconnectConfirmationToAnotherAccount() =
+        withCalendar { fixture, _ ->
+            val confirmation = "Disconnect this account?"
+            compose.onNodeWithText("工作日历").performClick()
+            compose.onNodeWithText("Disconnect account").performClick()
+            compose.onNodeWithText(confirmation).assertIsDisplayed()
+
+            compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+            fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            awaitText("This account is no longer available.")
+            compose.onNodeWithText("Close").performClick()
+
+            compose.onNodeWithText("协作日历").performClick()
+            compose.onNodeWithText("Update permissions").assertIsEnabled()
+            compose.onNodeWithText(confirmation).assertDoesNotExist()
+        }
+
+    @Test
     fun anUnconfirmedRenameCanBeDismissedAndStillReconcilesOnReconnect() =
         withCalendar { fixture, connectivity ->
             val pending = "The outcome is unconfirmed. Okou will check the account again."

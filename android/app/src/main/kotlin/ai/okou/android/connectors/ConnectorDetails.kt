@@ -78,7 +78,6 @@ internal fun ConnectorDetails(
     val hasAccountContent = state.accounts.data != null || accounts.isNotEmpty()
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
-    var confirmingDisconnect by remember { mutableStateOf(false) }
     var restoreAccountFocus by remember { mutableStateOf(false) }
     var restoreActionFocus by remember { mutableStateOf<FocusRequester?>(null) }
     val accountFocus = remember { FocusRequester() }
@@ -88,6 +87,7 @@ internal fun ConnectorDetails(
     val reauthorizeFocus = remember { FocusRequester() }
     val disconnectFocus = remember { FocusRequester() }
     val account = accounts.find { it.id == accountId }
+    val disconnectImpact = state.impact?.takeIf { it.accountId == accountId }
     val action = state.action?.takeIf { it.target.slug == entry?.slug }
     val busy = action?.busy == true
     val otherAction = state.action?.takeIf { it.target.slug != entry?.slug }
@@ -103,6 +103,7 @@ internal fun ConnectorDetails(
         if (busy) return
         val previous = panel
         if (previous == ConnectorPanel.Permissions) model.hidePermissions()
+        if (disconnectImpact != null) model.clearImpact()
         model.dismissAction()
         when (previous) {
             ConnectorPanel.Rename,
@@ -123,6 +124,7 @@ internal fun ConnectorDetails(
         }
     }
 
+    val confirmingDisconnect = disconnectImpact != null
     LaunchedEffect(panel, confirmingDisconnect, restoreActionFocus, canModify) {
         if (
             panel == ConnectorPanel.Account && account != null && !confirmingDisconnect && canModify
@@ -145,7 +147,6 @@ internal fun ConnectorDetails(
         when (action.result) {
             ConnectorResult.Disconnected -> {
                 if (panel == ConnectorPanel.Account && accountId == action.target.connectionId) {
-                    confirmingDisconnect = false
                     panel = null
                     accountId = null
                     if (detail?.methods?.isNotEmpty() == true) addFocus.requestFocus()
@@ -359,7 +360,6 @@ internal fun ConnectorDetails(
                             },
                             disconnect = {
                                 model.dismissAction()
-                                confirmingDisconnect = true
                                 model.prepareDisconnect(account.id)
                             },
                         )
@@ -391,17 +391,16 @@ internal fun ConnectorDetails(
         }
     }
 
-    if (confirmingDisconnect && account != null) {
+    if (disconnectImpact != null && account != null) {
         ConnectorDisconnectDialog(
             account,
-            state.impact?.takeIf { it.accountId == account.id }?.read,
+            disconnectImpact.read,
             canModify,
             action,
             state.offline,
             confirm = { model.disconnect(account.id) },
             cancel = {
                 if (!busy) {
-                    confirmingDisconnect = false
                     restoreActionFocus = disconnectFocus
                     model.clearImpact()
                     model.dismissAction()
