@@ -55,4 +55,18 @@
     <string name="settings_credit_top_up">충전 크레딧</string>
     <string name="settings_credit_unit">크레딧</string>
     <string name="settings_credit_web">웹에서 크레딧 상세 내역 보기</string>
+    <string name="settings_default_model">기본 모델</string>
+    <string name="settings_auto_model_detail">Okou가 사용 가능한 모델을 선택</string>
+    <string name="settings_model_plan_restricted">다른 요금제 필요</string>
+    <string name="settings_model_fast">빠른 모드</string>
+    <string name="settings_model_fast_usage">구독 한도의 약 %1$s배 사용</string>
+    <string name="settings_model_offline">오프라인입니다. 연결되면 변경사항이 동기화됩니다.</string>
+    <string name="settings_model_save_unavailable">기본 모델을 동기화할 수 없습니다.</string>
+    <string name="settings_model_effort">추론 강도</string>
+    <string name="settings_model_effort_low">낮음</string>
+    <string name="settings_model_effort_medium">중간</string>
+    <string name="settings_model_effort_high">높음</string>
+    <string name="settings_model_effort_extra">매우 높음</string>
+    <string name="settings_model_effort_max">최대</string>
+    <string name="settings_model_effort_ultra">울트라</string>
 </resources>
