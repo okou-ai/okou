@@ -8,6 +8,7 @@ import ai.okou.android.CONNECTOR_SLACK_ACCOUNT
 import ai.okou.android.ConnectorApiFixture
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
@@ -16,11 +17,13 @@ import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -201,31 +204,33 @@ class ConnectorModelTest {
                 try {
                     withContext(main) {
                         val store = ViewModelStore()
-                        try {
-                            val model =
-                                ViewModelProvider.create(
-                                        store,
-                                        viewModelFactory {
-                                            initializer {
-                                                ConnectorModel(
-                                                    fixture.service,
-                                                    connectivity,
-                                                    { true },
-                                                ) {
-                                                    throw AssertionError(
-                                                        "Unexpected session failure",
-                                                        it,
-                                                    )
-                                                }
+                        val model =
+                            ViewModelProvider.create(
+                                    store,
+                                    viewModelFactory {
+                                        initializer {
+                                            ConnectorModel(
+                                                fixture.service,
+                                                connectivity,
+                                                { true },
+                                            ) {
+                                                throw AssertionError(
+                                                    "Unexpected session failure",
+                                                    it,
+                                                )
                                             }
-                                        },
-                                    )[ConnectorModel::class]
+                                        }
+                                    },
+                                )[ConnectorModel::class]
+                        val modelJob = model.viewModelScope.coroutineContext.job
+                        try {
                             model.setOpen(true)
                             model.select(slug)
                             model.await { it.detail.data != null && it.accounts.data != null }
                             exercise(fixture, model)
                         } finally {
                             store.clear()
+                            withContext(NonCancellable) { modelJob.join() }
                         }
                     }
                 } finally {
