@@ -165,6 +165,30 @@ class ArtifactCatalogRootTest {
         awaitText("No preview is available for this file")
     }
 
+    @Test
+    fun chatResourcesPagesItsOwnCatalogAndReturnsThroughTheSharedPreview() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.pageSize = 2
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Chat resources").performClick()
+        awaitText(fixture.slides.title)
+        assertTrue(fixture.catalogScopes.contains(CHAT_PERSONAL to null))
+        assertTrue(fixture.catalogScopes.contains(CHAT_PERSONAL to "2"))
+        assertTrue(fixture.catalogScopes.all { it.first == CHAT_PERSONAL })
+        compose.onNodeWithText(fixture.image.title).assertDoesNotExist()
+        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(72.dp).performClick()
+        awaitText("Preview only", partial = true)
+        compose.onNodeWithContentDescription("Back to chat resources").performClick()
+        compose.onNodeWithTag("chat_artifact_resources").assertIsDisplayed()
+        awaitText(fixture.slides.title)
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
+    }
+
     @After
     fun close() {
         app.responseGate.countDown()

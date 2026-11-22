@@ -134,6 +134,7 @@ internal fun SessionRoot(
                     },
                     recovery = ready?.recovery,
                     artifacts = ready?.artifacts,
+                    chatArtifacts = ready?.chatArtifacts,
                     workspaceName = organization?.name,
                     workspaceAvatar =
                         organization?.let { workspace ->
