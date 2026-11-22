@@ -100,7 +100,6 @@
     <string name="composer_revoked">Mensaje revocado</string>
     <string name="updates_title">Actualizaciones de la aplicación</string>
     <string name="updates_installed">Versión actual: %1$s</string>
-    <string name="updates_available">La actualización %1$s está disponible</string>
     <string name="updates_current">Tienes la versión más reciente</string>
     <string name="updates_preparing">Preparando…</string>
     <string name="updates_installing">Instalando…</string>
@@ -109,7 +108,6 @@
     <string name="updates_connect_to_check">Conéctate a internet para buscar actualizaciones.</string>
     <string name="updates_connect_to_download">Conéctate a internet para descargar la actualización.</string>
     <string name="updates_check">Buscar actualizaciones</string>
-    <string name="updates_view">Ver actualización</string>
     <string name="updates_toolbar">Actualizar</string>
     <string name="updates_download">Descargar actualización</string>
     <string name="updates_retry_download">Reintentar descarga</string>

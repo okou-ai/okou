@@ -9,6 +9,7 @@ import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
+import ai.okou.android.testAuthenticationState
 import android.app.Activity
 import android.app.LocaleManager
 import android.content.Intent
@@ -25,10 +26,16 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.AnnotatedString
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import java.io.File
@@ -80,36 +87,36 @@ class UpdateRootTest {
     }
 
     @Test
-    fun heldDiscoveryDoesNotBlockNativeRootAndLaterSurvivesRecreation() {
-        compose.onNodeWithText("Welcome to Okou").assertExists()
+    fun optionalDiscoveryLeavesTheRestoringRootInPlaceAcrossRecreation() {
+        val welcome = compose.onNodeWithText(app.getString(R.string.auth_welcome))
+        val startupBounds = welcome.assertIsDisplayed().getUnclippedBoundsInRoot()
         assertFalse(app.updates.state.value.required)
         app.fixture.heldCheck!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.available }
-        compose.onNodeWithText("Update 99.0.0 is available").assertExists()
-        compose.onNodeWithText("Later").performClick()
-        compose.waitUntil(10_000) { !app.updates.state.value.announce }
+        assertEquals(startupBounds, welcome.getUnclippedBoundsInRoot())
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Welcome to Okou").assertExists()
-        compose.onNodeWithText("View update").assertDoesNotExist()
+        assertEquals(startupBounds, welcome.assertIsDisplayed().getUnclippedBoundsInRoot())
+        assertTrue(app.updates.state.value.available)
     }
 
     @Test
     fun closingDetailsKeepsTheTransferRunningAndRequiredGateUsesTheSameProgress() {
         app.fixture.heldCheck!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.available }
-        compose.onNodeWithText("View update").performClick()
+        openUpdateSettings()
+        updateSettingsRow().performScrollTo().performClick()
         compose.onNodeWithText(app.getString(R.string.updates_version, "99.0.0")).assertExists()
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(10_000) { app.fixture.progress != null }
         app.fixture.progress!!(617)
-        compose.onNodeWithText("Downloading · 50%").assertExists()
+        updateDetailText("Downloading · 50%").assertExists()
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         assertTrue(app.updates.state.value.transfer is UpdateTransfer.Downloading)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
         compose.waitUntil(10_000) { app.updates.state.value.required }
         compose.onNodeWithText("Update Okou to continue").assertExists()
         compose.onNodeWithText("Downloading · 50%").assertExists()
-        compose.onNodeWithText("Welcome to Okou").assertDoesNotExist()
+        compose.onNodeWithText("Settings").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Update Okou to continue").assertExists()
         compose.onNodeWithText("Downloading · 50%").assertExists()
@@ -127,9 +134,10 @@ class UpdateRootTest {
             shadowOf(app.packageManager).setCanRequestPackageInstalls(false)
             app.fixture.heldCheck!!.complete(Unit)
             compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-            val openDetails = compose.onNodeWithText("View update")
-            openDetails.performClick()
-            val title = compose.onNodeWithText("App updates")
+            openUpdateSettings()
+            val openDetails = updateSettingsRow()
+            openDetails.performScrollTo().performClick()
+            val title = updateDetailsHeading()
             val update = compose.onNodeWithText("Download update")
             val titleBounds = title.assertIsDisplayed().getUnclippedBoundsInRoot()
             val actionBounds = update.assertIsDisplayed().getUnclippedBoundsInRoot()
@@ -151,8 +159,8 @@ class UpdateRootTest {
             finishDownload()
             assertNoPlatformLaunch()
             compose.onNodeWithText("Allow update installation").assertDoesNotExist()
-            openDetails.performClick()
-            val ready = compose.onNodeWithText("Continue installation")
+            openDetails.performScrollTo().performClick()
+            val ready = updateDetailText("Continue installation")
             assertEquals(actionBounds, ready.assertIsDisplayed().getUnclippedBoundsInRoot())
             assertEquals(titleBounds, title.getUnclippedBoundsInRoot())
         } finally {
@@ -326,17 +334,18 @@ class UpdateRootTest {
     @Test
     fun optionalDetailsReturnAfterInstallerCancellationAcrossActivityRecreation() {
         allowInstallAndDiscoverUpdate()
-        val openDetails = compose.onNodeWithText("View update")
-        val title = compose.onNodeWithText("App updates")
-        val install = compose.onNodeWithText("Continue installation")
-        openDetails.performClick()
+        openUpdateSettings()
+        val openDetails = updateSettingsRow()
+        val title = updateDetailsHeading()
+        val install = updateDetailText("Continue installation")
+        openDetails.performScrollTo().performClick()
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
         finishDownload()
         assertNoPlatformLaunch()
 
-        openDetails.performClick()
+        openDetails.performScrollTo().performClick()
         title.assertIsDisplayed()
         install.performSemanticsAction(SemanticsActions.OnClick)
         val pending = nextLaunch()
@@ -351,7 +360,8 @@ class UpdateRootTest {
     @Test
     fun backgroundCompletionOutsideUpdatesAwaitsExplicitContinuationWhenResumed() {
         allowInstallAndDiscoverUpdate()
-        compose.onNodeWithText("View update").performClick()
+        openUpdateSettings()
+        updateSettingsRow().performScrollTo().performClick()
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
@@ -365,10 +375,36 @@ class UpdateRootTest {
         // ActivityScenario changes the lifecycle separately from window focus.
         compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
         assertNoPlatformLaunch()
-        compose.onNodeWithText("View update").performClick()
-        compose.onNodeWithText("Continue installation").assertIsEnabled()
+        updateSettingsRow().performScrollTo().performClick()
+        updateDetailText("Continue installation").assertIsEnabled()
         assertNoPlatformLaunch()
     }
+
+    private fun openUpdateSettings() {
+        compose.runOnIdle {
+            (app.authentication as TestAuthentication).state.value = testAuthenticationState()
+        }
+        val more = app.getString(R.string.chat_more_actions)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithContentDescription(more).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription(more).performClick()
+        compose.onNodeWithText(app.getString(R.string.settings)).performClick()
+    }
+
+    private fun updateSettingsRow() =
+        compose.onNode(hasText(app.getString(R.string.updates_title)) and hasClickAction())
+
+    private fun updateDetailText(label: String) =
+        compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(AnnotatedString(label)))
+        )
+
+    private fun updateDetailsHeading() =
+        compose.onNode(
+            hasText(app.getString(R.string.updates_title)) and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+        )
 
     private fun allowInstallAndDiscoverUpdate() {
         shadowOf(app.packageManager).setCanRequestPackageInstalls(true)

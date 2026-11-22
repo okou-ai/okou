@@ -7,7 +7,6 @@ import ai.okou.android.SettingsModal
 import ai.okou.android.SettingsRow
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.currentWindowSizeDp
-import ai.okou.android.state.rememberUpdateDetailsOpen
 import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
 import androidx.annotation.DrawableRes
@@ -128,7 +127,7 @@ internal fun updateToolbarAction(
     @StringRes installProgress: Int?,
     openDetails: () -> Unit,
 ): UpdateToolbarAction? {
-    if (!state.announce) return null
+    if (state.preparing || state.required || !state.available) return null
     val transfer = state.transfer
     return when {
         transfer is UpdateTransfer.Downloading -> {
@@ -211,14 +210,12 @@ internal fun UpdateHost(
     state: UpdateUiState,
     check: () -> Unit,
     download: (AndroidUpdatesRelease) -> Unit,
-    defer: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
     automaticInstall: AndroidUpdatesRelease?,
     windowFocused: Boolean,
     startAutomaticInstall: (AndroidUpdatesRelease, fromDetails: Boolean) -> Unit,
-    showAnnouncement: Boolean,
-    detailsOpen: MutableState<Boolean> = rememberUpdateDetailsOpen(),
+    detailsOpen: MutableState<Boolean>,
     onDetailsFocusChanged: (Boolean) -> Unit = {},
     content: @Composable (openUpdates: () -> Unit) -> Unit,
 ) {
@@ -239,35 +236,13 @@ internal fun UpdateHost(
         }
         RequiredUpdateScreen(state, check, download, install, installProgress)
     } else {
-        Column(
+        Box(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .safeDrawingPadding()
         ) {
-            if (showAnnouncement && state.announce) {
-                val release = checkNotNull(state.displayedRelease)
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                        Text(stringResource(R.string.updates_available, release.version))
-                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            ActionText(stringResource(R.string.updates_view), { details = true })
-                            if (
-                                state.transfer !is UpdateTransfer.Downloading &&
-                                    state.transfer !is UpdateTransfer.Ready &&
-                                    state.transfer !is UpdateTransfer.Waiting
-                            )
-                                ActionText(
-                                    stringResource(R.string.updates_later),
-                                    { defer(release) },
-                                )
-                        }
-                    }
-                }
-            }
-            Box(Modifier.weight(1f)) {
-                // Retain navigation metadata while the required screen owns the task.
-                savedUi.SaveableStateProvider("workspace") { content { details = true } }
-            }
+            // Retain navigation metadata while the required screen owns the task.
+            savedUi.SaveableStateProvider("workspace") { content { details = true } }
         }
     }
     if (showDetails) {
@@ -321,11 +296,7 @@ internal fun AppUpdateSettings(
                 stringResource(R.string.updates_waiting_for_connection)
             state.check == UpdateCheck.Checking ->
                 stringResource(R.string.updates_check_in_progress)
-            state.available ->
-                stringResource(
-                    R.string.updates_available,
-                    checkNotNull(state.displayedRelease).version,
-                )
+            state.available -> stringResource(R.string.updates_new_version)
             state.check == UpdateCheck.Failed || state.check == UpdateCheck.Waiting ->
                 stringResource(R.string.updates_check_failed)
             state.check == UpdateCheck.Checked -> stringResource(R.string.updates_current)

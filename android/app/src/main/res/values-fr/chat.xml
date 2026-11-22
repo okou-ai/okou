@@ -36,7 +36,10 @@
     <string name="chat_archived">Archivées</string>
     <string name="chat_muted">En sourdine</string>
     <string name="chat_project_empty">Aucune discussion dans ce projet.</string>
-    <string name="chat_empty">Aucune discussion dans cette vue.</string>
+    <string name="chat_empty">Aucune discussion pour le moment</string>
+    <string name="chat_empty_unread">Aucune discussion non lue</string>
+    <string name="chat_empty_archived">Aucune discussion archivée</string>
+    <string name="chat_empty_muted">Aucune discussion en sourdine</string>
     <string name="chat_untitled">Discussion sans titre</string>
     <string name="chat_pinned">Épinglée</string>
     <string name="chat_active">Active</string>

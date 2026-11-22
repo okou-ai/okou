@@ -34,7 +34,10 @@
     <string name="chat_archived">Diarsipkan</string>
     <string name="chat_muted">Dibisukan</string>
     <string name="chat_project_empty">Belum ada chat dalam Proyek ini.</string>
-    <string name="chat_empty">Tidak ada chat dalam tampilan ini.</string>
+    <string name="chat_empty">Belum ada chat</string>
+    <string name="chat_empty_unread">Tidak ada chat yang belum dibaca</string>
+    <string name="chat_empty_archived">Tidak ada chat yang diarsipkan</string>
+    <string name="chat_empty_muted">Tidak ada chat yang dibisukan</string>
     <string name="chat_untitled">Chat tanpa judul</string>
     <string name="chat_pinned">Disematkan</string>
     <string name="chat_active">Aktif</string>

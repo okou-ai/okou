@@ -101,7 +101,6 @@
     <string name="composer_revoked">Message revoked</string>
     <string name="updates_title">App updates</string>
     <string name="updates_installed">Current version: %1$s</string>
-    <string name="updates_available">Update %1$s is available</string>
     <string name="updates_current">You are up to date</string>
     <string name="updates_preparing">Preparing…</string>
     <string name="updates_installing">Installing…</string>
@@ -110,7 +109,6 @@
     <string name="updates_connect_to_check">Connect to the internet to check for updates.</string>
     <string name="updates_connect_to_download">Connect to the internet to download the update.</string>
     <string name="updates_check">Check for updates</string>
-    <string name="updates_view">View update</string>
     <string name="updates_toolbar">Update</string>
     <string name="updates_download">Download update</string>
     <string name="updates_retry_download">Retry download</string>
