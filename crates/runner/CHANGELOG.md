@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.99](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.98...runner-rs-v0.249.99) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** share guarded idle status path claims ([#50018](https://github.com/okou-ai/okou/issues/50018)) ([9196f04](https://github.com/okou-ai/okou/commit/9196f04854672097248b8a4c1f1c24712f9e6c64))
+
 ## [0.249.98](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.97...runner-rs-v0.249.98) (2026-11-22)
 
 
