@@ -125,11 +125,17 @@ internal constructor(
     val projectId: String?,
     val projectName: String?,
 ) {
-    internal fun matches(state: ChatListUiState): Boolean =
-        state.projectList.deletingId == null &&
-            (projectId == null || state.projects.any { it.id == projectId }) &&
-            matchesMembership(state.confirmedThreads) &&
-            (state.confirmedThreads === state.threads || matchesMembership(state.threads))
+    internal fun resolve(state: ChatListUiState): ChatMoveNotice? {
+        if (
+            state.projectList.deletingId != null ||
+                !matchesMembership(state.confirmedThreads) ||
+                (state.confirmedThreads !== state.threads && !matchesMembership(state.threads))
+        )
+            return null
+        val name =
+            projectId?.let { id -> state.projects.firstOrNull { it.id == id }?.name ?: return null }
+        return if (projectName == name) this else copy(projectName = name)
+    }
 
     private fun matchesMembership(threads: List<ConfirmedChat>): Boolean =
         threads.any { it.id == threadId && it.hidden != true && it.projectId == projectId }
@@ -1006,10 +1012,9 @@ class ChatListModel(
     }
 
     private fun publishWithCurrentMoveNotice(state: ChatListUiState) {
-        val notice = state.chatMoveNotice
+        val notice = state.chatMoveNotice?.resolve(state)
         mutable.value =
-            if (notice == null || notice.matches(state)) state
-            else state.copy(chatMoveNotice = null)
+            if (notice === state.chatMoveNotice) state else state.copy(chatMoveNotice = notice)
     }
 
     private fun reconcileProjectMoves(state: ChatListUiState, rowsChanged: Boolean = false) {
@@ -1026,12 +1031,8 @@ class ChatListModel(
 
     private fun recordConfirmedProjectMove(edit: ChatRowEdit) {
         val state = mutable.value
-        val projectName =
-            edit.value?.let { id -> state.projects.firstOrNull { it.id == id }?.name ?: return }
-        val notice = ChatMoveNotice(edit.eventId, edit.threadId, edit.value, projectName)
-        if (notice.matches(state)) {
-            mutable.value = state.copy(chatMoveNotice = notice)
-        }
+        val notice = ChatMoveNotice(edit.eventId, edit.threadId, edit.value, projectName = null)
+        notice.resolve(state)?.let { mutable.value = state.copy(chatMoveNotice = it) }
     }
 
     internal fun retainAcceptedNewChats(chats: List<ProvisionalChat>, restored: Boolean = false) {

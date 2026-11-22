@@ -3329,6 +3329,29 @@ class ChatListModelTest {
         }
     }
 
+    @Test
+    fun queuedMoveConfirmationUsesTheCurrentProjectName() = runTest {
+        val source = ProjectOrganizationService()
+        source.moveResponse = source::publishMembership
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
+            runCurrent()
+            val original = checkNotNull(model.uiState.value.chatMoveNotice)
+            assertEquals("Research", original.projectName)
+
+            source.publishRename("00000022-0000-4000-8000-000000000000", "Field research")
+            model.refreshMetadata()
+            runCurrent()
+            val updated = checkNotNull(model.uiState.value.chatMoveNotice)
+            assertEquals("Field research", updated.projectName)
+            assertEquals(original.eventId, updated.eventId)
+            model.dismissChatMoveNotice(original)
+            assertEquals(updated, model.uiState.value.chatMoveNotice)
+        }
+    }
+
     private inner class ProjectOrganizationService(
         private val additionalProjectId: String? = null
     ) : Service() {
@@ -3358,7 +3381,7 @@ class ChatListModelTest {
                         extra = ",\"pinOrder\":\"a2\"",
                     ),
             )
-        private var deleted: ProjectEventsEventsItem? = null
+        private val projectEvents = mutableListOf<ProjectEventsEventsItem>()
         var chatReadUnavailable = false
         val moveIds = mutableListOf<String>()
         val deleteIds = mutableListOf<String>()
@@ -3393,7 +3416,7 @@ class ChatListModelTest {
             )
 
         override suspend fun projectEvents(since: Long) =
-            ProjectEvents(listOfNotNull(deleted?.takeIf { it.seqId > since }), false)
+            ProjectEvents(projectEvents.filter { it.seqId > since }, false)
 
         override suspend fun moveThreadToProject(
             threadId: String,
@@ -3424,17 +3447,29 @@ class ChatListModelTest {
                     )
         }
 
+        fun publishRename(event: String, name: String) {
+            publishProjectEvent(event, ProjectEventsEventsItemKind.RENAMED, name)
+        }
+
         fun publishDeletion(event: String) {
-            deleted =
+            publishProjectEvent(event, ProjectEventsEventsItemKind.DELETED, null)
+            publishMembership(CHAT_IN_PROJECT, null, "00000021-0000-4000-8000-000000000000")
+        }
+
+        private fun publishProjectEvent(
+            event: String,
+            kind: ProjectEventsEventsItemKind,
+            name: String?,
+        ) {
+            projectEvents +=
                 ProjectEventsEventsItem(
                     id = event,
-                    seqId = 1,
+                    seqId = projectEvents.size.toLong() + 1,
                     projectId = CHAT_PROJECT,
-                    kind = ProjectEventsEventsItemKind.DELETED,
-                    name = null,
+                    kind = kind,
+                    name = name,
                     createdAt = CHAT_DATE,
                 )
-            publishMembership(CHAT_IN_PROJECT, null, "00000021-0000-4000-8000-000000000000")
         }
     }
 
