@@ -28,6 +28,7 @@ class MainActivityTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
+    @Config(qualifiers = "en-rUS-w411dp-h731dp-notnight")
     fun settingsOnlyShowTheActiveAccountAndSignOutRequiresConfirmation() {
         val app = compose.activity.application as TestOkouApplication
         val auth = app.authentication as TestAuthentication
@@ -36,9 +37,16 @@ class MainActivityTest {
         compose.onNodeWithText("Account and security").performScrollTo().performClick()
         compose.onNodeWithText("other@okou.test").assertDoesNotExist()
         compose.onNodeWithText("Email").assertDoesNotExist()
-        compose.runOnIdle { auth.account.value = NativeAccount("user-a", "current@okou.test") }
+        val email = "account@example.com"
+        compose.runOnIdle { auth.account.value = NativeAccount("user-a", email) }
         compose.onNodeWithText("Email").assertIsDisplayed()
-        compose.onNodeWithText("current@okou.test").performScrollTo().assertIsDisplayed()
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(email).performScrollTo().assertIsDisplayed().performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult
+        ) {
+            it(layouts)
+        }
+        assertTrue(layouts.single().lineCount == 1)
         compose.onNodeWithText("Sign out").performScrollTo().performClick()
         compose.onNodeWithText("Sign out?").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()

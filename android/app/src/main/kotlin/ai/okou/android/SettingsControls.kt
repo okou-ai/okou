@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -102,6 +103,7 @@ internal fun SettingsRow(
     valueMaxLines: Int = Int.MAX_VALUE,
     valueLeading: (@Composable () -> Unit)? = null,
     supportingText: String? = null,
+    valueMaxWidth: Dp = 144.dp,
 ) {
     val colors = MaterialTheme.colorScheme
     val muted = colors.onSurfaceVariant
@@ -161,7 +163,7 @@ internal fun SettingsRow(
                 valueLeading?.invoke()
                 Text(
                     value,
-                    Modifier.widthIn(max = 144.dp),
+                    Modifier.widthIn(max = valueMaxWidth),
                     color = muted,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.End,

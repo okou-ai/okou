@@ -457,6 +457,7 @@ private fun AccountSettings(account: NativeAccount?, signOut: () -> Unit) {
                 stringResource(R.string.settings_account_email),
                 leading = { SettingsIcon(R.drawable.ic_mail) },
                 value = account.email,
+                valueMaxWidth = 192.dp,
             )
             HorizontalDivider()
         }
