@@ -258,7 +258,7 @@ private fun ModelAccountRow(
     ) {
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.bodyLarge)
-            account.planType?.takeIf(String::isNotBlank)?.let {
+            account.planType?.trim()?.takeIf(String::isNotEmpty)?.let {
                 Text(
                     it.replaceFirstChar { letter -> letter.titlecase() },
                     style = selectionStyle,
@@ -365,10 +365,9 @@ private fun QuotaView(quota: ModelAccountQuota, modifier: Modifier) {
                 drawStopIndicator = {},
             )
         }
-        val reset = quota.resetAt?.let { resetLabel(it, locale) }
-        if (reset != null) {
+        if (quota.resetAt != null) {
             Text(
-                reset,
+                resetLabel(quota.resetAt, locale),
                 style = typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
                 color = colors.onSurfaceVariant,
             )
@@ -379,9 +378,8 @@ private fun QuotaView(quota: ModelAccountQuota, modifier: Modifier) {
 }
 
 @Composable
-private fun resetLabel(value: String, locale: Locale): String? {
-    val resetAt =
-        runCatching { Date(Instant.parse(value).toEpochMilliseconds()) }.getOrNull() ?: return null
+private fun resetLabel(value: Instant, locale: Locale): String {
+    val resetAt = Date(value.toEpochMilliseconds())
     val calendar = Calendar.getInstance(locale)
     val today = calendar.get(Calendar.JULIAN_DAY)
     calendar.time = resetAt

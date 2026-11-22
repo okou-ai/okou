@@ -54,7 +54,7 @@ internal fun SettingsScreen(
 ) {
     workspace()
     SettingsSection(stringResource(R.string.settings_models)) { SettingsGroup { models() } }
-    SettingsSection(stringResource(R.string.settings_tools)) { SettingsGroup { tools() } }
+    SettingsSection(stringResource(R.string.settings_tools)) { tools() }
     SettingsSection(stringResource(R.string.settings_my_okou)) { SettingsGroup { myOkou() } }
     workspacePreferences()
     account()

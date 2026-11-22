@@ -121,7 +121,7 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
             HorizontalDivider()
             TimezonePicker(state.timezone, model::selectTimezone)
         }
-        PreferenceFeedback(state, model::retry)
+        if (state.pending?.cloudBrowser == null) PreferenceFeedback(state, model::retry)
     }
 }
 
@@ -199,7 +199,7 @@ private fun TimezonePicker(current: String, onSelect: (String) -> Unit) {
 }
 
 @Composable
-private fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit) {
+internal fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit) {
     if (state.recovering) return
     val message =
         when (state.status) {
