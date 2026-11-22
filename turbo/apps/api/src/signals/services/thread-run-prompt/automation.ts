@@ -6,7 +6,6 @@ import {
 } from "../workflow-automation-context.service";
 import type { RunPrompt } from "../run-prompt-and-skills";
 import type { ThreadContext } from "../thread-context.signals";
-import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 
 export function createAutomationThreadPrompt(
   snapshot$: ThreadContext["automationSnapshot$"],
@@ -33,14 +32,7 @@ export function createAutomationThreadPrompt(
       return null;
     }
     // Invoke the same ordinary Workflow name that the Runner will mount.
-    // A queued staff event can still carry the old name. Use the live Official
-    // Workflow name until those events drain.
-    // https://github.com/okou-ai/okou/issues/46783
-    const workflowName =
-      target?.ordinaryWorkflowName ??
-      (target?.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
-        ? target.workflow.name
-        : context.workflowName);
+    const workflowName = target?.ordinaryWorkflowName ?? context.workflowName;
     return {
       userPromptVariables: {
         message: [
