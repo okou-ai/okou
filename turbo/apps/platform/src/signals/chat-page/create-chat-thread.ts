@@ -70,8 +70,6 @@ import {
   createChatThreadScrollSignals,
   createThreadScrollPositionSignals,
   type ChatThreadScrollSignals,
-  type ReadyScrollAfterRenderRequest,
-  type ScrollAfterRenderRequest,
   type ThreadScrollPosition,
 } from "./chat-thread-scroll.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -2346,7 +2344,13 @@ function createEventChangeEffects({
       const scrollPosition = followLatest
         ? null
         : set(scroll.readCapturedThreadScrollPosition$);
-      await set(scroll.autoScroll$, scrollPosition, signal);
+      // A background tab may suspend RAF. Receiving the next batch must not
+      // wait for the viewport; a newer scroll request supersedes this one.
+      detach(
+        set(scroll.autoScroll$, scrollPosition, signal),
+        Reason.Deferred,
+        "align the updated transcript after paint",
+      );
     },
   );
   const afterEventsChange$ = command(
@@ -2420,31 +2424,6 @@ function createChatEventPresentationLifecycle({
     },
   );
   return { setup$, catchUp$ };
-}
-
-function createReadyScrollAfterRenderRequest(
-  pendingScrollAfterRenderRequest$: Computed<ScrollAfterRenderRequest | null>,
-  visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>,
-): Computed<Promise<ReadyScrollAfterRenderRequest | null>> {
-  return computed(async (get) => {
-    const request = get(pendingScrollAfterRenderRequest$);
-    if (request === null) {
-      return null;
-    }
-    const renderedGroups = await get(visibleRenderedChatGroups$);
-    const currentRequest = get(pendingScrollAfterRenderRequest$);
-    if (currentRequest?.revision !== request.revision) {
-      return null;
-    }
-    return {
-      request,
-      renderedEventKeys: renderedGroups.flatMap((group) => {
-        return group.events.map((event) => {
-          return `${event.id}:${event.isQueued ? "queued" : "active"}`;
-        });
-      }),
-    };
-  });
 }
 
 const EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX = 100;
@@ -2552,7 +2531,7 @@ function createChatThreadMessagePipeline({
         renderWindow.preloadPreviousRenderWindowForEvent$,
       loadEarlierGroups$: renderWindow.loadMoreRenderedChatGroups$,
     },
-    chatEvents.chatEvents$,
+    chatEvents,
     initialEventsReadyView$,
   );
   const effects = createEventChangeEffects({
@@ -2576,10 +2555,6 @@ function createChatThreadMessagePipeline({
     chatEvents,
     visibleRenderedChatGroups$: renderWindow.visibleRenderedChatGroups$,
   });
-  const readyScrollAfterRenderRequest$ = createReadyScrollAfterRenderRequest(
-    scroll.pendingScrollAfterRenderRequest$,
-    renderWindow.visibleRenderedChatGroups$,
-  );
   const loadEarlierGroupsAfterScroll$ = createLoadEarlierGroupsAfterScroll(
     scroll,
     renderWindow.loadMoreRenderedChatGroups$,
@@ -2599,7 +2574,6 @@ function createChatThreadMessagePipeline({
     ...resources.publicSignals,
     visibleRunUsageSignals$: usage.visibleRunUsageSignals$,
     ...renderWindow,
-    readyScrollAfterRenderRequest$,
     loadEarlierGroupsAfterScroll$,
   };
 }
@@ -3635,7 +3609,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
     visibleRows$: events.visibleRows$,
     visibleRunUsageSignals$: events.visibleRunUsageSignals$,
-    readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
@@ -3962,7 +3935,6 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
   return {
     scrollContainerOnRef$: scroll.scrollContainerOnRef$,
     scrollContentOnRef$: scroll.scrollContentOnRef$,
-    scrollCommitOnRef$: scroll.scrollCommitOnRef$,
     scrollContainer$: scroll.scrollContainer$,
     threadScrollPosition$: scroll.threadScrollPosition$,
     awayFromBottom$: scroll.awayFromBottom$,

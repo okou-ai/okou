@@ -24,7 +24,6 @@ import type { BrowserPresenceSignals } from "./browser-presence.ts";
 import type { EditorDocumentSnapshot } from "../okou-page/user-message-document-codec.ts";
 import type {
   createChatThreadScrollSignals,
-  ReadyScrollAfterRenderRequest,
   ThreadScrollPosition,
 } from "./chat-thread-scroll.ts";
 import type { AssistantErrorRecovery } from "./assistant-error-recovery.ts";
@@ -84,9 +83,6 @@ export interface MessageListSignals {
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
   readonly visibleRows$: Computed<readonly ChatThreadRowSignals[]>;
   readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
-  readonly readyScrollAfterRenderRequest$: Computed<
-    Promise<ReadyScrollAfterRenderRequest | null>
-  >;
   readonly initialEventsReady$: Computed<boolean>;
   readonly assistantErrorRecovery$: Computed<
     Promise<AssistantErrorRecovery | null>
@@ -167,13 +163,6 @@ export interface ChatPanelSignals {
   readonly scrollContentOnRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
-  >;
-  readonly scrollCommitOnRef$: Command<
-    (() => void) | undefined,
-    [HTMLElement | null]
-  >;
-  readonly readyScrollAfterRenderRequest$: Computed<
-    Promise<ReadyScrollAfterRenderRequest | null>
   >;
   /** The mounted scroll viewport, for readers that measure it themselves. */
   readonly scrollContainer$: Computed<HTMLElement | null>;
