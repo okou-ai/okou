@@ -7,12 +7,14 @@ import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.currentWindowSizeDp
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -116,8 +118,13 @@ private fun DefaultModelSheet(
     model: DefaultModelSettings,
     dismiss: () -> Unit,
 ) {
-    val maxHeight = currentWindowSizeDp().height.dp * 0.86f
-    SettingsModal(dismiss) { centered ->
+    val windowHeight = currentWindowSizeDp().height
+    val fullScreen = windowHeight < 480
+    val scroll = rememberScrollState()
+    val size =
+        if (fullScreen) Modifier.fillMaxHeight()
+        else Modifier.heightIn(max = windowHeight.dp * 0.86f).animateContentSize()
+    SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
         val initialModel = remember { state.selected?.takeIf { it.canSelect }?.id }
         val reveal = remember { BringIntoViewRequester() }
         val focus = remember { FocusRequester() }
@@ -135,7 +142,7 @@ private fun DefaultModelSheet(
         }
         Column(
             Modifier.fillMaxWidth()
-                .heightIn(max = maxHeight)
+                .then(size)
                 .padding(
                     start = 16.dp,
                     end = 16.dp,
@@ -162,9 +169,22 @@ private fun DefaultModelSheet(
                 )
             }
             Column(
-                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                Modifier.weight(1f, fill = false).verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                val status =
+                    when {
+                        state.offline -> R.string.settings_model_offline
+                        state.failed -> R.string.settings_model_save_unavailable
+                        else -> null
+                    }
+                if (status != null)
+                    Text(
+                        stringResource(status),
+                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 val choices = state.options?.choices.orEmpty()
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
                     ModelOption(
@@ -189,40 +209,32 @@ private fun DefaultModelSheet(
                     }
                 }
                 state.selected
-                    ?.takeIf { it.canSelect }
+                    ?.takeIf {
+                        it.canSelect && (it.efforts.isNotEmpty() || it.fastMultiplier != null)
+                    }
                     ?.let { choice ->
-                        if (choice.efforts.isNotEmpty() || choice.fastMultiplier != null)
-                            HorizontalDivider()
-                        if (choice.efforts.isNotEmpty()) {
-                            EffortMenu(choice.efforts, state.effort, model::effort)
-                        }
-                        choice.fastMultiplier?.let { multiplier ->
-                            val value =
-                                NumberFormat.getNumberInstance(LocalLocale.current.platformLocale)
-                                    .format(multiplier)
-                            SettingsSwitchRow(
-                                stringResource(R.string.settings_model_fast),
-                                leading = {},
-                                checked = state.fast,
-                                onCheckedChange = model::fast,
-                                supportingText =
-                                    stringResource(R.string.settings_model_fast_usage, value),
-                            )
+                        HorizontalDivider()
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            if (choice.efforts.isNotEmpty()) {
+                                EffortMenu(choice.efforts, state.effort, model::effort)
+                            }
+                            choice.fastMultiplier?.let { multiplier ->
+                                val value =
+                                    NumberFormat.getNumberInstance(
+                                            LocalLocale.current.platformLocale
+                                        )
+                                        .format(multiplier)
+                                SettingsSwitchRow(
+                                    stringResource(R.string.settings_model_fast),
+                                    leading = {},
+                                    checked = state.fast,
+                                    onCheckedChange = model::fast,
+                                    supportingText =
+                                        stringResource(R.string.settings_model_fast_usage, value),
+                                )
+                            }
                         }
                     }
-                val status =
-                    when {
-                        state.offline -> R.string.settings_model_offline
-                        state.failed -> R.string.settings_model_save_unavailable
-                        else -> null
-                    }
-                if (status != null)
-                    Text(
-                        stringResource(status),
-                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
             }
         }
     }
@@ -238,13 +250,13 @@ private fun ModelOption(
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val textColor = if (enabled) colors.onSurface else colors.onSurface.copy(alpha = 0.38f)
+    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .clip(RoundedCornerShape(12.dp))
-            .then(if (selected) Modifier.background(colors.surfaceVariant) else Modifier)
+            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -253,7 +265,7 @@ private fun ModelOption(
         Column(Modifier.weight(1f)) {
             Text(
                 title,
-                color = textColor,
+                color = if (enabled) foreground else foreground.copy(alpha = 0.38f),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -289,11 +301,15 @@ private fun EffortMenu(
                 shape = RoundedCornerShape(12.dp),
             ) {
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(current?.let { stringResource(it.title) } ?: label, Modifier.weight(1f))
+                    Text(
+                        current?.let { stringResource(it.title) } ?: label,
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
                     SettingsIcon(R.drawable.ic_expand_more)
                 }
             }
