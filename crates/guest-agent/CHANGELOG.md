@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.22](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.21...guest-agent-v0.110.22) (2026-11-22)
+
+
+### Refactoring
+
+* **guest-agent:** share presigned put request handling ([#49962](https://github.com/okou-ai/okou/issues/49962)) ([35195b1](https://github.com/okou-ai/okou/commit/35195b1cdf8a824f81f7fc785b82d76cbe544e4f))
+
 ## [0.110.21](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.20...guest-agent-v0.110.21) (2026-11-21)
 
 ## [0.110.20](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.19...guest-agent-v0.110.20) (2026-11-21)

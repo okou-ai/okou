@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.110.21"
+version = "0.110.22"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.241"
+version = "0.1.242"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.96"
+version = "0.249.97"
 dependencies = [
  "api-contracts",
  "async-trait",
