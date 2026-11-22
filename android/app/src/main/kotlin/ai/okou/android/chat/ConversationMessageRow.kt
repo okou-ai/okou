@@ -125,6 +125,7 @@ internal fun ConversationMessageRow(
     revoke: (() -> Unit)?,
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
+    links: ConversationLinkActions? = null,
 ) {
     val message = entry.message
     val colors = MaterialTheme.colorScheme
@@ -182,7 +183,7 @@ internal fun ConversationMessageRow(
                 if (entry.earlier.isNotEmpty()) {
                     var expanded by rememberEarlierRepliesExpanded()
                     if (findHighlight?.reveal != null) {
-                        val targetId = findHighlight.target.id
+                        val targetId = findHighlight.messageId
                         LaunchedEffect(targetId) {
                             if (entry.earlier.any { it.id == targetId }) expanded = true
                         }
@@ -216,7 +217,8 @@ internal fun ConversationMessageRow(
                                         earlier,
                                         artifactActions = artifactActions,
                                         findHighlight =
-                                            findHighlight?.takeIf { it.target.id == earlier.id },
+                                            findHighlight?.takeIf { it.messageId == earlier.id },
+                                        links = links,
                                     )
                                 }
                             }
@@ -225,7 +227,8 @@ internal fun ConversationMessageRow(
                 MessageBody(
                     message,
                     artifactActions = artifactActions,
-                    findHighlight = findHighlight?.takeIf { it.target.id == message.id },
+                    findHighlight = findHighlight?.takeIf { it.messageId == message.id },
+                    links = links,
                 )
             }
         else ->
@@ -376,6 +379,7 @@ private fun MessageBody(
     compact: Boolean = false,
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
+    links: ConversationLinkActions? = null,
 ) {
     val typography = MaterialTheme.typography
     val colors = MaterialTheme.colorScheme
@@ -407,6 +411,7 @@ private fun MessageBody(
                         artifactActions,
                         "${message.id}/$index",
                         markdownHighlight,
+                        links,
                     )
                 else Text(block.text, style = style, color = foreground)
             }
@@ -417,6 +422,7 @@ private fun MessageBody(
 internal data class ConversationFindHighlight(
     val target: ConversationFindTarget,
     val reveal: (suspend (LayoutCoordinates) -> Unit)?,
+    val messageId: String = target.id,
 )
 
 @Composable

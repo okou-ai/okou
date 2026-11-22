@@ -44,10 +44,13 @@
             android:exported="false"
             android:grantUriPermissions="false"
             tools:replace="android:exported" />
+        <!-- AppCompat handles Back on releases before the platform callback was introduced. -->
         <activity
             android:name=".MainActivity"
+            android:enableOnBackInvokedCallback="true"
             android:exported="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            tools:targetApi="33">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

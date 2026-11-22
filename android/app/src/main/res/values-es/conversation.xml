@@ -26,4 +26,6 @@
         <item quantity="many">%d mensajes encontrados</item>
         <item quantity="other">%d mensajes encontrados</item>
     </plurals>
+    <string name="conversation_link_unavailable">Este enlace de conversación no está disponible</string>
+    <string name="conversation_link_no_browser">Ningún navegador puede abrir este enlace</string>
 </resources>
