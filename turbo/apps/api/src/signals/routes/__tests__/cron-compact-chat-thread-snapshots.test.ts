@@ -43,10 +43,6 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
   const otherOrg = bdd.user({ userId: actor.userId });
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.ensurePersonalSubscriptionModel(otherOrg);
-  await bdd.createAgent(actor, { displayName: "Sidebar Agent" });
-  await bdd.createAgent(otherOrg, {
-    displayName: "Other organization Agent",
-  });
   const pinned = await chat.createThread(actor, {
     title: "Pinned sidebar thread",
   });

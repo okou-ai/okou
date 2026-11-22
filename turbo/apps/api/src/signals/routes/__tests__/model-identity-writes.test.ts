@@ -13,21 +13,11 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 
-async function actorWithAgent() {
-  const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Model identity writer",
-    visibility: "private",
-  });
-  return { actor, agentId: agent.agentId };
-}
-
 describe("model identity new writes", () => {
   it.each([null, "auto"])(
     "creates canonical Auto from intent %s",
     async (model) => {
-      const { actor } = await actorWithAgent();
+      const actor = bdd.user();
       const thread = await chat.createThread(actor, { model });
       await expect(
         chat.readThreadMetadata(actor, thread.id),
@@ -50,7 +40,7 @@ describe("model identity new writes", () => {
   );
 
   it("resolves an omitted creation model from the member's personal preference", async () => {
-    const { actor } = await actorWithAgent();
+    const actor = bdd.user();
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-sonnet-5-5",
     });
@@ -71,7 +61,7 @@ describe("model identity new writes", () => {
   });
 
   it("preserves a personal selection and effort when rename and send omit the model", async () => {
-    const { actor, agentId } = await actorWithAgent();
+    const actor = bdd.user();
     await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -90,7 +80,6 @@ describe("model identity new writes", () => {
     );
     await chat.renameThread(actor, thread.id, "Keep my selection");
     const run = await runs.createThreadRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Continue my personal model",
     });
@@ -136,7 +125,7 @@ describe("model identity new writes", () => {
   });
 
   it("keeps personal effort when switching to Auto and rejects Auto effort and Fast", async () => {
-    const { actor } = await actorWithAgent();
+    const actor = bdd.user();
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-sonnet-5-5",
     });
@@ -182,12 +171,11 @@ describe("model identity new writes", () => {
   it("writes canonical Auto on a send and launches the managed route", async () => {
     // The fixed test seed provides the managed key, so an Auto send without a
     // personal subscription launches on the platform route.
-    const { actor, agentId } = await actorWithAgent();
+    const actor = bdd.user();
     await runs.grantProEntitlement(actor);
     await runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
     const run = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use the platform model",
       model: null,
     });

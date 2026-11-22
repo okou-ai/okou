@@ -4,7 +4,7 @@ import {
   type MarketingHandoffManifest,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import {
   chatEventsContract,
   chatThreadsContract,

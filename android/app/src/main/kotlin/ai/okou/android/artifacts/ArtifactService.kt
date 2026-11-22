@@ -52,6 +52,7 @@ internal enum class ArtifactFilter(val wire: ArtifactCatalogQueryKind?, val kind
 internal data class ArtifactQuery(
     val filter: ArtifactFilter = ArtifactFilter.All,
     val keyword: String = "",
+    val chatThreadId: String? = null,
 )
 
 internal data class ArtifactItem(
@@ -120,6 +121,7 @@ internal constructor(
             api.artifactCatalog(
                 ArtifactCatalogQuery(
                     limit = 40,
+                    chatThreadId = query.chatThreadId,
                     kind = query.filter.wire,
                     keyword = query.keyword.ifBlank { null },
                     cursor = cursor,

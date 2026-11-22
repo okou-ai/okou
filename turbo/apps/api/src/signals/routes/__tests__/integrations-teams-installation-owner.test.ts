@@ -158,7 +158,7 @@ describe("Teams installation read ownership", () => {
   it("sends a personal card using the publicly connected installation", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({ onboarded: true });
       const installation = fixture.installation;
       const conversationId = `a:personal-${installation.teamsUserId}`;
       const requests = captureTeamsRequests(installation, conversationId);
@@ -214,7 +214,7 @@ describe("Teams installation read ownership", () => {
   it("uploads public request bytes and delivers a personal attachment", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({ onboarded: true });
       const installation = fixture.installation;
       const conversationId = `a:personal-${installation.teamsUserId}`;
       const requests = captureTeamsRequests(installation, conversationId);
@@ -314,9 +314,7 @@ describe("Teams installation read ownership", () => {
   it("reports the missing installation for a publicly onboarded message sender", async () => {
     const owner = createPublicConnectorActor(context);
     await owner.run(async () => {
-      await createBddApi(context).bootstrapLimitedFreeOnboarding(owner.actor, {
-        displayName: "No Teams installation",
-      });
+      await createBddApi(context).bootstrapLimitedFreeOnboarding(owner.actor);
       const response = await accept(
         setupApp({ context, routes: integrationsTeamsMessageRoutes })(
           integrationsTeamsMessageContract,
@@ -339,9 +337,7 @@ describe("Teams installation read ownership", () => {
   it("reports the missing installation before allocating an upload", async () => {
     const owner = createPublicConnectorActor(context);
     await owner.run(async () => {
-      await createBddApi(context).bootstrapLimitedFreeOnboarding(owner.actor, {
-        displayName: "No Teams installation",
-      });
+      await createBddApi(context).bootstrapLimitedFreeOnboarding(owner.actor);
       const response = await accept(
         setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
           integrationsTeamsUploadInitContract,
@@ -371,7 +367,7 @@ describe("Teams target command ownership", () => {
   it("reports a disconnected personal message recipient while retaining the installation", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({ onboarded: true });
       await owner.disconnect(fixture);
       expectDisconnectedInstallation(
         await owner.status(fixture),
@@ -399,7 +395,7 @@ describe("Teams target command ownership", () => {
   it("rejects an upload addressed to a disconnected personal recipient", async () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
-      const fixture = await owner.create({ withDefaultAgent: true });
+      const fixture = await owner.create({ onboarded: true });
       captureTeamsRequests(fixture.installation, "a:disconnected-upload");
       installSharedThreadStorage(context);
       const client = setupApp({
@@ -465,7 +461,7 @@ describe("Teams target command ownership", () => {
     async (connected) => {
       const owner = createPublicTeamsDispatchFixture(context);
       await owner.run(async () => {
-        const fixture = await owner.create({ withDefaultAgent: true });
+        const fixture = await owner.create({ onboarded: true });
         const installation = fixture.installation;
         if (!connected) {
           await owner.disconnect(fixture);
@@ -524,7 +520,7 @@ describe("Teams explicit target delivery", () => {
     async (connected) => {
       const owner = createPublicTeamsDispatchFixture(context);
       await owner.run(async () => {
-        const fixture = await owner.create({ withDefaultAgent: true });
+        const fixture = await owner.create({ onboarded: true });
         const installation = fixture.installation;
         if (!connected) {
           await owner.disconnect(fixture);
@@ -622,7 +618,7 @@ describe("Teams explicit target delivery", () => {
     async (connected) => {
       const owner = createPublicTeamsDispatchFixture(context);
       await owner.run(async () => {
-        const fixture = await owner.create({ withDefaultAgent: true });
+        const fixture = await owner.create({ onboarded: true });
         const installation = fixture.installation;
         if (!connected) {
           await owner.disconnect(fixture);
@@ -690,7 +686,7 @@ describe("Teams explicit target delivery", () => {
     async (connected) => {
       const owner = createPublicTeamsDispatchFixture(context);
       await owner.run(async () => {
-        const fixture = await owner.create({ withDefaultAgent: true });
+        const fixture = await owner.create({ onboarded: true });
         const installation = fixture.installation;
         if (!connected) {
           await owner.disconnect(fixture);

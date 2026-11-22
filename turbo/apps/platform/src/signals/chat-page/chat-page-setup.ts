@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { createElement } from "react";
 import { ChatThreadPage } from "../../views/okou-page/chat-thread-page.tsx";
 import { updatePage$ } from "../react-router.ts";
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import { hash$, searchParams$ } from "../route.ts";
 import {
   setupLeftThread$,

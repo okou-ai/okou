@@ -160,7 +160,7 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     XCTAssertEqual(server.writes.count, 1)
   }
 
-  func testRetiredEditorCancelsOriginalHTTPAndCannotPublishOrWriteForTheNewAgent() async throws {
+  func testRetiredEditorCancelsOriginalHTTPAndCannotPublishOrWriteForTheNewEditor() async throws {
     let gate = ModelResponseGate()
     let started = expectation(description: "Permission read reached HTTP")
     let cancelled = expectation(description: "Original permission HTTP cancelled")
@@ -189,7 +189,7 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     let resources = try open(composer)
     let pending = try own(resources.store.get(resources.page))
     await fulfillment(of: [started], timeout: 3)
-    composer.configure(agentID: PermissionEditorFixture.nextAgentID)
+    composer.closePermissions()
     await fulfillment(of: [cancelled], timeout: 3)
     gate.open()
     if case .success = await pending.result {
@@ -206,8 +206,6 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     XCTAssertEqual(body.target.connectorSlug, "gmail")
     XCTAssertEqual(body.grants.first?.permission, "mail.read")
     XCTAssertEqual(body.grants.first?.action, "deny")
-    XCTAssertTrue(
-      server.requests(path: "/api/agents/\(PermissionEditorFixture.nextAgentID)").isEmpty)
   }
 
   func testDismissingTheEditorKeepsTheComposerOwnedWriteAndReadback() async throws {
@@ -250,7 +248,6 @@ final class ComposerConnectorPermissionTests: XCTestCase {
       service: ChatComposerAccess(client: fixture.client),
       authorizationService: ChatConnectorService(client: fixture.client), webURL: fixture.baseURL,
       didFail: { _ in })
-    composer.configure(agentID: PermissionEditorFixture.agentID)
     return composer
   }
 
@@ -272,8 +269,6 @@ final class ComposerConnectorPermissionTests: XCTestCase {
 
 /// The real permission and composer HTTP contracts; no application-owned state is mocked.
 final class PermissionEditorFixture: Sendable {
-  static let agentID = "92000000-0000-4000-8000-000000000001"
-  static let nextAgentID = "92000000-0000-4000-8000-000000000002"
   struct Edit: Codable, Sendable {
     let permission: String
     let action: String
@@ -372,9 +367,6 @@ final class PermissionEditorFixture: Sendable {
               #"{"computerUseHosts":[],"cloudBrowserAvailable":true,"cloudBrowserEnabledByDefault":false,"sshHosts":[],"vncHosts":[]}"#
           )
         default:
-          if path.hasPrefix("/api/agents/") {
-            return ChatHTTPResponse(body: "{\"agentId\":\"\(request.url!.lastPathComponent)\"}")
-          }
           throw URLError(.unsupportedURL)
         }
       }

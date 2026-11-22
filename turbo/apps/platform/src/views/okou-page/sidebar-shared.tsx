@@ -24,13 +24,13 @@ export function useChatThreadsTitleLabels() {
       ($) => {
         return $.chat.sidebar.chatsWith;
       },
-      { agentName: assistantName },
+      { assistantName },
     ),
     newChatAriaLabel: t(
       ($) => {
         return $.chat.sidebar.newChatWith;
       },
-      { agentName: assistantName },
+      { assistantName },
     ),
   };
 }

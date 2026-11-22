@@ -178,7 +178,7 @@ describe("chat event annotations", () => {
 
   it("inherits precise source links across claimed and rejected replacements", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const group = await runs.configureRunnerGroup();
@@ -186,10 +186,6 @@ describe("chat event annotations", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const defaultAgentId = await bdd.readDefaultAgentId(actor);
-    if (!defaultAgentId) {
-      throw new Error("Expected the paid owner's Agent");
-    }
     const claimedPendingId = randomUUID();
     const prompt = "github claimed replacement";
     const sent = await chat.sendAndLaunch(actor, {

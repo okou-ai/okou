@@ -17,8 +17,7 @@ type AuxiliaryFeature =
   | "chat_initial_thinking"
   | "run_summary"
   | "recommended_followups"
-  | "notification_summary"
-  | "agent_setup_prompt";
+  | "notification_summary";
 type Outcome = "success" | "degraded" | "cancelled" | "error" | "skipped";
 type Reason =
   | VertexTextError["reason"]

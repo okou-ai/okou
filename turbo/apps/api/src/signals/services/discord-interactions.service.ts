@@ -61,7 +61,7 @@ function discordHelp(): string {
     "• `/disconnect` - Disconnect from Okou",
     "",
     "**Usage**",
-    "• Send a DM to this bot or mention it in a channel to message your workspace's default agent",
+    "• Send a DM to this bot or mention it in a channel to message Okou",
     "• Use `/connect` to choose your workspace",
   ].join("\n");
 }

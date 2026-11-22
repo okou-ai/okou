@@ -44,14 +44,10 @@ describe("chat search publication", () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     await createRunsApi(context).configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     await bdd.provisionWorkspace(owner);
     await bdd.completeOnboarding(owner);
-    await bdd.createAgent(owner, {
-      displayName: "Recalled search publication",
-      visibility: "private",
-    });
     const opened = await chat.requestSendEvent(
       owner,
       { model: null, prompt: "Start the conversation" },
@@ -127,7 +123,7 @@ describe("chat search publication", () => {
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
     await createRunsApi(context).configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       return Promise.resolve(
         request instanceof ListObjectsV2Command
@@ -138,49 +134,37 @@ describe("chat search publication", () => {
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     await bdd.provisionWorkspace(owner);
     await bdd.completeOnboarding(owner);
-    const named = await bdd.createAgent(owner, {
-      displayName: "MCP Research",
-      visibility: "private",
-    });
+
     const peer = bdd.user({ orgId: owner.orgId });
     await bdd.completeOnboarding(peer);
-    const shared = await bdd.createAgent(peer, {
-      displayName: "Shared research",
-    });
+
     const otherOrg = bdd.user({
       userId: owner.userId,
       orgId: `org_${randomUUID()}`,
     });
     await bdd.provisionWorkspace(otherOrg);
     await bdd.completeOnboarding(otherOrg);
-    const foreign = await bdd.createAgent(otherOrg, {
-      displayName: "Other organization",
-      visibility: "private",
-    });
+
     const keyword = `mcpidentity${randomUUID().replaceAll("-", "")}`;
     const ownerInputs: {
       readonly threadId: string;
-      readonly agentId: string;
     }[] = [];
-    for (const agentId of [named.agentId, shared.agentId]) {
+    for (const title of ["first", "second"]) {
       const sent = await chat.requestSendEvent(
         owner,
-        { model: null, prompt: `${keyword} owner ${agentId}` },
+        { model: null, prompt: `${keyword} owner ${title}` },
         [201],
       );
       if (sent.status !== 201) {
         throw new Error("Expected public input acceptance");
       }
-      ownerInputs.push({ threadId: sent.body.threadId, agentId });
+      ownerInputs.push({ threadId: sent.body.threadId });
       await flushWaitUntilForTest();
     }
-    for (const [actor, agentId] of [
-      [peer, shared.agentId],
-      [otherOrg, foreign.agentId],
-    ] as const) {
+    for (const actor of [peer, otherOrg]) {
       await chat.requestSendEvent(
         actor,
-        { model: null, prompt: `${keyword} isolated ${agentId}` },
+        { model: null, prompt: `${keyword} isolated ${actor.userId}` },
         [201],
       );
       await flushWaitUntilForTest();
@@ -199,9 +183,9 @@ describe("chat search publication", () => {
         }),
       ),
     );
-    await expect(
-      chat.searchChat(owner, keyword, { agentId: foreign.agentId }),
-    ).resolves.toStrictEqual(native);
+    await expect(chat.searchChat(owner, keyword)).resolves.toStrictEqual(
+      native,
+    );
     const token = mcp.authorize(owner);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [owner.orgId, otherOrg.orgId].map((orgId) => {
@@ -279,9 +263,7 @@ describe("chat search publication", () => {
       projectsContract,
     );
     const headers = { authorization: "Bearer clerk-session" };
-    const thread = ownerInputs.find((input) => {
-      return input.agentId === named.agentId;
-    });
+    const thread = ownerInputs[0];
     if (!thread) {
       throw new Error("Expected indexed owner thread");
     }
@@ -321,9 +303,6 @@ describe("chat search publication", () => {
     await expect(
       search(token({ org_id: otherOrg.orgId }), second),
     ).resolves.toStrictEqual([]);
-    await bdd.updateAgentMetadata(peer, shared.agentId, {
-      visibility: "private",
-    });
     expect(
       new Set(
         (await search(token())).map(({ threadId }) => {
@@ -347,14 +326,11 @@ describe("chat search publication", () => {
       const chat = createChatFilesBddApi(context);
       const mcp = createMcpWebApi(context);
       await createRunsApi(context).configureRunnerGroup();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       const owner = bdd.user({ orgId: `org_${randomUUID()}` });
       await bdd.provisionWorkspace(owner);
       await bdd.completeOnboarding(owner);
-      const agent = await bdd.createAgent(owner, {
-        displayName: "Unicode research",
-        visibility: "private",
-      });
+
       const examples = [
         {
           contract: "UTF-16 ranges",
@@ -431,9 +407,7 @@ describe("chat search publication", () => {
         const result = mcpProjectChatSearchContract.search.responses[200].parse(
           response.structuredContent,
         );
-        const native = await chat.searchChat(owner, keyword, {
-          agentId: agent.agentId,
-        });
+        const native = await chat.searchChat(owner, keyword);
         expect(
           result.results.map((hit) => {
             return {
@@ -512,7 +486,7 @@ describe("chat search publication", () => {
     const chat = createChatFilesBddApi(context);
     const mcp = createMcpWebApi(context);
     await createRunsApi(context).configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     context.mocks.s3.send.mockImplementation((request: unknown) => {
       return Promise.resolve(
         request instanceof ListObjectsV2Command
@@ -521,10 +495,7 @@ describe("chat search publication", () => {
       );
     });
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Search ordering",
-      visibility: "private",
-    });
+
     const keyword = `ordering${randomUUID().replaceAll("-", "")}`;
     const threadId = await withMockNowForTest(
       new Date("2026-10-12T08:00:00Z"),
@@ -576,9 +547,7 @@ describe("chat search publication", () => {
       `${keyword} middle`,
       `${keyword} oldest`,
     ]);
-    const viaWeb = await chat.searchChat(owner, keyword, {
-      agentId: agent.agentId,
-    });
+    const viaWeb = await chat.searchChat(owner, keyword);
     expect(
       viaWeb.results.map((hit) => {
         return [hit.matchedMessage.content, hit.matchedMessage.createdAt];

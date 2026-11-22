@@ -327,7 +327,7 @@ final class ConnectorActionStore {
       let eventID = callbackIDs[flow.action.id] ?? UUID().uuidString
       callbackIDs[flow.action.id] = eventID
       _ = try await commands.send(
-        thread: thread, text: prompt, clientEventID: eventID, expectedAgentID: flow.action.agentID)
+        thread: thread, text: prompt, clientEventID: eventID)
       try check(flow)
       callbackIDs[flow.action.id] = nil
     }

@@ -14,7 +14,7 @@ describe("Runner run lookup ownership", () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     const member = createBddApi(context).user({
       orgId: actor.orgId,
       orgRole: "org:member",
@@ -30,7 +30,6 @@ describe("Runner run lookup ownership", () => {
       const ownerBearer = `Bearer ${ownerKey.token}`;
       const memberBearer = `Bearer ${memberKey.token}`;
       const run = await api.createThreadRun(actor, {
-        agentId,
         prompt: "the owner's queued lookup",
       });
 
@@ -109,7 +108,7 @@ describe("Runner run lookup ownership", () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     const body = {
       targets: [{ kind: "builtin" as const, connectorSlug: "missing-builtin" }],
     };
@@ -119,7 +118,6 @@ describe("Runner run lookup ownership", () => {
       const key = await api.createCliToken(actor);
       const bearer = `Bearer ${key.token}`;
       const first = await api.createThreadRun(actor, {
-        agentId,
         prompt: "complete this lookup first",
       });
       const firstExecution = await owned.executionInput(first.runId);
@@ -143,7 +141,6 @@ describe("Runner run lookup ownership", () => {
       });
 
       const next = await api.createThreadRun(actor, {
-        agentId,
         prompt: "a distinct queued lookup",
       });
       expect(next.status).toBe("running");

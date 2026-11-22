@@ -29,11 +29,7 @@ extension WorkspaceStore {
     return true
   }
 
-  var currentAgentName: String { "Okou" }
-
   var billingURL: URL { webURL.appending(path: "settings/billing") }
-
-  var selectedAgentID: String? { selectedConversation?.thread.agentID }
 
   var newChatProject: ChatProject? {
     projects.projects.first { $0.id == newChatProjectID }

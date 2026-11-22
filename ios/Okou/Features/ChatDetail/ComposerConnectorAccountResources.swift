@@ -26,7 +26,7 @@ final class ComposerConnectorAccountResources {
   }
 
   let connector: ChatComposerConnector
-  let agentID: String?
+
   let managesDefaults: Bool
   let store = CCState.Store()
   let search: Computed<String>
@@ -53,12 +53,11 @@ final class ComposerConnectorAccountResources {
   @ObservationIgnored private var moreTask: Task<Void, Error>?
 
   init(
-    composer: ComposerConnectorStore, connector: ChatComposerConnector, agentID: String?,
+    composer: ComposerConnectorStore, connector: ChatComposerConnector,
     managesDefaults: Bool, didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.composer = composer
     self.connector = connector
-    self.agentID = agentID
     self.managesDefaults = managesDefaults
     service = composer.service
     self.didFail = didFail

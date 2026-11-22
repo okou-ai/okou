@@ -22,11 +22,7 @@ const chat = createChatFilesBddApi(context);
 
 async function seedChatThread(title: string) {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  await bdd.createAgent(actor, {
-    displayName: "Chat thread archive agent",
-    visibility: "private",
-  });
+  bdd.acceptStorageWrites();
   const thread = await chat.createThread(actor, {
     title,
   });

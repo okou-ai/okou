@@ -71,7 +71,7 @@ async function entitledActor(
   tier?: "pro" | "team",
 ): Promise<ApiTestUser> {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   await api.configureRunnerGroup();
@@ -79,21 +79,11 @@ async function entitledActor(
   return actor;
 }
 
-/** A product Agent whose runs start through the Thread entry. */
-async function createThreadAgent(
-  actor: ApiTestUser,
-  prefix: string,
-): Promise<{ readonly agentId: string }> {
+async function prepareChatModel(actor: ApiTestUser): Promise<void> {
   // The Claude Code route (no Pi route), matching completeRun's native history.
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: `${prefix}-${randomUUID().slice(0, 8)}`,
-    description: "Exercises run reads.",
-    visibility: "private",
-  });
-  return { agentId: agent.agentId };
 }
 
 type ChatInputOutcome =
@@ -104,7 +94,6 @@ type ChatInputOutcome =
 /** Send a chat prompt; the send only enqueues it for a background pick. */
 async function sendChatPrompt(
   actor: ApiTestUser,
-  agentId: string,
   prompt: string,
 ): Promise<{ readonly threadId: string; readonly clientEventId: string }> {
   const clientEventId = randomUUID();
@@ -136,18 +125,6 @@ async function readChatInputOutcome(
     return { kind: "launched", runId: successor.runId };
   }
   return { kind: "rejected" };
-}
-
-async function createChatAgent(actor: ApiTestUser): Promise<string> {
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "BDD chat admission agent",
-    description: "Chat input picked at the concurrency limit.",
-    visibility: "private",
-  });
-  return agent.agentId;
 }
 
 function sandboxHeaders(token: string): { readonly authorization: string } {
@@ -258,9 +235,7 @@ describe("RUN-03/RUN-04: run read surface auth matrix", () => {
 describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
   it("keeps limited-free plan concurrency visible when the runtime cap is disabled", async () => {
     const actor = bdd.user();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "BDD limited-free agent",
-    });
+    await bdd.bootstrapLimitedFreeOnboarding(actor);
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
 
     const queue = await api.readRunQueue(actor);
@@ -279,18 +254,12 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
     await api.ensurePersonalSubscriptionModel(member);
-    const actorAgent = await createThreadAgent(actor, "bdd-actor-usage");
-    const memberAgent = await bdd.createAgent(member, {
-      displayName: "bdd-member-usage",
-      visibility: "private",
-    });
+    await prepareChatModel(actor);
 
     await api.createThreadRun(actor, {
-      agentId: actorAgent.agentId,
       prompt: "actor active run",
     });
     await api.createThreadRun(member, {
-      agentId: memberAgent.agentId,
       prompt: "member active run",
       model: "claude-fable-5-1",
     });
@@ -325,12 +294,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
   it("reads the signed event automation trigger source from logs", async () => {
     // Webhook automations require a Team workspace.
     const actor = await entitledActor(undefined, "team");
-    const compose = await createThreadAgent(actor, "bdd-trigger-sources");
+    await prepareChatModel(actor);
 
-    const event = await workflows.startEventAutomationRun(
-      actor,
-      compose.agentId,
-    );
+    const event = await workflows.startEventAutomationRun(actor);
     await api.requestCancelRun(actor, event.runId, [200]);
 
     const sourceRuns = [
@@ -378,32 +344,15 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
     await api.ensurePersonalSubscriptionModel(member);
-    const namedAgent = async (owner: ApiTestUser, displayName: string) => {
-      const created = await bdd.createAgent(owner, {
-        displayName,
-        visibility: "private",
-      });
-      return { agentId: created.agentId };
-    };
-    const target = await namedAgent(actor, "bdd-target");
-    const other = await namedAgent(actor, "bdd-other");
-    const memberCompose = await namedAgent(member, "bdd-member");
 
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD run reads agent",
-      description: "Direct create at the concurrency limit.",
-      visibility: "private",
-    });
 
     const runA = await api.createThreadRun(actor, {
-      agentId: target.agentId,
       prompt: "target run a",
     });
     const runB = await api.createThreadRun(actor, {
-      agentId: other.agentId,
       prompt: "other run b",
     });
 
@@ -486,7 +435,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(missing.body.error.message).toBe("Agent run not found");
 
     const runM = await api.createThreadRun(member, {
-      agentId: memberCompose.agentId,
       prompt: "member run m",
       model: "claude-fable-5-1",
     });
@@ -529,7 +477,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     // A full org keeps new chat input queued instead of launching it.
     const overLimit = await sendChatPrompt(
       actor,
-      agent.agentId,
       "run over the concurrency limit",
     );
     await expect(readChatInputOutcome(actor, overLimit)).resolves.toStrictEqual(
@@ -562,14 +509,13 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 describe("RUN-03: cancel through the run cancel route", () => {
   async function cancelFixture() {
     const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-cancel");
-    return { actor, compose };
+    await prepareChatModel(actor);
+    return { actor };
   }
 
   it("cancels a running run idempotently", async () => {
-    const { actor, compose } = await cancelFixture();
+    const { actor } = await cancelFixture();
     const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "cancel a running run",
     });
     await api.executionInput(run.runId);
@@ -589,9 +535,8 @@ describe("RUN-03: cancel through the run cancel route", () => {
   });
 
   it("rejects cancellation after a run completes", async () => {
-    const { actor, compose } = await cancelFixture();
+    const { actor } = await cancelFixture();
     const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "complete then cancel",
     });
     const execution = await api.executionInput(run.runId);
@@ -609,9 +554,8 @@ describe("RUN-03: cancel through the run cancel route", () => {
   });
 
   it("hides another organization's run from cancellation", async () => {
-    const { actor, compose } = await cancelFixture();
+    const { actor } = await cancelFixture();
     const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "cross-organization cancel",
     });
     const execution = await api.executionInput(run.runId);
@@ -634,7 +578,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       mockEnv("S3_ENDPOINT", undefined);
       mockEnv("S3_PUBLIC_ENDPOINT", undefined);
       const actor = fixture.actor;
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
       await api.configureRunnerGroup();
@@ -649,10 +593,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       context.mocks.s3.send.mockResolvedValue({
         ContentLength: volumeArchiveSize,
       });
-      const agent = await bdd.createAgent(actor, {
-        displayName: "BDD resume agent",
-        visibility: "private",
-      });
+
       const [readonlySkill] = await readonlyConnectorSkills(context, actor, [
         "session continuation",
       ]);
@@ -691,7 +632,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       const presignCallsBeforeRun =
         context.mocks.s3.getSignedUrl.mock.calls.length;
       const r1 = await api.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "pin the Connector Skill bundle",
       });
       fixture.registerRun(r1.runId);
@@ -832,7 +772,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 
       await flushWaitUntilForTest();
       const continued = await api.createThreadRun(actor, {
-        agentId: agent.agentId,
         threadId: r1.threadId,
         prompt: "continue the persisted session",
       });
@@ -876,12 +815,12 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
 describe("RUN-01: run admission boundaries", () => {
   it("treats the one-run limit as soft for concurrent chat picks and enforces it afterwards", async () => {
     const actor = await entitledActor();
-    const agentId = await createChatAgent(actor);
+    await prepareChatModel(actor);
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
 
     const inputs = await Promise.all([
-      sendChatPrompt(actor, agentId, "concurrent admission candidate one"),
-      sendChatPrompt(actor, agentId, "concurrent admission candidate two"),
+      sendChatPrompt(actor, "concurrent admission candidate one"),
+      sendChatPrompt(actor, "concurrent admission candidate two"),
     ]);
 
     // Picks count active runs without an org lock, so simultaneous picks may
@@ -916,7 +855,6 @@ describe("RUN-01: run admission boundaries", () => {
     // A later input observes the launched runs and stays queued.
     const limited = await sendChatPrompt(
       actor,
-      agentId,
       "sequential admission after race",
     );
     await expect(readChatInputOutcome(actor, limited)).resolves.toStrictEqual({
@@ -932,26 +870,19 @@ describe("RUN-01: run admission boundaries", () => {
   it("enforces chat pick concurrency until the cap is disabled", async () => {
     const customerId = `cus_${randomUUID()}`;
     const actor = await entitledActor(customerId);
-    const compose = await createThreadAgent(actor, "bdd-admission");
-    const agentId = await createChatAgent(actor);
+    await prepareChatModel(actor);
+    await prepareChatModel(actor);
 
     const first = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "first concurrent run",
     });
     const second = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "second concurrent run",
     });
     const third = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "third concurrent run",
     });
-    const limited = await sendChatPrompt(
-      actor,
-      agentId,
-      "fourth concurrent run",
-    );
+    const limited = await sendChatPrompt(actor, "fourth concurrent run");
     await expect(readChatInputOutcome(actor, limited)).resolves.toStrictEqual({
       kind: "queued",
     });
@@ -968,35 +899,9 @@ describe("RUN-01: run admission boundaries", () => {
     await api.requestCancelRun(actor, third.runId, [200]);
   });
 
-  it("ignores a legacy foreign agent ID when admitting a member run", async () => {
-    const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-admission");
-    const first = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
-      prompt: "first concurrent run",
-    });
-    const second = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
-      prompt: "second concurrent run",
-    });
-    const outsider = bdd.user();
-    await createThreadAgent(outsider, "bdd-foreign");
-    const crossOrgCompose = await chat.requestSendEvent(
-      actor,
-      {
-        prompt: "run a foreign compose",
-        model: "claude-fable-5-1",
-      },
-      [201],
-    );
-    expect(crossOrgCompose.status).toBe(201);
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await api.requestCancelRun(actor, second.runId, [200]);
-  });
-
   it("restricts production network-body capture to staff organizations", async () => {
     const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-admission");
+    await prepareChatModel(actor);
     mockEnv("ENV", "production");
     mockOptionalEnv("VERCEL_ENV", "preview");
     const legacyDomainActor = {
@@ -1007,7 +912,6 @@ describe("RUN-01: run admission boundaries", () => {
     // The pick rejects a non-staff capture request before any run exists.
     await expect(
       api.readThreadRunRejection(legacyDomainActor, {
-        agentId: compose.agentId,
         prompt: "capture from a non-staff organization",
         captureNetworkBodies: true,
       }),
@@ -1015,9 +919,8 @@ describe("RUN-01: run admission boundaries", () => {
 
     const staff = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     await api.grantProEntitlement(staff);
-    const staffAgent = await createThreadAgent(staff, "bdd-staff-capture");
+    await prepareChatModel(staff);
     const allowed = await api.createThreadRun(staff, {
-      agentId: staffAgent.agentId,
       prompt: "capture from a staff organization",
       captureNetworkBodies: true,
     });
@@ -1313,9 +1216,8 @@ describe("RUN-04: agent run telemetry families", () => {
   it("serves paged Activity events without leaking another member's run", async () => {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const compose = await createThreadAgent(actor, "bdd-activity-events");
+    await prepareChatModel(actor);
     const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "inspect activity events",
     });
     const execution = await api.executionInput(run.runId);
@@ -1409,9 +1311,8 @@ describe("RUN-04: agent run telemetry families", () => {
     "pages unique Activity events in %s order after ambiguous trace retries",
     async (order) => {
       const actor = await entitledActor();
-      const compose = await createThreadAgent(actor, "bdd-duplicate-traces");
+      await prepareChatModel(actor);
       const run = await api.createThreadRun(actor, {
-        agentId: compose.agentId,
         prompt: "inspect repeated diagnostic events",
       });
       dispatchAxiomQueries({
@@ -1466,9 +1367,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("does not re-emit an already seen Activity event through sinceTime after a trace retry", async () => {
     const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-trace-incremental");
+    await prepareChatModel(actor);
     const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "read incremental Activity diagnostics",
     });
     const capturedAt = now();
@@ -1513,9 +1413,8 @@ describe("RUN-04: agent run telemetry families", () => {
     "reads tabular Activity aggregation with partial=%s",
     async (partial) => {
       const actor = await entitledActor();
-      const compose = await createThreadAgent(actor, "bdd-tabular-traces");
+      await prepareChatModel(actor);
       const run = await api.createThreadRun(actor, {
-        agentId: compose.agentId,
         prompt: "read aggregated trace data",
       });
       context.mocks.axiom.useRealQuery.mockReturnValue(true);
@@ -1591,9 +1490,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("hardens network log rows in the agent read API", async () => {
     const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-network-hardening");
+    await prepareChatModel(actor);
     const agentRun = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "zero network hardening",
     });
 
@@ -1674,9 +1572,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("keeps same-timestamp network rows reachable across time cursor pages", async () => {
     const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-time-cursor-ties");
+    await prepareChatModel(actor);
     const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "emit tied network telemetry",
     });
     const runId = run.runId;
@@ -1906,9 +1803,8 @@ describe("RUN-04: agent run telemetry families", () => {
 
   it("fails visibly when a network page cannot advance its cursor", async () => {
     const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-unpageable");
+    await prepareChatModel(actor);
     const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
       prompt: "emit an unpageable network boundary",
     });
     const runId = run.runId;
@@ -1955,13 +1851,8 @@ describe("RUN-04: agent run telemetry families", () => {
   it("reads fresh run context within the creation-time window after a cached miss", async () => {
     const actor = await entitledActor();
     await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD bounded run context agent",
-      description: "Bounded run context reads.",
-      visibility: "private",
-    });
+
     const agentRun = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "bounded run context",
     });
     onTestFinished(async () => {
@@ -2101,14 +1992,8 @@ describe("RUN-04: agent run telemetry families", () => {
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD zero detail agent",
-      description: "Agent run detail reads.",
-      visibility: "private",
-    });
 
     const agentRun = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "agent run detail",
     });
     const execution = await api.executionInput(agentRun.runId);
@@ -2128,7 +2013,6 @@ describe("RUN-04: agent run telemetry families", () => {
     );
 
     const bareRun = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "agent run without snapshots",
     });
 
@@ -2663,48 +2547,20 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agentOne = await bdd.createAgent(actor, {
-      displayName: "BDD logs agent one",
-      description: "Primary logs agent.",
-      visibility: "private",
-    });
-    const agentTwo = await bdd.createAgent(actor, {
-      displayName: "BDD logs agent two",
-      description: "Secondary logs agent.",
-      visibility: "private",
-    });
-    const memberAgent = await bdd.createAgent(member, {
-      displayName: "BDD member logs agent",
-      description: "Member isolation.",
-      visibility: "private",
-    });
-    const defaultAgentId = await bdd.readDefaultAgentId(actor);
-    if (!defaultAgentId) {
-      throw new Error("Expected a default executor for the automation");
-    }
-    const automationCompose = await bdd.readAgent(actor, defaultAgentId);
-    // Public creation names an Agent by its canonical id.
-    const agentOneName = agentOne.agentId;
 
     const webRun = await api.createThreadRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "web run on agent one",
+      prompt: "first web run",
     });
     await api.requestCancelRun(actor, webRun.runId, [200]);
-    const secondAgentRun = await api.createThreadRun(actor, {
-      agentId: agentTwo.agentId,
-      prompt: "web run on agent two",
+    const secondWebRun = await api.createThreadRun(actor, {
+      prompt: "second web run",
     });
-    await api.requestCancelRun(actor, secondAgentRun.runId, [200]);
+    await api.requestCancelRun(actor, secondWebRun.runId, [200]);
     // A signed event automation supplies the second public log source.
-    const automationRun = await workflows.startEventAutomationRun(
-      actor,
-      automationCompose.agentId,
-    );
+    const automationRun = await workflows.startEventAutomationRun(actor);
     await api.requestCancelRun(actor, automationRun.runId, [200]);
 
     const memberRun = await api.createThreadRun(member, {
-      agentId: memberAgent.agentId,
       prompt: "member run stays invisible",
       model: "claude-fable-5-1",
     });
@@ -2712,18 +2568,14 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
     return {
       actor,
-      agentOne,
-      agentOneName,
-      agentTwo,
-      secondAgentRun,
-      automationCompose,
+      secondWebRun,
       automationRun,
       webRun,
     };
   }
 
   it("lists organization run logs with their filter metadata", async () => {
-    const { actor, secondAgentRun, automationRun, webRun } =
+    const { actor, secondWebRun, automationRun, webRun } =
       await setupRunLogFixture();
     const listed = await reads.requestListLogs(actor, {}, [200]);
     mustOk(listed, "the logs list");
@@ -2731,7 +2583,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       return entry.id;
     });
     expect([...listedIds].sort()).toStrictEqual(
-      [webRun.runId, secondAgentRun.runId, automationRun.runId].sort(),
+      [webRun.runId, secondWebRun.runId, automationRun.runId].sort(),
     );
 
     const webEntry = listed.body.data.find((entry) => {
@@ -2741,7 +2593,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       framework: "claude-code",
       triggerSource: "web",
       status: "cancelled",
-      prompt: "web run on agent one",
+      prompt: "first web run",
     });
     const automationEntry = listed.body.data.find((entry) => {
       return entry.id === automationRun.runId;
@@ -2788,7 +2640,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   });
 
   it("filters run logs by status and source", async () => {
-    const { actor, secondAgentRun, webRun } = await setupRunLogFixture();
+    const { actor, secondWebRun, webRun } = await setupRunLogFixture();
     const byStatusAndSource = await reads.requestListLogs(
       actor,
       { status: "cancelled", triggerSource: "web" },
@@ -2801,7 +2653,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
           return entry.id;
         })
         .sort(),
-    ).toStrictEqual([webRun.runId, secondAgentRun.runId].sort());
+    ).toStrictEqual([webRun.runId, secondWebRun.runId].sort());
 
     const sourcePage = await reads.requestListLogs(
       actor,
@@ -2913,9 +2765,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("reads run-log detail when an older Axiom snapshot has null Storage mounts", async () => {
     const actor = await entitledActor();
-    const agent = await createThreadAgent(actor, "bdd-retained-log");
+    await prepareChatModel(actor);
     const run = await api.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "read a retained run snapshot",
     });
     onTestFinished(async () => {
@@ -2945,9 +2796,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   });
 
   it("reads run-log list and detail with a dispatched Run token", async () => {
-    const { actor, agentOne, webRun } = await setupRunLogFixture();
+    const { actor, webRun } = await setupRunLogFixture();
     const tokenRun = await api.createThreadRun(actor, {
-      agentId: agentOne.agentId,
       prompt: "Okou run token log access",
     });
     const tokenExecution = await api.executionInput(tokenRun.runId);
@@ -2977,13 +2827,12 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   });
 
   it("filters run logs from an exact time boundary", async () => {
-    const { actor, agentOne } = await setupRunLogFixture();
+    const { actor } = await setupRunLogFixture();
     const beforeBoundaryAt = now();
     const beforeBoundaryRun = await withMockNowForTest(
       beforeBoundaryAt,
       async () => {
         const run = await api.createThreadRun(actor, {
-          agentId: agentOne.agentId,
           prompt: "since boundary hidden run",
         });
         await api.requestCancelRun(actor, run.runId, [200]);
@@ -2995,7 +2844,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       sinceBoundary,
       async () => {
         const run = await api.createThreadRun(actor, {
-          agentId: agentOne.agentId,
           prompt: "since boundary visible run",
         });
         await api.requestCancelRun(actor, run.runId, [200]);

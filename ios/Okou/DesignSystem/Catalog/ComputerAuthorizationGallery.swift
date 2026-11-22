@@ -49,7 +49,7 @@
       let commands = ChatCommands(client: client, sync: sync)
       let thread = ChatThread(
         id: ComputerAuthorizationPreviewTransport.threadID,
-        agentID: "72000000-0000-4000-8000-000000000001", title: "Preview",
+        title: "Preview",
         createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
       cards = try [
         "/computer-use/authorize/preview_computer",

@@ -17,7 +17,6 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     let client = fixture.http.client
     let store = makeStore(fixture)
     defer { store.close() }
-    store.configure(agentID: FixtureData.agentID)
     await store.refresh()
     await store.setAccountAccess(
       target: .builtin("slack"), connectionID: FixtureData.siblingID, enabled: true)
@@ -45,7 +44,6 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
       let fixture = makeFixture(state)
       let store = makeStore(fixture)
       defer { store.close() }
-      store.configure(agentID: FixtureData.agentID)
       await store.refresh()
       let connector = try XCTUnwrap(store.connectors.first)
       XCTAssertEqual(
@@ -75,7 +73,6 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     workspace.startNewChat()
     workspace.newChatDraft = "Keep this message"
     let store = workspace.newModelSelection.connectors
-    store.configure(agentID: FixtureData.agentID)
     await store.refresh()
     await store.setAccountAccess(
       target: .builtin("slack"), connectionID: FixtureData.siblingID, enabled: true)

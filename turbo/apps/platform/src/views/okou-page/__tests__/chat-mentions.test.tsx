@@ -1,8 +1,8 @@
 import { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import {
   composerDraftContract,
-  type AgentDraftRequest,
-} from "@okouai/api-contracts/contracts/agent-draft";
+  type ComposerDraftRequest,
+} from "@okouai/api-contracts/contracts/composer-draft";
 import {
   chatThreadsContract,
   type ChatThreadSnapshotProjection,
@@ -202,7 +202,7 @@ test("Ordinary links are not mistaken for conversation mentions", async () => {
 
 test("Special characters in a conversation title survive saving and restoring", async () => {
   const specialTitle = String.raw`Release [QA] \ notes`;
-  let savedDraft: AgentDraftRequest | undefined;
+  let savedDraft: ComposerDraftRequest | undefined;
 
   configureWorkspaceDraft(
     {

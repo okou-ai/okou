@@ -2,7 +2,7 @@ import CCState
 import ChatData
 import Foundation
 
-/// One composer's immutable Agent/thread scope owns the shared overview reads.
+/// One composer's workspace or thread owns the shared overview reads.
 @MainActor
 final class ComposerConnectorResources {
   struct Remote: Sendable {
@@ -14,7 +14,7 @@ final class ComposerConnectorResources {
 
   let store = CCState.Store()
   private let service: ChatComposerAccess
-  private let agentID: String?
+
   private let threadID: String?
   private let sleep: @Sendable (Duration) async throws -> Void
   private let didLoadConnected: @MainActor ([ChatComposerConnector]) -> Void
@@ -29,14 +29,13 @@ final class ComposerConnectorResources {
   private var closed = false
 
   init(
-    service: ChatComposerAccess, agentID: String?, threadID: String?, options: ChatComposerOptions,
+    service: ChatComposerAccess, threadID: String?, options: ChatComposerOptions,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     didLoadConnected: @escaping @MainActor ([ChatComposerConnector]) -> Void,
     didLoadRemote: @escaping @MainActor (Remote) -> Void,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.service = service
-    self.agentID = agentID
     self.threadID = threadID
     self.sleep = sleep
     self.didLoadConnected = didLoadConnected
@@ -59,11 +58,11 @@ final class ComposerConnectorResources {
       _ = try get(revision)
       let pending = try get(self.options)
       let signal = options.signal
-      let task = Task { @MainActor [weak self, service, agentID, threadID] in
+      let task = Task { @MainActor [weak self, service, threadID] in
         guard let self else { throw CancellationError() }
         do {
           let value = try await read {
-            try await service.validate(agentID: agentID, threadID: threadID)
+            try await service.validate(threadID: threadID)
             try Task.checkCancellation()
             return try await service.connectors(threadID: threadID, options: pending)
           }

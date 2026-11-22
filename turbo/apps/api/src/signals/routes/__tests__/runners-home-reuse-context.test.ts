@@ -11,17 +11,11 @@ describe("Execution home-reuse context", () => {
   it("distinguishes current input, earlier Runs and another thread through dispatched input", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
-    const {
-      actor,
-      agentId,
-      run: own,
-      executionInput,
-    } = await publicChatActor(context);
+    const { actor, run: own, executionInput } = await publicChatActor(context);
 
     await own(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const first = await api.createThreadRun(actor, {
-        agentId,
         prompt: "first home-reuse context",
       });
       const firstExecution = await executionInput(first.runId);
@@ -34,7 +28,6 @@ describe("Execution home-reuse context", () => {
       );
 
       const next = await api.createThreadRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "subsequent home-reuse context",
       });
@@ -47,7 +40,6 @@ describe("Execution home-reuse context", () => {
       );
 
       const other = await api.createThreadRun(actor, {
-        agentId,
         prompt: "first context in another thread",
       });
       expect(other.threadId).not.toBe(first.threadId);

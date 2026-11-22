@@ -24,7 +24,6 @@ type RunnerExecutionInput = Awaited<ReturnType<typeof api.executionInput>>;
 
 interface ArtifactActor {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runnerGroup: string;
 }
 
@@ -45,11 +44,8 @@ async function artifactActor(
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName,
-    visibility: "private",
-  });
-  return { actor, agentId: agent.agentId, runnerGroup };
+
+  return { actor, runnerGroup };
 }
 
 async function sendChatRun(

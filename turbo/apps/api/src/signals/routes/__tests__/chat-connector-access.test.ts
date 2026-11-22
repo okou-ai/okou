@@ -35,11 +35,11 @@ function accounts() {
   );
 }
 async function ownerWithThread({ actor = bdd.user() } = {}) {
-  bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor);
+  bdd.acceptStorageWrites();
+
   const thread = await chat.createThread(actor, {});
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-  return { actor, agentId: agent.agentId, threadId: thread.id };
+  return { actor, threadId: thread.id };
 }
 async function addAccount(actor: ReturnType<typeof bdd.user>, name: string) {
   return await connectors.connectManualGrant(

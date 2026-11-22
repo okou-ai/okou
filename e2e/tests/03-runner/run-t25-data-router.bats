@@ -19,10 +19,6 @@ teardown() {
     before_history=$(runner_api_curl "/api/data/router/requests")
     jq -e '.requestIds | type == "array"' <<<"$before_history" >/dev/null
 
-    run create_runner_agent "runner-data-router-${TEST_ID}"
-    assert_success
-    AGENT_ID="$output"
-
     local prompt
     prompt=$(cat <<'EOF'
 set -eu
@@ -67,7 +63,7 @@ jq -e '.isError == true and any(.content[]; .type == "text" and (.text | length 
 printf 'DATA_ROUTER_DIRECT_OK\n'
 EOF
 )
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$prompt"
     assert_success
     RUN_ID=$(jq -er '.runId' <<<"$output")
     THREAD_ID=$(jq -er '.threadId' <<<"$output")

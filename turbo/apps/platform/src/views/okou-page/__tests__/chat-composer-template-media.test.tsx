@@ -10,7 +10,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import {
   expectInlineTemplate,
   sendComposerMessage,

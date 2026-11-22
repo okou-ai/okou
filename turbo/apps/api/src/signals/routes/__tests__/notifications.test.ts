@@ -50,7 +50,7 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user(options);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
@@ -58,13 +58,9 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Mail notification agent",
-    visibility: "private",
-  });
+
   await runs.heartbeatRunner(runnerGroup);
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     model: "claude-fable-5-1",
     prompt: "Notify me about a useful update",
   });

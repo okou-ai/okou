@@ -84,7 +84,6 @@ import { initialRemoteAccessOwnershipPredicate } from "./chat-remote-access.serv
 type ChatThreadRow = {
   readonly id: string;
   readonly title: string | null;
-  readonly agentId?: string;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
@@ -784,7 +783,6 @@ const existingClientThreadSelection = Object.freeze({
 function existingClientThreadCondition(args: {
   readonly clientThreadId: string | undefined;
   readonly userId: string;
-  readonly agentId?: string;
   readonly orgId: string;
 }) {
   if (args.clientThreadId === undefined) {
@@ -803,7 +801,6 @@ interface CreateChatThreadArgs {
   readonly sourceRunId?: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId?: string;
   readonly title: string | undefined;
   readonly clientThreadId: string | undefined;
   readonly eventId: string | undefined;

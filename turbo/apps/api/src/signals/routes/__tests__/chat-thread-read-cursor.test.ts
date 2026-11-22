@@ -41,7 +41,6 @@ function actorOrgId(actor: ApiTestUser): string {
  */
 async function createCursorFixture(): Promise<CursorFixture> {
   const actor = bdd.user();
-  await chat.createAgentForChatThread(actor);
   const thread = await chat.createThread(actor, {
     title: `Read cursor ${randomUUID()}`,
   });
@@ -74,10 +73,6 @@ async function createUnreadCursorFixture(): Promise<CursorFixture> {
   // whose personal subscription route queues it for the native Runner, not Pi.
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
-  });
-  await bdd.createAgent(actor, {
-    displayName: `Read cursor unread ${randomUUID().slice(0, 8)}`,
-    visibility: "private",
   });
   const { runId, threadId } = await chat.sendAndLaunch(actor, {
     prompt: `read cursor ${randomUUID()}`,

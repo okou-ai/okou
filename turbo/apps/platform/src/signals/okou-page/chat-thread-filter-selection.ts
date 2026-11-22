@@ -5,7 +5,7 @@ import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import {
   currentChatThreadId$,
   currentChatThreadListIds$,
-} from "../agent-chat.ts";
+} from "../chat-thread-list.ts";
 import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
 import { currentRightThread$ } from "../chat-page/chat-thread-pane-state.ts";
 import { loadLeftThread$ } from "../chat-page/chat-thread-pane-navigation.ts";

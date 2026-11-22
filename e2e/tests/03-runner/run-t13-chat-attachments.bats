@@ -17,11 +17,6 @@ teardown() {
 }
 
 @test "Okou CLI and chat attachments work across continuation" {
-    run create_runner_agent "e2e-chat-attachments-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local content_marker="ATTACHMENT_CONTENT_${TEST_ID}"
     run runner_e2e_upload_text \
         "runner-content-${TEST_ID}.txt" \
@@ -85,7 +80,6 @@ EOF
     ')
 
     run runner_chat_send_parts \
-        "$AGENT_ID" \
         "$shell_prompt" \
         "$parts" \
         "" \
@@ -140,7 +134,6 @@ EOF
     continuation_prompt=${continuation_prompt//__CONTENT_MARKER__/$content_marker}
     continuation_prompt=${continuation_prompt//__CONTINUATION_MARKER__/$continuation_marker}
     run runner_e2e_continue_chat_run \
-        "$AGENT_ID" \
         "$THREAD_ID" \
         "$continuation_prompt"
     echo "$output"

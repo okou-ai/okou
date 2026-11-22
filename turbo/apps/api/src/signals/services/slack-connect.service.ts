@@ -313,7 +313,7 @@ export const notifySlackConnect$ = command(
     const { assistantName } = BRAND_PRESENTATION;
 
     const blocks = buildSuccessMessage(
-      `You're connected to ${assistantName}! :tada:\nMention ${officialSlackBotMention(args.installation.botUserId)} in any channel or send a DM to start chatting with your agent.`,
+      `You're connected to ${assistantName}! :tada:\nMention ${officialSlackBotMention(args.installation.botUserId)} in any channel or send a DM to chat with ${assistantName}.`,
     );
 
     let sentEphemeral = false;
@@ -347,10 +347,7 @@ export const notifySlackConnect$ = command(
         `Hi! I'm ${officialSlackBotMention(args.installation.botUserId)}.`,
         {
           threadTs,
-          blocks: buildWelcomeMessage(
-            args.installation.botUserId,
-            assistantName,
-          ),
+          blocks: buildWelcomeMessage(args.installation.botUserId),
         },
       );
       signal.throwIfAborted();

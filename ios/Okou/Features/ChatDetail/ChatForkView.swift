@@ -63,7 +63,7 @@ struct ChatForkView: View {
           modelSelection: flow.modelSelection,
           connectorSelection: flow.modelSelection.connectors,
           mentionSource: ComposerMentionSource(threads: threads),
-          workflowSource: flow.workflowSource, agentID: flow.agentID,
+          workflowSource: flow.workflowSource,
           showsTrailingFeedbackInput: false, project: project
         )
         // A failed or unknown attempt retries the captured message, never an edited body

@@ -34,7 +34,7 @@ beforeEach(() => {
   mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));
   mockEnv("OKOU_DATA_ROUTER_URL", ROUTER);
   mockEnv("OKOU_DATA_TOKEN", "router-test-service-token");
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
 });
@@ -42,20 +42,15 @@ beforeEach(() => {
 async function createRun(actor = bdd.user()) {
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Router accounting",
-    visibility: "private",
-  });
+
   const runnerGroup = await runs.configureRunnerGroup();
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "Read data",
   });
   await runs.heartbeatRunner(runnerGroup);
   const execution = await runs.executionInput(run.runId);
   return {
     actor,
-    agentId: agent.agentId,
     runId: run.runId,
     execution,
     headers: { authorization: `Bearer ${execution.sandboxToken}` },

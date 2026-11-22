@@ -32,10 +32,7 @@ import type {
 } from "../../../external/discord-client";
 import { chatThreadRoutes } from "../../chat-threads";
 import { discordGatewayRoutes } from "../../discord-gateway";
-import {
-  createAuthOrgAgentsBddApi,
-  type ApiTestUser,
-} from "./api-bdd-auth-org";
+import { createAuthOrgBddApi, type ApiTestUser } from "./api-bdd-auth-org";
 import { threadEventCursor } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import {
@@ -57,7 +54,6 @@ export interface ConnectedDiscordActor {
   readonly guildId: string;
   readonly discordUserId: string;
   readonly botUserId: string;
-  readonly defaultAgentId: string;
   readonly runnerGroup: string;
   readonly connectionId: string;
   readonly sinceSetupSeqId?: number;
@@ -81,27 +77,21 @@ export async function setupConnectedDiscordActor(
   const guildId = options.guildId ?? uniqueDiscordSnowflake();
   const discordUserId = options.discordUserId ?? uniqueDiscordSnowflake();
   const botUserId = DISCORD_TEST_APPLICATION_ID;
-  const authOrgApi = createAuthOrgAgentsBddApi(context);
+  const authOrgApi = createAuthOrgBddApi(context);
   const runsApi = createRunsApi(context);
   const actor = authOrgApi.user({ userId, orgId, orgRole: "org:admin" });
   const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   if (!options.reuseOrganization) {
     await runsApi.grantProEntitlement(actor);
   }
-  const onboardingAgentId = await authOrgApi.readDefaultAgentId(actor);
-  if (!onboardingAgentId) {
-    throw new Error(
-      "Discord fixture onboarding did not create a default agent",
-    );
-  }
+  await authOrgApi.provisionWorkspace(actor);
   if (options.reuseOrganization) {
     await authOrgApi.completeOnboarding(actor);
   }
   if (!options.reuseOrganization) {
-    await authOrgApi.readAgent(actor, onboardingAgentId);
     // These lifecycle fixtures exercise the native Runner execution protocol.
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -126,7 +116,6 @@ export async function setupConnectedDiscordActor(
     guildId,
     discordUserId,
     botUserId,
-    defaultAgentId: onboardingAgentId,
     runnerGroup,
     connectionId: fixture.connectionId,
     sinceSetupSeqId: await threadEventCursor(context, actor),

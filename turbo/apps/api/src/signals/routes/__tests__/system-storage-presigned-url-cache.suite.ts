@@ -28,13 +28,12 @@ describe("system storage presigned URL cache", () => {
 
   async function entitledDirectRunActor(): Promise<{
     readonly actor: ApiTestUser;
-    readonly agentId: string;
     readonly runnerGroup: string;
   }> {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = await api.configureRunnerGroup();
@@ -43,11 +42,8 @@ describe("system storage presigned URL cache", () => {
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "System storage cache agent",
-      visibility: "private",
-    });
-    return { actor, agentId: agent.agentId, runnerGroup };
+
+    return { actor, runnerGroup };
   }
 
   async function readonlyCacheScenario() {
@@ -271,7 +267,6 @@ describe("system storage presigned URL cache", () => {
     const api = createRunsApi(context);
     const createExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
-        agentId: runFixture.agentId,
         prompt,
       });
       onTestFinished(async () => {

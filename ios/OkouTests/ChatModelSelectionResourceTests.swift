@@ -233,7 +233,7 @@ final class ChatModelSelectionResourceTests: XCTestCase {
 
   private func thread() -> ChatThread {
     ChatThread(
-      id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
+      id: ModelHTTPFixtures.threadID,
       title: "Example", selectedModel: "codex-model", createdAt: Date(), updatedAt: Date(),
       sortAt: Date())
   }

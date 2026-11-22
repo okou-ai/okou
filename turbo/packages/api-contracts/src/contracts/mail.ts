@@ -90,13 +90,11 @@ export const mailDraftSchema = discriminatedUnion("provider", [
 export const linkMailDraftInputSchema = union([
   object({
     threadId: uuid(),
-    agentId: uuid().optional(),
     provider: literal("gmail").optional(),
     gmailDraftId: string().min(1),
   }),
   object({
     threadId: uuid(),
-    agentId: uuid().optional(),
     provider: literal("outlook"),
     outlookMessageId: string().min(1),
   }),

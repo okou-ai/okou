@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
-import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, onTestFinished } from "vitest";
@@ -39,12 +39,7 @@ async function pendingConnect() {
   if (!actor.orgId) {
     throw new Error("Banking requires an organization");
   }
-  bdd.acceptAgentStorageWrites();
-  const agentBody = {
-    displayName: "Webhook Banking Agent",
-    visibility: "private",
-  } as const;
-  const agent = await bdd.createAgent(actor, agentBody);
+  bdd.acceptStorageWrites();
   await updateFeatureSwitchesForUser(
     context,
     { userId: actor.userId, orgId: actor.orgId },
@@ -72,12 +67,12 @@ async function pendingConnect() {
     }),
   );
   const client = setupApp({ context, routes: bankingRoutes })(
-    bankingUserContract,
+    bankingWorkspaceContract,
   );
   const started = await accept(
     client.createConnectSession({
       headers,
-      body: { agentId: agent.agentId, mode: "connect" },
+      body: { mode: "connect" },
     }),
     [200],
   );
@@ -85,7 +80,6 @@ async function pendingConnect() {
     return await accept(
       client.accessRequestStatus({
         headers,
-        params: { agentId: agent.agentId },
       }),
       [200],
     );
@@ -110,7 +104,6 @@ async function pendingConnect() {
   };
   return {
     client,
-    agentId: agent.agentId,
     userId: actor.userId,
     accountsUrl,
     status,
@@ -161,7 +154,7 @@ describe("Finicity webhook outcomes", () => {
     const session = await accept(
       fixture.client.createConnectSession({
         headers,
-        body: { agentId: fixture.agentId, mode: "connect" },
+        body: { mode: "connect" },
       }),
       [200],
     );
@@ -189,21 +182,20 @@ describe("Finicity webhook outcomes", () => {
     expect(context.mocks.ably.publish).not.toHaveBeenCalled();
 
     const grantBody = {
-      agentId: fixture.agentId,
       accountIds: [accountId],
       duration: "7d" as const,
       purpose: "Review checking account",
     };
     const granted = await accept(
-      fixture.client.saveAgentGrant({ headers, body: grantBody }),
+      fixture.client.saveGrant({ headers, body: grantBody }),
       [200],
     );
     await expectNotification();
     expect(granted.body.grant?.status).toBe("active");
     const revoked = await accept(
-      fixture.client.revokeAgentGrant({
+      fixture.client.revokeGrant({
         headers,
-        body: { agentId: fixture.agentId },
+        body: {},
       }),
       [200],
     );
@@ -211,10 +203,7 @@ describe("Finicity webhook outcomes", () => {
     expect(revoked.body.grant?.status).toBe("revoked");
 
     context.mocks.ably.publish.mockRejectedValue(new Error("Ably unavailable"));
-    await accept(
-      fixture.client.saveAgentGrant({ headers, body: grantBody }),
-      [200],
-    );
+    await accept(fixture.client.saveGrant({ headers, body: grantBody }), [200]);
     await expectNotification();
     expect((await fixture.status()).body.grant?.status).toBe("active");
   });
@@ -236,7 +225,7 @@ describe("Finicity webhook outcomes", () => {
       await accept(
         fixture.client.createConnectSession({
           headers,
-          body: { agentId: fixture.agentId, mode: "connect" },
+          body: { mode: "connect" },
         }),
         [502],
       );
@@ -285,7 +274,7 @@ describe("Finicity webhook outcomes", () => {
       const start = () => {
         return fixture.client.createConnectSession({
           headers,
-          body: { agentId: fixture.agentId, mode: "connect" },
+          body: { mode: "connect" },
         });
       };
       const older = start();
@@ -569,10 +558,9 @@ describe("Finicity webhook outcomes", () => {
       throw new Error("Expected a publicly connected account");
     }
     await accept(
-      fixture.client.saveAgentGrant({
+      fixture.client.saveGrant({
         headers,
         body: {
-          agentId: fixture.agentId,
           accountIds: [accountId],
           duration: "7d",
           purpose: "Review checking account",
@@ -600,9 +588,9 @@ describe("Finicity webhook outcomes", () => {
     });
     await requested.promise;
     const revoked = await accept(
-      fixture.client.revokeAgentGrant({
+      fixture.client.revokeGrant({
         headers,
-        body: { agentId: fixture.agentId },
+        body: {},
       }),
       [200],
     );
@@ -772,7 +760,6 @@ describe("Finicity webhook outcomes", () => {
         fixture.client.createConnectSession({
           headers,
           body: {
-            agentId: fixture.agentId,
             mode: "fix",
             institutionLoginId: "bank",
           },

@@ -118,86 +118,86 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
   return {
     connector: {
       name: t(($) => {
-        return $.chat.agentPage.getStarted.connector.name;
+        return $.chat.homePage.getStarted.connector.name;
       }),
       description: t(($) => {
-        return $.chat.agentPage.getStarted.connector.description;
+        return $.chat.homePage.getStarted.connector.description;
       }),
       unit: t(($) => {
-        return $.chat.agentPage.getStarted.connector.unit;
+        return $.chat.homePage.getStarted.connector.unit;
       }),
       action: t(($) => {
-        return $.chat.agentPage.getStarted.connector.action;
+        return $.chat.homePage.getStarted.connector.action;
       }),
     },
     slack: {
       name: t(
         ($) => {
-          return $.chat.agentPage.getStarted.slack.name;
+          return $.chat.homePage.getStarted.slack.name;
         },
         { assistantName },
       ),
       description: t(($) => {
-        return $.chat.agentPage.getStarted.slack.description;
+        return $.chat.homePage.getStarted.slack.description;
       }),
       unit: null,
       action: t(($) => {
-        return $.chat.agentPage.getStarted.slack.action;
+        return $.chat.homePage.getStarted.slack.action;
       }),
     },
     imessage: {
       name: t(($) => {
-        return $.chat.agentPage.getStarted.imessage.name;
+        return $.chat.homePage.getStarted.imessage.name;
       }),
       description: t(
         ($) => {
-          return $.chat.agentPage.getStarted.imessage.description;
+          return $.chat.homePage.getStarted.imessage.description;
         },
         { assistantName },
       ),
       unit: null,
       action: t(($) => {
-        return $.chat.agentPage.getStarted.imessage.action;
+        return $.chat.homePage.getStarted.imessage.action;
       }),
     },
     workflow: {
       name: t(($) => {
-        return $.chat.agentPage.getStarted.workflow.name;
+        return $.chat.homePage.getStarted.workflow.name;
       }),
       description: t(($) => {
-        return $.chat.agentPage.getStarted.workflow.description;
+        return $.chat.homePage.getStarted.workflow.description;
       }),
       unit: null,
       action: t(($) => {
-        return $.chat.agentPage.getStarted.workflow.action;
+        return $.chat.homePage.getStarted.workflow.action;
       }),
     },
     invite: {
       name: t(($) => {
-        return $.chat.agentPage.getStarted.invite.name;
+        return $.chat.homePage.getStarted.invite.name;
       }),
       description: t(($) => {
-        return $.chat.agentPage.getStarted.invite.description;
+        return $.chat.homePage.getStarted.invite.description;
       }),
       unit: t(($) => {
-        return $.chat.agentPage.getStarted.invite.unit;
+        return $.chat.homePage.getStarted.invite.unit;
       }),
       action: t(($) => {
-        return $.chat.agentPage.getStarted.invite.action;
+        return $.chat.homePage.getStarted.invite.action;
       }),
     },
     checkin: {
       name: t(($) => {
-        return $.chat.agentPage.getStarted.checkin.name;
+        return $.chat.homePage.getStarted.checkin.name;
       }),
       description: t(($) => {
-        return $.chat.agentPage.getStarted.checkin.description;
+        return $.chat.homePage.getStarted.checkin.description;
       }),
       unit: t(($) => {
-        return $.chat.agentPage.getStarted.checkin.unit;
+        return $.chat.homePage.getStarted.checkin.unit;
       }),
       action: t(($) => {
-        return $.chat.agentPage.getStarted.checkin.action;
+        return $.chat.homePage.getStarted.checkin.action;
       }),
     },
   };
@@ -295,7 +295,7 @@ function useQuestState(
     return checkinStreak > 0
       ? t(
           ($) => {
-            return $.chat.agentPage.getStarted.streak;
+            return $.chat.homePage.getStarted.streak;
           },
           { amount: formatLocalizedNumber(checkinStreak) },
         )
@@ -309,7 +309,7 @@ function useQuestState(
     return quest.pendingCount > 0
       ? `${counts} · ${t(
           ($) => {
-            return $.chat.agentPage.getStarted.pendingState;
+            return $.chat.homePage.getStarted.pendingState;
           },
           { amount: formatLocalizedNumber(quest.pendingCount) },
         )}`
@@ -340,7 +340,7 @@ function QuestRowBody({
   const name =
     quest.key === "checkin" && done
       ? t(($) => {
-          return $.chat.agentPage.getStarted.checkedIn;
+          return $.chat.homePage.getStarted.checkedIn;
         })
       : copy.name;
   return (
@@ -371,7 +371,7 @@ function QuestRowBody({
         {!pending && quest.status === "inReview" && (
           <span className="text-xs text-muted-foreground">
             {t(($) => {
-              return $.chat.agentPage.getStarted.inReview;
+              return $.chat.homePage.getStarted.inReview;
             })}
           </span>
         )}
@@ -512,7 +512,7 @@ function RewardsNote() {
       >
         <span>
           {t(($) => {
-            return $.chat.agentPage.getStarted.howRewardsWork;
+            return $.chat.homePage.getStarted.howRewardsWork;
           })}
         </span>
         <ChevronRight
@@ -522,7 +522,7 @@ function RewardsNote() {
       {open && (
         <p className="px-3 pb-1 text-xs leading-[1.5] text-muted-foreground">
           {t(($) => {
-            return $.chat.agentPage.getStarted.rewardsNote;
+            return $.chat.homePage.getStarted.rewardsNote;
           })}
         </p>
       )}
@@ -581,7 +581,7 @@ function GetStartedPanel({
       <p className="min-w-0 truncate px-3 pb-2 pt-1.5 text-[13px] font-semibold tabular-nums">
         {t(
           ($) => {
-            return $.chat.agentPage.getStarted.toGo;
+            return $.chat.homePage.getStarted.toGo;
           },
           { amount: formatLocalizedNumber(summary.remainingCredits) },
         )}
@@ -658,7 +658,7 @@ export function GetStartedEntry() {
         <QuestRing completed={0} total={1} />
         <span className="text-[13px] font-medium">
           {t(($) => {
-            return $.chat.agentPage.getStarted.title;
+            return $.chat.homePage.getStarted.title;
           })}
         </span>
         <span aria-hidden="true" className="h-4 w-px shrink-0 bg-divider" />
@@ -666,7 +666,7 @@ export function GetStartedEntry() {
           <span className="invisible text-xs font-semibold tabular-nums">
             {t(
               ($) => {
-                return $.chat.agentPage.getStarted.stepCount;
+                return $.chat.homePage.getStarted.stepCount;
               },
               { completed: 0, total: 0 },
             )}
@@ -700,14 +700,14 @@ export function GetStartedEntry() {
           <QuestRing completed={summary.completed} total={summary.total} />
           <span className="text-[13px] font-medium">
             {t(($) => {
-              return $.chat.agentPage.getStarted.title;
+              return $.chat.homePage.getStarted.title;
             })}
           </span>
           <span aria-hidden="true" className="h-4 w-px shrink-0 bg-divider" />
           <span className="text-xs font-semibold tabular-nums text-muted-foreground">
             {t(
               ($) => {
-                return $.chat.agentPage.getStarted.stepCount;
+                return $.chat.homePage.getStarted.stepCount;
               },
               { completed: summary.completed, total: summary.total },
             )}

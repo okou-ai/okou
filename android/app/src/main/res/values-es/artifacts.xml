@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_resources">Recursos del chat</string>
+    <string name="chat_resources_back">Volver a los recursos del chat</string>
     <string name="artifact_title">Artefactos</string>
     <string name="artifact_search">Buscar artefactos</string>
     <string name="artifact_return_workspace">Volver al espacio de trabajo</string>

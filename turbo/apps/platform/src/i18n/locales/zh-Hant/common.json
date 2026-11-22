@@ -384,7 +384,7 @@
         "connectors": "連接器",
         "settings": "設定",
         "workflows": "工作流",
-        "works": "{{agentName}} 的工作渠道"
+        "works": "{{assistantName}} 的工作渠道"
       },
       "rail": {
         "workflows": "工作流",
@@ -1507,115 +1507,6 @@
       "description": "這個操作不屬於當前對話，或者已經失效。",
       "title": "操作不可用"
     },
-    "agentPage": {
-      "getStarted": {
-        "checkedIn": "已簽到",
-        "checkin": {
-          "action": "簽到",
-          "description": "每天簽到一次，UTC 00:00 重置。",
-          "name": "每日簽到",
-          "unit": "每天"
-        },
-        "connector": {
-          "action": "連線",
-          "description": "Gmail、Notion 等 4,000 多個工具",
-          "name": "連線一個工具",
-          "unit": "每個連接器"
-        },
-        "howRewardsWork": "獎勵規則說明",
-        "imessage": {
-          "action": "新增",
-          "description": "用 iPhone 傳訊息給 {{assistantName}}",
-          "name": "新增到 iMessage"
-        },
-        "inReview": "稽核中",
-        "intro": {
-          "connector": {
-            "confirm": "瀏覽全部連接器",
-            "connected": "已連線",
-            "description": "選一個，{{assistantName}} 就能在裡面開始工作。",
-            "notConnected": "未連線",
-            "pickerFailed": "無法載入連接器。",
-            "pickerLoading": "正在載入連接器…",
-            "title": "{{assistantName}} 直接在你已經在用的工具裡幹活"
-          },
-          "invite": {
-            "confirm": "邀請同事",
-            "description": "把同事邀請到這個工作區。",
-            "note": "你搭好一次的東西，不再只屬於你自己。上午剛加入的同事，下午就能直接跑起來，不用再問你怎麼用。",
-            "title": "一個人會的，所有人都能跑"
-          },
-          "later": "以後再說",
-          "slack": {
-            "confirm": "新增到 Slack",
-            "description": "把 {{assistantName}} 新增到團隊的 Slack 工作區。",
-            "note": "同事不用再先來找你。他們在頻道里提一句，結果就回到同一個會話裡，所有人都看得到。",
-            "title": "在團隊日常溝通的地方和 {{assistantName}} 協作"
-          },
-          "workflow": {
-            "description": "把你反覆要做的事，變成團隊都能跑的工作流。",
-            "title": "一次跑通，就成了團隊長期能用的東西"
-          }
-        },
-        "invite": {
-          "action": "邀請",
-          "description": "每邀請一個人都算",
-          "name": "邀請你的團隊",
-          "unit": "每位成員"
-        },
-        "pendingState": "{{amount}} 待發放",
-        "rewardsNote": "任務獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
-        "slack": {
-          "action": "新增",
-          "description": "團隊日常辦公的地方",
-          "name": "新增到 Slack"
-        },
-        "stepCount": "{{completed}}/{{total}}",
-        "streak": "連續 {{amount}} 天",
-        "title": "獲得更多積分",
-        "toGo": "還差 {{amount}}",
-        "workflow": {
-          "action": "搭建",
-          "description": "把重複的任務變成可複用的技能",
-          "name": "搭一個工作流"
-        }
-      },
-      "growth": {
-        "addInSlack": "在 Slack 裡新增 {{assistantName}}",
-        "connect": "連線",
-        "credits": "積分",
-        "inSlack": "{{assistantName}} 已在 Slack 裡",
-        "inviteMember": "邀請真人 🤝",
-        "otherChannels": "Telegram 和電話"
-      },
-      "taglines": {
-        "anonymous": {
-          "buildSomething": "想做點什麼？",
-          "goodToSeeYou": "見到你真好。",
-          "readyToRoll": "準備開始了嗎？",
-          "welcomeBack": "歡迎回來。",
-          "whatAreWeWorkingOn": "今天我們做點什麼？",
-          "whatsOnYourMind": "在想些什麼？",
-          "whatsTheMove": "下一步怎麼走？"
-        },
-        "anotherWin": "{{userName}}，今天再贏一局？",
-        "coffeeReady": "咖啡好了，{{userName}}。",
-        "enteredChat": "{{userName}} 上線了。",
-        "goodToSeeYou": "見到你真好，{{userName}}。",
-        "knewYouWouldCome": "就知道你會回來，{{userName}}。",
-        "makeTodayCount": "讓今天過得有價值，{{userName}}。",
-        "newIdeas": "今天有什麼新想法，{{userName}}？",
-        "readyToBuild": "準備開工了嗎，{{userName}}？",
-        "rightOnTime": "來得正好，{{userName}}。",
-        "savedYourSeat": "位置給你留著呢，{{userName}}。",
-        "theUsual": "還是老樣子，{{userName}}？",
-        "welcomeBack": "歡迎回來，{{userName}}。",
-        "whatAreWeWorkingOn": "今天我們做點什麼，{{userName}}？",
-        "whatsCooking": "在忙什麼呢，{{userName}}？",
-        "whatsOnYourMind": "在想些什麼，{{userName}}？",
-        "whatsTheMove": "下一步怎麼走，{{userName}}？"
-      }
-    },
     "agentSuggestions": {
       "addReason": "補充原因",
       "alreadyDone": "已經處理了",
@@ -2212,6 +2103,115 @@
       "composerPlaceholder": "新增留言",
       "title": "轉發到"
     },
+    "homePage": {
+      "getStarted": {
+        "checkedIn": "已簽到",
+        "checkin": {
+          "action": "簽到",
+          "description": "每天簽到一次，UTC 00:00 重置。",
+          "name": "每日簽到",
+          "unit": "每天"
+        },
+        "connector": {
+          "action": "連線",
+          "description": "Gmail、Notion 等 4,000 多個工具",
+          "name": "連線一個工具",
+          "unit": "每個連接器"
+        },
+        "howRewardsWork": "獎勵規則說明",
+        "imessage": {
+          "action": "新增",
+          "description": "用 iPhone 傳訊息給 {{assistantName}}",
+          "name": "新增到 iMessage"
+        },
+        "inReview": "稽核中",
+        "intro": {
+          "connector": {
+            "confirm": "瀏覽全部連接器",
+            "connected": "已連線",
+            "description": "選一個，{{assistantName}} 就能在裡面開始工作。",
+            "notConnected": "未連線",
+            "pickerFailed": "無法載入連接器。",
+            "pickerLoading": "正在載入連接器…",
+            "title": "{{assistantName}} 直接在你已經在用的工具裡幹活"
+          },
+          "invite": {
+            "confirm": "邀請同事",
+            "description": "把同事邀請到這個工作區。",
+            "note": "你搭好一次的東西，不再只屬於你自己。上午剛加入的同事，下午就能直接跑起來，不用再問你怎麼用。",
+            "title": "一個人會的，所有人都能跑"
+          },
+          "later": "以後再說",
+          "slack": {
+            "confirm": "新增到 Slack",
+            "description": "把 {{assistantName}} 新增到團隊的 Slack 工作區。",
+            "note": "同事不用再先來找你。他們在頻道里提一句，結果就回到同一個會話裡，所有人都看得到。",
+            "title": "在團隊日常溝通的地方和 {{assistantName}} 協作"
+          },
+          "workflow": {
+            "description": "把你反覆要做的事，變成團隊都能跑的工作流。",
+            "title": "一次跑通，就成了團隊長期能用的東西"
+          }
+        },
+        "invite": {
+          "action": "邀請",
+          "description": "每邀請一個人都算",
+          "name": "邀請你的團隊",
+          "unit": "每位成員"
+        },
+        "pendingState": "{{amount}} 待發放",
+        "rewardsNote": "任務獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
+        "slack": {
+          "action": "新增",
+          "description": "團隊日常辦公的地方",
+          "name": "新增到 Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "streak": "連續 {{amount}} 天",
+        "title": "獲得更多積分",
+        "toGo": "還差 {{amount}}",
+        "workflow": {
+          "action": "搭建",
+          "description": "把重複的任務變成可複用的技能",
+          "name": "搭一個工作流"
+        }
+      },
+      "growth": {
+        "addInSlack": "在 Slack 裡新增 {{assistantName}}",
+        "connect": "連線",
+        "credits": "積分",
+        "inSlack": "{{assistantName}} 已在 Slack 裡",
+        "inviteMember": "邀請真人 🤝",
+        "otherChannels": "Telegram 和電話"
+      },
+      "taglines": {
+        "anonymous": {
+          "buildSomething": "想做點什麼？",
+          "goodToSeeYou": "見到你真好。",
+          "readyToRoll": "準備開始了嗎？",
+          "welcomeBack": "歡迎回來。",
+          "whatAreWeWorkingOn": "今天我們做點什麼？",
+          "whatsOnYourMind": "在想些什麼？",
+          "whatsTheMove": "下一步怎麼走？"
+        },
+        "anotherWin": "{{userName}}，今天再贏一局？",
+        "coffeeReady": "咖啡好了，{{userName}}。",
+        "enteredChat": "{{userName}} 上線了。",
+        "goodToSeeYou": "見到你真好，{{userName}}。",
+        "knewYouWouldCome": "就知道你會回來，{{userName}}。",
+        "makeTodayCount": "讓今天過得有價值，{{userName}}。",
+        "newIdeas": "今天有什麼新想法，{{userName}}？",
+        "readyToBuild": "準備開工了嗎，{{userName}}？",
+        "rightOnTime": "來得正好，{{userName}}。",
+        "savedYourSeat": "位置給你留著呢，{{userName}}。",
+        "theUsual": "還是老樣子，{{userName}}？",
+        "welcomeBack": "歡迎回來，{{userName}}。",
+        "whatAreWeWorkingOn": "今天我們做點什麼，{{userName}}？",
+        "whatsCooking": "在忙什麼呢，{{userName}}？",
+        "whatsOnYourMind": "在想些什麼，{{userName}}？",
+        "whatsTheMove": "下一步怎麼走，{{userName}}？"
+      }
+    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",
@@ -2500,7 +2500,7 @@
     "sidebar": {
       "archive": "歸檔聊天",
       "archived": "已歸檔",
-      "chatsWith": "與{{agentName}}的聊天",
+      "chatsWith": "與{{assistantName}}的聊天",
       "chatThreads": "聊天會話",
       "delete": "刪除聊天",
       "deleteDescription": "這將永久刪除該聊天。聊天中正在執行的任務會立即停止，關聯的自動化會被暫停。此操作無法撤銷。",
@@ -2515,7 +2515,7 @@
       "movePinUp": "上移",
       "mute": "靜音聊天",
       "muted": "已靜音",
-      "newChatWith": "與{{agentName}}新建聊天",
+      "newChatWith": "與{{assistantName}}新建聊天",
       "noArchived": "沒有已歸檔的聊天",
       "noMuted": "沒有已靜音的聊天",
       "noUnread": "沒有未讀聊天",
@@ -3260,7 +3260,7 @@
     "directed": {
       "connectDocumentTitle": "連線{{connector}}",
       "connected": "{{connector}}已連線",
-      "needsConnector": "{{agent}}需要{{connector}}才能繼續",
+      "needsConnector": "{{assistantName}}需要{{connector}}才能繼續",
       "reconnecting": "正在重新連線…"
     },
     "expiration": {
@@ -7287,7 +7287,7 @@
         "visibilityHelp": "選擇這個工作流在工作區內的共享方式。"
       },
       "notFound": "未找到該工作流。",
-      "refineWith": "用{{agent}}最佳化",
+      "refineWith": "用{{assistantName}}最佳化",
       "sectionNavigation": "工作流詳情欄目",
       "visibility": {
         "automationWarning": "自動化將停止",

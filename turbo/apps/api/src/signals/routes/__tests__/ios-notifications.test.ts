@@ -51,15 +51,12 @@ async function unreadConversation(actor: ApiTestUser) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Notification state",
-    visibility: "private",
-  });
+
   const sent = await chat.sendAndLaunch(actor, {
     prompt: "Unread result",
   });
   await cancelStartedRun(actor, sent.runId);
-  return { ...sent, agentId: agent.agentId };
+  return { ...sent };
 }
 
 function reconcile(

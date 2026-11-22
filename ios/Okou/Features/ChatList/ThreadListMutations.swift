@@ -93,7 +93,7 @@ final class ThreadListMutations {
         eventID,
         ChatThreadChange(
           kind: pinned ? .pinned : .unpinned, chatThreadId: current.id,
-          agentId: current.agentID, pinOrder: pinOrder, createdAt: .now)
+          pinOrder: pinOrder, createdAt: .now)
       ))
     projectThreads(threads)
     let previous = lastPinIDs[current.id].flatMap { pinTasks[$0] }
@@ -126,8 +126,7 @@ final class ThreadListMutations {
   }
 
   /// Places a pinned chat beside another pin listed with it, as the PWA's Move up / Move down.
-  /// A pin ranks against the pins listed with it: its project's chats, which can belong to
-  /// several Agents, or else its Agent's chats. Only the moved rank (and a tied run) changes.
+  /// Only the moved rank and tied ranks change within the current list.
   func movePinned(
     _ id: String, beside targetID: String, placement: ChatThreadReplay.PinPlacement,
     projectID: String? = nil
@@ -148,17 +147,14 @@ final class ThreadListMutations {
       return
     }
     guard !updates.isEmpty else { return }
-    let agents = Dictionary(uniqueKeysWithValues: ranked.map { ($0.id, $0.agentID) })
     // Match PostgreSQL's canonical UUID text in the persistent event stream.
     let writes = updates.map { (eventID: UUID().uuidString.lowercased(), update: $0) }
     for write in writes {
       optimisticChanges.append(
         (
           write.eventID,
-          // A re-ranked tie keeps its own Agent.
           ChatThreadChange(
             kind: .sortTouched, chatThreadId: write.update.threadID,
-            agentId: agents[write.update.threadID] ?? current.agentID,
             pinOrder: write.update.pinOrder, createdAt: .now)
         ))
     }
@@ -207,7 +203,7 @@ final class ThreadListMutations {
         (
           eventID,
           ChatThreadChange(
-            kind: .projectUpdated, chatThreadId: id, agentId: current.agentID,
+            kind: .projectUpdated, chatThreadId: id,
             projectId: projectID, createdAt: current.updatedAt)
         ))
     }
@@ -245,7 +241,7 @@ final class ThreadListMutations {
           eventID,
           ChatThreadChange(
             kind: archived ? .archived : .unarchived, chatThreadId: thread.id,
-            agentId: thread.agentID, createdAt: .now)
+            createdAt: .now)
         ))
     }
     projectThreads(threads)
@@ -261,7 +257,7 @@ final class ThreadListMutations {
   /// settles it, even when the request fails; a retry resends the same event.
   @discardableResult
   func delete(
-    _ id: String, agentID: String?, eventID: String,
+    _ id: String, eventID: String,
     onFailure: (@MainActor (String) -> Void)? = nil
   ) async -> Bool {
     let pending = optimisticChanges.contains { $0.id == eventID }
@@ -270,7 +266,7 @@ final class ThreadListMutations {
       optimisticChanges.append(
         (
           eventID,
-          ChatThreadChange(kind: .deleted, chatThreadId: id, agentId: agentID, createdAt: .now)
+          ChatThreadChange(kind: .deleted, chatThreadId: id, createdAt: .now)
         ))
       projectThreads(threads)
     }
@@ -327,7 +323,7 @@ final class ThreadListMutations {
         (
           eventID,
           ChatThreadChange(
-            kind: .renamed, chatThreadId: current.id, agentId: current.agentID,
+            kind: .renamed, chatThreadId: current.id,
             title: trimmed, createdAt: .now)
         ))
     }

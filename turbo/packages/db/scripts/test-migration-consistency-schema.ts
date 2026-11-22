@@ -53,7 +53,6 @@ import { array, literal, object, string } from "zod";
 import { migrationTimestamp } from "./migration-timestamp";
 import { applyPendingMigrations } from "./migration-runner";
 import { validateChatThreadEventExecutorRetirement } from "./test-chat-thread-event-executor-retirement";
-import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialWorkflowStorageRetirement } from "./test-official-workflow-storage-retirement";
@@ -2939,7 +2938,6 @@ async function main(): Promise<void> {
     await validateUserNotificationStorage(dbUrl1);
     await validateFeedItemStorage(dbUrl1);
     await validateRetiredStorageSchema(dbUrl1);
-    await validatePermanentAgentInstructions(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
@@ -2995,7 +2993,6 @@ async function main(): Promise<void> {
     await validateUserNotificationStorage(dbUrl2);
     await validateFeedItemStorage(dbUrl2);
     await validateRetiredStorageSchema(dbUrl2);
-    await validatePermanentAgentInstructions(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);
     await validateRestrictiveRunReferences(dbUrl2);
     await validatePermanentArtifactThreadCatalog(dbUrl2);

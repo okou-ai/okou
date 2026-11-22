@@ -20,7 +20,7 @@ import {
   chatThreadPinOrderContract,
   chatThreadDraftContract,
 } from "../contracts/chat-threads";
-import { composerDraftContract } from "../contracts/agent-draft";
+import { composerDraftContract } from "../contracts/composer-draft";
 import { chatEventRowSchema } from "../contracts/chat-event-rows";
 import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";

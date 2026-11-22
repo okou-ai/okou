@@ -13,7 +13,7 @@ final class PermissionActionTests: XCTestCase {
     let sync = ChatSync(client: fixture.http.client)
     let commands = ChatCommands(client: fixture.http.client, sync: sync)
     let thread = ChatThread(
-      id: PermissionHTTPFixture.threadID, agentID: nil,
+      id: PermissionHTTPFixture.threadID,
       title: "Permissions", createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil,
       pinOrder: nil)
     return ConversationStore(

@@ -30,7 +30,7 @@ describe("runner environment ownership", () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
@@ -38,12 +38,8 @@ describe("runner environment ownership", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Environment ownership agent",
-      visibility: "private",
-    });
+
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "exercise environment ownership",
     });
     await runs.heartbeatRunner(runnerGroup);

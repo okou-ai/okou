@@ -108,9 +108,8 @@ async function observeMemory(
       owner.user({ orgId: actor.orgId, orgRole: "org:admin" }),
     );
   }
-  const { agentId, runnerGroup } = await owner.prepareActor(actor);
+  const { runnerGroup } = await owner.prepareActor(actor);
   const run = await runs.createThreadRun(actor, {
-    agentId,
     prompt: "Observe this member's initialized Memory",
     model: "claude-fable-5-1",
   });
@@ -140,9 +139,7 @@ describe("member memory account initialization", () => {
       await owner.prepareActor(admin);
       const runs = createRunsApi(context);
       await runs.ensurePersonalSubscriptionModel(actor);
-      const { agentId } = await api.createAgent(actor, {
-        visibility: "private",
-      });
+
       await prepareReadablePreferences(actor);
 
       const { sendChatRun } = createChatEventsFixture(context);
@@ -200,7 +197,6 @@ describe("member memory account initialization", () => {
           // send before enqueue. The other Run can initialize Memory first.
           await flushWaitUntilForTest();
           const run = await runs.createThreadRun(actor, {
-            agentId,
             prompt: "Start my first Run without an attachment",
           });
           const execution = await owner.executionInput(actor, run.runId);
@@ -302,7 +298,7 @@ describe("member memory account initialization", () => {
     const owner = createPublicComputerUseScenario(context);
     const actor = owner.user({ orgRole: "org:member" });
     await owner.run(async () => {
-      api.acceptAgentStorageWrites();
+      api.acceptStorageWrites();
       await prepareReadablePreferences(actor);
       await expect(memoryInitialized(actor)).resolves.toBeFalsy();
       const deliveries = await Promise.allSettled([
@@ -334,7 +330,7 @@ describe("member memory account initialization", () => {
       const owner = createPublicComputerUseScenario(context);
       const actor = owner.user({ orgRole });
       await owner.run(async () => {
-        api.acceptAgentStorageWrites();
+        api.acceptStorageWrites();
         await prepareReadablePreferences(actor);
         await expect(memoryInitialized(actor)).resolves.toBeFalsy();
         const completions = await Promise.allSettled([
@@ -406,7 +402,7 @@ describe("member memory account initialization", () => {
       orgRole: "org:member",
     });
     await owner.run(async () => {
-      api.acceptAgentStorageWrites();
+      api.acceptStorageWrites();
       const memories = [];
       for (const actor of [first, anotherOrg, anotherMember]) {
         await prepareReadablePreferences(actor);
@@ -439,9 +435,8 @@ describe("member memory account initialization", () => {
       orgRole: "org:member",
     });
     await fixture.run(async () => {
-      const agentId = await fixture.initializeNative();
+      await fixture.initializeNative();
       const writer = await fixture.startExecution(
-        agentId,
         "Publish while membership delivery is replayed",
       );
       fixture.installObjects();
@@ -451,7 +446,6 @@ describe("member memory account initialization", () => {
         membershipCreated(fixture.actor),
       ]);
       const reader = await fixture.startExecution(
-        agentId,
         "Read the published Memory after membership replay",
       );
       expect(reader.memory).toMatchObject({
@@ -478,9 +472,8 @@ describe("member memory account initialization", () => {
     });
     await fixture.run(async () => {
       const actor = fixture.actor;
-      const agentId = await fixture.initializeNative();
+      await fixture.initializeNative();
       const initial = await fixture.startExecution(
-        agentId,
         "Publish existing member Memory",
       );
       const content = "Keep this existing memory";
@@ -527,7 +520,6 @@ describe("member memory account initialization", () => {
       await completeOnboarding(actor);
       await membershipCreated(actor);
       const repeated = await fixture.startExecution(
-        agentId,
         "Read preserved member Memory",
       );
       expect(repeated.memory).toMatchObject({

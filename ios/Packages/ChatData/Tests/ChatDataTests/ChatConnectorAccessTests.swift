@@ -132,8 +132,8 @@ final class ChatConnectorAccessTests: XCTestCase {
     let client = fixture.http.client
     let action = try XCTUnwrap(
       ChatConnectorAction.parse(
-        "/agents/\(FixtureData.agentID)/connector-accounts/\(FixtureData.siblingID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
-        webURL: URL(string: "https://app.okou.ai")!, agentID: FixtureData.agentID,
+        "/connectors/accounts/\(FixtureData.siblingID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
+        webURL: URL(string: "https://app.okou.ai")!,
         threadID: FixtureData.threadID))
     let service = ChatConnectorService(client: client)
     let initial = try await service.status(action)
@@ -163,7 +163,7 @@ final class ChatConnectorAccessTests: XCTestCase {
       let service = ChatConnectorService(client: fixture.http.client)
       let action = ChatConnectorAction.configuration(
         target: custom ? .custom(FixtureData.customID) : .builtin("slack"),
-        agentID: FixtureData.agentID, threadID: nil)
+        threadID: nil)
       let initial = try await service.status(action)
       let status = try XCTUnwrap(initial)
       let result = try await service.start(

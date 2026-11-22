@@ -32,8 +32,6 @@ final class AuthenticationHTTPFixture: Sendable {
   let clientReads = AuthenticationRequestGate()
   let api = ChatHTTPFixture { request in
     switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
-    case ("GET", "/api/agents"):
-      return ChatHTTPResponse(body: "[]")
     case ("GET", "/api/feature-switches"):
       return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
     case ("GET", "/api/chat-threads/snapshot"):
@@ -42,7 +40,7 @@ final class AuthenticationHTTPFixture: Sendable {
     case ("GET", "/api/chat-threads/events"):
       return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
     case ("GET", "/api/indicators"):
-      return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+      return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
     case ("GET", "/api/user-model-preference"):
       return ChatHTTPResponse(body: "{}")
     case ("GET", "/api/run-models"):

@@ -114,9 +114,9 @@ test("mock Codex start helpers reject missing or incorrect profiles before dispa
     const script = [
       `source "${chatHelper}"`,
       `source "${apiHelper}"`,
-      'runner_chat_send() { printf "CHAT_REQUEST:%s\\n" "$4"; }',
-      '_runner_chat_execute() { printf "CHAT_REQUEST:%s\\n" "$4"; }',
-      `${helper} test-agent 'echo hello' 'echo continue'`,
+      'runner_chat_send() { printf "CHAT_REQUEST:%s\\n" "$3"; }',
+      '_runner_chat_execute() { printf "CHAT_REQUEST:%s\\n" "$3"; }',
+      `${helper} 'echo hello' 'echo continue'`,
     ].join("\n");
 
     for (const { name, profile, model } of invalidProfiles) {

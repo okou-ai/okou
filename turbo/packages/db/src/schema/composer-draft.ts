@@ -8,19 +8,20 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type {
-  AgentDraftAttachments,
-  AgentDraftUserMessage,
-} from "@okouai/db/jsonb-contracts/agent-draft";
+  ComposerDraftAttachments,
+  ComposerDraftUserMessage,
+} from "@okouai/db/jsonb-contracts/composer-draft";
 
-export const agentDrafts = pgTable(
+export const composerDrafts = pgTable(
   "agent_drafts",
   {
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    /** Canonical rich document for the agent composer's saved draft. */
+    /** Canonical rich document for the member's saved draft. */
     draftUserMessage:
-      jsonb("draft_user_message").$type<AgentDraftUserMessage>(),
-    draftAttachments: jsonb("draft_attachments").$type<AgentDraftAttachments>(),
+      jsonb("draft_user_message").$type<ComposerDraftUserMessage>(),
+    draftAttachments:
+      jsonb("draft_attachments").$type<ComposerDraftAttachments>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

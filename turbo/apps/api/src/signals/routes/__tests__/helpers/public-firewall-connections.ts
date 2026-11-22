@@ -30,20 +30,14 @@ export function createPublicFirewallConnections(context: TestContext) {
 
   async function run() {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD firewall agent",
-      description: "Exercises firewall auth resolution.",
-      visibility: "private",
-    });
 
     const created = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "resolve firewall auth",
     });
     const credential: { token?: string } = {};

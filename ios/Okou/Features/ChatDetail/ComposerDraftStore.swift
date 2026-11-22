@@ -31,9 +31,7 @@ final class ComposerDraftStore {
     let content: ChatDraftDocument
     var isFeedback: Bool { quote != nil }
     var hasParagraph: Bool {
-      content.parts.contains {
-        ["text", "chat_thread", "agent", "template"].contains($0["type"]?.string ?? "")
-      }
+      content.parts.contains(where: ComposerAttributedDocument.isInline)
     }
     var searchableRanges: [NSRange] {
       var result: [NSRange] = []

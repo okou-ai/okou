@@ -197,14 +197,13 @@ private final class ProjectSyncFixture {
         switch (request.httpMethod, request.url?.path) {
         case ("POST", "/api/realtime/token"):
           return ChatHTTPResponse(body: String(data: token, encoding: .utf8)!)
-        case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
         case ("GET", "/api/chat-threads/snapshot"):
           return ChatHTTPResponse(
             body: #"{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"#)
         case ("GET", "/api/chat-threads/events"):
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case ("GET", "/api/indicators"):
-          return ChatHTTPResponse(body: #"{"threads":{},"agents":{},"unreadAt":{}}"#)
+          return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
         case ("GET", "/api/projects/snapshot"):
           return ChatHTTPResponse(
             body: """

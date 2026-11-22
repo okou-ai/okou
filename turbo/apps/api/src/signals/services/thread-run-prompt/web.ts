@@ -20,7 +20,6 @@ export function createWebThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
   framework$: Computed<Promise<SupportedFramework>>,
-  singleAgent$: Computed<Promise<boolean>>,
   projectContext$: Computed<Promise<ThreadProjectContext | null>>,
 ): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
@@ -39,13 +38,9 @@ export function createWebThreadPrompt(
     if (!message) {
       throw new Error("Queued input event is missing userMessage");
     }
-    const [framework, featureSwitchContext, projectContext, singleAgent] =
-      await Promise.all([
-        get(framework$),
-        get(featureSwitches$),
-        get(projectContext$),
-        get(singleAgent$),
-      ]);
+    const [framework, featureSwitchContext, projectContext] = await Promise.all(
+      [get(framework$), get(featureSwitches$), get(projectContext$)],
+    );
     const triggerSource =
       pickedEvent.contextType === "agent_run" ? "agent" : "web";
     return {
@@ -59,8 +54,7 @@ export function createWebThreadPrompt(
           incompleteContext: "",
           priorContext: "",
           context: {
-            singleAgent,
-            projectContext: buildProjectContext(projectContext, singleAgent),
+            projectContext: buildProjectContext(projectContext),
             generationTemplatePrompt: "",
             computerUseHostDisplayName: null,
             triggerSource,
@@ -77,10 +71,7 @@ export function createWebThreadPrompt(
   });
 }
 
-function buildProjectContext(
-  context: ThreadProjectContext | null,
-  singleAgent: boolean,
-): string {
+function buildProjectContext(context: ThreadProjectContext | null): string {
   if (!context) {
     return "";
   }
@@ -100,9 +91,7 @@ function buildProjectContext(
     );
   }
   lines.push(
-    singleAgent
-      ? "Discover ALL related conversations with `okou chat list --project-id <PROJECT_ID> --limit all --json`, including your authorized archived and muted chats. Read relevant history with `okou chat messages --thread-id <id> --output-dir /tmp/okou-chat-history`. Check current availability with `okou project get <PROJECT_ID> --json`. Each call checks ownership and membership. A mention does not move this conversation, change its execution context, or grant access to accounts, credentials, Instructions or private data."
-      : "Discover ALL related conversations with `okou chat list --project-id <PROJECT_ID> --limit all --json`, including archived and muted chats across Agents. Read relevant history with `okou chat messages --thread-id <id> --output-dir /tmp/okou-chat-history`. Check current availability with `okou project get <PROJECT_ID> --json`. Each call checks live ownership and membership. A mention does not move this conversation, switch its Agent, or grant another Agent's instructions, connectors, credentials, or execution identity.",
+    "Discover ALL related conversations with `okou chat list --project-id <PROJECT_ID> --limit all --json`, including your authorized archived and muted chats. Read relevant history with `okou chat messages --thread-id <id> --output-dir /tmp/okou-chat-history`. Check current availability with `okou project get <PROJECT_ID> --json`. Each call checks ownership and membership. A mention does not move this conversation, change its execution context, or grant access to accounts, credentials, Instructions or private data.",
   );
   return lines.join("\n\n");
 }

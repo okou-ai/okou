@@ -144,17 +144,14 @@ async function connectCodexAccount(
 
 async function firewallRun(
   options: {
-    readonly prepareAgent?: (
-      actor: ApiTestUser,
-      agentId: string,
-    ) => Promise<void>;
+    readonly prepareActor?: (actor: ApiTestUser) => Promise<void>;
     readonly additionalConnectorSlugs?: readonly ConnectorSlug[];
   } = {},
 ) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const runnerGroup = await runs.configureRunnerGroup();
@@ -194,14 +191,9 @@ async function firewallRun(
       model: "claude-fable-5-1",
     });
     modelAccounts.add(provider.providerId);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD firewall agent",
-      visibility: "private",
-    });
 
-    await options.prepareAgent?.(actor, agent.agentId);
+    await options.prepareActor?.(actor);
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       model: "claude-fable-5-1",
       prompt: "resolve firewall auth",
     });
@@ -260,7 +252,6 @@ async function withPublicFirewallRun(
     run: {
       readonly runId: string;
       readonly threadId: string;
-      readonly agentId: string;
       readonly sandboxToken: string;
     },
   ) => Promise<void>,
@@ -269,19 +260,14 @@ async function withPublicFirewallRun(
   await fixture.run(async () => {
     const bdd = createBddApi(context);
     const runsApi = createRunsApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     const runnerGroup = await runsApi.configureRunnerGroup();
     const subscription = await fixture.fund();
     await runsApi.ensurePersonalSubscriptionModel(fixture.actor);
-    const agent = await bdd.createAgent(fixture.actor, {
-      displayName: "BDD firewall agent",
-      description: "Exercises firewall auth resolution.",
-      visibility: "private",
-    });
+
     const run = await runsApi.createThreadRun(fixture.actor, {
-      agentId: agent.agentId,
       prompt: "resolve firewall auth",
     });
     fixture.registerRun(run.runId);
@@ -292,7 +278,7 @@ async function withPublicFirewallRun(
       { authorization: `Bearer ${execution.firewallToken}` },
       fixture,
       subscription,
-      { ...run, agentId: agent.agentId, sandboxToken: execution.sandboxToken },
+      { ...run, sandboxToken: execution.sandboxToken },
     );
   });
 }
@@ -914,18 +900,14 @@ describe("FW-3: billable firewall lease", () => {
     const webhooks = createWebhookCallbackApi(context);
     const fw = createFirewallApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     const runnerGroup = await runsApi.configureRunnerGroup();
     const granted = await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD billable suspension agent",
-      visibility: "private",
-    });
+
     const run = await runsApi.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "billable auth across a subscription deletion",
     });
     await runsApi.heartbeatRunner(runnerGroup);
@@ -984,7 +966,7 @@ describe("FW-3: billable firewall lease", () => {
     const runsApi = createRunsApi(context);
     const fw = createFirewallApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     const runnerGroup = await runsApi.configureRunnerGroup();
@@ -995,12 +977,8 @@ describe("FW-3: billable firewall lease", () => {
       periodEndUnix: Math.floor(now() / 1000) - 60 * 86_400,
     });
     await runsApi.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD expired-credit billable agent",
-      visibility: "private",
-    });
+
     const run = await runsApi.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "billable auth with expired credits",
     });
 
@@ -1501,7 +1479,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       execution: receivedExecution,
     } = await firewallRun({
       additionalConnectorSlugs: [catalog.slug],
-      prepareAgent: async (owner) => {
+      prepareActor: async (owner) => {
         mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
         mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
         mockEnv("APP_URL", "https://app.okou.ai");

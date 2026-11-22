@@ -157,7 +157,7 @@ describe("CHAT-02: incomplete-round context", () => {
 
 describe("CHAT-02: prior rounds and thread titles", () => {
   it("leaves prior completed rounds to the session, generates the thread title, and accepts immutable follow-up revokes", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     mockGoogleText();
     let upstreamAuthorization: string | null = null;
     let titleRequests = 0;
@@ -315,7 +315,6 @@ describe("CHAT-02: prior rounds and thread titles", () => {
 
     const recommendedFollowupQueueEventId = randomUUID();
     const recommendedFollowupRequest = {
-      agentId,
       threadId: first.threadId,
       prompt: "use the recommended follow-up",
       revokesEventId: recommender.id,

@@ -176,14 +176,14 @@ private final class ThreadListReadFixture: Sendable {
         return ChatHTTPResponse(
           body: """
             {"chatThreads":[{"id":"98000000-0000-4000-8000-000000000001",\
-            "agentId":"98000000-0000-4000-8000-000000000002","title":"\(response.0)",\
+            "title":"\(response.0)",\
             "sortAt":"2026-11-13T00:00:00Z","createdAt":"2026-11-13T00:00:00Z",\
             "updatedAt":"2026-11-13T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
             """)
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       default: throw URLError(.unsupportedURL)
       }
     }

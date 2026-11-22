@@ -100,9 +100,6 @@ final class ChatModelCommandTests: XCTestCase {
       let fixture = ChatHTTPFixture { request in
         let path = request.url!.path
         switch path {
-        case "/api/agents":
-          return ChatHTTPResponse(
-            body: "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"isDefaultAgent\":true}]")
         case "/api/chat-threads":
           creations.withLock { $0.append(chatRequestBody(request)) }
           creationStarted.fulfill()
@@ -114,7 +111,7 @@ final class ChatModelCommandTests: XCTestCase {
         case "/api/chat-threads/snapshot":
           return ChatHTTPResponse(
             body: """
-              {"chatThreads":[{"id":"\(ModelHTTPFixtures.threadID)","agentId":"\(ModelHTTPFixtures.agentID)","title":null,"selectedModel":"\(model)","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
+              {"chatThreads":[{"id":"\(ModelHTTPFixtures.threadID)","title":null,"selectedModel":"\(model)","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":null,"latestSeqId":null}
               """)
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
@@ -623,7 +620,7 @@ extension XCTestCase {
 
   fileprivate func thread() -> ChatThread {
     ChatThread(
-      id: ModelHTTPFixtures.threadID, agentID: ModelHTTPFixtures.agentID,
+      id: ModelHTTPFixtures.threadID,
       title: "Example", selectedModel: "codex-model", createdAt: Date(), updatedAt: Date(),
       sortAt: Date())
   }

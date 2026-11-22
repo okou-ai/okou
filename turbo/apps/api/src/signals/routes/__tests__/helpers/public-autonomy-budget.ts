@@ -8,7 +8,6 @@ interface PublicBudgetRun {
   readonly runId: string;
   readonly threadId: string;
   readonly token: string;
-  readonly agentId: string;
 }
 
 /** Issue execution credentials, then release the Run's live slot. */
@@ -18,7 +17,6 @@ export async function launchBudgetRun(
   run: {
     readonly runId: string;
     readonly threadId: string;
-    readonly agentId?: string;
   },
 ): Promise<PublicBudgetRun> {
   const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
@@ -34,5 +32,5 @@ export async function launchBudgetRun(
     );
     await flushWaitUntilForTest();
   });
-  return { ...run, token, agentId: run.agentId ?? owned.agentId };
+  return { ...run, token };
 }

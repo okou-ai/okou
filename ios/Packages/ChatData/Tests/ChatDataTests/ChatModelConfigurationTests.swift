@@ -87,9 +87,6 @@ final class ChatModelConfigurationTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       requests.withLock { $0.append(request) }
       switch request.url!.path {
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body: "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"isDefaultAgent\":true}]")
       case "/api/chat-threads":
         return ChatHTTPResponse(
           body:

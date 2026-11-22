@@ -17,7 +17,7 @@ import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddApi } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -101,7 +101,7 @@ describe("private Runner VNC authority", () => {
   });
 
   async function executionRuntime(
-    owner: Pick<VncRuntimeFixture, "orgId" | "userId" | "agentId">,
+    owner: Pick<VncRuntimeFixture, "orgId" | "userId">,
   ) {
     const actor = createBddApi(context).user(owner);
     const runnerIdentity = {
@@ -113,7 +113,6 @@ describe("private Runner VNC authority", () => {
       heartbeatAuthorization: vncRunnerHeaders.authorization,
     });
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId: owner.agentId,
       prompt: "Use my configured VNC desktop",
     });
     const input = await runs.executionInput(runId);
@@ -149,17 +148,13 @@ describe("private Runner VNC authority", () => {
       throw new Error("Expected a VNC owner organization");
     }
     const owner = { orgId: actor.orgId, userId: actor.userId };
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agentId = await bdd.readDefaultAgentId(actor);
-    if (!agentId) {
-      throw new Error("Expected onboarding to provide the default Agent");
-    }
     api.authenticate(owner);
     const connection = await accept(
       api.connections().create({
@@ -171,11 +166,10 @@ describe("private Runner VNC authority", () => {
     if (options.defaultEnabled !== false) {
       await api.enableDefault(owner, "vnc", connection.body.id);
     }
-    const running = await executionRuntime({ ...owner, agentId });
+    const running = await executionRuntime({ ...owner });
     return {
       ...owner,
       ...running,
-      agentId,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
       credentialId: requireVncCredentialId(connection.body),
@@ -1564,7 +1558,7 @@ describe("private Runner VNC authority", () => {
       expect(checked.status).toBe(401);
       expect(checked.headers.get("cache-control")).toBe("no-store");
     }
-    const auth = createAuthOrgAgentsBddApi(context);
+    const auth = createAuthOrgBddApi(context);
     const actor = auth.user();
     auth.mockClerkOrg(actor);
     const pat = await auth.createCliToken(actor);

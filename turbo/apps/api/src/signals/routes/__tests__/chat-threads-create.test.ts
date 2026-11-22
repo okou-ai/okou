@@ -60,13 +60,12 @@ interface AgentFixture {
   readonly actor: ApiTestUser;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
 }
 
 /** Creates an agent with caller-owned subscriptions and a saved member model. */
 async function seedAgent(): Promise<AgentFixture> {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await api.ensurePersonalSubscriptionModel(actor, {
     model: WORKSPACE_DEFAULT_MODEL,
   });
@@ -74,10 +73,7 @@ async function seedAgent(): Promise<AgentFixture> {
     actor,
   );
   await api.updateUserModelPreference(actor, WORKSPACE_DEFAULT_MODEL);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Chat thread create agent",
-    visibility: "private",
-  });
+
   if (!actor.orgId) {
     throw new Error("Expected the seeded actor to belong to an org");
   }
@@ -90,7 +86,6 @@ async function seedAgent(): Promise<AgentFixture> {
     actor,
     userId: actor.userId,
     orgId: actor.orgId,
-    agentId: agent.agentId,
   };
 }
 
@@ -541,7 +536,7 @@ describe("POST /api/chat-threads", () => {
   it("refreshes builtin and custom selection authorization after Chat allowance changes", async () => {
     const actor = bdd.user();
 
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const builtin = await connectorApi.connectManualGrant(
       actor,
       "openai",
@@ -1179,7 +1174,6 @@ describe("POST /api/chat-threads", () => {
       [201],
     );
     const { runId } = await api.createThreadRun(fixture.actor, {
-      agentId: fixture.agentId,
       threadId: source.body.id,
       prompt: "Create a separate thread using the workspace default",
     });
@@ -1250,7 +1244,6 @@ describe("POST /api/chat-threads", () => {
     expect(source.body.serviceTier).toBe("priority");
 
     const { runId } = await api.createThreadRun(fixture.actor, {
-      agentId: fixture.agentId,
       threadId: source.body.id,
       prompt: "Create a separate thread with the member's priority default",
     });

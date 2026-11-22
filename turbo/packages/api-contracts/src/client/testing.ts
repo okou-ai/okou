@@ -5,23 +5,6 @@
 
 import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
-import {
-  agentDraftContract as OriginalAgentDraftContract,
-  composerDraftContract as OriginalComposerDraftContract,
-} from "../contracts/agent-draft";
-import { agentDraftContract, composerDraftContract } from "./agent-draft";
-import { agentSetupPromptsContract as OriginalAgentSetupPromptsContract } from "../contracts/agent-setup-prompts";
-import { agentSetupPromptsContract } from "./agent-setup-prompts";
-import {
-  agentInstructionsContract as OriginalAgentInstructionsContract,
-  agentsByIdContract as OriginalAgentsByIdContract,
-  agentsMainContract as OriginalAgentsMainContract,
-} from "../contracts/agents";
-import {
-  agentInstructionsContract,
-  agentsByIdContract,
-  agentsMainContract,
-} from "./agents";
 import { androidUpdatesContract as OriginalAndroidUpdatesContract } from "../contracts/android-updates";
 import { androidUpdatesContract } from "./android-updates";
 import { artifactCatalogContract as OriginalArtifactCatalogContract } from "../contracts/artifact-catalog";
@@ -43,13 +26,11 @@ import { authContract } from "./auth";
 import {
   bankingContract as OriginalBankingContract,
   bankingPublicContract as OriginalBankingPublicContract,
-  bankingUserContract as OriginalBankingUserContract,
   bankingWorkspaceContract as OriginalBankingWorkspaceContract,
 } from "../contracts/banking";
 import {
   bankingContract,
   bankingPublicContract,
-  bankingUserContract,
   bankingWorkspaceContract,
 } from "./banking";
 import {
@@ -180,6 +161,8 @@ import { cloudflareAccessContract as OriginalCloudflareAccessContract } from "..
 import { cloudflareAccessContract } from "./cloudflare-access";
 import { codexDeviceAuthContract as OriginalCodexDeviceAuthContract } from "../contracts/codex-device-auth";
 import { codexDeviceAuthContract } from "./codex-device-auth";
+import { composerDraftContract as OriginalComposerDraftContract } from "../contracts/composer-draft";
+import { composerDraftContract } from "./composer-draft";
 import {
   computerUseAuditEventsContract as OriginalComputerUseAuditEventsContract,
   computerUseAuthorizationRequestsContract as OriginalComputerUseAuthorizationRequestsContract,
@@ -805,12 +788,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ClientRouter,
   AppRouter,
 ])[] = [
-  [agentDraftContract, OriginalAgentDraftContract],
-  [composerDraftContract, OriginalComposerDraftContract],
-  [agentSetupPromptsContract, OriginalAgentSetupPromptsContract],
-  [agentInstructionsContract, OriginalAgentInstructionsContract],
-  [agentsByIdContract, OriginalAgentsByIdContract],
-  [agentsMainContract, OriginalAgentsMainContract],
   [androidUpdatesContract, OriginalAndroidUpdatesContract],
   [artifactCatalogContract, OriginalArtifactCatalogContract],
   [artifactDownloadsContract, OriginalArtifactDownloadsContract],
@@ -822,7 +799,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [authContract, OriginalAuthContract],
   [bankingContract, OriginalBankingContract],
   [bankingPublicContract, OriginalBankingPublicContract],
-  [bankingUserContract, OriginalBankingUserContract],
   [bankingWorkspaceContract, OriginalBankingWorkspaceContract],
   [billingAutoRechargeContract, OriginalBillingAutoRechargeContract],
   [billingCheckoutContract, OriginalBillingCheckoutContract],
@@ -904,6 +880,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [cliAuthTokenContract, OriginalCliAuthTokenContract],
   [cloudflareAccessContract, OriginalCloudflareAccessContract],
   [codexDeviceAuthContract, OriginalCodexDeviceAuthContract],
+  [composerDraftContract, OriginalComposerDraftContract],
   [computerUseAuditEventsContract, OriginalComputerUseAuditEventsContract],
   [
     computerUseAuthorizationRequestsContract,

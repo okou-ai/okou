@@ -1,5 +1,6 @@
 import ChatData
 import ChatDataTestSupport
+import ChatDomain
 import Foundation
 import XCTest
 
@@ -13,16 +14,16 @@ final class NavigationResourceTests: XCTestCase {
     let cacheDirectory = CacheTestDirectory(owner: self)
     let cache = cacheDirectory.cache(
       scope: ChatCacheScope(apiBaseURL: server.http.baseURL, userID: "user", workspaceID: "org"))
-    let previousNavigation = try JSONDecoder().decode(
-      SidebarNavigationSnapshot.self,
-      from: Data(
-        #"""
-        {"agents":[{"agentId":"\#(draftAgentID)","isDefaultAgent":true,"displayName":"Previous profile"}]}
-        """#.utf8))
-    try await cache.saveNavigation(previousNavigation)
-    let oldComposer = server.composer(storage: server.storage())
-    oldComposer.text = "Unsent before upgrade"
-    oldComposer.close()
+    let previousID = "43000000-0000-4000-8000-000000000002"
+    _ = try await cache.loadThreadList()
+    try LegacyComposerFixture.storeLocation(previousID, in: cacheDirectory.url)
+    let oldKey = "agent/" + previousID
+    var document = ChatDraftDocument()
+    document.replaceText("Unsent before upgrade")
+    let record = ComposerDraftStore.LocalRecord(
+      value: ComposerDraft(document: document),
+      files: [], baseline: nil, dirty: true, cleared: false, consumedVoiceID: nil)
+    try server.storage().save(record, key: oldKey)
 
     let workspace = WorkspaceStore(
       client: server.http.client, webURL: server.http.baseURL, cache: cache,
@@ -30,12 +31,11 @@ final class NavigationResourceTests: XCTestCase {
     defer { workspace.close() }
     await workspace.prepareWorkspaceComposer()
     XCTAssertEqual(workspace.newChatDraft, "Unsent before upgrade")
+    XCTAssertNil(try server.storage().load(oldKey, as: ComposerDraftStore.LocalRecord.self))
+    XCTAssertNotNil(try server.storage().load("workspace", as: ComposerDraftStore.LocalRecord.self))
     workspace.setPhase(.active)
     await workspace.newComposer.synchronize()
     let requests = server.state.value.withLock { $0.paths }
     XCTAssertTrue(requests.contains("GET /api/chat-drafts/composer"))
-    XCTAssertFalse(requests.contains(where: { $0.contains("/api/agents") }))
-    XCTAssertNil(workspace.selectedAgentID)
-    XCTAssertEqual(workspace.currentAgentName, "Okou")
   }
 }

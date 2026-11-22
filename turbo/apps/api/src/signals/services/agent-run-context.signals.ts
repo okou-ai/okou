@@ -97,7 +97,6 @@ import {
 import { createRunTemplateSources } from "./run-template-sources.service";
 
 export interface BootstrapFeatureSwitchContext {
-  readonly personalExecution: boolean;
   readonly userId: string;
   readonly orgId: string;
   readonly email?: string;
@@ -324,7 +323,6 @@ function capturedFeatureSwitchContext(
     orgId: scope.orgId,
     email: member.profile?.email ?? undefined,
     overrides,
-    personalExecution: true,
   };
 }
 

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_resources">チャットの資料</string>
+    <string name="chat_resources_back">チャットの資料に戻る</string>
     <string name="artifact_title">成果物</string>
     <string name="artifact_search">成果物を検索</string>
     <string name="artifact_return_workspace">ワークスペースに戻る</string>

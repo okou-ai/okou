@@ -204,7 +204,7 @@ function IntroLink({
 function useLaterLabel(): string {
   const { t } = useTranslation();
   return t(($) => {
-    return $.chat.agentPage.getStarted.intro.later;
+    return $.chat.homePage.getStarted.intro.later;
   });
 }
 
@@ -223,13 +223,13 @@ function ConnectorIntro({
     <IntroLayout
       title={t(
         ($) => {
-          return $.chat.agentPage.getStarted.intro.connector.title;
+          return $.chat.homePage.getStarted.intro.connector.title;
         },
         { assistantName },
       )}
       description={t(
         ($) => {
-          return $.chat.agentPage.getStarted.intro.connector.description;
+          return $.chat.homePage.getStarted.intro.connector.description;
         },
         { assistantName },
       )}
@@ -239,7 +239,7 @@ function ConnectorIntro({
       confirm={
         <IntroLink pathname={ROUTES.connectors} onClose={onClose} escape>
           {t(($) => {
-            return $.chat.agentPage.getStarted.intro.connector.confirm;
+            return $.chat.homePage.getStarted.intro.connector.confirm;
           })}
         </IntroLink>
       }
@@ -274,16 +274,16 @@ function SlackIntro({ onClose, reward }: IntroProps) {
       ? (slack.installUrl ?? null)
       : null;
   const confirmLabel = t(($) => {
-    return $.chat.agentPage.getStarted.intro.slack.confirm;
+    return $.chat.homePage.getStarted.intro.slack.confirm;
   });
   return (
     <IntroLayout
       title={t(($) => {
-        return $.chat.agentPage.getStarted.intro.slack.title;
+        return $.chat.homePage.getStarted.intro.slack.title;
       })}
       description={t(
         ($) => {
-          return $.chat.agentPage.getStarted.intro.slack.description;
+          return $.chat.homePage.getStarted.intro.slack.description;
         },
         { assistantName },
       )}
@@ -306,7 +306,7 @@ function SlackIntro({ onClose, reward }: IntroProps) {
     >
       <IntroNote>
         {t(($) => {
-          return $.chat.agentPage.getStarted.intro.slack.note;
+          return $.chat.homePage.getStarted.intro.slack.note;
         })}
       </IntroNote>
     </IntroLayout>
@@ -322,10 +322,10 @@ function InviteIntro({
   return (
     <IntroLayout
       title={t(($) => {
-        return $.chat.agentPage.getStarted.intro.invite.title;
+        return $.chat.homePage.getStarted.intro.invite.title;
       })}
       description={t(($) => {
-        return $.chat.agentPage.getStarted.intro.invite.description;
+        return $.chat.homePage.getStarted.intro.invite.description;
       })}
       reward={reward}
       figure={<QuestFigure art="invite" />}
@@ -338,14 +338,14 @@ function InviteIntro({
           data-testid="quest-intro-confirm"
         >
           {t(($) => {
-            return $.chat.agentPage.getStarted.intro.invite.confirm;
+            return $.chat.homePage.getStarted.intro.invite.confirm;
           })}
         </Button>
       }
     >
       <IntroNote>
         {t(($) => {
-          return $.chat.agentPage.getStarted.intro.invite.note;
+          return $.chat.homePage.getStarted.intro.invite.note;
         })}
       </IntroNote>
     </IntroLayout>
@@ -383,12 +383,12 @@ function WorkflowIntro({ onClose, reward }: IntroProps) {
     <IntroLayout
       title={t(
         ($) => {
-          return $.chat.agentPage.getStarted.intro.workflow.title;
+          return $.chat.homePage.getStarted.intro.workflow.title;
         },
         { assistantName },
       )}
       description={t(($) => {
-        return $.chat.agentPage.getStarted.intro.workflow.description;
+        return $.chat.homePage.getStarted.intro.workflow.description;
       })}
       reward={reward}
       secondaryLabel={useLaterLabel()}

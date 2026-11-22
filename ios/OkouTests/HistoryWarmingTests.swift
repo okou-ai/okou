@@ -194,7 +194,6 @@ private final class HistoryWarmingFixture {
     ])
     http = ChatHTTPFixture { request in
       switch (request.httpMethod, request.url?.path) {
-      case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
       case ("POST", "/api/realtime/token"):
         return ChatHTTPResponse(body: String(data: token, encoding: .utf8)!)
       case ("GET", "/api/chat-threads/snapshot"):
@@ -202,7 +201,7 @@ private final class HistoryWarmingFixture {
         let sequence = title == "Original chat" ? 1 : 2
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(warmingThreadID)","agentId":"\(warmingAgentID)",\
+            {"chatThreads":[{"id":"\(warmingThreadID)",\
             "title":"\(title)","createdAt":"2026-10-20T00:00:00Z",\
             "updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],\
             "latestEventId":"\(warmingListEventID(sequence))","latestSeqId":\(sequence)}
@@ -223,11 +222,10 @@ private final class HistoryWarmingFixture {
           body: "{\"events\":[\(events.joined(separator: ","))],\"hasMore\":false}")
       case ("GET", "/api/indicators"):
         let unread = state.unread.withLock { $0 }
-        let agents = unread ? "\"\(warmingAgentID)\":\"unread\"" : ""
         let threads = unread ? "\"\(warmingThreadID)\":\"unread\"" : ""
         let unreadAt = unread ? "\"\(warmingThreadID)\":\"2026-10-20T00:00:00Z\"" : ""
         return ChatHTTPResponse(
-          body: "{\"agents\":{\(agents)},\"unreadAt\":{\(unreadAt)},\"threads\":{\(threads)}}")
+          body: "{\"unreadAt\":{\(unreadAt)},\"threads\":{\(threads)}}")
       case ("POST", "/api/chat/events/catch-up"): return try await batch(request)
       default: throw URLError(.unsupportedURL)
       }
@@ -278,7 +276,7 @@ private func emptyWarmingResponse() -> ChatHTTPResponse {
 private func warmingListEvent(_ sequence: Int, kind: String, title: String) -> String {
   """
   {"id":"\(warmingListEventID(sequence))","seqId":\(sequence),"kind":"\(kind)",\
-  "chatThreadId":"\(warmingThreadID)","agentId":"\(warmingAgentID)",\
+  "chatThreadId":"\(warmingThreadID)",\
   "title":"\(title)","createdAt":"2026-10-20T00:00:00Z"}
   """
 }
@@ -288,4 +286,3 @@ private func warmingListEventID(_ sequence: Int) -> String {
 }
 
 private let warmingThreadID = "73000000-0000-4000-8000-000000000001"
-private let warmingAgentID = "73000000-0000-4000-8000-000000000002"

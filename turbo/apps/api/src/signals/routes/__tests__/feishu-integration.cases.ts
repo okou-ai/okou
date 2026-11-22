@@ -67,7 +67,7 @@ import { feishuBrowserConnectRoutes } from "../feishu-browser-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import {
@@ -113,7 +113,7 @@ const customConnectorByIdTestRoutes = Object.freeze([
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const runsApi = createRunsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
@@ -232,7 +232,6 @@ interface FeishuInstallationFixture {
   readonly appId: string;
   readonly callbackUrl: string;
   readonly installationId: string;
-  readonly defaultAgentId: string;
 }
 
 interface FeishuRunFixture extends FeishuInstallationFixture {
@@ -1201,20 +1200,12 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         [FeatureSwitchKey.OkouDebug]: true,
       });
     });
-    authOrgApi.acceptAgentStorageWrites();
-    const onboardingAgentId = await own(() => {
-      return authOrgApi.readDefaultAgentId(actor);
-    });
+    authOrgApi.acceptStorageWrites();
+    await authOrgApi.provisionWorkspace(actor);
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
-    const defaultAgentId = requireValue(
-      onboardingAgentId,
-      "Expected the normal default Agent",
-    );
-    const defaultAgent = await own(() => {
-      return authOrgApi.readAgent(actor, defaultAgentId);
-    });
+
     await grantEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const configured = await configureTestInstallation({ appId });
@@ -1222,7 +1213,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       actor,
       appId,
       ...configured,
-      defaultAgentId: defaultAgent.agentId,
     };
   }
 
@@ -1239,25 +1229,17 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         [FeatureSwitchKey.OkouDebug]: true,
       });
     });
-    authOrgApi.acceptAgentStorageWrites();
+    authOrgApi.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     installWorkflowVolumeS3Fixture(context, new Map(), {
       bundlesOnly: true,
     });
     runsApi.acceptTelemetryIngest();
-    const onboardingAgentId = await own(() => {
-      return authOrgApi.readDefaultAgentId(actor);
-    });
+    await authOrgApi.provisionWorkspace(actor);
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
-    const defaultAgentId = requireValue(
-      onboardingAgentId,
-      "Expected the normal default Agent",
-    );
-    const defaultAgent = await own(() => {
-      return authOrgApi.readAgent(actor, defaultAgentId);
-    });
+
     const subscription = await grantEntitlement(actor);
     await own(() => {
       return runsApi.ensurePersonalSubscriptionModel(actor, {
@@ -1279,7 +1261,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       appId,
       callbackUrl,
       installationId,
-      defaultAgentId: defaultAgent.agentId,
     };
   }
 
@@ -1902,16 +1883,11 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu plaintext callback agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2105,16 +2081,11 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu single-bot agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2272,16 +2243,11 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu concurrent setup agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2350,16 +2316,11 @@ export function registerFeishuIntegrationTests(
             orgId: `org_${randomUUID()}`,
             orgRole: "org:admin",
           });
-          authOrgApi.acceptAgentStorageWrites();
+          authOrgApi.acceptStorageWrites();
           await own(() => {
             return enableFeishuIntegration(platform, actor);
           });
-          await own(() => {
-            return authOrgApi.createAgent(actor, {
-              displayName: "Feishu replay setup agent",
-              visibility: "public",
-            });
-          });
+
           mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
           const client = feishuConnectClient(platform);
           const headers = { authorization: "Bearer clerk-session" };
@@ -2495,7 +2456,7 @@ export function registerFeishuIntegrationTests(
       );
 
       it("keeps a concurrently registered Feishu app in its winning organization", async () => {
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         const owners: {
           readonly actor: ApiTestUser;
         }[] = [];
@@ -2508,12 +2469,7 @@ export function registerFeishuIntegrationTests(
           await own(() => {
             return enableFeishuIntegration(platform, actor);
           });
-          await own(() => {
-            return authOrgApi.createAgent(actor, {
-              displayName: "Feishu competing setup agent",
-              visibility: "public",
-            });
-          });
+
           owners.push({ actor });
         }
         context.mocks.clerk.authenticateRequest.mockImplementation(
@@ -2640,16 +2596,11 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu connector retry agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2786,16 +2737,11 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu connector repair agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2887,16 +2833,11 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu managed bot agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -3018,7 +2959,7 @@ export function registerFeishuIntegrationTests(
           orgId: admin.orgId,
           orgRole: "org:member",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         context.mocks.s3.send.mockImplementation((command: unknown) => {
           if (
             command instanceof HeadObjectCommand &&
@@ -3040,19 +2981,11 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, member);
         });
-        const onboardingAgentId = await own(() => {
-          return authOrgApi.readDefaultAgentId(admin);
-        });
+        await authOrgApi.provisionWorkspace(admin);
         await own(() => {
           return authOrgApi.completeOnboarding(admin);
         });
-        const defaultAgentId = requireValue(
-          onboardingAgentId,
-          "Expected the normal default Agent",
-        );
-        await own(() => {
-          return authOrgApi.readAgent(admin, defaultAgentId);
-        });
+
         mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -3790,16 +3723,11 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu callback agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -3900,23 +3828,15 @@ export function registerFeishuIntegrationTests(
           orgId: `org_${randomUUID()}`,
           orgRole: "org:admin",
         });
-        authOrgApi.acceptAgentStorageWrites();
+        authOrgApi.acceptStorageWrites();
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        const onboardingAgentId = await own(() => {
-          return authOrgApi.readDefaultAgentId(actor);
-        });
+        await authOrgApi.provisionWorkspace(actor);
         await own(() => {
           return authOrgApi.completeOnboarding(actor);
         });
-        const defaultAgentId = requireValue(
-          onboardingAgentId,
-          "Expected the normal default Agent",
-        );
-        await own(() => {
-          return authOrgApi.readAgent(actor, defaultAgentId);
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -7029,8 +6949,7 @@ export function registerFeishuIntegrationTests(
 
       it("resumes queued Feishu group tasks through the canonical session", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-          fixture;
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
         const secondOpenId = "ou_feishu_canonical_group_user";
         const secondActor = createActor({
           userId: `user_${randomUUID()}`,
@@ -7057,9 +6976,7 @@ export function registerFeishuIntegrationTests(
             "claude-fable-5-1",
           );
         });
-        await own(() => {
-          return authOrgApi.readAgent(actor, defaultAgentId);
-        });
+
         fixtureState.outboundMessages = [];
         const firstMessageId = `om_${randomUUID()}`;
         const firstPrompt = "first canonical group task";

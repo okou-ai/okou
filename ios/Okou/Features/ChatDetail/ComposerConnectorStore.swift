@@ -9,7 +9,7 @@ final class ComposerConnectorStore {
   let service: ChatComposerAccess
   let webURL: URL
   let threadID: String?
-  private(set) var agentID: String?
+
   private(set) var connectors: [ChatComposerConnector] = []
   private(set) var remotes: ChatRemotesOverview?
   private(set) var threadAccess: ChatThreadRemoteAccess?
@@ -21,7 +21,6 @@ final class ComposerConnectorStore {
   private(set) var notice: String?
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private(set) var pendingOptions = ChatComposerOptions()
-  private var pendingByAgent: [String: ChatComposerOptions] = [:]
   private let authorizationService: ChatConnectorService
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
@@ -58,7 +57,6 @@ final class ComposerConnectorStore {
     self.authorizationService = authorizationService
     self.webURL = webURL
     threadID = thread?.id
-    agentID = thread?.agentID
     self.didFail = didFail
     resources = makeResources()
   }
@@ -73,38 +71,6 @@ final class ComposerConnectorStore {
       connector.hasPermissions
     else { return false }
     return !connector.access.accounts.isEmpty
-  }
-
-  func configure(agentID: String?) {
-    guard !closed, self.agentID != agentID else { return }
-    if threadID == nil, let previous = self.agentID { pendingByAgent[previous] = pendingOptions }
-    generation = UUID()
-    resources?.close()
-    refreshTask?.cancel()
-    refreshTask = nil
-    closeDirectory()
-    closeAccounts()
-    accountWrite?.cancel()
-    accountWrite = nil
-    closePermissions()
-    permissionWrite?.cancel()
-    permissionWrite = nil
-    authorization.cancel()
-    authorization.activationError = nil
-    webDestination = nil
-    self.agentID = agentID
-    pendingOptions = agentID.flatMap { pendingByAgent[$0] } ?? ChatComposerOptions()
-    connectors = []
-    remotes = nil
-    threadAccess = nil
-    currentComputerAccess = nil
-    vncConnections = []
-    error = nil
-    notice = nil
-    uncertain = false
-    isSaving = false
-    refreshAgain = false
-    resources = makeResources()
   }
 
   /// One owned confirmation cycle can serve several refresh callers.
@@ -149,7 +115,7 @@ final class ComposerConnectorStore {
   private func makeResources() -> ComposerConnectorResources? {
     let request = generation
     return ComposerConnectorResources(
-      service: service, agentID: agentID, threadID: threadID, options: pendingOptions,
+      service: service, threadID: threadID, options: pendingOptions,
       sleep: readRetrySleep,
       didLoadConnected: { [weak self] entries in
         guard let self, !closed, request == generation else { return }
@@ -182,7 +148,7 @@ final class ComposerConnectorStore {
     var submitted = false
     defer { if request == generation { isSaving = false } }
     do {
-      try await service.validate(agentID: agentID, threadID: threadID)
+      try await service.validate(threadID: threadID)
       guard !closed, !Task.isCancelled, request == generation else { return }
       submitted = true
       try await operation()
@@ -305,7 +271,7 @@ final class ComposerConnectorStore {
     guard !closed else { return }
     authorization.activate(
       .configuration(
-        target: target, agentID: agentID, threadID: threadID, connectionID: accountID))
+        target: target, threadID: threadID, connectionID: accountID))
   }
   func openWeb(path: String, query: [URLQueryItem] = []) {
     guard !closed else { return }
@@ -320,10 +286,9 @@ final class ComposerConnectorStore {
     if let threadID { query.append(URLQueryItem(name: "returnThread", value: threadID)) }
     openWeb(path: "connectors", query: query)
   }
-  func consumeNewChatOptions(agentID: String?) {
+  func consumeNewChatOptions() {
     guard threadID == nil else { return }
-    if let agentID { pendingByAgent[agentID] = nil }
-    if self.agentID == agentID { pendingOptions = ChatComposerOptions() }
+    pendingOptions = ChatComposerOptions()
   }
   func openDirectory() {
     guard !closed else { return }
@@ -341,7 +306,7 @@ final class ComposerConnectorStore {
     guard !closed else { return nil }
     closePermissions()
     permissions = ComposerConnectorPermissionResources(
-      composer: self, agentID: agentID, slug: slug, label: label, didFail: didFail)
+      composer: self, slug: slug, label: label, didFail: didFail)
     return permissions
   }
 
@@ -353,7 +318,7 @@ final class ComposerConnectorStore {
   func applyPermissions(
     owner: ComposerConnectorPermissionResources, edits: [ChatPermissionEdit], reset: Bool
   ) async {
-    guard !closed, permissions === owner, agentID == owner.agentID,
+    guard !closed, permissions === owner,
       permissionWrite == nil, !isSaving, !uncertain
     else { return }
     let request = generation
@@ -365,7 +330,7 @@ final class ComposerConnectorStore {
       }
       guard !closed, !Task.isCancelled, request == generation else { return }
       if let presented = permissions,
-        presented.agentID == owner.agentID, presented.slug == owner.slug
+        presented.slug == owner.slug
       {
         await presented.refresh()
       }
@@ -379,7 +344,7 @@ final class ComposerConnectorStore {
   ) -> ComposerConnectorAccountResources? {
     guard !closed else { return nil }
     let page = ComposerConnectorAccountResources(
-      composer: self, connector: connector, agentID: agentID,
+      composer: self, connector: connector,
       managesDefaults: managesDefaults, didFail: didFail)
     accountPages.append(page)
     return page
@@ -398,7 +363,6 @@ final class ComposerConnectorStore {
     owner: ComposerConnectorAccountResources, action: ComposerConnectorAccountResources.Action
   ) async {
     guard !closed, !owner.isClosed, accountPages.contains(where: { $0 === owner }),
-      owner.agentID == agentID,
       connectors.contains(where: { $0.target == owner.connector.target }),
       accountWrite == nil, !isSaving, !uncertain
     else { return }

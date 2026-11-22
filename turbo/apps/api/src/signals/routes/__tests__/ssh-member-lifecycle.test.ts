@@ -24,7 +24,7 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { tailscaleRoutes } from "../tailscale";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import {
   deleteOrgMembership$,
   seedOrgMembership$,
@@ -35,7 +35,7 @@ import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
-const org = createAuthOrgAgentsBddApi(context);
+const org = createAuthOrgBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function connections() {
