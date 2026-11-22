@@ -142,6 +142,7 @@ internal fun SessionRoot(
                         }
                     },
                     recovery = ready?.recovery,
+                    artifacts = ready?.artifacts,
                     workspaceName = organization?.name,
                     workspaceAvatar =
                         organization?.let { workspace ->
