@@ -7,6 +7,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -79,12 +80,14 @@ internal class ArtifactApiFixture(
         )
     var beforeCatalog: (RecordedRequest) -> Unit = {}
     var beforeDownload: () -> Unit = {}
+    @Volatile var beforeSitePreview: () -> Unit = {}
     var pageSize = 40
     var downloadGranted = true
     val catalogQueries = CopyOnWriteArrayList<Pair<String?, String?>>()
     val catalogScopes = CopyOnWriteArrayList<Pair<String?, String?>>()
     val requestedDownloads = CopyOnWriteArrayList<String>()
     val requestedReferences = CopyOnWriteArrayList<String>()
+    val requestedSiteGrants = CopyOnWriteArrayList<String>()
     private val currentDispatcher = api.commandResponse
 
     fun installInlineHistory() {
@@ -104,6 +107,22 @@ internal class ArtifactApiFixture(
         api.commandResponse = { request ->
             when (val path = checkNotNull(request.requestUrl).encodedPath) {
                 "/api/artifacts/catalog" -> page(request)
+                "/api/host/sites/fixture/preview" -> {
+                    assertEquals("fixture.okou.app", request.requestUrl?.queryParameter("hostname"))
+                    val grant =
+                        api.server
+                            .url("/artifact-bytes/site")
+                            .newBuilder()
+                            .addQueryParameter("grant", UUID.randomUUID().toString())
+                            .build()
+                    requestedSiteGrants.add(grant.toString())
+                    beforeSitePreview()
+                    jsonResponse("""{"url":"$grant","expiresAt":null}""")
+                }
+                "/artifact-bytes/site" ->
+                    MockResponse()
+                        .setHeader("Content-Type", "text/html; charset=utf-8")
+                        .setBody("<!doctype html><title>${site.title}</title><p>${site.title}</p>")
                 "/artifact-bytes/image" -> {
                     assertNull(request.getHeader("Authorization"))
                     MockResponse().setBody(Buffer().write(imageBody ?: sampleImage()))
@@ -222,6 +241,7 @@ internal class ArtifactApiFixture(
         jsonResponse(
             buildJsonObject {
                     wire(item).forEach { (name, value) -> put(name, value) }
+                    if (item == summary || item == site) put("sourceChatThreadId", CHAT_PERSONAL)
                     when (item) {
                         site,
                         slides ->
@@ -232,7 +252,6 @@ internal class ArtifactApiFixture(
                                 ),
                             )
                         else -> {
-                            if (item == summary) put("sourceChatThreadId", CHAT_PERSONAL)
                             val path =
                                 when (item) {
                                     checklist -> "/artifacts/checklist1.md"

@@ -5,6 +5,10 @@ import ai.okou.android.auth.SessionModel
 import android.app.Activity
 import android.content.Intent
 import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebView
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -14,6 +18,7 @@ import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -25,13 +30,17 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
+import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -253,6 +262,96 @@ class ArtifactCatalogRootTest {
     }
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun cachedDocumentAndImagePreviewsStayReadableOffline() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        val backToCatalog = compose.onNodeWithContentDescription("Back to artifacts")
+
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        val documentText = "Positioning: help teams move ongoing work forward"
+        awaitText(documentText, partial = true)
+        backToCatalog.performClick()
+
+        awaitText(fixture.image.title)
+        compose.onNodeWithText(fixture.image.title).performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 10_000)
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
+        backToCatalog.performClick()
+        awaitText("Showing saved results offline")
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        compose.onNodeWithText(documentText, substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun websiteReconnectKeepsItsFrameAndSourceWhileWaitingForFreshAccess() {
+        val releaseGrant = CountDownLatch(1)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.site.title)
+            compose.onNodeWithText(fixture.site.title).performClick()
+            awaitText("View source conversation")
+            compose.waitUntil(10_000) {
+                val grant = fixture.requestedSiteGrants.firstOrNull()
+                grant != null && loadedWebsiteUrl() == grant
+            }
+
+            val title = compose.onNodeWithTag("artifact_preview_title")
+            val source = compose.onNodeWithText("View source conversation")
+            val surface = compose.onNodeWithTag("artifact_preview_surface")
+            val titleBounds = title.getUnclippedBoundsInRoot()
+            val sourceBounds = source.getUnclippedBoundsInRoot()
+            val surfaceBounds = surface.getUnclippedBoundsInRoot()
+            val surfaceWidth = surfaceBounds.right - surfaceBounds.left
+            val surfaceHeight = surfaceBounds.bottom - surfaceBounds.top
+            assertEquals(surfaceWidth.value * 9f / 16f, surfaceHeight.value, 1f)
+
+            compose.runOnIdle { app.connectivity.value = false }
+            awaitText("Connect to load the preview")
+            compose.onNodeWithText("Open in browser").assertDoesNotExist()
+            assertEquals(surfaceBounds, surface.getUnclippedBoundsInRoot())
+            assertEquals(sourceBounds, source.getUnclippedBoundsInRoot())
+            assertNull(loadedWebsiteUrl())
+            source.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            source.assertIsFocused()
+
+            fixture.beforeSitePreview = { releaseGrant.await() }
+            compose.runOnIdle { app.connectivity.value = true }
+            compose.waitUntil(10_000) {
+                // Let the detail response reach the main owner before the grant request begins.
+                shadowOf(Looper.getMainLooper()).idle()
+                fixture.requestedSiteGrants.size == 2
+            }
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_preview_loading"), 10_000)
+            assertNull(loadedWebsiteUrl())
+            assertEquals(surfaceBounds, surface.getUnclippedBoundsInRoot())
+            assertEquals(sourceBounds, source.assertIsFocused().getUnclippedBoundsInRoot())
+
+            releaseGrant.countDown()
+            compose.waitUntil(10_000) { loadedWebsiteUrl() == fixture.requestedSiteGrants.last() }
+            assertEquals(surfaceBounds, surface.getUnclippedBoundsInRoot())
+            assertEquals(titleBounds, title.getUnclippedBoundsInRoot())
+            assertEquals(sourceBounds, source.assertIsFocused().getUnclippedBoundsInRoot())
+            compose.onNodeWithText("Open in browser").assertIsEnabled()
+        } finally {
+            releaseGrant.countDown()
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     fun chatResourcesPagesItsOwnCatalogAndReturnsThroughTheSharedPreview() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.pageSize = 2
@@ -462,6 +561,18 @@ class ArtifactCatalogRootTest {
         app.fixture.close()
         app.cacheSnapshot.restore()
     }
+
+    private fun loadedWebsiteUrl(): String? =
+        compose.runOnIdle {
+            compose.activity.window.decorView.website()?.let { shadowOf(it).lastLoadedUrl }
+        }
+
+    private fun View.website(): WebView? =
+        when (this) {
+            is WebView -> this
+            is ViewGroup -> children.firstNotNullOfOrNull { it.website() }
+            else -> null
+        }
 
     private fun awaitText(value: String, partial: Boolean = false) {
         compose.waitUntil(10_000) {

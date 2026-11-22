@@ -34,7 +34,12 @@ internal data class ArtifactPreviewState(
     val access: ArtifactAccess? = null,
     val content: ArtifactContent? = null,
     val problem: ArtifactProblem? = null,
-)
+) {
+    val isHosted: Boolean
+        get() =
+            info?.resource !is ArtifactResource.File &&
+                (item?.kind == ArtifactKind.Website || item?.kind == ArtifactKind.Presentation)
+}
 
 internal enum class ArtifactSaveResult {
     Saving,
@@ -83,11 +88,16 @@ internal constructor(
             connectivity.collect { online ->
                 val current = mutable.value
                 if (online == !current.offline) return@collect
+                val preview = current.preview
                 mutable.value =
                     current.copy(
                         offline = !online,
                         reading = null,
                         page = current.page ?: if (online) null else cachedResults(current.query),
+                        preview =
+                            if (!online && preview?.isHosted == true)
+                                preview.copy(content = null, problem = null)
+                            else preview,
                     )
                 if (online && active) {
                     readCatalog()
