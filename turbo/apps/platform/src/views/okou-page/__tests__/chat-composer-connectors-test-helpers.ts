@@ -62,6 +62,7 @@ interface ComposerThreadFixture {
 }
 
 interface ConnectorFixtureOptions {
+  readonly onFirstRun?: () => void;
   readonly catalog?: readonly PublicConnectorCatalogStatusItem[];
   readonly featuredConnectorSlugs?: readonly ConnectorSlug[];
   /** Category totals discovery reports, so a shelf can close on a real count. */
@@ -540,6 +541,7 @@ export function createComposerConnectorHelpers(context: TestContext) {
       }[];
     }[] = [];
     const lifecycle = installMessageExperienceChat({
+      onRunCreate: options.onFirstRun,
       threadId: fixtureThreadId,
       onThreadCreate: ({ clientThreadId, initialRemoteAccessOverrides }) => {
         createdThreadRequests.push({
