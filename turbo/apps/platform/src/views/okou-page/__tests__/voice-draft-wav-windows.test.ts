@@ -29,7 +29,9 @@ async function record(live: number, tail: number) {
     rms: 0.3,
     vadProbability: 0.95,
     onPcmCapture(emit) {
-      emit(speech(live));
+      if (live > 0) {
+        emit(speech(live));
+      }
     },
     finalPcmSamples: speech(tail),
   });
@@ -121,3 +123,34 @@ test("voice-draft-audio-007 Stopping at 448000 samples retains the previous wind
     [208_000, 448_000, 2],
   ]);
 });
+
+test.each([
+  ["voice-draft-audio-001", 0, 239_999],
+  ["voice-draft-audio-003", 240_000, 447_999],
+] as const)(
+  "%s A live window one sample short stays pending until the final sample arrives",
+  async (_id, previous, total) => {
+    const { files, stop, editor } = await record(total, 1);
+    await waitFor(() => {
+      return expect(files[0]?.length ?? 0).toBe(previous);
+    });
+    click(stop);
+    await waitFor(() => {
+      return expect(editor).toHaveTextContent(
+        previous ? "Window 1 Window 2" : "Window 1",
+      );
+    });
+    expect(
+      files.map((f) => {
+        return [f.start, f.length];
+      }),
+    ).toStrictEqual(
+      previous
+        ? [
+            [0, 240_000],
+            [208_000, 240_000],
+          ]
+        : [[0, 240_000]],
+    );
+  },
+);

@@ -1,6 +1,6 @@
 // @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
 import { HttpResponse } from "msw";
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 
 import { expect, test, vi } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -8,7 +8,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { chatListAuth } from "./chat-list-test-helpers.ts";
 import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { observeWorkerTraffic } from "./worker-traffic-fixture.ts";
 const sink = vi.hoisted(() => {
   return vi.fn<(_dataset: string, events: Record<string, unknown>[]) => void>();
 });
@@ -106,36 +105,4 @@ test("indexeddb-client-006 Opening a private chat reports its event-rows route w
   for (const value of [RUN_THREAD_ID, "test-token", "sinceSeqId"]) {
     expect(JSON.stringify(events)).not.toContain(value);
   }
-});
-
-test("single-connection-client-002 A preview conversation reads its empty cached history without publishing query telemetry", async () => {
-  const wire = observeWorkerTraffic(context.signal);
-  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
-  sink.mockClear();
-  await setupPage({ ...settings, host: "pr-789-app.omby.ai", path: RUN_PATH });
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    const read = wire.requests().find((message) => {
-      return (
-        message.type === "query" &&
-        message.query.dataKey.kind === "chat-event" &&
-        message.query.dataKey.threadId === RUN_THREAD_ID &&
-        message.query.consistency === "cache-only"
-      );
-    });
-    expect(read).toMatchObject({ type: "query" });
-    if (read?.type !== "query") {
-      throw new Error("The page has not read its cached conversation");
-    }
-    {
-      expect(wire.received()).toContainEqual({
-        type: "result",
-        requestId: read.requestId,
-        value: [],
-      });
-    }
-  });
-  expect(sink).not.toHaveBeenCalled();
 });

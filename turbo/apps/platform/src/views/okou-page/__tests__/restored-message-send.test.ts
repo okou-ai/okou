@@ -1,3 +1,5 @@
+import { suggestionContextPart } from "@okouai/api-contracts/contracts/suggestion-context";
+import { installCorrespondence } from "./correspondence-test-fixtures.ts";
 import userEvent from "@testing-library/user-event";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { waitFor } from "@testing-library/react";
@@ -44,6 +46,7 @@ async function openDraft(
     ...workspace.pageOptions,
   });
   return {
+    threadId: chat.id,
     editor: await findComposerEditor(),
     async saveAgain() {
       const extra = continuityAttachment(caseId, 9, "scratch.txt");
@@ -178,4 +181,52 @@ test("user-message-document-017 The editor and outgoing prompt keep both mention
     expect.objectContaining({ type: "model" }),
   ]);
   expect(sent.prompt.split("/projects/" + project.projectId)).toHaveLength(3);
+});
+
+test("user-message-document-012 Saving a restored multiline draft keeps its hard break, blank paragraph and edge spaces", async () => {
+  const lines = ["  North wing", "Door schedule  ", "", "Final delivery  "];
+  const draft = await openDraft(798, [
+    { type: "text", text: lines.join("\n") },
+  ]);
+  expect(draft.editor.innerHTML).toContain("  North wing");
+  expect(draft.editor.textContent).toContain("Final delivery  ");
+  await draft.saveAgain();
+});
+
+test("user-message-document-016 A restored suggestion keeps its feedback while the linked message shows its title", async () => {
+  const suggestion = suggestionContextPart({
+    suggestionId: "1163d0a5-ddcf-4039-89e8-ff57b6978069",
+    draftId: "9608fa1a-497b-4f23-a16f-8a8dc28aba35",
+    optionId: "custom",
+    titleSnapshot: "Renew the lease",
+    rationaleSnapshot: "The lease expires next quarter",
+    contextVersion: "verified-lease",
+    attachmentIds: [],
+  });
+  const source = "PROPERTY-204";
+  const direction = "Compare the two renewal periods";
+  const parts: UserMessageDocument["parts"] = [
+    { type: "text", text: "Prepare the renewal" },
+    suggestion,
+    {
+      type: "feedback",
+      quote: "See annex " + source + " for the revised terms",
+      note: [{ type: "text", text: direction }],
+    },
+  ];
+  const draft = await openDraft(799, parts);
+  expect(draft.editor.textContent).toContain(direction);
+  await draft.saveAgain();
+  const sent = await draft.send();
+  expect(sent.prompt).toContain(source);
+  expect(sent.prompt).toContain(direction);
+  const doc = sent.userMessage;
+  if (!doc) {
+    throw new Error("The sent request omitted the suggestion document");
+  }
+  const display = await installCorrespondence(context, draft.threadId, () => {
+    return doc;
+  })();
+  expect(display).toContain("Renew the lease");
+  expect(display).not.toContain(source);
 });

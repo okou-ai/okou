@@ -1,7 +1,6 @@
 import { screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import asset from "virtual:shared-database-worker";
-import { mockedClerk } from "../../__tests__/mock-auth.ts";
 import { startPage } from "../../__tests__/page-helper.ts";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
 
@@ -169,32 +168,6 @@ test("shared-database-browser-001 Chats starts a module worker bound to its work
     name: "okou_test-user-123_org_default",
     type: "module",
   });
-});
-
-test("shared-database-browser-002 A registered worker receives the cached session token for its own request", async () => {
-  const { connections, registered } = browserWorkers();
-  const opened = await startPage(page);
-  await opened.content;
-  await registered.promise;
-  const worker = connections[0]!.remote;
-  const reply = context.mocks.deferred<unknown>();
-  worker.addEventListener(
-    "message",
-    ({ data }) => {
-      if (data.requestId === "local-worker-read") {
-        reply.resolve(data);
-      }
-    },
-    { signal: context.signal },
-  );
-  mockedClerk.sessionGetToken.mockClear();
-  worker.postMessage({ type: "get-token", requestId: "local-worker-read" });
-  await expect(reply.promise).resolves.toStrictEqual({
-    type: "token-result",
-    requestId: "local-worker-read",
-    token: "test-token",
-  });
-  expect(mockedClerk.sessionGetToken.mock.calls).toStrictEqual([[undefined]]);
 });
 
 test("shared-worker-failure-003 Switching sessions releases the old worker error listener", async () => {

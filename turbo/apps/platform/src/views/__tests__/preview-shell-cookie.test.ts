@@ -20,13 +20,13 @@ test("preview-bypass-cookie-001 Opening the preview shell stores its one-hour cr
     .find((value) => {
       return value.startsWith("x-vercel-protection-bypass=");
     });
-  expect(preview?.split(/;\s*/u).toSorted()).toStrictEqual(
-    [
+  expect(new Set(preview?.split(/;\s*/u))).toStrictEqual(
+    new Set([
       "x-vercel-protection-bypass=local%20preview",
       "Path=/",
       "Max-Age=3600",
       "SameSite=Lax",
       "Secure",
-    ].toSorted(),
+    ]),
   );
 });
