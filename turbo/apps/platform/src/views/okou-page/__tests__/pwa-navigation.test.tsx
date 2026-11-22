@@ -3,18 +3,15 @@ import { expect, test } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  createThread,
-  mockChatThreadSnapshot,
-} from "./sidebar-test-helpers.tsx";
+  chatListThread,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 test("pwa-navigation-001 A desktop standalone chat list keeps its navigation rail and message composer", async () => {
-  const thread = createThread(
-    "01936bce-4ca5-4b31-abe1-18dbafe93b45",
-    "Coastal survey",
-  );
-  mockChatThreadSnapshot(context, () => {
-    return [thread];
+  installChatListStream(context, {
+    caseId: 68,
+    snapshot: [chatListThread(1, "Coastal survey")],
   });
   context.mocks.browser.matchMedia((query) => {
     return (

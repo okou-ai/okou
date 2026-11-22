@@ -2731,6 +2731,8 @@ The focused run passed 30/30 new rows. The five complete suites passed 34/34. Se
 
 The post-authoring comparison covered the frozen baseline, both pre-withdrawal trees, restored and renamed paths, the opening head and main, including helpers and mocks. It examined 1,883 unique blobs from 818 paths. Common sequences in the newly authored suites were imports. The diagnostics file intentionally retains the approved batch 67 analytics boundary and extends it with four route-specific rows. No four-line normalized sequence was shared between the six compared batch files.
 
+The first pushed revision reported 10 unused files and 66 unused exports in Knip. The PWA fixture had made the previously unused sidebar helper reachable, exposing 16 of its exports. The final PWA test uses the active conversation-list stream fixture. It retains the same GWT, assertion sequence and expanded row. [First revision's Knip log](https://github.com/okou-ai/okou/actions/runs/44968444630/job/137042811440).
+
 ### GWT and expanded Vitest registrations
 
 | Stable ID and registration                                                                               | Opening GWT                                                                                                                                                                  | Passing expanded row                                                                                                                                                                           |
