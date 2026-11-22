@@ -6,16 +6,22 @@ import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
+import ai.okou.android.api.generated.WorkflowAutomationVariant1
+import ai.okou.android.api.generated.WorkflowAutomationVariant1Kind
+import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1
+import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1Type
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailVisibility
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
+import ai.okou.android.api.generated.WorkspaceWorkflowAutomationsItem
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -70,6 +76,50 @@ class WorkflowModelTest {
             assertNull(model.state.value.catalogFailure)
             assertEquals(2, service.detailReads)
         }
+
+    @Test
+    fun directoryKeepsConfirmedDetailWhenOlderRulesArrive() = check { service, model ->
+        val rules = CompletableDeferred<WorkspaceWorkflowAutomations>()
+        val connections = CompletableDeferred<Set<String>>()
+        val active =
+            WorkflowAutomationVariant1(
+                id = "weekly",
+                ownerUserId = service.summary.ownerUserId,
+                enabled = true,
+                chatThreadId = null,
+                nextRunAt = CHAT_DATE,
+                lastRunAt = null,
+                official = null,
+                kind = WorkflowAutomationVariant1Kind.SCHEDULE,
+                schedule =
+                    WorkflowAutomationVariant1ScheduleVariant1(
+                        WorkflowAutomationVariant1ScheduleVariant1Type.CRON,
+                        "0 9 * * 1",
+                        "UTC",
+                    ),
+                scheduleSummary = "Weekly at 09:00",
+            )
+        service.detail = service.detail.copy(automations = listOf(active))
+        service.rulesRead = { rules.await() }
+        service.connectionsRead = { connections.await() }
+        model.select(service.summary.id)
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(listOf(active), model.state.value.detail?.automations)
+
+        rules.complete(
+            listOf(WorkspaceWorkflowAutomationsItem(service.summary, active.copy(enabled = false)))
+        )
+        runCurrent()
+        assertNull(model.state.value.connections)
+        assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
+
+        model.select(null)
+        connections.complete(emptySet())
+        runCurrent()
+        assertEquals(emptySet<String>(), model.state.value.connections)
+        assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
+    }
 
     @Test
     fun successfulSaveRestartsInterruptedCatalogRead() = check { service, model ->
@@ -171,7 +221,7 @@ class WorkflowModelTest {
                 official = null,
                 importSource = null,
             )
-        private var detail =
+        var detail =
             WorkflowDetail(
                 id = summary.id,
                 name = summary.name,
@@ -193,6 +243,8 @@ class WorkflowModelTest {
                 automations = emptyList(),
             )
         var catalogRead: suspend () -> List<WorkflowSummary> = { listOf(summary) }
+        var rulesRead: suspend () -> WorkspaceWorkflowAutomations = { emptyList() }
+        var connectionsRead: suspend () -> Set<String> = { emptySet() }
         var detailReads = 0
             private set
 
@@ -206,9 +258,9 @@ class WorkflowModelTest {
             return detail
         }
 
-        override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations = emptyList()
+        override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations = rulesRead()
 
-        override suspend fun workflowConnections(): Set<String> = emptySet()
+        override suspend fun workflowConnections(): Set<String> = connectionsRead()
 
         override suspend fun updateWorkflow(
             id: String,

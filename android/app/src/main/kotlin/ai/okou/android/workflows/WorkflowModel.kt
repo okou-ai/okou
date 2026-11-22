@@ -132,21 +132,36 @@ internal constructor(
         }
         mutable.value = mutable.value.copy(catalog = workflows.getOrThrow())
         val automationRules = rules.await()
+        if (!authorized()) return@coroutineScope null
+        val current = mutable.value
+        val directoryRules = automationRules.getOrNull()
+        val detail = current.detail
+        mutable.value =
+            current.copy(
+                rules =
+                    when {
+                        automationRules.exceptionOrNull().denied() -> null
+                        directoryRules == null -> current.rules
+                        // A confirmed detail owns the rules shown for the selected workflow.
+                        detail != null &&
+                            directoryRules[detail.id].orEmpty() != detail.automations ->
+                            directoryRules + (detail.id to detail.automations)
+                        else -> directoryRules
+                    }
+            )
+
         val connections = accounts.await()
         if (!authorized()) return@coroutineScope null
         val failure =
             listOfNotNull(automationRules.exceptionOrNull(), connections.exceptionOrNull())
                 .maxByOrNull { it.retryAfterMillis() ?: -1L }
-        val current = mutable.value
+        val latest = mutable.value
         mutable.value =
-            current.copy(
-                rules =
-                    if (automationRules.exceptionOrNull().denied()) null
-                    else automationRules.getOrNull() ?: current.rules,
+            latest.copy(
                 connections =
                     if (connections.exceptionOrNull().denied()) null
-                    else connections.getOrNull() ?: current.connections,
-                catalogFailure = if (failure == null) null else current.catalogFailure,
+                    else connections.getOrNull() ?: latest.connections,
+                catalogFailure = if (failure == null) null else latest.catalogFailure,
             )
         failure
     }
