@@ -27,6 +27,7 @@ function serializeCallbackActionUrl(
 export function finalizeActionUrl(
   actionUrl: URL,
   callbackPrompt: string | undefined,
+  resolveThreadId = getOkouChatThreadId,
 ): string {
   if (callbackPrompt === undefined) {
     return actionUrl.toString();
@@ -42,7 +43,7 @@ export function finalizeActionUrl(
     );
   }
 
-  const threadId = getOkouChatThreadId()?.trim();
+  const threadId = resolveThreadId()?.trim();
   if (!threadId) {
     throw new Error(
       "--callback-prompt requires the current web chat and its execution context",
