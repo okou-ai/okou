@@ -667,7 +667,12 @@ private fun SearchResults(
                 }
             }
         }
-        if (list.offline && type == WorkspaceSearchType.All && keyword.isNotEmpty()) {
+        if (
+            list.offline &&
+                list.confirmedAt != null &&
+                type == WorkspaceSearchType.All &&
+                keyword.isNotEmpty()
+        ) {
             item(key = "search_offline_scope") {
                 Text(
                     stringResource(R.string.chat_search_offline_titles),

@@ -113,6 +113,29 @@ class SavedUiStateTest {
     }
 
     @Test
+    fun offlineSearchWithoutCachedChatsShowsOneNotice() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(offline = true),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    workspaceName = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    retry = {},
+                )
+            }
+        }
+        compose.onNodeWithText("Chats will load when you’re back online.").assertIsDisplayed()
+        compose.onNodeWithText("Offline. Searching saved chat titles only.").assertDoesNotExist()
+    }
+
+    @Test
     fun searchRestoresTheSameResultWhenCacheAddsAnEarlierMatch() {
         checkSearchRestoration("Result", "Result 5")
     }
