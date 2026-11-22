@@ -16,17 +16,16 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 
+@OptIn(ExperimentalSerializationApi::class)
+@JsonIgnoreUnknownKeys
 @Serializable
-internal data class DefaultModelEdit(
-    val request: UpdateDefaultModelPreference,
-    val pending: Boolean = true,
-    val failedAttempts: Int = 0,
-    val lastFailureMillis: Long? = null,
-)
+internal data class DefaultModelEdit(val request: UpdateDefaultModelPreference)
 
 @Serializable
 internal data class DefaultModelRecord(
@@ -38,9 +37,6 @@ internal data class DefaultModelRecord(
 ) {
     val selectedModel: String?
         get() = if (edit == null) confirmed.selectedModel else edit.request.selectedModel
-
-    val pending: UpdateDefaultModelPreference?
-        get() = edit?.takeIf { it.pending }?.request
 }
 
 /** The application can finish an accepted cache write after its workspace view is retired. */

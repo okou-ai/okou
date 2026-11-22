@@ -7,9 +7,12 @@ import ai.okou.android.api.generated.DefaultModelPreference
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.auth.workspaceStorageKey
 import ai.okou.android.jsonResponse
 import ai.okou.android.state.SettingsDestination
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
@@ -27,6 +30,7 @@ import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -151,21 +155,39 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun offlineChangesSurviveReopeningStorageAndSyncAsOneRequest() = runTest {
+    fun offlineChangesCoalesceAndReopeningOnlyRestoresTheDisplayValue() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
+            val fixtureResponse = api.commandResponse
+            val rejectWrites = AtomicBoolean(false)
+            val failedWrite = CompletableDeferred<Unit>()
+            api.commandResponse = { request ->
+                if (
+                    rejectWrites.get() &&
+                        request.method == "PUT" &&
+                        request.requestUrl?.encodedPath == "/api/user-model-preference"
+                )
+                    jsonResponse("{}").setResponseCode(503)
+                else fixtureResponse(request)
+            }
             val file = temporary.newFolder().resolve("default-model.preferences_pb")
             val process = SupervisorJob(backgroundScope.coroutineContext[Job])
             val storageScope = CoroutineScope(backgroundScope.coroutineContext + process)
             val owner = SupervisorJob(process)
             val scope = CoroutineScope(backgroundScope.coroutineContext + owner)
-            val store =
-                DefaultModelStore(
-                    PreferenceDataStoreFactory.create(scope = storageScope) { file },
-                    storageScope,
-                )
+            val preferences = PreferenceDataStoreFactory.create(scope = storageScope) { file }
+            val store = DefaultModelStore(preferences, storageScope)
             try {
-                val model = model(api, store, scope)
+                val model =
+                    model(
+                        api,
+                        store,
+                        scope,
+                        onFailure = {
+                            assertEquals(503, (it as ApiFailure.Http).status)
+                            failedWrite.complete(Unit)
+                        },
+                    )
                 assertEquals("gpt-test", model.openAfterSync().selected?.id)
                 model.online(false)
                 model.effort(ModelEffort.HIGH)
@@ -174,40 +196,78 @@ class DefaultModelSettingsTest {
                 model.select("gpt-test")
                 assertEquals(ModelEffort.HIGH, model.state.value.effort)
                 model.fast(true)
-                owner.cancelAndJoin()
-                assertEquals("GPT 5.6 Sol", store.load(api.identity).label)
                 assertTrue(fixture.writes.isEmpty())
+
+                model.online(true)
+                val synced = model.state.first { it.pending == null }
+                assertTrue(synced.fast)
+                assertEquals(ModelEffort.HIGH, synced.effort)
+                val update = fixture.writes.single()
+                assertEquals(JsonPrimitive("priority"), update["serviceTier"])
+                assertEquals(
+                    JsonPrimitive("high"),
+                    update["modelSettingsPatch"]?.jsonObject?.get("effort"),
+                )
+                assertFalse(update.containsKey("selectedImageModel"))
+
+                rejectWrites.set(true)
+                model.select("claude-test")
+                failedWrite.await()
+                runCurrent()
+                owner.cancelAndJoin()
+                assertEquals("Claude Sonnet 5", store.load(api.identity).label)
+                val key = stringPreferencesKey(api.identity.workspaceStorageKey())
+                preferences.edit { values ->
+                    val record = Json.parseToJsonElement(checkNotNull(values[key])).jsonObject
+                    val edit = record.getValue("edit").jsonObject
+                    assertEquals(setOf("request"), edit.keys)
+                    val oldEdit =
+                        JsonObject(
+                            edit +
+                                mapOf(
+                                    "failedAttempts" to JsonPrimitive(1),
+                                    "lastFailureMillis" to JsonPrimitive(currentTime),
+                                )
+                        )
+                    values[key] = JsonObject(record + ("edit" to oldEdit)).toString()
+                }
             } finally {
                 process.cancelAndJoin()
             }
+            rejectWrites.set(false)
             val reopened =
                 DefaultModelStore(
                     PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
                     backgroundScope,
                 )
             val otherWorkspace = api.identity.copy(workspaceId = "other")
-            assertNull(reopened.load(otherWorkspace).pending)
+            assertNull(reopened.load(otherWorkspace).edit)
             assertNull(reopened.load(api.identity.copy(userId = "other")).selectedModel)
             val model = model(api, reopened, identity = api.identity.copy(sessionId = "renewed"))
             model.online(false)
             model.showSettings(SettingsDestination.Overview)
             model.foreground(true)
             val restored = model.state.first { it.record != null }
-            assertEquals("gpt-test", restored.record?.selectedModel)
-            assertEquals("GPT 5.6 Sol", restored.record?.label)
-            assertEquals(ModelEffort.HIGH, restored.record?.efforts?.get("gpt-test"))
+            assertEquals("claude-test", restored.record?.selectedModel)
+            assertEquals("Claude Sonnet 5", restored.record?.label)
+            assertNull(restored.pending)
 
             model.online(true)
-            val synced = model.state.first { it.options != null && it.pending == null }
-            assertTrue(synced.fast)
-            assertEquals(ModelEffort.HIGH, synced.effort)
-            val update = fixture.writes.single()
-            assertEquals(JsonPrimitive("priority"), update["serviceTier"])
-            assertEquals(
-                JsonPrimitive("high"),
-                update["modelSettingsPatch"]?.jsonObject?.get("effort"),
-            )
-            assertFalse(update.containsKey("selectedImageModel"))
+            val cached = model.state.first { it.options != null }
+            assertEquals("claude-test", cached.selected?.id)
+            assertEquals(ModelEffort.HIGH, cached.effort)
+            assertFalse(cached.fast)
+            advanceTimeBy(30_000)
+            assertEquals(1, fixture.writes.size)
+            assertEquals("claude-test", model.state.value.selected?.id)
+
+            model.showSettings(null)
+            val refreshAt = checkNotNull(restored.record?.lastRefreshMillis) + 600_000
+            advanceTimeBy((refreshAt - currentTime).coerceAtLeast(0))
+            val refreshed = model.state.first { it.record?.edit == null }
+            assertEquals("gpt-test", refreshed.selected?.id)
+            assertTrue(refreshed.fast)
+            assertEquals(1, fixture.writes.size)
             assertEquals(
                 JsonPrimitive("high"),
                 fixture.preference["modelSettings"]
@@ -216,11 +276,39 @@ class DefaultModelSettingsTest {
                     ?.jsonObject
                     ?.get("effort"),
             )
+            model.showSettings(SettingsDestination.Overview)
             model.select("claude-test")
             val switched = model.state.first { it.pending == null }
             assertEquals(ModelEffort.HIGH, switched.effort)
             assertFalse(switched.fast)
             assertEquals(JsonNull, fixture.writes.last()["serviceTier"])
+        }
+    }
+
+    @Test
+    fun saveConfirmsItsFieldsAndKeepsAnotherModelsLocalEffort() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = DefaultModelApiFixture(api)
+            val model = model(api)
+            assertEquals(ModelEffort.MEDIUM, model.openAfterSync().effort)
+            val changedElsewhere = JsonObject(mapOf("effort" to JsonPrimitive("medium")))
+            fixture.preference =
+                JsonObject(
+                    fixture.preference +
+                        ("modelSettings" to JsonObject(mapOf("claude-test" to changedElsewhere)))
+                )
+
+            model.effort(ModelEffort.HIGH)
+            val synced = model.state.first { it.pending == null }
+            assertEquals(ModelEffort.HIGH, synced.effort)
+            assertEquals(
+                JsonPrimitive("gpt-test"),
+                fixture.writes.single()["modelSettingsPatch"]?.jsonObject?.get("model"),
+            )
+
+            model.online(false)
+            model.select("claude-test")
+            assertEquals(ModelEffort.HIGH, model.state.value.effort)
         }
     }
 
@@ -407,7 +495,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun saveRetryLimitSurvivesReconnectAndReopeningUntilOrdinaryReadReplacesTheEdit() = runTest {
+    fun saveRetriesKeepTheirScheduleAcrossReconnectAndYieldToScheduledRead() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val confirmed = api.service.defaultModelPreference()
@@ -434,9 +522,9 @@ class DefaultModelSettingsTest {
                     }
                 }
             val store = store(backgroundScope)
-            val owner = SupervisorJob(backgroundScope.coroutineContext[Job])
-            val scope = CoroutineScope(backgroundScope.coroutineContext + owner)
-            val model = model(api, store, scope, service = remote, onFailure = {})
+            val model = model(api, store, service = remote, onFailure = {})
+            val notices = mutableListOf<DefaultModelNotice>()
+            backgroundScope.launch { model.notices.collect { notices += it } }
             model.openAfterSync()
             model.fast(true)
             runCurrent()
@@ -452,51 +540,44 @@ class DefaultModelSettingsTest {
             advanceTimeBy(3_000)
             runCurrent()
             assertEquals(listOf(0L, 5_000L), writes)
-            owner.cancelAndJoin()
 
-            val reopened = model(api, store, service = remote, onFailure = {})
-            val notices = mutableListOf<DefaultModelNotice>()
-            backgroundScope.launch { reopened.notices.collect { notices += it } }
-            reopened.showSettings(SettingsDestination.Overview)
-            reopened.foreground(true)
-            val restored = reopened.state.first { it.options != null && it.record != null }
-            assertTrue(restored.fast)
             advanceTimeBy(9_999)
             assertTrue(notices.isEmpty())
             advanceTimeBy(1)
             runCurrent()
             assertEquals(listOf(0L, 5_000L, 15_000L), writes)
             assertEquals(listOf(DefaultModelNotice.SyncFailed), notices)
-            assertTrue(reopened.state.value.fast)
-            assertEquals(false, store.load(api.identity).edit?.pending)
+            assertTrue(model.state.value.fast)
+            assertNull(model.state.value.pending)
+            assertEquals("PRIORITY", store.load(api.identity).edit?.request?.serviceTier?.name)
 
             advanceTimeBy(30_000)
-            reopened.online(false)
-            reopened.online(true)
+            model.online(false)
+            model.online(true)
             runCurrent()
             assertEquals(listOf(0L, 5_000L, 15_000L), writes)
             assertEquals(listOf(DefaultModelNotice.SyncFailed), notices)
-            reopened.showSettings(null)
+            model.showSettings(null)
             advanceTimeBy(600_000 - currentTime)
             runCurrent()
             assertEquals(600_000L, reads.last())
-            assertFalse(reopened.state.value.fast)
-            assertNull(reopened.state.value.pending)
+            assertFalse(model.state.value.fast)
+            assertNull(model.state.value.pending)
             assertNull(store.load(api.identity).edit)
 
-            reopened.showSettings(SettingsDestination.Overview)
+            model.showSettings(SettingsDestination.Overview)
             advanceTimeBy(599_000)
-            reopened.fast(true)
+            model.fast(true)
             runCurrent()
-            assertTrue(reopened.state.value.fast)
+            assertTrue(model.state.value.fast)
             val attemptTimes = listOf(0L, 5_000L, 15_000L, 1_199_000L)
             assertEquals(attemptTimes, writes)
 
-            reopened.showSettings(null)
+            model.showSettings(null)
             advanceTimeBy(1_000)
             runCurrent()
             assertEquals(1_200_000L, reads.last())
-            assertFalse(reopened.state.value.fast)
+            assertFalse(model.state.value.fast)
             assertNull(store.load(api.identity).edit)
             advanceTimeBy(20_000)
             assertEquals(attemptTimes, writes)
@@ -527,7 +608,7 @@ class DefaultModelSettingsTest {
             assertEquals(DefaultModelNotice.SyncFailed, model.notices.first())
             assertEquals(JsonNull, fixture.preference["serviceTier"])
             runCurrent()
-            assertEquals(false, store.load(api.identity).edit?.pending)
+            assertEquals("PRIORITY", store.load(api.identity).edit?.request?.serviceTier?.name)
 
             model.foreground(false)
             advanceTimeBy(600_000)
