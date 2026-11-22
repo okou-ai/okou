@@ -246,8 +246,8 @@ class PendingWorkspaceRootTest {
         val search = compose.onNodeWithTag("workspace_search_entry")
         val startupBounds = search.getUnclippedBoundsInRoot()
         val release = updateRelease("99.0.0")
-        val announcement = compose.onNodeWithText("Update ${release.version} is available")
         val action = app.getString(R.string.updates_toolbar)
+        val update = compose.onNodeWithContentDescription(action)
         val previousService = app.updateService
         try {
             compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Checked }
@@ -257,20 +257,19 @@ class PendingWorkspaceRootTest {
                 app.updates.check()
             }
             compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-            announcement.assertDoesNotExist()
+            update.assertDoesNotExist()
             assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
 
             compose.runOnIdle { app.organizationResponse.complete(Unit) }
             awaitCachedRow()
-            announcement.assertDoesNotExist()
-            compose.onNodeWithContentDescription(action).assertDoesNotExist()
+            update.assertDoesNotExist()
+            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
 
             compose.runOnIdle { app.preferencesResponse.complete(Unit) }
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithContentDescription(action).fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithContentDescription(action).assertIsDisplayed().assertIsEnabled()
-            announcement.assertDoesNotExist()
+            update.assertIsDisplayed().assertIsEnabled()
             assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
         } finally {
             compose.runOnIdle { app.updateService = previousService }

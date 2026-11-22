@@ -88,14 +88,14 @@ class UpdateRootTest {
 
     @Test
     fun optionalDiscoveryLeavesTheRestoringRootInPlaceAcrossRecreation() {
-        compose.onNodeWithText("Welcome to Okou").assertExists()
+        val welcome = compose.onNodeWithText(app.getString(R.string.auth_welcome))
+        val startupBounds = welcome.assertIsDisplayed().getUnclippedBoundsInRoot()
         assertFalse(app.updates.state.value.required)
         app.fixture.heldCheck!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.available }
-        compose.onNodeWithText("Update 99.0.0 is available").assertDoesNotExist()
+        assertEquals(startupBounds, welcome.getUnclippedBoundsInRoot())
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Welcome to Okou").assertExists()
-        compose.onNodeWithText("View update").assertDoesNotExist()
+        assertEquals(startupBounds, welcome.assertIsDisplayed().getUnclippedBoundsInRoot())
         assertTrue(app.updates.state.value.available)
     }
 

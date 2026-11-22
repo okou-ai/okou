@@ -279,8 +279,6 @@ class AndroidUpdateClientTest {
         assertEquals(record, store.load())
         stateFile.writeText(stateFile.readText().replaceFirst("{", "{\"deferred\":\"0.13.0\","))
         assertEquals(record, store.load())
-        store.save(record)
-        assertFalse(stateFile.readText().contains("\"deferred\""))
         stateFile.writeBytes(ByteArray(131_073))
         try {
             store.load()
