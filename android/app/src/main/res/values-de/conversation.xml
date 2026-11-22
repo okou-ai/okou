@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">Was möchtest du heute erledigen?</string>
+    <string name="conversation_welcome_detail">Sag Okou, was du tun möchtest.</string>
+    <string name="conversation_jump_latest">Zur neuesten Nachricht</string>
+    <string name="conversation_new_reply">Neue Antwort</string>
+    <string name="conversation_view_progress">Fortschritt ansehen</string>
+    <string name="conversation_processing">In Bearbeitung…</string>
+    <string name="conversation_history_offline">Der Chatverlauf wird geladen, sobald du online bist.</string>
+    <string name="conversation_offline_send">Geh zum Senden online. Dein Entwurf bleibt hier.</string>
+    <string name="conversation_work">Arbeitsverlauf</string>
+    <string name="conversation_reply_actions">Antwortaktionen</string>
+    <string name="conversation_copy_reply">Antwort kopieren</string>
+    <string name="conversation_reply_copied">Antwort kopiert</string>
+    <string name="conversation_revoke">Zurückziehen</string>
+    <string name="conversation_stop">Stopp</string>
+</resources>

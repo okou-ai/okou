@@ -217,6 +217,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.serialization.json)
     implementation(libs.commonmark)
+    implementation(libs.commonmarkTables)
     implementation(libs.ably.device) {
         // This client owns foreground realtime only; FCM adds an unused public receiver/provider.
         exclude(group = "com.google.firebase", module = "firebase-messaging")
