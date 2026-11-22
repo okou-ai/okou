@@ -423,7 +423,7 @@ internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighl
             val bounds =
                 snapshotFlow { coordinates?.takeIf { it.isAttached } }.filterNotNull().first()
             reveal(bounds)
-            focus.requestFocus()
+            if (bounds.isAttached) focus.requestFocus()
         }
     }
     return drawBehind {
