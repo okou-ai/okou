@@ -2864,3 +2864,15 @@ Historical **1874/2,681**, current **1850/2,681**. The withdrawn cohort is 422 h
 The next run continues batch 79 on the same PR and original 292-ID intake. [30 prospective files for a later batch](https://app.okou.ai/artifacts/f52pxh6o8q.md).
 
 A follow-up desktop-pointer probe for `chat-resources-004` observed the closed trigger’s tooltip and its disappearance after opening the panel. It remains outside the 103 accepted registrations pending an independent failure control and normal-suite admission. The probe is retained in the handoff evidence. The Home capability chooser now uses fixed suggestion patterns after Semgrep flagged a dynamic regular expression.
+
+## Batch 79 continuation checkpoint-3
+
+The fixed intake remains 30 frozen owners and 292 IDs. At opening commit `24798bd2c3`, 103 IDs were already accepted. This run has verified 7 additional IDs through this checkpoint. The batch now has **110 accepted / 182 open**. Of the open IDs, 158 await implementation and 24 have recorded gaps or changed prerequisites. Main is synchronized through `541a590e84`.
+
+| Complete owners | Partially accepted | Wholly blocked | Awaiting implementation |
+| --------------: | -----------------: | -------------: | ----------------------: |
+|               3 |                 17 |              5 |                       5 |
+
+Historical first acceptances: **1,881**. Currently complete: **1,857**. New registrations are reconciled by expanded Vitest title. Previous regressions and the two existing late-evidence gaps retain their prior status.
+
+[All 292 GWT, ID results and controls](https://app.okou.ai/artifacts/b2a9n5680z.tsv). [Remaining IDs by frozen file](https://app.okou.ai/artifacts/0kctnlgh41.md). [Runnable probes, source and raw results](https://app.okou.ai/artifacts/jo8bq74x55.zip).
