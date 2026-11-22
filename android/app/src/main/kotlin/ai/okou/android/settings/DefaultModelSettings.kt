@@ -552,7 +552,9 @@ private fun retryDelay(failures: Int): Long =
     retryDelays[(failures - 1).coerceAtMost(retryDelays.lastIndex)]
 
 private fun UpdateDefaultModelPreference.matches(preference: DefaultModelPreference): Boolean =
-    selectedModel == preference.selectedModel &&
+    // The server can read back an explicit Auto ID for a nullable write.
+    (selectedModel == preference.selectedModel ||
+        isAutoDefaultModel(selectedModel) && isAutoDefaultModel(preference.selectedModel)) &&
         serviceTier?.name == preference.serviceTier?.name &&
         (modelSettingsPatch?.let {
             preference.modelSettings[it.model]?.effort?.name == it.effort.name

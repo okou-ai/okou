@@ -331,11 +331,40 @@ class DefaultModelSettingsTest {
             assertFalse(model.state.value.fast)
             releaseLast.complete(Unit)
             model.state.first { it.pending == null }
-            assertNull(model.state.value.record?.selectedModel)
+            assertEquals("auto", model.state.value.record?.selectedModel)
             assertEquals(
                 listOf(JsonPrimitive("gpt-test"), JsonNull),
                 fixture.writes.map { it["selectedModel"] },
             )
+        }
+    }
+
+    @Test
+    fun canonicalAutoReadbackConfirmsAnUnacknowledgedWriteWithoutReplay() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = DefaultModelApiFixture(api)
+            val fixtureResponse = api.commandResponse
+            api.commandResponse = { request ->
+                val response = fixtureResponse(request)
+                if (
+                    request.method == "PUT" &&
+                        request.requestUrl?.encodedPath == "/api/user-model-preference" &&
+                        fixture.writes.size == 1
+                )
+                    jsonResponse("{}").setResponseCode(503)
+                else response
+            }
+            val model =
+                model(api, onFailure = { assertEquals(503, (it as ApiFailure.Http).status) })
+            assertEquals("gpt-test", model.openAfterSync().selected?.id)
+
+            model.select(null)
+            val confirmed = model.state.first { it.pending == null }
+            assertEquals("auto", confirmed.record?.confirmed?.selectedModel)
+            assertNull(confirmed.record?.edit)
+            assertNull(confirmed.selected)
+            assertEquals(1, fixture.writes.size)
+            assertEquals(JsonNull, fixture.writes.single()["selectedModel"])
         }
     }
 

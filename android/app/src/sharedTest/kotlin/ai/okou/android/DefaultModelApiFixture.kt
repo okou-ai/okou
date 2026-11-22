@@ -36,13 +36,16 @@ internal class DefaultModelApiFixture(
                         val update =
                             Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                         writes += update
+                        val selectedModel =
+                            update.getValue("selectedModel").takeUnless { it == JsonNull }
+                                ?: JsonPrimitive("auto")
                         val patch = update["modelSettingsPatch"]?.jsonObject
                         val settings = preference.getValue("modelSettings").jsonObject
                         preference =
                             JsonObject(
                                 preference +
                                     mapOf(
-                                        "selectedModel" to update.getValue("selectedModel"),
+                                        "selectedModel" to selectedModel,
                                         "serviceTier" to update.getValue("serviceTier"),
                                         "modelSettings" to
                                             if (patch == null) settings
@@ -70,7 +73,10 @@ internal class DefaultModelApiFixture(
 
     fun selectAutoElsewhere() {
         preference =
-            JsonObject(preference + mapOf("selectedModel" to JsonNull, "serviceTier" to JsonNull))
+            JsonObject(
+                preference +
+                    mapOf("selectedModel" to JsonPrimitive("auto"), "serviceTier" to JsonNull)
+            )
     }
 
     private val gptEfforts =
