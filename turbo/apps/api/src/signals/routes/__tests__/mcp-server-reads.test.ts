@@ -225,7 +225,30 @@ describe("thin MCP Web adapters", () => {
       }
       expect(
         Object.keys(sendTool.inputSchema.properties ?? {}).sort(),
-      ).toStrictEqual(["model", "projectId", "prompt", "threadId"]);
+      ).toStrictEqual([
+        "model",
+        "projectId",
+        "prompt",
+        "threadId",
+        "userMessage",
+      ]);
+      const validateSend = validator.getValidator(
+        sendTool.inputSchema as JsonSchemaType,
+      );
+      const userMessage = {
+        version: 1,
+        parts: [
+          {
+            type: "voice",
+            clips: [{ fileId: randomUUID() }, { fileId: randomUUID() }],
+          },
+        ],
+      };
+      expect(validateSend({ userMessage }).valid).toBeTruthy();
+      expect(
+        validateSend({ userMessage, prompt: "ambiguous input" }).valid,
+      ).toBeFalsy();
+      expect(validateSend({}).valid).toBeFalsy();
       expect(sendTool.outputSchema).toMatchObject({
         properties: { eventId: { type: "string", format: "uuid" } },
       });

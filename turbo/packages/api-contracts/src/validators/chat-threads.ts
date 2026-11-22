@@ -402,7 +402,14 @@ export const generationTemplateRequestSchema = discriminatedUnion("type", [
   documentGenerationTemplateRequestSchema,
 ]);
 
-const userMessageTextPartSchema = object({
+export const userMessageVoicePartSchema = object({
+  type: literal("voice"),
+  clips: array(object({ fileId: uuid() }).strict())
+    .min(1)
+    .max(MAX_VOICE_CLIPS),
+}).strict();
+
+export const userMessageTextPartSchema = object({
   type: literal("text"),
   text: string().min(1),
 }).strict();
@@ -553,12 +560,7 @@ export const userMessageInputPartSchema = discriminatedUnion("type", [
         message: "Feedback eventId and range must be provided together",
       },
     ),
-  object({
-    type: literal("voice"),
-    clips: array(object({ fileId: uuid() }).strict())
-      .min(1)
-      .max(MAX_VOICE_CLIPS),
-  }).strict(),
+  userMessageVoicePartSchema,
 ]);
 
 const userMessageModelPartSchema = object({

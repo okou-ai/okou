@@ -1,4 +1,4 @@
-import { object, record, uuid } from "zod";
+import { array, discriminatedUnion, literal, object, record, uuid } from "zod";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
 import {
   chatEventsContract,
@@ -15,14 +15,36 @@ import {
 import { initContract } from "./base";
 import { runsCancelContract } from "./run-routes";
 
+import {
+  userMessageTextPartSchema,
+  userMessageVoicePartSchema,
+} from "../validators/chat-threads";
+
 const normal = chatEventNormalSendBodySchema.shape;
 export const mcpSendChatMessageInputSchema = object({
-  prompt: normal.prompt,
+  prompt: normal.prompt.optional(),
+  userMessage: object({
+    version: literal(1),
+    parts: array(
+      discriminatedUnion("type", [
+        userMessageTextPartSchema,
+        userMessageVoicePartSchema,
+      ]),
+    ).min(1),
+  })
+    .strict()
+    .optional(),
   threadId: mcpThreadIdSchema.optional(),
   projectId: uuid().toLowerCase().optional(),
   model: normal.model,
 })
   .strict()
+  .refine(
+    (input) => {
+      return (input.prompt === undefined) !== (input.userMessage === undefined);
+    },
+    { message: "Provide either prompt or userMessage", path: ["prompt"] },
+  )
   .refine(
     (input) => {
       return input.threadId === undefined || input.projectId === undefined;
@@ -31,7 +53,8 @@ export const mcpSendChatMessageInputSchema = object({
       message: "projectId is only allowed when starting a new Chat",
       path: ["projectId"],
     },
-  );
+  )
+  .meta({ oneOf: [{ required: ["prompt"] }, { required: ["userMessage"] }] });
 
 export const mcpRevokeQueuedMessageInputSchema = object({
   threadId: mcpThreadIdSchema,

@@ -14,6 +14,9 @@ import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createMcpWebApi } from "./helpers/mcp-web-api";
+import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-tools";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
@@ -136,22 +139,25 @@ test("ordered private recordings share one Vertex request and one credit settlem
       return { fileId };
     }),
   };
-  const launched = await chat.sendAndLaunch(actor, {
-    prompt: "(see message parts)",
+  const mcp = createMcpWebApi(context);
+  const sent = await mcp.call(mcp.authorize(actor)(), "send_chat_message", {
     userMessage: { version: 1, parts: [voice] },
   });
-  const history = await chat.listThreadEvents(actor, launched.threadId);
-  expect(history.events).toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        eventType: "input.prompt",
-        runId: launched.runId,
-        userMessage: expect.objectContaining({
-          parts: expect.arrayContaining([voice]),
-        }),
-      }),
-    ]),
-  );
+  expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();
+  const accepted = mcpSendChatMessageOutputSchema.parse(sent.structuredContent);
+  await flushWaitUntilForTest();
+  const history = await chat.listThreadEvents(actor, accepted.threadId);
+  const launched = history.events.find((event) => {
+    return (
+      event.eventType === "input.prompt" &&
+      event.revokesEventId === accepted.eventId &&
+      event.runId
+    );
+  });
+  if (!launched || launched.eventType !== "input.prompt" || !launched.runId) {
+    throw new Error("Expected the MCP voice message to launch a run");
+  }
+  expect(launched.userMessage?.parts).toContainEqual(voice);
   await runs.heartbeatRunner(group);
   const execution = await runs.executionInput(launched.runId);
   const token = execution.platformEnvironment.OKOU_TOKEN;
