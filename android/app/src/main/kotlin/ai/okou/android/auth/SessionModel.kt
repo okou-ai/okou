@@ -171,10 +171,15 @@ class SessionModel(
         membershipLoad?.cancel()
         membershipLoad = null
         membershipsComplete = false
-        workspace?.close()
+        val retiredWorkspace = workspace
+        val retiredPresentation = presentation
         workspace = null
-        presentation?.clear()
         presentation = null
+        try {
+            retiredWorkspace?.close()
+        } finally {
+            retiredPresentation?.clear()
+        }
     }
 
     private fun enterRequiredUpdate() {

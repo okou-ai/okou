@@ -103,6 +103,19 @@ class CanonicalWorkspaceSessionTest {
     }
 
     @Test
+    fun closingWorkspaceImmediatelyRejectsFurtherRequests() = runTest {
+        server.enqueue(MockResponse().setBody("""{"id":"org-a","name":"A"}"""))
+        owner().use { session ->
+            assertEquals("org-a", session.organization().id)
+            session.close()
+            assertTrue(
+                runCatching { session.organization() }.exceptionOrNull() is IllegalStateException
+            )
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
     fun incompleteInitializationNeverGrantsReadyPreferences() = runTest {
         val uninitialized =
             TEST_PREFERENCES.replace("\"memoryInitialized\":true", "\"memoryInitialized\":false")
