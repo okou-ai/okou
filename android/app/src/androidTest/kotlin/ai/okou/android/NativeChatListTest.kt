@@ -9,7 +9,6 @@ import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.Window
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -26,7 +25,6 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import java.util.UUID
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -571,15 +569,13 @@ class NativeChatListTest {
                     start.x + (horizontal * swipeDensity).toInt(),
                     start.y + (vertical * swipeDensity).toInt(),
                 )
-            var downAt = 0L
+            val downAt = SystemClock.uptimeMillis()
             val finger =
                 MotionEvent.PointerProperties().apply {
                     id = 0
                     toolType = MotionEvent.TOOL_TYPE_FINGER
                 }
-            val injected = mutableListOf<String>()
-            val delivered = ConcurrentLinkedQueue<String>()
-            fun injectSwipeEvent(action: Int, point: Point): Boolean {
+            fun injectSwipeEvent(action: Int, point: Point) {
                 val coordinates =
                     MotionEvent.PointerCoords().apply {
                         x = point.x.toFloat()
@@ -593,17 +589,10 @@ class NativeChatListTest {
                             else 1f
                         this.size = 1f
                     }
-                // Diagnostic only: give Android a 10 ms history for extrapolating the first MOVE.
-                val eventAt =
-                    when {
-                        action == MotionEvent.ACTION_DOWN -> downAt
-                        action == MotionEvent.ACTION_MOVE && injected.size == 1 -> downAt + 10L
-                        else -> SystemClock.uptimeMillis()
-                    }
                 val event =
                     MotionEvent.obtain(
                         downAt,
-                        eventAt,
+                        SystemClock.uptimeMillis(),
                         action,
                         1, // pointerCount
                         arrayOf(finger),
@@ -618,88 +607,78 @@ class NativeChatListTest {
                         0, // flags
                     )
                 try {
-                    return instrumentation.uiAutomation.injectInputEvent(event, true)
+                    check(instrumentation.uiAutomation.injectInputEvent(event, true)) {
+                        "Could not inject ${MotionEvent.actionToString(action)} at $point"
+                    }
                 } finally {
-                    injected.add("${MotionEvent.actionToString(action)}@${eventAt}ms=$point")
                     event.recycle()
                 }
             }
             val personalChat = By.pkg(app.packageName).text("Personal chat")
-            fun captureSwipe(displacement: Int, name: String) {
-                val point = swipePoint(displacement, 0)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
-                val targetRight = row.right + point.x - start.x
-                val observed = mutableListOf<Rect?>()
-                val followed =
+            fun awaitRowRight(expectedRight: Int, stage: String, tolerancePx: Int = 0) {
+                var observed: Rect? = null
+                val reached =
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
                             override fun apply(device: UiDevice): Boolean {
-                                val bounds = device.findObject(personalChat)?.visibleBounds
-                                observed.add(bounds)
-                                return bounds != null && abs(bounds.right - targetRight) <= 2
+                                val bounds =
+                                    try {
+                                        device.findObject(personalChat)?.visibleBounds
+                                    } catch (_: StaleObjectException) {
+                                        null
+                                    }
+                                observed = bounds
+                                return bounds != null &&
+                                    abs(bounds.right - expectedRight) <= tolerancePx
                             }
                         },
                         10_000,
                     )
-                val details =
-                    "${displacement}dp density=$swipeDensity resting=$row expectedRight=$targetRight " +
-                        "observed=${observed.distinct()} injected=$injected delivered=$delivered"
-                Log.i("OkouNativeSwipe", details)
-                if (!followed) {
-                    val error = AssertionError("Chat row failed to follow the swipe. $details")
-                    runCatching { takeScreenshot().writeToTestStorage("$name-timeout") }
-                        .exceptionOrNull()
-                        ?.let(error::addSuppressed)
-                    throw error
-                }
-                takeScreenshot().writeToTestStorage(name)
+                assertTrue(
+                    "$stage. Resting bounds=$row expected right=$expectedRight observed=$observed",
+                    reached == true,
+                )
             }
-            lateinit var originalCallback: Window.Callback
-            scenario.onActivity { activity ->
-                val window = activity.window
-                originalCallback = window.callback
-                window.callback =
-                    object : Window.Callback by originalCallback {
-                        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-                            val history =
-                                (0 until event.historySize).map { index ->
-                                    val time = event.getHistoricalEventTime(index)
-                                    "${event.getHistoricalX(index)},${event.getHistoricalY(index)}@${time}ms"
-                                }
-                            val action = MotionEvent.actionToString(event.actionMasked)
-                            val time = event.eventTime
-                            delivered.add(
-                                "$action@${time}ms=${event.rawX},${event.rawY} history=$history"
-                            )
-                            return originalCallback.dispatchTouchEvent(event)
-                        }
-                    }
+            fun captureSwipe(displacement: Int, name: String) {
+                val point = swipePoint(displacement, 0)
+                // Android 15 can extrapolate past a MOVE. A 2 px final step limits that
+                // extrapolation to 1 px and leaves room for accessibility bounds rounding.
+                val approach = Point(point.x + 2, point.y)
+                injectSwipeEvent(MotionEvent.ACTION_MOVE, approach)
+                injectSwipeEvent(MotionEvent.ACTION_MOVE, point)
+                awaitRowRight(
+                    row.right + point.x - start.x,
+                    "Chat row failed to follow the $displacement dp swipe from $start " +
+                        "through $approach to $point at density $swipeDensity",
+                    tolerancePx = 2,
+                )
+                takeScreenshot().writeToTestStorage(name)
             }
             var released = false
             try {
-                downAt = SystemClock.uptimeMillis() - 30L
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
+                injectSwipeEvent(MotionEvent.ACTION_DOWN, start)
                 captureSwipe(-36, "android-swipe-archive-icon")
                 captureSwipe(-104, "android-swipe-archive-ready")
                 val diagonal = swipePoint(-96, 72)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, diagonal))
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_UP, diagonal))
+                injectSwipeEvent(MotionEvent.ACTION_MOVE, diagonal)
+                injectSwipeEvent(MotionEvent.ACTION_UP, diagonal)
                 released = true
+                awaitRowRight(
+                    row.right,
+                    "Chat row did not return after diagonal release at $diagonal",
+                )
+            } catch (error: Throwable) {
+                runCatching { takeScreenshot().writeToTestStorage("native-chat-swipe-failure") }
+                    .exceptionOrNull()
+                    ?.let(error::addSuppressed)
+                throw error
             } finally {
                 if (!released) {
-                    runCatching { check(injectSwipeEvent(MotionEvent.ACTION_CANCEL, start)) }
+                    runCatching { injectSwipeEvent(MotionEvent.ACTION_CANCEL, start) }
                         .exceptionOrNull()
                         ?.let(failures::add)
                 }
-                runCatching {
-                        scenario.onActivity { activity ->
-                            activity.window.callback = originalCallback
-                        }
-                    }
-                    .exceptionOrNull()
-                    ?.let(failures::add)
             }
-            text("Personal chat")
             device.waitForIdle()
             assertTrue("A diagonal release must not archive the chat", rowEvents.isEmpty())
             assertTrue(device.swipe(arrayOf(start, swipePoint(-96, 0)), 16))
