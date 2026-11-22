@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.8...runner-provider-v0.21.9) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
 ## [0.21.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.7...runner-provider-v0.21.8) (2026-11-22)
 
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.859.9](https://github.com/okou-ai/okou/compare/core-v8.859.8...core-v8.859.9) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.104.1
+
 ## [8.859.8](https://github.com/okou-ai/okou/compare/core-v8.859.7...core-v8.859.8) (2026-11-22)
 
 
