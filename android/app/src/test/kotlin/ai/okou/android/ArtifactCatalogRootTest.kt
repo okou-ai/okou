@@ -8,6 +8,7 @@ import android.os.Looper
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -226,6 +227,26 @@ class ArtifactCatalogRootTest {
         compose.runOnIdle { app.connectivity.value = true }
         compose.waitUntil(10_000) { fixture.catalogScopes.size > onlinePages }
         compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
+    }
+
+    @Test
+    fun conversationCardOpensAnAuthorizedPreviewWithoutReadingTheCatalog() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        fixture.installInlineHistory()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(fixture.summary.title)
+        assertTrue(fixture.requestedReferences.isEmpty())
+        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(60.dp).performClick()
+        awaitText("Preview only", partial = true)
+        compose.onNodeWithText("Save file").assertDoesNotExist()
+        assertEquals(1, fixture.requestedReferences.size)
+        assertTrue(fixture.catalogScopes.isEmpty())
+        compose.onNodeWithContentDescription("Back").performClick()
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
     }
 
     @Test
