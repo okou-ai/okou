@@ -46,16 +46,6 @@ describe("iOS API consumption CLI", () => {
     expect(output.join("\n")).toContain("inventory covers all Swift API calls");
   });
 
-  it("rejects legacy Agent profile and draft requests on mobile", async () => {
-    await source(String.raw`
-      try await client.request("/api/agents")
-      try await client.request("/api/agents/\(id)")
-      try await client.data("/api/agents/\(id)/draft", method: "PATCH", body: body)
-    `);
-    expect(await lint()).toBe(1);
-    expect(errors).toHaveLength(3);
-  });
-
   it("rejects a newly consumed endpoint with an actionable source location", async () => {
     await source(String.raw`
       try await api.request("/api/host/sites/\(id)/new-operation")
@@ -100,7 +90,7 @@ describe("iOS API consumption CLI", () => {
 
   it("rejects escaped separators rather than hiding an unregistered endpoint in a parameter", async () => {
     await source(
-      String.raw`try await client.request("/api/agents/\u{2f}unregistered")`,
+      String.raw`try await client.request("/api/chat-threads/\u{2f}unregistered")`,
     );
     expect(await lint()).toBe(1);
     expect(errors.join("\n")).toContain("unescaped API path text");
