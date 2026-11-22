@@ -10,11 +10,13 @@ import ai.okou.android.auth.AuthenticationState
 import ai.okou.android.auth.ClerkAuthentication
 import ai.okou.android.awaitChatList
 import ai.okou.android.testAuthenticationState
+import android.animation.ValueAnimator
 import android.app.UiModeManager
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.provider.Settings
 import androidx.annotation.StringRes
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -28,10 +30,13 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
+import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.MethodSorters
 
 @RunWith(AndroidJUnit4::class)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class ScreenshotScenario {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val device = UiDevice.getInstance(instrumentation)
@@ -58,7 +63,7 @@ class ScreenshotScenario {
     }
 
     @Test
-    fun workspaceEntryStagesAndCurrentActions() {
+    fun sessionEntryStagesAndCurrentActions() {
         val previous = auth.state.value
         val workspaces = auth.available
         val memberships = auth.membershipsAction
@@ -66,10 +71,34 @@ class ScreenshotScenario {
         val signOut = auth.signOutAction
         val membershipGate = CompletableDeferred<Unit>()
         val exitGate = CompletableDeferred<Unit>()
-        val animatorScale =
-            device.executeShellCommand("settings get global animator_duration_scale").trim()
+        val scaleSettings =
+            listOf(
+                "window_animation_scale",
+                "transition_animation_scale",
+                "animator_duration_scale",
+            )
+        val originalScales =
+            scaleSettings.associateWith {
+                device.executeShellCommand("settings get global $it").trim()
+            }
         try {
-            device.executeShellCommand("settings put global animator_duration_scale 1.0")
+            instrumentation.uiAutomation.setAnimationScale(1f)
+            check(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean =
+                            ValueAnimator.areAnimatorsEnabled() &&
+                                Settings.Global.getFloat(
+                                    app.contentResolver,
+                                    "animator_duration_scale",
+                                    0f,
+                                ) == 1f
+                    },
+                    5_000,
+                ) == true
+            ) {
+                "The emulator did not enable system animator scale"
+            }
             auth.state.value = AuthenticationState()
             ActivityScenario.launch(MainActivity::class.java).use {
                 captureWaiting(R.string.auth_restoring, "restoring.png")
@@ -123,12 +152,10 @@ class ScreenshotScenario {
             auth.signOutAction = signOut
             auth.available = workspaces
             auth.state.value = previous
-            if (animatorScale == "null")
-                device.executeShellCommand("settings delete global animator_duration_scale")
-            else
-                device.executeShellCommand(
-                    "settings put global animator_duration_scale $animatorScale"
-                )
+            originalScales.forEach { (setting, value) ->
+                if (value == "null") device.executeShellCommand("settings delete global $setting")
+                else device.executeShellCommand("settings put global $setting $value")
+            }
         }
     }
 
