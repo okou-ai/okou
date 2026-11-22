@@ -89,20 +89,7 @@ internal class ArtifactApiFixture(
 
     fun installInlineHistory() {
         val intro = title("The release summary is ready.", "发布摘要已准备好。")
-        val text = "$intro\n\n[${summary.title}](/artifacts/artifacts2.md)"
-        api.historyRows = { request ->
-            val thread = checkNotNull(request.requestUrl).pathSegments[2]
-            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0
-            val event =
-                historyEventWire(
-                    thread = thread,
-                    payload = buildJsonObject { put("content", text) }.toString(),
-                )
-            val rows = if (after < 37) event else ""
-            jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
-            )
-        }
+        api.historyReply = "$intro\n\n[${summary.title}](/artifacts/artifacts2.md)"
     }
 
     fun install() {
