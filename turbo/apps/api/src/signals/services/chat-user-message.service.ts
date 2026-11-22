@@ -354,7 +354,7 @@ function projectAttachment(
     })
     .join(" ");
   return {
-    prompt: `[Voice message] Transcribe the recordings in order:\nokou transcribe ${VOICE_TRANSCRIPTION_MODEL} ${flags}`,
+    prompt: `[Voice message] The user spoke this part of their message to you. The command below returns their words in recording order.\nokou transcribe ${VOICE_TRANSCRIPTION_MODEL} ${flags}`,
     label: `[Voice message: ${part.clips.length} clips]`,
   };
 }
