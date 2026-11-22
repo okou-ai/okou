@@ -12,11 +12,13 @@ import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.awaitChatList
+import ai.okou.android.chatEventWire
 import ai.okou.android.chat.ComposerPersistence
 import ai.okou.android.chat.ComposerSync
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
+import ai.okou.android.rowEventTail
 import ai.okou.android.testAuthenticationState
 import android.util.Log
 import android.view.WindowInsets
@@ -31,6 +33,8 @@ import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -58,6 +62,9 @@ class ScreenshotScenario {
         val size = displayOverride("size")
         val density = displayOverride("density")
         val fixture = ChatListApiFixture()
+        val destinationRequested = CountDownLatch(1)
+        val destinationResponse = CountDownLatch(1)
+        val remoteEvents = fixture.rowEventTail()
         fun rows(thread: String): List<Pair<Long, String>> {
             val markdown =
                 if (thread == CHAT_PERSONAL) {
@@ -87,8 +94,13 @@ class ScreenshotScenario {
         }
         fixture.historyRows = { request ->
             val url = checkNotNull(request.requestUrl)
+            val thread = url.pathSegments[2]
+            if (thread == CHAT_IN_PROJECT) {
+                destinationRequested.countDown()
+                destinationResponse.await()
+            }
             val after = url.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
-            val rows = rows(url.pathSegments[2]).filter { it.first > after }.map { it.second }
+            val rows = rows(thread).filter { it.first > after }.map { it.second }
             jsonResponse(
                 """{"rows":[${rows.joinToString(",")}],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
             )
@@ -100,9 +112,12 @@ class ScreenshotScenario {
                     val item = tuple.jsonArray
                     val thread = item[0].jsonPrimitive.content
                     val after = item[1].jsonPrimitive.long
+                    val availableRows =
+                        if (thread == CHAT_IN_PROJECT && destinationResponse.count > 0) emptyList()
+                        else rows(thread)
                     thread to
                         JsonArray(
-                            rows(thread)
+                            availableRows
                                 .filter { it.first > after }
                                 .map { Json.parseToJsonElement(it.second) }
                         )
@@ -169,6 +184,13 @@ class ScreenshotScenario {
                     ScreenshotCapture.capture("01-phone-inline-links.png")
 
                     text("Project release update", partial = true).click()
+                    check(destinationRequested.await(12, TimeUnit.SECONDS)) {
+                        "The linked conversation did not request history"
+                    }
+                    text("Project chat")
+                    scenario.recreate()
+                    text("Project chat")
+                    destinationResponse.countDown()
                     val targetReply = "Release checklist approved. The launch may proceed."
                     text(targetReply)
                     check(device.wait(Until.gone(draftEditor), 12_000))
@@ -188,9 +210,14 @@ class ScreenshotScenario {
                     text(targetReply)
                     device.awaitChatList(app)
                     ScreenshotCapture.capture("05-wide-message-target.png")
-                    await(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
+                    remoteEvents.add(
+                        24L to chatEventWire(UUID.randomUUID().toString(), 24, CHAT_IN_PROJECT, "deleted")
+                    )
+                    scenario.onActivity { activity ->
+                        val ready = ViewModelProvider(activity)[SessionModel::class.java].uiState.value.ready
+                        checkNotNull(ready).chats.refreshList()
+                    }
                     awaitSavedDraft()
-                    text("Unavailable conversation", partial = true).click()
                     text(app.getString(R.string.conversation_link_unavailable))
                     await(draftEditor)
                     ScreenshotCapture.capture("06-unavailable-link.png")
@@ -224,6 +251,8 @@ class ScreenshotScenario {
                         .exceptionOrNull()
                         ?.let(failure::addSuppressed)
                     throw failure
+                } finally {
+                    destinationResponse.countDown()
                 }
             }
         } finally {
