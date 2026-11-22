@@ -58,7 +58,7 @@ class NativeUpdateTest {
         val owner =
             AppUpdates(
                 object : UpdateService {
-                    override suspend fun initialize() = Unit
+                    override suspend fun initialize(retainedRelease: AndroidUpdatesRelease?) = Unit
 
                     override suspend fun check(): AndroidUpdates {
                         gate.await()

@@ -600,12 +600,13 @@ each numeric component. APK `versionCode` is internal build/installation metadat
 and is absent from both the public response and the R2 manifest.
 Optional announcements follow available versions and the user's per-release
 deferral. Manual and required-update recovery remain available. Automatic checks
-run on foreground without holding the first native frame. The first discovery
-request in each app process can run even if the saved result is recent. Later
-automatic checks in that process reuse successful discovery for 24 hours.
+run on foreground without holding the first native frame and reuse successful
+discovery for 10 minutes, including across process restarts.
 
-Startup revalidates a saved package before offering download or installation
-actions. The last successful discovery and its timestamp are restored together.
+Startup retains and revalidates an eligible pending APK for the current
+installed version. It removes other updater-owned APKs, including the package
+left behind after an upgrade. The last successful discovery and its timestamp
+are restored together.
 Each transfer and installer action stays bound to its presented package; a click
 during preparation is not queued against a later version or recovery result.
 
