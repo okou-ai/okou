@@ -80,6 +80,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.DateFormat
+import java.text.NumberFormat
 import java.util.Date
 import java.util.TimeZone
 
@@ -532,8 +533,12 @@ private val EditableTrigger.label: Int
         }
 
 @Composable
-private fun workflowLengthError(value: String, limit: Int): String? =
-    if (value.length > limit) stringResource(R.string.workflow_field_too_long, limit) else null
+private fun workflowLengthError(value: String, limit: Int): String? {
+    if (value.length <= limit) return null
+    val formattedLimit =
+        NumberFormat.getIntegerInstance(LocalConfiguration.current.locales[0]).format(limit)
+    return stringResource(R.string.workflow_field_too_long, formattedLimit)
+}
 
 @Composable
 private fun WorkflowField(

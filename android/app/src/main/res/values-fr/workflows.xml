@@ -53,7 +53,7 @@
     <string name="workflow_meet">Google Meet</string>
     <string name="workflow_name">Nom d’affichage</string>
     <string name="workflow_name_required">Saisissez un nom d’affichage.</string>
-    <string name="workflow_field_too_long">Utilisez %1$,d caractères au maximum.</string>
+    <string name="workflow_field_too_long">Utilisez %1$s caractères au maximum.</string>
     <string name="workflow_connect_to_save">Connectez %1$s pour enregistrer cette règle.</string>
     <string name="workflow_needs_connection">Connexion requise</string>
     <string name="workflow_new">Nouveau</string>

@@ -53,7 +53,7 @@
     <string name="workflow_meet">Google Meet</string>
     <string name="workflow_name">Display name</string>
     <string name="workflow_name_required">Enter a display name.</string>
-    <string name="workflow_field_too_long">Use %1$,d characters or fewer.</string>
+    <string name="workflow_field_too_long">Use %1$s characters or fewer.</string>
     <string name="workflow_connect_to_save">A %1$s connection is required to save this rule.</string>
     <string name="workflow_needs_connection">Needs connection</string>
     <string name="workflow_new">New</string>
