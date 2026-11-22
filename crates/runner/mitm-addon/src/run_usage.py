@@ -165,7 +165,7 @@ def admit(flow: http.HTTPFlow, *, namespace: str | None = None) -> None:
     if _FLOW_STATE in flow.metadata:
         return
     namespace = namespace or flow_metadata.firewall_name(flow.metadata)
-    if not namespace.startswith("model-provider:"):
+    if not flow_metadata.is_model_provider_firewall(namespace):
         return
     websocket = flow.metadata.get(metadata_keys.WEBSOCKET_UPGRADE_REQUEST) is True
     # Model discovery and other read-only HTTP endpoints do not start inference.

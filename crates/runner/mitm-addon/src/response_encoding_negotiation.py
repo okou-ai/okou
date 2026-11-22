@@ -8,6 +8,7 @@ from typing import Final, Literal
 from mitmproxy import http
 
 import body_decoding
+import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_header_syntax
 import usage
@@ -76,7 +77,7 @@ def _expects_http_response_body_usage_inspection(
         return False
     if is_websocket_upgrade:
         return False
-    if firewall_name.startswith("model-provider:") and billable:
+    if flow_metadata.is_model_provider_firewall(firewall_name) and billable:
         return True
     return billable and usage.has_connector_response_parser(firewall_name)
 
