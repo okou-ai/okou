@@ -1,4 +1,4 @@
-//! Guest-side `/webhooks/agent/complete` caller.
+//! Guest-side `/webhooks/run/complete` caller.
 //!
 //! The guest sends native history metadata and published file versions to
 //! `/complete` after execution or recovery. The API saves those outputs and the

@@ -169,7 +169,7 @@ async fn native_continuation_peer_keeps_complete_history_across_both_listeners()
     let http = reqwest::Client::new();
     let run = RunId::new_v4().to_string();
     let thread = uuid::Uuid::new_v4().to_string();
-    http.post(format!("{}/api/webhooks/agent/complete", api.host_url))
+    http.post(format!("{}/api/webhooks/run/complete", api.host_url))
         .bearer_auth(continuation_api::TOKEN)
         .json(&serde_json::json!({"runId":run,"exitCode":0,"completion":{
             "cliAgentSessionId":thread,"cliAgentSessionHistoryDisposition":"native_only"
@@ -195,7 +195,7 @@ async fn native_continuation_peer_rejects_oversized_stream_before_eof() -> TestR
     let response = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         stream
             .write_all(
-                b"POST /api/webhooks/agent/events HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n",
+                b"POST /api/webhooks/run/events HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n",
             )
             .await?;
         let chunk = vec![b'x'; 64 * 1024];

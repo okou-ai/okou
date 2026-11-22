@@ -517,7 +517,7 @@ async fn stopping_heartbeat_monitor_closes_inflight_request() {
         .expect("stopping heartbeat monitor should close its in-flight request")
         .unwrap();
     let request = String::from_utf8(request).unwrap();
-    assert!(request.starts_with("POST /api/webhooks/agent/heartbeat HTTP/1.1\r\n"));
+    assert!(request.starts_with("POST /api/webhooks/run/heartbeat HTTP/1.1\r\n"));
     assert!(request.ends_with(r#"{"runId":"heartbeat-monitor-cancel"}"#));
     assert!(status_rx.await.is_err());
 }
@@ -844,7 +844,7 @@ fn complete_execution_attributes_proven_codex_child_oom_without_changing_wrapper
                     server.reset_async().await;
                     let complete = server.mock(|when, then| {
                         when.method(POST)
-                            .path("/api/webhooks/agent/complete")
+                            .path("/api/webhooks/run/complete")
                             .json_body_includes(json!({"exitCode": 1, "failureReason": reason.map_or("unknown", FailureReason::as_str)}).to_string());
                         then.status(200)
                             .json_body(json!({"success": true, "status": "failed"}));
@@ -960,7 +960,7 @@ async fn first_completion_classifies_proven_cli_oom_inner() {
         let complete = server.mock(|when, then| {
             let when = when
                 .method(POST)
-                .path("/api/webhooks/agent/complete")
+                .path("/api/webhooks/run/complete")
                 .json_body_includes(json!({"exitCode":137}).to_string());
             if !cancelled {
                 when.json_body_includes(
@@ -1074,7 +1074,7 @@ async fn complete_execution_treats_combined_report_failure_as_finalization_failu
 
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(
                 r#"{"exitCode":0,"completion":{"cliAgentSessionId":"combined-failure-session"}}"#,
             );
@@ -1147,7 +1147,7 @@ async fn complete_execution_keeps_success_when_history_is_unavailable_inner() {
 
     let complete_mock = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/complete")
+                .path("/api/webhooks/run/complete")
                 .json_body_includes(
                     r#"{"exitCode":0,"completion":{"cliAgentSessionHistoryDisposition":"native_only"}}"#,
                 );
@@ -1239,7 +1239,7 @@ async fn complete_execution_after_cli_failure_inner(
 
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(
                 serde_json::json!({
                     "exitCode": failure_exit_code,

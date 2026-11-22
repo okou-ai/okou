@@ -825,6 +825,7 @@ export const clientDescriptorManifest = [
   {
     module: "webhooks",
     contracts: [
+      "runWebhookContract",
       "webhookBuiltInGenerationFalContract",
       "webhookClerkContract",
       "webhookCompleteContract",

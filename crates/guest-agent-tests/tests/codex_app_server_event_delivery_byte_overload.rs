@@ -76,7 +76,7 @@ async fn run_retry_case(recover_before_eviction: bool) -> Result<(), Box<dyn std
             }
             request = server.next_request(Duration::from_secs(5)) => request?,
         };
-        assert_eq!(request.request.path, "/api/webhooks/agent/events");
+        assert_eq!(request.request.path, "/api/webhooks/run/events");
         let payload: Value = serde_json::from_str(&request.request.body)?;
         let events = payload
             .get("events")

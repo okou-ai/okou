@@ -24,7 +24,7 @@ fn capture_batch(
     request: &common::RecordedRequest,
     run_id: &str,
 ) -> Result<CapturedBatch, Box<dyn std::error::Error>> {
-    if request.path != "/api/webhooks/agent/events" {
+    if request.path != "/api/webhooks/run/events" {
         return Err(io::Error::other(format!("unexpected request path: {}", request.path)).into());
     }
     if request.authorization.as_deref() != Some("Bearer test-token") {

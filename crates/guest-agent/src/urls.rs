@@ -3,7 +3,7 @@
 use api_contracts::generated::routes;
 
 pub(crate) fn events_url(base_url: &str) -> String {
-    routes::webhooks::agent::events::SEND.url(base_url)
+    routes::webhooks::run::events::SEND.url(base_url)
 }
 
 pub(crate) fn session_output_url(base_url: &str) -> String {
@@ -11,11 +11,11 @@ pub(crate) fn session_output_url(base_url: &str) -> String {
 }
 
 pub(crate) fn complete_url(base_url: &str) -> String {
-    routes::webhooks::agent::complete::COMPLETE.url(base_url)
+    routes::webhooks::run::complete::COMPLETE.url(base_url)
 }
 
 pub(crate) fn heartbeat_url(base_url: &str) -> String {
-    routes::webhooks::agent::heartbeat::SEND.url(base_url)
+    routes::webhooks::run::heartbeat::SEND.url(base_url)
 }
 
 pub(crate) fn telemetry_url(base_url: &str) -> String {

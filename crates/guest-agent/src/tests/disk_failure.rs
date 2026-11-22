@@ -257,7 +257,7 @@ async fn record_first_completion(
     let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
     let recorded = Arc::clone(&requests);
     let complete = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/complete");
+        when.method(POST).path("/api/webhooks/run/complete");
         then.respond_with(move |request| {
             recorded
                 .lock()

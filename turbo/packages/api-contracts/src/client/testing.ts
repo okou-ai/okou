@@ -726,6 +726,7 @@ import {
 import { webFilesContract as OriginalWebFilesContract } from "../contracts/web-files";
 import { webFilesContract } from "./web-files";
 import {
+  runWebhookContract as OriginalRunWebhookContract,
   webhookBuiltInGenerationFalContract as OriginalWebhookBuiltInGenerationFalContract,
   webhookClerkContract as OriginalWebhookClerkContract,
   webhookCompleteContract as OriginalWebhookCompleteContract,
@@ -748,6 +749,7 @@ import {
   webhookWorkflowAutomationContract as OriginalWebhookWorkflowAutomationContract,
 } from "../contracts/webhooks";
 import {
+  runWebhookContract,
   webhookBuiltInGenerationFalContract,
   webhookClerkContract,
   webhookCompleteContract,
@@ -1327,6 +1329,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [walletContract, OriginalWalletContract],
   [walletUserContract, OriginalWalletUserContract],
   [webFilesContract, OriginalWebFilesContract],
+  [runWebhookContract, OriginalRunWebhookContract],
   [
     webhookBuiltInGenerationFalContract,
     OriginalWebhookBuiltInGenerationFalContract,
