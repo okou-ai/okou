@@ -17,6 +17,7 @@ data class ProjectRenameRejection internal constructor(val projectId: String, va
 enum class ProjectDeleteStatus {
     Confirmed,
     Rejected,
+    ConnectionFailed,
     Unconfirmed,
 }
 
@@ -32,11 +33,12 @@ data class ProjectListUiState(
     val renamingId: String? = null,
     val deletingId: String? = null,
     val unconfirmedRenames: Set<String> = emptySet(),
+    internal val connectionFailedRenames: Set<String> = emptySet(),
     internal val renameRejection: ProjectRenameRejection? = null,
     internal val deleteFeedback: ProjectDeleteFeedback? = null,
 ) {
-    internal fun canRename(offline: Boolean): Boolean =
-        source != null && !offline && renamingId == null && deletingId == null
+    internal val canRename: Boolean
+        get() = source != null && renamingId == null && deletingId == null
 }
 
 internal fun newProjectOperationId(wallMillis: Long): String {
@@ -80,7 +82,12 @@ internal class ProjectListOwner(
         val rows: List<ConfirmedProject>,
     )
 
-    private data class ProjectRename(val id: String, val name: String, val eventId: String)
+    private data class ProjectRename(
+        val id: String,
+        val name: String,
+        val eventId: String,
+        val connectionFailed: Boolean = false,
+    )
 
     init {
         scope.launch {
@@ -159,24 +166,41 @@ internal class ProjectListOwner(
     }
 
     fun deleteProject(id: String) {
-        if (!current() || !state.canRename(offline()) || confirmedRows().none { it.id == id })
-            return
-        val eventId = retryableProjectDeletes[id] ?: newProjectOperationId(wallMillis())
+        if (!current() || !state.canRename || confirmedRows().none { it.id == id }) return
+        val previousAttempt = retryableProjectDeletes[id]
+        val eventId = previousAttempt ?: newProjectOperationId(wallMillis())
         state = state.copy(deletingId = id, deleteFeedback = null)
         scope.launch {
             try {
-                val rejected =
+                val failure =
                     try {
                         service.deleteProject(id, eventId)
-                        false
+                        null
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
                         requireCurrent()
                         if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-                        error.rejectsProjectMutation()
+                        error
                     }
                 requireCurrent()
+                if (
+                    failure is ApiFailure.Network &&
+                        failure.connectionFailed &&
+                        previousAttempt == null
+                ) {
+                    state =
+                        state.copy(
+                            deleteFeedback =
+                                ProjectDeleteFeedback(
+                                    id,
+                                    eventId,
+                                    ProjectDeleteStatus.ConnectionFailed,
+                                )
+                        )
+                    return@launch
+                }
+                val rejected = failure?.rejectsProjectMutation() == true
                 // Reconcile the chats first so the folder can disappear with its contents
                 // already in the outside group. Project and chat feeds are independent.
                 if (!rejected) syncChatsAfterDelete()
@@ -239,17 +263,20 @@ internal class ProjectListOwner(
                         },
                 renamingId = pending?.id,
                 unconfirmedRenames = retryableProjectRenames.keys.toSet(),
+                connectionFailedRenames =
+                    retryableProjectRenames.values
+                        .filter { it.connectionFailed }
+                        .mapTo(hashSetOf()) { it.id },
             )
     }
 
     private fun submitProjectRename(rename: ProjectRename) {
         val snapshot = state
-        if (
-            !current() ||
-                !snapshot.canRename(offline()) ||
-                confirmedRows().none { it.id == rename.id }
-        )
-            return
+        if (!current() || !snapshot.canRename || confirmedRows().none { it.id == rename.id }) return
+        val uncertainAttempt =
+            retryableProjectRenames[rename.id]?.let {
+                it.eventId == rename.eventId && !it.connectionFailed
+            } == true
         projectRename = rename
         retryableProjectRenames.remove(rename.id)
         val previousRejection = snapshot.renameRejection
@@ -269,6 +296,15 @@ internal class ProjectListOwner(
                     if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
                     rejected = error.rejectsProjectMutation()
                     if (rejected) return@launch
+                    if (
+                        error is ApiFailure.Network &&
+                            error.connectionFailed &&
+                            !uncertainAttempt &&
+                            !hasProjectReceipt(rename.eventId)
+                    ) {
+                        retryableProjectRenames[rename.id] = rename.copy(connectionFailed = true)
+                        return@launch
+                    }
                 }
                 requireCurrent()
                 val readBack = refreshAfterWrite()
@@ -277,7 +313,7 @@ internal class ProjectListOwner(
                 // The stream can deliver the receipt before the write response is lost.
                 if (!observedName && !hasProjectReceipt(rename.eventId) && confirmedName != null) {
                     // The server deduplicates retries by this Project event ID.
-                    retryableProjectRenames[rename.id] = rename
+                    retryableProjectRenames[rename.id] = rename.copy(connectionFailed = false)
                 }
             } finally {
                 projectRename = null
@@ -301,15 +337,15 @@ internal class ProjectListOwner(
         while (projectsJob?.isCompleted == false) projectsJob?.join()
         requireCurrent()
         val previousRead = projectsJob
-        refresh()
+        refresh(verifyWrite = true)
         val readBack = projectsJob
         readBack?.join()
         requireCurrent()
         return readBack !== previousRead && state.phase == ChatReadPhase.Ready
     }
 
-    fun refresh() {
-        if (current() && !offline() && projectsJob?.isActive != true) {
+    fun refresh(verifyWrite: Boolean = false) {
+        if (current() && (verifyWrite || !offline()) && projectsJob?.isActive != true) {
             state = state.copy(phase = ChatReadPhase.Loading)
             projectsJob =
                 scope.launch {

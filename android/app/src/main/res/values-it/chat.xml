@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">Chat rimossa dall’archivio</string>
     <string name="chat_undo_marked_read">Chat contrassegnata come letta</string>
     <string name="chat_undo">Annulla</string>
-    <string name="chat_undo_offline">%1$s\nPotrai annullare la modifica quando tornerai online.</string>
+    <string name="chat_undo_connection_failed">Impossibile annullare la modifica. Controlla la connessione e riprova.</string>
+    <string name="chat_action_connection_failed">Impossibile connettersi. Controlla la connessione e riprova.</string>
     <string name="chat_undo_checking">Verifica dell’annullamento…</string>
     <string name="chat_undo_failed">Impossibile annullare la modifica.</string>
     <string name="chat_undo_unconfirmed">Impossibile confermare l’annullamento.</string>
@@ -24,6 +25,11 @@
     <string name="chat_inbox">Posta in arrivo</string>
     <string name="chat_mark_all_read">Segna tutto come letto</string>
     <string name="chat_mark_all_read_unconfirmed">Alcune chat potrebbero essere ancora da leggere.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">Segnata come letta %1$d chat su %2$d.</item>
+        <item quantity="many">Segnate come lette %1$d chat su %2$d.</item>
+        <item quantity="other">Segnate come lette %1$d chat su %2$d.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d chat segnata come letta.</item>
         <item quantity="many">%1$d chat segnate come lette.</item>
@@ -69,7 +75,7 @@
     <string name="chat_rename_cancel">Annulla</string>
     <string name="chat_delete">Elimina la chat</string>
     <string name="chat_delete_title">Eliminare la chat?</string>
-    <string name="chat_delete_description">Ciò eliminerà definitivamente questa chat. Qualsiasi attività attualmente in esecuzione in questa chat verrà interrotta immediatamente. Tutte le automazioni collegate verranno messe in pausa. Questa azione non può essere annullata.</string>
+    <string name="chat_delete_description">I messaggi e le bozze di «%1$s» verranno eliminati definitivamente. Le attività in corso verranno interrotte e le automazioni collegate verranno sospese.</string>
     <string name="chat_delete_confirm">Elimina</string>
     <string name="chat_rename_project">Rinomina progetto</string>
     <string name="chat_project_name">Nome del progetto</string>
@@ -84,8 +90,8 @@
     <string name="chat_project_moved_named">Spostata in %1$s</string>
     <string name="chat_project_moved_outside">Spostata fuori dai progetti</string>
     <string name="chat_project_delete">Elimina progetto</string>
-    <string name="chat_project_delete_title">Eliminare «%1$s»?</string>
-    <string name="chat_project_delete_description">Le chat di questo progetto verranno spostate fuori dai progetti. Le attività in corso continueranno.</string>
+    <string name="chat_project_delete_title">Eliminare il progetto?</string>
+    <string name="chat_project_delete_description">Le chat di «%1$s» verranno spostate fuori dai progetti. Le attività in corso continueranno.</string>
     <string name="chat_project_delete_pending">Eliminazione del progetto…</string>
     <string name="chat_project_deleted">Il progetto è stato eliminato e le sue chat sono state spostate fuori dai progetti.</string>
     <string name="chat_project_delete_rejected">Impossibile eliminare il progetto.</string>

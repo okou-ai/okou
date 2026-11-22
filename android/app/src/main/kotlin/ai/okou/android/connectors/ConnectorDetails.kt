@@ -763,10 +763,7 @@ private fun ConnectorDisconnectDialog(
         dismissEnabled = action?.busy != true,
         destructive = true,
     ) {
-        Column(
-            Modifier.verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(account.label(), fontWeight = FontWeight.SemiBold)
             if (
                 account.displayName != null &&

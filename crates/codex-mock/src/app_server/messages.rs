@@ -120,23 +120,21 @@ pub(super) fn server_notification() -> Value {
 }
 
 pub(super) fn server_notification_with_index(index: usize) -> Value {
-    json!({
-        "method": "experimental/server-notification",
-        "params": {
-            "message": "codex-mock notification",
-            "index": index
-        }
-    })
+    experimental_server_notification("codex-mock notification".into(), Some(index))
 }
 
 pub(super) fn large_server_notification() -> Value {
-    let params = Value::Object(serde_json::Map::from_iter([(
-        "message".into(),
-        "x".repeat(LARGE_NOTIFICATION_MESSAGE_BYTES).into(),
-    )]));
+    experimental_server_notification("x".repeat(LARGE_NOTIFICATION_MESSAGE_BYTES), None)
+}
+
+fn experimental_server_notification(message: String, index: Option<usize>) -> Value {
+    let mut params = serde_json::Map::from_iter([("message".into(), message.into())]);
+    if let Some(index) = index {
+        params.insert("index".into(), index.into());
+    }
     Value::Object(serde_json::Map::from_iter([
         ("method".into(), "experimental/server-notification".into()),
-        ("params".into(), params),
+        ("params".into(), Value::Object(params)),
     ]))
 }
 

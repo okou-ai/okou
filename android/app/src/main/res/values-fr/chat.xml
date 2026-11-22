@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">Discussion désarchivée</string>
     <string name="chat_undo_marked_read">Discussion marquée comme lue</string>
     <string name="chat_undo">Annuler</string>
-    <string name="chat_undo_offline">%1$s\nVous pourrez annuler la modification une fois la connexion rétablie.</string>
+    <string name="chat_undo_connection_failed">Impossible d’annuler la modification. Vérifiez votre connexion, puis réessayez.</string>
+    <string name="chat_action_connection_failed">Connexion impossible. Vérifiez votre connexion, puis réessayez.</string>
     <string name="chat_undo_checking">Vérification de l’annulation…</string>
     <string name="chat_undo_failed">Impossible d’annuler la modification.</string>
     <string name="chat_undo_unconfirmed">Impossible de confirmer l’annulation.</string>
@@ -24,6 +25,11 @@
     <string name="chat_inbox">Boîte de réception</string>
     <string name="chat_mark_all_read">Tout marquer comme lu</string>
     <string name="chat_mark_all_read_unconfirmed">Certaines discussions sont peut-être encore non lues.</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">%1$d conversation sur %2$d a été marquée comme lue.</item>
+        <item quantity="many">%1$d conversations sur %2$d ont été marquées comme lues.</item>
+        <item quantity="other">%1$d conversations sur %2$d ont été marquées comme lues.</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d discussion marquée comme lue.</item>
         <item quantity="many">%1$d discussions marquées comme lues.</item>
@@ -69,7 +75,7 @@
     <string name="chat_rename_cancel">Annuler</string>
     <string name="chat_delete">Supprimer la discussion</string>
     <string name="chat_delete_title">Supprimer la discussion ?</string>
-    <string name="chat_delete_description">Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible.</string>
+    <string name="chat_delete_description">Les messages et brouillons de « %1$s » seront définitivement supprimés. Les tâches en cours seront arrêtées et les automatisations liées seront mises en pause.</string>
     <string name="chat_delete_confirm">Supprimer</string>
     <string name="chat_rename_project">Renommer le projet</string>
     <string name="chat_project_name">Nom du projet</string>
@@ -84,8 +90,8 @@
     <string name="chat_project_moved_named">Déplacée vers %1$s</string>
     <string name="chat_project_moved_outside">Déplacée hors des projets</string>
     <string name="chat_project_delete">Supprimer le projet</string>
-    <string name="chat_project_delete_title">Supprimer « %1$s » ?</string>
-    <string name="chat_project_delete_description">Les conversations de ce projet seront déplacées hors des projets. Les tâches en cours continueront.</string>
+    <string name="chat_project_delete_title">Supprimer le projet ?</string>
+    <string name="chat_project_delete_description">Les conversations de « %1$s » seront déplacées hors des projets. Les tâches en cours continueront.</string>
     <string name="chat_project_delete_pending">Suppression du projet…</string>
     <string name="chat_project_deleted">Le projet a été supprimé et ses conversations ont été déplacées hors des projets.</string>
     <string name="chat_project_delete_rejected">Impossible de supprimer le projet.</string>

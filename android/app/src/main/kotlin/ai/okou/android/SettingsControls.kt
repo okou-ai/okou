@@ -7,8 +7,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,13 +26,13 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -52,6 +55,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -390,46 +394,116 @@ internal fun OkouConfirmationDialog(
     destructive: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val actions = ButtonDefaults.textButtonColors(contentColor = colors.onSurface)
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.widthIn(max = 360.dp),
-        shape = RoundedCornerShape(28.dp),
-        containerColor = colors.surfaceContainerHigh,
-        tonalElevation = 0.dp,
-        titleContentColor = colors.onSurface,
-        textContentColor = colors.onSurfaceVariant,
         properties =
             DialogProperties(
+                usePlatformDefaultWidth = false,
                 dismissOnBackPress = dismissEnabled,
                 dismissOnClickOutside = dismissEnabled,
             ),
-        title = { Text(title, Modifier.semantics { heading() }, fontWeight = FontWeight.SemiBold) },
-        text = content,
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.heightIn(min = 48.dp),
-                enabled = dismissEnabled,
-                colors = actions,
+    ) {
+        BoxWithConstraints {
+            val compact = with(LocalDensity.current) { maxHeight < 16.sp.toDp() * 12 }
+            val margin = if (compact) 12.dp else 24.dp
+            val inset = if (compact) 16.dp else 24.dp
+            val titleGap = if (compact) 8.dp else 12.dp
+            val actionGap = if (compact) 12.dp else 16.dp
+            val titleStyle =
+                if (compact)
+                    MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
+                else MaterialTheme.typography.headlineSmall
+            val bodyStyle = MaterialTheme.typography.bodyMedium
+            val colors = MaterialTheme.colorScheme
+            val dialogWidth = minOf(360.dp, (maxWidth - margin * 2).coerceAtLeast(0.dp))
+            val dialogHeight = (maxHeight - margin * 2).coerceAtLeast(0.dp)
+            val contentHeight = (dialogHeight - inset * 2).coerceAtLeast(0.dp)
+            Surface(
+                Modifier.width(dialogWidth).heightIn(max = dialogHeight),
+                shape = RoundedCornerShape(28.dp),
+                color = colors.surfaceContainerHigh,
+                contentColor = colors.onSurface,
             ) {
-                Text(stringResource(R.string.settings_cancel))
+                Layout(
+                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(inset),
+                    content = {
+                        Text(
+                            title,
+                            Modifier.semantics { heading() },
+                            style = titleStyle,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Surface(
+                            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                            color = Color.Transparent,
+                            contentColor = colors.onSurfaceVariant,
+                        ) {
+                            ProvideTextStyle(bodyStyle, content)
+                        }
+                        FlowRow(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            val buttonPadding =
+                                if (compact) PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                                else ButtonDefaults.TextButtonContentPadding
+                            TextButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                enabled = dismissEnabled,
+                                contentPadding = buttonPadding,
+                                colors =
+                                    ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+                            ) {
+                                Text(stringResource(R.string.settings_cancel))
+                            }
+                            TextButton(
+                                onClick = onConfirm,
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                enabled = confirmEnabled,
+                                contentPadding = buttonPadding,
+                                colors =
+                                    ButtonDefaults.textButtonColors(
+                                        contentColor =
+                                            if (destructive) colors.error else colors.onSurface
+                                    ),
+                            ) {
+                                Text(confirm)
+                            }
+                        }
+                    },
+                ) { children, constraints ->
+                    val loose = constraints.copy(minHeight = 0)
+                    val heading = children[0].measure(loose)
+                    val actions = children[2].measure(loose)
+                    val titleSpace = titleGap.roundToPx()
+                    val actionSpace = actionGap.roundToPx()
+                    val bodySpace =
+                        contentHeight.roundToPx() -
+                            heading.height -
+                            actions.height -
+                            titleSpace -
+                            actionSpace
+                    // Let the whole dialog scroll if the body would be squeezed below two lines.
+                    val body =
+                        children[1].measure(
+                            loose.copy(
+                                maxHeight =
+                                    maxOf(bodySpace, bodyStyle.lineHeight.toDp().roundToPx() * 2)
+                            )
+                        )
+                    val bodyTop = heading.height + titleSpace
+                    val actionsTop = bodyTop + body.height + actionSpace
+                    layout(constraints.maxWidth, actionsTop + actions.height) {
+                        heading.placeRelative(0, 0)
+                        body.placeRelative(0, bodyTop)
+                        actions.placeRelative(0, actionsTop)
+                    }
+                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                modifier = Modifier.heightIn(min = 48.dp),
-                enabled = confirmEnabled,
-                colors =
-                    if (destructive) ButtonDefaults.textButtonColors(contentColor = colors.error)
-                    else actions,
-            ) {
-                Text(confirm)
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable

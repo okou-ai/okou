@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">चैट संग्रह से निकाली गई</string>
     <string name="chat_undo_marked_read">चैट पढ़ी हुई चिह्नित की गई</string>
     <string name="chat_undo">पूर्ववत करें</string>
-    <string name="chat_undo_offline">%1$s\nदोबारा ऑनलाइन होने पर बदलाव पूर्ववत करें।</string>
+    <string name="chat_undo_connection_failed">बदलाव पूर्ववत नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
+    <string name="chat_action_connection_failed">कनेक्ट नहीं हो सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="chat_undo_checking">पूर्ववत करने का नतीजा जाँचा जा रहा है…</string>
     <string name="chat_undo_failed">बदलाव पूर्ववत नहीं किया जा सका।</string>
     <string name="chat_undo_unconfirmed">पुष्टि नहीं हो सकी कि बदलाव पूर्ववत हुआ।</string>
@@ -24,6 +25,10 @@
     <string name="chat_inbox">इनबॉक्स</string>
     <string name="chat_mark_all_read">सभी को पढ़ा हुआ चिह्नित करें</string>
     <string name="chat_mark_all_read_unconfirmed">कुछ चैट अब भी अपठित हो सकती हैं।</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="one">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</item>
+        <item quantity="other">%2$d में से %1$d चैट को पढ़ा गया चिह्नित किया गया।</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
         <item quantity="other">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
@@ -68,7 +73,7 @@
     <string name="chat_rename_cancel">रद्द करें</string>
     <string name="chat_delete">चैट हटाएं</string>
     <string name="chat_delete_title">चैट हटाएं?</string>
-    <string name="chat_delete_description">इससे यह चैट स्थायी रूप से हट जाएगी. इस चैट में वर्तमान में चल रहा कोई भी कार्य तुरंत बंद कर दिया जाएगा। इससे जुड़ी सभी ऑटोमेशन रोक दी जाएंगी। इस एक्शन को वापस नहीं किया जा सकता।</string>
+    <string name="chat_delete_description">“%1$s” के संदेश और ड्राफ़्ट हमेशा के लिए हट जाएँगे। चल रहे काम रुक जाएँगे और जुड़े ऑटोमेशन रोक दिए जाएँगे।</string>
     <string name="chat_delete_confirm">हटाएँ</string>
     <string name="chat_rename_project">प्रोजेक्ट का नाम बदलें</string>
     <string name="chat_project_name">प्रोजेक्ट का नाम</string>
@@ -83,8 +88,8 @@
     <string name="chat_project_moved_named">%1$s में ले जाया गया</string>
     <string name="chat_project_moved_outside">प्रोजेक्ट से बाहर ले जाया गया</string>
     <string name="chat_project_delete">प्रोजेक्ट हटाएँ</string>
-    <string name="chat_project_delete_title">“%1$s” हटाएँ?</string>
-    <string name="chat_project_delete_description">इस प्रोजेक्ट की चैट बाहर चली जाएँगी। चल रहे काम जारी रहेंगे।</string>
+    <string name="chat_project_delete_title">प्रोजेक्ट हटाएँ?</string>
+    <string name="chat_project_delete_description">“%1$s” की चैट प्रोजेक्ट से बाहर चली जाएँगी। चल रहे काम जारी रहेंगे।</string>
     <string name="chat_project_delete_pending">प्रोजेक्ट हटाया जा रहा है…</string>
     <string name="chat_project_deleted">प्रोजेक्ट हटा दिया गया और उसकी चैट बाहर ले जाई गईं।</string>
     <string name="chat_project_delete_rejected">प्रोजेक्ट हटाया नहीं जा सका।</string>
