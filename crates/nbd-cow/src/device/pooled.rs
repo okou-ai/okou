@@ -150,15 +150,9 @@ impl pool::DevicePoolHandle {
     }
 }
 
-#[derive(Clone, Copy)]
 enum DestroyMode {
     RemoveCow,
     KeepCow,
-}
-
-enum DestroyAttemptError {
-    Device(error::NbdCowError),
-    Storage(error::NbdCowError),
 }
 
 /// A COW device that owns a pooled host `/dev/nbdN` lease.
@@ -372,57 +366,28 @@ impl PooledNbdCowDevice {
         policy: DestroyRetryPolicy,
         mode: DestroyMode,
     ) -> std::result::Result<(), PooledDestroyError> {
-        let attempts = policy.attempts();
-
-        let mut last_device_err = match Self::run_destroy_attempt(device, lease, pool, mode).await {
-            Ok(()) => {
-                Self::release_clean(pool, lease).await;
-                return Ok(());
+        let save_bitmap = matches!(mode, DestroyMode::KeepCow);
+        let mut attempts_remaining = policy.attempts();
+        while let Err(source) =
+            Self::shutdown_device_with_lease(device, lease, pool, save_bitmap).await
+        {
+            attempts_remaining -= 1;
+            if attempts_remaining == 0 {
+                device.abandon();
+                Self::retire_uncertain(pool, lease).await;
+                return Err(PooledDestroyError::device_cleanup(source));
             }
-            Err(DestroyAttemptError::Storage(source)) => {
-                Self::release_clean(pool, lease).await;
-                return Err(PooledDestroyError::storage_cleanup(source));
-            }
-            Err(DestroyAttemptError::Device(source)) => source,
-        };
-
-        for _ in 1..attempts {
             tokio::time::sleep(policy.delay).await;
-            match Self::run_destroy_attempt(device, lease, pool, mode).await {
-                Ok(()) => {
-                    Self::release_clean(pool, lease).await;
-                    return Ok(());
-                }
-                Err(DestroyAttemptError::Storage(source)) => {
-                    Self::release_clean(pool, lease).await;
-                    return Err(PooledDestroyError::storage_cleanup(source));
-                }
-                Err(DestroyAttemptError::Device(source)) => last_device_err = source,
-            }
         }
 
-        device.abandon();
-        Self::retire_uncertain(pool, lease).await;
-        Err(PooledDestroyError::device_cleanup(last_device_err))
-    }
-
-    async fn run_destroy_attempt(
-        device: &mut NbdCowDevice,
-        lease: &mut LeaseGuard,
-        pool: &pool::DevicePoolHandle,
-        mode: DestroyMode,
-    ) -> std::result::Result<(), DestroyAttemptError> {
-        match mode {
+        let storage_result = match mode {
             DestroyMode::RemoveCow => {
-                Self::shutdown_device_with_lease(device, lease, pool, false)
-                    .await
-                    .map_err(DestroyAttemptError::Device)?;
-                remove_cow_files(&device.cow_file).map_err(DestroyAttemptError::Storage)
+                remove_cow_files(&device.cow_file).map_err(PooledDestroyError::storage_cleanup)
             }
-            DestroyMode::KeepCow => Self::shutdown_device_with_lease(device, lease, pool, true)
-                .await
-                .map_err(DestroyAttemptError::Device),
-        }
+            DestroyMode::KeepCow => Ok(()),
+        };
+        Self::release_clean(pool, lease).await;
+        storage_result
     }
 
     async fn shutdown_device_with_lease(

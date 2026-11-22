@@ -1136,7 +1136,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.93"
+version = "0.12.94"
 dependencies = [
  "chrono",
  "clap",
@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.110.22"
+version = "0.110.23"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.242"
+version = "0.1.243"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -3184,7 +3184,7 @@ dependencies = [
 
 [[package]]
 name = "nbd-cow"
-version = "0.5.29"
+version = "0.5.30"
 dependencies = [
  "bitvec",
  "cli-test-support",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.97"
+version = "0.249.99"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4894,7 +4894,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.136"
+version = "0.53.137"
 dependencies = [
  "api-contracts",
  "async-trait",

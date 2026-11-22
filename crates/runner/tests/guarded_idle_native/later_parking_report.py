@@ -69,9 +69,7 @@ def validate(directory):
             raise ValueError("later parking changed original owner")
         blocked, pool, tail, waiting, complete, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if not status_evidence.valid_status_path(path) or path in paths:
-            raise ValueError("private status path changed")
-        paths.add(path)
+        status_evidence.claim_status_path(path, paths, "private status path changed")
         initial = blocked.get("published_status")
         status_evidence.original_status(initial, sandbox=identity[0])
         preparation = blocked.get("preparation")

@@ -30,6 +30,7 @@ home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-c
 member_memory_protocol_floor=$(<"${repo_root}/.github/rollback-floors/member-memory-dual-writer")
 widget_push_columns_floor=$(<"${repo_root}/.github/rollback-floors/ios-widget-push-columns-independent-api")
 agent_connector_schema_floor=$(<"${repo_root}/.github/rollback-floors/agent-connector-schema-independent-api")
+agent_api_profile_floor=$(<"${repo_root}/.github/rollback-floors/agent-api-profile-independent-api")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -263,6 +264,12 @@ case "${1:-}" in
         [ "${MOCK_AGENT_CONNECTOR_SCHEMA_ON_MAIN:-1}" = "1" ]
       else
         [ "${MOCK_AGENT_CONNECTOR_SCHEMA_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_AGENT_API_PROFILE_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_AGENT_API_PROFILE_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_AGENT_API_PROFILE_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -539,6 +546,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_AGENT_CONNECTOR_SCHEMA_COMMIT-$MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/agent-api-profile-independent-api" ]; then
+      [ "${MOCK_AGENT_API_PROFILE_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_AGENT_API_PROFILE_COMMIT-$MOCK_AGENT_API_PROFILE_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/member-memory-dual-writer" ]; then
       [ "${MOCK_MEMBER_MEMORY_PROTOCOL_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_MEMBER_MEMORY_PROTOCOL_COMMIT-$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR}"
@@ -692,6 +704,7 @@ run_resolver() {
     MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR="$member_memory_protocol_floor" \
     MOCK_WIDGET_PUSH_COLUMNS_FLOOR="$widget_push_columns_floor" \
     MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR="$agent_connector_schema_floor" \
+    MOCK_AGENT_API_PROFILE_FLOOR="$agent_api_profile_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
@@ -2550,6 +2563,19 @@ for connector_schema_case in \
   [ ! -s "${tmp_dir}/agent-connector-schema-policy.output" ] || fail "invalid Agent connector schema floor must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Agent connector schema floor must reject before provider or host access"
+  fi
+done
+for agent_api_profile_case in \
+  "MOCK_AGENT_API_PROFILE_AVAILABLE=0|Cannot read the Agent API profile rollback floor from main" \
+  "MOCK_AGENT_API_PROFILE_COMMIT=invalid|Missing or invalid Agent API profile rollback floor" \
+  "MOCK_AGENT_API_PROFILE_ON_MAIN=0|Agent API profile rollback floor is not on main" \
+  "MOCK_AGENT_API_PROFILE_VALID=0|Rollback target predates the Agent API profile retirement"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${agent_api_profile_case#*|}" \
+    run_resolver "${tmp_dir}/agent-api-profile-policy.output" "${agent_api_profile_case%%|*}"
+  [ ! -s "${tmp_dir}/agent-api-profile-policy.output" ] || fail "invalid Agent API profile floor must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Agent API profile floor must reject before provider or host access"
   fi
 done
 

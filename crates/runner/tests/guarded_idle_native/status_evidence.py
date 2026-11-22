@@ -7,15 +7,17 @@ import pressure_report as pressure
 import report
 
 
-def valid_status_path(value):
-    """Check the private status destination without resolving or rewriting it."""
-    return (
+def claim_status_path(value, paths, reason):
+    """Record one private status destination without resolving or rewriting it."""
+    if not (
         isinstance(value, str)
         and pathlib.PurePosixPath(value).is_absolute()
         and str(pathlib.PurePosixPath(value)) == value
         and ".." not in pathlib.PurePosixPath(value).parts
         and pathlib.PurePosixPath(value).name == "status.json"
-    )
+    ) or value in paths:
+        raise ValueError(reason)
+    paths.add(value)
 
 
 def status_wait_advanced(before, after):

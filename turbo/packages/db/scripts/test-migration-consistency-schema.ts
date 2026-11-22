@@ -90,6 +90,7 @@ import {
   validateLegacyStorageRetirement,
   validateRetiredStorageSchema,
 } from "./test-legacy-storage-retirement";
+import { validateLegacyAgentApiProfileRetirement } from "./test-legacy-agent-api-profile-retirement";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
 import { validateWorkspaceWorkflowIdentity } from "./test-workspace-workflow-identity";
@@ -1011,17 +1012,6 @@ async function generateFreshMigrations(): Promise<void> {
   );
   // Drizzle does not model routines. Install the independently maintained
   // current definition, then validate its exact body on both schema shapes.
-  const agentMetadata = await fs.readFile(
-    path.join(
-      PACKAGE_DIR,
-      "src/functions/update-legacy-agent-api-metadata.sql",
-    ),
-    "utf-8",
-  );
-  await fs.appendFile(
-    path.join(MIGRATIONS_DIR, finalSql),
-    `\n--> statement-breakpoint\n${agentMetadata}`,
-  );
   const workflowDeletion = await fs.readFile(
     path.join(PACKAGE_DIR, "src/functions/delete-workflow-rows.sql"),
     "utf-8",
@@ -1384,17 +1374,6 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "7401f5cb04ba3cc021f8c39b3dce1b8d",
-  },
-  {
-    schemaName: "public",
-    functionName: "update_legacy_agent_api_metadata",
-    identityArguments:
-      "p_org_id text, p_agent_id uuid, p_member_id text, p_is_admin boolean, p_identity_changes boolean, p_visibility text, p_public_limit integer, p_body bytea, p_now timestamp without time zone",
-    kind: "f",
-    volatility: "v",
-    securityDefiner: false,
-    parallel: "u",
-    bodyHash: "0f83156a5ae4ec2301c9e52da6356f62",
   },
   {
     schemaName: "public",
@@ -2894,6 +2873,10 @@ async function main(): Promise<void> {
     await validateLegacyStorageRetirement(
       dbUrl1,
       await migrationTimestamp("1617_retire_legacy_storage_registry"),
+    );
+    await validateLegacyAgentApiProfileRetirement(
+      dbUrl1,
+      await migrationTimestamp("1618_drop_legacy_agent_api_profiles"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
