@@ -130,6 +130,7 @@ struct ChatSettingsView: View {
           .okouSectionNote()
         }
         StoreProvider(store.settingsResources.store) {
+          SettingsModelsSection(models: store.modelStore)
           SettingsBillingSection(workspace: store)
         }
         Section {
@@ -273,4 +274,28 @@ struct ChatSettingsView: View {
     OkouRowLabel(title, okouSymbol: icon)
   }
 
+}
+
+private struct SettingsModelsSection: View {
+  let models: ChatModelStore
+  @ResolvedValue private var canLinkSubscriptions: Bool?
+
+  init(models: ChatModelStore) {
+    self.models = models
+    _canLinkSubscriptions = ResolvedValue(task: models.subscriptionLinkingEnabled, keepLast: true)
+  }
+
+  var body: some View {
+    if canLinkSubscriptions == true {
+      Section {
+        NavigationLink {
+          PersonalSubscriptionsView(store: models.subscriptions)
+        } label: {
+          OkouRowLabel("Subscriptions", okouSymbol: "cpu")
+        }
+      } header: {
+        Text("Models").okouSectionHeader()
+      }
+    }
+  }
 }
