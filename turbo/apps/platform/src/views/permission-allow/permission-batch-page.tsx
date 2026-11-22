@@ -13,7 +13,7 @@ export function PermissionBatchPage() {
   }
   const signals = graph.state === "hasData" ? graph.data : null;
   return (
-    <div className="pointer-events-none fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-6 pb-safe-offset-8 pl-safe-offset-6">
+    <div className="fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto pt-safe-offset-8 pr-safe-offset-6 pb-safe-offset-8 pl-safe-offset-6">
       <main className="pointer-events-auto my-auto flex w-[600px] max-w-full shrink-0 flex-col items-center gap-10 rounded-[20px] border border-border bg-background px-6 py-12">
         <ProductBrandMark />
         {graph.state === "loading" ? (
