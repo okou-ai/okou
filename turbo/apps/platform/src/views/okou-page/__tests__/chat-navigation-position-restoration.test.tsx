@@ -311,6 +311,10 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
       if (contentTop === undefined) {
         throw new Error(`No content position for ${text}`);
       }
+      fireEvent.scroll(container);
+      fireEvent.wheel(container, {
+        deltaY: contentTop - viewportOffsetTop - container.scrollTop,
+      });
       setScrollTop(contentTop - viewportOffsetTop);
       fireEvent.scroll(container);
     },
@@ -377,6 +381,8 @@ async function loadEarlierThreadMessage(
 ): Promise<void> {
   await waitForThreadMessage(threadId, latestText);
   const container = threadContainer(threadId);
+  fireEvent.scroll(container);
+  fireEvent.wheel(container, { deltaY: 0 - container.scrollTop });
   container.scrollTop = 0;
   fireEvent.scroll(container);
   await waitForThreadMessage(threadId, earlierText);
