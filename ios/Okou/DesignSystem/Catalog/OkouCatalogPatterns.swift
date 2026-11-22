@@ -219,10 +219,10 @@
         }
         OkouCatalogSection("Chats") {
           VStack(spacing: 0) {
-            OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
+            OkouChatRowLabel("!45375 Sidebar entries open in one tap", states: .unread) {
               OkouChatStatusMark(emoji: "✅")
             }
-            OkouChatRowLabel("Design tokens review", isWorking: true) {
+            OkouChatRowLabel("Design tokens review", states: .working) {
               OkouChatStatusMark(emoji: nil)
             }
           }
