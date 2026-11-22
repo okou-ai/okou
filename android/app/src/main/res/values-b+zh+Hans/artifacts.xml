@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_resources">对话资料</string>
+    <string name="chat_resources_back">返回对话资料</string>
     <string name="artifact_title">成果</string>
     <string name="artifact_search">搜索成果</string>
     <string name="artifact_return_workspace">返回工作区</string>
