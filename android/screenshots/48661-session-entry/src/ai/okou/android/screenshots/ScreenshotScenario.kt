@@ -71,7 +71,7 @@ class ScreenshotScenario {
         try {
             device.executeShellCommand("settings put global animator_duration_scale 1.0")
             auth.state.value = AuthenticationState()
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            ActivityScenario.launch(MainActivity::class.java).use {
                 captureWaiting(R.string.auth_restoring, "restoring.png")
 
                 auth.membershipsAction = {
@@ -104,8 +104,6 @@ class ScreenshotScenario {
                 find(R.string.auth_workspace_setup)
                 find(R.string.auth_check_workspace)
                 capture(R.string.auth_no_workspace, "no-workspace.png")
-                captureCompactDark(scenario)
-
                 auth.membershipsAction = { error("Fixture membership read failed") }
                 find(R.string.auth_check_workspace).click()
                 capture(R.string.auth_unavailable, "unavailable.png")
@@ -134,6 +132,23 @@ class ScreenshotScenario {
         }
     }
 
+    @Test
+    fun shortLandscapeDarkWithLargeText() {
+        val previous = auth.state.value
+        val workspaces = auth.available
+        try {
+            auth.available = emptyList()
+            auth.state.value = testAuthenticationState(session = "compact-entry", workspace = null)
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                find(R.string.auth_no_workspace)
+                captureCompactDark(scenario)
+            }
+        } finally {
+            auth.available = workspaces
+            auth.state.value = previous
+        }
+    }
+
     private fun captureCompactDark(scenario: ActivityScenario<MainActivity>) {
         val mode = checkNotNull(app.getSystemService(UiModeManager::class.java))
         val originalNight = mode.nightMode
@@ -147,6 +162,8 @@ class ScreenshotScenario {
             originalNightMask =
                 it.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         }
+        val automation = instrumentation.uiAutomation
+        automation.adoptShellPermissionIdentity("android.permission.MODIFY_DAY_NIGHT_MODE")
         try {
             mode.nightMode = UiModeManager.MODE_NIGHT_YES
             device.executeShellCommand("wm size 440x700")
@@ -170,13 +187,20 @@ class ScreenshotScenario {
             find(R.string.auth_check_workspace)
             ScreenshotCapture.capture("compact-dark.png")
         } finally {
-            if (originalFont == "null")
-                device.executeShellCommand("settings delete system font_scale")
-            else device.executeShellCommand("settings put system font_scale $originalFont")
-            device.executeShellCommand("wm size $originalSize")
-            device.executeShellCommand("wm density $originalDensity")
-            scenario.onActivity { it.requestedOrientation = originalOrientation }
-            mode.nightMode = originalNight
+            try {
+                if (originalFont == "null")
+                    device.executeShellCommand("settings delete system font_scale")
+                else device.executeShellCommand("settings put system font_scale $originalFont")
+                device.executeShellCommand("wm size $originalSize")
+                device.executeShellCommand("wm density $originalDensity")
+                scenario.onActivity { it.requestedOrientation = originalOrientation }
+            } finally {
+                try {
+                    mode.nightMode = originalNight
+                } finally {
+                    automation.dropShellPermissionIdentity()
+                }
+            }
         }
         awaitConfiguration(scenario, "original window and text size") {
             it.screenHeightDp >= 480 &&
