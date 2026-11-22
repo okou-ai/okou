@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import android.util.Log
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
@@ -119,10 +120,17 @@ internal fun ChatRowSwipe(
                         )
                     }
                     reveal = next
+                    Log.d("SwipeProbe", "row reveal delta=$delta offset=$offset ready=${next.ready}")
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val x = windowX + down.position.x
+                    Log.d(
+                        "SwipeProbe",
+                        "row down time=${down.uptimeMillis} local=${down.position} windowX=$x " +
+                            "returning=$returning type=${down.type} leftEdge=$leftEdge " +
+                            "rightEdge=$rightEdge width=${view.width} read=$readAction archive=$archiveAction",
+                    )
                     if (
                         returning ||
                             down.type != PointerType.Touch ||
@@ -137,9 +145,16 @@ internal fun ChatRowSwipe(
                             val logical = delta.x * directionSign
                             val available =
                                 if (logical > 0) readAction != null else archiveAction != null
+                            Log.d(
+                                "SwipeProbe",
+                                "row slop time=${change.uptimeMillis} delta=$delta " +
+                                    "consumed=${change.isConsumed} available=$available",
+                            )
                             if (available && abs(delta.x) >= SwipeHorizontalRatio * abs(delta.y)) {
                                 change.consume()
                             }
+                        }.also {
+                            if (it == null) Log.d("SwipeProbe", "row slop cancelled")
                         } ?: return@awaitEachGesture
                     try {
                         updateReveal(start.position - down.position)
@@ -165,6 +180,7 @@ internal fun ChatRowSwipe(
                             change.consume()
                         }
                     } finally {
+                        Log.d("SwipeProbe", "row gesture finished offset=${reveal.offset}")
                         reveal = reveal.copy(ready = false)
                         returning = reveal.offset != 0f
                     }
@@ -179,7 +195,17 @@ internal fun ChatRowSwipe(
         if (reveal.offset != 0f && revealed != null) {
             ChatSwipeAction(revealed, reveal, Modifier.matchParentSize())
         }
-        content(Modifier.offset { IntOffset(reveal.offset.roundToInt(), 0) })
+        content(
+            Modifier.offset { IntOffset(reveal.offset.roundToInt(), 0) }.onGloballyPositioned {
+                if (reveal.offset != 0f) {
+                    val left = it.localToWindow(Offset.Zero).x
+                    Log.d(
+                        "SwipeProbe",
+                        "row layout left=$left right=${left + it.size.width} offset=${reveal.offset}",
+                    )
+                }
+            }
+        )
     }
 }
 

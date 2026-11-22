@@ -606,6 +606,11 @@ class NativeChatListTest {
                         0, // flags
                     )
                 try {
+                    Log.d(
+                        "SwipeProbe",
+                        "inject action=$action x=${point.x} y=${point.y} " +
+                            "down=$downAt time=${event.eventTime} density=$swipeDensity",
+                    )
                     return instrumentation.uiAutomation.injectInputEvent(event, true)
                 } finally {
                     event.recycle()
@@ -616,19 +621,32 @@ class NativeChatListTest {
                 val point = swipePoint(displacement, 0)
                 assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
                 val targetRight = row.right + point.x - start.x
-                assertTrue(
-                    "Chat row failed to follow the $displacement dp swipe",
+                Log.d(
+                    "SwipeProbe",
+                    "observe dp=$displacement baseline=${row.toShortString()} targetRight=$targetRight",
+                )
+                var previousBounds: String? = null
+                val matched =
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean =
-                                device.findObject(personalChat)?.visibleBounds?.right?.let {
-                                    abs(it - targetRight) <= 2
-                                } == true
+                            override fun apply(device: UiDevice): Boolean {
+                                val bounds = device.findObject(personalChat)?.visibleBounds
+                                val description = bounds?.toShortString() ?: "missing"
+                                if (previousBounds != description) {
+                                    Log.d("SwipeProbe", "observe row=$description targetRight=$targetRight")
+                                    previousBounds = description
+                                }
+                                return bounds != null && abs(bounds.right - targetRight) <= 2
+                            }
                         },
                         10_000,
-                    ),
-                )
-                takeScreenshot().writeToTestStorage(name)
+                    )
+                if (!matched) {
+                    runCatching { ScreenshotCapture.capture("$name-failed.png") }
+                        .onFailure { Log.d("SwipeProbe", "failure screenshot unavailable", it) }
+                }
+                assertTrue("Chat row failed to follow the $displacement dp swipe", matched)
+                ScreenshotCapture.capture("$name.png")
             }
             assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
             var released = false

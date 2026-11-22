@@ -71,6 +71,19 @@ import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        val history = List(event.historySize) { index ->
+            "${event.getHistoricalEventTime(index)}:(${event.getHistoricalX(index)},${event.getHistoricalY(index)})"
+        }
+        android.util.Log.d(
+            "SwipeProbe",
+            "activity action=${event.actionMasked} x=${event.x} y=${event.y} " +
+                "down=${event.downTime} time=${event.eventTime} history=$history " +
+                "density=${resources.displayMetrics.density} width=${window.decorView.width}",
+        )
+        return super.dispatchTouchEvent(event)
+    }
+
     private val updates
         get() = (application as OkouApplication).updates
 
