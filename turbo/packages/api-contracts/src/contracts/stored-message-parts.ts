@@ -55,14 +55,18 @@ export function readStoredMessageParts(value: unknown): unknown {
           "type" in part &&
           part.type === "source" &&
           "kind" in part &&
-          part.kind === "agent"
+          part.kind === "agent" &&
+          "runId" in part &&
+          "threadId" in part &&
+          "titleSnapshot" in part
         ) {
-          // Append-only events can still name a forwarded conversation by its old kind.
-          const { agentId: _retiredId, ...source } = part as Record<
-            string,
-            unknown
-          >;
-          return { ...source, kind: "chat" };
+          // Append-only events keep the old discriminator for forwarded conversations.
+          return {
+            type: "chat_thread",
+            threadId: part.threadId,
+            runId: part.runId,
+            titleSnapshot: part.titleSnapshot,
+          };
         }
         if (
           typeof part !== "object" ||

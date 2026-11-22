@@ -123,13 +123,11 @@ test("Delegated work links back to its source run", async () => {
     version: 1,
     parts: [
       {
-        type: "source",
-        kind: "chat",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
 
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
       { type: "text", text: "Prepare the delegated launch analysis." },
     ],
@@ -234,13 +232,11 @@ test("Forwarded feedback names its source chat", async () => {
         note: [],
       },
       {
-        type: "source",
-        kind: "chat",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
 
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
     ],
   } satisfies UserMessageDocument;
@@ -307,13 +303,11 @@ async function openStructuredContextChat() {
     version: 1,
     parts: [
       {
-        type: "source",
-        kind: "chat",
+        type: "chat_thread",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
 
         titleSnapshot: "Source thread",
-        href: `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
       },
       {
         type: "file",

@@ -1,3 +1,4 @@
+import { visibleWorkflowCondition } from "../services/workflow-visibility";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -102,7 +103,6 @@ import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-mee
 import {
   loadVisibleWorkflowById$,
   type VisibleWorkflow,
-  visibleWorkflowCondition,
   requireWorkflowPermission,
   workflowSummary,
   workflowList,
@@ -1198,7 +1198,7 @@ const publishCopiedWorkflow$ = command(
           and(
             eq(workflows.orgId, args.orgId),
             eq(workflows.id, targetWorkflowId),
-            visibleWorkflowCondition(args.member),
+            visibleWorkflowCondition(args.member.userId),
           ),
         )
         .limit(1);
@@ -1564,7 +1564,7 @@ const loadVisibilityTransition$ = command(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.id, args.workflowId),
-          visibleWorkflowCondition(args.member),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);

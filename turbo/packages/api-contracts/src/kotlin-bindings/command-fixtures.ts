@@ -144,12 +144,10 @@ export function kotlinCommandFixtureJson(): string {
             parts: [
               { type: "text", text },
               {
-                type: "source",
-                kind: "chat",
+                type: "chat_thread",
                 runId,
                 threadId,
                 titleSnapshot: "Source conversation",
-                href: "https://app.example/chat",
               },
             ],
           },

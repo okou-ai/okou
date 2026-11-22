@@ -25,7 +25,7 @@ import {
 } from "../services/integration-oauth-callback";
 import { queryOf } from "../context/request";
 import { authorization$, request$ } from "../context/hono";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { claimBuiltinConnectorOAuthState$ } from "../services/connector-oauth-state.service";
 import { publishUserSignal } from "../external/realtime";
 import { env, optionalEnv } from "../../lib/env";
@@ -960,9 +960,11 @@ const encryptGithubInstallationAccessToken$ = command(
     signal: AbortSignal,
   ) => {
     const { token } = await getGithubInstallationAccessToken(args, signal);
+    signal.throwIfAborted();
     const context = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
+    signal.throwIfAborted();
     const encryptedToken = await encryptPersistentSecretValue(token, context);
     signal.throwIfAborted();
     return encryptedToken;

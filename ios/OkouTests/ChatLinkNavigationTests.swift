@@ -301,7 +301,7 @@ final class ChatLinkFixture: Sendable {
       let source: String
       if sequence == 1 {
         source = """
-          {"type":"source","kind":"chat","threadId":"\(sourceID)","runId":"\(runID(8))","titleSnapshot":"Source round 8"},
+          {"type":"chat_thread","threadId":"\(sourceID)","runId":"\(runID(8))","titleSnapshot":"Source round 8"},
           """
       } else if sequence == 4 {
         source = """

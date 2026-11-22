@@ -1,3 +1,4 @@
+import type { ChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   ChatShareHeaderControls,
   useChatShareRefresh,
@@ -400,11 +401,6 @@ import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
-
-type UserMessageNonContentPart = Extract<
-  UserMessagePart,
-  { readonly type: "source" | "automation" }
->;
 
 type UserMessageAnnotationRenderPart = Extract<
   UserMessageRenderPart,
@@ -7066,10 +7062,7 @@ function ChatRunSourceMessageAnnotation({
   part,
   className,
 }: {
-  part: Extract<
-    Extract<UserMessageNonContentPart, { type: "source" }>,
-    { kind: "chat" }
-  >;
+  part: ChatRunReference;
   className: string;
 }) {
   const { t } = useTranslation();

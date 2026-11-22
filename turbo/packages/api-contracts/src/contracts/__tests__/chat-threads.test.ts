@@ -309,7 +309,7 @@ describe("chat thread generation template contract", () => {
     }
   });
 
-  it("accepts an internal agent-run source annotation", () => {
+  it("accepts a forwarded chat reference", () => {
     const runId = "00000000-0000-4000-8000-000000000001";
     const threadId = "00000000-0000-4000-8000-000000000002";
     expect(
@@ -318,12 +318,10 @@ describe("chat thread generation template contract", () => {
         parts: [
           { type: "text", text: "Delegated prompt" },
           {
-            type: "source",
-            kind: "chat",
+            type: "chat_thread",
             runId,
             threadId,
             titleSnapshot: "New thread",
-            href: `/chats/${threadId}#run-${runId}`,
           },
         ],
       }),

@@ -1,3 +1,4 @@
+import { isChatRunReference } from "../contracts/chat-run-reference";
 import { readStoredMessageParts } from "../contracts/stored-message-parts";
 import {
   modelSettingsPatchSchema,
@@ -476,24 +477,14 @@ const userMessageMcpSourcePartSchema = object({
   clientName: string().trim().min(1).max(120).optional(),
 }).strict();
 
-const userMessageChatSourcePartSchema = object({
-  type: literal("source"),
-  kind: literal("chat"),
-  runId: uuid(),
-  threadId: uuid(),
-  titleSnapshot: string().min(1),
-  href: string().min(1),
-}).strict();
-
 const userMessageSourcePartSchema = discriminatedUnion("kind", [
   userMessageExternalSourcePartSchema,
   userMessageMcpSourcePartSchema,
-  userMessageChatSourcePartSchema,
 ]);
 
 export const userMessageInputPartSchema = discriminatedUnion("type", [
   userMessageTextPartSchema,
-  userMessageChatThreadPartSchema,
+  userMessageChatThreadPartSchema.extend({ runId: uuid().optional() }),
   userMessageTemplatePartSchema,
   projectMentionSchema,
   userMessageSourcePartSchema,
@@ -564,7 +555,11 @@ export const userMessageDocumentSchema = object({
       (parts) => {
         return (
           parts.filter((part) => {
-            return part.type === "source" || part.type === "automation";
+            return (
+              part.type === "source" ||
+              part.type === "automation" ||
+              isChatRunReference(part)
+            );
           }).length <= 1
         );
       },
@@ -590,7 +585,11 @@ export const userMessageInputDocumentSchema = object({
       (parts) => {
         return (
           parts.filter((part) => {
-            return part.type === "source" || part.type === "automation";
+            return (
+              part.type === "source" ||
+              part.type === "automation" ||
+              isChatRunReference(part)
+            );
           }).length <= 1
         );
       },

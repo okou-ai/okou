@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
@@ -75,12 +76,18 @@ export function prependMessageDocument(
     return userMessageDocumentSchema.parse(prefix);
   }
   const hasCurrentSource = current.parts.some((part) => {
-    return part.type === "source" || part.type === "automation";
+    return (
+      part.type === "source" ||
+      part.type === "automation" ||
+      isChatRunReference(part)
+    );
   });
   const parts: UserMessagePart[] = prefix.parts.map((part) => {
     if (
       hasCurrentSource &&
-      (part.type === "source" || part.type === "automation")
+      (part.type === "source" ||
+        part.type === "automation" ||
+        isChatRunReference(part))
     ) {
       return {
         type: "additional_info",
@@ -761,7 +768,7 @@ function chatRunSourceTitle(
   parts: readonly UserMessagePart[],
 ): string | undefined {
   return parts.find((part) => {
-    return part.type === "source" && part.kind === "chat";
+    return isChatRunReference(part);
   })?.titleSnapshot;
 }
 
@@ -817,6 +824,7 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
   }).length;
 
   for (const [partIndex, part] of parts.entries()) {
+    if (isChatRunReference(part)) continue;
     if (part.type === "text") {
       appendRestoredText(state, part.text);
       continue;
@@ -950,6 +958,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   };
 
   for (const part of parsed.data.parts) {
+    if (isChatRunReference(part)) continue;
     if (part.type === "feedback") {
       flushInlineText();
       feedbackParts.push(part);
@@ -1004,6 +1013,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   };
 
   for (const part of parsed.data.parts) {
+    if (isChatRunReference(part)) continue;
     if (part.type === "feedback") {
       flushInlineText();
       const context = suggestionContexts.get(part);

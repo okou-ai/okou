@@ -33,7 +33,7 @@ struct UserMessageView: View {
           VStack(alignment: .leading, spacing: OkouSpace.ten) {
             UserMessageBody(
               parts: document.bodyParts, webURL: webURL,
-              sourceTitle: document.annotation?.kind == "chat"
+              sourceTitle: document.annotation?.isForwardedChat == true
                 ? document.annotation?.titleSnapshot : nil)
             if let error = message.inputError {
               Label(error, okouSymbol: "circle-alert")
@@ -175,6 +175,7 @@ private struct UserMessageAnnotation: View {
   @Environment(\.openChatSource) private var openChatSource
 
   private var kind: String {
+    if part.isForwardedChat { return "chat" }
     if part.type == "automation" { return "automation" }
     if part.kind == "feishu", part.href?.hasPrefix("https://applink.larksuite.com/") == true {
       return "lark"

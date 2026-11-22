@@ -403,7 +403,7 @@ const resolveNormalSendChatRunSource$ = command(
     if (hasChatRunSourceAnnotation(params.userMessage)) {
       return {
         response: badRequestMessage(
-          "Agent source annotations are server-managed",
+          "Forwarded chat references are server-managed",
         ),
       };
     }
@@ -446,12 +446,12 @@ const resolveNormalSendChatRunSource$ = command(
       signal,
     );
     if (resolved === null) {
-      return { response: badRequestMessage("Agent source run not found") };
+      return { response: badRequestMessage("Source run not found") };
     }
     if (resolved.annotation === null) {
       return {
         response: badRequestMessage(
-          "Agent source run is not linked to a chat thread",
+          "Source run is not linked to a chat thread",
         ),
       };
     }

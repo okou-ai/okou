@@ -1,3 +1,4 @@
+import type { ChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -13,7 +14,6 @@ import type {
   ChatRelationMessage,
   RelatedChat,
 } from "@okouai/api-contracts/contracts/chat-relations";
-import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
   ChatRelationList,
@@ -39,24 +39,18 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
 
-type ChatSourcePart = Extract<
-  UserMessagePart,
-  { type: "source"; kind: "chat" }
->;
-
-function useChatOrigin(thread: ChatPanelSignals): ChatSourcePart | null {
+function useChatOrigin(thread: ChatPanelSignals): ChatRunReference | null {
   const origin = useGet(thread.relations.origin$);
-  return origin?.kind === "source" && origin.part.kind === "chat"
+  return origin?.kind === "source" && origin.part.type === "chat_thread"
     ? origin.part
     : null;
 }
 
-// An agent origin is a chat, so it is listed with the other chats. Only
-// sources outside Okou keep a section of their own.
+// Forwarded conversations appear alongside the other related chats.
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const origin = useGet(thread.relations.origin$);
-  if (origin?.kind !== "source" || origin.part.kind === "chat") {
+  if (origin?.kind !== "source" || origin.part.type === "chat_thread") {
     return null;
   }
   const part = origin.part;
@@ -440,7 +434,7 @@ function ResourceChatRow({
 }
 
 // The parent is not always among the chats this one exchanged messages with.
-function UnlistedOriginRow({ part }: { readonly part: ChatSourcePart }) {
+function UnlistedOriginRow({ part }: { readonly part: ChatRunReference }) {
   const titleReveal = useTitleReveal();
   return (
     <li>

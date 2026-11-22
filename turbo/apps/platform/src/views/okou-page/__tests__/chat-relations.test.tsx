@@ -397,13 +397,10 @@ test("Link the first-run agent source directly to its parent run", async () => {
   await setupRelations({
     events: [
       prompt({
-        type: "source",
-        kind: "chat",
+        type: "chat_thread",
         threadId: PEER,
         runId: OTHER_RUN,
         titleSnapshot: "Parent planning chat",
-
-        href: `https://app.okou.ai/chats/${PEER}#run-${OTHER_RUN}`,
       }),
     ],
   });
@@ -453,13 +450,10 @@ test("List an agent origin once when it is also a related chat", async () => {
   await setupRelations({
     events: [
       prompt({
-        type: "source",
-        kind: "chat",
+        type: "chat_thread",
         threadId: PEER,
         runId: OTHER_RUN,
         titleSnapshot: "Parent planning chat",
-
-        href: `https://app.okou.ai/chats/${PEER}#run-${OTHER_RUN}`,
       }),
     ],
     mock: () => {
@@ -491,13 +485,10 @@ test("Keep the agent origin first in the collapsed preview when it is the oldest
   await setupRelations({
     events: [
       prompt({
-        type: "source",
-        kind: "chat",
+        type: "chat_thread",
         threadId: PEER,
         runId: OTHER_RUN,
         titleSnapshot: "Parent planning chat",
-
-        href: `https://app.okou.ai/chats/${PEER}#run-${OTHER_RUN}`,
       }),
     ],
     mock: () => {

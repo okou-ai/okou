@@ -1,3 +1,4 @@
+import type { ChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import type { SuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import type { Root } from "hast";
 import { command } from "ccstate";
@@ -40,16 +41,9 @@ type FeedbackNotePartOfType<T extends FeedbackNotePart["type"]> = Extract<
   { type: T }
 >;
 type UserMessageSourcePart = UserMessagePartOfType<"source">;
-type UserMessageChatSourcePart = Extract<
-  UserMessageSourcePart,
-  { kind: "chat" }
->;
 type UserMessageMcpSourcePart = Extract<UserMessageSourcePart, { kind: "mcp" }>;
 type UserMessageExternalSourcePart =
-  | Exclude<
-      UserMessageSourcePart,
-      UserMessageChatSourcePart | UserMessageMcpSourcePart
-    >
+  | Exclude<UserMessageSourcePart, UserMessageMcpSourcePart>
   | {
       readonly type: "source";
       readonly kind: "email";
@@ -94,7 +88,7 @@ export type UserMessageRenderPart =
   | {
       readonly type: "source";
       readonly kind: "chat";
-      readonly part: UserMessageChatSourcePart;
+      readonly part: ChatRunReference;
     }
   | {
       readonly type: "source";

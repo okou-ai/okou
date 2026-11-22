@@ -101,12 +101,10 @@ async function expectAgentChatProvenance(args: {
     },
   );
   expect(delegatedInput?.userMessage.parts).toContainEqual({
-    type: "source",
-    kind: "chat",
+    type: "chat_thread",
     runId: args.source.runId,
     threadId: args.source.threadId,
     titleSnapshot: "New thread",
-    href: `/chats/${args.source.threadId}#run-${args.source.runId}`,
   });
 }
 

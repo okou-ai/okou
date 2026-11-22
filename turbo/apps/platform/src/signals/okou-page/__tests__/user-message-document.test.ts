@@ -264,13 +264,11 @@ test("Forwarded feedback uses the document-level source title", () => {
         note: [],
       },
       {
-        type: "source",
-        kind: "chat",
+        type: "chat_thread",
         runId: "d0000000-0000-4000-a000-000000000931",
         threadId: CHAT_THREAD_ID,
 
         titleSnapshot: "Source launch plan",
-        href: `/chats/${CHAT_THREAD_ID}#run-d0000000-0000-4000-a000-000000000931`,
       },
     ],
   };
@@ -284,13 +282,11 @@ test("Forwarded feedback uses the document-level source title", () => {
 
 test("Forwarded mail feedback keeps common source identifiers", () => {
   const sourcePart = {
-    type: "source",
-    kind: "chat",
+    type: "chat_thread",
     runId: "d0000000-0000-4000-a000-000000000932",
     threadId: CHAT_THREAD_ID,
 
     titleSnapshot: "Source launch plan",
-    href: `/chats/${CHAT_THREAD_ID}#run-d0000000-0000-4000-a000-000000000932`,
   } as const satisfies UserMessagePart;
   const cases: readonly {
     readonly document: UserMessageDocument;

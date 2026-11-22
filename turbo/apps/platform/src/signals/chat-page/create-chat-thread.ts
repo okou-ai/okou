@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   userMessageDocumentSchema,
   resolveChatEventRecommendedFollowups,
@@ -199,7 +200,7 @@ import {
   createChatThreadFeedbackSignals,
   type ChatForwardComposerFactory,
 } from "./chat-thread-feedback.ts";
-import { createForwardAgentComposerSignals } from "../okou-page/agent-composer-signals.ts";
+import { createForwardChatComposerSignals } from "../okou-page/agent-composer-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
 import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
 import {
@@ -1072,6 +1073,8 @@ const registerUserMessageRenderPart$ = command(
         return { type: "project", part };
       }
       case "chat_thread": {
+        if (isChatRunReference(part))
+          return { type: "source", kind: "chat", part };
         return { type: "chat_thread", part };
       }
       case "template": {
@@ -1084,15 +1087,9 @@ const registerUserMessageRenderPart$ = command(
         return { type: "model", part };
       }
       case "source": {
-        return part.kind === "chat"
-          ? {
-              type: part.type,
-              kind: "chat",
-              part,
-            }
-          : part.kind === "mcp"
-            ? { type: part.type, kind: "mcp", part }
-            : { type: part.type, kind: "external", part };
+        return part.kind === "mcp"
+          ? { type: part.type, kind: "mcp", part }
+          : { type: part.type, kind: "external", part };
       }
       case "file": {
         const renderFileId = part.annotatedFileId ?? part.fileId;
@@ -3885,7 +3882,7 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   onOptimisticSend: () => void,
   projectId?: string,
 ) => {
-  const composer = createForwardAgentComposerSignals(
+  const composer = createForwardChatComposerSignals(
     forward,
     onOptimisticSend,
     projectId,

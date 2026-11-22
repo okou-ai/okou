@@ -828,13 +828,10 @@ test("Follow the Resources origin link to its parent run", async () => {
               parts: [
                 { type: "text", text: "Child message 1" },
                 {
-                  type: "source",
-                  kind: "chat",
+                  type: "chat_thread",
                   threadId: DEEP_LINK_THREAD_ID,
                   runId: linkedRunId,
                   titleSnapshot: "Parent conversation",
-
-                  href: `https://${APP_HOST}/chats/${DEEP_LINK_THREAD_ID}#run-${linkedRunId}`,
                 },
               ],
             },

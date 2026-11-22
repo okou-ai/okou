@@ -234,7 +234,7 @@ function createAgentComposerSignalsWithDraft(
   return project ? { ...composer, project } : composer;
 }
 
-export function createForwardAgentComposerSignals(
+export function createForwardChatComposerSignals(
   forward: ChatForwardContext,
   onOptimisticSend: () => void,
   projectId?: string,

@@ -430,12 +430,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     );
     expect(forwardedMessage?.userMessage?.parts).toContainEqual({
-      type: "source",
-      kind: "chat",
+      type: "chat_thread",
       runId: source.runId,
       threadId: source.threadId,
       titleSnapshot: "Source launch plan",
-      href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
     await cancelAndCompleteChatRun(actor, forwardedRunId);
@@ -578,8 +576,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         expect.arrayContaining([
           ...scenario.userMessage.parts,
           expect.objectContaining({
-            type: "source",
-            kind: "chat",
+            type: "chat_thread",
             runId: source.runId,
           }),
         ]),

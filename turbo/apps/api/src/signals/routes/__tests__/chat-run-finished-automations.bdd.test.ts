@@ -283,11 +283,7 @@ async function expectAutomationSourceAnnotation(
       event.eventType === "input.prompt" &&
       event.runId !== undefined &&
       event.userMessage.parts.some((part) => {
-        return (
-          part.type === "source" &&
-          part.kind === "chat" &&
-          part.runId === sourceRun.runId
-        );
+        return part.type === "chat_thread" && part.runId === sourceRun.runId;
       })
     );
   });
@@ -306,12 +302,10 @@ async function expectAutomationSourceAnnotation(
     }),
   ).toStrictEqual([
     {
-      type: "source",
-      kind: "chat",
+      type: "chat_thread",
       runId: sourceRun.runId,
       threadId: sourceRun.threadId,
       titleSnapshot: WATCHED_THREAD_TITLE,
-      href: `/chats/${sourceRun.threadId}#run-${sourceRun.runId}`,
     },
   ]);
   return {

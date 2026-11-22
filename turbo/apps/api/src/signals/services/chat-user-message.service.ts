@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   readSuggestionContext,
   suggestionFeedbacks,
@@ -84,12 +85,6 @@ export function chatRunSourceTitleSnapshot(title: string | null): string {
   return normalizedTitle;
 }
 
-function chatRunSourceHref(
-  source: Pick<ChatRunSourceAnnotation, "runId" | "threadId">,
-): string {
-  return `/chats/${source.threadId}#run-${source.runId}`;
-}
-
 /**
  * Recover the provenance a send route wrote into the persisted document. The
  * annotation is the only place a claimed queue item still carries its source
@@ -99,7 +94,7 @@ export function chatRunSourceAnnotation(
   document: UserMessageDocument,
 ): ChatRunSourceAnnotation | null {
   for (const part of document.parts) {
-    if (part.type === "source" && part.kind === "chat") {
+    if (isChatRunReference(part)) {
       return {
         runId: part.runId,
         threadId: part.threadId,
@@ -134,7 +129,11 @@ export function userMessageReferences(
     if (part.type === "project") {
       projects.set(part.projectId, part.nameSnapshot);
     }
-    if (part.type === "chat_thread" && !chatThreads.has(part.threadId)) {
+    if (
+      part.type === "chat_thread" &&
+      !isChatRunReference(part) &&
+      !chatThreads.has(part.threadId)
+    ) {
       chatThreads.set(part.threadId, part.titleSnapshot);
     }
   };
@@ -163,7 +162,7 @@ export function hasChatRunSourceAnnotation(
   return chatRunSourceAnnotation(document) !== null;
 }
 
-/** Replace client-owned annotations with authoritative agent-run provenance. */
+/** Replace client-owned annotations with the verified source conversation. */
 export function withChatRunSourceAnnotation(
   document: UserMessageInputDocument,
   source: ChatRunSourceAnnotation,
@@ -177,19 +176,21 @@ export function withChatRunSourceAnnotation(
   source: ChatRunSourceAnnotation,
 ): UserMessageDocument {
   const contentParts = document.parts.filter((part) => {
-    return part.type !== "source" && part.type !== "automation";
+    return (
+      part.type !== "source" &&
+      part.type !== "automation" &&
+      !isChatRunReference(part)
+    );
   });
   return {
     version: 1,
     parts: [
       ...contentParts,
       {
-        type: "source",
-        kind: "chat",
+        type: "chat_thread",
         runId: source.runId,
         threadId: source.threadId,
         titleSnapshot: source.titleSnapshot,
-        href: chatRunSourceHref(source),
       },
     ],
   };
@@ -578,6 +579,7 @@ export function projectUserMessage(
       hasTextContent ||= part.text.trim().length > 0;
       continue;
     }
+    if (isChatRunReference(part)) continue;
     if (part.type === "chat_thread") {
       const serialized = serializeChatThreadMention(
         part.threadId,
@@ -636,10 +638,7 @@ export function projectUserMessageForPublicShare(
     version: 1,
     parts: document.parts
       .filter((part) => {
-        return (
-          part.type !== "file" &&
-          !(part.type === "source" && part.kind === "chat")
-        );
+        return part.type !== "file" && !isChatRunReference(part);
       })
       .map((part): UserMessagePart => {
         if (part.type !== "feedback") {
