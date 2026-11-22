@@ -400,7 +400,7 @@ internal fun OkouConfirmationDialog(
                 dismissOnBackPress = dismissEnabled,
                 dismissOnClickOutside = dismissEnabled,
             ),
-        title = { Text(title, Modifier.semantics { heading() }) },
+        title = { Text(title, Modifier.semantics { heading() }, fontWeight = FontWeight.SemiBold) },
         text = content,
         dismissButton = {
             TextButton(
