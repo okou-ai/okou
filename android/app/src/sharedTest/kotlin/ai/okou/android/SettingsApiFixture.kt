@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import okhttp3.mockwebserver.MockResponse
 
 internal class SettingsApiFixture(api: ChatListApiFixture) {
+    @Volatile var returnedAccountIds = listOf(primaryAccount, alternateAccount, claudeAccount)
     @Volatile var activeAccount = primaryAccount
     @Volatile var activationStatus = 200
     @Volatile var activateBeforeError = false
@@ -57,7 +58,7 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
                             Json.parseToJsonElement(RecoveryApiFixture.billing).jsonObject
                         val breakdown =
                             Json.parseToJsonElement(
-                                """[{"category":"plan","label":"Team","credits":2000,"tier":"team"},{"category":"payAsYouGo","label":"Top-up","credits":400}]"""
+                                """[{"category":"plan","label":"Pro plan","credits":300,"tier":"pro"},{"category":"plan","label":"Team plan","credits":1700,"tier":"team"},{"category":"payAsYouGo","label":"Top-up","credits":400}]"""
                             )
                         jsonResponse(
                             JsonObject(
@@ -77,9 +78,7 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
     }
 
     private fun accounts() =
-        listOf(primaryAccount, alternateAccount, claudeAccount).joinToString(",", "[", "]") {
-            account(it).toString()
-        }
+        returnedAccountIds.joinToString(",", "[", "]") { account(it).toString() }
 
     private fun account(id: String): JsonObject {
         val claude = id == claudeAccount
