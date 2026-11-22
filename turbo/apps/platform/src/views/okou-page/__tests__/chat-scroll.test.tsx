@@ -410,8 +410,11 @@ async function openConversation(
 }
 
 function scrollFromUser(container: HTMLElement, top: number): void {
+  fireEvent.scroll(container); // Deliver the previous layout offset before the gesture.
+  fireEvent.wheel(container, { deltaY: top - container.scrollTop });
   container.scrollTop = top;
   fireEvent.scroll(container);
+  fireEvent(container, new Event("scrollend"));
 }
 
 function anchorId(anchor: HTMLElement): string {
@@ -1097,7 +1100,7 @@ test("Reopening automations cancels the first reveal and restores only the final
   });
 });
 
-test.each(["wheel", "touchmove", "pointerdown", "keydown"] as const)(
+test.each(["wheel", "touchmove", "keydown"] as const)(
   "Reader %s input takes over before the narrow sidebar reveal finishes",
   async (input) => {
     const { container, geometry } = await setupUtilitySidebarScroll();
@@ -1112,12 +1115,16 @@ test.each(["wheel", "touchmove", "pointerdown", "keydown"] as const)(
       fireEvent.keyDown(container, { key: "PageDown" });
     } else if (input === "wheel") {
       fireEvent.wheel(container, { deltaY: 125 });
-    } else if (input === "pointerdown") {
-      fireEvent.pointerDown(container);
     } else {
-      fireEvent.touchMove(container);
+      fireEvent.touchStart(container, {
+        touches: [{ clientX: 40, clientY: 200 }],
+      });
+      fireEvent.touchMove(container, {
+        touches: [{ clientX: 40, clientY: 75 }],
+      });
     }
-    scrollFromUser(container, 125);
+    container.scrollTop = 125;
+    fireEvent.scroll(container);
     geometry.writes.length = 0;
     await frames.paint();
     expect(container.scrollTop).toBe(125);
@@ -1441,6 +1448,11 @@ test("Follow new messages while reading the latest reply", async () => {
   const geometry = installChatScrollGeometry(container);
   expect(container.scrollTop).toBe(geometry.bottomScrollTop());
 
+  // The browser can clamp the offset when the preceding follow-up panel disappears.
+  container.scrollTop -= 80;
+  fireEvent.scroll(container);
+  expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+
   await conversation.publish(completedTurn(6));
 
   const incomingAnswer = await screen.findByText("History answer 6");
@@ -1520,12 +1532,10 @@ test("Loading older messages preserves the reading position", async () => {
   );
   const geometry = installChatScrollGeometry(container);
   expect(screen.queryByText("History question 6")).toBeNull();
-  container.scrollTop = 40;
+  scrollFromUser(container, 40);
   const readingAnchor = geometry.firstVisibleAnchor();
   const readingAnchorId = anchorId(readingAnchor);
   const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  fireEvent.scroll(container);
 
   const olderMessage = await screen.findByText("History question 6");
   expect(olderMessage).toBeVisible();

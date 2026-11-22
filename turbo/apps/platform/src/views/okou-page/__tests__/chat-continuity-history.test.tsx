@@ -245,6 +245,8 @@ test("Page older conversation history without losing turn anchors", async () => 
   expect(container).not.toHaveTextContent("Earliest retained request");
   const scroller = scrollContainer(thread.id);
   setScrollableGeometry(scroller, 2400, 600);
+  fireEvent.scroll(scroller);
+  fireEvent.wheel(scroller, { deltaY: 50 - scroller.scrollTop });
   scroller.scrollTop = 50;
   fireEvent.scroll(scroller);
   await waitFor(() => {
@@ -256,6 +258,8 @@ test("Page older conversation history without losing turn anchors", async () => 
   expect(container).toHaveTextContent("First launch brief result");
   expect(container).toHaveTextContent("Second launch brief result");
 
+  fireEvent.scroll(scroller);
+  fireEvent.wheel(scroller, { deltaY: 50 - scroller.scrollTop });
   scroller.scrollTop = 50;
   fireEvent.scroll(scroller);
   await waitFor(() => {
@@ -302,6 +306,8 @@ test("Navigate chat history with scroll controls and keyboard commands", async (
   setScrollableGeometry(scroller, 2400, 600);
   scroller.scrollTop = 2400;
 
+  fireEvent.scroll(scroller);
+  fireEvent.wheel(scroller, { deltaY: 800 - scroller.scrollTop });
   scroller.scrollTop = 800;
   fireEvent.scroll(scroller);
   await waitFor(() => {
