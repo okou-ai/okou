@@ -633,7 +633,7 @@ def configure_response_stream(
     if not flow.response:
         return
 
-    metrics = {"total_bytes": 0}
+    metrics = stream_capture.empty_stream_byte_count()
     setup = _configure_response_inspection_stream(
         flow,
         websocket_header_work_limit=websocket_header_work_limit,
@@ -704,10 +704,9 @@ def streamed_response_size(flow: http.HTTPFlow) -> int | None:
     ``metadata_keys.RESPONSE_STREAM_STATE`` and returns ``None`` when
     ``responseheaders()`` did not configure streaming for this flow.
     """
-    state = flow.metadata.get(metadata_keys.RESPONSE_STREAM_STATE)
-    if state is None:
-        return None
-    return int(state["total_bytes"])
+    return stream_capture.streamed_byte_count(
+        flow.metadata.get(metadata_keys.RESPONSE_STREAM_STATE)
+    )
 
 
 def finalize_model_json_usage(flow: http.HTTPFlow, proxy_log_path: str) -> None:

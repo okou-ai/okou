@@ -8,8 +8,6 @@
     <string name="composer_restore_draft">Ripristina bozza conservata</string>
     <string name="controls_storage_failed">Impossibile salvare i comandi in attesa.</string>
     <string name="controls_stop">Interrompi il lavoro in corso</string>
-    <string name="controls_queued_automation">Automazione in coda</string>
-    <string name="controls_skip">Salta automazione</string>
     <string name="controls_preparing">Salvataggio del comando…</string>
     <string name="controls_sending">Invio del comando…</string>
     <string name="controls_accepted">Richiesta accettata. In attesa di conferma.</string>
@@ -23,9 +21,6 @@
     <string name="controls_read_failed">Impossibile verificare il risultato.</string>
     <string name="controls_recovery_failed">Lo stato di ripristino non è disponibile.</string>
     <string name="controls_recovering">Preparazione della conversazione per continuare.</string>
-    <string name="output_live">Risposta in tempo reale</string>
-    <string name="output_waiting">In attesa della risposta in tempo reale</string>
-    <string name="output_catching_up">Aggiornamento dei messaggi salvati. Il testo ricevuto viene conservato.</string>
     <string name="settings">Impostazioni</string>
     <string name="back">Indietro</string>
     <string name="appearance">Modalità di visualizzazione</string>

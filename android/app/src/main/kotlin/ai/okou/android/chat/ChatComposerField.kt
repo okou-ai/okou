@@ -4,6 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -53,6 +55,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -66,19 +69,17 @@ fun ChatComposerField(
     target: ComposerTarget,
     modifier: Modifier = Modifier,
     onInputFocusChanged: (Boolean) -> Unit = {},
+    offline: Boolean = false,
+    beforeSend: () -> Unit = {},
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
     val window = currentWindowSizeDp()
     val shortWindow = window.height < 480
-    val horizontalInset =
-        when {
-            shortWindow -> 12.dp
-            window.width >= 600 -> 24.dp
-            else -> 20.dp
-        }
+    val horizontalInset = composerHorizontalInset(window)
     val bottomInset =
         when {
             shortWindow -> 8.dp
@@ -197,8 +198,18 @@ fun ChatComposerField(
                 )
                 FilledIconButton(
                     onClick = {
-                        focus.clearFocus()
-                        model.send(target)
+                        if (offline) {
+                            Toast.makeText(
+                                    context,
+                                    R.string.conversation_offline_send,
+                                    Toast.LENGTH_SHORT,
+                                )
+                                .show()
+                        } else {
+                            focus.clearFocus()
+                            beforeSend()
+                            model.send(target)
+                        }
                     },
                     modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
                     enabled = state.canSend(target),
@@ -221,6 +232,13 @@ fun ChatComposerField(
         }
     }
 }
+
+internal fun composerHorizontalInset(window: IntSize) =
+    when {
+        window.height < 480 -> 12.dp
+        window.width >= 600 -> 24.dp
+        else -> 20.dp
+    }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

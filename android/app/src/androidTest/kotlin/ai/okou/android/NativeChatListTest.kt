@@ -16,7 +16,6 @@ import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import java.util.UUID
@@ -324,15 +323,10 @@ class NativeChatListTest {
             )
             takeScreenshot().writeToTestStorage("android-conversation-loading")
             firstHistory.countDown()
-            text(app.getString(R.string.history_completed))
+            text("Native history reply")
             text("Research")
-            assertTrue(
-                UiScrollable(UiSelector().scrollable(true))
-                    .setAsVerticalList()
-                    .scrollIntoView(UiSelector().textContains("Native history"))
-            )
-            assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
-            click(UiSelector().description(app.getString(R.string.settings)))
+            click(UiSelector().description(app.getString(R.string.chat_actions)))
+            clickText(app.getString(R.string.settings))
             text(app.getString(R.string.appearance))
             scenario.recreate()
             text(app.getString(R.string.appearance))
@@ -346,12 +340,12 @@ class NativeChatListTest {
             clickText("Research")
             revealText("Project chat")
             clickText("Project chat")
-            text(app.getString(R.string.history_completed))
+            text("Native history reply")
             click(UiSelector().description(app.getString(R.string.back)))
             assertTrue(device.wait(Until.gone(By.textContains("Native history")), 10_000))
             text("Project chat")
             clickText("Project chat")
-            text(app.getString(R.string.history_completed))
+            text("Native history reply")
 
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             revealText("Personal chat")
@@ -398,7 +392,7 @@ class NativeChatListTest {
                 device.executeShellCommand("wm size 1000x1000")
                 device.executeShellCommand("wm density 160")
                 val listTitle = device.awaitChatList(app)
-                val conversation = text(app.getString(R.string.history_completed))
+                val conversation = text("Native history reply")
                 assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
                 toolLabels.forEach { label ->
                     assertTrue(tool(label).visibleBounds.right < conversation.visibleBounds.left)
@@ -438,7 +432,7 @@ class NativeChatListTest {
                         10_000,
                     )
                 )
-                text(app.getString(R.string.history_completed))
+                text("Native history reply")
                 assertTrue(device.pressDPadCenter())
                 clickText(app.getString(R.string.chat_inbox))
                 revealText("Project chat")
@@ -446,13 +440,13 @@ class NativeChatListTest {
                 text(app.getString(R.string.appearance))
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 device.awaitChatList(app)
-                text(app.getString(R.string.history_completed))
+                text("Native history reply")
             } finally {
                 device.executeShellCommand("wm size ${originalSize ?: "reset"}")
                 device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
             }
             assertTrue(device.wait(Until.gone(chatListRegion(app)), 10_000))
-            text(app.getString(R.string.history_completed))
+            text("Native history reply")
             click(UiSelector().description(app.getString(R.string.back)))
             revealText("Project chat")
             revealText("Research")

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">What would you like to work on?</string>
+    <string name="conversation_welcome_detail">Tell Okou what you’d like to do.</string>
+    <string name="conversation_jump_latest">Back to latest</string>
+    <string name="conversation_new_reply">New reply</string>
+    <string name="conversation_view_progress">View progress</string>
+    <string name="conversation_processing">Working…</string>
+    <string name="conversation_history_offline">Conversation history will load when you’re online.</string>
+    <string name="conversation_offline_send">Go online to send. Your draft stays here.</string>
+    <string name="conversation_work">Work in progress</string>
+    <string name="conversation_reply_actions">Reply actions</string>
+    <string name="conversation_copy_reply">Copy reply</string>
+    <string name="conversation_reply_copied">Reply copied</string>
+    <string name="conversation_revoke">Withdraw</string>
+    <string name="conversation_stop">Stop</string>
+</resources>
