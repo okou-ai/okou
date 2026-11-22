@@ -1651,21 +1651,21 @@ Original test `An explicit selection supersedes pending creation during image re
 - **Given** Image recovery is underway while creation of a new tab is pending.
 - **When** The user explicitly selects another tab before creation completes.
 - **Then** The explicit selection remains active and accepts input; completion of the pending creation does not change it. A later New tab action creates a second blank tab, with no recovery report."
-browser-automatic-recovery-026	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1093	pending					"## browser-automatic-recovery-026
+browser-automatic-recovery-026	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1093	first-verified	browser-automatic-recovery-026 The draft and caret survive reconnection and submit to the same window	turbo/apps/platform/src/views/browser-session/__tests__/reconnecting-to-a-local-browser.test.ts	stage8-new.json	viewer-ownership-and-recovery-red.json	"## browser-automatic-recovery-026
 
 Original test `Local address editing survives recovery (binding replaced=false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1093).
 
 - **Given** The address field contains a locally edited draft with the caret after its second character, and the browser connection drops.
 - **When** The user edits the draft during recovery and the binding remains unchanged when recovery succeeds.
 - **Then** The field retains focus, value, and caret position. Submitting navigates the selected tab to the normalized address; Escape restores the sibling tab's address."
-browser-automatic-recovery-027	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1093	pending					"## browser-automatic-recovery-027
+browser-automatic-recovery-027	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1093	first-verified	browser-automatic-recovery-027 The replaced window retains its draft and caret but cannot submit the detached address	turbo/apps/platform/src/views/browser-session/__tests__/reconnecting-to-a-local-browser.test.ts	stage8-new.json	viewer-ownership-and-recovery-red.json	"## browser-automatic-recovery-027
 
 Original test `Local address editing survives recovery (binding replaced=true)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1093).
 
 - **Given** The address field contains a locally edited draft with the caret after its second character, and the browser connection drops.
 - **When** The user edits the draft during recovery and the binding is replaced before recovery succeeds.
 - **Then** The field retains focus, value, and caret position. Submitting does not navigate either tab; Escape restores the sibling tab's address."
-browser-automatic-recovery-028	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1141	pending					"## browser-automatic-recovery-028
+browser-automatic-recovery-028	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1141	first-verified	browser-automatic-recovery-028 Blur adopts the replacement tab after the focused original address and caret survive recovery	turbo/apps/platform/src/views/browser-session/__tests__/reconnecting-to-a-local-browser.test.ts	stage8-new.json	viewer-ownership-and-recovery-red.json	"## browser-automatic-recovery-028
 
 Original test `A clean address selection survives binding replacement and releases on blur`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1141).
 
@@ -1686,14 +1686,14 @@ Original test `Interacting with a recovered submission cannot transfer it to an 
 - **Given** An address submission is pending when the connection drops, recovery restores the viewer, and the selected tab is then moved out of scope.
 - **When** The user edits the recovered address by adding a character and presses Enter.
 - **Then** The edited address remains in the field, and the successor tab's URL is not changed by the old submission."
-browser-automatic-recovery-032	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1245	pending					"## browser-automatic-recovery-032
+browser-automatic-recovery-032	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1245	first-verified	browser-automatic-recovery-032 An address entered before tab admission can be submitted once its page becomes ready	turbo/apps/platform/src/views/browser-session/__tests__/reconnecting-to-a-local-browser.test.ts	stage8-new.json	viewer-ownership-and-recovery-red.json	"## browser-automatic-recovery-032
 
 Original test `An address first edited during recovery stays bound to the restored tab`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1245).
 
 - **Given** The browser connection drops before the user has edited the address field.
 - **When** During recovery, the user edits and submits an address before tab membership completes.
 - **Then** After the restored tab is ready, the address remains selected and a subsequent submission navigates that restored tab to the normalized address."
-browser-automatic-recovery-039	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1488	pending					"## browser-automatic-recovery-039
+browser-automatic-recovery-039	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1488	first-verified	browser-automatic-recovery-039 Authorization denial during recovery removes the displayed picture and leaves the viewer terminal	turbo/apps/platform/src/views/browser-session/__tests__/reconnecting-to-a-local-browser.test.ts	stage8-new.json	viewer-ownership-and-recovery-red.json	"## browser-automatic-recovery-039
 
 Original test `Definitive authorization loss during attempt clears the picture and ends the reconnecting notice`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1488).
 
@@ -1707,7 +1707,7 @@ Original test `Exhausted automatic recovery stops after three attempts and permi
 - **Given** The viewer is ready, but browser recovery requests keep failing with HTTP 500.
 - **When** Automatic recovery makes three attempts, then the user waits and manually reconnects after the service becomes available.
 - **Then** Automatic recovery stops with the final error and an enabled Reconnect button; the manual action succeeds with a fourth request."
-browser-automatic-recovery-051	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1904	pending					"## browser-automatic-recovery-051
+browser-automatic-recovery-051	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	1904	first-verified	browser-automatic-recovery-051 Reconnect remains unavailable during a transient service failure and the restored viewer accepts input	turbo/apps/platform/src/views/browser-session/__tests__/reconnecting-to-a-local-browser.test.ts	stage8-new.json	viewer-ownership-and-recovery-red.json	"## browser-automatic-recovery-051
 
 Original test `Manual recovery serializes its transient failures with automatic policy`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1904).
 
@@ -1735,7 +1735,7 @@ Original test `A chat replacement cancels a held automatic bootstrap`. [Registra
 - **Given** Automatic recovery is holding a browser bootstrap for the current chat.
 - **When** The user navigates to a different chat and its new tab becomes ready before the old bootstrap is released.
 - **Then** The old bootstrap does not clear the new picture or disrupt the new selection, which continues to accept input."
-browser-automatic-recovery-059	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2098	pending					"## browser-automatic-recovery-059
+browser-automatic-recovery-059	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2098	first-verified	browser-automatic-recovery-059 Reconnection adopts the completed remote navigation without replaying the uncertain submission	turbo/apps/platform/src/views/browser-session/__tests__/reconnecting-to-a-local-browser.test.ts	stage8-new.json	viewer-ownership-and-recovery-red.json	"## browser-automatic-recovery-059
 
 Original test `Automatic recovery never replays uncertain navigation after connection loss`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2098).
 
@@ -1756,7 +1756,7 @@ Original test `A transient native read recovers the selected tab on the existing
 - **Given** The user has selected the Other tab and the browser control connection is healthy.
 - **When** A native tab event triggers a transient read failure, followed by automatic recovery.
 - **Then** The selected tab becomes ready again, text input works on its page, and recovery uses the existing control connection."
-browser-automatic-recovery-070	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2374	pending					"## browser-automatic-recovery-070
+browser-automatic-recovery-070	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md	2374	first-verified	browser-automatic-recovery-070 A name-resolution rejection is reported and later input still reaches the original document	turbo/apps/platform/src/views/browser-session/__tests__/reconnecting-to-a-local-browser.test.ts	stage8-new.json	viewer-ownership-and-recovery-red.json	"## browser-automatic-recovery-070
 
 Original test `Rejected navigation remains local and does not trigger resource replay`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2374).
 
@@ -1840,7 +1840,7 @@ Original test `Returning to a visible viewer does not flash a failure during dis
 - **Given** The viewer is visible, displaying a live picture with input enabled.
 - **When** The page becomes hidden and then visible again.
 - **Then** While hidden, viewing is paused and input is disabled. On return, the viewport is 900 by 600, input is enabled, the live picture is present, and no failure message flashes."
-browser-domain-initialization-018	turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md	308	pending					"## browser-domain-initialization-018
+browser-domain-initialization-018	turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx	turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.bdd.md	308	probe-insufficient	Held Inspector.enable while Page.enable failed with -32601. The original attachment was retired and the page displayed disabled input, unavailable view and an enabled Reconnect. Sentry reported Page.enable and terminal. Advancing the scoped monotonic clock by 31,000 ms after retirement has no corresponding application read or interval completion. The same outcome occurs with the clock held. Batch 73 had already established the real-time behavior and its lint limitation.	domain-018-with-terminal-report.ts.txt; round8-browser-diags2.json; domain-clock-withheld.json; viewer-ownership-and-recovery-red.json			"## browser-domain-initialization-018
 
 Original test `A terminal Page.enable failure is retained when its peer never replies`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L308).
 

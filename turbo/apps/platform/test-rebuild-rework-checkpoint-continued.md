@@ -3004,3 +3004,11 @@ The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts
 [Full GWT, row names, controls and status by ID](https://app.okou.ai/artifacts/kjtlxewceb.tsv). [Exact remaining IDs by frozen owner](https://app.okou.ai/artifacts/zxmjjlk34g.md). [Sources, comparison, runnable controls and Vitest records](https://app.okou.ai/artifacts/88o99jswc5.zip).
 
 Stage 7 includes merge of main `9ad7e2d29e`. App source and test registrations were unchanged by those upstream commits; the Platform package and changelog advanced. Targeted new rows, whole accepted files, shuffled seed 8007, the three App type projects, applicable formatting, lint and size checks were exercised after synchronization. Unavailable negative observations and upstream member-scope changes remain tied to the original owners. The exact-head CI and the next-run handoff are linked in the [PR description](https://github.com/okou-ai/okou/pull/48906).
+
+## Batch 80 checkpoint 8
+
+The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts/ojoskbx5gp.md) opened at `a5a95d9bd9`. 144 IDs have their first accepted Vitest row, 10 retain an evidence gap, 13 have a documented upstream disposition, and 94 await implementation. 12 owners are closed, 12 are partially accepted, and 4 are wholly blocked. Historical first acceptances are 2,153, with 2,129 currently complete. Batch 79 retains its separate 54 open dispositions.
+
+[Full GWT, row names, controls and status by ID](https://app.okou.ai/artifacts/wn79428dwo.tsv). [Exact remaining IDs by frozen owner](https://app.okou.ai/artifacts/4oirniajow.md). [Sources, comparison, runnable controls and Vitest records](https://app.okou.ai/artifacts/0ly762mmr5.zip).
+
+This checkpoint resumed at bc201bbcae and merged main e870be51a0. Eight new browser recovery cases passed. The terminal Page.enable probe still has no application acknowledgement of the 31-second advance. The complete frozen BDD remains. The 136 previously accepted cases are regressions.
