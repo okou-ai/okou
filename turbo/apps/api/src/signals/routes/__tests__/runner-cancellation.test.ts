@@ -36,11 +36,7 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
   });
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Cancellation state agent",
-    description: "Exercises cancellation reconciliation.",
-    visibility: "private",
-  });
+
   const run = await runs.createThreadRun(actor, {
     prompt: "exercise cancellation reconciliation",
   });
@@ -58,7 +54,6 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
     bdd,
     runs,
     actor,
-    agentId: agent.agentId,
     runId: run.runId,
     headers: { authorization: `Bearer ${execution.sandboxToken}` },
     agentToken: execution.platformEnvironment.OKOU_TOKEN,
@@ -328,11 +323,10 @@ describe("Run cancellation reconciliation", () => {
     });
   });
 
-  it("keeps the cancelled member Run visible to its sandbox after a rejected legacy Agent deletion", async () => {
+  it("keeps the cancelled member Run visible to its sandbox", async () => {
     const f = await fixture();
     await f.runs.requestCancelRun(f.actor, f.runId, [200]);
     await flushWaitUntilForTest();
-    await f.bdd.expectAgentDeleteUnavailable(f.actor, f.agentId);
     expect((await read(f)).body).toStrictEqual({
       protocolVersion: 1,
       runId: f.runId,

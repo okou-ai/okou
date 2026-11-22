@@ -25,10 +25,6 @@ async function diagnosticFixture() {
   const actor = bdd.user();
   await api.grantProEntitlement(actor);
   await api.ensurePersonalSubscriptionModel(actor);
-  const { agentId } = await bdd.createAgent(actor, {
-    displayName: "Snapshot diagnostics",
-    visibility: "private",
-  });
 
   // Replay the diagnostic provider's captured documents through the read API,
   // rather than asserting incidental telemetry calls or privately seeding Runs.
@@ -84,7 +80,7 @@ async function diagnosticFixture() {
     return run;
   }
 
-  return { api, bdd, actor, agentId, snapshots, launch };
+  return { api, bdd, actor, snapshots, launch };
 }
 
 test.each(["data router", "Preview"])(

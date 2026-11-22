@@ -130,7 +130,6 @@ export async function launchPublicToolRun(
   actor: ApiTestUser,
   registerCleanup: (cleanup: () => Promise<void>) => void,
 ) {
-  const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();

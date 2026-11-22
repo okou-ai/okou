@@ -81,9 +81,6 @@ describe("production-global sweep route contracts", () => {
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await bdd.createAgent(owner, {
-      displayName: "Sidebar snapshot agent",
-    });
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", `snapshot-${randomUUID()}`);
     const objects = new Map<string, Buffer>();
     context.mocks.s3.send.mockImplementation((request: unknown) => {

@@ -134,7 +134,6 @@ const ASSISTANT_EVENT_ID_NAMESPACE = "bfec4fb6-d5b8-43e4-a72a-9f58f87d7e01";
 
 async function connectAutomaticRuntime(args: {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly slug: string;
   readonly methodId: string;
   readonly issuer: string;
@@ -594,7 +593,6 @@ async function entitledRunActor(
   route: { readonly model?: typeof NATIVE_RUNNER_ROUTE.model } = {},
 ): Promise<{
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runnerGroup: string;
   readonly personalProviderId: string;
   readonly granted: {
@@ -611,14 +609,9 @@ async function entitledRunActor(
   const runnerGroup = await api.configureRunnerGroup();
   const granted = await api.grantProEntitlement(actor);
   const personal = await api.ensurePersonalSubscriptionModel(actor, route);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "BDD lifecycle agent",
-    description: "Exercises the full run lifecycle.",
-    visibility: "private",
-  });
+
   return {
     actor,
-    agentId: agent.agentId,
     runnerGroup,
     personalProviderId: personal.providerId,
     granted,
@@ -823,12 +816,6 @@ function useOrdinaryOAuthRuns() {
         personalAccounts.set(entitled.personalProviderId, entitled.actor);
         return entitled;
       },
-      async createAgent(
-        ...args: Parameters<ReturnType<typeof createBddApi>["createAgent"]>
-      ) {
-        const agent = await createBddApi(context).createAgent(...args);
-        return agent;
-      },
       async finishCancelledRun(runId: string, sandboxToken: string) {
         await finishCancelledRun(runId, sandboxToken);
         const owned = ownedRuns.get(runId);
@@ -921,7 +908,6 @@ async function finishCancelledRun(
 async function failedExecutionPreparation(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
     readonly prompt: string;
     readonly threadId?: string;
   },
@@ -952,7 +938,6 @@ async function failedExecutionPreparation(
 async function sendChatRunMessage(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
     readonly prompt: string;
     readonly threadId?: string;
   },
@@ -1226,7 +1211,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("fails unavailable storage signing and preserves the complete manifest on a fresh retry", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -1336,7 +1321,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         // Admission retains the session's mounts; execution signs their current URLs.
         const continuationPrompt = `failed canonical session storage ${randomUUID()}`;
         const largeRun = await failedExecutionPreparation(actor, {
-          agentId,
           threadId: initialRun.threadId,
           prompt: continuationPrompt,
         });
@@ -1442,11 +1426,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
         const prompt = "storage manifest dimensions should not leak prompt";
-        const defaultAgentId =
-          await createBddApi(context).readDefaultAgentId(actor);
-        if (!defaultAgentId) {
-          throw new Error("Expected a workspace workflow namespace");
-        }
+        await createBddApi(context).provisionWorkspace(actor);
         // A member Workflow is distributed as an immutable read-only bundle.
         const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
         const workflow = await createMiscRoutesApi(context).createWorkflow(
@@ -1780,9 +1760,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("keeps a committed artifact head after initial empty artifact creation", async () => {
         const fixture = createPublicRunnerMemory(context);
         await fixture.run(async () => {
-          const agentId = await fixture.initializeNative();
+          await fixture.initializeNative();
           const initial = await fixture.startExecution(
-            agentId,
             "initial empty artifact creation should not block later commits",
           );
           const initialMemory = initial.memory;
@@ -1897,7 +1876,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             fileCount: 1,
           });
           const next = await fixture.startExecution(
-            agentId,
             "committed artifact head should stay non-empty",
           );
           expect(next.memory).toMatchObject({
@@ -2620,10 +2598,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         api.acceptStorageDownloads();
         api.acceptTelemetryIngest();
 
-        const onboardingAgentId = await bdd.readDefaultAgentId(actor);
-        if (!onboardingAgentId) {
-          throw new Error("Expected limited-free bootstrap agent");
-        }
+        await bdd.provisionWorkspace(actor);
         await bdd.completeOnboarding(actor);
 
         await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
@@ -2870,10 +2845,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.ensurePersonalSubscriptionModel(actor);
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
-        const defaultAgentId = await bdd.readDefaultAgentId(actor);
-        if (!defaultAgentId) {
-          throw new Error("Expected the member workflow namespace");
-        }
+        await bdd.provisionWorkspace(actor);
         for (const workflowName of workflowNames) {
           await misc.createWorkflow(
             actor,
@@ -5011,7 +4983,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -5072,7 +5044,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           fw,
           webhooks,
           actor,
-          agentId,
           runnerGroup,
           connectedSlugs,
           incompleteSlug,
@@ -6157,10 +6128,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const connectionId = await connectAutomaticRuntime({
           actor,
-          agentId,
           ...catalog,
           issuer: provider.issuer,
         });
@@ -6277,11 +6247,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const connectedAt = now();
         const connectionId = await connectAutomaticRuntime({
           actor,
-          agentId,
           ...catalog,
           issuer: provider.issuer,
         });
@@ -6389,11 +6358,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         const connectedAt = now();
         const connectionId = await connectAutomaticRuntime({
           actor,
-          agentId,
           ...catalog,
           issuer: provider.issuer,
         });
@@ -7733,9 +7701,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const { actor, runnerGroup } = await oauth.entitledRunActor();
-        const agent = await oauth.createAgent(actor, {
-          displayName: "BDD queued permission refresh agent",
-        });
 
         await oauth.connect(actor, {
           connectorSlug: "slack",
@@ -7798,7 +7763,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
 
       it("skips connector catalog work for a current writer without built-ins", async () => {
-        const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const { actor, runnerGroup } = await entitledRunActor();
 
@@ -8887,11 +8851,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const s3 = installWorkflowVolumeS3Fixture(context);
 
-        const defaultAgentId =
-          await createBddApi(context).readDefaultAgentId(actor);
-        if (!defaultAgentId) {
-          throw new Error("Expected a member workflow namespace");
-        }
+        await createBddApi(context).provisionWorkspace(actor);
         const workflowName = `bdd-priority-${randomUUID().slice(0, 8)}`;
         await workflows.createWorkflow(actor, {
           name: workflowName,
@@ -8980,10 +8940,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const workflowName = "bdd-claude-kit";
-        const defaultAgentId = await bdd.readDefaultAgentId(actor);
-        if (!defaultAgentId) {
-          throw new Error("Expected a member workflow namespace");
-        }
+        await bdd.provisionWorkspace(actor);
         await misc.createWorkflow(
           actor,
           workflowName,
@@ -9237,10 +9194,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("delivers chat run callbacks through cancellation side effects", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
 
         const first = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "first cancellable chat run",
         });
         await api.requestCancelRun(actor, first.runId, [200]);
@@ -9264,7 +9220,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const second = await sendChatRunMessage(actor, {
-          agentId,
           threadId: first.threadId,
           prompt: "second cancellable chat run",
         });
@@ -9287,7 +9242,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const third = await sendChatRunMessage(actor, {
-          agentId,
           threadId: first.threadId,
           prompt: "third cancellable chat run",
         });
@@ -10414,11 +10368,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const webhooks = createWebhookCallbackApi(context);
         const periodStart = Date.UTC(2026, 8, 1, 9, 15);
         mockNow(periodStart);
-        const {
-          actor: admin,
-          agentId,
-          runnerGroup,
-        } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+        const { actor: admin, runnerGroup } = await entitledRunActor(
+          {},
+          NATIVE_RUNNER_ROUTE,
+        );
         await webhooks.postStripeEvent(
           {
             id: `evt_member_usage_${randomUUID()}`,
@@ -10443,10 +10396,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
         await bdd.completeOnboarding(member);
         await runs.ensurePersonalSubscriptionModel(member, NATIVE_RUNNER_ROUTE);
-        const memberAgent = await bdd.createAgent(member, {
-          displayName: "Member usage agent",
-          visibility: "private",
-        });
+
         // Keep the existing ceil-to-hour billing-period boundary observable.
         mockNow(periodStart + 3_600_000);
         await runs.registerDirectRunner(runnerGroup);
@@ -10456,10 +10406,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         );
         const expectedCredits = new Map<string, number>();
-        for (const owner of [
-          { actor: admin, agentId },
-          { actor: member, agentId: memberAgent.agentId },
-        ]) {
+        for (const owner of [{ actor: admin }, { actor: member }]) {
           await runs.registerDirectRunner(runnerGroup);
           const run = await runs.createThreadRun(owner.actor, {
             prompt: "generate images",
@@ -10709,12 +10656,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
         const { runId, threadId } = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "publish ordinary assistant output",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -10775,13 +10721,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
 
         const { runId, threadId } = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "bdd cleanup wins before late event",
         });
 
@@ -10876,7 +10821,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -10887,7 +10832,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const { runId, threadId } = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "bdd assistant events",
         });
         const acknowledgedAt = requestedAt + 4321;
@@ -11144,7 +11088,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -11155,7 +11099,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const { runId, threadId } = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "bdd concurrent assistant acknowledgements",
         });
         const acknowledgedAt = requestedAt + 5000;
@@ -11249,7 +11192,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
+        const { actor, runnerGroup } = await entitledRunActor();
         // Astra stays on the native Codex Runner; Pi-eligible GPT models would
         // launch Pi instead of reporting Codex items.
 
@@ -11265,7 +11208,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const { runId, threadId } = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "bdd Codex first assistant output",
         });
         const acknowledgedAt = requestedAt + 2468;
@@ -11339,7 +11281,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         // Two open runs fill the organization, independent of the plan.
         mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
         const api = createRunsApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
@@ -11351,11 +11293,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const first = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "occupy the first concurrency slot",
         });
         const second = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "occupy the second concurrency slot",
         });
         // At capacity the chat input waits in its thread without a run.
@@ -11386,13 +11326,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
+        const { actor, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
 
         const { runId, threadId } = await sendChatRunMessage(actor, {
-          agentId,
           prompt: "bdd execution assistant event",
         });
         await flushWaitUntilForTest();

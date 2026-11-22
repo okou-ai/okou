@@ -186,10 +186,7 @@ describe("chat event annotations", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const defaultAgentId = await bdd.readDefaultAgentId(actor);
-    if (!defaultAgentId) {
-      throw new Error("Expected the paid owner's Agent");
-    }
+    await bdd.provisionWorkspace(actor);
     const claimedPendingId = randomUUID();
     const prompt = "github claimed replacement";
     const sent = await chat.sendAndLaunch(actor, {

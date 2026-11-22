@@ -21,13 +21,13 @@ export async function terminalPredecessor(
     runner: { runnerIdentity: { runnerId, heartbeatGeneration: 7 } },
   });
   const api = createRunsApi(context);
-  const { actor, agentId, runnerGroup: group } = owned;
+  const { actor, runnerGroup: group } = owned;
   const run = await owned.run(() => {
     return api.createThreadRun(actor, {
       prompt: "Preserve terminal home state",
     });
   });
-  const fixture = { api, owned, actor, agentId, group, run, runnerId, clock };
+  const fixture = { api, owned, actor, group, run, runnerId, clock };
   const execution = await owned.executionInput(run.runId);
   await owned.run(async () => {
     const webhooks = createWebhookCallbackApi(context);

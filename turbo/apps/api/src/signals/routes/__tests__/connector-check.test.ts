@@ -186,10 +186,7 @@ async function connectReap(
 
 async function createOwnedRun(
   actor: ApiTestUser,
-  options: {
-    readonly onAgentCreated?: (agentId: string) => void;
-  } = {},
-): Promise<{ readonly runId: string; readonly agentId: string }> {
+): Promise<{ readonly runId: string }> {
   bdd.acceptAgentStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
@@ -198,15 +195,11 @@ async function createOwnedRun(
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: `Connector check ${randomUUID()}`,
-    visibility: "private",
-  });
-  options.onAgentCreated?.(agent.agentId);
+
   const run = await runsApi.createThreadRun(actor, {
     prompt: "Create a connector check fixture",
   });
-  return { runId: run.runId, agentId: agent.agentId };
+  return { runId: run.runId };
 }
 
 async function createAwsRunWithPermissionGrants(): Promise<string> {
@@ -1165,8 +1158,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const startedAt = now();
     await withMockNowForTest(startedAt, async () => {
       const owner = bdd.user();
-      const owned: { agentId?: string; runId?: string; sandboxToken?: string } =
-        {};
+      const owned: { runId?: string; sandboxToken?: string } = {};
       const kmsKeyId = env("SECRETS_KMS_KEY_ID");
       const configureCloudflareOAuth = () => {
         mockOptionalEnv("CLOUDFLARE_OAUTH_CLIENT_ID", "cloudflare-test-client");
@@ -1249,11 +1241,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       if (connected.body.status !== "success") {
         throw new Error("Expected the Cloudflare OAuth callback to connect");
       }
-      const { runId } = await createOwnedRun(owner, {
-        onAgentCreated(createdAgentId) {
-          owned.agentId = createdAgentId;
-        },
-      });
+      const { runId } = await createOwnedRun(owner);
       owned.runId = runId;
       owned.sandboxToken = (await runsApi.executionInput(runId)).sandboxToken;
       await chatAccess.applyPermissions(owner, {
@@ -1590,7 +1578,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
         throw new Error("Expected a connected custom connector account");
       }
       const customConnectionId = connectedCustom.connectionId;
-      const { runId, agentId } = await createOwnedRun(actor);
+      const { runId } = await createOwnedRun(actor);
       const token = okouToken(actor, runId, [
         "connector:read",
         "agent-run:read",
@@ -1611,7 +1599,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
         custom,
         connectedCustom,
         customConnectionId,
-        agentId,
         token,
         url,
         customRequest,

@@ -95,9 +95,6 @@ async function fixture() {
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  await bdd.createAgent(actor, {
-    displayName: "Resource snapshot",
-  });
   const originalSend = context.mocks.s3.send.getMockImplementation();
   const objects = new Map<string, Buffer>();
   const failedWrites = new Set<string>();

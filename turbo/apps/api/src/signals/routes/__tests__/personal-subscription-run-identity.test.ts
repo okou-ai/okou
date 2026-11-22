@@ -57,7 +57,6 @@ type ExecutionInput = Awaited<ReturnType<typeof runs.executionInput>>;
 async function sendRejectedAtPick(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
     readonly model: string;
     readonly prompt: string;
   },
@@ -171,10 +170,7 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
   const model: "gpt-6-astra" | "claude-sonnet-5-5" =
     type === "codex-oauth-token" ? "gpt-6-astra" : "claude-sonnet-5-5";
   await runs.updateUserModelPreference(actor, model);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Subscription identity",
-    visibility: "private",
-  });
+
   const start = async () => {
     const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
       prompt: "use my selected subscription",
@@ -194,7 +190,6 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
     subscription,
     start,
     execution,
-    agentId: agent.agentId,
     type,
     model,
   };
@@ -393,10 +388,6 @@ describe("personal subscription run identity", () => {
         runs.acceptTelemetryIngest();
         const runnerGroup = await runs.configureRunnerGroup();
         const connected = await connect(actor, type, "identity-auto");
-        await bdd.createAgent(actor, {
-          displayName: "Auto subscription",
-          visibility: "private",
-        });
         const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
           prompt: "use my subscription model",
           model,
@@ -1212,7 +1203,6 @@ describe("member-effective model contract", () => {
       const f = await fixture(type);
       await support.deletePersonalModelProvider(f.actor, f.type, [204]);
       const { rejected, guidance } = await sendRejectedAtPick(f.actor, {
-        agentId: f.agentId,
         model: f.model,
         prompt: "this model requires my subscription",
       });
@@ -1240,7 +1230,6 @@ describe("personal effective provider entitlement", () => {
       "canceled",
     );
     const restricted = await sendRejectedAtPick(f.actor, {
-      agentId: f.agentId,
       model: f.model,
       prompt: "personal requires plan authority",
     });

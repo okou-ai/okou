@@ -93,12 +93,6 @@ describe("CHAT-02: default assistant identity", () => {
   it("uses the fixed Okou identity on immediate, queued and historical threads", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const { actor } = await entitledNativeChatActor();
-    bdd.acceptAgentStorageWrites();
-    const onboardingAgentId = await bdd.readDefaultAgentId(actor);
-    const defaultAgentId = onboardingAgentId;
-    if (!defaultAgentId) {
-      throw new Error("Expected the system default agent to exist");
-    }
 
     const anchor = await sendChatRun(actor, {
       prompt: "start an Okou run",
@@ -173,10 +167,6 @@ describe("CHAT-02: default assistant identity", () => {
     await cancelChatRun(actor, promoted.runId);
 
     mockEnv("APP_URL", "https://preview.example.test");
-    await bdd.createAgent(actor, {
-      displayName: "Nova",
-      visibility: "private",
-    });
     const legacyThread = await chat.createThread(actor, {});
     const customRun = await sendChatRun(actor, {
       threadId: legacyThread.id,

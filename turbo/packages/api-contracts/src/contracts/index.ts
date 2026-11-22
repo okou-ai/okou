@@ -101,12 +101,7 @@ export {
   type RunFailureReasonToken,
 } from "./run-failure-reasons";
 export { CAPABILITIES, type Capability } from "./capabilities";
-export {
-  AGENT_NAME_REGEX,
-  agentNameSchema,
-  MOUNT_PATH_TEMPLATE,
-  expandMountPath,
-} from "./agents";
+export { MOUNT_PATH_TEMPLATE, expandMountPath } from "./runner-primitives";
 export {
   ALL_RUN_STATUSES,
   runStatusSchema,
@@ -718,24 +713,6 @@ export {
   type AgentDraftResponse,
   type AgentDraftRequest,
 } from "./agent-draft";
-export {
-  agentsMainContract,
-  agentsByIdContract,
-  agentInstructionsContract,
-  agentResponseSchema,
-  agentRequestSchema,
-  agentMetadataRequestSchema,
-  agentInstructionsResponseSchema,
-  agentInstructionsRequestSchema,
-  type AgentsMainContract,
-  type AgentsByIdContract,
-  type AgentInstructionsContract,
-  type AgentResponse,
-  type AgentRequest,
-  type AgentMetadataRequest,
-  type AgentInstructionsResponse,
-  type AgentInstructionsRequest,
-} from "./agents";
 export {
   workflowVisibilitySchema,
   workflowNameSchema,

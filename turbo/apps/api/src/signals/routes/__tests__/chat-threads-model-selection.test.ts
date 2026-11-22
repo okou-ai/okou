@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import {
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
@@ -10,7 +9,6 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { agentsRoutes } from "../agents";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import {
@@ -37,13 +35,11 @@ interface ChatThreadFixture {
   readonly actor: ApiTestUser;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly threadId: string;
 }
 
 /** Creates an agent and chat thread through the product routes. */
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
-  const app = setupApp({ context, routes: agentsRoutes });
   const actor = bdd.user();
   if (!actor.orgId) {
     throw new Error("Expected the seeded actor to belong to an org");
@@ -66,17 +62,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
       primaryEmailAddressId: "email",
     },
   ]);
-  const created = await accept(
-    app(agentsMainContract).create({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        displayName: "Chat thread model selection agent",
-        visibility: "private",
-      },
-    }),
-    [201],
-  );
-  const agent = created.body;
   await api.ensurePersonalSubscriptionModel(actor);
   const thread = await chat.createThread(actor, {
     title,
@@ -86,7 +71,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     actor,
     userId: actor.userId,
     orgId: actor.orgId,
-    agentId: agent.agentId,
     threadId: thread.id,
   };
 }

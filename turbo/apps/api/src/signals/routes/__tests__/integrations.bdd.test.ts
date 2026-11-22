@@ -4177,10 +4177,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    const onboardingAgentId = await bdd.readDefaultAgentId(actor);
-    if (!onboardingAgentId) {
-      throw new Error("Expected onboarding to configure a default agent");
-    }
+    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -4567,13 +4564,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "BDD Slack Default Agent",
-    });
-    const defaultAgentId = await bdd.readDefaultAgentId(actor);
-    if (!defaultAgentId) {
-      throw new Error("Expected onboarding to configure a default agent");
-    }
+    await bdd.bootstrapLimitedFreeOnboarding(actor);
+    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -4680,9 +4672,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "BDD Slack Login Agent",
-    });
+    await bdd.bootstrapLimitedFreeOnboarding(actor);
     const { teamId } = await integrations.installSlackWorkspace(actor);
     integrations.clearSlackCallHistory();
 
@@ -4922,9 +4912,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "Welcome Agent",
-    });
+    await bdd.bootstrapLimitedFreeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();
     const install = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,

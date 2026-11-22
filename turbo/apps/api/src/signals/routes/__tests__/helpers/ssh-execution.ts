@@ -15,7 +15,6 @@ interface Owner {
 }
 
 interface RuntimeOptions {
-  readonly agentId?: string;
   readonly group?: string;
   readonly runnerIdentity?: {
     readonly runnerId: string;
@@ -56,14 +55,7 @@ export function createSshExecutionApi(
     // The paid organization is shared, but each Run owner needs their own memory.
     await bdd.completeOnboarding(actor);
     // Each omitted Agent is a distinct public Agent, matching the ordinary fixture.
-    const agentId =
-      runtimeOptions.agentId ??
-      (
-        await bdd.createAgent(actor, {
-          displayName: "SSH execution Agent",
-          visibility: "public",
-        })
-      ).agentId;
+
     const group =
       runtimeOptions.group ??
       (await runs.configureRunnerGroup({ registerRunner: false }));
@@ -101,7 +93,6 @@ export function createSshExecutionApi(
     const guestHeaders = { authorization: `Bearer ${agentToken}` };
     return {
       ...owner,
-      agentId,
       runId,
       threadId,
       runnerIdentity,

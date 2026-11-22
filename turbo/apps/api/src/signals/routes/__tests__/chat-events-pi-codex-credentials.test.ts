@@ -50,19 +50,19 @@ function codexAuthJson(accountId: string | null): string {
 }
 
 async function fixture(expiresAt = Math.floor(now() / 1000) + 7200) {
-  const { actor, agentId } = await entitledChatActor();
+  const { actor } = await entitledChatActor();
   const identity = `pi-codex-fast-${randomUUID()}`;
   const connected = await configureSubscriptionPiModel(actor, {
     accountId: identity,
     accessTokenExpiresAt: expiresAt,
     refreshedAccessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
   });
-  return { actor, agentId, connected, identity };
+  return { actor, connected, identity };
 }
 
 /** A member ChatGPT auth.json source. */
 async function memberAuthJsonFixture(accountId: string | null) {
-  const { actor, agentId } = await entitledChatActor();
+  const { actor } = await entitledChatActor();
 
   await misc.upsertPersonalModelProvider(
     actor,
@@ -73,7 +73,7 @@ async function memberAuthJsonFixture(accountId: string | null) {
     },
     [200, 201],
   );
-  return { actor, agentId };
+  return { actor };
 }
 
 describe("Pi Codex subscription admission", () => {

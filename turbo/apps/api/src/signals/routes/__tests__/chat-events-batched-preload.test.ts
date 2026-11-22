@@ -65,10 +65,6 @@ describe("batched identity preload through chat entry", () => {
       orgId: owner.actor.orgId,
       orgRole: "org:member",
     });
-    const { agentId } = await bdd.createAgent(member, {
-      displayName: "Second member",
-      visibility: "private",
-    });
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
       type: "organizationMembership.created",
@@ -88,11 +84,10 @@ describe("batched identity preload through chat entry", () => {
     for (const entry of [
       {
         actor: owner.actor,
-        agentId: owner.agentId,
         disabled: ["data-search", "social"],
         cloudBrowserEnabled: false,
       },
-      { actor: member, agentId, disabled: [], cloudBrowserEnabled: true },
+      { actor: member, disabled: [], cloudBrowserEnabled: true },
     ]) {
       const run = await sendChatRun(entry.actor, {
         model: "claude-fable-5-1",

@@ -26,13 +26,6 @@ import {
 } from "@okouai/api-contracts/contracts/onboarding";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import {
-  agentsByIdContract,
-  agentsMainContract,
-  type AgentMetadataRequest,
-  type AgentRequest,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
-import {
   customConnectorByIdContract,
   customConnectorValuesContract,
   customConnectorsContract,
@@ -64,7 +57,6 @@ import { mockEnv } from "../../../../lib/env";
 import { server } from "../../../../mocks/server";
 import { authMeRoutes } from "../../auth-me";
 import { cliAuthRoutes } from "../../cli-auth";
-import { agentsRoutes } from "../../agents";
 import { connectorAccountRoutes } from "../../connector-accounts";
 import { customConnectorsRoutes } from "../../custom-connectors";
 import { customConnectorsCreateRoutes } from "../../custom-connectors-create";
@@ -194,7 +186,6 @@ const authOrgRoutes = [
   ...orgInviteRoutes,
   ...orgMembershipRequestsRoutes,
   ...orgLogoRoutes,
-  ...agentsRoutes,
   ...connectorAccountRoutes,
   ...customConnectorsRoutes,
   ...customConnectorsCreateRoutes,
@@ -752,8 +743,6 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       });
       return { token: token.body.access_token };
     },
-
-    readDefaultAgentId: createBddApi(context).readDefaultAgentId,
     provisionWorkspace: createBddApi(context).provisionWorkspace,
 
     async readOnboardingStatus(actor: ApiTestUser) {
@@ -771,12 +760,10 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
 
     async bootstrapLimitedFreeOnboarding(
       actor: ApiTestUser,
-      body: OnboardingBootstrapOptions,
+      body: OnboardingBootstrapOptions = {},
     ) {
-      const agentId = await createBddApi(
-        context,
-      ).bootstrapLimitedFreeOnboarding(actor, body);
-      return { status: 200 as const, body: { agentId } };
+      await createBddApi(context).bootstrapLimitedFreeOnboarding(actor, body);
+      return { status: 200 as const };
     },
 
     async completeOnboarding(actor: ApiTestUser) {
@@ -1203,170 +1190,6 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
         );
       }
       return { status: response.status, body: responseBody };
-    },
-
-    async createAgent(
-      actor: ApiTestUser,
-      body: AgentRequest = {},
-    ): Promise<AgentResponse> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsMainContract,
-      );
-      const response = await accept(
-        client.create({
-          headers: authenticate(actor),
-          body: { visibility: "public", ...body },
-        }),
-        [201],
-      );
-      return response.body;
-    },
-
-    async requestCreateAgent(
-      actor: ApiTestUser | null,
-      body: AgentRequest,
-      statuses: readonly (201 | 400 | 401 | 403 | 409 | 422)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsMainContract,
-      );
-      return await accept(
-        client.create({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async listAgents(actor: ApiTestUser): Promise<readonly AgentResponse[]> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsMainContract,
-      );
-      const response = await accept(
-        client.list({
-          headers: authenticate(actor),
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async requestListAgents(
-      actor: ApiTestUser | null,
-      statuses: readonly (200 | 401 | 403)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsMainContract,
-      );
-      return await accept(
-        client.list({ headers: authenticate(actor) }),
-        statuses,
-      );
-    },
-
-    async readAgent(
-      actor: ApiTestUser,
-      agentId: string,
-    ): Promise<AgentResponse> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      const response = await accept(
-        client.get({
-          params: { id: agentId },
-          headers: authenticate(actor),
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async requestReadAgent(
-      actor: ApiTestUser | null,
-      agentId: string,
-      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      return await accept(
-        client.get({ params: { id: agentId }, headers: authenticate(actor) }),
-        statuses,
-      );
-    },
-
-    async updateAgentMetadata(
-      actor: ApiTestUser,
-      agentId: string,
-      body: AgentMetadataRequest,
-    ): Promise<AgentResponse> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      const response = await accept(
-        client.updateMetadata({
-          params: { id: agentId },
-          headers: authenticate(actor),
-          body,
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async updateAgent(
-      actor: ApiTestUser,
-      agentId: string,
-      body: AgentRequest,
-    ): Promise<AgentResponse> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      const response = await accept(
-        client.update({
-          params: { id: agentId },
-          headers: authenticate(actor),
-          body,
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async requestUpdateAgent(
-      actor: ApiTestUser | null,
-      agentId: string,
-      body: AgentRequest,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      return await accept(
-        client.update({
-          params: { id: agentId },
-          headers: authenticate(actor),
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestUpdateAgentMetadata(
-      actor: ApiTestUser | null,
-      agentId: string,
-      body: AgentMetadataRequest,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      return await accept(
-        client.updateMetadata({
-          params: { id: agentId },
-          headers: authenticate(actor),
-          body,
-        }),
-        statuses,
-      );
     },
 
     async createCustomConnector(

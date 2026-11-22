@@ -137,7 +137,6 @@ type RunnerExecutionInput = Awaited<ReturnType<typeof api.executionInput>>;
 
 interface EntitledChatActor {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runnerGroup: string;
   readonly providerId: string;
 }
@@ -148,9 +147,7 @@ async function selectNativeClaudeModel(actor: ApiTestUser) {
   await api.updateUserModelPreference(actor, "claude-fable-5-1");
 }
 
-async function entitledChatActorWithoutRunner(
-  displayName: string,
-): Promise<EntitledChatActorWithoutRunner> {
+async function entitledChatActorWithoutRunner(): Promise<EntitledChatActorWithoutRunner> {
   const actor = bdd.user();
   chatCallbacks.acceptChatObjectStorage();
   api.acceptStorageDownloads();
@@ -162,19 +159,14 @@ async function entitledChatActorWithoutRunner(
   // Thread lifecycle tests execute and complete a native-harness Run. Fable is
   // the permanently native Claude route now that Pi has no off switch.
   await selectNativeClaudeModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName,
-    visibility: "private",
-  });
-  return { actor, agentId: agent.agentId, providerId };
+
+  return { actor, providerId };
 }
 
-async function entitledChatActor(
-  displayName: string,
-): Promise<EntitledChatActor> {
+async function entitledChatActor(): Promise<EntitledChatActor> {
   const runnerGroup = await api.configureRunnerGroup();
   return {
-    ...(await entitledChatActorWithoutRunner(displayName)),
+    ...(await entitledChatActorWithoutRunner()),
     runnerGroup,
   };
 }
@@ -403,7 +395,6 @@ function expectDriveStatuses(
 /** Cheapest visible message writer: the no-credit send persists a searchable
  * user row plus a non-searchable output.error without creating a run. */
 type NoCreditMessageBody = {
-  readonly agentId: string;
   readonly threadId?: string;
   readonly prompt: string;
   readonly userMessage?: UserMessageInputDocument;
@@ -442,7 +433,6 @@ async function sendNoCreditMessage(
 async function completeChatRunInThread(
   actor: ApiTestUser,
   args: {
-    readonly agentId: string;
     readonly threadId?: string;
     readonly prompt: string;
   },
@@ -568,9 +558,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   it("returns chat thread snapshot and lifecycle events with cursor expiry", async () => {
     const actor = bdd.user();
     await api.ensurePersonalSubscriptionModel(actor);
-    await bdd.createAgent(actor, {
-      displayName: "Thread event sourcing agent",
-    });
     const createEventId = randomUUID();
     const renameEventId = randomUUID();
     const modelSelectionEventId = randomUUID();
@@ -716,9 +703,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   it("keeps no-snapshot cursors anchored to real scoped rows", async () => {
     const actor = bdd.user();
     await api.ensurePersonalSubscriptionModel(actor);
-    await bdd.createAgent(actor, {
-      displayName: "No-snapshot cursor agent",
-    });
     const firstEventId = randomUUID();
     const thread = await chat.createThread(actor, {
       title: "No-snapshot cursor thread",
@@ -744,15 +728,10 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await expectExpiredThreadEventCursor(actor, firstEvent.seqId + 1);
   });
 
-  it("preserves member threads and their sidebar events when legacy Agent deletion is rejected", async () => {
+  it("preserves member threads across sidebar event replay", async () => {
     const actor = bdd.user();
     await api.ensurePersonalSubscriptionModel(actor);
-    const removedAgent = await bdd.createAgent(actor, {
-      displayName: "Agent with sidebar threads to delete",
-    });
-    await bdd.createAgent(actor, {
-      displayName: "Agent with a retained sidebar thread",
-    });
+
     const removedThreads = await Promise.all(
       ["First deleted thread", "Second deleted thread"].map(async (title) => {
         return await chat.createThread(actor, {
@@ -774,7 +753,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     }
 
     chat.mockObjectStorageObjectsExist();
-    await bdd.expectAgentDeleteUnavailable(actor, removedAgent.agentId);
     // The App renders its list from the snapshot plus this external event API.
     const tail = await threadEventPage(actor, before.latestSeqId);
     expect(tail.events).toStrictEqual([]);
@@ -800,9 +778,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   });
 
   it("touches thread sort from existing direct user sends and run-finished markers", async () => {
-    const { actor, runnerGroup } = await entitledChatActor(
-      "Thread sort touch agent",
-    );
+    const { actor, runnerGroup } = await entitledChatActor();
     const directSendSortEventId = randomUUID();
     const thread = await chat.createThread(actor, {
       title: "Existing sort touch thread",
@@ -851,9 +827,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     expect(sortTouches).toHaveLength(2);
   }, 90_000);
   it("rejects explicit thread models without the member's subscription", async () => {
-    const { actor } = await entitledChatActor(
-      "Unavailable explicit thread model agent",
-    );
+    const { actor } = await entitledChatActor();
     await api.updateUserModelPreference(actor, "claude-opus-5-5");
 
     const rejectedThreadId = randomUUID();
@@ -887,9 +861,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   }, 90_000);
 
   it("rejects the internal Auto run model as a thread selection", async () => {
-    const { actor } = await entitledChatActorWithoutRunner(
-      "Auto run model selection agent",
-    );
+    const { actor } = await entitledChatActorWithoutRunner();
 
     const rejectedThreadId = randomUUID();
     const rejectedCreate = await chat.requestCreateThread(
@@ -917,7 +889,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("creates a thread without a model as Auto when the member has no preference", async () => {
     const actor = bdd.user();
-    await bdd.createAgent(actor, { displayName: "Auto default thread agent" });
     const eventId = randomUUID();
     const created = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
@@ -957,10 +928,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         const subscription = await fixture.fund();
         await api.ensurePersonalSubscriptionModel(actor);
         await selectNativeClaudeModel(actor);
-        await bdd.createAgent(actor, {
-          displayName: "Limited free model pin agent",
-          visibility: "private",
-        });
 
         const billingStatus = await api.readBillingStatus(actor);
         await createWebhookCallbackApi(context).postStripeEvent(
@@ -1010,11 +977,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await owned.run(() => {
       return api.ensurePersonalSubscriptionModel(actor);
     });
-    await owned.run(() => {
-      return bdd.createAgent(actor, {
-        displayName: "Computer-use thread agent",
-      });
-    });
+
     const thread = await owned.run(() => {
       return chat.createThread(actor, {
         title: "Computer Use",
@@ -1083,9 +1046,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   });
 
   it("cancels in-flight runs and cascades schedules when a thread is deleted", async () => {
-    const { actor, runnerGroup } = await entitledChatActor(
-      "Thread delete cascade agent",
-    );
+    const { actor, runnerGroup } = await entitledChatActor();
     const peer = bdd.user({ orgId: actor.orgId });
 
     const unauthenticated = await chat.requestDeleteThread(
@@ -1174,17 +1135,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
 describe("CHAT-01 chat thread read state", () => {
   it("lists unread agent and thread indicators", async () => {
-    const {
-      actor: owner,
-      agentId: agentA,
-      runnerGroup,
-    } = await entitledChatActor("Unread agent A");
-    const agentB = (
-      await bdd.createAgent(owner, {
-        displayName: "Unread agent B",
-        visibility: "private",
-      })
-    ).agentId;
+    const { actor: owner, runnerGroup } = await entitledChatActor();
 
     const unauthenticated = await chat.requestIndicators(null, [401]);
     expectApiError(unauthenticated.body);
@@ -1204,12 +1155,8 @@ describe("CHAT-01 chat thread read state", () => {
 
     await api.ensurePersonalSubscriptionModel(peer);
     await selectNativeClaudeModel(peer);
-    const peerAgent = await bdd.createAgent(peer, {
-      displayName: "Unread peer agent",
-      visibility: "private",
-    });
+
     const peerRun = await completeChatRunInThread(peer, {
-      agentId: peerAgent.agentId,
       prompt: "peer unread thread stays isolated",
     });
 
@@ -1217,12 +1164,8 @@ describe("CHAT-01 chat thread read state", () => {
     await api.grantProEntitlement(sameUserOtherOrg);
     await api.ensurePersonalSubscriptionModel(sameUserOtherOrg);
     await selectNativeClaudeModel(sameUserOtherOrg);
-    const otherOrgAgent = await bdd.createAgent(sameUserOtherOrg, {
-      displayName: "Unread other org agent",
-      visibility: "private",
-    });
+
     const otherOrgRun = await completeChatRunInThread(sameUserOtherOrg, {
-      agentId: otherOrgAgent.agentId,
       prompt: "other org unread thread stays isolated",
     });
 
@@ -1281,11 +1224,9 @@ describe("CHAT-01 chat thread read state", () => {
     );
 
     const runA = await completeChatRunInThread(owner, {
-      agentId: agentA,
       prompt: "unread aggregate A",
     });
     const runB = await completeChatRunInThread(owner, {
-      agentId: agentB,
       prompt: "unread aggregate B",
     });
 
@@ -1305,13 +1246,11 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("does not let a muted thread hide another unread thread under the same agent", async () => {
-    const { actor, agentId } = await entitledChatActor("Mixed mute states");
+    const { actor } = await entitledChatActor();
     const muted = await completeChatRunInThread(actor, {
-      agentId,
       prompt: "Muted unread task",
     });
     const other = await completeChatRunInThread(actor, {
-      agentId,
       prompt: "Unmuted unread task",
     });
     await chat.requestSetThreadMuted(actor, muted.threadId, true, [204]);
@@ -1326,23 +1265,10 @@ describe("CHAT-01 chat thread read state", () => {
   });
 
   it("lists active thread ids without hiding the agent's unread state", async () => {
-    const {
-      actor: owner,
-      agentId: ownerAgent,
-      runnerGroup,
-    } = await entitledChatActor("Active ids owner agent");
+    const { actor: owner, runnerGroup } = await entitledChatActor();
     const peer = bdd.user({ orgId: owner.orgId });
     await bdd.completeOnboarding(peer);
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
-
-    await bdd.createAgent(peer, {
-      displayName: "Active ids peer agent",
-      visibility: "private",
-    });
-    await bdd.createAgent(sameUserOtherOrg, {
-      displayName: "Active ids other org agent",
-      visibility: "private",
-    });
     await api.grantProEntitlement(sameUserOtherOrg);
     await api.ensurePersonalSubscriptionModel(sameUserOtherOrg);
     await api.ensurePersonalSubscriptionModel(peer, {
@@ -1352,7 +1278,6 @@ describe("CHAT-01 chat thread read state", () => {
     // A completed run's thread must not appear in the active list. Run it
     // first so the pro-tier concurrency slots stay free for the runs below.
     const completedRun = await completeChatRunInThread(owner, {
-      agentId: ownerAgent,
       prompt: "terminal completed thread",
     });
 
@@ -1415,21 +1340,17 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("limits unified unread indicators to seven days without limiting active threads", async () => {
-    const { actor, agentId } = await entitledChatActor(
-      "Bounded indicator window agent",
-    );
+    const { actor } = await entitledChatActor();
     const currentTime = now();
 
     await withMockNowForTest(currentTime, async () => {
       mockNow(currentTime - 7 * DAY_MS - 1);
       await completeChatRunInThread(actor, {
-        agentId,
         prompt: "expired unread indicator",
       });
 
       mockNow(currentTime);
       const recentRun = await completeChatRunInThread(actor, {
-        agentId,
         prompt: "recent unread indicator",
       });
 
@@ -1450,15 +1371,8 @@ describe("CHAT-01 chat thread read state", () => {
   }, 120_000);
 
   it("returns the 50 newest unread indicators across the organization", async () => {
-    const { actor, agentId: agentA } = await entitledChatActor(
-      "Bounded indicator agent A",
-    );
-    const agentB = (
-      await bdd.createAgent(actor, {
-        displayName: "Bounded indicator agent B",
-        visibility: "private",
-      })
-    ).agentId;
+    const { actor } = await entitledChatActor();
+
     const firstCompletedAt = now() - 60_000;
 
     await withMockNowForTest(firstCompletedAt, async () => {
@@ -1467,7 +1381,6 @@ describe("CHAT-01 chat thread read state", () => {
         mockNow(firstCompletedAt + index * 1000);
         runs.push(
           await completeChatRunInThread(actor, {
-            agentId: index % 2 === 0 ? agentA : agentB,
             prompt: `bounded unread indicator ${index}`,
           }),
         );
@@ -1490,25 +1403,15 @@ describe("CHAT-01 chat thread read state", () => {
   }, 240_000);
 
   it("marks all unread chat threads for the current member", async () => {
-    const { actor: owner, agentId: agentA } =
-      await entitledChatActor("Mark-read agent A");
-    const agentB = (
-      await bdd.createAgent(owner, {
-        displayName: "Mark-read agent B",
-        visibility: "private",
-      })
-    ).agentId;
+    const { actor: owner } = await entitledChatActor();
 
     const firstRunA = await completeChatRunInThread(owner, {
-      agentId: agentA,
       prompt: "mark all read A one",
     });
     const secondRunA = await completeChatRunInThread(owner, {
-      agentId: agentA,
       prompt: "mark all read A two",
     });
     const runB = await completeChatRunInThread(owner, {
-      agentId: agentB,
       prompt: "mark all read B",
     });
 
@@ -1538,16 +1441,11 @@ describe("CHAT-01 chat thread read state", () => {
   it("tails thread event rows after a sequence cursor", async () => {
     const owner = bdd.user();
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Message cursor agent",
-    });
 
     const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
       prompt: "cursor round one",
     });
     await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
       threadId,
       prompt: "cursor round two",
     });
@@ -1630,9 +1528,7 @@ describe("CHAT-01 chat thread read state", () => {
 
 describe("CHAT-03 run usage events", () => {
   it("reads zero-credit usage and omits runs without settled usage", async () => {
-    const { actor, runnerGroup } = await entitledChatActor(
-      "Zero-credit usage message agent",
-    );
+    const { actor, runnerGroup } = await entitledChatActor();
 
     const agentRun = await sendChatRun(actor, {
       prompt: "record zero-credit usage",
@@ -1965,9 +1861,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   });
 
   it("groups run uploads and reports google drive sync status", async () => {
-    const { actor, runnerGroup } = await entitledChatActor(
-      "Artifacts drive status agent",
-    );
+    const { actor, runnerGroup } = await entitledChatActor();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
     const peer = bdd.user({ orgId: actor.orgId });
 
@@ -2457,11 +2351,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }, 120_000);
 
   async function setupSlidesConversionSync(params: {
-    readonly agentLabel: string;
     readonly conversionEnabled: boolean;
     readonly source?: { readonly filename: string; readonly body: Buffer };
   }) {
-    const { actor, runnerGroup } = await entitledChatActor(params.agentLabel);
+    const { actor, runnerGroup } = await entitledChatActor();
     if (params.conversionEnabled) {
       await createBillingMediaApi(context).updateFeatureSwitches(actor, {
         [FeatureSwitchKey.GoogleSlidesConversion]: true,
@@ -2508,7 +2401,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     slidesEnabled = false,
   ) {
     const prepared = await setupSlidesConversionSync({
-      agentLabel: "Workspace conversion agent",
       conversionEnabled: slidesEnabled,
       source: { filename, body },
     });
@@ -4698,7 +4590,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     async ({ trashAccepted, expectedMessage }) => {
       const { actor, deckId, run, sandboxHeaders } =
         await setupSlidesConversionSync({
-          agentLabel: "Artifacts slides conversion agent",
           conversionEnabled: true,
         });
 
@@ -4784,7 +4675,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     async ({ providerError, expected }) => {
       const { actor, deckId, run, sandboxHeaders } =
         await setupSlidesConversionSync({
-          agentLabel: "Artifacts slides unreadable agent",
           conversionEnabled: true,
         });
 
@@ -4817,9 +4707,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   );
 
   it("uses the selected google drive account for artifact status and sync", async () => {
-    const { actor, runnerGroup } = await entitledChatActor(
-      "Artifacts selected drive account agent",
-    );
+    const { actor, runnerGroup } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an entitled chat actor with an organization");
     }
@@ -5077,9 +4965,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }, 120_000);
 
   it("dedupes artifact urls and lists hosted sites beside run files", async () => {
-    const { actor, runnerGroup } = await entitledChatActor(
-      "Artifacts dedupe agent",
-    );
+    const { actor, runnerGroup } = await entitledChatActor();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     // Run 1 uploads its own file plus the shared one.
@@ -5224,8 +5110,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }, 120_000);
 
   it("keeps files generated beside a hosted site visible", async () => {
-    const { actor, runnerGroup } =
-      await entitledChatActor("Hosted media agent");
+    const { actor, runnerGroup } = await entitledChatActor();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     // One run generates deliverables and then publishes a site alongside them.

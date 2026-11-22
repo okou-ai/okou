@@ -433,9 +433,6 @@ describe("retained chat input observation", () => {
       bdd.acceptAgentStorageWrites();
       f.captureStorageMocks();
       await bdd.completeOnboarding(f.actor);
-      await bdd.createAgent(f.actor, {
-        displayName: "Rejected input",
-      });
       await f.activateWithoutCredits();
       await f.suspend(0);
       const eventId = randomUUID();

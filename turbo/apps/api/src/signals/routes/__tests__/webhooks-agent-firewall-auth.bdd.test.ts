@@ -144,10 +144,7 @@ async function connectCodexAccount(
 
 async function firewallRun(
   options: {
-    readonly prepareAgent?: (
-      actor: ApiTestUser,
-      agentId: string,
-    ) => Promise<void>;
+    readonly prepareActor?: (actor: ApiTestUser) => Promise<void>;
     readonly additionalConnectorSlugs?: readonly ConnectorSlug[];
   } = {},
 ) {
@@ -194,12 +191,8 @@ async function firewallRun(
       model: "claude-fable-5-1",
     });
     modelAccounts.add(provider.providerId);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD firewall agent",
-      visibility: "private",
-    });
 
-    await options.prepareAgent?.(actor, agent.agentId);
+    await options.prepareActor?.(actor);
     const run = await runs.createThreadRun(actor, {
       model: "claude-fable-5-1",
       prompt: "resolve firewall auth",
@@ -259,7 +252,6 @@ async function withPublicFirewallRun(
     run: {
       readonly runId: string;
       readonly threadId: string;
-      readonly agentId: string;
       readonly sandboxToken: string;
     },
   ) => Promise<void>,
@@ -274,11 +266,7 @@ async function withPublicFirewallRun(
     const runnerGroup = await runsApi.configureRunnerGroup();
     const subscription = await fixture.fund();
     await runsApi.ensurePersonalSubscriptionModel(fixture.actor);
-    const agent = await bdd.createAgent(fixture.actor, {
-      displayName: "BDD firewall agent",
-      description: "Exercises firewall auth resolution.",
-      visibility: "private",
-    });
+
     const run = await runsApi.createThreadRun(fixture.actor, {
       prompt: "resolve firewall auth",
     });
@@ -290,7 +278,7 @@ async function withPublicFirewallRun(
       { authorization: `Bearer ${execution.firewallToken}` },
       fixture,
       subscription,
-      { ...run, agentId: agent.agentId, sandboxToken: execution.sandboxToken },
+      { ...run, sandboxToken: execution.sandboxToken },
     );
   });
 }
@@ -1491,7 +1479,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       execution: receivedExecution,
     } = await firewallRun({
       additionalConnectorSlugs: [catalog.slug],
-      prepareAgent: async (owner) => {
+      prepareActor: async (owner) => {
         mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
         mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
         mockEnv("APP_URL", "https://app.okou.ai");

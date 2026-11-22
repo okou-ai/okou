@@ -158,7 +158,6 @@ export function createWorkflowsBddApi(context: TestContext) {
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
-      readonly defaultAgentId: string;
     }> {
       if (options.maxAutonomyBudget !== undefined) {
         createStore().set(
@@ -178,21 +177,6 @@ export function createWorkflowsBddApi(context: TestContext) {
       });
       bdd.acceptAgentStorageWrites();
       return { actor, ...entitlement };
-    },
-
-    async createAgent(
-      actor: ApiTestUser,
-      options: {
-        readonly displayName?: string;
-        readonly visibility?: "public" | "private";
-      } = {},
-    ): Promise<{ readonly agentId: string }> {
-      bdd.acceptAgentStorageWrites();
-      const agent = await bdd.createAgent(actor, {
-        displayName: options.displayName ?? "Workflow Automation Agent",
-        ...(options.visibility ? { visibility: options.visibility } : {}),
-      });
-      return { agentId: agent.agentId };
     },
 
     async createWorkflow(
@@ -304,7 +288,6 @@ export function createWorkflowsBddApi(context: TestContext) {
      */
     async startEventAutomationRun(
       actor: ApiTestUser,
-      _legacyAgentId: string,
       chatThreadId?: string,
     ): Promise<{ readonly runId: string; readonly threadId: string }> {
       const workflowId = await api.createWorkflow(actor, {

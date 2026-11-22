@@ -7,14 +7,6 @@ export const clientDescriptorManifest = [
     contracts: ["composerDraftContract"],
   },
   {
-    module: "agents",
-    contracts: [
-      "agentInstructionsContract",
-      "agentsByIdContract",
-      "agentsMainContract",
-    ],
-  },
-  {
     module: "android-updates",
     contracts: ["androidUpdatesContract"],
   },

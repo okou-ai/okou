@@ -42,10 +42,7 @@ beforeEach(() => {
 async function createRun(actor = bdd.user()) {
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Router accounting",
-    visibility: "private",
-  });
+
   const runnerGroup = await runs.configureRunnerGroup();
   const run = await runs.createThreadRun(actor, {
     prompt: "Read data",
@@ -54,7 +51,6 @@ async function createRun(actor = bdd.user()) {
   const execution = await runs.executionInput(run.runId);
   return {
     actor,
-    agentId: agent.agentId,
     runId: run.runId,
     execution,
     headers: { authorization: `Bearer ${execution.sandboxToken}` },

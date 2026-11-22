@@ -3157,9 +3157,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       integrations.configureAgentPhoneProvider();
       integrations.configureAgentPhoneWebhook();
       const sends = ap.captureAgentPhoneSends();
-      await bdd.bootstrapLimitedFreeOnboarding(owner, {
-        displayName: "Workspace recovery agent",
-      });
+      await bdd.bootstrapLimitedFreeOnboarding(owner);
       const actor =
         role === "org:admin"
           ? owner
@@ -6023,7 +6021,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   it.each([false, true])(
     "uploads phone media with a real run-scoped agent token (group: %s)",
     async (isGroup) => {
-      const bdd = createBddApi(context);
       const runs = createRunsApi(context);
       const integrations = createBddIntegrationApi(context);
       const { actor, phone, runnerGroup, sends, storage, ap } =

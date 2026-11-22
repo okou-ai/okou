@@ -110,8 +110,6 @@ export type RunnerExecutionInput = Awaited<
 export interface EntitledChatActor {
   readonly actor: ApiTestUser;
   readonly customerId: string;
-  readonly agentId: string;
-  readonly defaultAgentId: string;
   readonly runnerGroup: string;
   readonly providerId: string;
 }
@@ -374,29 +372,19 @@ export function createChatEventsFixture(context: TestContext) {
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     chatCallbacks.disableVapid();
     const runnerGroup = await api.configureRunnerGroup();
-    const { customerId, defaultAgentId } = await api.grantProEntitlement(
-      actor,
-      {
-        ...(options.orgId === STAFF_ORG_ID
-          ? {
-              customerId: "cus_bdd_chat_events_staff",
-              subscriptionId: "sub_bdd_chat_events_staff",
-            }
-          : {}),
-        tier,
-      },
-    );
-    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD chat messages agent",
-      description: "Exercises the web chat send route.",
-      visibility: "private",
+    const { customerId } = await api.grantProEntitlement(actor, {
+      ...(options.orgId === STAFF_ORG_ID
+        ? {
+            customerId: "cus_bdd_chat_events_staff",
+            subscriptionId: "sub_bdd_chat_events_staff",
+          }
+        : {}),
+      tier,
     });
+    const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
     return {
       actor,
       customerId,
-      defaultAgentId,
-      agentId: agent.agentId,
       runnerGroup,
       providerId,
     };
@@ -1136,11 +1124,9 @@ export function createChatEventsFixture(context: TestContext) {
     bdd: {
       acceptAgentStorageWrites: bdd.acceptAgentStorageWrites,
       completeOnboarding: bdd.completeOnboarding,
-      createAgent: bdd.createAgent,
+      provisionWorkspace: bdd.provisionWorkspace,
       readMe: bdd.readMe,
       readOnboardingStatus: bdd.readOnboardingStatus,
-      readDefaultAgentId: bdd.readDefaultAgentId,
-      updateAgentMetadata: bdd.updateAgentMetadata,
       user: bdd.user,
     },
     api: {

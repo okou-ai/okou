@@ -2483,7 +2483,6 @@ export function createConnectorBddApi(context: TestContext) {
      */
     async installGithubAppViaApi(
       actor: ApiTestUser,
-      composeId: string,
       installationId: string,
     ): Promise<void> {
       await createGithubBddApi(context).installGithubApp(actor, {

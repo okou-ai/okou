@@ -23,7 +23,6 @@ const chat = createChatFilesBddApi(context);
 interface ChatThreadFixture {
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly threadId: string;
 }
 
@@ -31,10 +30,7 @@ interface ChatThreadFixture {
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Chat thread rename agent",
-    visibility: "private",
-  });
+
   const thread = await chat.createThread(actor, {
     title,
   });
@@ -49,7 +45,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   return {
     userId: actor.userId,
     orgId: actor.orgId,
-    agentId: agent.agentId,
     threadId: thread.id,
   };
 }
@@ -111,9 +106,6 @@ describe("POST /api/chat-threads/:id/rename", () => {
   it("keeps the metadata title aligned with concurrent ordered rename events", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await bdd.createAgent(actor, {
-      displayName: "Concurrent renames",
-    });
     const thread = await chat.createThread(actor, {
       title: "Original title",
     });
@@ -157,9 +149,6 @@ describe("POST /api/chat-threads/:id/rename", () => {
   it("retains a caller's event identity when the same rename is delivered twice", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await bdd.createAgent(actor, {
-      displayName: "Rename delivery identity",
-    });
     const thread = await chat.createThread(actor, {
       title: "Original title",
     });

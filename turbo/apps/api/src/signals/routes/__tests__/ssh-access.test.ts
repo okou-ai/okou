@@ -1,10 +1,6 @@
 import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
-import {
-  agentsByIdContract,
-  agentsMainContract,
-} from "@okouai/api-contracts/contracts/agents";
 import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
@@ -20,7 +16,6 @@ import {
   signSandboxJwtForTests,
 } from "../../auth/tokens";
 import { sshAccessRoutes } from "../ssh-access";
-import { agentsRoutes } from "../agents";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
@@ -118,10 +113,7 @@ describe("live chat SSH Run inventory", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agentId = await bdd.readDefaultAgentId(actor);
-    if (!agentId) {
-      throw new Error("Expected onboarding to provide the default Agent");
-    }
+    await bdd.provisionWorkspace(actor);
     // Keep this owner host-free so first-host defaults remain the behavior under test.
     const { runId, threadId } = await runs.createThreadRun(actor, {
       prompt: "List my enabled SSH hosts",
@@ -273,18 +265,6 @@ describe("live chat SSH Run inventory", () => {
     expect(recreated.body.identities[0]?.id).toBe(first.body.id);
   });
 
-  async function createAgent(visibility: "public" | "private") {
-    context.mocks.s3.send.mockResolvedValue({});
-    const result = await accept(
-      setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
-        headers,
-        body: { displayName: "SSH authorization test", visibility },
-      }),
-      [201],
-    );
-    return { agentId: result.body.agentId };
-  }
-
   async function createHost(host = "ssh.example.com") {
     return await accept(
       config().create({
@@ -416,7 +396,7 @@ describe("live chat SSH Run inventory", () => {
     ).toStrictEqual([listed.body.hosts[1]]);
   });
 
-  it("uses only the Run owner's hosts regardless of legacy Agent visibility", async () => {
+  it("uses only the Run owner's hosts across members of the same workspace", async () => {
     const runnerSecret = "c".repeat(64);
     mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
     const creatorOwner = {
@@ -424,10 +404,7 @@ describe("live chat SSH Run inventory", () => {
       userId: `user_ssh_creator_${randomUUID()}`,
     };
     authenticate(creatorOwner);
-    const shared = await createAgent("public");
-    const creator = await ordinary.runtime(creatorOwner, {
-      agentId: shared.agentId,
-    });
+    const creator = await ordinary.runtime(creatorOwner, {});
     const creatorHost = await createHost("creator.example.com");
     const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
     const user = await ordinary.runtime(
@@ -435,7 +412,7 @@ describe("live chat SSH Run inventory", () => {
         orgId: creator.orgId,
         userId: `user_ssh_member_${randomUUID()}`,
       },
-      { agentId: shared.agentId, runnerIdentity },
+      { runnerIdentity },
     );
     const runner = setupApp({ context, routes: runnerSshRoutes })(
       runnerSshContract,
@@ -486,15 +463,6 @@ describe("live chat SSH Run inventory", () => {
         )
       ).body,
     ).toStrictEqual({ outcome: "unavailable" });
-    authenticate(creator);
-    await accept(
-      setupApp({ context, routes: agentsRoutes })(agentsByIdContract).update({
-        headers,
-        params: { id: shared.agentId },
-        body: { visibility: "private" },
-      }),
-      [200],
-    );
     authenticate(user);
     const ownedHosts = await accept(
       inventory().list({ headers: user.token() }),

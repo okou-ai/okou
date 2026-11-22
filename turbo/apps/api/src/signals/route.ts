@@ -12,8 +12,6 @@ import type { RouteEntry } from "./route-entry";
 import { composerDraftRoutes } from "./routes/composer-draft";
 import { feedRoutes } from "./routes/feed";
 import { instructionsRoutes } from "./routes/instructions";
-import { agentInstructionsRoutes } from "./routes/agent-instructions";
-import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
 import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
@@ -326,9 +324,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...emailUnsubscribeRoutes,
   ...composerDraftRoutes,
   ...feedRoutes,
-  ...agentInstructionsRoutes,
   ...instructionsRoutes,
-  ...agentsRoutes,
   ...artifactCatalogRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,

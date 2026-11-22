@@ -36,9 +36,7 @@ function detail() {
 async function fixture() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  await bdd.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Workflow member",
-  });
+  await bdd.bootstrapLimitedFreeOnboarding(actor);
   const s3 = installWorkflowVolumeS3Fixture(context);
   const body = {
     name: `atomic-${randomUUID().slice(0, 8)}`,

@@ -60,7 +60,6 @@ interface AgentFixture {
   readonly actor: ApiTestUser;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
 }
 
 /** Creates an agent with caller-owned subscriptions and a saved member model. */
@@ -74,10 +73,7 @@ async function seedAgent(): Promise<AgentFixture> {
     actor,
   );
   await api.updateUserModelPreference(actor, WORKSPACE_DEFAULT_MODEL);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Chat thread create agent",
-    visibility: "private",
-  });
+
   if (!actor.orgId) {
     throw new Error("Expected the seeded actor to belong to an org");
   }
@@ -90,7 +86,6 @@ async function seedAgent(): Promise<AgentFixture> {
     actor,
     userId: actor.userId,
     orgId: actor.orgId,
-    agentId: agent.agentId,
   };
 }
 

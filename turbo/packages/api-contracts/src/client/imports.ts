@@ -14,26 +14,6 @@ export const clientContractImportManifest = [
     ],
   },
   {
-    module: "agents",
-    contracts: [
-      "agentInstructionsContract",
-      "agentsByIdContract",
-      "agentsMainContract",
-    ],
-    bindings: [
-      {
-        name: "agentResponseSchema",
-        source: "validators/agents",
-        imported: "agentResponseSchema",
-      },
-      {
-        name: "agentVisibilitySchema",
-        source: "validators/agents",
-        imported: "agentVisibilitySchema",
-      },
-    ],
-  },
-  {
     module: "android-updates",
     contracts: ["androidUpdatesContract"],
     bindings: [],

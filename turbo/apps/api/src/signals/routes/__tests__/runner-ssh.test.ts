@@ -110,7 +110,6 @@ async function setThreadHostOverride(f: Fixture, enabled: boolean | null) {
 interface Fixture extends Owner {
   readonly connectionCreatedAt: string;
   readonly runId: string;
-  readonly agentId: string;
   readonly threadId?: string;
   readonly sandboxToken: string;
   readonly runnerIdentity: {
@@ -198,10 +197,7 @@ function useExecutionFixture() {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agentId = await bdd.readDefaultAgentId(actor);
-    if (!agentId) {
-      throw new Error("Expected onboarding to provide the default Agent");
-    }
+    await bdd.provisionWorkspace(actor);
     authenticate(owner);
     const connection = await accept(
       config().create({
@@ -239,7 +235,6 @@ function useExecutionFixture() {
     authenticate(owner);
     return {
       ...owner,
-      agentId,
       runId,
       threadId,
       runnerIdentity,

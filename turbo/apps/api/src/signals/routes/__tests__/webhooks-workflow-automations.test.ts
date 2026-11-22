@@ -63,18 +63,13 @@ interface WorkflowsFixture {
 async function setupFixture(): Promise<{
   readonly fixture: WorkflowsFixture;
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly workflowId: string;
   readonly subscriptionId: string;
 }> {
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
   // Webhook runs are executed by the native Runner, so the owner selects
   // Fable, whose personal subscription route never uses Pi.
-  const {
-    defaultAgentId: agentId,
-    actor,
-    subscriptionId,
-  } = await wf.setupWorkflowOrg({
+  const { actor, subscriptionId } = await wf.setupWorkflowOrg({
     tier: "team",
     model: "claude-fable-5-1",
   });
@@ -90,7 +85,6 @@ async function setupFixture(): Promise<{
   return {
     fixture,
     actor,
-    agentId,
     workflowId,
     subscriptionId,
   };

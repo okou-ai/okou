@@ -57,7 +57,6 @@ export interface ConnectedDiscordActor {
   readonly guildId: string;
   readonly discordUserId: string;
   readonly botUserId: string;
-  readonly defaultAgentId: string;
   readonly runnerGroup: string;
   readonly connectionId: string;
   readonly sinceSetupSeqId?: number;
@@ -91,17 +90,11 @@ export async function setupConnectedDiscordActor(
   if (!options.reuseOrganization) {
     await runsApi.grantProEntitlement(actor);
   }
-  const onboardingAgentId = await authOrgApi.readDefaultAgentId(actor);
-  if (!onboardingAgentId) {
-    throw new Error(
-      "Discord fixture onboarding did not create a default agent",
-    );
-  }
+  await authOrgApi.provisionWorkspace(actor);
   if (options.reuseOrganization) {
     await authOrgApi.completeOnboarding(actor);
   }
   if (!options.reuseOrganization) {
-    await authOrgApi.readAgent(actor, onboardingAgentId);
     // These lifecycle fixtures exercise the native Runner execution protocol.
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -126,7 +119,6 @@ export async function setupConnectedDiscordActor(
     guildId,
     discordUserId,
     botUserId,
-    defaultAgentId: onboardingAgentId,
     runnerGroup,
     connectionId: fixture.connectionId,
     sinceSetupSeqId: await threadEventCursor(context, actor),

@@ -20,7 +20,6 @@ export function createRunExecutionCredentials(context: TestContext) {
       readonly sandboxToken: string;
       readonly runId: string;
       readonly threadId: string;
-      readonly agentId: string;
     }
   >();
   const owners = new Map<string, ReturnType<typeof publicRunOwner>[]>();
@@ -90,10 +89,7 @@ export function createRunExecutionCredentials(context: TestContext) {
           await bdd.completeOnboarding(actor);
         }
         await createAuthDeviceSupportApi(context).initializePreferences(actor);
-        const agent = await bdd.createAgent(actor, {
-          displayName: "API caller credential",
-          visibility: "private",
-        });
+
         const thread = await createChatFilesBddApi(context).createThread(
           actor,
           { model: null },
@@ -113,7 +109,6 @@ export function createRunExecutionCredentials(context: TestContext) {
           sandboxToken: execution.sandboxToken,
           runId: run.runId,
           threadId: run.threadId,
-          agentId: agent.agentId,
         };
       });
       restoreAccepted = captureConnectorExternalState(context);

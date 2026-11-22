@@ -101,7 +101,7 @@ describe("private Runner VNC authority", () => {
   });
 
   async function executionRuntime(
-    owner: Pick<VncRuntimeFixture, "orgId" | "userId" | "agentId">,
+    owner: Pick<VncRuntimeFixture, "orgId" | "userId">,
   ) {
     const actor = createBddApi(context).user(owner);
     const runnerIdentity = {
@@ -155,10 +155,7 @@ describe("private Runner VNC authority", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agentId = await bdd.readDefaultAgentId(actor);
-    if (!agentId) {
-      throw new Error("Expected onboarding to provide the default Agent");
-    }
+    await bdd.provisionWorkspace(actor);
     api.authenticate(owner);
     const connection = await accept(
       api.connections().create({
@@ -170,11 +167,10 @@ describe("private Runner VNC authority", () => {
     if (options.defaultEnabled !== false) {
       await api.enableDefault(owner, "vnc", connection.body.id);
     }
-    const running = await executionRuntime({ ...owner, agentId });
+    const running = await executionRuntime({ ...owner });
     return {
       ...owner,
       ...running,
-      agentId,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
       credentialId: requireVncCredentialId(connection.body),

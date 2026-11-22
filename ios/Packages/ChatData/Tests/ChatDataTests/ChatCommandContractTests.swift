@@ -368,7 +368,6 @@ final class ChatCommandContractTests: XCTestCase {
     XCTAssertEqual(receipt.clientEventID, fixtureRun)
     XCTAssertEqual(receipt.threadID, fixtureThread)
     let sent = try XCTUnwrap(state.withLock { $0.sends.first })
-    XCTAssertFalse(sent.hasAgentId)
     XCTAssertEqual(sent.prompt, "Steer this task")
     XCTAssertFalse(sent.hasModelOverride)
     XCTAssertTrue(sent.hostIsExplicitNull)

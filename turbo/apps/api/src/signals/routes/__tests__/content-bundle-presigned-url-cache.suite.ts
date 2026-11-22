@@ -44,7 +44,6 @@ describe("content bundle presigned URL cache", () => {
 
   async function entitledWorkflowActor(): Promise<{
     readonly actor: ApiTestUser;
-    readonly agentId: string;
     readonly runnerGroup: string;
   }> {
     const bdd = createBddApi(context);
@@ -53,11 +52,11 @@ describe("content bundle presigned URL cache", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = await api.configureRunnerGroup();
-    const { defaultAgentId } = await api.grantProEntitlement(actor);
+    await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    return { actor, agentId: defaultAgentId, runnerGroup };
+    return { actor, runnerGroup };
   }
 
   beforeEach(() => {
@@ -70,7 +69,7 @@ describe("content bundle presigned URL cache", () => {
   });
 
   async function workflowCacheFixture() {
-    const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
+    const { actor, runnerGroup } = await entitledWorkflowActor();
     const misc = createMiscRoutesApi(context);
     const chats = createChatEventsFixture(context);
     installWorkflowVolumeS3Fixture(context);
@@ -98,7 +97,6 @@ describe("content bundle presigned URL cache", () => {
     };
     return {
       actor,
-      agentId,
       runnerGroup,
       workflow: workflow.body,
       misc,

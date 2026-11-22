@@ -121,10 +121,7 @@ describe("OPS-01: user data export", () => {
     const misc = createMiscRoutesApi(context);
     const events = createChatEventsFixture(context);
     await fixture.run(async () => {
-      const defaultAgentId = await bdd.readDefaultAgentId(actor);
-      if (!defaultAgentId) {
-        throw new Error("Expected a workspace workflow namespace");
-      }
+      await bdd.provisionWorkspace(actor);
       await bdd.updatePersonalInstructions(
         actor,
         "Use the exported personal instructions.",
@@ -144,15 +141,11 @@ describe("OPS-01: user data export", () => {
       await chat.pinThread(actor, thread.id, { pinOrder: "a0" });
 
       const peer = bdd.user({ orgId: actor.orgId });
-      const peerOnboardingAgentId = await bdd.readDefaultAgentId(peer);
-      if (!peerOnboardingAgentId) {
-        throw new Error("Expected the paid organization to onboard the peer");
-      }
+      await bdd.provisionWorkspace(peer);
       const peerOnboarded = await bdd.completeOnboarding(peer);
       if (peerOnboarded.status !== 200) {
         throw new Error("Expected peer onboarding to complete");
       }
-      await bdd.createAgent(peer, { visibility: "private" });
       const peerThread = await chat.createThread(peer, {
         title: "Another user's private thread",
       });

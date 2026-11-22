@@ -69,16 +69,11 @@ async function connectorActor() {
       model: "claude-fable-5-1",
     });
     providerIds.push(provider.providerId);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Connector selection",
-      visibility: "private",
-    });
 
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     await connectX(connectors, actor);
     return {
       actor,
-      agentId: agent.agentId,
       api,
       connectors,
       async send(prompt: string, threadId?: string) {

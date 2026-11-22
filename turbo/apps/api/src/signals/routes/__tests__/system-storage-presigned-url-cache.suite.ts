@@ -28,7 +28,6 @@ describe("system storage presigned URL cache", () => {
 
   async function entitledDirectRunActor(): Promise<{
     readonly actor: ApiTestUser;
-    readonly agentId: string;
     readonly runnerGroup: string;
   }> {
     const bdd = createBddApi(context);
@@ -43,11 +42,8 @@ describe("system storage presigned URL cache", () => {
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "System storage cache agent",
-      visibility: "private",
-    });
-    return { actor, agentId: agent.agentId, runnerGroup };
+
+    return { actor, runnerGroup };
   }
 
   async function readonlyCacheScenario() {

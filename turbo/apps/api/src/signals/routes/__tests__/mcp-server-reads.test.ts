@@ -50,11 +50,9 @@ async function fixture() {
   const actor = bdd.user({ orgId: `org_${randomUUID()}` });
   bdd.acceptAgentStorageWrites();
   await createRunsApi(context).configureRunnerGroup({ registerRunner: false });
-  const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Web MCP adapter",
-  });
+  await bdd.bootstrapLimitedFreeOnboarding(actor);
   const token = mcp.authorize(actor);
-  return { actor, agentId, token };
+  return { actor, token };
 }
 function body(result: Awaited<ReturnType<typeof mcp.call>>): unknown {
   return (
@@ -390,9 +388,9 @@ describe("thin MCP Web adapters", () => {
       f.actor.orgId,
       f.actor.orgRole,
     );
-    const expired = await mcp.web(f.token({ exp: 1 }), "/api/agents");
+    const expired = await mcp.web(f.token({ exp: 1 }), "/api/billing");
     expect(expired.status).toBe(401);
-    const unsupported = await mcp.web(f.token(), `/api/agents/${f.agentId}`);
+    const unsupported = await mcp.web(f.token(), "/api/billing");
     expect(unsupported.status).toBe(401);
   });
 
@@ -408,7 +406,7 @@ describe("thin MCP Web adapters", () => {
         );
       }),
     );
-    const unavailable = await mcp.web(f.token(), "/api/agents");
+    const unavailable = await mcp.web(f.token(), "/api/billing");
     expect(unavailable.status).toBe(503);
     expect(unavailable.body).toMatchObject({
       error: { code: "PROVIDER_UNAVAILABLE" },
@@ -560,10 +558,6 @@ describe("thin MCP Web adapters", () => {
     ).toBe("BAD_REQUEST");
 
     expect(listed.content[0]?.text).not.toContain("agentId");
-    await bdd.createAgent(f.actor, {
-      visibility: "private",
-      displayName: "Retained Agent",
-    });
     const thread = await chat.createThread(f.actor, {
       title: "Retained Chat",
     });
@@ -910,7 +904,7 @@ describe("thin MCP Web adapters", () => {
     const query = { keyword: "plain keyword" };
     const web = await mcp.web(
       f.token(),
-      `/api/chat/search?keyword=plain%20keyword&agentId=${f.agentId}`,
+      "/api/chat/search?keyword=plain%20keyword",
     );
     const search = await mcp.call(f.token(), "search_chat_messages", query);
     expect(search.isError).not.toBeTruthy();
@@ -955,9 +949,6 @@ describe("thin MCP Web adapters", () => {
       ).code,
     ).toBe("NOT_FOUND");
     const unrelated = bdd.user({ orgId: `org_${randomUUID()}` });
-    await bdd.createAgent(unrelated, {
-      displayName: "Other organization",
-    });
     const thread = await chat.createThread(unrelated, {
       title: "Other organization",
     });
@@ -978,9 +969,6 @@ describe("thin MCP Web adapters", () => {
     const other = bdd.user({
       userId: f.actor.userId,
       orgId: `org_${randomUUID()}`,
-    });
-    await bdd.createAgent(other, {
-      displayName: "Same user, different organization",
     });
     const thread = await chat.createThread(other, {
       title: "Other organization thread",

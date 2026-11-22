@@ -18,7 +18,6 @@ import { mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { projectRoutes } from "../../projects";
-import { agentsRoutes } from "../../agents";
 import { chatEventsRoutes } from "../../chat-events";
 import { chatThreadRoutes } from "../../chat-threads";
 import { mcpServerRoutes } from "../../mcp-server";
@@ -157,7 +156,6 @@ export function createMcpWebApi(context: TestContext) {
   const raw = setupRawAppRequest({
     context,
     routes: [
-      ...agentsRoutes,
       ...projectRoutes,
       ...runModelsRoutes,
       ...chatThreadRoutes,

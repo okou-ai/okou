@@ -7,16 +7,6 @@ import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
 import { composerDraftContract as OriginalComposerDraftContract } from "../contracts/agent-draft";
 import { composerDraftContract } from "./agent-draft";
-import {
-  agentInstructionsContract as OriginalAgentInstructionsContract,
-  agentsByIdContract as OriginalAgentsByIdContract,
-  agentsMainContract as OriginalAgentsMainContract,
-} from "../contracts/agents";
-import {
-  agentInstructionsContract,
-  agentsByIdContract,
-  agentsMainContract,
-} from "./agents";
 import { androidUpdatesContract as OriginalAndroidUpdatesContract } from "../contracts/android-updates";
 import { androidUpdatesContract } from "./android-updates";
 import { artifactCatalogContract as OriginalArtifactCatalogContract } from "../contracts/artifact-catalog";
@@ -799,9 +789,6 @@ export const clientDescriptorContracts: readonly (readonly [
   AppRouter,
 ])[] = [
   [composerDraftContract, OriginalComposerDraftContract],
-  [agentInstructionsContract, OriginalAgentInstructionsContract],
-  [agentsByIdContract, OriginalAgentsByIdContract],
-  [agentsMainContract, OriginalAgentsMainContract],
   [androidUpdatesContract, OriginalAndroidUpdatesContract],
   [artifactCatalogContract, OriginalArtifactCatalogContract],
   [artifactDownloadsContract, OriginalArtifactDownloadsContract],

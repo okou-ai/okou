@@ -3,10 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
-import { agentInstructionsRoutes } from "../agent-instructions";
+import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -38,8 +35,6 @@ const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
 const runsApi = createRunsApi(context);
 const connectors = createConnectorBddApi(context);
-const DEFAULT_AGENT_AVATAR_URL =
-  "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
 
 function shortId(): string {
   return randomUUID().replace(/-/g, "").slice(0, 10);
@@ -57,7 +52,7 @@ async function onboardAdmin(
     readonly slug?: string;
     readonly name?: string;
   } = {},
-): Promise<string> {
+): Promise<void> {
   const orgState: { slug?: string; name?: string } = {};
   if (options.slug !== undefined) {
     orgState.slug = options.slug;
@@ -67,15 +62,12 @@ async function onboardAdmin(
     orgState.name = orgName;
   }
   api.mockClerkOrg(admin, orgState);
-  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
-    displayName: options.displayName ?? "BDD Default Agent",
-  });
+  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin);
   if (bootstrap.status !== 200) {
     throw new Error(
       `Expected onboarding bootstrap to succeed, got ${bootstrap.status}`,
     );
   }
-  return bootstrap.body.agentId;
 }
 
 async function withOwnedInvitationOrg(
@@ -96,8 +88,8 @@ async function withOwnedInvitationOrg(
   await owner.run(scenario);
 }
 
-describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
-  it("chains current identity, onboarding, default agent selection, and later agent reads", async () => {
+describe("AUTH-01 and ORG-03", () => {
+  it("reads current identity and completes workspace onboarding", async () => {
     const admin = api.user();
     const noOrg = api.user({ orgId: null });
     const orgSlug = slug("bdd-chain");
@@ -122,15 +114,7 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
     expectApiError(missingOrg.body);
     expect(missingOrg.body.error.code).toBe("NOT_FOUND");
 
-    const noOrgAgent = await api.requestCreateAgent(
-      noOrg,
-      { displayName: "No Org Agent" },
-      [401],
-    );
-    expectApiError(noOrgAgent.body);
-    expect(noOrgAgent.body.error.code).toBe("UNAUTHORIZED");
-
-    const defaultAgentId = await onboardAdmin(admin, {
+    await onboardAdmin(admin, {
       displayName: "BDD Default Agent",
       workspaceName: "BDD Chain Org",
       slug: orgSlug,
@@ -139,55 +123,17 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
 
     const after = await api.readOnboardingStatus(admin);
     expect(after.onboardingComplete).toBeTruthy();
-    const defaultAgent = await api.readAgent(admin, defaultAgentId);
-    expect(defaultAgent.displayName).toBe("Okou");
-    expect(defaultAgent.avatarUrl).toBe(DEFAULT_AGENT_AVATAR_URL);
-
-    const repeatedBootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
-      displayName: "BDD Default Agent Repeated",
-    });
+    const repeatedBootstrap = await api.bootstrapLimitedFreeOnboarding(admin);
     if (repeatedBootstrap.status !== 200) {
       throw new Error(
         `Expected repeated onboarding bootstrap to be idempotent, got ${repeatedBootstrap.status}`,
       );
     }
-    expect(repeatedBootstrap.body.agentId).toBe(defaultAgentId);
 
     const onboardingBilling = await runsApi.readBillingStatus(admin);
     expect(onboardingBilling).toMatchObject({
       tier: "limited-free-1",
       onboardingPaymentPending: false,
-    });
-
-    const afterRepeatedBootstrap = await api.listAgents(admin);
-    expect(
-      afterRepeatedBootstrap.filter((agent) => {
-        return agent.agentId === defaultAgentId;
-      }),
-    ).toHaveLength(1);
-
-    const created = await api.createAgent(admin, {
-      displayName: "BDD Secondary Agent",
-      description: "Created after onboarding",
-      visibility: "public",
-    });
-    const listed = await api.listAgents(admin);
-    expect(
-      listed.some((agent) => {
-        return agent.agentId === created.agentId;
-      }),
-    ).toBeTruthy();
-
-    const updated = await api.updateAgentMetadata(admin, created.agentId, {
-      displayName: "BDD Secondary Agent Updated",
-      description: "Updated through metadata API",
-      visibility: "private",
-    });
-    expect(updated).toMatchObject({
-      agentId: created.agentId,
-      displayName: "BDD Secondary Agent Updated",
-      description: "Updated through metadata API",
-      visibility: "private",
     });
   });
 
@@ -507,177 +453,7 @@ describe("ORG-01 and ORG-02", () => {
 });
 
 describe("ORG-03 onboarding status mapping", () => {
-  it.each(["admin", "member", "other-admin"] as const)(
-    "lets an %s editor configure the default without replacing its identity",
-    async (role) => {
-      const admin = api.user();
-      api.acceptAgentStorageWrites();
-      const onboardingAgentId = await api.readDefaultAgentId(admin);
-      const defaultAgentId = onboardingAgentId;
-      if (!defaultAgentId) {
-        throw new Error("Expected the workspace default agent");
-      }
-      const owner =
-        role === "admin"
-          ? admin
-          : api.user({
-              ...(role === "member" ? { userId: admin.userId } : {}),
-              orgId: admin.orgId,
-              orgRole: role === "member" ? "org:member" : "org:admin",
-            });
-      const instructions = setupApp({
-        context,
-        routes: agentInstructionsRoutes,
-      })(agentInstructionsContract);
-      const instructionRequest = {
-        headers: api.authenticate(owner),
-        params: { id: defaultAgentId },
-      };
-      const before = await api.readAgent(owner, defaultAgentId);
-      expect(before).toMatchObject({
-        isDefaultAgent: true,
-        displayName: "Okou",
-        visibility: "public",
-      });
-      await expect(api.listAgents(owner)).resolves.toContainEqual(before);
-
-      for (const [fields, code] of [
-        [{ displayName: "Renamed default" }, "DEFAULT_AGENT_NAME_LOCKED"],
-        [{ avatarUrl: "preset:4" }, "DEFAULT_AGENT_AVATAR_LOCKED"],
-        [{ visibility: "private" }, "DEFAULT_AGENT_VISIBILITY_LOCKED"],
-      ] as const) {
-        const body = { ...fields, isDefaultAgent: false };
-        const patched = await api.requestUpdateAgentMetadata(
-          owner,
-          defaultAgentId,
-          body,
-          [400],
-        );
-        expect(patched.body).toMatchObject({
-          error: { code },
-        });
-        const replaced = await api.requestUpdateAgent(
-          owner,
-          defaultAgentId,
-          body,
-          [400],
-        );
-        expect(replaced.body).toMatchObject({
-          error: { code },
-        });
-        await expect(
-          api.readAgent(owner, defaultAgentId),
-        ).resolves.toStrictEqual(before);
-      }
-      const clearedAvatar = await api.requestUpdateAgentMetadata(
-        owner,
-        defaultAgentId,
-        { avatarUrl: null },
-        [400],
-      );
-      expect(clearedAvatar.body).toMatchObject({
-        error: { code: "DEFAULT_AGENT_AVATAR_LOCKED" },
-      });
-      const configuration = {
-        displayName: "Okou",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-        description: "Changed responsibility",
-        sound: "friendly",
-        isDefaultAgent: false,
-      };
-      const configured = await api.requestUpdateAgentMetadata(
-        owner,
-        defaultAgentId,
-        configuration,
-        [200],
-      );
-      expect(configured.body).toMatchObject({
-        ...before,
-        description: "Changed responsibility",
-        sound: "friendly",
-      });
-      const updated = await api.requestUpdateAgent(
-        owner,
-        defaultAgentId,
-        { description: "Updated responsibility", sound: "direct" },
-        [200],
-      );
-      expect(updated.body).toMatchObject({
-        ...before,
-        description: "Updated responsibility",
-        sound: "direct",
-      });
-      await expect(api.readAgent(owner, defaultAgentId)).resolves.toStrictEqual(
-        updated.body,
-      );
-      await expect(api.readDefaultAgentId(owner)).resolves.toBe(defaultAgentId);
-
-      const savedInstructions = await accept(
-        instructions.update({
-          ...instructionRequest,
-          body: { content: "Shared team instructions" },
-        }),
-        [200],
-      );
-      expect(savedInstructions.body).toMatchObject({
-        agentId: defaultAgentId,
-        isDefaultAgent: true,
-      });
-      const afterInstructions = await accept(
-        instructions.get(instructionRequest),
-        [200],
-      );
-      expect(afterInstructions.body.content).toBe("Shared team instructions");
-      const member = api.user({ orgId: admin.orgId, orgRole: "org:member" });
-      await expect(
-        api.readAgent(member, defaultAgentId),
-      ).resolves.toMatchObject({
-        isDefaultAgent: true,
-        visibility: "public",
-      });
-      await api.requestUpdateAgentMetadata(
-        member,
-        defaultAgentId,
-        { description: "Unauthorized configuration" },
-        [403],
-      );
-      await accept(
-        instructions.update({
-          headers: api.authenticate(member),
-          params: { id: defaultAgentId },
-          body: { content: "Unauthorized instructions" },
-        }),
-        [403],
-      );
-      await expect(api.readAgent(owner, defaultAgentId)).resolves.toStrictEqual(
-        updated.body,
-      );
-      const retainedInstructions = await accept(
-        instructions.get(instructionRequest),
-        [200],
-      );
-      expect(retainedInstructions.body.content).toBe(
-        "Shared team instructions",
-      );
-
-      const custom = await api.createAgent(owner, { displayName: "Okou" });
-      expect(custom.isDefaultAgent).toBeFalsy();
-      await expect(
-        api.updateAgent(owner, custom.agentId, {
-          displayName: "Research",
-          avatarUrl: "preset:2",
-          visibility: "private",
-        }),
-      ).resolves.toMatchObject({
-        displayName: "Research",
-        avatarUrl: "preset:2",
-        visibility: "private",
-        isDefaultAgent: false,
-      });
-    },
-  );
-
-  it("maps onboarding status across the setup, payment, entitlement, and agent-deletion journey", async () => {
+  it("maps onboarding status across setup, payment, and entitlement", async () => {
     const noOrg = api.user({ orgId: null });
     const admin = api.user();
     const member = api.user({ orgId: admin.orgId, orgRole: "org:member" });
@@ -768,137 +544,10 @@ describe("ORG-03 onboarding status mapping", () => {
   });
 });
 
-describe("AGENT-01 and AGENT-02", () => {
-  it("rejects agent metadata updates at unauthenticated and missing boundaries", async () => {
+describe("workspace custom connector connection", () => {
+  it("connects a workspace custom connector", async () => {
     const admin = api.user();
-    const missingAgentId = randomUUID();
-
-    const unauthenticated = await api.requestUpdateAgentMetadata(
-      null,
-      missingAgentId,
-      { displayName: "No auth" },
-      [401],
-    );
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const missing = await api.requestUpdateAgentMetadata(
-      admin,
-      missingAgentId,
-      { displayName: "Missing" },
-      [404],
-    );
-    expectApiError(missing.body);
-    expect(missing.body.error.code).toBe("NOT_FOUND");
-  });
-
-  it("enforces the public agent limit while still allowing private agents", async () => {
-    const admin = api.user();
-    api.acceptAgentStorageWrites();
-
-    const publicAgents = [];
-    for (let index = 0; index < 7; index += 1) {
-      publicAgents.push(
-        await api.createAgent(admin, {
-          displayName: `BDD Public Limit ${index + 1}`,
-          visibility: "public",
-        }),
-      );
-    }
-
-    const blocked = await api.requestCreateAgent(
-      admin,
-      {
-        displayName: "BDD Public Limit Blocked",
-        visibility: "public",
-      },
-      [409],
-    );
-    expectApiError(blocked.body);
-    expect(blocked.body.error.code).toBe("CONFLICT");
-    expect(blocked.body.error.message).toBe(
-      "This organization has reached the maximum number of agents (7). Delete an existing agent before creating a new one.",
-    );
-
-    const listed = await api.listAgents(admin);
-    const listedPublicAgents = listed.filter((agent) => {
-      return agent.visibility === "public";
-    });
-    expect(listedPublicAgents).toHaveLength(7);
-    expect(
-      publicAgents.every((agent) => {
-        return listedPublicAgents.some((listedAgent) => {
-          return listedAgent.agentId === agent.agentId;
-        });
-      }),
-    ).toBeTruthy();
-
-    const privateAfterLimit = await api.createAgent(admin, {
-      displayName: "BDD Private After Public Limit",
-      visibility: "private",
-    });
-    expect(privateAfterLimit).toMatchObject({
-      displayName: "BDD Private After Public Limit",
-      visibility: "private",
-    });
-
-    const blockedVisibility = await api.requestUpdateAgentMetadata(
-      admin,
-      privateAfterLimit.agentId,
-      { visibility: "public" },
-      [409],
-    );
-    expectApiError(blockedVisibility.body);
-    expect(blockedVisibility.body.error.code).toBe("CONFLICT");
-    expect(blockedVisibility.body.error.message).toBe(
-      "This organization has reached the maximum number of agents (7). Delete an existing agent before making this agent public.",
-    );
-
-    const privateAfterBlockedVisibility = await api.readAgent(
-      admin,
-      privateAfterLimit.agentId,
-    );
-    expect(privateAfterBlockedVisibility.visibility).toBe("private");
-  });
-
-  it("covers agent visibility and workspace custom connector connection", async () => {
-    const admin = api.user();
-    const member = api.user({
-      orgId: admin.orgId,
-      orgRole: "org:member",
-      email: `member-${shortId()}@example.test`,
-    });
-    const otherAdmin = api.user();
-    await onboardAdmin(admin, { slug: slug("bdd-agent") });
-    api.acceptAgentStorageWrites();
-
-    const privateAgent = await api.createAgent(admin, {
-      displayName: "BDD Private Agent",
-      visibility: "private",
-    });
-    const memberPrivateRead = await api.requestReadAgent(
-      member,
-      privateAgent.agentId,
-      [404],
-    );
-    expectApiError(memberPrivateRead.body);
-    expect(memberPrivateRead.body.error.code).toBe("NOT_FOUND");
-
-    const publicAgent = await api.createAgent(admin, {
-      displayName: "BDD Public Agent",
-      visibility: "public",
-    });
-    const memberPublicRead = await api.readAgent(member, publicAgent.agentId);
-    expect(memberPublicRead.agentId).toBe(publicAgent.agentId);
-
-    const crossOrgRead = await api.requestReadAgent(
-      otherAdmin,
-      publicAgent.agentId,
-      [404],
-    );
-    expectApiError(crossOrgRead.body);
-    expect(crossOrgRead.body.error.code).toBe("NOT_FOUND");
-
+    await onboardAdmin(admin);
     const connectorSlug = `_${slug("bdd-connector")}`;
     const connector = await api.createCustomConnector(
       admin,

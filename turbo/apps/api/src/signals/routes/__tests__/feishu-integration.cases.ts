@@ -232,7 +232,6 @@ interface FeishuInstallationFixture {
   readonly appId: string;
   readonly callbackUrl: string;
   readonly installationId: string;
-  readonly defaultAgentId: string;
 }
 
 interface FeishuRunFixture extends FeishuInstallationFixture {
@@ -1202,19 +1201,11 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       });
     });
     authOrgApi.acceptAgentStorageWrites();
-    const onboardingAgentId = await own(() => {
-      return authOrgApi.readDefaultAgentId(actor);
-    });
+    await authOrgApi.provisionWorkspace(actor);
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
-    const defaultAgentId = requireValue(
-      onboardingAgentId,
-      "Expected the normal default Agent",
-    );
-    const defaultAgent = await own(() => {
-      return authOrgApi.readAgent(actor, defaultAgentId);
-    });
+
     await grantEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const configured = await configureTestInstallation({ appId });
@@ -1222,7 +1213,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       actor,
       appId,
       ...configured,
-      defaultAgentId: defaultAgent.agentId,
     };
   }
 
@@ -1245,19 +1235,11 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       bundlesOnly: true,
     });
     runsApi.acceptTelemetryIngest();
-    const onboardingAgentId = await own(() => {
-      return authOrgApi.readDefaultAgentId(actor);
-    });
+    await authOrgApi.provisionWorkspace(actor);
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
-    const defaultAgentId = requireValue(
-      onboardingAgentId,
-      "Expected the normal default Agent",
-    );
-    const defaultAgent = await own(() => {
-      return authOrgApi.readAgent(actor, defaultAgentId);
-    });
+
     const subscription = await grantEntitlement(actor);
     await own(() => {
       return runsApi.ensurePersonalSubscriptionModel(actor, {
@@ -1279,7 +1261,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       appId,
       callbackUrl,
       installationId,
-      defaultAgentId: defaultAgent.agentId,
     };
   }
 
@@ -1906,12 +1887,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu plaintext callback agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2109,12 +2085,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu single-bot agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2276,12 +2247,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu concurrent setup agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2354,12 +2320,7 @@ export function registerFeishuIntegrationTests(
           await own(() => {
             return enableFeishuIntegration(platform, actor);
           });
-          await own(() => {
-            return authOrgApi.createAgent(actor, {
-              displayName: "Feishu replay setup agent",
-              visibility: "public",
-            });
-          });
+
           mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
           const client = feishuConnectClient(platform);
           const headers = { authorization: "Bearer clerk-session" };
@@ -2508,12 +2469,7 @@ export function registerFeishuIntegrationTests(
           await own(() => {
             return enableFeishuIntegration(platform, actor);
           });
-          await own(() => {
-            return authOrgApi.createAgent(actor, {
-              displayName: "Feishu competing setup agent",
-              visibility: "public",
-            });
-          });
+
           owners.push({ actor });
         }
         context.mocks.clerk.authenticateRequest.mockImplementation(
@@ -2644,12 +2600,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu connector retry agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2790,12 +2741,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu connector repair agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -2891,12 +2837,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu managed bot agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -3040,19 +2981,11 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, member);
         });
-        const onboardingAgentId = await own(() => {
-          return authOrgApi.readDefaultAgentId(admin);
-        });
+        await authOrgApi.provisionWorkspace(admin);
         await own(() => {
           return authOrgApi.completeOnboarding(admin);
         });
-        const defaultAgentId = requireValue(
-          onboardingAgentId,
-          "Expected the normal default Agent",
-        );
-        await own(() => {
-          return authOrgApi.readAgent(admin, defaultAgentId);
-        });
+
         mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -3794,12 +3727,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        await own(() => {
-          return authOrgApi.createAgent(actor, {
-            displayName: "Feishu callback agent",
-            visibility: "public",
-          });
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -3904,19 +3832,11 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        const onboardingAgentId = await own(() => {
-          return authOrgApi.readDefaultAgentId(actor);
-        });
+        await authOrgApi.provisionWorkspace(actor);
         await own(() => {
           return authOrgApi.completeOnboarding(actor);
         });
-        const defaultAgentId = requireValue(
-          onboardingAgentId,
-          "Expected the normal default Agent",
-        );
-        await own(() => {
-          return authOrgApi.readAgent(actor, defaultAgentId);
-        });
+
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -7029,8 +6949,7 @@ export function registerFeishuIntegrationTests(
 
       it("resumes queued Feishu group tasks through the canonical session", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-          fixture;
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
         const secondOpenId = "ou_feishu_canonical_group_user";
         const secondActor = createActor({
           userId: `user_${randomUUID()}`,
@@ -7057,9 +6976,7 @@ export function registerFeishuIntegrationTests(
             "claude-fable-5-1",
           );
         });
-        await own(() => {
-          return authOrgApi.readAgent(actor, defaultAgentId);
-        });
+
         fixtureState.outboundMessages = [];
         const firstMessageId = `om_${randomUUID()}`;
         const firstPrompt = "first canonical group task";

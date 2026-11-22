@@ -32,8 +32,6 @@ ORG-01/02/03, TEAM, and AGENT-02 integration chains:
 
 const context = testContext();
 const api = createAuthOrgAgentsBddApi(context);
-const DEFAULT_AGENT_AVATAR_URL =
-  "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
 
 class ClerkApiResponseTestError extends Error {
   static readonly kind = "ClerkAPIResponseError";
@@ -68,7 +66,7 @@ async function onboardAdmin(
     readonly slug?: string;
     readonly name?: string;
   } = {},
-): Promise<string> {
+): Promise<void> {
   const orgState: { slug?: string; name?: string } = {};
   if (options.slug !== undefined) {
     orgState.slug = options.slug;
@@ -77,15 +75,12 @@ async function onboardAdmin(
     orgState.name = options.name;
   }
   api.mockClerkOrg(admin, orgState);
-  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
-    displayName: options.displayName ?? "BDD Org Team Agent",
-  });
+  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin);
   if (bootstrap.status !== 200) {
     throw new Error(
       `Expected onboarding bootstrap to succeed, got ${bootstrap.status}`,
     );
   }
-  return bootstrap.body.agentId;
 }
 
 function pngLogoFile(): File {
@@ -908,74 +903,6 @@ describe("ORG-02: member cleanup detaches Slack connections", () => {
       [200],
     );
     expect(afterDelete.body).toMatchObject({ isConnected: false });
-  });
-});
-
-describe("ORG-01/AGENT-02: agent listing", () => {
-  it("lists org-visible agents only [TEAM-E]", async () => {
-    const unauthenticated = await api.requestListAgents(null, [401]);
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const noOrg = api.user({ orgId: null });
-    const noOrgAgents = await api.requestListAgents(noOrg, [401]);
-    expect(noOrgAgents.body).toStrictEqual({
-      error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
-      },
-    });
-
-    const crossOrgAdmin = api.user();
-    await expect(api.listAgents(crossOrgAdmin)).resolves.toStrictEqual([]);
-
-    const admin = api.user();
-    const peerAdmin = api.user({
-      orgId: admin.orgId,
-      email: `peer-admin-${shortId()}@example.test`,
-    });
-    api.acceptAgentStorageWrites();
-    const defaultAgentId = await onboardAdmin(admin, {
-      slug: slug("bdd-r5-team"),
-      displayName: "BDD Team Default",
-    });
-
-    const listedAgents = await api.listAgents(admin);
-    const defaultEntry = listedAgents.find((entry) => {
-      return entry.agentId === defaultAgentId;
-    });
-    expect(defaultEntry).toMatchObject({
-      agentId: defaultAgentId,
-      ownerId: admin.userId,
-      displayName: "Okou",
-      description: null,
-      sound: "professional",
-      avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      visibility: "public",
-    });
-    // Private agents are visible to their owner only; public agents to the
-    // whole org; nothing leaks across orgs.
-    const ownPrivate = await api.createAgent(admin, {
-      displayName: "BDD Own Private",
-      visibility: "private",
-    });
-    const peerPrivate = await api.createAgent(peerAdmin, {
-      displayName: "BDD Peer Private",
-      visibility: "private",
-    });
-    const adminAgentIds = (await api.listAgents(admin)).map((entry) => {
-      return entry.agentId;
-    });
-    expect(adminAgentIds).toContain(defaultAgentId);
-    expect(adminAgentIds).toContain(ownPrivate.agentId);
-    expect(adminAgentIds).not.toContain(peerPrivate.agentId);
-    const peerAgentIds = (await api.listAgents(peerAdmin)).map((entry) => {
-      return entry.agentId;
-    });
-    expect(peerAgentIds).toContain(defaultAgentId);
-    expect(peerAgentIds).toContain(peerPrivate.agentId);
-    expect(peerAgentIds).not.toContain(ownPrivate.agentId);
-    await expect(api.listAgents(crossOrgAdmin)).resolves.toStrictEqual([]);
   });
 });
 

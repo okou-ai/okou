@@ -44,10 +44,7 @@ export function createPublicComputerUseScenario(
   const activeExecutions = new Map<string, string>();
   const resources: (() => Promise<void>)[] = [];
   const personalTokens = new Map<string, ApiTestUser>();
-  const prepared = new Map<
-    string,
-    Promise<{ agentId: string; runnerGroup: string }>
-  >();
+  const prepared = new Map<string, Promise<{ runnerGroup: string }>>();
   function captureExternalState() {
     const base = captureConnectorExternalState(
       context,
@@ -287,13 +284,8 @@ export function createPublicComputerUseScenario(
         await run(() => {
           return runs.updateUserModelPreference(actor, "claude-fable-5-1");
         });
-        const agent = await run(() => {
-          return bdd.createAgent(actor, {
-            displayName: "Computer Use public authorization",
-            visibility: "private",
-          });
-        });
-        return { agentId: agent.agentId, runnerGroup };
+
+        return { runnerGroup };
       });
       prepared.set(key, existing);
     }

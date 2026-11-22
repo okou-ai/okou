@@ -327,9 +327,8 @@ test("publishes the exact owned memory bytes committed by a genuine Runner execu
   const fixture = initialize(app, [owner]);
   const carrier = createPublicRunnerMemory(context, owner);
   await carrier.run(async () => {
-    const agentId = await carrier.initializeNative();
+    await carrier.initializeNative();
     const receivedExecution = await carrier.startExecution(
-      agentId,
       "Write my exported memory",
     );
     const content = "Memory from an authenticated Runner";
@@ -420,9 +419,8 @@ test.each([
     const fixture = initialize(app, [owner]);
     const carrier = createPublicRunnerMemory(context, owner);
     await carrier.run(async () => {
-      const agentId = await carrier.initializeNative();
+      await carrier.initializeNative();
       const receivedExecution = await carrier.startExecution(
-        agentId,
         "Export my completed conversation: 你好",
       );
       const contents = Array.from({ length: count }, (_, index) => {

@@ -83,7 +83,6 @@ async function createOnboardedFeishuInstallation(
   connected = true,
 ): Promise<{
   readonly actor: FeishuTestActor;
-  readonly agentId: string;
   readonly installationId: string;
 }> {
   const userId = `user_${randomUUID()}`;
@@ -97,10 +96,8 @@ async function createOnboardedFeishuInstallation(
     [FEISHU_PLATFORMS[platform].featureSwitch]: true,
   });
   authOrgApi.acceptAgentStorageWrites();
-  const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Feishu CLI agent",
-  });
-  const agent = await authOrgApi.readAgent(actor, bootstrap.body.agentId);
+  await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
+
   await runsApi.grantProEntitlement(actor);
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -136,7 +133,7 @@ async function createOnboardedFeishuInstallation(
   if (connected) {
     await connectCurrentFeishuUser(actor, platform);
   }
-  return { actor, agentId: agent.agentId, installationId };
+  return { actor, installationId };
 }
 
 function requireTestValue<T>(value: T | null | undefined, message: string): T {

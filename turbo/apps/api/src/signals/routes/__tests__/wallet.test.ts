@@ -68,21 +68,9 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
   const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor, { tier: unattended ? "team" : "pro" });
   await api.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Wallet agent",
-    visibility: "private",
-  });
-  const workflowAgentId = unattended
-    ? await bdd.readDefaultAgentId(actor)
-    : undefined;
-  if (unattended && !workflowAgentId) {
-    throw new Error("Expected the personal workflow namespace");
-  }
-  const run = workflowAgentId
-    ? await createWorkflowsBddApi(context).startEventAutomationRun(
-        actor,
-        workflowAgentId,
-      )
+
+  const run = unattended
+    ? await createWorkflowsBddApi(context).startEventAutomationRun(actor)
     : await api.createThreadRun(actor, {
         prompt: "Prepare a test Link purchase approval",
       });
@@ -122,7 +110,6 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
       await flushWaitUntilForTest();
     },
     actor: { ...actor, orgId: actor.orgId },
-    agentId: agent.agentId,
     prompt: execution.appendSystemPrompt ?? "",
     environmentNames: Object.keys(execution.platformEnvironment),
     headers: { authorization: `Bearer ${token}` },

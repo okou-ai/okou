@@ -37,7 +37,6 @@ interface OwnedTeamsDispatch {
   readonly storageBucket: string;
   readonly notices: string[];
   readonly sandboxTokens: Map<string, string>;
-  defaultAgentId: string | null;
 }
 
 async function recordTeamsNotice(
@@ -194,7 +193,7 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
   return {
     run: owner.run,
     async create(options: {
-      readonly withDefaultAgent: boolean;
+      readonly onboarded: boolean;
       readonly paidNative?: boolean;
     }): Promise<OwnedTeamsDispatch> {
       const installation = teamsConnectFixture();
@@ -210,16 +209,12 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
         notices: [],
         sandboxTokens: new Map(),
-        defaultAgentId: null,
       };
       // Register the UUID owner before onboarding, billing, or installation.
       owned.push(fixture);
       configureExternalMocks(fixture);
-      if (options.withDefaultAgent && !options.paidNative) {
-        fixture.defaultAgentId = await bdd.bootstrapLimitedFreeOnboarding(
-          fixture.actor,
-          { displayName: "Teams dispatch" },
-        );
+      if (options.onboarded && !options.paidNative) {
+        await bdd.bootstrapLimitedFreeOnboarding(fixture.actor);
       }
       await runs.configureRunnerGroup({
         reply(envelope) {
@@ -234,13 +229,10 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         },
       });
       if (options.paidNative) {
-        const entitlement = await runs.grantProEntitlement(fixture.actor, {
+        await runs.grantProEntitlement(fixture.actor, {
           customerId: fixture.customerId,
           subscriptionId: fixture.subscriptionId,
         });
-        if (options.withDefaultAgent) {
-          fixture.defaultAgentId = entitlement.defaultAgentId;
-        }
         await runs.ensurePersonalSubscriptionModel(fixture.actor, {
           model: "claude-fable-5-1",
         });

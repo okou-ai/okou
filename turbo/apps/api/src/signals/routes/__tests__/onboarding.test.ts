@@ -282,10 +282,6 @@ describe("member source-first onboarding", () => {
     }
     const existing = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     bdd.acceptAgentStorageWrites();
-    await bdd.createAgent(existing, {
-      displayName: "Existing member agent",
-      visibility: "private",
-    });
     await chat.createThread(existing, {});
     const member = {
       userId: existing.userId,
@@ -319,24 +315,11 @@ describe("member source-first onboarding", () => {
       orgRole: "org:member",
     });
     bdd.acceptAgentStorageWrites();
-    await bdd.createAgent(peer, {
-      displayName: "Peer agent",
-      visibility: "private",
-    });
     await chat.createThread(peer, {});
-    await bdd.createAgent(sameUserElsewhere, {
-      displayName: "Other workspace agent",
-      visibility: "private",
-    });
     await chat.createThread(sameUserElsewhere, {});
     await expect(statusAs(actor)).resolves.toMatchObject({
       needsOnboarding: true,
       isAdmin: false,
-    });
-
-    await bdd.createAgent(member, {
-      displayName: "Member agent",
-      visibility: "private",
     });
     await chat.createThread(member, {});
     await expect(statusAs(actor)).resolves.toMatchObject({

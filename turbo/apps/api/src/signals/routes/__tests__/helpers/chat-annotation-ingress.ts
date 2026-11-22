@@ -346,10 +346,7 @@ export async function createPublicAnnotationIngress(
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const defaultAgentId = await bdd.readDefaultAgentId(actor);
-  if (!defaultAgentId) {
-    throw new Error("Expected the annotation owner's Agent");
-  }
+  await bdd.provisionWorkspace(actor);
 
   await runs.heartbeatRunner(group);
 

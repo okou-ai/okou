@@ -15,7 +15,7 @@ describe("ordinary Pi published personal Memory", () => {
   it("reads the selected published version across Runs, independently of Suggestions and daily profile updates", async () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
-      const agentId = await fixture.initializeNative();
+      await fixture.initializeNative();
       const chat = createChatEventsFixture(context);
       await chat.configureSubscriptionPiModel(fixture.actor);
       if (!fixture.actor.orgId) {
@@ -70,12 +70,10 @@ describe("ordinary Pi published personal Memory", () => {
         return version;
       }
       const writer = await fixture.startExecution(
-        agentId,
         "Publish a verified personal fact",
       );
       const published = await publish(writer, "selected-version");
       const selected = await fixture.startExecution(
-        agentId,
         "Recall published personal Memory",
         "gpt-6-luna",
       );
@@ -85,12 +83,10 @@ describe("ordinary Pi published personal Memory", () => {
       });
       expect(selected.execution.featureFlags?.agentSuggestion).toBeFalsy();
       const queued = await fixture.enqueue(
-        agentId,
         "Keep the accepted Memory version while queued",
         "gpt-6-luna",
       );
       const laterWriter = await fixture.startExecution(
-        agentId,
         "Publish a newer version after reader startup",
       );
       let newerVersion = "";
@@ -120,7 +116,6 @@ describe("ordinary Pi published personal Memory", () => {
       expect(queuedExecution.memory).toStrictEqual(selected.memory);
       await fixture.cancel(queuedExecution);
       const next = await fixture.startExecution(
-        agentId,
         "A new Run selects the newly published version",
         "gpt-6-luna",
       );
@@ -132,11 +127,10 @@ describe("ordinary Pi published personal Memory", () => {
         orgRole: "org:member",
       });
       await foreign.run(async () => {
-        const foreignAgent = await foreign.initializeNative();
+        await foreign.initializeNative();
         await chat.configureSubscriptionPiModel(foreign.actor);
         foreign.installObjects();
         const receivedExecution = await foreign.startExecution(
-          foreignAgent,
           "Read my own personal Memory",
           "gpt-6-luna",
         );

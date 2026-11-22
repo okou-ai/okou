@@ -51,9 +51,7 @@ async function installPublicSlack(): Promise<PublicSlackInstall> {
   integrations.configureSlackAppMocks();
   context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
   const actor = bdd.user({ orgRole: "org:admin" });
-  await bdd.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Slack Bot",
-  });
+  await bdd.bootstrapLimitedFreeOnboarding(actor);
   const installerSlackUserId = uniqueSlackUserId();
   const install = await integrations.installSlackWorkspace(actor, {
     installerSlackUserId,
@@ -164,9 +162,7 @@ function createDeleteFixture() {
         integrations.configureSlackAppMocks();
         context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
         const actor = user({ orgRole: "org:admin" });
-        await bdd.bootstrapLimitedFreeOnboarding(actor, {
-          displayName: "Slack Bot",
-        });
+        await bdd.bootstrapLimitedFreeOnboarding(actor);
         const installation = await integrations.installSlackWorkspace(actor);
         installations.push(installation.teamId);
         await flushWaitUntilForTest();

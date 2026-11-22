@@ -56,7 +56,6 @@ async function fixture() {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  await bdd.createAgent(actor, { displayName: "PDF filename" });
   const run = await chat.sendAndLaunch(actor, {
     prompt: "Analyze residential solar economics",
   });

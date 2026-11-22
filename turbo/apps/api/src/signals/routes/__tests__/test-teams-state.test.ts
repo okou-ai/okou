@@ -38,7 +38,6 @@ interface PublicTeamsFixture {
   readonly installation: TeamsConnectFixture;
   readonly kmsKeyId: string | undefined;
   readonly storageBucket: string;
-  defaultAgentId: string | null;
   readonly subscriptionId: string;
 }
 
@@ -138,7 +137,7 @@ describe("Teams message launch context", () => {
     const scenario = createPublicTeamsDispatchFixture(context);
     await scenario.run(async () => {
       const owned = await scenario.create({
-        withDefaultAgent: true,
+        onboarded: true,
         paidNative: true,
       });
       const fixture = owned.installation;
@@ -249,7 +248,6 @@ describe("Teams webhook dispatch", () => {
         installation: fixture,
         kmsKeyId: env("SECRETS_KMS_KEY_ID"),
         storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-        defaultAgentId: null,
         subscriptionId: `sub_teams_realtime_${randomUUID()}`,
       }),
     );
@@ -259,9 +257,7 @@ describe("Teams webhook dispatch", () => {
     configurePublicTeamsMocks(fixture);
     runs.acceptStorageDownloads();
     await runs.configureRunnerGroup();
-    owned.defaultAgentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "Teams realtime failure",
-    });
+    await bdd.bootstrapLimitedFreeOnboarding(actor);
     await runs.grantProEntitlement(actor, {
       subscriptionId: owned.subscriptionId,
     });
@@ -333,23 +329,13 @@ describe("Teams webhook dispatch", () => {
   it("rejects unlinked users and dispatches for a connected member without an Agent row", async () => {
     const scenario = createPublicTeamsDispatchFixture(context);
     await scenario.run(async () => {
-      const unlinked = await scenario.create({ withDefaultAgent: true });
+      const unlinked = await scenario.create({ onboarded: true });
       await scenario.disconnect(unlinked);
       await expect(scenario.status(unlinked)).resolves.toMatchObject({
         isInstalled: true,
         isConnected: false,
         tenantId: unlinked.installation.teamsTenantId,
       });
-      if (!unlinked.defaultAgentId) {
-        throw new Error(
-          "Expected an independent default Agent for the unlinked gate",
-        );
-      }
-      await createBddApi(context).requestReadAgent(
-        unlinked.actor,
-        unlinked.defaultAgentId,
-        [200],
-      );
       await scenario.dispatch(unlinked, "unlinked teams");
       expect(unlinked.notices).toContain(
         "Please connect your account to use Okou in this Teams workspace.",
@@ -360,7 +346,7 @@ describe("Teams webhook dispatch", () => {
           .data,
       ).toStrictEqual([]);
 
-      const missingDefault = await scenario.create({ withDefaultAgent: false });
+      const missingDefault = await scenario.create({ onboarded: false });
       await expect(scenario.status(missingDefault)).resolves.toMatchObject({
         isInstalled: true,
         isConnected: true,

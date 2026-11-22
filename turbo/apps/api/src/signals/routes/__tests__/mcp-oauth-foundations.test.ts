@@ -50,9 +50,6 @@ describe("MCP OAuth foundations", () => {
     const connectors = createConnectorBddApi(context);
     bdd.acceptAgentStorageWrites();
     const actor = bdd.user({ orgRole: "org:admin" });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "OAuth transport owner",
-    });
 
     const connector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
@@ -69,7 +66,6 @@ describe("MCP OAuth foundations", () => {
     });
     return {
       actor,
-      agent,
       connector,
       connectors,
       provider,

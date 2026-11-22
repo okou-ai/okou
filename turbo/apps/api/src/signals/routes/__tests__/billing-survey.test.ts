@@ -581,9 +581,7 @@ describe("/api/billing/survey", () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await bdd.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "Survey test",
-    });
+    await bdd.bootstrapLimitedFreeOnboarding(actor);
     await enableSurvey(actor);
     signIn(actor);
     const status = await accept(

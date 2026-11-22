@@ -32,12 +32,8 @@ async function launchFixture() {
   const group = await api.configureRunnerGroup({ registerRunner: false });
   await api.grantProEntitlement(actor);
   await api.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Direct dispatch agent",
-    description: "Exercises full input delivery.",
-    visibility: "private",
-  });
-  return { api, actor, group, agentId: agent.agentId };
+
+  return { api, actor, group };
 }
 
 test("delivers complete input after binding its process", async () => {

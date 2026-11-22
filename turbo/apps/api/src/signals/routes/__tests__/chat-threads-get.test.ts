@@ -19,7 +19,6 @@ const chat = createChatFilesBddApi(context);
 interface ChatThreadFixture {
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly threadId: string;
 }
 
@@ -27,10 +26,6 @@ interface ChatThreadFixture {
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  await bdd.createAgent(actor, {
-    displayName: "Chat thread metadata agent",
-    visibility: "private",
-  });
   const thread = await chat.createThread(actor, {
     title,
   });
@@ -42,14 +37,10 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     { orgId: actor.orgId, userId: actor.userId },
     context.signal,
   );
-  const defaultAgentId = await bdd.readDefaultAgentId(actor);
-  if (!defaultAgentId) {
-    throw new Error("Expected the compatibility Agent for this organization");
-  }
+  await bdd.provisionWorkspace(actor);
   return {
     userId: actor.userId,
     orgId: actor.orgId,
-    agentId: defaultAgentId,
     threadId: thread.id,
   };
 }

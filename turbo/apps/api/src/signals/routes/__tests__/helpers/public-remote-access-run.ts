@@ -24,7 +24,6 @@ interface Owner {
 
 interface PublicRemoteAccessRun extends Owner {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runId: string;
   readonly threadId: string;
   readonly runnerGroup: string;
@@ -33,7 +32,6 @@ interface PublicRemoteAccessRun extends Owner {
 interface OwnedRun {
   readonly actor: ApiTestUser;
   readonly restoreStorage: () => void;
-  agentId?: string;
   runId?: string;
   sandboxToken?: string;
   acknowledged: boolean;
@@ -90,11 +88,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Remote access lifecycle Agent",
-      visibility: "public",
-    });
-    state.agentId = agent.agentId;
+
     const runnerGroup = await runs.configureRunnerGroup();
     let runId: string;
     let threadId: string;
@@ -167,7 +161,6 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     return {
       ...owner,
       actor,
-      agentId: agent.agentId,
       runId,
       threadId,
       runnerGroup,

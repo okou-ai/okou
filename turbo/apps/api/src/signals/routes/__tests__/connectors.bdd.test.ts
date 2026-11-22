@@ -80,7 +80,6 @@ import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 
 const context = testContext();
 const connectorsApi = createConnectorBddApi(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
 async function observeCustomSkill(
   fixture: Awaited<ReturnType<typeof publicChatActor>>,
   connectorId: string,
@@ -283,9 +282,6 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
   it("keeps a manual-grant connection and authorization when realtime publishing fails", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
-    await authOrgApi.createAgent(actor, {
-      displayName: "Manual Connector Agent",
-    });
     const publishError = new Error("Ably channel rate limit exceeded");
     context.mocks.ably.publish
       .mockRejectedValueOnce(publishError)
@@ -2363,11 +2359,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       ready: true,
       configuredFieldKeys: [],
     });
-    await own(() => {
-      return bdd.createAgent(admin, {
-        displayName: "BDD No Auth Agent",
-      });
-    });
 
     const observedConnector2392 = await own(() => {
       return connectorsApi.readCustomConnector(admin, http.id);
@@ -3299,9 +3290,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       orgId: admin.orgId,
       orgRole: "org:member",
     });
-    await bdd.createAgent(member, {
-      displayName: "BDD MCP OAuth Agent",
-    });
     const clientSecret = "bdd-mcp-oauth-client-secret";
     const definition = {
       kind: "mcp" as const,
@@ -3412,9 +3400,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     const bdd = createBddApi(context);
     const admin = bdd.user({ orgRole: "org:admin" });
-    await bdd.createAgent(admin, {
-      displayName: "BDD Automatic OAuth Agent",
-    });
     const connector = await connectorsApi.createCustomConnector(admin, {
       kind: "mcp",
       displayName: "BDD Automatic CIMD",
@@ -3541,13 +3526,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       registration: "cimd",
       authentication: "none",
     });
-    const bdd = createBddApi(context);
     const { actor: admin, run: own } = createPublicConnectorActor(context);
-    await own(() => {
-      return bdd.createAgent(admin, {
-        displayName: "BDD Automatic auth Agent",
-      });
-    });
+
     const connector = await own(() => {
       return connectorsApi.createCustomConnector(admin, {
         kind: "mcp",
@@ -4861,10 +4841,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       ready: true,
     });
 
-    await bdd.createAgent(admin, {
-      displayName: "BDD Connector Agent",
-    });
-
     await connectorsApi.updateCustomConnector(admin, created.id, {
       ...definitionUpdateBody,
       displayName: "BDD Custom Connector Renamed",
@@ -5896,11 +5872,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const admin = owner.actor;
     const own = owner.run;
     await own(async () => {
-      await own(() => {
-        return bdd.createAgent(admin, {
-          displayName: "BDD Missing Proposal Value Agent",
-        });
-      });
       const rand = randomUUID().replace(/-/g, "").slice(0, 8);
 
       const saved = await own(() => {
@@ -6470,10 +6441,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(rejectedPublicMcp.body.error.message).toBe(
       "Manual custom connector injections must reference a declared secret or variable field",
     );
-
-    await bdd.createAgent(admin, {
-      displayName: "BDD MCP Management Agent",
-    });
     const created = await connectorsApi.createCustomConnector(
       admin,
       initialDefinition,
@@ -7617,9 +7584,6 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     await connectorsApi.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.TestOauthConnector]: true,
     });
-    await authOrgApi.createAgent(actor, {
-      displayName: "OAuth Connector Agent",
-    });
 
     const manualConnection = await connectorsApi.connectManualGrant(
       actor,
@@ -8173,18 +8137,8 @@ describe("CONN-02: GitHub installation link after connector OAuth", () => {
     const admin = owner.actor;
     const own = owner.run;
     await own(async () => {
-      const agent = await own(() => {
-        return bdd.createAgent(admin, {
-          displayName: "BDD GitHub Link Agent",
-        });
-      });
-
       await own(() => {
-        return connectorsApi.installGithubAppViaApi(
-          admin,
-          agent.agentId,
-          installationId,
-        );
+        return connectorsApi.installGithubAppViaApi(admin, installationId);
       });
 
       const beforeLink = await own(() => {

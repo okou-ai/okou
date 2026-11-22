@@ -154,7 +154,9 @@ const bankingOwner$ = computed((get) => {
 });
 
 const accessRequestStatus$ = command(async ({ get, set }) => {
-  if (!(await set(bankingEnabled$))) return bankingDisabled;
+  if (!(await set(bankingEnabled$))) {
+    return bankingDisabled;
+  }
   return await set(bankingAccessRequestStatus$, { owner: get(bankingOwner$) });
 });
 

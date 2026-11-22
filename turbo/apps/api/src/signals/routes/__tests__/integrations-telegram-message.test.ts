@@ -213,11 +213,7 @@ function sendExecutionModelMessage(model: FooterModel) {
       expect(available?.subscriptionOptions?.serviceTier).toBe(
         fast ? "priority" : null,
       );
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Model footer sender",
-        visibility: "private",
-      });
-      expect(agent.displayName).toBe("Model footer sender");
+
       const thread = await chat.createThread(actor, {
         model,
       });

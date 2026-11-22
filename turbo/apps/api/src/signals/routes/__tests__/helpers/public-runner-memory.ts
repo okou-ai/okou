@@ -103,8 +103,6 @@ export function createPublicRunnerMemory(
       fixture.actor.orgRole === "org:member"
         ? bdd.user({ orgId: fixture.actor.orgId, orgRole: "org:admin" })
         : fixture.actor;
-    // Only an admin can initialize the organization's default Agent. The
-    // member remains the owner of the Memory, Agent and executions below.
     await fixture.fund(admin);
     await api.ensurePersonalSubscriptionModel(fixture.actor, {
       model: "claude-fable-5-1",
@@ -113,17 +111,8 @@ export function createPublicRunnerMemory(
     if (admin.userId !== fixture.actor.userId) {
       await bdd.completeOnboarding(fixture.actor);
     }
-    const agent = await bdd.createAgent(fixture.actor, {
-      displayName: "Owned Memory carrier",
-      visibility: "private",
-    });
-    return agent.agentId;
   }
-  async function enqueue(
-    agentId: string,
-    prompt: string,
-    model = "claude-fable-5-1",
-  ) {
+  async function enqueue(prompt: string, model = "claude-fable-5-1") {
     const run = await api.createThreadRun(fixture.actor, {
       prompt,
       // The Memory owner selects their own connected subscription;
@@ -151,12 +140,8 @@ export function createPublicRunnerMemory(
       headers: { authorization: `Bearer ${execution.sandboxToken}` },
     };
   }
-  async function startExecution(
-    agentId: string,
-    prompt: string,
-    model = "claude-fable-5-1",
-  ) {
-    return await readExecution(await enqueue(agentId, prompt, model));
+  async function startExecution(prompt: string, model = "claude-fable-5-1") {
+    return await readExecution(await enqueue(prompt, model));
   }
   async function prepare(
     execution: Awaited<ReturnType<typeof startExecution>>,

@@ -127,10 +127,8 @@ describe("Lark integration", () => {
       [FeatureSwitchKey.FeishuIntegration]: true,
     });
     authOrgApi.acceptAgentStorageWrites();
-    const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "Bot agent",
-    });
-    const agent = await authOrgApi.readAgent(actor, bootstrap.body.agentId);
+    await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
+
     await runsApi.grantProEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -178,7 +176,6 @@ describe("Lark integration", () => {
       larkClient,
       install,
       token,
-      defaultAgentId: agent.agentId,
     };
   }
 

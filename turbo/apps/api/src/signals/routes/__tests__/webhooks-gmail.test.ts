@@ -75,7 +75,6 @@ const googleOidcPublicKeyPem = googleOidcKeyPair.publicKey.export({
 
 interface GmailTestFixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
-  readonly agentId: string;
   readonly workflowId: string;
 }
 
@@ -526,7 +525,6 @@ async function addGmailAccount(
     readonly subject: string;
     readonly accessToken: string;
     readonly displayName: string;
-    readonly agentId: string;
   },
 ): Promise<string> {
   mockGmailConnectorOAuth({
@@ -572,13 +570,11 @@ async function setupFixture(
 
   bdd.acceptAgentStorageWrites();
   await bdd.provisionWorkspace(actor);
-  await bdd.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "BDD Gmail Webhook Owner",
-  });
+  await bdd.bootstrapLimitedFreeOnboarding(actor);
   await grantVisibleCredits({ ...actor, orgId: actor.orgId });
   // Fable's native Runner route requires the same Pro eligibility as other
   // native-harness fixtures; keep the credit-purchase setup for billing checks.
-  const { defaultAgentId: agentId } = await runsApi.grantProEntitlement(actor);
+  await runsApi.grantProEntitlement(actor);
   const workflow = await miscApi.createWorkflow(
     actor,
     WORKFLOW_NAME,
@@ -594,7 +590,6 @@ async function setupFixture(
   }
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId,
     workflowId: workflow.body.id,
   };
 }
@@ -621,7 +616,6 @@ async function setupMultiAccountGmailFixture(): Promise<MultiAccountGmailTestFix
     subject: "gmail-second-account",
     accessToken: "gmail-second-access-token",
     displayName: "Second Gmail",
-    agentId: fixture.agentId,
   });
   return {
     ...fixture,
@@ -1865,7 +1859,7 @@ describe("POST /api/webhooks/gmail", () => {
   it("restores a Gmail watch after the last account is replaced", async () => {
     configureGmailEnv();
     const recorder = configureGmailWatchLifecycleMock();
-    const { actor, agentId, workflowId } = await setupFixture();
+    const { actor, workflowId } = await setupFixture();
     await updateFeatureSwitchesForUser(context, actor, {});
     const firstConnectorId = await connectGmail(
       actor,
@@ -1903,7 +1897,6 @@ describe("POST /api/webhooks/gmail", () => {
       subject: "gmail-replacement-account",
       accessToken: "gmail-replacement-access-token",
       displayName: "Replacement Gmail",
-      agentId,
     });
     expect(recorder.watchedTokens).toStrictEqual([
       "Bearer gmail-access-token",
@@ -1923,7 +1916,7 @@ describe("POST /api/webhooks/gmail", () => {
     configureGmailEnv();
     const runnerGroup = await runsApi.configureRunnerGroup();
     const watch = configureGmailWatchLifecycleMock();
-    const { actor, agentId, workflowId } = await setupFixture();
+    const { actor, workflowId } = await setupFixture();
     await updateFeatureSwitchesForUser(context, actor, {});
     await configureWorkspaceModelProvider(actor);
     // Creation requires a connected account, so the unbound state an
@@ -1970,7 +1963,6 @@ describe("POST /api/webhooks/gmail", () => {
       subject: "gmail-first-account",
       accessToken: "gmail-first-access-token",
       displayName: "First Gmail",
-      agentId,
     });
     await expect(
       connectorsApi.listBuiltinConnectorAccounts(actor, "gmail"),

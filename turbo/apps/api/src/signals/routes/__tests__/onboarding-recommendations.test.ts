@@ -101,10 +101,7 @@ describe("onboarding recommendations", () => {
       if (!actor.orgId) {
         throw new Error("Expected an organization actor");
       }
-      const onboardingAgentId = await bdd.readDefaultAgentId(actor);
-      if (!onboardingAgentId) {
-        throw new Error("Expected onboarding to create a default agent");
-      }
+      await bdd.provisionWorkspace(actor);
 
       mockGmailConnectorOAuth({
         accessToken: "gmail-context-access-token",

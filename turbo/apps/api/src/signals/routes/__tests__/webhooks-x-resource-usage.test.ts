@@ -9,7 +9,6 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { joinAll } from "../../utils";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -21,7 +20,6 @@ type ResourceEvent = Extract<UsageEvent, { protocol: "x-resource-v1" }>;
 
 interface RunFixture {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runId: string;
   readonly authorization: string;
 }
@@ -44,13 +42,7 @@ async function createRun(actor = bdd.user()): Promise<RunFixture> {
     throw new Error("X resource test requires an organization");
   }
   await runs.grantProEntitlement(actor);
-  const [, agent] = await joinAll([
-    runs.ensurePersonalSubscriptionModel(actor),
-    bdd.createAgent(actor, {
-      displayName: "X resource accounting",
-      visibility: "private",
-    }),
-  ]);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const runnerGroup = await runs.configureRunnerGroup();
   const run = await runs.createThreadRun(actor, {
     prompt: "Read X resources",
@@ -59,7 +51,6 @@ async function createRun(actor = bdd.user()): Promise<RunFixture> {
   const execution = await runs.executionInput(run.runId);
   return {
     actor,
-    agentId: agent.agentId,
     runId: run.runId,
     authorization: `Bearer ${execution.sandboxToken}`,
   };
@@ -103,7 +94,7 @@ function submit(fixture: RunFixture, events: UsageEvent[]) {
 }
 
 describe("X daily resource usage webhook", () => {
-  it("validates Run identity after a rejected legacy Agent deletion", async () => {
+  it("validates the originating Run identity", async () => {
     const deleted = await createRun();
     const survivor = await createRun();
     const sharedId = resourceId();
@@ -111,7 +102,6 @@ describe("X daily resource usage webhook", () => {
     await accept(submit(deleted, [observation([sharedId])]), [200]);
     await runs.requestCancelRun(deleted.actor, deleted.runId, [200]);
     await flushWaitUntilForTest();
-    await bdd.expectAgentDeleteUnavailable(deleted.actor, deleted.agentId);
     await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
 
     const rejected = await accept(

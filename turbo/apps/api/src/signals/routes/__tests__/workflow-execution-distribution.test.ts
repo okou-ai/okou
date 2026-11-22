@@ -35,7 +35,7 @@ const mocks = createRouteMocks(context);
 const chatFixture = createChatEventsFixture(context);
 
 function headers(actor: ApiTestUser) {
-  // This suite exercises per-Agent Workflow distribution and visibility.
+  // This suite exercises member Workflow distribution and visibility.
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
 }
@@ -48,10 +48,9 @@ function detailClient() {
 
 async function fixture(
   framework: "claude-code" | "codex" | "pi" = "claude-code",
-  retained = false,
 ) {
   const actor = bdd.user({ orgRole: "org:admin" });
-  const { defaultAgentId } = await runs.grantProEntitlement(actor);
+  await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
@@ -66,13 +65,7 @@ async function fixture(
   const group = await runs.configureRunnerGroup();
   bdd.acceptAgentStorageWrites();
   const s3 = installWorkflowVolumeS3Fixture(context);
-  const agent = retained
-    ? await bdd.createAgent(actor, {
-        displayName: "Retained Workflow owner",
-        visibility: "public",
-      })
-    : { agentId: defaultAgentId };
-  return { actor, agent, group, s3 };
+  return { actor, group, s3 };
 }
 
 function saveInstructions(actor: ApiTestUser, content: string) {
@@ -649,7 +642,7 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
 });
 
 test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {
-  const { actor, agent, group } = await fixture("claude-code", true);
+  const { actor, group } = await fixture("claude-code");
   const workflow = await createWorkflow(actor, {
     files: [{ path: "keep.md", content: "execution attachment" }],
   });
@@ -689,7 +682,6 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "running",
   });
-  await bdd.expectAgentDeleteUnavailable(actor, agent.agentId);
   await runs.requestCancelRun(actor, run.runId, [200]);
   await flushWaitUntilForTest();
   await finish(run.runId, execution.sandboxToken);

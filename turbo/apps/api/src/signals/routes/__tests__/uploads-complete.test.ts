@@ -37,7 +37,6 @@ type ChatObjectStore = ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
 
 interface RunUploadFixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
-  readonly agentId: string;
   readonly runId: string;
   readonly threadId: string;
   readonly bearer: string;
@@ -100,10 +99,6 @@ async function createRunUploadFixture(
   await runsApi.grantProEntitlement(actor);
   await runsApi.ensurePersonalSubscriptionModel(actor);
   await runsApi.heartbeatRunner(runnerGroup);
-  const agent = await bdd.createAgent(actor, {
-    displayName: `BDD upload completion ${randomUUID().slice(0, 8)}`,
-    visibility: "private",
-  });
 
   let runId: string;
   let threadId: string;
@@ -125,7 +120,6 @@ async function createRunUploadFixture(
 
   return {
     actor: orgActor,
-    agentId: agent.agentId,
     runId,
     threadId,
     bearer: `Bearer ${okouToken({

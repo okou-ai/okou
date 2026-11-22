@@ -52,7 +52,6 @@ import { env, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { mockStripeClient } from "../../../external/stripe-client";
-import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
 import { billingUsagePackCreditsRoutes } from "../../billing-usage-pack-credits";
 import { cliAuthRoutes } from "../../cli-auth";
@@ -136,7 +135,6 @@ const runRoutes = [
   ...runDetailRoutes,
   ...runsRoutes,
   ...runsCancelRoutes,
-  ...agentsRoutes,
   ...userModelPreferenceRoutes,
 ] as const;
 
@@ -623,7 +621,6 @@ export function createRunsApi(context: TestContext) {
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
-      readonly defaultAgentId: string;
       readonly credits: number;
     }> {
       const run =
@@ -789,16 +786,9 @@ export function createRunsApi(context: TestContext) {
         );
       }
 
-      // Bootstrap only after the paid entitlement exists. Onboarding status
-      // then creates a default agent without granting limited-free credits or
-      // replacing metadata on an existing default agent.
+      // Complete onboarding after the paid entitlement is visible.
       const bdd = createBddApi(context);
-      const onboardingAgentId = await run(() => {
-        return bdd.readDefaultAgentId(actor);
-      });
-      if (!onboardingAgentId) {
-        throw new Error("Expected paid onboarding to create a default agent");
-      }
+      await run(() => bdd.provisionWorkspace(actor));
       const completed = await run(() => {
         return bdd.completeOnboarding(actor);
       });
@@ -813,7 +803,6 @@ export function createRunsApi(context: TestContext) {
         customerId,
         subscriptionId,
         invoiceId,
-        defaultAgentId: onboardingAgentId,
         credits: billingStatus.body.credits,
       };
     },

@@ -435,9 +435,8 @@ describe("member memory account initialization", () => {
       orgRole: "org:member",
     });
     await fixture.run(async () => {
-      const agentId = await fixture.initializeNative();
+      await fixture.initializeNative();
       const writer = await fixture.startExecution(
-        agentId,
         "Publish while membership delivery is replayed",
       );
       fixture.installObjects();
@@ -447,7 +446,6 @@ describe("member memory account initialization", () => {
         membershipCreated(fixture.actor),
       ]);
       const reader = await fixture.startExecution(
-        agentId,
         "Read the published Memory after membership replay",
       );
       expect(reader.memory).toMatchObject({
@@ -474,9 +472,8 @@ describe("member memory account initialization", () => {
     });
     await fixture.run(async () => {
       const actor = fixture.actor;
-      const agentId = await fixture.initializeNative();
+      await fixture.initializeNative();
       const initial = await fixture.startExecution(
-        agentId,
         "Publish existing member Memory",
       );
       const content = "Keep this existing memory";
@@ -523,7 +520,6 @@ describe("member memory account initialization", () => {
       await completeOnboarding(actor);
       await membershipCreated(actor);
       const repeated = await fixture.startExecution(
-        agentId,
         "Read preserved member Memory",
       );
       expect(repeated.memory).toMatchObject({

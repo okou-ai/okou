@@ -469,7 +469,6 @@ describe("GET /api/mcp-connectors", () => {
 describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
   const ownedReauthorizations: {
     readonly actor: ApiTestUser;
-    agentId?: string;
     connectorId?: string;
     runId?: string;
     sandboxToken?: string;
@@ -589,10 +588,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       ownedReauthorizations.push(owned);
       await runs.grantProEntitlement(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "MCP scope reauthorization Agent",
-      });
-      owned.agentId = agent.agentId;
+
       const connector = await connectors.createCustomConnector(actor, {
         kind: "mcp",
         displayName: "MCP scope reauthorization",

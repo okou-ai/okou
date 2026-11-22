@@ -46,21 +46,18 @@ function slug(prefix: string): string {
 async function onboardAdmin(
   admin: ApiTestUser,
   options: { readonly slug?: string } = {},
-): Promise<string> {
+): Promise<void> {
   const orgState: { slug?: string } = {};
   if (options.slug !== undefined) {
     orgState.slug = options.slug;
   }
   api.mockClerkOrg(admin, orgState);
-  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin, {
-    displayName: "BDD User Config Agent",
-  });
+  const bootstrap = await api.bootstrapLimitedFreeOnboarding(admin);
   if (bootstrap.status !== 200) {
     throw new Error(
       `Expected onboarding bootstrap to succeed, got ${bootstrap.status}`,
     );
   }
-  return bootstrap.body.agentId;
 }
 
 describe("AUTH-03 user model preference", () => {

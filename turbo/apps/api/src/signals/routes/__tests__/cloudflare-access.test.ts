@@ -10,10 +10,6 @@ import {
   sshConnectionResponseSchema,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
-import {
-  agentsMainContract,
-  agentsByIdContract,
-} from "@okouai/api-contracts/contracts/agents";
 import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -21,7 +17,6 @@ import { mockEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
-import { agentsRoutes } from "../agents";
 import { runnerSshRoutes } from "../runner-ssh";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { sshAccessRoutes } from "../ssh-access";
@@ -479,10 +474,7 @@ function useExecutionFixture() {
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
-    const agentId = await bdd.readDefaultAgentId(bootstrapActor);
-    if (!agentId) {
-      throw new Error("Expected onboarding to provide the default Agent");
-    }
+    await bdd.provisionWorkspace(bootstrapActor);
     // Public host configuration and execution retain the original ordinary-member role.
     const actor = { ...bootstrapActor, orgRole: "org:member" as const };
     const configured = await configuredOwnerFixture(o);
@@ -513,7 +505,6 @@ function useExecutionFixture() {
     return {
       ...configured,
       runId,
-      agentId,
       runnerIdentity,
       guestHeaders: { authorization: `Bearer ${agentToken}` },
       body: { connectionId: configured.host.id, runnerIdentity },
@@ -1522,20 +1513,13 @@ describe("protected SSH authority", () => {
     ).toStrictEqual([f.host.id]);
   });
 
-  it("uses only the Run owner's protected hosts after legacy Agent visibility changes", async () => {
+  it("uses only the Run owner's protected hosts across members of the same workspace", async () => {
     const creator = owner();
-    const shared = await accept(
-      setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
-        headers,
-        body: { displayName: "Shared SSH Agent", visibility: "public" },
-      }),
-      [201],
-    );
-    await ordinary.runtime(creator, { agentId: shared.body.agentId });
+    await ordinary.runtime(creator, {});
     const creatorConfig = await config();
     const creatorHost = await host(creatorConfig.id);
     const user = owner({ orgId: creator.orgId });
-    const r = await ordinary.runtime(user, { agentId: shared.body.agentId });
+    const r = await ordinary.runtime(user, {});
     const ownConfig = await config();
     const ownHost = await host(ownConfig.id);
     await enableHostDefault(ownHost.id);
@@ -1571,15 +1555,6 @@ describe("protected SSH authority", () => {
         return h.id;
       }),
     ).toStrictEqual([ownHost.id]);
-    authenticate(creator);
-    await accept(
-      setupApp({ context, routes: agentsRoutes })(agentsByIdContract).update({
-        headers,
-        params: { id: shared.body.agentId },
-        body: { visibility: "private" },
-      }),
-      [200],
-    );
     authenticate(user);
     expect((await accept(runner().resolve(request), [200])).body).toMatchObject(
       { outcome: "resolved_access", access: { configId: ownConfig.id } },
@@ -1763,7 +1738,7 @@ describe("protected SSH authority", () => {
   it("rejects foreign Run owners before decrypting protected credentials", async () => {
     const f = await ordinaryFixture();
     const foreign = owner({ orgId: f.orgId });
-    const r = await ordinary.runtime(foreign, { agentId: f.agentId });
+    const r = await ordinary.runtime(foreign, {});
     const kms = useSecretKmsProbe();
     const result = await accept(
       runner().resolve({

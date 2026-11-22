@@ -33,7 +33,6 @@ const context = testContext();
 
 async function connectAutomaticRuntime(args: {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly slug: string;
   readonly methodId: string;
   readonly issuer: string;
@@ -161,13 +160,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const runnerGroup = await api.configureRunnerGroup();
       await api.grantProEntitlement(actor);
       await api.ensurePersonalSubscriptionModel(actor);
-      const { agentId } = await bdd.createAgent(actor, {
-        displayName: "Automatic runtime agent",
-        visibility: "private",
-      });
+
       const connectionId = await connectAutomaticRuntime({
         actor,
-        agentId,
         ...catalog,
         issuer: provider.issuer,
       });
@@ -311,7 +306,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         await expect(
           connectAutomaticRuntime({
             actor,
-            agentId,
             ...catalog,
             issuer: provider.issuer,
             connectionId,

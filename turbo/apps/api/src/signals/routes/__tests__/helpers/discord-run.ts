@@ -17,9 +17,6 @@ export async function launchPublicDiscordTestRun(
   await runs.ensurePersonalSubscriptionModel(actor);
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.heartbeatRunner(runnerGroup);
-  await bdd.createAgent(actor, {
-    displayName: "Discord native caller",
-  });
   const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
     prompt: "Use the Discord integration",
   });

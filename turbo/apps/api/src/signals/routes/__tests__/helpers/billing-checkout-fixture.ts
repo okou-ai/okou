@@ -261,6 +261,9 @@ export function createBillingCheckoutFixture() {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user(fixture);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [{ organization: { id: fixture.orgId }, role: "org:admin" }],
+    });
     let restoreAccepted = captureCheckoutExternalState();
     const owner = publicRunOwner(context, actor, {
       restoreEnvironment: () => {

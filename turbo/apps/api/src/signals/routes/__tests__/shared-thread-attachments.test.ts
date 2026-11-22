@@ -70,9 +70,6 @@ async function fixture() {
   await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  await bdd.createAgent(actor, {
-    displayName: "Attachment sharing",
-  });
   const storage = installSharedThreadStorage(context);
   mocks.clerk.session(actor.userId, actor.orgId);
 

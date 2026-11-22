@@ -179,14 +179,14 @@ test("retains the creator separately from the executor and the complete lineage 
 
 test("records event automation provenance but never certifies a failed Run or an ordinary Run that mounts a Workflow", async () => {
   const received = capture();
-  const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg({
+  const { actor } = await workflows.setupWorkflowOrg({
     tier: "team",
   });
   installWorkflowVolumeS3Fixture(context);
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const group = await runs.configureRunnerGroup();
-  const automated = await workflows.startEventAutomationRun(actor, agentId);
+  const automated = await workflows.startEventAutomationRun(actor);
   const completion = createPublicAutomationRunApi(context);
   await completion.complete(actor, automated.runId, group, { exitCode: 1 });
   const ordinary = await runs.createThreadRun(actor, {

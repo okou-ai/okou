@@ -34,10 +34,8 @@ async function runActor() {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Builtin MCP Agent",
-  });
-  return { actor, agentId: agent.agentId, runnerGroup };
+
+  return { actor, runnerGroup };
 }
 
 async function connectPublic(actor: ApiTestUser) {

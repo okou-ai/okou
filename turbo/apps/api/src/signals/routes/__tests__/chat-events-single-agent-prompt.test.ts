@@ -14,16 +14,6 @@ describe("captured My Okou execution guidance", () => {
       throw new Error("Expected a workspace member");
     }
     await owned.run(async () => {
-      fixture.bdd.acceptAgentStorageWrites();
-      const statusAgentId = await fixture.bdd.readDefaultAgentId(actor);
-      if (!statusAgentId) {
-        throw new Error("Expected the workspace executor");
-      }
-      await fixture.bdd.updateAgentMetadata(actor, statusAgentId, {
-        description: "MUTABLE_SHARED_ROLE_DO_NOT_INHERIT",
-        sound: "friendly",
-      });
-
       const run = await owned.sendChatRun(actor, {
         prompt: "Work with my personal Instructions",
       });
@@ -54,7 +44,6 @@ describe("captured My Okou execution guidance", () => {
       expect(prompt).toContain(
         "a successful switch also saves this Chat's current account for subsequent Runs",
       );
-      expect(prompt).not.toContain("MUTABLE_SHARED_ROLE_DO_NOT_INHERIT");
       expect(prompt).not.toContain("Communicate in a warm, approachable");
       expect(prompt).not.toContain("Agent instructions are team-shared");
       expect(prompt).not.toContain("okou agent edit");
