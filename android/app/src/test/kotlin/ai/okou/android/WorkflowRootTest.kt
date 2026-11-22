@@ -5,6 +5,7 @@ import ai.okou.android.chat.ComposerJournalStore
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
@@ -242,6 +243,50 @@ class WorkflowRootTest {
             releaseCatalog.countDown()
             waitFor(updatedTitle)
             compose.onNodeWithText(originalTitle).assertDoesNotExist()
+        } finally {
+            releaseCatalog.countDown()
+        }
+    }
+
+    @Test
+    fun workflowIntroStaysDismissedAfterItsSearchResultStopsMatching() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("checklist")
+        val originalTitle = app.fixture.releaseTitle
+        waitFor(originalTitle)
+
+        val catalogRequested = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        app.fixture.beforeCatalog = {
+            catalogRequested.countDown()
+            releaseCatalog.await()
+        }
+        try {
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+            back()
+
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            val updatedTitle = "Launch planning"
+            app.fixture.releaseTitle = updatedTitle
+            releaseCatalog.countDown()
+
+            waitFor("No matching workflows")
+            compose.onNodeWithText("View workflow details").assertDoesNotExist()
+            compose.onNodeWithTag("chat_search_results").assertIsFocused()
+            scope.assertIsSelected()
+
+            query.performTextReplacement("launch")
+            waitFor(updatedTitle)
+            compose.onNodeWithText("View workflow details").assertDoesNotExist()
         } finally {
             releaseCatalog.countDown()
         }

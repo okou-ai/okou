@@ -266,10 +266,15 @@ internal fun OkouApp(
     var searchEntryFocused by remember { mutableStateOf(false) }
     var restoreSearchFocus by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
+
+    fun dismissWorkflowIntro() {
+        handoff?.cancel()
+        searchWorkflowId = null
+    }
+
     LaunchedEffect(list.offline, workflowState?.enabled) {
         if (searchWorkflowId != null && (list.offline || workflowState?.enabled == false)) {
-            handoff?.cancel()
-            searchWorkflowId = null
+            dismissWorkflowIntro()
         }
     }
 
@@ -991,6 +996,28 @@ internal fun OkouApp(
                             if (searchActive) {
                                 val remote =
                                     workspaceSearch?.results?.collectAsStateWithLifecycle()?.value
+                                val workflowRead =
+                                    remote?.takeIf { it.keyword == searchState.keyword }?.workflows
+                                val selectedWorkflowId = searchWorkflowId
+                                val intro =
+                                    selectedWorkflowId?.let { id ->
+                                        (workflowRead as? SearchRead.Ready)?.rows?.firstOrNull {
+                                            it.id == id
+                                        }
+                                    }
+                                val unavailableWorkflowId =
+                                    selectedWorkflowId.takeIf {
+                                        workflowRead == SearchRead.Failed ||
+                                            workflowRead is SearchRead.Ready && intro == null
+                                    }
+                                LaunchedEffect(unavailableWorkflowId) {
+                                    if (
+                                        unavailableWorkflowId != null &&
+                                            searchWorkflowId == unavailableWorkflowId
+                                    ) {
+                                        dismissWorkflowIntro()
+                                    }
+                                }
                                 val recents =
                                     workspaceSearch
                                         ?.recentlyOpened
@@ -1011,7 +1038,7 @@ internal fun OkouApp(
                                     remote = remote,
                                     recentlyOpened = recents.orEmpty(),
                                     onOpenMessage = ::openSearchMessage,
-                                    restoreResultFocus = searchWorkflowId == null,
+                                    restoreResultFocus = selectedWorkflowId == null,
                                     onMoreArtifacts = { term, cursor ->
                                         workspaceSearch?.nextArtifacts(term, cursor)
                                     },
@@ -1027,20 +1054,13 @@ internal fun OkouApp(
                                         if (!searchArtifactsAvailable) null
                                         else { hit -> openArtifacts(hit.id) },
                                 )
-                                val intro =
-                                    (remote?.workflows as? SearchRead.Ready)?.rows?.firstOrNull {
-                                        it.id == searchWorkflowId
-                                    }
                                 if (searchWorkflowsAvailable && intro != null) {
                                     SearchWorkflowIntro(
                                         intro,
                                         canStartDraft = workspaceReady && !list.offline,
                                         pending = handoffPending,
                                         failed = workflowHandoffFailed,
-                                        onClose = {
-                                            handoff?.cancel()
-                                            searchWorkflowId = null
-                                        },
+                                        onClose = ::dismissWorkflowIntro,
                                         onUse = {
                                             workflowDraft(
                                                 "/${intro.name} ",
