@@ -2911,3 +2911,7 @@ The initial file-size check flagged table padding in this checkpoint. The regist
 - [browser-session-page-003](src/views/browser-session/__tests__/browser-session-page.test.tsx#L48). The blank tab shows Nothing open yet and the Okou guidance with an enabled address. Selecting Example displays its URL and removes both messages. Both return when New tab is selected. Vitest: `browser-session-page-003 The blank tab's guidance follows the selected remote page`.
 - [keyboard-shortcut-hints-001](src/views/okou-page/__tests__/keyboard-shortcut-hints.test.tsx#L28). Command+Shift+O from the focused draft opens / with an empty Message composer. Vitest: `keyboard-shortcut-hints-001 Command Shift O starts a fresh My Okou chat from the focused message`.
 - [keyboard-shortcut-hints-005](src/views/okou-page/__tests__/keyboard-shortcut-hints.test.tsx#L39). Command+Shift+F from the focused composer opens the Search workspace... dialog and focuses its combobox. Vitest: `keyboard-shortcut-hints-005 Command Shift F moves editing focus into workspace search`.
+
+## Batch 71 evidence
+
+[Batch 71 registrations, probes, controls and verification](test-rebuild-rework-checkpoint-continued.md#batch-71-evidence).
