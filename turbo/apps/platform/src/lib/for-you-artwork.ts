@@ -397,7 +397,7 @@ export const DEFAULT_FOR_YOU_COVER_ID: ForYouCoverId = forYouCovers[0].id;
 
 // Shown once the last card is handled: Okou takes a breather with the user.
 export const forYouCompleteIllustration = platformStaticAssetUrl(
-  "views/for-you/assets/take-a-breather-1edc7a6640d4.webp",
+  "views/for-you/assets/take-a-breather-fc0fc8a8ff33.webp",
 );
 
 export const forYouIllustrations = [
@@ -445,7 +445,7 @@ export const forYouIllustrations = [
     "views/for-you/assets/organize-threads-85558c4b8a68.webp",
   ),
   platformStaticAssetUrl(
-    "views/for-you/assets/take-a-breather-1edc7a6640d4.webp",
+    "views/for-you/assets/take-a-breather-fc0fc8a8ff33.webp",
   ),
   platformStaticAssetUrl(
     "views/for-you/assets/share-insights-f3ae2febde35.webp",
