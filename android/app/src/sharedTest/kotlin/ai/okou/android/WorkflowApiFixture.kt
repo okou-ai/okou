@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertNull
 
 internal const val WORKFLOW_RELEASE = "a1111111-1111-4111-8111-111111111111"
@@ -31,6 +32,10 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     @Volatile var beforeCatalog: () -> Unit = {}
     @Volatile var beforeConnectionsRead: () -> Unit = {}
     @Volatile var beforeDraftRead: () -> Unit = {}
+    @Volatile var beforeInstructionSave: () -> Unit = {}
+    @Volatile var disconnectDraftRead = false
+    @Volatile var disconnectInstructionSave = false
+    @Volatile var instructionSaveConflict = false
     @Volatile var previousDraft = if (chinese) "保留原有草稿" else "Keep my existing draft"
     @Volatile
     var instruction =
@@ -70,6 +75,14 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             }
             "/api/workflows/$WORKFLOW_RELEASE" -> {
                 if (request.method == "PATCH") {
+                    beforeInstructionSave()
+                    if (disconnectInstructionSave)
+                        return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                    if (instructionSaveConflict)
+                        return jsonResponse(
+                                """{"error":{"code":"CONFLICT","message":"Workflow changed during update; retry the request"}}"""
+                            )
+                            .setResponseCode(409)
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                     body["instruction"]?.jsonPrimitive?.content?.let { instruction = it }
                 }
@@ -145,6 +158,8 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             "/api/chat-drafts/composer" -> {
                 if (request.method == "GET") {
                     beforeDraftRead()
+                    if (disconnectDraftRead)
+                        return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                     jsonResponse(plainDraftDocument(previousDraft).toString())
                 } else {
                     previousDraft =

@@ -122,7 +122,8 @@ internal fun WorkflowScreen(
     listWidth: Int?,
     timezone: String,
     handoffPending: Boolean,
-    handoffFailed: Boolean,
+    createError: Int?,
+    useError: Int?,
     feedback: @Composable () -> Unit,
     onClose: () -> Unit,
     onCreate: () -> Unit,
@@ -202,7 +203,7 @@ internal fun WorkflowScreen(
                 onBack = { if (editor != null) exitEditor() else if (!state.writing) onClose() },
                 onCreate = onCreate,
                 canNavigate = editor == null && !state.writing && !handoffPending,
-                handoffFailed = handoffFailed,
+                createError = createError,
                 onScope = {
                     query.position.requestScrollToItem(0)
                     changeRoute(route.copy(scope = it))
@@ -234,7 +235,7 @@ internal fun WorkflowScreen(
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
                     state.detailFailure == WorkflowReadFailure.Unavailable ->
                         WorkflowPlaceholder(R.string.workflow_unavailable)
-                    detail == null && state.offline ->
+                    detail == null && state.detailFailure == WorkflowReadFailure.Offline ->
                         WorkflowPlaceholder(R.string.workflow_offline)
                     detail == null && state.detailFailure != null ->
                         WorkflowPlaceholder(R.string.workflow_load_failed)
@@ -257,7 +258,7 @@ internal fun WorkflowScreen(
                             onEditRule = { model.edit(it) },
                             onToggle = model::toggle,
                             handoffPending = handoffPending,
-                            handoffFailed = handoffFailed,
+                            useError = useError,
                             onUse = { onUse(detail) },
                             sourceChatAvailable = sourceChatAvailable,
                             onOpenChat = onOpenChat,
@@ -305,7 +306,7 @@ private fun WorkflowDirectory(
     query: ChatSearchState,
     modifier: Modifier,
     canNavigate: Boolean,
-    handoffFailed: Boolean,
+    createError: Int?,
     onBack: () -> Unit,
     onCreate: () -> Unit,
     onScope: (WorkflowScope) -> Unit,
@@ -334,10 +335,7 @@ private fun WorkflowDirectory(
         WorkflowToolbar(stringResource(R.string.workspace_workflows), onBack) {
             TextButton(
                 onClick = onCreate,
-                enabled =
-                    canNavigate &&
-                        !state.offline &&
-                        state.catalogFailure != WorkflowReadFailure.Unavailable,
+                enabled = canNavigate && state.catalogFailure != WorkflowReadFailure.Unavailable,
                 modifier = Modifier.heightIn(min = 48.dp).testTag("workflow_create"),
                 colors =
                     ButtonDefaults.textButtonColors(
@@ -360,6 +358,7 @@ private fun WorkflowDirectory(
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (createError != null) WorkflowNotice(createError)
             WorkflowQuery(query)
             FlowRow(
                 Modifier.selectableGroup(),
@@ -388,10 +387,10 @@ private fun WorkflowDirectory(
                 }
             }
         }
-        if (handoffFailed) WorkflowNotice(R.string.workflow_draft_unavailable)
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when {
-                catalog == null && state.offline -> WorkflowPlaceholder(R.string.workflow_offline)
+                catalog == null && state.catalogFailure == WorkflowReadFailure.Offline ->
+                    WorkflowPlaceholder(R.string.workflow_offline)
                 catalog == null && state.catalogFailure != null ->
                     WorkflowPlaceholder(R.string.workflow_load_failed)
                 catalog == null -> WorkflowSkeleton(directory = true)
@@ -419,7 +418,7 @@ private fun WorkflowDirectory(
             }
         }
         if (catalog != null) {
-            WorkflowReadFeedback(state.offline, state.catalogFailure)
+            WorkflowReadFeedback(state.catalogFailure)
         }
     }
 }
@@ -643,7 +642,7 @@ private fun WorkflowDetailPane(
     onEditRule: (WorkflowEdit.Rule) -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
     handoffPending: Boolean,
-    handoffFailed: Boolean,
+    useError: Int?,
     onUse: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
     onOpenChat: (String) -> Unit,
@@ -673,7 +672,7 @@ private fun WorkflowDetailPane(
                         WorkflowSectionHeader(
                             R.string.workflow_instructions_heading,
                             if (detail.canManage) R.string.workflow_edit_instructions else null,
-                            !state.offline && !state.writing && !handoffPending,
+                            !state.writing && !handoffPending,
                             onEdit,
                         )
                         Text(
@@ -687,10 +686,9 @@ private fun WorkflowDetailPane(
                         WorkflowSectionHeader(
                             R.string.workflow_trigger_rules,
                             if (detail.canManage) R.string.workflow_add_automation else null,
-                            !state.offline && !state.writing && !handoffPending,
+                            !state.writing && !handoffPending,
                             onNewRule,
                         )
-                        if (state.issue != null) WorkflowNotice(R.string.workflow_write_failed)
                         if (detail.automations.isEmpty())
                             WorkflowSecondary(stringResource(R.string.workflow_no_rules))
                     }
@@ -728,18 +726,16 @@ private fun WorkflowDetailPane(
                 }
             }
         }
-        if (!state.offline) WorkflowReadFeedback(offline = false, failure = state.detailFailure)
+        WorkflowReadFeedback(state.detailFailure)
         WorkflowDivider()
-        val unavailable =
-            detail.shadowedBy != null || handoffPending || state.writing || state.offline
+        val unavailable = detail.shadowedBy != null || handoffPending || state.writing
         Column(
             contentWidth.padding(start = padding, end = padding, top = 8.dp, bottom = 10.dp),
             horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,
         ) {
             when {
                 detail.shadowedBy != null -> WorkflowActionNotice(R.string.workflow_shadowed)
-                state.offline -> WorkflowActionNotice(R.string.workflow_offline_cache)
-                handoffFailed -> WorkflowActionNotice(R.string.workflow_draft_unavailable)
+                useError != null -> WorkflowActionNotice(useError)
             }
             WorkflowAction(
                 stringResource(R.string.workflow_use_in_chat),
@@ -1009,10 +1005,10 @@ private fun WorkflowSkeleton(directory: Boolean) {
 }
 
 @Composable
-private fun WorkflowReadFeedback(offline: Boolean, failure: WorkflowReadFailure?) {
+private fun WorkflowReadFeedback(failure: WorkflowReadFailure?) {
     val label =
         when {
-            offline -> R.string.workflow_offline_cache
+            failure == WorkflowReadFailure.Offline -> R.string.workflow_offline_cache
             failure == WorkflowReadFailure.RefreshFailed -> R.string.workflow_refresh_failed
             else -> return
         }

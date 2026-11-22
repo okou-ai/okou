@@ -107,4 +107,8 @@
         <item quantity="many">%d automatizaciones activas</item>
         <item quantity="other">%d automatizaciones activas</item>
     </plurals>
+    <string name="workflow_draft_network_failed">No se pudo abrir el borrador del nuevo chat. Tu borrador anterior sigue guardado. Comprueba tu conexión e inténtalo de nuevo.</string>
+    <string name="workflow_rule_change_failed">No se pudo cambiar esta regla.</string>
+    <string name="workflow_rule_network_failed">No se pudo cambiar esta regla. Comprueba tu conexión e inténtalo de nuevo.</string>
+    <string name="workflow_write_conflict">Este flujo de trabajo cambió durante el guardado. Tus cambios se conservan.</string>
 </resources>

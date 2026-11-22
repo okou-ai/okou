@@ -195,23 +195,123 @@ class WorkflowRootTest {
     }
 
     @Test
-    fun offlineDetailKeepsContentAndExplainsTheUnavailableActionInPlace() {
+    fun offlineDetailAttemptsTheDraftReadAndExplainsItsFailureBesideUse() {
         openWorkflowDetail()
-        val use = compose.onNodeWithTag("workflow_use").assertIsEnabled()
-
         app.connectivity.value = false
-        val offline = "Offline · Showing last loaded data"
-        waitFor(offline)
+        app.fixture.disconnectDraftRead = true
+        val error =
+            "Could not open the new chat draft. Your existing draft is preserved. Check your connection and try again."
         compose.onNodeWithText("Workflow instructions").assertIsDisplayed()
-        val notice = compose.onNodeWithText(offline).assertIsDisplayed().getUnclippedBoundsInRoot()
-        val action = use.assertIsNotEnabled().getUnclippedBoundsInRoot()
+        compose.onNodeWithText(error).assertDoesNotExist()
+        val use = compose.onNodeWithTag("workflow_use").assertIsEnabled()
+        use.performClick()
+        waitFor(error)
+        val notice = compose.onNodeWithText(error).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val action = use.assertIsEnabled().getUnclippedBoundsInRoot()
         assertTrue(notice.bottom <= action.top)
+        assertTrue(
+            app.fixture.requests.any {
+                it.method == "GET" && it.requestUrl?.encodedPath == "/api/chat-drafts/composer"
+            }
+        )
+        assertEquals("Keep my existing draft", app.fixture.previousDraft)
 
+        app.fixture.disconnectDraftRead = false
         app.connectivity.value = true
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(offline).fetchSemanticsNodes().isEmpty()
+            compose.onAllNodesWithText(error).fetchSemanticsNodes().isEmpty()
         }
-        use.assertIsEnabled()
+        compose.onNodeWithTag("message_input").assertDoesNotExist()
+        use.performClick()
+        waitForTag("message_input")
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+    }
+
+    @Test
+    fun offlineEditorAttemptsSaveAndRetainsInputAndFocusAfterTransportFailure() =
+        withHardwareKeyboard {
+            openWorkflowDetail()
+            app.connectivity.value = false
+            app.fixture.disconnectInstructionSave = true
+            val original = app.fixture.instruction
+            compose.onNodeWithText("Edit instructions").assertIsEnabled().performClick()
+            val instruction = compose.onNodeWithContentDescription("Workflow instructions")
+            instruction.performTextReplacement("Check the launch owner.")
+
+            val error = "Connect to save. Your changes are still here."
+            val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
+            compose.onNodeWithText(error).assertDoesNotExist()
+            val releaseSave = CountDownLatch(1)
+            app.fixture.beforeInstructionSave = { releaseSave.await() }
+            try {
+                save
+                    .performSemanticsAction(SemanticsActions.RequestFocus)
+                    .assertIsFocused()
+                    .performClick()
+                save.assertIsNotEnabled()
+            } finally {
+                releaseSave.countDown()
+            }
+            waitFor(error)
+            instruction.assertTextContains("Check the launch owner.")
+            val notice = compose.onNodeWithText(error).getUnclippedBoundsInRoot()
+            assertTrue(
+                notice.bottom <=
+                    save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top
+            )
+            val saves =
+                app.fixture.requests.filter {
+                    it.method == "PATCH" &&
+                        it.requestUrl?.encodedPath == "/api/workflows/$WORKFLOW_RELEASE"
+                }
+            assertEquals(1, saves.size)
+
+            app.fixture.disconnectInstructionSave = false
+            app.connectivity.value = true
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(error).fetchSemanticsNodes().isEmpty()
+            }
+            assertEquals(original, app.fixture.instruction)
+            save.performClick()
+            waitForTag("workflow_detail_title")
+            compose.onNodeWithText("Check the launch owner.").assertIsDisplayed()
+        }
+
+    @Test
+    fun instructionConflictShowsTheServerOutcomeAndPreservesTheEdit() {
+        openWorkflowDetail()
+        app.fixture.instructionSaveConflict = true
+        compose.onNodeWithText("Edit instructions").performClick()
+        val instruction = compose.onNodeWithContentDescription("Workflow instructions")
+        instruction.performTextReplacement("Check the launch owner.")
+        val save = compose.onNodeWithTag("workflow_save")
+        save.performClick()
+
+        val error = "This workflow changed while saving. Your edits are preserved."
+        waitFor(error)
+        instruction.assertTextContains("Check the launch owner.")
+        assertTrue(
+            compose.onNodeWithText(error).getUnclippedBoundsInRoot().bottom <=
+                save.assertIsEnabled().getUnclippedBoundsInRoot().top
+        )
+    }
+
+    @Test
+    fun newScheduleUsesTheLocalTimezoneBeforePreferencesSync() {
+        openWorkflowDetail()
+        app.connectivity.value = false
+        compose.runOnIdle {
+            val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
+            val preferences = checkNotNull(session.uiState.value.ready).preferences
+            preferences.selectTimezone("Asia/Tokyo")
+            assertEquals("UTC", preferences.uiState.value.confirmed.timezone)
+        }
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithText("Add automation").assertIsEnabled().performClick()
+
+        compose.onNodeWithText("Tokyo (UTC+9)").assertIsDisplayed()
     }
 
     @Test
@@ -238,6 +338,7 @@ class WorkflowRootTest {
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
         compose.onNodeWithText("example/release").assertIsDisplayed()
+        app.connectivity.value = false
 
         compose
             .onNodeWithTag("workflow_toggle_github")
@@ -259,6 +360,7 @@ class WorkflowRootTest {
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
+        app.connectivity.value = false
 
         compose
             .onNodeWithTag("workflow_toggle_github")
@@ -273,7 +375,11 @@ class WorkflowRootTest {
             }
         }
 
-        waitFor("Could not save your changes.")
+        val failure =
+            hasText("Could not change this rule.") and
+                hasAnyAncestor(hasTestTag("workflow_rule_github"))
+        compose.waitUntil(10_000) { compose.onAllNodes(failure).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(failure).assertIsDisplayed()
         compose
             .onNode(hasText("Paused") and hasAnyAncestor(hasTestTag("workflow_rule_github")))
             .assertIsDisplayed()

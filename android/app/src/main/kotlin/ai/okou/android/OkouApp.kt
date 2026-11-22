@@ -18,6 +18,7 @@ import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ChatTitleSearch
+import ai.okou.android.chat.ComposerPrefillResult
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConversationFind
@@ -122,6 +123,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private data class ChatMoveTarget(val threadId: String, val fromList: Boolean)
+
+private data class WorkflowDraftError(val workflowId: String?, val message: Int)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -322,7 +325,11 @@ internal fun OkouApp(
     var restoreWorkflowFocus by remember { mutableStateOf(false) }
     var handoff by remember { mutableStateOf<Job?>(null) }
     var handoffPending by remember { mutableStateOf(false) }
-    var workflowHandoffFailed by remember { mutableStateOf(false) }
+    var workflowDraftError by remember { mutableStateOf<WorkflowDraftError?>(null) }
+    LaunchedEffect(list.offline) {
+        if (!list.offline && workflowDraftError?.message == R.string.workflow_draft_network_failed)
+            workflowDraftError = null
+    }
     var searchEntryFocused by remember { mutableStateOf(false) }
     var restoreSearchFocus by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
@@ -384,7 +391,7 @@ internal fun OkouApp(
         keyboard?.hide()
         workflowOrigin = navigation
         workflowQuery.reset()
-        workflowHandoffFailed = false
+        workflowDraftError = null
         workflowRoute = WorkflowsRoute(mode = WorkflowsMode.Directory)
     }
 
@@ -606,26 +613,37 @@ internal fun OkouApp(
         navigation = navigation.copy(target = WorkspaceTarget.NewChat(projectId), search = search)
     }
 
-    fun workflowDraft(prefix: String) {
+    fun workflowDraft(prefix: String, workflowId: String? = null) {
         val activeComposer = composer ?: return
         if (handoffPending) return
         handoffPending = true
-        workflowHandoffFailed = false
+        workflowDraftError = null
         handoff =
             scope.launch {
                 try {
-                    if (activeComposer.prefillNew(prefix)) {
-                        focus.clearFocus()
-                        keyboard?.hide()
-                        conversations.open(ComposerTarget().key)
-                        navigation =
-                            navigation.copy(
-                                target = WorkspaceTarget.NewChat(null),
-                                settings = null,
-                                search = SearchRoute.Closed,
-                            )
-                        workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Chat)
-                    } else workflowHandoffFailed = true
+                    when (activeComposer.prefillNew(prefix)) {
+                        ComposerPrefillResult.Ready -> {
+                            focus.clearFocus()
+                            keyboard?.hide()
+                            conversations.open(ComposerTarget().key)
+                            navigation =
+                                navigation.copy(
+                                    target = WorkspaceTarget.NewChat(null),
+                                    settings = null,
+                                    search = SearchRoute.Closed,
+                                )
+                            workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Chat)
+                        }
+                        ComposerPrefillResult.NetworkFailed ->
+                            workflowDraftError =
+                                WorkflowDraftError(
+                                    workflowId,
+                                    R.string.workflow_draft_network_failed,
+                                )
+                        ComposerPrefillResult.Unavailable ->
+                            workflowDraftError =
+                                WorkflowDraftError(workflowId, R.string.workflow_draft_unavailable)
+                    }
                 } finally {
                     handoffPending = false
                 }
@@ -796,17 +814,22 @@ internal fun OkouApp(
             model = workflows,
             state = workflowState,
             route = workflowRoute,
-            changeRoute = { workflowRoute = it },
+            changeRoute = {
+                if (it.id != workflowRoute.id && workflowDraftError?.workflowId != null)
+                    workflowDraftError = null
+                workflowRoute = it
+            },
             query = workflowQuery,
             positions = workflowPositions,
             listWidth = listWidth,
             timezone = workflowTimezone,
             handoffPending = handoffPending,
-            handoffFailed = workflowHandoffFailed,
+            createError = workflowDraftError?.takeIf { it.workflowId == null }?.message,
+            useError = workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
             feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
             onClose = ::closeWorkflows,
             onCreate = { workflowDraft("$creation\n\n") },
-            onUse = { workflowDraft("/${it.name} ") },
+            onUse = { workflowDraft("/${it.name} ", it.id) },
             sourceChatAvailable = { id -> list.threads.any { it.id == id && it.hidden != true } },
             onOpenChat = { id ->
                 if (!handoffPending) {

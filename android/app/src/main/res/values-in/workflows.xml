@@ -105,4 +105,8 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d otomatisasi aktif</item>
     </plurals>
+    <string name="workflow_draft_network_failed">Draf chat baru tidak dapat dibuka. Draf Anda yang sudah ada tetap tersimpan. Periksa koneksi Anda dan coba lagi.</string>
+    <string name="workflow_rule_change_failed">Aturan ini tidak dapat diubah.</string>
+    <string name="workflow_rule_network_failed">Aturan ini tidak dapat diubah. Periksa koneksi Anda dan coba lagi.</string>
+    <string name="workflow_write_conflict">Alur kerja ini berubah saat disimpan. Perubahan Anda tetap ada.</string>
 </resources>

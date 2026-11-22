@@ -52,7 +52,8 @@ class ChatComposerModel(
         owner.open(connection, target)
     }
 
-    internal suspend fun prefillNew(prefix: String) = owner.prefillNew(connection, prefix)
+    internal suspend fun prefillNew(prefix: String): ComposerPrefillResult =
+        owner.prefillNew(connection, prefix)
 
     fun edit(target: ComposerTarget, text: String) = owner.edit(connection, target, text)
 

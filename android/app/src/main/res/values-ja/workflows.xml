@@ -105,4 +105,8 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d 件の自動化が有効</item>
     </plurals>
+    <string name="workflow_draft_network_failed">新しいチャットの下書きを開けませんでした。既存の下書きは保持されています。接続を確認して、もう一度お試しください。</string>
+    <string name="workflow_rule_change_failed">このルールを変更できませんでした。</string>
+    <string name="workflow_rule_network_failed">このルールを変更できませんでした。接続を確認して、もう一度お試しください。</string>
+    <string name="workflow_write_conflict">保存中にこのワークフローが更新されました。編集内容は保持されています。</string>
 </resources>

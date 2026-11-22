@@ -41,6 +41,54 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkflowModelTest {
     @Test
+    fun openingOfflineAttemptsAReadThenResumesOnReconnect() = check { service, model ->
+        var reads = 0
+        service.catalogRead = {
+            reads++
+            if (reads == 1) throw ApiFailure.Network(IOException("Offline"))
+            listOf(service.summary)
+        }
+        model.connectivityChanged(true)
+        model.visibilityChanged(true)
+        runCurrent()
+
+        assertEquals(1, reads)
+        assertEquals(WorkflowReadFailure.Offline, model.state.value.catalogFailure)
+        assertNull(model.state.value.catalog)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(1, reads)
+
+        model.connectivityChanged(false)
+        runCurrent()
+        assertEquals(2, reads)
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        assertNull(model.state.value.catalogFailure)
+    }
+
+    @Test
+    fun reconnectRestartsTheFailedDetailWhileTheCatalogIsStillReadingConnections() =
+        check { service, model ->
+            val connections = CompletableDeferred<Set<String>>()
+            service.connectionsRead = { connections.await() }
+            service.detailRead = {
+                if (service.detailReads == 1) throw ApiFailure.Network(IOException("Offline"))
+                service.detail
+            }
+            model.connectivityChanged(true)
+            model.select(service.summary.id)
+            model.visibilityChanged(true)
+            runCurrent()
+            assertEquals(WorkflowReadFailure.Offline, model.state.value.detailFailure)
+
+            model.connectivityChanged(false)
+            runCurrent()
+            assertEquals(service.detail, model.state.value.detail)
+            assertNull(model.state.value.detailFailure)
+            assertNull(model.state.value.connections)
+        }
+
+    @Test
     fun cachedReadsBackOffIndependentlyAndOnlyWarnAfterSustainedFailure() =
         check { service, model ->
             model.select(service.summary.id)
@@ -255,11 +303,13 @@ class WorkflowModelTest {
         runCurrent()
         val editor = WorkflowEdit.Rule(id = null, original = RuleFields(timezone = "UTC"))
         model.edit(editor)
+        model.connectivityChanged(true)
         model.save(editor)
         runCurrent()
 
-        assertEquals(WorkflowWriteIssue.UncertainCreate, model.state.value.issue)
+        assertEquals(WorkflowWriteFailure.UncertainCreate, model.state.value.issue?.failure)
         assertEquals(editor, model.state.value.editor)
+        model.connectivityChanged(false)
         model.save(editor)
         runCurrent()
         assertEquals(1, service.createAttempts)

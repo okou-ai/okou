@@ -290,6 +290,7 @@ private fun ComposerFeedback(
         ComposerSync.Loading -> Text(stringResource(R.string.composer_sync_loading))
         ComposerSync.Saving -> Text(stringResource(R.string.composer_sync_saving))
         ComposerSync.Failed,
+        ComposerSync.NetworkFailed,
         ComposerSync.Unsupported -> {
             Text(
                 stringResource(

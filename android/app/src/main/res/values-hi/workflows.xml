@@ -106,4 +106,8 @@
         <item quantity="one">%d ऑटोमेशन चालू</item>
         <item quantity="other">%d ऑटोमेशन चालू</item>
     </plurals>
+    <string name="workflow_draft_network_failed">नया चैट ड्राफ़्ट नहीं खुल सका। आपका मौजूदा ड्राफ़्ट सुरक्षित है। अपना कनेक्शन जाँचें और फिर कोशिश करें।</string>
+    <string name="workflow_rule_change_failed">यह नियम बदला नहीं जा सका।</string>
+    <string name="workflow_rule_network_failed">यह नियम बदला नहीं जा सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।</string>
+    <string name="workflow_write_conflict">सहेजते समय यह वर्कफ़्लो बदल गया। आपके बदलाव सुरक्षित हैं।</string>
 </resources>

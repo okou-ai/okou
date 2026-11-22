@@ -107,4 +107,8 @@
         <item quantity="many">%d automatisations actives</item>
         <item quantity="other">%d automatisations actives</item>
     </plurals>
+    <string name="workflow_draft_network_failed">Impossible d’ouvrir le brouillon du nouveau chat. Votre brouillon actuel est conservé. Vérifiez votre connexion et réessayez.</string>
+    <string name="workflow_rule_change_failed">Impossible de modifier cette règle.</string>
+    <string name="workflow_rule_network_failed">Impossible de modifier cette règle. Vérifiez votre connexion et réessayez.</string>
+    <string name="workflow_write_conflict">Ce workflow a changé pendant l’enregistrement. Vos modifications sont conservées.</string>
 </resources>

@@ -107,4 +107,8 @@
         <item quantity="many">%d automações ativas</item>
         <item quantity="other">%d automações ativas</item>
     </plurals>
+    <string name="workflow_draft_network_failed">Não foi possível abrir o rascunho do novo chat. Seu rascunho atual foi preservado. Verifique sua conexão e tente novamente.</string>
+    <string name="workflow_rule_change_failed">Não foi possível alterar esta regra.</string>
+    <string name="workflow_rule_network_failed">Não foi possível alterar esta regra. Verifique sua conexão e tente novamente.</string>
+    <string name="workflow_write_conflict">Este fluxo de trabalho mudou durante o salvamento. Suas alterações foram preservadas.</string>
 </resources>

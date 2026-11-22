@@ -246,7 +246,7 @@ class ChatComposerModelTest {
 
             refresh.complete(Unit)
             runCurrent()
-            assertTrue(prefill.await())
+            assertEquals(ComposerPrefillResult.Ready, prefill.await())
             assertEquals("/release-review Current draft", model.uiState.value.entry(target).text)
             advanceTimeBy(500)
             runCurrent()
@@ -255,7 +255,7 @@ class ChatComposerModelTest {
                 ApiFailure.Network(IOException("Could not check workspace readiness"))
             val failed = async { model.prefillNew("/another-workflow ") }
             runCurrent()
-            assertFalse(failed.await())
+            assertEquals(ComposerPrefillResult.NetworkFailed, failed.await())
             assertEquals("/release-review Current draft", model.uiState.value.entry(target).text)
         }
 

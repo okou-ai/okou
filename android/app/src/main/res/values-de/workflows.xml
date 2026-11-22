@@ -106,4 +106,8 @@
         <item quantity="one">%d Automatisierung aktiv</item>
         <item quantity="other">%d Automatisierungen aktiv</item>
     </plurals>
+    <string name="workflow_draft_network_failed">Der neue Chatentwurf konnte nicht geöffnet werden. Dein vorhandener Entwurf bleibt erhalten. Prüfe deine Verbindung und versuche es erneut.</string>
+    <string name="workflow_rule_change_failed">Diese Regel konnte nicht geändert werden.</string>
+    <string name="workflow_rule_network_failed">Diese Regel konnte nicht geändert werden. Prüfe deine Verbindung und versuche es erneut.</string>
+    <string name="workflow_write_conflict">Dieser Workflow wurde während des Speicherns geändert. Deine Änderungen bleiben erhalten.</string>
 </resources>

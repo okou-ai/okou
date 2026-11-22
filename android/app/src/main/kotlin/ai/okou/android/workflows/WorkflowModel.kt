@@ -26,7 +26,6 @@ internal data class WorkflowState(
     val detail: WorkflowDetail? = null,
     val catalogFailure: WorkflowReadFailure? = null,
     val detailFailure: WorkflowReadFailure? = null,
-    val offline: Boolean = false,
     val writing: Boolean = false,
     val issue: WorkflowWriteIssue? = null,
     val editor: WorkflowEdit? = null,
@@ -34,14 +33,22 @@ internal data class WorkflowState(
 
 internal enum class WorkflowReadFailure {
     Unavailable,
+    Offline,
     CouldNotLoad,
     RefreshFailed,
 }
 
-internal enum class WorkflowWriteIssue {
+internal enum class WorkflowWriteFailure {
     Failed,
+    Network,
+    Conflict,
     UncertainCreate,
 }
+
+internal data class WorkflowWriteIssue(
+    val failure: WorkflowWriteFailure,
+    val ruleId: String? = null,
+)
 
 /** Confirmed data belongs to the authorized workspace and survives leaving the destination. */
 class WorkflowModel
@@ -54,6 +61,7 @@ internal constructor(
     private val mutable = MutableStateFlow(WorkflowState())
     internal val state = mutable.asStateFlow()
     private var visible = false
+    private var offline = false
     private var selected: String? = null
     private var catalogLoad: Job? = null
     // A null update records a workflow that the detail endpoint confirmed is unavailable.
@@ -62,9 +70,20 @@ internal constructor(
     private var refreshAfterWrite = false
 
     internal fun connectivityChanged(offline: Boolean) {
-        if (mutable.value.offline == offline) return
-        mutable.value = mutable.value.copy(offline = offline)
-        if (offline) stopReads() else refresh()
+        if (this.offline == offline) return
+        this.offline = offline
+        if (!offline) {
+            val current = mutable.value
+            mutable.value =
+                current.copy(
+                    catalogFailure =
+                        current.catalogFailure.takeUnless { it == WorkflowReadFailure.Offline },
+                    detailFailure =
+                        current.detailFailure.takeUnless { it == WorkflowReadFailure.Offline },
+                    issue = current.issue.takeUnless { it?.failure == WorkflowWriteFailure.Network },
+                )
+            refresh()
+        }
     }
 
     internal fun visibilityChanged(open: Boolean) {
@@ -100,13 +119,13 @@ internal constructor(
     }
 
     private fun refresh() {
-        if (!authorized() || !visible || mutable.value.offline) return
+        if (!authorized() || !visible) return
         if (mutable.value.writing) {
             refreshAfterWrite = true
             return
         }
-        if (catalogLoad?.isActive == true) return
         selected?.let(::loadDetail)
+        if (catalogLoad?.isActive == true) return
         catalogLoad =
             viewModelScope.launch {
                 retryReads(
@@ -199,14 +218,7 @@ internal constructor(
     }
 
     private fun loadDetail(id: String) {
-        val state = mutable.value
-        if (
-            !visible ||
-                !authorized() ||
-                state.offline ||
-                state.writing ||
-                detailLoad?.isActive == true
-        )
+        if (!visible || !authorized() || mutable.value.writing || detailLoad?.isActive == true)
             return
         detailLoad =
             viewModelScope.launch {
@@ -256,6 +268,10 @@ internal constructor(
         try {
             while (authorized()) {
                 val error = attempt() ?: break
+                if (offline && error is ApiFailure.Network) {
+                    publishFailure(WorkflowReadFailure.Offline)
+                    break
+                }
                 val retryAfter = error.retryAfterMillis()
                 if (retryAfter == null) {
                     publishFailure(WorkflowReadFailure.RefreshFailed)
@@ -288,7 +304,13 @@ internal constructor(
                 value != null && state.detail?.canChange(ruleId) != true
         )
             return
-        val issue = state.issue.takeIf { it == WorkflowWriteIssue.UncertainCreate && value != null }
+        val issue =
+            state.issue?.takeIf {
+                value != null &&
+                    state.editor != null &&
+                    (it.failure == WorkflowWriteFailure.UncertainCreate ||
+                        it.failure == WorkflowWriteFailure.Network)
+            }
         mutable.value = state.copy(editor = value, issue = issue)
     }
 
@@ -306,7 +328,7 @@ internal constructor(
         if (
             state.editor != editor ||
                 !editor.canSave ||
-                state.issue == WorkflowWriteIssue.UncertainCreate
+                state.issue?.failure == WorkflowWriteFailure.UncertainCreate
         )
             return
         when (editor) {
@@ -349,10 +371,11 @@ internal constructor(
     ) {
         val state = mutable.value
         val detail = state.detail ?: return
-        if (!authorized() || !visible || state.writing || state.offline || detail.id != selected)
-            return
+        if (!authorized() || !visible || state.writing || detail.id != selected) return
         if (!detail.canChange(ruleId)) {
-            if (ruleId != null) mutable.value = state.copy(issue = WorkflowWriteIssue.Failed)
+            if (ruleId != null)
+                mutable.value =
+                    state.copy(issue = WorkflowWriteIssue(WorkflowWriteFailure.Failed, ruleId))
             return
         }
         refreshAfterWrite = catalogLoad?.isActive == true || detailLoad?.isActive == true
@@ -371,13 +394,16 @@ internal constructor(
                 if (authorized() && selected == detail.id) {
                     reportSessionFailure(error)
                     val status = (error as? ApiFailure.Http)?.status
-                    mutable.value =
-                        mutable.value.copy(
-                            issue =
-                                if (creating && (status == null || status >= 500))
-                                    WorkflowWriteIssue.UncertainCreate
-                                else WorkflowWriteIssue.Failed
-                        )
+                    val failure =
+                        when {
+                            creating && (status == null || status >= 500) ->
+                                WorkflowWriteFailure.UncertainCreate
+                            error is ApiFailure.Network -> WorkflowWriteFailure.Network
+                            !creating && ruleId == null && status == 409 ->
+                                WorkflowWriteFailure.Conflict
+                            else -> WorkflowWriteFailure.Failed
+                        }
+                    mutable.value = mutable.value.copy(issue = WorkflowWriteIssue(failure, ruleId))
                 }
             } finally {
                 if (authorized()) {

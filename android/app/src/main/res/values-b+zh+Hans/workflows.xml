@@ -105,4 +105,8 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d 项自动化启用</item>
     </plurals>
+    <string name="workflow_draft_network_failed">未能打开新聊天草稿。已有草稿已保留，请检查网络后重试。</string>
+    <string name="workflow_rule_change_failed">未能更改此规则。</string>
+    <string name="workflow_rule_network_failed">未能更改此规则，请检查网络后重试。</string>
+    <string name="workflow_write_conflict">保存时此工作流已更新。你的修改已保留。</string>
 </resources>

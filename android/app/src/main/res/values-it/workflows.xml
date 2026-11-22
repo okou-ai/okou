@@ -107,4 +107,8 @@
         <item quantity="many">%d automazioni attive</item>
         <item quantity="other">%d automazioni attive</item>
     </plurals>
+    <string name="workflow_draft_network_failed">Impossibile aprire la bozza di una nuova chat. La bozza esistente è stata conservata. Controlla la connessione e riprova.</string>
+    <string name="workflow_rule_change_failed">Impossibile modificare questa regola.</string>
+    <string name="workflow_rule_network_failed">Impossibile modificare questa regola. Controlla la connessione e riprova.</string>
+    <string name="workflow_write_conflict">Questo workflow è cambiato durante il salvataggio. Le tue modifiche sono state conservate.</string>
 </resources>

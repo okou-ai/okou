@@ -155,6 +155,11 @@ internal fun WorkflowRuleRow(
             ruleDescription(rule, connectionRequired)?.let { WorkflowSecondary(it, small = true) }
             if (nextRun != null) WorkflowSecondary(nextRun, small = true)
         }
+        when (state.issue?.takeIf { it.ruleId == rule.id }?.failure) {
+            WorkflowWriteFailure.Network -> WorkflowNotice(R.string.workflow_rule_network_failed)
+            WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_rule_change_failed)
+            else -> Unit
+        }
         if (rule.official == null) {
             val toggleFocus = remember { FocusRequester() }
             var connectionFocused by remember { mutableStateOf(false) }
@@ -176,8 +181,7 @@ internal fun WorkflowRuleRow(
                         enabled = actionsEnabled,
                     )
                 val needsRecovery = connectionRequired && !rule.enabled
-                val canToggle =
-                    !state.offline && (rule.enabled || rule.canEnable(state.connections))
+                val canToggle = rule.enabled || rule.canEnable(state.connections)
                 WorkflowAction(
                     stringResource(
                         when {
@@ -201,7 +205,7 @@ internal fun WorkflowRuleRow(
                     WorkflowAction(
                         stringResource(R.string.workflow_edit),
                         { onEdit(editable) },
-                        enabled = actionsEnabled && !state.offline && !state.writing,
+                        enabled = actionsEnabled && !state.writing,
                     )
             }
         }
@@ -327,18 +331,24 @@ internal fun WorkflowEditor(
     val uriHandler = LocalUriHandler.current
     var couldNotOpen by remember { mutableStateOf(false) }
     val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
-    val showConnectionAction =
-        connectionRequired != null && state.connections != null && !state.offline
+    val showConnectionAction = connectionRequired != null && state.connections != null
     val saveEnabled =
         available &&
             editor.canSave &&
-            !state.offline &&
             connectionRequired == null &&
-            state.issue != WorkflowWriteIssue.UncertainCreate
+            state.issue?.failure != WorkflowWriteFailure.UncertainCreate
     val saveFocus = remember { FocusRequester() }
     var connectionFocused by remember { mutableStateOf(false) }
-    val restoreSaveFocus = !showConnectionAction && saveEnabled && connectionFocused
-    LaunchedEffect(showConnectionAction) { if (restoreSaveFocus) saveFocus.requestFocus() }
+    var saveFocused by remember { mutableStateOf(false) }
+    var restoreSaveFocusAfterWrite by remember { mutableStateOf(false) }
+    val restoreSaveFocus =
+        !showConnectionAction && saveEnabled && (connectionFocused || restoreSaveFocusAfterWrite)
+    LaunchedEffect(showConnectionAction, saveEnabled) {
+        if (restoreSaveFocus) {
+            restoreSaveFocusAfterWrite = false
+            saveFocus.requestFocus()
+        }
+    }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(
             Modifier.widthIn(max = 730.dp)
@@ -404,13 +414,15 @@ internal fun WorkflowEditor(
                 .padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,
         ) {
-            when {
-                state.offline -> WorkflowActionNotice(R.string.workflow_offline_changes)
-                state.issue == WorkflowWriteIssue.UncertainCreate ->
+            when (state.issue?.failure) {
+                WorkflowWriteFailure.Network -> WorkflowNotice(R.string.workflow_offline_changes)
+                WorkflowWriteFailure.UncertainCreate ->
                     WorkflowNotice(R.string.workflow_create_uncertain)
-                state.issue != null -> WorkflowNotice(R.string.workflow_write_failed)
+                WorkflowWriteFailure.Conflict -> WorkflowNotice(R.string.workflow_write_conflict)
+                WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_write_failed)
+                null -> Unit
             }
-            if (connectionRequired != null && !state.offline) {
+            if (connectionRequired != null) {
                 WorkflowStatus(
                     stringResource(
                         R.string.workflow_connect_to_save,
@@ -439,10 +451,16 @@ internal fun WorkflowEditor(
                 }
                 WorkflowAction(
                     stringResource(R.string.workflow_save),
-                    onClick = { model.save(editor) },
+                    onClick = {
+                        restoreSaveFocusAfterWrite = saveFocused
+                        model.save(editor)
+                    },
                     primary = true,
                     enabled = saveEnabled,
-                    modifier = Modifier.focusRequester(saveFocus).testTag("workflow_save"),
+                    modifier =
+                        Modifier.focusRequester(saveFocus)
+                            .onFocusChanged { saveFocused = it.isFocused }
+                            .testTag("workflow_save"),
                 )
             }
         }

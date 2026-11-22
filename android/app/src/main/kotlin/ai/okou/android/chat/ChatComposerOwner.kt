@@ -240,7 +240,13 @@ internal class ChatComposerOwner(
                     } catch (error: Exception) {
                         if (connection.current()) {
                             report(connection, error)
-                            mutable.value = mutable.value.copy(context = ComposerContext.Failed)
+                            mutable.value =
+                                mutable.value.copy(
+                                    context =
+                                        if (error is ApiFailure.Network)
+                                            ComposerContext.NetworkFailed
+                                        else ComposerContext.Failed
+                                )
                         }
                     }
                 }
@@ -258,9 +264,9 @@ internal class ChatComposerOwner(
         }
     }
 
-    suspend fun prefillNew(connection: Connection, prefix: String): Boolean {
+    suspend fun prefillNew(connection: Connection, prefix: String): ComposerPrefillResult {
         val target = ComposerTarget()
-        open(connection, target)?.join() ?: return false
+        open(connection, target)?.join() ?: return ComposerPrefillResult.Unavailable
         val key = ServerDraftTarget().key
         // Joining a draft read can also start a follow-up refresh queued while it was in flight.
         while (true) {
@@ -270,13 +276,22 @@ internal class ChatComposerOwner(
         val state = mutable.value
         if (
             !connection.current() ||
-                state.context != ComposerContext.Ready ||
                 state.journal == null ||
                 state.entry(target).pending != null ||
-                target.key in state.busy ||
+                target.key in state.busy
+        )
+            return ComposerPrefillResult.Unavailable
+        if (
+            state.context == ComposerContext.NetworkFailed ||
+                state.context == ComposerContext.Ready &&
+                    state.synchronization[key] == ComposerSync.NetworkFailed
+        )
+            return ComposerPrefillResult.NetworkFailed
+        if (
+            state.context != ComposerContext.Ready ||
                 state.synchronization[key] != ComposerSync.Saved
         )
-            return false
+            return ComposerPrefillResult.Unavailable
         beginNew(connection, null)
         val text = mutable.value.entry(target).text
         val command = prefix.trimEnd()
@@ -285,7 +300,7 @@ internal class ChatComposerOwner(
             existing.startsWith(command) &&
                 (existing.length == command.length || existing[command.length].isWhitespace())
         if (!alreadyPrefilled) edit(connection, target, prefix + text)
-        return true
+        return ComposerPrefillResult.Ready
     }
 
     fun edit(connection: Connection, target: ComposerTarget, text: String) {
@@ -444,7 +459,11 @@ internal class ChatComposerOwner(
                 } catch (error: Exception) {
                     if (current()) {
                         report(connection, error)
-                        syncStatus(target.key, ComposerSync.Failed)
+                        syncStatus(
+                            target.key,
+                            if (error is ApiFailure.Network) ComposerSync.NetworkFailed
+                            else ComposerSync.Failed,
+                        )
                     }
                 } finally {
                     if (draftWork[target.key] === work) {

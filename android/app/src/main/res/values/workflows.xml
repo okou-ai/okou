@@ -106,4 +106,8 @@
         <item quantity="one">%d automation enabled</item>
         <item quantity="other">%d automations enabled</item>
     </plurals>
+    <string name="workflow_draft_network_failed">Could not open the new chat draft. Your existing draft is preserved. Check your connection and try again.</string>
+    <string name="workflow_rule_change_failed">Could not change this rule.</string>
+    <string name="workflow_rule_network_failed">Could not change this rule. Check your connection and try again.</string>
+    <string name="workflow_write_conflict">This workflow changed while saving. Your edits are preserved.</string>
 </resources>
