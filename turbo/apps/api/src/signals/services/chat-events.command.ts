@@ -171,6 +171,7 @@ import {
   repairUserMessageText,
   userMessagePhysicalFiles,
   withAgentRunSourceAnnotation,
+  withServerSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
 import {
@@ -1344,17 +1345,11 @@ function normalSendUserMessage(
   }
   return args.auth.tokenType !== "oauth"
     ? userMessage
-    : {
-        ...userMessage,
-        parts: [
-          ...userMessage.parts,
-          {
-            type: "source",
-            kind: "mcp",
-            clientId: args.auth.clientId,
-          },
-        ],
-      };
+    : withServerSourceAnnotation(userMessage, {
+        type: "source",
+        kind: "mcp",
+        clientId: args.auth.clientId,
+      });
 }
 /**
  * A conflict on the insert is accepted as a duplicate without a lookup. Only

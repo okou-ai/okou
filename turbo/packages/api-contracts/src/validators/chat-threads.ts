@@ -402,14 +402,14 @@ export const generationTemplateRequestSchema = discriminatedUnion("type", [
   documentGenerationTemplateRequestSchema,
 ]);
 
-export const userMessageVoicePartSchema = object({
+const userMessageVoicePartSchema = object({
   type: literal("voice"),
   clips: array(object({ fileId: uuid() }).strict())
     .min(1)
     .max(MAX_VOICE_CLIPS),
 }).strict();
 
-export const userMessageTextPartSchema = object({
+const userMessageTextPartSchema = object({
   type: literal("text"),
   text: string().min(1),
 }).strict();

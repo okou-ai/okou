@@ -1,4 +1,4 @@
-import { array, discriminatedUnion, literal, object, record, uuid } from "zod";
+import { object, record, uuid } from "zod";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
 import {
   chatEventsContract,
@@ -15,25 +15,10 @@ import {
 import { initContract } from "./base";
 import { runsCancelContract } from "./run-routes";
 
-import {
-  userMessageTextPartSchema,
-  userMessageVoicePartSchema,
-} from "../validators/chat-threads";
-
 const normal = chatEventNormalSendBodySchema.shape;
 export const mcpSendChatMessageInputSchema = object({
   prompt: normal.prompt.optional(),
-  userMessage: object({
-    version: literal(1),
-    parts: array(
-      discriminatedUnion("type", [
-        userMessageTextPartSchema,
-        userMessageVoicePartSchema,
-      ]),
-    ).min(1),
-  })
-    .strict()
-    .optional(),
+  userMessage: normal.userMessage.optional(),
   threadId: mcpThreadIdSchema.optional(),
   projectId: uuid().toLowerCase().optional(),
   model: normal.model,

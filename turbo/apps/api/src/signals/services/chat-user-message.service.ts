@@ -177,6 +177,22 @@ export function hasAgentRunSourceAnnotation(
   return agentRunSourceAnnotation(document) !== null;
 }
 
+/** Keep the single provenance slot authoritative for server-attributed sends. */
+export function withServerSourceAnnotation(
+  document: UserMessageDocument,
+  source: Extract<UserMessagePart, { type: "source" }>,
+): UserMessageDocument {
+  return {
+    version: document.version,
+    parts: [
+      ...document.parts.filter((part) => {
+        return part.type !== "source" && part.type !== "automation";
+      }),
+      source,
+    ],
+  };
+}
+
 /** Replace client-owned annotations with authoritative agent-run provenance. */
 export function withAgentRunSourceAnnotation(
   document: UserMessageInputDocument,
@@ -190,23 +206,14 @@ export function withAgentRunSourceAnnotation(
   document: UserMessageDocument,
   source: ChatAgentRunSourceAnnotation,
 ): UserMessageDocument {
-  const contentParts = document.parts.filter((part) => {
-    return part.type !== "source" && part.type !== "automation";
+  return withServerSourceAnnotation(document, {
+    type: "source",
+    kind: "agent",
+    runId: source.runId,
+    threadId: source.threadId,
+    titleSnapshot: source.titleSnapshot,
+    href: chatAgentRunSourceHref(source),
   });
-  return {
-    version: 1,
-    parts: [
-      ...contentParts,
-      {
-        type: "source",
-        kind: "agent",
-        runId: source.runId,
-        threadId: source.threadId,
-        titleSnapshot: source.titleSnapshot,
-        href: chatAgentRunSourceHref(source),
-      },
-    ],
-  };
 }
 
 /** Replace any prior run-model annotation with the model persisted for the run. */
