@@ -17,6 +17,7 @@ import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.preferences.PreferenceFeedback
+import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.WorkspaceSettingsDataPage
 import ai.okou.android.settings.settingsWebClick
 import ai.okou.android.state.SettingsDestination
@@ -354,6 +355,7 @@ private fun WorkspaceSettingsContent(
                     }
                 },
                 models = {
+                    DefaultModelSetting(ready.settings.defaultModel)
                     SettingsRow(
                         stringResource(R.string.settings_model_accounts),
                         leading = { SettingsIcon(R.drawable.ic_account_circle) },

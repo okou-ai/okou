@@ -87,6 +87,12 @@ interface WorkspaceSession :
 
     suspend fun preferences(): UserPreferences
 
+    suspend fun defaultModelPreference(): ai.okou.android.api.generated.DefaultModelPreference
+
+    suspend fun updateDefaultModelPreference(
+        update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+    ): ai.okou.android.api.generated.DefaultModelPreference
+
     suspend fun updatePreferences(update: UpdatePreferencesRequest): UserPreferences
 }
 
@@ -169,6 +175,12 @@ class CanonicalWorkspaceSession(
     override suspend fun recoveryCatalog() = api.recoveryCatalog()
 
     override suspend fun recoveryModels() = api.recoveryModels()
+
+    override suspend fun defaultModelPreference() = api.defaultModelPreference()
+
+    override suspend fun updateDefaultModelPreference(
+        update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+    ) = api.updateDefaultModelPreference(update)
 
     override suspend fun recoverySubscriptions() = api.recoverySubscriptions()
 

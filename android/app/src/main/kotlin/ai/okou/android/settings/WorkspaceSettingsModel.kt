@@ -58,6 +58,8 @@ internal constructor(
 ) : ViewModel() {
     private val mutable = MutableStateFlow(WorkspaceSettingsState())
     internal val uiState = mutable.asStateFlow()
+    internal val defaultModel =
+        DefaultModelSettings(viewModelScope, service, authorized, ::reportSessionFailure)
 
     private var visible: SettingsDestination? = null
     private var accountsRead: Job? = null
@@ -68,6 +70,7 @@ internal constructor(
     init {
         viewModelScope.launch {
             connectivity.collect { online ->
+                defaultModel.online(online)
                 val changed = mutable.value.offline == online
                 mutable.update { it.copy(offline = !online) }
                 if (changed) {

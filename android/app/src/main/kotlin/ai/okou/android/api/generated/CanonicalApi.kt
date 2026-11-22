@@ -80,6 +80,17 @@ internal interface CanonicalApi {
     @GET("/api/run-models")
     suspend fun `recoveryModels`(@Header("Authorization") token: String): Response<RecoveryModels>
 
+    @GET("/api/user-model-preference")
+    suspend fun `defaultModelPreference`(
+        @Header("Authorization") token: String
+    ): Response<DefaultModelPreference>
+
+    @PUT("/api/user-model-preference")
+    suspend fun `updateDefaultModelPreference`(
+        @Header("Authorization") token: String,
+        @Body body: UpdateDefaultModelPreference,
+    ): Response<DefaultModelPreference>
+
     @GET("/api/me/3rd-party-subscriptions")
     suspend fun `recoverySubscriptions`(
         @Header("Authorization") token: String

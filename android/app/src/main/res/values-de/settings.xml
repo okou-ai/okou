@@ -55,4 +55,18 @@
     <string name="settings_credit_top_up">Aufgeladene Credits</string>
     <string name="settings_credit_unit">Credits</string>
     <string name="settings_credit_web">Guthabendetails im Web ansehen</string>
+    <string name="settings_default_model">Standardmodell</string>
+    <string name="settings_auto_model_detail">Okou wählt ein verfügbares Modell</string>
+    <string name="settings_model_plan_restricted">Anderer Tarif erforderlich</string>
+    <string name="settings_model_fast">Schnellmodus</string>
+    <string name="settings_model_fast_usage">Benötigt etwa das %1$s-Fache des Kontingents</string>
+    <string name="settings_model_offline">Offline. Änderungen werden bei Verbindung synchronisiert.</string>
+    <string name="settings_model_save_unavailable">Standardmodell kann nicht synchronisiert werden.</string>
+    <string name="settings_model_effort">Denkaufwand</string>
+    <string name="settings_model_effort_low">Niedrig</string>
+    <string name="settings_model_effort_medium">Mittel</string>
+    <string name="settings_model_effort_high">Hoch</string>
+    <string name="settings_model_effort_extra">Sehr hoch</string>
+    <string name="settings_model_effort_max">Maximal</string>
+    <string name="settings_model_effort_ultra">Ultra</string>
 </resources>
