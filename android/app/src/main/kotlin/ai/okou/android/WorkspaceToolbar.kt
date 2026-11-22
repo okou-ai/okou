@@ -503,6 +503,7 @@ internal fun WorkspaceMenu(
     items: List<WorkspaceMenuItem>,
     close: () -> Unit,
     filter: Boolean = false,
+    separatorBefore: Int? = null,
     back: () -> Unit = close,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -530,7 +531,7 @@ internal fun WorkspaceMenu(
             shadowElevation = 6.dp,
             border = BorderStroke(1.dp, colors.outline),
         ) {
-            key(filter) { WorkspaceMenuItems(items, filter, close, back) }
+            key(filter) { WorkspaceMenuItems(items, filter, close, back, separatorBefore) }
         }
     }
 }
@@ -541,6 +542,7 @@ private fun WorkspaceMenuItems(
     filter: Boolean,
     close: () -> Unit,
     back: () -> Unit,
+    separatorBefore: Int?,
 ) {
     val inputMode = LocalInputModeManager.current.inputMode
     val popupFocus = remember { FocusRequester() }
@@ -613,7 +615,11 @@ private fun WorkspaceMenuItems(
             HorizontalDivider(Modifier.padding(horizontal = 6.dp, vertical = 5.dp))
             Column(Modifier.selectableGroup()) { for (index in 1..items.lastIndex) row(index) }
         } else {
-            for (index in items.indices) row(index)
+            for (index in items.indices) {
+                if (index == separatorBefore)
+                    HorizontalDivider(Modifier.padding(horizontal = 6.dp, vertical = 5.dp))
+                row(index)
+            }
         }
     }
 }

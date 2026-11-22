@@ -46,9 +46,10 @@ internal fun ConversationToolbarActions(
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
     openResources: ((restoreFocus: Boolean) -> Unit)? = null,
     settingsFocus: FocusRequester? = null,
+    onFind: (() -> Unit)? = null,
 ) {
     val actions = thread?.let { state.rowActions(it) }.orEmpty()
-    if (actions.isEmpty() && openSettings == null && openResources == null) return
+    if (actions.isEmpty() && openSettings == null && openResources == null && onFind == null) return
     key(thread?.id) {
         var menu by remember { mutableStateOf(false) }
         var rename by remember { mutableStateOf(false) }
@@ -74,20 +75,31 @@ internal fun ConversationToolbarActions(
                     stringResource(R.string.chat_actions),
                 )
             }
-            if (menu)
+            if (menu) {
+                val readingActions =
+                    listOfNotNull(
+                        onFind?.let { find ->
+                            WorkspaceMenuItem(
+                                stringResource(R.string.conversation_find),
+                                R.drawable.ic_search,
+                            ) {
+                                menu = false
+                                find()
+                            }
+                        },
+                        openResources?.let { open ->
+                            WorkspaceMenuItem(
+                                stringResource(R.string.chat_resources),
+                                R.drawable.ic_folder,
+                            ) {
+                                menu = false
+                                open(restoreFocus)
+                            }
+                        },
+                    )
                 WorkspaceMenu(
                     items =
-                        listOfNotNull(
-                            openResources?.let { open ->
-                                WorkspaceMenuItem(
-                                    stringResource(R.string.chat_resources),
-                                    R.drawable.ic_folder,
-                                ) {
-                                    menu = false
-                                    open(restoreFocus)
-                                }
-                            }
-                        ) +
+                        readingActions +
                             actions.map { action ->
                                 WorkspaceMenuItem(
                                     stringResource(action.label()),
@@ -115,7 +127,9 @@ internal fun ConversationToolbarActions(
                                 }
                             ),
                     close = { menu = false },
+                    separatorBefore = readingActions.size.takeIf { onFind != null },
                 )
+            }
         }
         if (rename && thread != null)
             RenameListItemDialog(
