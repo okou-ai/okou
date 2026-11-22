@@ -265,7 +265,9 @@ class PendingWorkspaceRootTest {
 
         settings.assertIsEnabled().performClick()
         compose.onNodeWithText("Display mode").assertIsNotEnabled()
-        compose.onNodeWithText("Dark").assertExists()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Dark").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Daydream").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
@@ -292,14 +294,16 @@ class PendingWorkspaceRootTest {
         compose.waitUntil(10_000) { listState()?.listPhase == ChatReadPhase.Loading }
         compose.mainClock.advanceTimeBy(120)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
-        val empty = compose.onNodeWithText(compose.activity.getString(R.string.chat_empty))
-        empty.assertDoesNotExist()
+        val empty = compose.activity.getString(R.string.chat_empty)
+        compose.onNodeWithText(empty).assertDoesNotExist()
         compose.onNodeWithContentDescription("Filter").assertIsEnabled()
         compose.onNodeWithContentDescription("Settings").assertIsEnabled()
 
         compose.runOnIdle { app.listResponse.complete(Unit) }
         compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
-        empty.assertExists()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(empty).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
     }
 
