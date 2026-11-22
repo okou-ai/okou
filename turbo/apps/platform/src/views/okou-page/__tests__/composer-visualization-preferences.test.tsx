@@ -10,6 +10,7 @@ import {
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 const context = testContext(),
   first = "Plot quarterly revenue",
   second = "Reserve a separate coastal chart";
@@ -114,3 +115,48 @@ test("composer-visualization-preferences-003 accepting the first send consumes o
   expect(summary(await message(second))).toStrictEqual([]);
   expect(summary(sent)).toStrictEqual(["Spreadsheet · Bar"]);
 });
+
+test.each([
+  { id: "004", path: "/" },
+  { id: "007", path: "/chats/" + THREAD_ID },
+])(
+  "composer-visualization-preferences-$id a draft edited back to its original options survives the send receipt",
+  async ({ path }) => {
+    const { gate, fixture } = await pending(path);
+    const destination = location.pathname;
+    expect(destination).toMatch(/^\/chats\/[a-f0-9-]+$/u);
+    expect(fixture.sentMessages).toStrictEqual([]);
+    await fill(await findComposerEditor(), second);
+    await clickComposerAddMenuItem("Create");
+    await screen.findByRole("region", { name: "Visualization options" });
+    await option("Spreadsheet");
+    await option("Website");
+    await option("Sankey diagram");
+    expect(summary(await board())).toStrictEqual(["Website · Bar, Sankey"]);
+    await option("Website");
+    await option("Spreadsheet");
+    await option("Sankey diagram");
+    expect(summary(await board())).toStrictEqual(["Spreadsheet · Bar"]);
+    gate.resolve();
+    await waitFor(() => {
+      return expect(fixture.sentMessages[0]).toBeDefined();
+    });
+    fixture.lifecycle.completeRun("The first chart is ready.");
+    createChatEvent(destination.slice(7));
+    await screen.findByText("The first chart is ready.");
+    expect(location.pathname).toBe(destination);
+    await expect(findComposerEditor()).resolves.toHaveTextContent(second);
+    expect(summary(await message(first))).toStrictEqual(["Spreadsheet · Bar"]);
+    expect(summary(await board())).toStrictEqual(["Spreadsheet · Bar"]);
+    for (const [label, selected] of [
+      ["Spreadsheet", "true"],
+      ["Bar chart", "true"],
+      ["Sankey diagram", "false"],
+    ] as const) {
+      await expect(findFastControl("button", label)).resolves.toHaveAttribute(
+        "aria-pressed",
+        selected,
+      );
+    }
+  },
+);

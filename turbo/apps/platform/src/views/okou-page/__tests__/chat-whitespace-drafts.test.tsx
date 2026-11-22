@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { setupPage, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   continuityDraft,
@@ -107,4 +108,25 @@ test("chat-whitespace-drafts-005 a pasted space retains the attached file and th
   });
   expect(editor).toHaveTextContent("Shipping notes");
   expect(screen.getByText("manifest.txt")).toBeInTheDocument();
+});
+
+test("The member workspace saves a blank draft after whitespace-only input", async () => {
+  const saved = context.mocks.deferred<ComposerDraftResponse>();
+  const blank = { draftUserMessage: null, draftAttachments: null };
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
+    return respond(200, blank);
+  });
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
+    saved.resolve({
+      draftUserMessage: body.draftUserMessage,
+      draftAttachments: body.draftAttachments ?? null,
+    });
+    return respond(204);
+  });
+  await setupPage({ context, path: "/" });
+  const editor = await findComposerEditor();
+  expect(editor.textContent).toBe("");
+  await fill(editor, "  \t ");
+  await expect(saved.promise).resolves.toStrictEqual(blank);
+  await expect(findAction("button", "Send")).resolves.toBeDisabled();
 });

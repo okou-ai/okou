@@ -1,8 +1,14 @@
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { catalogConnector } from "./chat-capability-connector-test-helpers.ts";
+import { manualAuthMethod } from "./chat-composer-connectors-test-helpers.ts";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
-import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  builtinConnectorManualGrantContract,
+  builtinConnectorOauthStartContract,
+} from "@okouai/api-contracts/contracts/connectors";
 
 import {
   connectorAccountsContract,
@@ -13,6 +19,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -621,3 +628,103 @@ test.each([
     expect(screen.queryByTestId("banking-action-card")).not.toBeInTheDocument();
   },
 );
+
+async function submitManualReconnect(relative: boolean, other: boolean) {
+  const work = { ...workAccount(), authMethod: "api-token" };
+  const fallback = {
+    ...work,
+    id: crypto.randomUUID(),
+    displayName: "Personal GitHub",
+    isDefault: true,
+  };
+  const method = manualAuthMethod();
+  const connector = catalogConnector({
+    slug: "github",
+    label: "GitHub",
+    method,
+    hasAccount: true,
+    connectionId: fallback.id,
+  });
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector });
+  });
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      return respond(200, params.connectionId === work.id ? work : fallback);
+    },
+  );
+  const received = context.mocks.deferred<void>();
+  const receipt = context.mocks.deferred<void>();
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    async ({ body, respond }) => {
+      if (
+        body.account.intent !== "reconnect" ||
+        body.account.connectionId !== work.id ||
+        body.values.apiToken !== "review-example"
+      ) {
+        return respond(400, {
+          error: { code: "INVALID_INPUT", message: "Wrong account or value" },
+        });
+      }
+      received.resolve();
+      await receipt.promise;
+      const completed = other ? fallback : work;
+      completed.connectionStatus = "connected";
+      return respond(200, { connectionId: completed.id });
+    },
+  );
+  const prompt = "Continue the account-specific task";
+  const query = new URLSearchParams({
+    threadId: RUN_THREAD_ID,
+    callbackPrompt: prompt,
+  });
+  const link =
+    (relative ? "" : origin) +
+    "/connectors/github/reconnect/" +
+    work.id +
+    "?" +
+    query;
+  await open(
+    relative ? "Work account: " + link + "。 Proceed when ready." : link,
+  );
+  if (relative) {
+    await screen.findByText(/Work account:/);
+    await screen.findByText(/。 Proceed when ready\./);
+  }
+  click(await reconnectCard());
+  const form = await screen.findByRole("dialog");
+  expect(form).toHaveTextContent("Work GitHub");
+  expect(location.pathname).toBe(RUN_PATH);
+  await fill(within(form).getByDisplayValue(""), "review-example");
+  const save = await findEnabledButton("Save", form);
+  click(save);
+  await received.promise;
+  expect(save).toBeDisabled();
+  expect(screen.queryByText(prompt)).not.toBeInTheDocument();
+  receipt.resolve();
+  return { form, prompt };
+}
+
+test.each([
+  { id: "018", relative: false, link: "absolute" },
+  { id: "023", relative: true, link: "punctuated relative" },
+])(
+  "chat-cards-$id the $link Work link resumes the chat after its receipt",
+  async ({ relative }) => {
+    const { prompt } = await submitManualReconnect(relative, false);
+    await screen.findByText(prompt, { selector: '[data-role="user"] *' });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  },
+);
+
+test("chat-cards-019 a default-account receipt keeps the Work dialog open for retry", async () => {
+  const { form, prompt } = await submitManualReconnect(false, true);
+  await findEnabledButton("Save", form);
+  expect(form).toHaveTextContent(
+    "Connector account response identity mismatch.",
+  );
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.queryByText(prompt)).not.toBeInTheDocument();
+});

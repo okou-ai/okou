@@ -1,3 +1,4 @@
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { screen } from "@testing-library/react";
@@ -89,4 +90,53 @@ test("connector-callbacks-008 a denied Notion callback replaces the provider que
   expect(result.pathname).toBe("/connectors/notion/callback/error");
   expect(result.searchParams.has("error")).toBeFalsy();
   expect(result.searchParams.has("state")).toBeFalsy();
+});
+
+test("connector-callbacks-002 GitHub publishes its account and catalog mark after the public callback", async () => {
+  const mark = "https://icons.example.test/authorized-github.svg";
+  let authorized = false;
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Sign in" },
+    });
+  });
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ query, params, respond }) => {
+      authorized =
+        params.connectorSlug === "github" &&
+        query.code === "port-code" &&
+        query.state === "review";
+      return respond(200, { status: "success", username: "octocat" });
+    },
+  );
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    const connector = catalogConnector({
+      slug: "github",
+      label: "GitHub",
+      method: browserAuthMethod(),
+    });
+    return respond(200, {
+      connector: {
+        ...connector,
+        icon: {
+          ...connector.icon,
+          url: authorized ? mark : "https://icons.example.test/pending.svg",
+        },
+      },
+    });
+  });
+  await setupPage({
+    context,
+    auth: null,
+    path: "/connectors/github/callback?state=review&code=port-code",
+    host: "app.okou.ai",
+  });
+  await screen.findByRole("heading", { name: "GitHub connected" });
+  expect(screen.getByText(/^Connected as octocat\./)).toBeInTheDocument();
+  expect(screen.getByAltText("")).toHaveAttribute("src", mark);
+  expect(location.pathname).toBe("/connectors/github/callback/success");
+  const query = new URLSearchParams(location.search);
+  expect(query.has("code")).toBeFalsy();
+  expect(query.has("state")).toBeFalsy();
 });

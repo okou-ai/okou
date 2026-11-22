@@ -133,3 +133,18 @@ test("chat-session-output-stream-011 completing the run ends its live subscripti
   });
   expect(screen.getByText("The complete report")).toBeVisible();
 });
+
+test("chat-session-output-stream-010 closing the streamed PDF embed reveals its preview through completion", async () => {
+  const wire = await conversation();
+  const open = "![Port survey](https://a.okou.io/harbor7pdf.pdf";
+  wire.chunk(open);
+  await screen.findByText(/Port survey/);
+  const preview = "Open pdf preview for harbor7pdf.pdf";
+  expect(screen.queryByLabelText(preview)).not.toBeInTheDocument();
+  wire.chunk(")");
+  await expect(screen.findByLabelText(preview)).resolves.toBeInTheDocument();
+  wire.persist(open + ")\n\nSurvey delivered.");
+  wire.finish();
+  await screen.findByText("Survey delivered.");
+  expect(screen.getByLabelText(preview)).toBeInTheDocument();
+});
