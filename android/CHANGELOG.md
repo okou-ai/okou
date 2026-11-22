@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.40.0](https://github.com/okou-ai/okou/compare/android-v0.39.1...android-v0.40.0) (2026-11-22)
+
+
+### Features
+
+* **android:** refine the native conversation page ([#49852](https://github.com/okou-ai/okou/issues/49852)) ([60ea18b](https://github.com/okou-ai/okou/commit/60ea18b1a30ea38fe2e36bd12414170e62c775ff))
+* **android:** show model accounts and credit balances in settings ([#49923](https://github.com/okou-ai/okou/issues/49923)) ([2c95e9e](https://github.com/okou-ai/okou/commit/2c95e9e4b8d7a6cc6f0355c5406779465e7de022))
+
+
+### Bug Fixes
+
+* **android:** align the chat list and retire the update banner ([#49912](https://github.com/okou-ai/okou/issues/49912)) ([a319487](https://github.com/okou-ai/okou/commit/a319487fed13bc07af0c364d0a9522467ccf00da))
+
 ## [0.39.1](https://github.com/okou-ai/okou/compare/android-v0.39.0...android-v0.39.1) (2026-11-22)
 
 

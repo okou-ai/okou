@@ -970,6 +970,12 @@ test("A folded Project prioritizes unread over running chats, and an unfolded on
 
 test("A Project page moves down into its chats when unfolded and past them when folded", async () => {
   const { a1, b } = await setupProjectNavigation(115, `/projects/${id}`);
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  const chatEntry = rail.querySelector('nav a[href="/"]');
+  const activeEntries = () => {
+    return [...rail.querySelectorAll('nav a[aria-current="page"]')];
+  };
+  expect(activeEntries()).toStrictEqual([chatEntry]);
   await waitFor(() => {
     expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
   });
@@ -992,6 +998,7 @@ test("A Project page moves down into its chats when unfolded and past them when 
     expect(location.pathname).toBe(`/chats/${a1.id}`);
   });
   expect(threadLink(a1.id)).toHaveAttribute("aria-current", "page");
+  expect(activeEntries()).toStrictEqual([chatEntry]);
 });
 function pressProjectFold(direction: "ArrowLeft" | "ArrowRight") {
   return userEvent

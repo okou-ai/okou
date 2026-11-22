@@ -824,13 +824,7 @@ pub(super) fn secondary_token_usage_notification(thread_id: &str, turn_id: &str)
 }
 
 pub(super) fn warning_notification(thread_id: &str, index: usize) -> Value {
-    json!({
-        "method": "warning",
-        "params": {
-            "threadId": thread_id,
-            "message": format!("codex-mock warning {index}")
-        }
-    })
+    warning_with_message(thread_id, format!("codex-mock warning {index}"))
 }
 
 pub(super) fn large_warning_notification(
@@ -838,12 +832,13 @@ pub(super) fn large_warning_notification(
     index: usize,
     message_bytes: usize,
 ) -> Value {
+    warning_with_message(thread_id, format!("{index}:{}", "x".repeat(message_bytes)))
+}
+
+fn warning_with_message(thread_id: &str, message: String) -> Value {
     let params = Value::Object(serde_json::Map::from_iter([
         ("threadId".into(), thread_id.into()),
-        (
-            "message".into(),
-            format!("{index}:{}", "x".repeat(message_bytes)).into(),
-        ),
+        ("message".into(), message.into()),
     ]));
     Value::Object(serde_json::Map::from_iter([
         ("method".into(), "warning".into()),

@@ -791,6 +791,9 @@ test("Show working dots on scroll-to-bottom while the thread works", async () =>
     scrollHeight: { configurable: true, value: 2400 },
     clientHeight: { configurable: true, value: 600 },
   });
+  scroller.scrollTop = 1800;
+  fireEvent.scroll(scroller);
+  fireEvent.wheel(scroller, { deltaY: -1000 });
   scroller.scrollTop = 800;
   fireEvent.scroll(scroller);
 
