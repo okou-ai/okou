@@ -13,6 +13,8 @@ import ai.okou.android.api.generated.UpdateDefaultModelPreferenceServiceTier
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
+import java.net.ConnectException
+import java.net.UnknownHostException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -127,8 +129,8 @@ internal data class DefaultModelSave(
     val failedAttempts: Int = 0,
     val lastFailureMillis: Long? = null,
 ) {
-    val exhausted: Boolean
-        get() = failedAttempts > preferenceSaveRetryDelays.size
+    val canRetry: Boolean
+        get() = failedAttempts < preferenceSaveRetryDelays.size
 }
 
 internal data class DefaultModelState(
@@ -324,14 +326,20 @@ internal class DefaultModelSettings(
                     currentCoroutineContext().ensureActive()
                     if (!authorized()) return
                     if (before.save !== mutable.value.save) return@withLock
-                    unconfirmedWrite = null
-                    readbackBlocked = false
-                    clearSaveFailure()
-                    publishConfirmed(
-                        DefaultModelRecord(confirmed = remote, lastRefreshMillis = nowMillis()),
-                        save = null,
-                    )
-                    saveWait?.cancel()
+                    val snapshot =
+                        DefaultModelRecord(confirmed = remote, lastRefreshMillis = nowMillis())
+                    val attempted = unconfirmedWrite
+                    if (attempted == null) {
+                        clearSaveFailure()
+                        publishConfirmed(snapshot, save = null)
+                        saveWait?.cancel()
+                    } else if (reconcileReadback(attempted, remote, snapshot)) {
+                        saveWait?.cancel()
+                        synchronizeSaves()
+                    } else {
+                        // Refresh the confirmed cache without resolving a write we cannot verify.
+                        publishConfirmed(snapshot)
+                    }
                 }
                 failures = 0
             } catch (cancelled: CancellationException) {
@@ -425,20 +433,19 @@ internal class DefaultModelSettings(
                             }
                         currentCoroutineContext().ensureActive()
                         if (!authorized()) return
-                        unconfirmedWrite = null
-                        applySaveResponse(request, remote, readback = unresolved != null)
+                        if (unresolved == null) {
+                            unconfirmedWrite = null
+                            applySaveResponse(request, remote)
+                        } else if (!reconcileReadback(unresolved, remote)) {
+                            deferReadback(checkNotNull(mutable.value.save), retryable = true)
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
                         currentCoroutineContext().ensureActive()
                         onFailure(error)
                         if (!authorized()) return
-                        handleSaveFailure(
-                            save,
-                            readback = unresolved != null,
-                            retryable =
-                                error.retryable() || error is ApiFailure.IncompatibleResponse,
-                        )
+                        handleSaveFailure(save, readback = unresolved != null, error = error)
                     }
                     0L
                 }
@@ -449,54 +456,87 @@ internal class DefaultModelSettings(
     private fun applySaveResponse(
         request: UpdateDefaultModelPreference,
         response: DefaultModelPreference,
-        readback: Boolean,
     ) {
         val current = mutable.value
         val latest = checkNotNull(current.save)
-        val fulfilled =
-            if (readback) latest.request.matches(response) else latest.request == request
-        val rolledBack = readback && latest.exhausted && !fulfilled
-        var confirmed = checkNotNull(current.record).confirm(request, response)
-        if (fulfilled && latest.request != request) {
-            confirmed = confirmed.confirm(latest.request, response)
-        }
+        val fulfilled = latest.request == request
         if (fulfilled) clearSaveFailure()
-        publishConfirmed(confirmed, save = latest.takeUnless { fulfilled || rolledBack })
-        if (rolledBack) reportSaveFailure(DefaultModelNotice.SaveRolledBack)
+        publishConfirmed(
+            checkNotNull(current.record).confirm(request, response),
+            save = latest.takeUnless { fulfilled },
+        )
     }
 
-    private fun handleSaveFailure(save: DefaultModelSave, readback: Boolean, retryable: Boolean) {
-        val rejected = !retryable && !readback
-        if (rejected) unconfirmedWrite = null
+    private fun reconcileReadback(
+        attempted: UpdateDefaultModelPreference,
+        response: DefaultModelPreference,
+        snapshot: DefaultModelRecord? = null,
+    ): Boolean {
+        val current = mutable.value
+        val latest = checkNotNull(current.save)
+        val fulfilled = latest.request.matches(response)
+        // The current value can confirm the user's choice. A different value is not a receipt
+        // for the old write. Only a distinct, explicitly requested edit can replace it.
+        if (!fulfilled && latest.request == attempted) return false
+
+        unconfirmedWrite = null
+        readbackBlocked = false
+        clearSaveFailure()
+        val confirmed =
+            snapshot
+                ?: checkNotNull(current.record).confirm(attempted, response).let { previous ->
+                    if (fulfilled && latest.request != attempted)
+                        previous.confirm(latest.request, response)
+                    else previous
+                }
+        publishConfirmed(
+            confirmed,
+            save = if (fulfilled) null else DefaultModelSave(latest.request),
+        )
+        return true
+    }
+
+    private fun handleSaveFailure(save: DefaultModelSave, readback: Boolean, error: Exception) {
+        val rejected = !readback && error.definitivelyRejectedWrite()
+        val undelivered = !readback && error.failedBeforeDelivery()
+        if (rejected || undelivered) unconfirmedWrite = null
         val current = mutable.value
         if (current.save !== save) return
         when {
-            rejected -> {
+            rejected || (undelivered && !save.canRetry) -> {
                 mutable.value = current.copy(save = null)
                 reportSaveFailure(DefaultModelNotice.SaveRolledBack)
             }
-            retryable && save.failedAttempts < preferenceSaveRetryDelays.size -> {
-                mutable.value =
-                    current.copy(
-                        save =
-                            save.copy(
-                                failedAttempts = save.failedAttempts + 1,
-                                lastFailureMillis = nowMillis(),
-                            )
-                    )
-            }
-            else -> {
-                // A final PUT can still have committed. Allow one check before giving up.
-                mutable.value =
-                    current.copy(
-                        save = save.copy(failedAttempts = preferenceSaveRetryDelays.size + 1)
-                    )
-                if (readback) {
-                    readbackBlocked = true
-                    reportSaveFailure(DefaultModelNotice.SaveUnconfirmed)
-                }
-            }
+            readback ->
+                deferReadback(save, error.retryable() || error is ApiFailure.IncompatibleResponse)
+            // An ambiguous PUT turns the remaining attempts into reads. Even if the last
+            // safe attempt loses its response, check once before reporting an unknown outcome.
+            else -> deferSave(save)
         }
+    }
+
+    private fun deferReadback(save: DefaultModelSave, retryable: Boolean) {
+        if (retryable && save.canRetry) {
+            deferSave(save)
+        } else {
+            readbackBlocked = true
+            mutable.value =
+                mutable.value.copy(
+                    save = save.copy(failedAttempts = preferenceSaveRetryDelays.size + 1)
+                )
+            reportSaveFailure(DefaultModelNotice.SaveUnconfirmed)
+        }
+    }
+
+    private fun deferSave(save: DefaultModelSave) {
+        mutable.value =
+            mutable.value.copy(
+                save =
+                    save.copy(
+                        failedAttempts = save.failedAttempts + 1,
+                        lastFailureMillis = nowMillis(),
+                    )
+            )
     }
 
     private suspend fun waitToSave(millis: Long) = coroutineScope {
@@ -580,6 +620,13 @@ private val DefaultModelState.canApplyScheduledRead: Boolean
 private fun Exception.retryable(): Boolean =
     this is ApiFailure.Network ||
         this is ApiFailure.Http && (status >= 500 || status == 408 || status == 429)
+
+private fun Exception.failedBeforeDelivery(): Boolean =
+    this is ApiFailure.Network && (cause is UnknownHostException || cause is ConnectException)
+
+private fun Exception.definitivelyRejectedWrite(): Boolean =
+    this is ApiFailure.Unauthenticated ||
+        this is ApiFailure.Http && status in 400..499 && status != 408
 
 private fun retryDelay(failures: Int): Long =
     retryDelays[(failures - 1).coerceAtMost(retryDelays.lastIndex)]
