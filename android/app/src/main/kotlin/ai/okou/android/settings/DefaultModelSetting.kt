@@ -43,7 +43,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -51,6 +55,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -113,12 +118,21 @@ private fun DefaultModelSheet(
 ) {
     val maxHeight = currentWindowSizeDp().height.dp * 0.86f
     SettingsModal(dismiss) { centered ->
-        val initialModel = remember { state.selected?.id }
+        val initialModel = remember { state.selected?.takeIf { it.canSelect }?.id }
         val reveal = remember { BringIntoViewRequester() }
+        val focus = remember { FocusRequester() }
+        val inputMode = LocalInputModeManager.current
         var positioned by remember { mutableStateOf(false) }
         val initialRow =
-            Modifier.bringIntoViewRequester(reveal).onGloballyPositioned { positioned = true }
-        LaunchedEffect(positioned) { if (positioned) reveal.bringIntoView() }
+            Modifier.focusRequester(focus).bringIntoViewRequester(reveal).onGloballyPositioned {
+                positioned = true
+            }
+        LaunchedEffect(positioned) {
+            if (positioned) {
+                if (inputMode.inputMode == InputMode.Keyboard) focus.requestFocus()
+                reveal.bringIntoView()
+            }
+        }
         Column(
             Modifier.fillMaxWidth()
                 .heightIn(max = maxHeight)
@@ -143,6 +157,7 @@ private fun DefaultModelSheet(
                         MaterialTheme.typography.titleLarge.copy(
                             fontSize = 22.sp,
                             lineHeight = 28.sp,
+                            fontWeight = FontWeight.SemiBold,
                         ),
                 )
             }
@@ -236,7 +251,12 @@ private fun ModelOption(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = textColor, style = MaterialTheme.typography.titleMedium)
+            Text(
+                title,
+                color = textColor,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             supportingText?.let {
                 Text(
                     it,
