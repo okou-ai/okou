@@ -169,12 +169,28 @@ configure = next(step for step in native if step.get('name') == 'Configure locke
 capture = next(step for step in native if step.get('name') == 'Capture promotion inputs')
 assert native.index(capture) < native.index(evidence) < native.index(cache)
 assert cache['with']['toolchain-file'] == '${{ env.IOS_ARCHIVE_DIR }}/toolchain.json'
-for event in ['merge_group', 'pull_request', 'workflow_dispatch']:
-    for decision in ['true', 'false', '']:
-        for step in [cache, receive, configure, simulator]:
-            expression = (step['if'].replace('github.event_name', repr(event))
-                .replace('steps.evidence.outputs.run_tests', repr(decision)).replace('||', 'or'))
-            assert eval(expression, {'__builtins__': {}}, {}) is (event != 'merge_group' or decision == 'true')
+assert ios['on']['workflow_dispatch']['inputs']['parallel_simulator_build']['default'] is False
+parallel = ios['env']['IOS_PARALLEL_SIMULATOR_BUILD'].removeprefix('${{').removesuffix('}}').strip()
+handoff = [step for step in native + ios['jobs']['test-packages']['steps']
+    if step.get('if') == "env.IOS_PARALLEL_SIMULATOR_BUILD == 'true'"]
+assert {s.get('id') for s in handoff} >= {'producer-sources', 'producer-cache', 'simulator-products'}
+assert any('ci-test.sh run' in s.get('run', '') for s in handoff)
+assert any('ci-test.sh build' in s.get('run', '') for s in handoff)
+for event in ['merge_group', 'pull_request', 'push', 'workflow_dispatch']:
+    for requested in [False, True]:
+        manual = event == 'workflow_dispatch' and requested
+        mode_expr = (parallel.replace('github.event_name', repr(event))
+            .replace('inputs.parallel_simulator_build', repr(requested)).replace('&&', 'and').replace('||', 'or'))
+        mode = eval(mode_expr, {'__builtins__': {}}, {})
+        assert mode == ('true' if manual else 'false')
+        for decision in ['true', 'false', '']:
+            for step in [cache, receive, configure, simulator]:
+                expression = (step['if'].replace('github.event_name', repr(event))
+                    .replace('env.IOS_PARALLEL_SIMULATOR_BUILD', repr(mode))
+                    .replace('steps.evidence.outputs.run_tests', repr(decision))
+                    .replace('&&', 'and').replace('||', 'or'))
+                assert eval(expression, {'__builtins__': {}}, {}) is (
+                    not manual and (event != 'merge_group' or decision == 'true'))
 test_job = ios['jobs']['build-test']
 archive_job = ios['jobs']['build-archive']
 package_job = ios['jobs']['test-packages']
