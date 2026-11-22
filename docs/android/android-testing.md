@@ -108,7 +108,7 @@ that configuration; OEM input methods and physical-device latency need their own
 evidence.
 
 Prefer build-managed device provisioning/execution/teardown over a second custom
-emulator lifecycle. Give each case an isolated fixture identity and store. Before
+emulator lifecycle. Isolate any fixture identity and stores a case uses. Before
 changing device settings, save their original values, including whether an
 override was present. On success and failure, release held fixture responses,
 close Activity owners, restore settings and stores, and release adopted
@@ -132,9 +132,10 @@ timeouts or repeated input as substitutes for synchronization.
   relevant. After input or Back, verify the expected text, focus, insets, or
   dismissal of the intended keyboard, popup or destination.
 - **Gestures and animations.** Use controlled Compose input for exact distances,
-  thresholds and animation frames. On a device, calculate points from the current
-  visible bounds, allow margin from the system gesture area, and verify outcomes
-  such as a row returning, being archived or being restored by Undo. Android can
+  thresholds and animation frames. For an in-app gesture on a device, calculate
+  points from the current visible bounds and stay clear of system gesture areas.
+  Verify outcomes such as a row returning, being archived or being restored by
+  Undo. Android can
   resample touch events before app delivery. A device assertion about geometry
   needs a defined coordinate space and tolerance that accounts for sampling and
   rounding.
