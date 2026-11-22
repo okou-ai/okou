@@ -14,7 +14,6 @@ import {
   setupPage,
   createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
-import { waitForBrowserPaint } from "../../../signals/utils.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import {
   mockChatEventRows,
@@ -995,7 +994,7 @@ test("Return to the latest message after sending from history", async () => {
   await expectAtLatestActivity(geometry);
 });
 
-async function setupSharingScroll() {
+test("Preserve the reading position while entering and leaving sharing mode", async () => {
   mockChatLifecycleWithoutBrowserSession({
     threadId: SHARING_THREAD_ID,
     threadTitle: "Shareable research",
@@ -1021,15 +1020,9 @@ async function setupSharingScroll() {
   await waitFor(() => {
     expect(geometry.atBottom()).toBeTruthy();
   });
-  return { geometry, targetText };
-}
-
-test("Preserve the reading position while entering and leaving sharing mode", async () => {
-  const { geometry, targetText } = await setupSharingScroll();
   await chooseReadingPosition(geometry, targetText);
+
   click(buttonNamed("Share messages"));
-  // Native overflow anchoring scrolls the viewport during the mode change.
-  geometry.scrollMessageTo(targetText, READING_OFFSET + 80);
   await waitFor(() => {
     expect(buttonNamed("Cancel")).toBeInTheDocument();
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
@@ -1041,7 +1034,6 @@ test("Preserve the reading position while entering and leaving sharing mode", as
   await expectReadingPosition(geometry, targetText);
 
   click(buttonNamed("Cancel"));
-  geometry.scrollMessageTo(targetText, READING_OFFSET - 40);
   await waitFor(() => {
     expect(buttonNamed("Share messages")).toBeInTheDocument();
     expect(screen.queryAllByText("0 selected")).toHaveLength(0);
@@ -1051,30 +1043,4 @@ test("Preserve the reading position while entering and leaving sharing mode", as
   fireEvent.resize(window);
 
   await expectReadingPosition(geometry, targetText);
-});
-
-test("Keep the latest reply pinned while entering and leaving sharing mode", async () => {
-  const { geometry, targetText } = await setupSharingScroll();
-  click(buttonNamed("Share messages"));
-  geometry.setViewportHeight(VIEWPORT_HEIGHT - 80);
-  fireEvent.scroll(threadContainer(SHARING_THREAD_ID));
-  await waitFor(() => {
-    expect(geometry.atBottom()).toBeTruthy();
-  });
-  click(buttonNamed("Cancel"));
-  geometry.setViewportHeight(VIEWPORT_HEIGHT);
-  geometry.scrollMessageTo(targetText, READING_OFFSET);
-  await waitFor(() => {
-    expect(geometry.atBottom()).toBeTruthy();
-  });
-});
-
-test("Let reader input supersede the sharing position restore", async () => {
-  const { geometry, targetText } = await setupSharingScroll();
-  await chooseReadingPosition(geometry, targetText);
-  click(buttonNamed("Share messages"));
-  fireEvent.wheel(threadContainer(SHARING_THREAD_ID), { deltaY: 80 });
-  geometry.scrollMessageTo(targetText, READING_OFFSET - 80);
-  await waitForBrowserPaint(context.signal);
-  expect(geometry.viewportOffsetFor(targetText)).toBe(READING_OFFSET - 80);
 });

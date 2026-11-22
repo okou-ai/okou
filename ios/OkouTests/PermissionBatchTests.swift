@@ -16,9 +16,15 @@ final class PermissionBatchTests: XCTestCase {
     let markdown = MessageMarkdownCache(baseURL: webURL)
     defer { markdown.clear() }
     let link = FixtureData.actionURL()
+    let single = PermissionHTTPFixture.actionURL()
+    let otherMember = link.replacingOccurrences(of: ChatHTTPFixture.userID, with: "user_other")
     let fence = String(repeating: "\u{60}", count: 3)
     let source = """
-      [Review permissions](\(link))
+      https://app.okou.ai\(link)
+
+      [Review one permission](\(single))
+
+      [Another member](\(otherMember))
 
       \(fence)
       \(link)
@@ -27,10 +33,21 @@ final class PermissionBatchTests: XCTestCase {
       [Untrusted](https://evil.invalid\(link))
       """
     let content = await markdown.content(for: source)
-    let blocks = MessageActionBody.blocks(
-      content, webURL: webURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID)
-    let actions = blocks.compactMap { block -> ChatPermissionBatchAction? in
-      if case .permissionBatch(let action) = block { return action }
+    let plan = MessageRenderPlan(
+      content: content, source: source,
+      context: .init(
+        webURL: webURL, action: .init(agentID: nil, threadID: FixtureData.threadID),
+        permissionMember: .init(
+          userID: ChatHTTPFixture.userID, workspaceID: ChatHTTPFixture.workspaceID), artifacts: nil)
+    )
+    guard case .group(let units, _) = plan.root else {
+      return XCTFail("Expected native action cards")
+    }
+    XCTAssertEqual(units.filter { if case .permission = $0 { true } else { false } }.count, 1)
+    XCTAssertEqual(
+      units.filter { if case .unavailablePermission = $0 { true } else { false } }.count, 1)
+    let actions = units.compactMap { unit -> ChatPermissionBatchAction? in
+      if case .permissionBatch(let action) = unit { return action }
       return nil
     }
     XCTAssertEqual(actions.count, 1)
@@ -55,6 +72,47 @@ final class PermissionBatchTests: XCTestCase {
     let requests = fixture.state.withLock { $0.requests }
     XCTAssertEqual(requests.filter { $0.httpMethod == "PUT" }.count, 2)
     XCTAssertEqual(requests.filter { $0.url!.path == "/api/chat/events" }.count, 1)
+  }
+
+  func testOneHourNeonApprovalWritesBothPermissionsThenContinuesItsChat() async throws {
+    let items = ["branches:create", "branches:delete"].map {
+      ["connectorSlug": "neon", "permission": $0]
+    }
+    var state = FixtureData.State()
+    let deadline = Date(timeIntervalSince1970: floor(Date.now.timeIntervalSince1970) + 3600)
+    state.grantExpiry = deadline.formatted(.iso8601)
+    let fixture = FixtureData(items: items, initial: state, onUnhandledRequest: { XCTFail($0) })
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    XCTAssertEqual(card.action.items.map(\.permission), ["branches:create", "branches:delete"])
+    XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+    card.duration = .hour
+    await card.confirm()
+    XCTAssertNil(card.error)
+    let requests = fixture.state.withLock { $0.requests.filter { $0.httpMethod != "GET" } }
+    XCTAssertEqual(
+      requests.compactMap { $0.url?.path }, ["/api/connector-permissions", "/api/chat/events"])
+    let write = try XCTUnwrap(requests.first)
+    let patch = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: chatRequestBody(write)) as? [String: Any])
+    XCTAssertEqual(
+      patch["target"] as? [String: String], ["kind": "builtin", "connectorSlug": "neon"])
+    XCTAssertEqual(
+      patch["grants"] as? [[String: String]],
+      items.map {
+        ["permission": $0["permission"]!, "action": "allow", "expiresIn": "1h"]
+      })
+    let grants = try XCTUnwrap(card.snapshot?.groups.first?.grants)
+    XCTAssertEqual(grants.map(\.expiresAt), [deadline, deadline])
+    XCTAssertTrue(
+      grants.allSatisfy {
+        $0.isActive(at: deadline.addingTimeInterval(-1)) && !$0.isActive(at: deadline)
+      })
+    let callback = try XCTUnwrap(requests.last)
+    let prompt = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: chatRequestBody(callback)) as? [String: Any])
+    XCTAssertEqual(prompt["threadId"] as? String, FixtureData.threadID)
+    XCTAssertEqual(prompt["prompt"] as? String, "Continue after permissions")
   }
 
   func testFirstConfirmationPublishesTheReceiptBeforeConversationRefreshCompletes() async throws {
@@ -214,7 +272,6 @@ final class PermissionBatchTests: XCTestCase {
       let action = try XCTUnwrap(
         ChatPermissionBatchAction(
           value: FixtureData.actionURL(callback: false), webURL: fixture.http.baseURL,
-          agentID: FixtureData.agentID,
           threadID: UUID().uuidString))
       _ = conversation.permissionActions.resources.read(action)
     }
@@ -244,7 +301,7 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(card.duration, .day)
     let writes = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }
     await card.confirm()
-    XCTAssertFalse(card.canConfirm)
+    XCTAssertNotNil(card.error)
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, writes)
     conversation.close()
@@ -313,7 +370,7 @@ final class PermissionBatchTests: XCTestCase {
       ChatPermissionBatchAction(
         value: FixtureData.actionURL(
           items: Array(FixtureData.items.reversed()), callback: false, duration: "24h"),
-        webURL: fixture.http.baseURL, agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+        webURL: fixture.http.baseURL, threadID: FixtureData.threadID))
     let other = conversation.permissionActions.card(action)
     blocks.withLock { $0 = true }
     let one = Task { await card.refresh() }
@@ -432,7 +489,7 @@ final class PermissionBatchTests: XCTestCase {
     let sync = ChatSync(client: fixture.http.client)
     let commands = ChatCommands(client: fixture.http.client, sync: sync)
     let thread = ChatThread(
-      id: FixtureData.threadID, agentID: FixtureData.agentID, title: "Batch permissions",
+      id: FixtureData.threadID, agentID: nil, title: "Batch permissions",
       createdAt: .now,
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     let conversation = ConversationStore(
@@ -443,8 +500,7 @@ final class PermissionBatchTests: XCTestCase {
     conversation.permissionActions.activate(owner: UUID())
     let action = try XCTUnwrap(
       ChatPermissionBatchAction(
-        value: FixtureData.actionURL(), webURL: fixture.http.baseURL, agentID: FixtureData.agentID,
-        threadID: FixtureData.threadID
+        value: fixture.link, webURL: fixture.http.baseURL, threadID: FixtureData.threadID
       ))
     let card = conversation.permissionActions.card(action)
     await card.refresh()

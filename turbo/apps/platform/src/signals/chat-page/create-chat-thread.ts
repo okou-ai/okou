@@ -64,16 +64,14 @@ import type {
 } from "./chat-event-types.ts";
 import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
 import { createChatRunUsageSignals } from "./chat-run-usage.ts";
-import {
-  createTranscriptPages,
-  createTranscriptWindow,
-} from "./chat-transcript-pages.ts";
 import { createChatThreadRows } from "./chat-thread-rows.ts";
 import { createThreadDraftLoad } from "./chat-thread-draft.ts";
 import {
   createChatThreadScrollSignals,
   createThreadScrollPositionSignals,
   type ChatThreadScrollSignals,
+  type ReadyScrollAfterRenderRequest,
+  type ScrollAfterRenderRequest,
   type ThreadScrollPosition,
 } from "./chat-thread-scroll.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -2336,13 +2334,7 @@ function createEventChangeEffects({
       const scrollPosition = followLatest
         ? null
         : set(scroll.readCapturedThreadScrollPosition$);
-      // A background tab may suspend RAF. Receiving the next batch must not
-      // wait for the viewport; a newer scroll request supersedes this one.
-      detach(
-        set(scroll.autoScroll$, scrollPosition, "instant", signal),
-        Reason.Deferred,
-        "align the updated transcript after paint",
-      );
+      await set(scroll.autoScroll$, scrollPosition, signal);
     },
   );
   const afterEventsChange$ = command(
@@ -2418,6 +2410,31 @@ function createChatEventPresentationLifecycle({
   return { setup$, catchUp$ };
 }
 
+function createReadyScrollAfterRenderRequest(
+  pendingScrollAfterRenderRequest$: Computed<ScrollAfterRenderRequest | null>,
+  visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>,
+): Computed<Promise<ReadyScrollAfterRenderRequest | null>> {
+  return computed(async (get) => {
+    const request = get(pendingScrollAfterRenderRequest$);
+    if (request === null) {
+      return null;
+    }
+    const renderedGroups = await get(visibleRenderedChatGroups$);
+    const currentRequest = get(pendingScrollAfterRenderRequest$);
+    if (currentRequest?.revision !== request.revision) {
+      return null;
+    }
+    return {
+      request,
+      renderedEventKeys: renderedGroups.flatMap((group) => {
+        return group.events.map((event) => {
+          return `${event.id}:${event.isQueued ? "queued" : "active"}`;
+        });
+      }),
+    };
+  });
+}
+
 const EARLIER_GROUPS_LOAD_TOP_THRESHOLD_PX = 100;
 // Safari reverts a scrollTop write made while its scrolling thread still
 // animates a gesture, momentum, or smooth scroll. Every animated frame delivers
@@ -2446,7 +2463,7 @@ function createLoadEarlierGroupsAfterScroll(
       const didPrepend = await set(loadMoreGroups$, signal);
       signal.throwIfAborted();
       if (didPrepend) {
-        await set(scroll.autoScroll$, scrollPosition, "instant", signal);
+        await set(scroll.autoScroll$, scrollPosition, signal);
         signal.throwIfAborted();
       }
       return didPrepend;
@@ -2513,21 +2530,17 @@ function createChatThreadMessagePipeline({
   });
   const afterPositionChanged$ = createEnsureVisibleEventTreesAfterScroll(
     renderWindow.ensureVisibleEventTrees$,
-    renderWindow.transcriptPages.rangePrepared$,
   );
   const scroll = createChatThreadScrollSignals(
     threadId,
     position,
     {
       afterThreadScrollPositionChanged$: afterPositionChanged$,
-      positionInSpacer$: renderWindow.transcriptPages.positionInSpacer$,
-      awaitingAnchor$: renderWindow.transcriptPages.awaitingAnchor$,
-      tailMounted$: renderWindow.transcriptPages.tailMounted$,
       preloadPreviousRenderWindowForEvent$:
         renderWindow.preloadPreviousRenderWindowForEvent$,
       loadEarlierGroups$: renderWindow.loadMoreRenderedChatGroups$,
     },
-    chatEvents,
+    chatEvents.chatEvents$,
     initialEventsReadyView$,
   );
   const effects = createEventChangeEffects({
@@ -2546,14 +2559,15 @@ function createChatThreadMessagePipeline({
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,
     initialEventsReady$,
   });
-  // Recovery belongs to the latest run even while its rows are outside the window.
   const assistantErrorRecovery = createAssistantErrorRecoverySignals({
     threadId,
     chatEvents,
-    visibleRenderedChatGroups$: computed((get) => {
-      return Promise.resolve(get(projections.allSemanticChatGroups$));
-    }),
+    visibleRenderedChatGroups$: renderWindow.visibleRenderedChatGroups$,
   });
+  const readyScrollAfterRenderRequest$ = createReadyScrollAfterRenderRequest(
+    scroll.pendingScrollAfterRenderRequest$,
+    renderWindow.visibleRenderedChatGroups$,
+  );
   const loadEarlierGroupsAfterScroll$ = createLoadEarlierGroupsAfterScroll(
     scroll,
     renderWindow.loadMoreRenderedChatGroups$,
@@ -2573,6 +2587,7 @@ function createChatThreadMessagePipeline({
     ...resources.publicSignals,
     visibleRunUsageSignals$: usage.visibleRunUsageSignals$,
     ...renderWindow,
+    readyScrollAfterRenderRequest$,
     loadEarlierGroupsAfterScroll$,
   };
 }
@@ -2801,7 +2816,6 @@ interface ChatRenderWindowOptions {
 }
 
 interface PreloadPreviousRenderWindowOptions {
-  readonly virtualRange$: ReturnType<typeof createTranscriptPages>["range$"];
   readonly cursorGroupId$: State<string | null>;
   readonly allSemanticChatGroups$: Computed<ChatEventGroup[]>;
   readonly ensureVisibleEventTrees$: Command<
@@ -2811,7 +2825,6 @@ interface PreloadPreviousRenderWindowOptions {
 }
 
 function createPreloadPreviousRenderWindowForEvent({
-  virtualRange$,
   cursorGroupId$,
   allSemanticChatGroups$,
   ensureVisibleEventTrees$,
@@ -2827,9 +2840,6 @@ function createPreloadPreviousRenderWindowForEvent({
     ): Promise<void> => {
       const groups = get(allSemanticChatGroups$);
       signal.throwIfAborted();
-      if (get(virtualRange$)) {
-        return;
-      }
       const targetStartIndex = eventRunStartIndex(groups, eventId);
       if (targetStartIndex === null) {
         return;
@@ -2909,6 +2919,24 @@ function createEnsureVisibleEventTrees({
   );
 }
 
+function createRenderedVisibleChatGroups(
+  visibleChatGroups$: Computed<ChatEventGroup[]>,
+  eventRenderResources$: Computed<ChatEventRenderResources>,
+) {
+  const renderedVisibleChatGroups$ = computed((get): ChatEventGroup[] => {
+    return renderChatGroups(
+      get(visibleChatGroups$),
+      get(eventRenderResources$),
+    );
+  });
+  const visibleRenderedChatGroups$ = computed(
+    (get): Promise<ChatEventGroup[]> => {
+      return Promise.resolve(get(renderedVisibleChatGroups$));
+    },
+  );
+  return { renderedVisibleChatGroups$, visibleRenderedChatGroups$ };
+}
+
 function createChatRenderWindow({
   allSemanticChatGroups$,
   threadScrollPosition$,
@@ -2924,20 +2952,8 @@ function createChatRenderWindow({
   // its pane shows this thread; a later visit restores from the reading
   // position alone.
   const cursorGroupId$ = state<string | null>(null);
-  const transcriptWindow = createTranscriptWindow(
-    allSemanticChatGroups$,
-    threadScrollPosition$,
-  );
-  const includesTail$ = computed((get) => {
-    const range = get(transcriptWindow.range$);
-    return !range || range.end === get(allSemanticChatGroups$).length;
-  });
   const visibleChatGroups$ = computed((get): ChatEventGroup[] => {
     const groups = get(allSemanticChatGroups$);
-    const range = get(transcriptWindow.range$);
-    if (range) {
-      return groups.slice(range.start, range.end);
-    }
     const requestedStartIndex = renderWindowStartIndex(
       groups,
       get(cursorGroupId$),
@@ -2956,23 +2972,12 @@ function createChatRenderWindow({
         : Math.min(requestedStartIndex, targetStartIndex),
     );
   });
-  const renderedVisibleChatGroups$ = computed((get) => {
-    return renderChatGroups(
-      get(visibleChatGroups$),
-      get(eventRenderResources$),
-    );
-  });
+  const { renderedVisibleChatGroups$, visibleRenderedChatGroups$ } =
+    createRenderedVisibleChatGroups(visibleChatGroups$, eventRenderResources$);
   const { visibleRows$, syncVisibleRows$ } = createChatThreadRows({
-    includesTail$,
     renderedGroups$: renderedVisibleChatGroups$,
     threadScrollPosition$,
   });
-
-  const transcriptPages = createTranscriptPages(
-    transcriptWindow,
-    visibleRows$,
-    threadScrollPosition$,
-  );
 
   /**
    * Prepares resources for every event currently in the render window. Every
@@ -2993,7 +2998,6 @@ function createChatRenderWindow({
 
   const preloadPreviousRenderWindowForEvent$ =
     createPreloadPreviousRenderWindowForEvent({
-      virtualRange$: transcriptPages.range$,
       cursorGroupId$,
       allSemanticChatGroups$,
       ensureVisibleEventTrees$,
@@ -3003,13 +3007,6 @@ function createChatRenderWindow({
     async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
       const groups = get(allSemanticChatGroups$);
       signal.throwIfAborted();
-      if (get(transcriptPages.range$)) {
-        if (!set(transcriptPages.fillViewport$)) {
-          return false;
-        }
-        await set(ensureVisibleEventTrees$, false, signal);
-        return true;
-      }
       const requestedStartIndex = renderWindowStartIndex(
         groups,
         get(cursorGroupId$),
@@ -3035,7 +3032,7 @@ function createChatRenderWindow({
   );
 
   return {
-    transcriptPages,
+    visibleRenderedChatGroups$,
     visibleRows$,
     ensureVisibleEventTrees$,
     preloadPreviousRenderWindowForEvent$,
@@ -3045,12 +3042,8 @@ function createChatRenderWindow({
 
 function createEnsureVisibleEventTreesAfterScroll(
   ensureVisibleEventTrees$: Command<Promise<void>, [boolean, AbortSignal]>,
-  rangePrepared$: Computed<boolean>,
 ): Command<Promise<void>, [AbortSignal]> {
-  return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    if (get(rangePrepared$)) {
-      return;
-    }
+  return command(async ({ set }, signal: AbortSignal): Promise<void> => {
     await set(ensureVisibleEventTrees$, false, signal);
   });
 }
@@ -3627,9 +3620,10 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
+    visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
     visibleRows$: events.visibleRows$,
-    transcriptPages: events.transcriptPages,
     visibleRunUsageSignals$: events.visibleRunUsageSignals$,
+    readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
@@ -3956,6 +3950,7 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
   return {
     scrollContainerOnRef$: scroll.scrollContainerOnRef$,
     scrollContentOnRef$: scroll.scrollContentOnRef$,
+    scrollCommitOnRef$: scroll.scrollCommitOnRef$,
     scrollContainer$: scroll.scrollContainer$,
     threadScrollPosition$: scroll.threadScrollPosition$,
     awayFromBottom$: scroll.awayFromBottom$,

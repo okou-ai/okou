@@ -4,6 +4,8 @@ import ai.okou.android.BuildConfig
 import ai.okou.android.api.generated.AndroidUpgradeRequired
 import ai.okou.android.api.generated.ApiError
 import ai.okou.android.api.generated.ApiHeaders
+import ai.okou.android.api.generated.ArtifactCatalogQuery
+import ai.okou.android.api.generated.ArtifactDetailQuery
 import ai.okou.android.api.generated.CanonicalApi
 import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
@@ -23,13 +25,17 @@ import ai.okou.android.api.generated.RealtimeTokenRequest
 import ai.okou.android.api.generated.RenameProjectRequest
 import ai.okou.android.api.generated.RenameThreadRequest
 import ai.okou.android.api.generated.ReorderPinnedThreadRequest
+import ai.okou.android.api.generated.ResolveArtifactReferenceQuery
 import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.api.generated.artifactCatalog
+import ai.okou.android.api.generated.artifactDetail
 import ai.okou.android.api.generated.historyRows
+import ai.okou.android.api.generated.resolveArtifactReference
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.plainDraftDocument
@@ -246,6 +252,26 @@ class ApiClient(
     }
 
     suspend fun threadDetail(threadId: String) = execute { reads.threadDetail(it, threadId) }
+
+    internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = execute {
+        reads.artifactCatalog(it, query)
+    }
+
+    internal suspend fun artifactDetail(id: String) = execute {
+        reads.artifactDetail(it, id, ArtifactDetailQuery())
+    }
+
+    internal suspend fun resolveArtifactReference(reference: String) = execute {
+        reads.resolveArtifactReference(it, reference, ResolveArtifactReferenceQuery())
+    }
+
+    internal suspend fun artifactDownload(reference: String) = execute {
+        reads.artifactDownload(it, reference)
+    }
+
+    internal suspend fun artifactSitePreview(slug: String, host: String) = execute {
+        reads.artifactSitePreview(it, slug, host)
+    }
 
     suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
 

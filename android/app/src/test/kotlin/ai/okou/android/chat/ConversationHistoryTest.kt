@@ -1162,4 +1162,14 @@ class ConversationHistoryTest {
         assertTrue(numbered.text.contains("7. nested"))
         assertTrue(numbered.text.contains("4. second"))
     }
+
+    @Test
+    fun artifactMarkdownKeepsTightListsAndParagraphBreaks() {
+        val source = "1. First\n2. Second\n\nA paragraph.\n\nAnother paragraph."
+        assertEquals(
+            "1. First\n2. Second\n\nA paragraph.\n\nAnother paragraph.",
+            renderHistoryMarkdown(source, compactLists = true).text,
+        )
+        assertTrue(renderHistoryMarkdown(source).text.contains("First\n\n2. Second"))
+    }
 }

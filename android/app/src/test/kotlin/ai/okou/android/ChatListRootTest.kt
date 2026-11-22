@@ -110,17 +110,16 @@ class ChatListRootTest {
     @Test
     @Config(qualifiers = "en-rUS-w320dp-h800dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun workspaceToolEntriesAreVisibleButDisabledOnTheList() {
+    fun workspaceToolEntriesAreVisibleWithArtifactsEnabled() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
         awaitListAndNames()
         val entries =
             listOf("Workflows", "Connectors", "Artifacts").map {
-                compose
-                    .onNodeWithContentDescription(it)
-                    .assertIsDisplayed()
-                    .assertIsNotEnabled()
-                    .assertHasNoClickAction()
+                val entry = compose.onNodeWithContentDescription(it).assertIsDisplayed()
+                if (it == "Artifacts") entry.assertIsEnabled()
+                else entry.assertIsNotEnabled().assertHasNoClickAction()
+                entry
             }
         val search = compose.onNodeWithContentDescription("Search workspace")
         val searchBounds = search.getUnclippedBoundsInRoot()
@@ -140,7 +139,7 @@ class ChatListRootTest {
         search.performClick()
         entries.forEach { it.assertDoesNotExist() }
         compose.onNodeWithContentDescription("Back").performClick()
-        entries.forEach { it.assertIsDisplayed().assertIsNotEnabled() }
+        entries.forEach { it.assertIsDisplayed() }
     }
 
     @Test

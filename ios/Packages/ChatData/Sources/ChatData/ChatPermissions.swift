@@ -70,7 +70,6 @@ public struct ChatPermissionMetadata: Decodable, Sendable {
 }
 
 public struct ChatPermissionSnapshot: Sendable {
-  public let agentName: String?
   public let metadata: ChatPermissionMetadata?
   public let grants: [ChatPermissionRule]
 }
@@ -81,7 +80,7 @@ public struct ChatPermissions: Sendable {
   public init(client: APIClient) { self.client = client }
 
   public func load(_ action: ChatPermissionAction) async throws -> ChatPermissionSnapshot {
-    try await validateContext(action)
+    try validateMember(action.member)
     return try await connectorPermissions(slug: action.connectorSlug)
   }
 
@@ -89,7 +88,6 @@ public struct ChatPermissions: Sendable {
     _ action: ChatPermissionAction, duration: ChatPermissionAction.Duration,
     reviewing current: ChatPermissionSnapshot
   ) async throws -> ChatPermissionSnapshot {
-    // Revalidate before writing: the conversation must still be accessible.
     try await validateContext(action)
     guard let metadata = current.metadata, metadata.connectorSlug == action.connectorSlug,
       metadata.contains(action.permission)
@@ -115,13 +113,13 @@ public struct ChatPermissions: Sendable {
       })
     else { throw APIClientError.invalidResponse }
     return ChatPermissionSnapshot(
-      agentName: current.agentName, metadata: metadata, grants: result)
+      metadata: metadata, grants: result)
   }
 
   func connectorPermissions(slug: String) async throws -> ChatPermissionSnapshot {
     async let rules = connectorGrants(slug: slug)
     async let metadata = self.metadata(slug: slug)
-    return try await ChatPermissionSnapshot(agentName: nil, metadata: metadata, grants: rules)
+    return try await ChatPermissionSnapshot(metadata: metadata, grants: rules)
   }
 
   func connectorGrants(slug: String) async throws -> [ChatPermissionRule] {
@@ -157,10 +155,24 @@ public struct ChatPermissions: Sendable {
   }
 
   public func validateContext(_ action: ChatPermissionAction) async throws {
-    let thread: ThreadMetadata = try await client.request(
-      "/api/chat-threads/\(action.threadID)/metadata")
-    guard UUID(uuidString: thread.id) == UUID(uuidString: action.threadID)
-    else { throw ChatError.invalidContract("This request no longer belongs to this chat.") }
+    try await validateContext(
+      member: action.member, callbackThreadID: action.callbackPrompt == nil ? nil : action.threadID)
   }
 
+  func validateMember(_ member: WorkspaceMemberID) throws {
+    // This client obtains every token from its original user/session/workspace scope.
+    guard client.member == member else {
+      throw ChatError.invalidContract(
+        "This permission request belongs to a different workspace member.")
+    }
+  }
+
+  func validateContext(member: WorkspaceMemberID, callbackThreadID: String?) async throws {
+    try validateMember(member)
+    guard let callbackThreadID else { return }
+    let thread: ThreadMetadata = try await client.request(
+      "/api/chat-threads/\(callbackThreadID)/metadata")
+    guard UUID(uuidString: thread.id) == UUID(uuidString: callbackThreadID)
+    else { throw ChatError.invalidContract("This request no longer belongs to this chat.") }
+  }
 }

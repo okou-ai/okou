@@ -39,19 +39,17 @@ impl ConnState {
     }
 
     pub(super) fn update_from_connected(&mut self, msg: &ProtocolMessage) {
+        let details = msg.connection_details.as_ref();
         self.connection_id = msg.connection_id.clone();
-        self.server_id = msg
-            .connection_details
-            .as_ref()
-            .and_then(|details| details.server_id.clone());
-        if let Some(ref key) = msg.connection_key {
+        self.server_id = details.and_then(|details| details.server_id.clone());
+        let key = details
+            .and_then(|details| details.connection_key.as_ref())
+            .or(msg.connection_key.as_ref());
+        if let Some(key) = key {
             self.connection_key = Some(key.clone());
         }
 
-        if let Some(ref details) = msg.connection_details {
-            if let Some(ref key) = details.connection_key {
-                self.connection_key = Some(key.clone());
-            }
+        if let Some(details) = details {
             if let Some(ttl) = details.connection_state_ttl
                 && let Some(ttl) = positive_external_millis(ttl)
             {

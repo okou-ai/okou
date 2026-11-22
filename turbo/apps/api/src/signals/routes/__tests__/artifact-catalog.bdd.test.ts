@@ -475,6 +475,10 @@ describe("GET /api/artifacts/catalog", () => {
     }
     // The publish-time API response already supplies the original identity.
     const originalCatalog = publications[0]!.catalog;
+    const artifactId = originalCatalog.artifacts[0]!.id;
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.toMatchObject({ sourceChatThreadId: first.threadId });
     await completeChatRunOk(first.runId, execution.sandboxHeaders);
     const second = await sendChatRun(owner.actor, {
       prompt: "Reuse the private video",
@@ -506,6 +510,9 @@ describe("GET /api/artifacts/catalog", () => {
     await expect(chat.listArtifactCatalog(owner.actor)).resolves.toMatchObject({
       artifacts: [{ id: originalCatalog.artifacts[0]!.id }],
     });
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.not.toHaveProperty("sourceChatThreadId");
     await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
   });
 
@@ -1353,6 +1360,8 @@ describe("GET /api/artifacts/catalog", () => {
     if (detail.kind !== "hosted-site") {
       throw new Error("Expected a hosted site to be catalogued as hosted-site");
     }
+    const { sourceChatThreadId, ...detailWithoutSource } = detail;
+    expect(sourceChatThreadId).toBe(hosted.threadId);
     expect(entry.id).toBe(initialArtifact.id);
     // The entry follows the site's newest publication.
     expect(detail.site).toMatchObject({
@@ -1384,7 +1393,7 @@ describe("GET /api/artifacts/catalog", () => {
     );
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, entry.id),
-    ).resolves.toStrictEqual(detail);
+    ).resolves.toStrictEqual(detailWithoutSource);
 
     // A real later publication must not reattach the artifact after deletion
     // cleared its original thread, even when the projection stays in B.
@@ -2086,6 +2095,8 @@ describe("shared thread routes", () => {
     }
     const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
     expect(detail.kind).toBe("shared-thread");
+    const { sourceChatThreadId, ...detailWithoutSource } = detail;
+    expect(sourceChatThreadId).toBe(run.threadId);
     // Neither selected message contains a file. The source-thread association
     // must exist independently of uploaded-file projections.
     const firstPage = await chat.listArtifactCatalog(owner.actor, {
@@ -2161,7 +2172,7 @@ describe("shared thread routes", () => {
     ).resolves.toStrictEqual(catalog);
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, artifactId),
-    ).resolves.toStrictEqual(detail);
+    ).resolves.toStrictEqual(detailWithoutSource);
 
     webhooks.configureClerkWebhookSecret();
     context.mocks.stripe.subscriptions.list.mockResolvedValue({

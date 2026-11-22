@@ -22,7 +22,6 @@ public struct ChatPermissionBatchSnapshot: Sendable {
   }
 
   public let enabled: Bool
-  public let agentName: String?
   public let groups: [Group]
   public var complete: Bool {
     enabled && !groups.isEmpty
@@ -46,13 +45,12 @@ public struct ChatBatchPermissions: Sendable {
   public func load(
     _ action: ChatPermissionBatchAction
   ) async throws -> ChatPermissionBatchSnapshot {
+    try ChatPermissions(client: client).validateMember(action.member)
     let features: SidebarFeatureSwitches = try await client.request("/api/feature-switches")
     guard features.effectiveSwitches["batchConnectorPermissions"] == true else {
-      return ChatPermissionBatchSnapshot(enabled: false, agentName: nil, groups: [])
+      return ChatPermissionBatchSnapshot(enabled: false, groups: [])
     }
-    try await validateContext(action)
-    return try await ChatPermissionBatchSnapshot(
-      enabled: true, agentName: nil, groups: loadGroups(action))
+    return try await ChatPermissionBatchSnapshot(enabled: true, groups: loadGroups(action))
   }
 
   private func loadGroups(
@@ -84,25 +82,22 @@ public struct ChatBatchPermissions: Sendable {
   }
 
   public func validateContext(_ action: ChatPermissionBatchAction) async throws {
-    let thread: ThreadMetadata = try await client.request(
-      "/api/chat-threads/\(action.threadID)/metadata")
-    guard UUID(uuidString: thread.id) == UUID(uuidString: action.threadID)
-    else { throw ChatError.invalidContract("This request no longer belongs to this chat.") }
+    try await ChatPermissions(client: client).validateContext(
+      member: action.member, callbackThreadID: action.callbackPrompt == nil ? nil : action.threadID)
   }
 
   public func apply(
     _ action: ChatPermissionBatchAction, duration: ChatPermissionAction.Duration,
     reviewing reviewed: ChatPermissionBatchSnapshot
   ) async throws -> ChatPermissionBatchSnapshot {
-    async let context: Void = validateContext(action)
+    try await validateContext(action)
     let features: SidebarFeatureSwitches = try await client.request("/api/feature-switches")
     guard features.effectiveSwitches["batchConnectorPermissions"] == true else {
       throw ChatError.invalidContract("These permissions are no longer available.")
     }
     // Fresh rules preserve existing expirations. The write endpoint validates its current catalog.
     let current = try await ChatPermissionBatchSnapshot(
-      enabled: true, agentName: reviewed.agentName, groups: loadGroups(action, reviewing: reviewed))
-    try await context
+      enabled: true, groups: loadGroups(action, reviewing: reviewed))
     guard current.complete else {
       throw ChatError.invalidContract("These permissions are no longer available.")
     }
@@ -138,7 +133,7 @@ public struct ChatBatchPermissions: Sendable {
     }
     try Task.checkCancellation()
     let updated = ChatPermissionBatchSnapshot(
-      enabled: current.enabled, agentName: current.agentName, groups: groups)
+      enabled: current.enabled, groups: groups)
     guard updated.allAllowed else { throw APIClientError.invalidResponse }
     return updated
   }

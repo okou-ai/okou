@@ -1,8 +1,8 @@
 """Shared flow metadata access helpers.
 
-This module owns only stable shape/default helpers for cross-module metadata
-reads plus narrow shared state transitions. Domain-specific lifecycle state
-stays with the module that creates and releases it.
+This module owns stable shape, default and namespace helpers for cross-module
+metadata values plus narrow shared state transitions. Domain-specific lifecycle
+state stays with the module that creates and releases it.
 """
 
 import time
@@ -72,6 +72,11 @@ def firewall_base(meta: Mapping[str, object]) -> str:
 
 def firewall_name(meta: Mapping[str, object]) -> str:
     return _metadata_str(meta, metadata_keys.FIREWALL_NAME)
+
+
+def is_model_provider_firewall(name: str) -> bool:
+    """Return whether a firewall name uses the model-provider namespace."""
+    return name.startswith("model-provider:")
 
 
 def firewall_permission(meta: Mapping[str, object]) -> str:

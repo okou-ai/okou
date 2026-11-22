@@ -54,16 +54,35 @@ test("ordered private recordings share one Vertex request and one credit settlem
   });
   const uploads = api(uploadsContract);
   const fileIds = [];
-  const recordings = ["first recording", "second recording"];
+  const recordings = [
+    "first recording".repeat(4),
+    "second recording".repeat(4),
+  ];
+  const authorize = createMcpWebApi(context).authorize(actor);
+  const uploadHeaders = {
+    authorization: `Bearer ${authorize({ scope: "okou:chat:send" })}`,
+  };
+  const readOnlyHeaders = {
+    authorization: `Bearer ${authorize({ scope: "okou:chat:read" })}`,
+  };
+  const clip = { filename: "clip.wav", contentType: "audio/wav", size: 64 };
+  await accept(
+    uploads.preparePrivate({ headers: readOnlyHeaders, body: clip }),
+    [403],
+  );
+  await accept(uploads.prepare({ headers: uploadHeaders, body: clip }), [401]);
+  await accept(
+    uploads.preparePrivate({
+      headers: uploadHeaders,
+      body: { ...clip, contentType: "text/plain" },
+    }),
+    [400],
+  );
   for (const audio of recordings) {
     const { body } = await accept(
       uploads.preparePrivate({
-        headers,
-        body: {
-          filename: "clip.wav",
-          contentType: "audio/wav",
-          size: audio.length,
-        },
+        headers: uploadHeaders,
+        body: { ...clip, size: audio.length },
       }),
       [200],
     );
@@ -79,7 +98,15 @@ test("ordered private recordings share one Vertex request and one credit settlem
         })
       ).status,
     ).toBe(200);
-    await accept(uploads.complete({ headers, body: { id: body.id } }), [200]);
+    const completeBody = { id: body.id };
+    await accept(
+      uploads.complete({ headers: readOnlyHeaders, body: completeBody }),
+      [403],
+    );
+    await accept(
+      uploads.complete({ headers: uploadHeaders, body: completeBody }),
+      [200],
+    );
     fileIds.push(body.id);
   }
   const calls: string[][] = [];
@@ -140,7 +167,7 @@ test("ordered private recordings share one Vertex request and one credit settlem
     }),
   };
   const mcp = createMcpWebApi(context);
-  const sent = await mcp.call(mcp.authorize(actor)(), "send_chat_message", {
+  const sent = await mcp.call(authorize(), "send_chat_message", {
     userMessage: { version: 1, parts: [voice] },
   });
   expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();

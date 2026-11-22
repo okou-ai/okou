@@ -6,6 +6,7 @@ from typing import Final, Literal
 
 import builtin_firewall_cache
 import connector_template_syntax
+import flow_metadata
 import matching
 
 _DYNAMIC_BASE_MARKERS: Final = ("{", "}")
@@ -13,7 +14,6 @@ _DIAGNOSTIC_ANY_PERMISSION: Final = "__connector_diagnostic_any__"
 _DIAGNOSTIC_ANY_RULES: Final = ("ANY /", "ANY /{path+}")
 _DIAGNOSTIC_CANDIDATE_KEY: Final = "_diagnostic_candidate"
 _DIAGNOSTIC_BASE_KEY: Final = "_diagnostic_base_key"
-_MODEL_PROVIDER_PREFIX: Final = "model-provider:"
 # Keep this regular grammar aligned with parseBasicAuthTemplates() in the
 # TypeScript connector contract.
 # basic() uses explicit ASCII whitespace.
@@ -557,7 +557,7 @@ def project_diagnostic_catalog(firewalls: dict[str, dict]) -> DiagnosticCatalogP
         firewall = firewalls[name]
         raw_name, raw_apis = _catalog_firewall_fields(firewall)
         projected_apis: list[dict] = []
-        if name.startswith(_MODEL_PROVIDER_PREFIX):
+        if flow_metadata.is_model_provider_firewall(name):
             for api in raw_apis:
                 projected_api = _project_model_provider_api(api)
                 if projected_api is not None:

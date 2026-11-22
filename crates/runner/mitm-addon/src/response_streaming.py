@@ -148,7 +148,7 @@ def uses_model_json_fallback(
     if (
         response is None
         or not http_response_classification.can_have_body(flow, response)
-        or not flow_metadata.firewall_name(flow.metadata).startswith("model-provider:")
+        or not flow_metadata.is_model_provider_firewall(flow_metadata.firewall_name(flow.metadata))
     ):
         return False
     if http_response_classification.has_event_stream_media_type(response):
@@ -564,7 +564,9 @@ def _configure_response_inspection_stream(
     # Connector extraction remains gated by the billing flag.
     is_billable_flow = flow_metadata.is_firewall_billable(flow.metadata)
     is_billable_model_provider = usage.is_model_provider_usage_billable(flow)
-    extract_model_usage = flow_metadata.firewall_name(flow.metadata).startswith("model-provider:")
+    extract_model_usage = flow_metadata.is_model_provider_firewall(
+        flow_metadata.firewall_name(flow.metadata)
+    )
     model_protocol = model_usage_protocol(flow) if extract_model_usage else None
     if (
         model_protocol == "openai_responses"

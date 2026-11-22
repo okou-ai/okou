@@ -1,6 +1,10 @@
 import CCStateSwiftUI
 import SwiftUI
 
+extension EnvironmentValues {
+  @Entry var permissionWorkspaceName: String?
+}
+
 /// Rendering and measurement observe the original read phase without demanding hidden cards.
 struct PermissionCardReadView<Value: Sendable, Content: View>: View {
   let read: PermissionCardRead<Value>
