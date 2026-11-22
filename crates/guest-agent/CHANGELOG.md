@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.110.23](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.22...guest-agent-v0.110.23) (2026-11-22)
+
+
+### Refactoring
+
+* **codex-mock:** share experimental server notification construction ([#50003](https://github.com/okou-ai/okou/issues/50003)) ([d4f1bad](https://github.com/okou-ai/okou/commit/d4f1bad001dce43b7712b26b100e8435b7987d4b))
+* **guest-agent:** centralize codex app server stop selection ([#49977](https://github.com/okou-ai/okou/issues/49977)) ([f55c2b7](https://github.com/okou-ai/okou/commit/f55c2b7d251e165846e23fb2afa5847efa1ece8d))
+
 ## [0.110.22](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.21...guest-agent-v0.110.22) (2026-11-22)
 
 
