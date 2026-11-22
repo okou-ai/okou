@@ -44,6 +44,7 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -671,10 +672,21 @@ class ChatListRootTest {
         val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
         val projectUnreadCount =
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
+        fun assertProjectWeight(expected: FontWeight) {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText("Research", useUnmergedTree = true).performSemanticsAction(
+                SemanticsActions.GetTextLayoutResult
+            ) {
+                it(layouts)
+            }
+            assertEquals(expected, layouts.single().layoutInput.style.fontWeight)
+        }
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
         compose.onNodeWithText("Research").assert(projectUnreadCount)
+        assertProjectWeight(FontWeight.SemiBold)
         compose.onNodeWithText("Project chat").assertDoesNotExist()
         setResearchExpanded(true)
+        assertProjectWeight(FontWeight.Normal)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.waitUntil(10_000) {
             compose
@@ -685,6 +697,7 @@ class ChatListRootTest {
         compose.onNodeWithText("Project chat").assert(unread)
         setResearchExpanded(false)
         compose.onNodeWithText("Research").assert(projectUnreadCount)
+        assertProjectWeight(FontWeight.SemiBold)
         compose.onNodeWithText("Project chat").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").performScrollToIndex(0)
         compose.onNodeWithContentDescription("Filter").performClick()

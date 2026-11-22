@@ -796,7 +796,9 @@ private fun ProjectRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = chatListTitleStyle(),
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight =
+                        if (status == ChatRowStatus.Unread) FontWeight.SemiBold
+                        else FontWeight.Normal,
                 )
                 Icon(
                     painterResource(
