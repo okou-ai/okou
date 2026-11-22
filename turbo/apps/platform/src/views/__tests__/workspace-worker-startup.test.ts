@@ -158,6 +158,7 @@ test("shared-worker-failure-002 Two native worker failures interrupt the open pa
 test("shared-database-browser-001 Chats starts a module worker bound to its workspace and member", async () => {
   const { connections, registered } = browserWorkers();
   const opening = await startPage({ ...page, path: "/chats" });
+  await opening.content;
   await registered.promise;
   const connection = connections[0]!;
   expect(connection.url.origin).toBe(location.origin);
@@ -168,7 +169,6 @@ test("shared-database-browser-001 Chats starts a module worker bound to its work
     name: "okou_test-user-123_org_default",
     type: "module",
   });
-  await opening.content;
 });
 
 test("shared-database-browser-002 A registered worker receives the cached session token for its own request", async () => {

@@ -77,7 +77,7 @@ test("clerk-bootstrap-003 Early Clerk navigation sends sign-in to the browser", 
   const { core, runtime, provider, loadGate, shell } = openShell("app.okou.ai");
   core.dispatchEvent(new Event("load"));
   await runtime;
-  const browserNavigate = vi.fn<(url: string) => void>();
+  const browserNavigate = vi.fn<(url: string | URL) => void>();
   await provider.load.mock.calls[0]?.[0].routerPush?.("/sign-in", {
     windowNavigate: browserNavigate,
   });
