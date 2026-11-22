@@ -1513,6 +1513,10 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
   });
   await conversation.publish(completedTurn(27));
   await screen.findByText("History answer 27");
+  // The 6000px viewport spans fifteen turns. Its middle and oldest visible
+  // answers arrive in successive renders before the final tail alignment.
+  await screen.findByText("History answer 20");
+  await screen.findByText("History answer 13");
   await waitFor(() => {
     const before = container.querySelector<HTMLElement>(
       '[data-transcript-spacer="before"]',
