@@ -24,6 +24,7 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -113,8 +114,9 @@ class NativeUpdateTest {
             val searchBounds = button(search).visibleBounds
             val density = app.resources.displayMetrics.density
             fun assertGap(expectedDp: Int, actualPx: Int) {
-                // UI Automator reports integer bounds and rounds the two edges independently.
-                assertEquals(expectedDp * density, actualPx.toFloat(), 1f)
+                // Compose rounds layout spacing first. UI Automator rounds each edge separately.
+                val expectedPx = (expectedDp * density).roundToInt()
+                assertEquals(expectedPx.toFloat(), actualPx.toFloat(), 1f)
             }
             val avatar =
                 By.pkg(app.packageName)
