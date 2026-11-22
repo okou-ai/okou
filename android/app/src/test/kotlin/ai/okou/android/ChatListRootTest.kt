@@ -1249,6 +1249,51 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun keyboardMoveFocusesTheCollapsedDestinationWithoutOpeningIt() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
+        val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail()
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method == "PUT" &&
+                    request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL/project"
+            ) {
+                val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                val eventId = body.getValue("eventId").jsonPrimitive.content
+                assertEquals(CHAT_PROJECT, body.getValue("projectId").jsonPrimitive.content)
+                events +=
+                    24L to
+                        chatEventWire(
+                            id = eventId,
+                            seq = 24,
+                            kind = "project_updated",
+                            extra = ",\"projectId\":\"$CHAT_PROJECT\"",
+                        )
+                jsonResponse("""{"threadId":"$CHAT_PERSONAL","projectId":"$CHAT_PROJECT"}""")
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        row.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        row.performKeyInput { pressKey(Key.Menu) }
+        val move = compose.onNodeWithText("Move to Research")
+        move.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        move.performKeyInput { pressKey(Key.Enter) }
+
+        compose.waitUntil(10_000) {
+            currentList()?.threads?.singleOrNull { it.id == CHAT_PERSONAL }?.projectId ==
+                CHAT_PROJECT
+        }
+        compose.onNodeWithText("Research").assertIsFocused()
+        row.assertDoesNotExist()
+        compose.onNodeWithText("Project chat").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun rejectedProjectDeletionStaysInItsOriginalConfirmation() {
         val app = compose.activity.application as ChatListApplication
         val deletes = AtomicInteger()

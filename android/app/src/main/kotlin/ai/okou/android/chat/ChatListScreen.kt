@@ -116,6 +116,8 @@ internal fun ChatListScreen(
     openProvisional: (ProvisionalChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
     requestMove: (String) -> Unit,
+    moveFocus: ProjectMoveFocus?,
+    onMoveFocusFinished: (ProjectMoveFocus) -> Unit,
     renameThread: (String, String) -> Unit,
     renameProject: (String, String) -> Unit,
     requestDeleteProject: (String) -> Unit,
@@ -218,8 +220,12 @@ internal fun ChatListScreen(
     val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
     val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val renameRejection = state.projectRenameRejection
-    val renameNoticeIds =
-        state.unconfirmedProjectRenames + listOfNotNull(renameRejection?.projectId)
+    val projectNoticeIds =
+        state.unconfirmedProjectRenames +
+            listOfNotNull(
+                renameRejection?.projectId,
+                state.projectList.deletingId?.takeUnless { it == confirmingProjectDelete },
+            )
     val expansion = projectExpansion?.state?.collectAsStateWithLifecycle()?.value
     val savedExpansion = expansion?.expandedIds
     val expandedProjectIds = savedExpansion.orEmpty()
@@ -247,6 +253,13 @@ internal fun ChatListScreen(
                 unreadChatIds,
                 pendingByProject,
             )
+        }
+    val moveFocusSection =
+        moveFocus?.let { request ->
+            sections.firstOrNull { section ->
+                section.group.projectId == request.projectId &&
+                    section.group.threads.any { it.id == request.threadId }
+            }
         }
     val runningKeys =
         remember(indicators, sections) {
@@ -412,7 +425,22 @@ internal fun ChatListScreen(
                     }
             }
         KeepChatListProjectAnchor(listState, knownProjects) { key, offset ->
-            sections.findScrollAnchor(key, offset, leadingItems.size, renameNoticeIds)
+            sections.findScrollAnchor(key, offset, leadingItems.size, projectNoticeIds)
+        }
+        if (moveFocus != null) {
+            val pending = state.pendingRowActions[moveFocus.threadId] == ChatRowAction.MoveProject
+            LaunchedEffect(moveFocus, moveFocusSection, pending, leadingItems.size) {
+                if (moveFocusSection?.foldedActivity != null) {
+                    val key = projectRowKey(moveFocus.projectId)
+                    if (listState.layoutInfo.visibleItemsInfo.none { it.key == key }) {
+                        sections
+                            .findScrollAnchor(key, 0, leadingItems.size, projectNoticeIds)
+                            ?.let { listState.requestScrollToItem(it.index) }
+                    }
+                } else if (moveFocusSection != null || !pending) {
+                    onMoveFocusFinished(moveFocus)
+                }
+            }
         }
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
@@ -454,6 +482,11 @@ internal fun ChatListScreen(
                                 delete = { requestDeleteProject(project.id) },
                                 canDelete = state.canDeleteProject,
                                 deleteDialogOpen = confirmingProjectDelete == project.id,
+                                focusAfterMove =
+                                    moveFocus?.takeIf {
+                                        section === moveFocusSection && foldedStatus != null
+                                    },
+                                onMoveFocusFinished = onMoveFocusFinished,
                             )
                         }
                         if (
@@ -673,7 +706,7 @@ private fun List<ChatListSection>.findScrollAnchor(
     key: Any,
     offset: Int,
     leadingItemCount: Int,
-    renameNoticeIds: Set<String>,
+    projectNoticeIds: Set<String>,
 ): ChatListScrollAnchor? {
     var row = leadingItemCount
     for (section in this) {
@@ -681,7 +714,7 @@ private fun List<ChatListSection>.findScrollAnchor(
         val header = row
         if (project != null) {
             if (key == projectRowKey(project.id)) return ChatListScrollAnchor(row, offset)
-            row += if (project.id in renameNoticeIds) 2 else 1
+            row += if (project.id in projectNoticeIds) 2 else 1
         }
         val threads = section.group.threads
         val pending = section.provisionalChats
@@ -769,6 +802,7 @@ internal fun DeleteProjectDialog(
     projectName: String,
     pending: Boolean,
     status: ProjectDeleteStatus?,
+    offline: Boolean,
     enabled: Boolean,
     dismiss: () -> Unit,
     confirm: () -> Unit,
@@ -787,9 +821,11 @@ internal fun DeleteProjectDialog(
         confirm = confirm,
         pending = pending,
         failureRes =
-            when (status) {
-                ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
-                ProjectDeleteStatus.Unconfirmed -> R.string.chat_project_delete_unconfirmed
+            when {
+                offline -> R.string.chat_list_offline
+                status == ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
+                status == ProjectDeleteStatus.Unconfirmed ->
+                    R.string.chat_project_delete_unconfirmed
                 else -> null
             },
     )
@@ -861,6 +897,8 @@ private fun ProjectRow(
     delete: () -> Unit,
     canDelete: Boolean,
     deleteDialogOpen: Boolean,
+    focusAfterMove: ProjectMoveFocus?,
+    onMoveFocusFinished: (ProjectMoveFocus) -> Unit,
 ) {
     val collapsed = activity != null
     val status = activity?.status ?: ChatRowStatus.None
@@ -877,6 +915,12 @@ private fun ProjectRow(
             .joinToString()
     var menuOpen by remember { mutableStateOf(false) }
     val rowFocus = remember { FocusRequester() }
+    if (focusAfterMove != null) {
+        LaunchedEffect(focusAfterMove) {
+            rowFocus.requestFocus()
+            onMoveFocusFinished(focusAfterMove)
+        }
+    }
     var rowFocused by remember { mutableStateOf(false) }
     var restoreMenuFocus by remember { mutableStateOf(false) }
     val openMenu: (() -> Unit)? =

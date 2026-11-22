@@ -25,6 +25,7 @@ import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.NewConversationWelcome
 import ai.okou.android.chat.ProjectDeleteStatus
 import ai.okou.android.chat.ProjectExpansionModel
+import ai.okou.android.chat.ProjectMoveFocus
 import ai.okou.android.chat.ProjectMovePicker
 import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RealtimeNotice
@@ -87,8 +88,10 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -100,6 +103,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+
+private data class ChatMoveTarget(val threadId: String, val fromList: Boolean)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -291,6 +296,7 @@ internal fun OkouApp(
             projectName = deleteProject.name,
             pending = list.projectList.deletingId == deleteProject.id,
             status = feedback?.status,
+            offline = list.offline,
             enabled = list.canDeleteProject,
             dismiss = {
                 confirmingProjectDelete = null
@@ -695,29 +701,44 @@ internal fun OkouApp(
         )
             returnToList()
     }
-    var moveChatId by remember(chats) { mutableStateOf<String?>(null) }
-    fun requestMove(id: String) {
+    val inputMode = LocalInputModeManager.current
+    var moveTarget by remember(chats) { mutableStateOf<ChatMoveTarget?>(null) }
+    var moveFocus by remember(chats) { mutableStateOf<ProjectMoveFocus?>(null) }
+    LaunchedEffect(showChatList) { if (!showChatList) moveFocus = null }
+    fun moveChat(from: ChatMoveTarget, destination: String?) {
+        if (
+            chats?.moveThreadToProject(from.threadId, destination) == true &&
+                from.fromList &&
+                destination != null &&
+                inputMode.inputMode == InputMode.Keyboard
+        ) {
+            moveFocus = ProjectMoveFocus(from.threadId, destination)
+        }
+    }
+    fun requestMove(id: String, fromList: Boolean) {
         val chat = list.threads.firstOrNull { it.id == id && it.hidden != true } ?: return
         if (ChatRowAction.MoveProject !in list.rowActions(chat) || id in list.pendingRowActions)
             return
         val destinations = list.projectDestinations(chat)
-        if (destinations.size == 1) chats?.moveThreadToProject(id, destinations[0].id)
-        else if (destinations.isNotEmpty()) moveChatId = id
+        val from = ChatMoveTarget(id, fromList)
+        if (destinations.size == 1) moveChat(from, destinations[0].id)
+        else if (destinations.isNotEmpty()) moveTarget = from
     }
-    moveChatId?.let { id ->
+    moveTarget?.let { from ->
+        val id = from.threadId
         val chat = list.threads.firstOrNull { it.id == id && it.hidden != true }
         if (
             chat != null &&
                 ChatRowAction.MoveProject in list.rowActions(chat) &&
                 id !in list.pendingRowActions
         ) {
-            ProjectMovePicker(list.projectDestinations(chat), dismiss = { moveChatId = null }) {
+            ProjectMovePicker(list.projectDestinations(chat), dismiss = { moveTarget = null }) {
                 destination ->
-                moveChatId = null
-                chats?.moveThreadToProject(id, destination)
+                moveTarget = null
+                moveChat(from, destination)
             }
         } else {
-            LaunchedEffect(id) { moveChatId = null }
+            LaunchedEffect(id) { moveTarget = null }
         }
     }
     val detailActions =
@@ -727,7 +748,7 @@ internal fun OkouApp(
                 state = list,
                 thread = thread,
                 onRowAction = ::rowAction,
-                onMove = ::requestMove,
+                onMove = { requestMove(it, fromList = false) },
                 onRename = { id, title -> chats?.renameThread(id, title) },
                 openResources =
                     thread
@@ -949,7 +970,11 @@ internal fun OkouApp(
                                     provisionalChats,
                                     ::openProvisionalChat,
                                     ::rowAction,
-                                    ::requestMove,
+                                    { requestMove(it, fromList = true) },
+                                    moveFocus = moveFocus,
+                                    onMoveFocusFinished = { request ->
+                                        if (moveFocus == request) moveFocus = null
+                                    },
                                     { id, title -> chats?.renameThread(id, title) },
                                     { id, name -> chats?.renameProject(id, name) },
                                     { id -> confirmingProjectDelete = id },

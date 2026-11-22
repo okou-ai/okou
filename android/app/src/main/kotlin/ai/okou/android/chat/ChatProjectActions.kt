@@ -22,6 +22,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
+internal data class ProjectMoveFocus(val threadId: String, val projectId: String)
+
 @Composable
 internal fun projectMoveLabel(destination: ChatProjectDestination?): String =
     when {

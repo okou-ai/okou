@@ -93,7 +93,9 @@ internal fun ConversationToolbarActions(
                                 WorkspaceMenuItem(
                                     if (action == ChatRowAction.MoveProject)
                                         projectMoveLabel(
-                                            state.projectDestinations(checkNotNull(thread)).singleOrNull()
+                                            state
+                                                .projectDestinations(checkNotNull(thread))
+                                                .singleOrNull()
                                         )
                                     else stringResource(action.label()),
                                     action.icon(),

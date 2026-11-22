@@ -348,7 +348,15 @@ class ChatListModel(
             wallMillis = wallMillis,
             syncChatsAfterDelete = { awaitListRead { true } },
             readState = { mutable.value.projectList },
-            publish = { mutable.value = mutable.value.copy(projectList = it) },
+            publish = { projectList ->
+                val state = mutable.value
+                mutable.value =
+                    state.copy(
+                        projectList = projectList,
+                        chatMoveNotice =
+                            state.chatMoveNotice.takeUnless { projectList.deletingId != null },
+                    )
+            },
         )
     private var cacheRead = false
     private var restoreJob: Job? = null
@@ -804,6 +812,14 @@ class ChatListModel(
         mutable.value =
             state.copy(
                 pendingRowActions = state.pendingRowActions + (threadId to action),
+                projectList =
+                    if (
+                        destination != null &&
+                            state.projectList.deleteFeedback?.status !=
+                                ProjectDeleteStatus.Unconfirmed
+                    )
+                        state.projectList.copy(deleteFeedback = null)
+                    else state.projectList,
                 rowUndo = undoRequest?.copy(phase = ChatUndoPhase.Checking) ?: state.rowUndo,
                 readIntents =
                     if (intent == null || undoRequest != null) state.readIntents
