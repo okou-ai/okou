@@ -3767,6 +3767,13 @@
       "when": 1795320110045,
       "tag": "1616_retire_agents_table",
       "breakpoints": true
+    },
+    {
+      "idx": 1617,
+      "version": "7",
+      "when": 1795337263972,
+      "tag": "1617_retire_legacy_storage_registry",
+      "breakpoints": true
     }
   ]
 }
