@@ -15,7 +15,6 @@ export enum FeatureSwitchKey {
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
   BatchConnectorPermissions = "batchConnectorPermissions",
-  AndroidConnectors = "androidConnectors",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",

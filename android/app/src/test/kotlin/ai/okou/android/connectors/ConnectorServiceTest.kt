@@ -22,7 +22,6 @@ class ConnectorServiceTest {
     fun recommendationsAndCategoryBrowsesUseTheCanonicalDirectory() = runBlocking {
         ConnectorApiFixture().use { fixture ->
             val service = fixture.service
-            assertTrue(service.enabled())
             val initial = service.discover(null, null)
             assertEquals(
                 listOf(CONNECTOR_CALENDAR, "gmail", "slack"),

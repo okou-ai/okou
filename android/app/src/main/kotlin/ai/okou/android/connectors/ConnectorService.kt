@@ -161,9 +161,6 @@ internal sealed interface ConnectorDeviceResult {
 }
 
 class ConnectorService(private val api: ApiClient) {
-    internal suspend fun enabled(): Boolean =
-        api.read { featureSwitches(it) }.effectiveSwitches["androidConnectors"] == true
-
     internal suspend fun discover(keyword: String?, category: String?): ConnectorBrowse {
         val response = api.read { connectorDiscovery(it, keyword, category) }
         return ConnectorBrowse(

@@ -135,8 +135,7 @@ internal fun OkouApp(
     val artifactSource = navigation.artifacts?.sourceId.takeIf { artifacts != null }
     val showArtifacts = artifactsOpen && artifacts != null && artifactSource == null
     var connectorsOpen by rememberConnectorsOpen()
-    val canOpenConnectors =
-        connectors?.enabled?.collectAsStateWithLifecycle()?.value == true && workspaceReady
+    val canOpenConnectors = connectors != null && workspaceReady
     val showingConnectors = canOpenConnectors && connectorsOpen
     val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
     val settings =

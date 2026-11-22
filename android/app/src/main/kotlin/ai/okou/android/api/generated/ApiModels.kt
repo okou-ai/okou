@@ -23,12 +23,6 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 
 @Serializable
-data class FeatureSwitches(
-    val `switches`: Map<String, Boolean>,
-    val `effectiveSwitches`: Map<String, Boolean>,
-)
-
-@Serializable
 data class ConnectorDiscoveryConnectorsItemIcon(
     val `url`: String,
     val `invertInDarkMode`: Boolean,

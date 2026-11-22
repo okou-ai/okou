@@ -135,7 +135,6 @@ class ConnectorModelTest {
                                             }
                                         },
                                     )[ConnectorModel::class]
-                            withTimeout(10.seconds) { model.enabled.first { it } }
                             model.setOpen(true)
                             model.select(slug)
                             model.await { it.detail.data != null && it.accounts.data != null }

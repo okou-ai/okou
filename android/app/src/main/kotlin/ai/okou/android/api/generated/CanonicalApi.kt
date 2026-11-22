@@ -20,9 +20,6 @@ import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
-    @GET("/api/feature-switches")
-    suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
-
     @GET("/api/connector-catalog/discovery")
     suspend fun `connectorDiscovery`(
         @Header("Authorization") token: String,

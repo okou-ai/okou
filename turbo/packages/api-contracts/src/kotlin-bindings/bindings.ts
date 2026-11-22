@@ -42,7 +42,6 @@ import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { hostContract } from "../contracts/host";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
-import { featureSwitchesContract } from "../contracts/feature-switches";
 import { connectorCatalogContract } from "../contracts/connector-catalog";
 import { connectorAccountsContract } from "../contracts/connector-accounts";
 import { chatConnectorAccessContract } from "../contracts/chat-connector-access";
@@ -129,11 +128,6 @@ const historyReadBindings = [
 ] satisfies readonly KotlinRouteBinding[];
 
 const connectorBindings = [
-  {
-    name: "featureSwitches",
-    response: "FeatureSwitches",
-    route: featureSwitchesContract.get,
-  },
   {
     name: "connectorDiscovery",
     response: "ConnectorDiscovery",

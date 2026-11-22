@@ -148,8 +148,6 @@ internal class ConnectorApiFixture : Closeable {
         val parts = url.pathSegments
         val querySlug = url.queryParameter("connectorSlug")
         return when {
-            path == "/api/feature-switches" ->
-                jsonResponse("""{"switches":{},"effectiveSwitches":{"androidConnectors":true}}""")
             path == "/api/chat-connector-overview" ->
                 json(
                     JsonArray(

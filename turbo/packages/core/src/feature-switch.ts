@@ -52,14 +52,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Send voice messages and transcribe their recordings with model credits.",
     enabled: false,
   },
-  [FeatureSwitchKey.AndroidConnectors]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Android Connectors",
-    description:
-      "Show the built-in connector directory and account management on Android.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
     displayName: "Refined message sharing",

@@ -84,11 +84,8 @@ class ConnectorModel(
     private val authorized: () -> Boolean,
     private val sessionFailure: (Exception) -> Unit,
 ) : ViewModel() {
-    private val mutableEnabled = MutableStateFlow(false)
-    internal val enabled = mutableEnabled.asStateFlow()
     private val mutableState = MutableStateFlow(ConnectorUiState())
     internal val uiState = mutableState.asStateFlow()
-    private var gateJob: Job? = null
     private var browseJob: Job? = null
     private var connectedJob: Job? = null
     private var inspectionJob: Job? = null
@@ -108,27 +105,13 @@ class ConnectorModel(
     private var pendingChange: PendingChange? = null
 
     init {
-        refreshGate()
         viewModelScope.launch {
             connectivity.collect { online ->
                 val changed = mutableState.value.offline == online
                 mutableState.update { it.copy(offline = !online) }
-                if (changed && online) {
-                    refreshGate()
-                    if (open) refreshVisible()
-                }
+                if (changed && online && open) refreshVisible()
             }
         }
-    }
-
-    private fun refreshGate() {
-        if (gateJob?.isActive == true || !authorized()) return
-        gateJob =
-            viewModelScope.launch {
-                load(service::enabled) { value, _ ->
-                    if (value != null) mutableEnabled.value = value
-                }
-            }
     }
 
     internal fun setOpen(open: Boolean) {
