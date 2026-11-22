@@ -168,6 +168,7 @@ class ScreenshotScenario {
                     clickable(text(R.string.settings_default_model)).click()
                     val autoDetail = text(R.string.settings_auto_model_detail)
                     val autoTop = autoDetail.visibleBounds.top
+                    capture("diagnostic-short-window-before-scroll.png")
                     val titleBounds = headingBounds(R.string.settings_default_model)
                     check(titleBounds.top < 145) { "Expected a full-screen header at $titleBounds" }
                     val options = generateSequence(autoDetail) { it.parent }
@@ -209,10 +210,12 @@ class ScreenshotScenario {
 
     private fun headingBounds(resource: Int): Rect {
         val label = app.getString(resource)
-        val heading = checkNotNull(instrumentation.uiAutomation.rootInActiveWindow)
-            .findAccessibilityNodeInfosByText(label)
-            .single { it.text?.toString() == label && it.isHeading }
-        return Rect().also(heading::getBoundsInScreen)
+        val candidates = device.findObjects(By.pkg(app.packageName).text(label))
+        val heading = candidates.singleOrNull { node ->
+            generateSequence(node) { it.parent }.none { it.isClickable || it.isScrollable }
+        }
+        return checkNotNull(heading) { "Missing fixed header $label in ${candidates.size} matches" }
+            .visibleBounds
     }
 
     private fun openSettings() {
