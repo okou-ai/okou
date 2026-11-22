@@ -23,7 +23,7 @@ function button(name: string) {
 async function openDebug(debug = true) {
   await setupPage({
     context,
-    path: "/agents?settings=debug",
+    path: "/?settings=debug",
     featureSwitches: {
       [FeatureSwitchKey.OkouDebug]: debug,
     },

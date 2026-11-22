@@ -16,8 +16,6 @@ final class WorkspaceResources {
   private let invalidateReads: Command<Void, Set<ChatInvalidation>>
   private let modelBootstrap: WorkspaceReadBootstrap?
   private let projectBootstrap: WorkspaceReadBootstrap?
-  let navigation: Computed<Task<[AgentRecord], Error>>
-  let reloadNavigation: Command<Void, Void>
   let projectList: Computed<Task<[ChatProject], Error>>
   let reloadProjects: Command<Void, Void>
   let sidebarDraftThreadIDs: Computed<Task<Set<String>, Error>>
@@ -26,7 +24,6 @@ final class WorkspaceResources {
   private let available: WorkspaceRead<AvailableRunModels>
   private let catalog: WorkspaceRead<ModelCatalog>
   private let features: WorkspaceRead<SidebarFeatureSwitches>
-  private let agents: WorkspaceRead<[AgentRecord]>
   private let projects: WorkspaceRead<[ChatProject]>
   private let sidebarDrafts: WorkspaceRead<Set<String>>
   private let billing: WorkspaceRead<WorkspaceBilling>
@@ -90,14 +87,6 @@ final class WorkspaceResources {
       try options.signal.checkCancellation()
       return credits.availableCredits(organizationCredits: billing.credits)
     }
-    let agents = WorkspaceRead<[AgentRecord]>(
-      "agents", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks
-    ) {
-      try await client.request("/api/agents")
-    }
-    self.agents = agents
-    navigation = agents.value
-    reloadNavigation = agents.reload
     let projectReadiness: (@MainActor () async throws -> Void)?
     if let projectBootstrap {
       projectReadiness = {
@@ -217,7 +206,6 @@ final class WorkspaceResources {
     available.close()
     catalog.close()
     features.close()
-    agents.close()
     projects.close()
     sidebarDrafts.close()
     billing.close()

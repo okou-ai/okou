@@ -23,7 +23,6 @@ import type {
 import {
   onboardingCompleteContract,
   onboardingStatusContract,
-  type OnboardingStatusResponse,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import {
@@ -754,9 +753,10 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       return { token: token.body.access_token };
     },
 
-    async readOnboardingStatus(
-      actor: ApiTestUser,
-    ): Promise<OnboardingStatusResponse> {
+    readDefaultAgentId: createBddApi(context).readDefaultAgentId,
+    provisionWorkspace: createBddApi(context).provisionWorkspace,
+
+    async readOnboardingStatus(actor: ApiTestUser) {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
         onboardingStatusContract,
       );

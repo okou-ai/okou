@@ -52,6 +52,7 @@ import postgres from "postgres";
 import { array, literal, object, string } from "zod";
 import { migrationTimestamp } from "./migration-timestamp";
 import { applyPendingMigrations } from "./migration-runner";
+import { validateChatThreadEventExecutorRetirement } from "./test-chat-thread-event-executor-retirement";
 import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
@@ -454,7 +455,6 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
-  const historicalExecutorId = "00000000-0000-4000-8000-000000074401";
   let threadId: string | undefined;
 
   try {
@@ -486,15 +486,15 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "event_executor_id", "title", "selected_model"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "title", "selected_model"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 1,
-          $1, 'created', $2, 'append-only migration test', 'auto'
+          $1, 'created', 'append-only migration test', 'auto'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, historicalExecutorId],
+      [threadId],
     );
     const eventId = event.rows[0]?.id;
     if (!eventId) {
@@ -524,15 +524,15 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const nextEvent = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "event_executor_id", "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "title"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 2,
-          $1, 'renamed', $2, 'advanced append-only migration test'
+          $1, 'renamed', 'advanced append-only migration test'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, historicalExecutorId],
+      [threadId],
     );
     const nextEventId = nextEvent.rows[0]?.id;
     if (!nextEventId) {
@@ -1010,7 +1010,10 @@ async function generateFreshMigrations(): Promise<void> {
   // Drizzle does not model routines. Install the independently maintained
   // current definition, then validate its exact body on both schema shapes.
   const agentMetadata = await fs.readFile(
-    path.join(PACKAGE_DIR, "src/functions/update-agent-metadata.sql"),
+    path.join(
+      PACKAGE_DIR,
+      "src/functions/update-legacy-agent-api-metadata.sql",
+    ),
     "utf-8",
   );
   await fs.appendFile(
@@ -1382,14 +1385,14 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
   },
   {
     schemaName: "public",
-    functionName: "update_agent_metadata",
+    functionName: "update_legacy_agent_api_metadata",
     identityArguments:
       "p_org_id text, p_agent_id uuid, p_member_id text, p_is_admin boolean, p_identity_changes boolean, p_visibility text, p_public_limit integer, p_body bytea, p_now timestamp without time zone",
     kind: "f",
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "ab54d46da8f18943c84251db98afb734",
+    bodyHash: "0f83156a5ae4ec2301c9e52da6356f62",
   },
   {
     schemaName: "public",
@@ -1556,7 +1559,6 @@ async function validatePermanentAgentRunMetadataState(
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
   const fixture = {
-    agentId: "00000000-0000-4000-8000-000000270951",
     lifecycleRunId: "00000000-0000-4000-8000-000000270953",
     outOfRangeRunId: "00000000-0000-4000-8000-000000270955",
     partialRunId: "00000000-0000-4000-8000-000000270954",
@@ -1735,11 +1737,6 @@ async function validatePermanentAgentRunMetadataState(
     ]);
 
     await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, $2, $3, 'permanent-agent-run-metadata')`,
-      [fixture.agentId, fixture.orgId, fixture.userId],
-    );
-    await client.query(
       `INSERT INTO "agent_runs" (
          "id", "user_id", "status", "prompt", "org_id"
        ) VALUES
@@ -1851,9 +1848,6 @@ async function validatePermanentAgentRunMetadataState(
       "   ✅ nullable two-state metadata, range, permanent readers, and physical zero_runs removal are enforced\n",
     );
   } finally {
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [
-      fixture.agentId,
-    ]);
     await client.end();
   }
 }
@@ -2889,6 +2883,11 @@ async function main(): Promise<void> {
       dbUrl1,
       await migrationTimestamp("1608_prepare_custom_connector_skill_cutover"),
       await migrationTimestamp("1613_retire_custom_connector_skill_mirror"),
+    );
+    await validateChatThreadEventExecutorRetirement(
+      dbUrl1,
+      await migrationTimestamp("1615_drop_chat_thread_event_executor"),
+      await migrationTimestamp("1616_retire_agents_table"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

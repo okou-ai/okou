@@ -14,7 +14,6 @@ import { pathname, search } from "../../../signals/location.ts";
 import { resetSignal } from "../../../signals/utils.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const NOTICE =
   "We couldn’t restore the linked task. You can continue normally; your existing draft is unchanged.";
 const HASH = "a".repeat(12);
@@ -57,8 +56,8 @@ test.each([
   ["/prompt", 503],
   ["/onboarding", 404],
   ["/onboarding", 503],
-  [`/agents/${AGENT_ID}/chat`, 404],
-  [`/agents/${AGENT_ID}/chat`, 503],
+  [`/`, 404],
+  [`/`, 503],
 ] as const)(
   "A failed handoff at %s (%i) keeps the App usable and the draft intact",
   async (path, status) => {
@@ -92,7 +91,7 @@ test("A network failure restoring a task keeps the App and the existing draft us
   expect(screen.getAllByText(NOTICE)).toHaveLength(1);
 });
 
-test.each(["/prompt", `/agents/${AGENT_ID}/chat`])(
+test.each(["/prompt", `/`])(
   "An attachment import failure at %s preserves the existing draft",
   async (path) => {
     preserveDraft();
@@ -265,7 +264,7 @@ test.each([404, 503, "network"] as const)(
     await setupPage({
       context,
       locale: "en-US",
-      path: `/agents/${AGENT_ID}/chat?handoff=${HASH}`,
+      path: `/?handoff=${HASH}`,
     });
     const notice =
       failure === 404
@@ -334,7 +333,7 @@ test("A valid task restores its text and attachments into the agent composer", a
   await setupPage({
     context,
     locale: "en-US",
-    path: `/agents/${AGENT_ID}/chat?handoff=${HASH}`,
+    path: `/?handoff=${HASH}`,
   });
   await waitFor(() => {
     expect(

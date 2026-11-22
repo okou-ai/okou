@@ -24,7 +24,6 @@ import {
   chatListAuth,
   fastButton,
   installActiveChatBoundaries,
-  installChatListAgent,
   installChatListRunModels,
   installChatListStream,
 } from "./chat-list-test-helpers.ts";
@@ -132,7 +131,7 @@ test("Protect local edits while a saved draft is loading", async () => {
   const delayedDraft = context.mocks.deferred<void>();
   const oldAttachment = continuityAttachment(2, 1, "older-notes.txt");
   let draftResponseCompleted = false;
-  installChatListAgent(context);
+
   installChatListRunModels(context);
   installChatListStream(context, { caseId: 2, snapshot: [] });
   installActiveChatBoundaries(context);

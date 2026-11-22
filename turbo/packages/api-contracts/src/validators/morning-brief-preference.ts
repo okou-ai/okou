@@ -13,6 +13,6 @@ export function isMorningBriefDefinitionName(name: string | null): boolean {
   });
 }
 
-export const MORNING_BRIEF_PREFERENCES_ROUTE = "/agents";
+export const MORNING_BRIEF_PREFERENCES_ROUTE = "/";
 export const MORNING_BRIEF_PREFERENCES_SECTION = "preference";
 export const MORNING_BRIEF_PREFERENCES_FOCUS = "morning-brief";

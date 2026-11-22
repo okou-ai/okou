@@ -36,6 +36,7 @@ import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
 } from "./api-bdd-auth-org";
+import { threadEventCursor } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import {
   configureDiscordApp,
@@ -59,6 +60,7 @@ export interface ConnectedDiscordActor {
   readonly defaultAgentId: string;
   readonly runnerGroup: string;
   readonly connectionId: string;
+  readonly sinceSetupSeqId?: number;
 }
 
 export async function setupConnectedDiscordActor(
@@ -89,8 +91,8 @@ export async function setupConnectedDiscordActor(
   if (!options.reuseOrganization) {
     await runsApi.grantProEntitlement(actor);
   }
-  const onboarding = await authOrgApi.readOnboardingStatus(actor);
-  if (!onboarding.defaultAgentId) {
+  const onboardingAgentId = await authOrgApi.readDefaultAgentId(actor);
+  if (!onboardingAgentId) {
     throw new Error(
       "Discord fixture onboarding did not create a default agent",
     );
@@ -99,7 +101,7 @@ export async function setupConnectedDiscordActor(
     await authOrgApi.completeOnboarding(actor);
   }
   if (!options.reuseOrganization) {
-    await authOrgApi.readAgent(actor, onboarding.defaultAgentId);
+    await authOrgApi.readAgent(actor, onboardingAgentId);
     // These lifecycle fixtures exercise the native Runner execution protocol.
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -124,9 +126,10 @@ export async function setupConnectedDiscordActor(
     guildId,
     discordUserId,
     botUserId,
-    defaultAgentId: onboarding.defaultAgentId,
+    defaultAgentId: onboardingAgentId,
     runnerGroup,
     connectionId: fixture.connectionId,
+    sinceSetupSeqId: await threadEventCursor(context, actor),
   };
 }
 
@@ -528,7 +531,7 @@ export function postDiscordGatewayEnvelope(
 
 export async function discordChatThreads(
   context: TestContext,
-  actor: Pick<ConnectedDiscordActor, "userId" | "orgId">,
+  actor: Pick<ConnectedDiscordActor, "userId" | "orgId" | "sinceSetupSeqId">,
 ) {
   createRouteMocks(context).clerk.session(
     actor.userId,
@@ -539,14 +542,8 @@ export async function discordChatThreads(
     chatThreadsContract,
   );
   const headers = { authorization: "Bearer clerk-session" };
-  const response = await accept(client.snapshot({ headers }), [200]);
-  if (!("chatThreads" in response.body)) {
-    throw new Error(
-      "A newly created Discord fixture must have an inline chat snapshot",
-    );
-  }
   const lifecycleEvents: ChatThreadEvent[] = [];
-  let sinceSeqId: number | undefined = response.body.latestSeqId ?? undefined;
+  let sinceSeqId = actor.sinceSetupSeqId;
   while (true) {
     const page: { body: { events: ChatThreadEvent[]; hasMore: boolean } } =
       await accept(
@@ -568,5 +565,5 @@ export async function discordChatThreads(
     }
     sinceSeqId = next;
   }
-  return replayChatThreadEvents(response.body.chatThreads, lifecycleEvents);
+  return replayChatThreadEvents([], lifecycleEvents);
 }

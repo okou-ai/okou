@@ -254,7 +254,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let scenario = ActivityScenario()
     let workspace = scenario.workspace()
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.refresh()
     workspace.setPhase(.active)
     workspace.selectedThreadID = ActivityScenario.thread
@@ -343,7 +343,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let scenario = ActivityScenario()
     let workspace = scenario.workspace()
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.refresh()
     XCTAssertEqual(scenario.state.requests.withLock { $0 }, 0)
     workspace.setPhase(.active)

@@ -206,8 +206,8 @@ final class ComposerConnectorPermissionTests: XCTestCase {
     XCTAssertEqual(body.target.connectorSlug, "gmail")
     XCTAssertEqual(body.grants.first?.permission, "mail.read")
     XCTAssertEqual(body.grants.first?.action, "deny")
-    XCTAssertEqual(
-      server.requests(path: "/api/agents/\(PermissionEditorFixture.nextAgentID)").count, 2)
+    XCTAssertTrue(
+      server.requests(path: "/api/agents/\(PermissionEditorFixture.nextAgentID)").isEmpty)
   }
 
   func testDismissingTheEditorKeepsTheComposerOwnedWriteAndReadback() async throws {

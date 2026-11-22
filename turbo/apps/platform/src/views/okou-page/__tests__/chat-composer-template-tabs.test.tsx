@@ -14,7 +14,6 @@ import {
 import { mockNow } from "../../../__tests__/time.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
-  AGENT_ID,
   expectInlineTemplate,
   openTemplatePicker,
   createTemplateGalleryHelpers,
@@ -33,7 +32,7 @@ test("Built-in templates stay usable while custom templates load after switching
   });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?templatePicker=website`,
+    path: `/?templatePicker=website`,
   });
   const dialog = await screen.findByRole("dialog");
   const website = WEBSITE_TEMPLATE_ITEMS[0]!;
@@ -71,7 +70,7 @@ async function openPicker({
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?compose=1`,
+    path: `/?compose=1`,
   });
   const dialog = await openTemplatePicker(user);
   return { user, dialog };

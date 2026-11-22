@@ -22,7 +22,6 @@ const APP_API_PREFETCH_PATHS = [
   "/api/feature-switches",
   "/api/user-preferences",
   "/api/onboarding/status",
-  "/api/agents",
   "/api/org",
   "/api/run-models",
   "/api/user-model-preference",

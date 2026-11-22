@@ -303,7 +303,6 @@ async function setupFixture(): Promise<CalendarScenario> {
     throw new Error("Expected an org-scoped workflow actor");
   }
   const workflowId = await wf.createWorkflow(actor, {
-    agentId,
     name: WORKFLOW_NAME,
   });
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");

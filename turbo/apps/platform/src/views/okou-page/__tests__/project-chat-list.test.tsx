@@ -18,10 +18,7 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import {
-  CHAT_LIST_AGENT_ID,
-  chatListThread,
-} from "./chat-list-test-helpers.ts";
+import { chatListThread } from "./chat-list-test-helpers.ts";
 import { menuItemByText } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
@@ -140,7 +137,6 @@ async function openChatList(
 ) {
   const workspace = installContinuityWorkspace(context, { caseId, threads });
   installProjects();
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   await setupPage({
     context,
     path,
@@ -220,7 +216,6 @@ test.each([false, true])(
       threads: [archived],
     });
     installProjects([]);
-    context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
     await setupPage({
       context,
       path: "/",
@@ -350,13 +345,13 @@ test("Pinned chats in a Project move among themselves", async () => {
   });
 });
 
-test("A pinned chat moves past another Agent's pin in the same Project", async () => {
+test("A pinned chat moves past another pinned chat in the same Project", async () => {
   const pinnedAt = "2026-09-01T00:00:00Z";
   const ordinary = continuityThread(307, 1, "Ordinary chat");
   const first = {
-    ...continuityThread(307, 2, "Other Agent pin"),
+    ...continuityThread(307, 2, "First pin"),
     projectId: launchId,
-    agentId: "c7000000-0000-4000-a000-000000000009",
+
     pinnedAt,
     pinOrder: "a0",
   };
@@ -371,16 +366,13 @@ test("A pinned chat moves past another Agent's pin in the same Project", async (
   });
   await openChatList(307, [ordinary, first, second], `/chats/${ordinary.id}`);
   await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
-  expect(projectChatTitles()).toStrictEqual(["Other Agent pin", "Second pin"]);
+  expect(projectChatTitles()).toStrictEqual(["First pin", "Second pin"]);
 
   click(chatMenuButton(second.id));
   await screen.findByRole("menu");
   click(menuItemByText("Move up"));
   await waitFor(() => {
-    expect(projectChatTitles()).toStrictEqual([
-      "Second pin",
-      "Other Agent pin",
-    ]);
+    expect(projectChatTitles()).toStrictEqual(["Second pin", "First pin"]);
   });
 });
 
@@ -391,7 +383,6 @@ test("Clicking an expanded, unselected Project title folds its chats and keeps t
     projectId: launchId,
   };
   // A Project page lists the default Agent's chats, so these belong to it.
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   await openChatList(306, [ordinary, member], `/chats/${ordinary.id}`);
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 

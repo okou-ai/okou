@@ -246,8 +246,7 @@ public struct SendReceipt: Sendable {
 }
 
 public enum ChatError: LocalizedError, Sendable {
-  case noDefaultAgent
-  case agentUnavailable
+  case composerUnavailable
   case invalidContract(String)
   case settingsChanged
   case operationInProgress
@@ -255,10 +254,8 @@ public enum ChatError: LocalizedError, Sendable {
 
   public var errorDescription: String? {
     switch self {
-    case .noDefaultAgent:
-      "This workspace has no default agent. Complete setup on the Okou website, then refresh."
-    case .agentUnavailable:
-      "This agent is no longer available. Choose another agent and try again."
+    case .composerUnavailable:
+      "The workspace draft is still loading. Try again in a moment."
     case .invalidContract(let detail):
       "Chat data could not be read. Refresh or update the TestFlight app. \(detail)"
     case .settingsChanged:

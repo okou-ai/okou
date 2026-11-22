@@ -8,7 +8,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { githubOauthRoutes } from "../github-oauth";
 import { githubOauthContract } from "@okouai/api-contracts/contracts/github-oauth";
-import { randomInt, randomUUID } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { mockEnv } from "../../../lib/env";
@@ -22,22 +22,18 @@ const bdd = createBddApi(context);
 const github = createGithubBddApi(context);
 const ORIGIN = "https://api.okou.ai";
 
-async function installationActor() {
+function installationActor() {
   const actor = bdd.user();
-  const agent = await bdd.createAgent(actor, {
-    displayName: `Authorized GitHub install ${randomUUID()}`,
-  });
   github.configureApp();
   mockClerkMembership(context, actor, "org:admin");
-  return { actor, agentId: agent.agentId };
+  return actor;
 }
 
-async function start(actor: ApiTestUser, agentId: string) {
+async function start(actor: ApiTestUser) {
   const response = await github.requestInstall(
     new URLSearchParams({
       userId: actor.userId,
       orgId: actor.orgId!,
-      composeId: agentId,
     }).toString(),
     { auth: actor, origin: ORIGIN },
   );
@@ -58,12 +54,11 @@ describe("GitHub installation authorization", () => {
     mockEnv("APP_URL", "https://app.okou.ai");
   });
   it("requires sign-in before accepting a named administrator", async () => {
-    const { actor, agentId } = await installationActor();
+    const actor = installationActor();
     const response = await github.requestInstall(
       new URLSearchParams({
         userId: actor.userId,
         orgId: actor.orgId!,
-        composeId: agentId,
       }).toString(),
       { origin: ORIGIN, auth: null },
     );
@@ -73,13 +68,12 @@ describe("GitHub installation authorization", () => {
   });
 
   it("rejects another user's principal even when that user is an administrator", async () => {
-    const { actor: victim, agentId } = await installationActor();
+    const victim = installationActor();
     const attacker = bdd.user();
     const response = await github.requestInstall(
       new URLSearchParams({
         userId: victim.userId,
         orgId: victim.orgId!,
-        composeId: agentId,
       }).toString(),
       { auth: attacker, origin: ORIGIN },
     );
@@ -90,25 +84,19 @@ describe("GitHub installation authorization", () => {
     await github.requestReadInstallation(attacker, [404]);
   });
 
-  it("rejects non-admin callers and agents outside the active organization", async () => {
-    const { actor, agentId } = await installationActor();
+  it("requires an organization administrator", async () => {
+    const actor = installationActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    const denied = await github.requestInstall(
-      new URLSearchParams({ composeId: agentId }).toString(),
-      { auth: member, origin: ORIGIN },
-    );
+    const denied = await github.requestInstall("", {
+      auth: member,
+      origin: ORIGIN,
+    });
     expect(error(denied.location)).toContain("Only organization admins");
-    const other = await installationActor();
-    const foreignAgent = await github.requestInstall(
-      new URLSearchParams({ composeId: other.agentId }).toString(),
-      { auth: actor, origin: ORIGIN },
-    );
-    expect(error(foreignAgent.location)).toContain("does not belong");
   });
 
   it("checks the user's provider access before associating an installation", async () => {
-    const { actor, agentId } = await installationActor();
-    const state = await start(actor, agentId);
+    const actor = installationActor();
+    const state = await start(actor);
     github.mockInstallation({
       installationId: "2002",
       targetId: "7007",
@@ -137,8 +125,8 @@ describe("GitHub installation authorization", () => {
   });
 
   it("rejects a callback after the authenticated Okou actor switches", async () => {
-    const { actor, agentId } = await installationActor();
-    const state = await start(actor, agentId);
+    const actor = installationActor();
+    const state = await start(actor);
     const other = bdd.user({ orgId: actor.orgId });
     const response = await github.requestSetupCallback(
       new URLSearchParams({
@@ -155,8 +143,8 @@ describe("GitHub installation authorization", () => {
   });
 
   it("verifies the provider account, persists the installation, and rejects state replay", async () => {
-    const { actor, agentId } = await installationActor();
-    const installed = await github.installGithubApp(actor, agentId, {
+    const actor = installationActor();
+    const installed = await github.installGithubApp(actor, {
       oauthCode: { code: "authorized-installation", githubUserId: "702" },
     });
     await expect(github.readInstallation(actor)).resolves.toMatchObject({
@@ -180,8 +168,8 @@ describe("GitHub installation authorization", () => {
   });
 
   it("accepts a personal installation only for the verified GitHub account owner", async () => {
-    const { actor, agentId } = await installationActor();
-    const installed = await github.installGithubApp(actor, agentId, {
+    const actor = installationActor();
+    const installed = await github.installGithubApp(actor, {
       targetType: "User",
       oauthCode: { code: "personal-owner", githubUserId: "703" },
     });
@@ -195,8 +183,8 @@ describe("GitHub installation authorization", () => {
   });
 
   it("rejects a personal installation owned by a different GitHub account", async () => {
-    const { actor, agentId } = await installationActor();
-    const state = await start(actor, agentId);
+    const actor = installationActor();
+    const state = await start(actor);
     github.mockInstallation({
       installationId: "7007",
       targetId: "704",
@@ -219,8 +207,8 @@ describe("GitHub installation authorization", () => {
   });
 
   it("requires user verification when installation returns no authorization code", async () => {
-    const { actor, agentId } = await installationActor();
-    const state = await start(actor, agentId);
+    const actor = installationActor();
+    const state = await start(actor);
     const pending = await github.requestSetupCallback(
       new URLSearchParams({
         state,
@@ -248,10 +236,10 @@ describe("GitHub installation authorization", () => {
   });
 
   it("recovers an existing provider installation only after verifying its administrator", async () => {
-    const { actor, agentId } = await installationActor();
+    const actor = installationActor();
     const installationId = String(randomInt(1_000_000_000, 9_999_999_999));
     const organizationId = String(randomInt(1_000_000_000, 9_999_999_999));
-    const state = await start(actor, agentId);
+    const state = await start(actor);
     const configured = await github.requestSetupCallback(
       new URLSearchParams({
         state,
@@ -289,10 +277,10 @@ describe("GitHub installation authorization", () => {
   });
 
   it("expires an abandoned authorization without creating an installation", async () => {
-    const { actor, agentId } = await installationActor();
+    const actor = installationActor();
     const instant = now();
     mockNow(instant);
-    const state = await start(actor, agentId);
+    const state = await start(actor);
     mockNow(instant + 15 * 60 * 1000);
     const response = await github.requestSetupCallback(
       new URLSearchParams({
@@ -308,8 +296,8 @@ describe("GitHub installation authorization", () => {
   it.each(callbackAuthenticationModes)(
     "requires the GitHub installation completing actor (%s)",
     async (mode) => {
-      const { actor, agentId } = await installationActor();
-      const state = await start(actor, agentId);
+      const actor = installationActor();
+      const state = await start(actor);
       const installationId = String(randomInt(1_000_000_000, 9_999_999_999));
       github.mockInstallation({
         installationId,
@@ -383,8 +371,8 @@ describe("GitHub installation authorization", () => {
   it.each(["missing", "expired-cookie"] as const)(
     "protects GitHub no-code continuation (%s)",
     async (mode) => {
-      const { actor, agentId } = await installationActor();
-      const state = await start(actor, agentId);
+      const actor = installationActor();
+      const state = await start(actor);
       const installationId = String(randomInt(1_000_000_000, 9_999_999_999));
       const first = await github.requestSetupCallback(
         new URLSearchParams({
@@ -445,7 +433,7 @@ describe("GitHub installation authorization", () => {
   it.each([undefined, "invalid-state"])(
     "keeps GitHub update without valid state read only (%s)",
     async (state) => {
-      const { actor } = await installationActor();
+      const actor = installationActor();
       const query = new URLSearchParams({
         setup_action: "update",
         installation_id: "988000",

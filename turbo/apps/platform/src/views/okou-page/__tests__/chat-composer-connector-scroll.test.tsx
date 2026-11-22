@@ -22,7 +22,6 @@ import {
   connectorAccount,
   chatConnectorOverviewFixture,
   createComposerConnectorHelpers,
-  SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 
@@ -51,7 +50,7 @@ async function setup(count: number) {
   installComposerConnectorFixture({ catalog, accounts });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
     locale: "en-US",
     featureSwitches: {},
   });

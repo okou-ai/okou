@@ -1344,7 +1344,7 @@ assertNoClerkSecrets(authenticatedWithoutOrganization);
 
 const prefetchPagePath =
   "/settings/profile?x-vercel-protection-bypass=query-secret&keep=value";
-const agentBody = Promise.withResolvers();
+const orgBody = Promise.withResolvers();
 const featureSwitchesBody = Promise.withResolvers();
 const observedApiRequests = [];
 const apiRequestsStarted = Promise.withResolvers();
@@ -1368,14 +1368,14 @@ const prefetchWorker = workerModule.createWorker(
       method: init?.method,
       url,
     });
-    if (observedApiRequests.length === 7) {
+    if (observedApiRequests.length === 6) {
       apiRequestsStarted.resolve();
     }
-    if (url.pathname === "/api/agents") {
+    if (url.pathname === "/api/org") {
       return {
         ok: true,
         json() {
-          return agentBody.promise;
+          return orgBody.promise;
         },
       };
     }
@@ -1407,7 +1407,6 @@ assert.deepEqual(
     })
     .sort(),
   [
-    "/api/agents",
     "/api/feature-switches",
     "/api/onboarding/status",
     "/api/org",
@@ -1448,15 +1447,14 @@ assert.deepEqual(sharedDatabaseWorkerPreloadArguments(prefixHtml), [
 ]);
 assert.doesNotMatch(prefixHtml, /<\/body>/u);
 
-agentBody.resolve([{ agentId: "agent-prefetched" }]);
-const agentChunk = await prefetchedReader.read();
-assert.equal(agentChunk.done, false);
-const agentHtml = prefetchedDecoder.decode(agentChunk.value, { stream: true });
-assert.deepEqual(prefetchedApiPaths(agentHtml), ["/api/agents"]);
-assert.deepEqual(prefetchedApiJson(agentHtml, "/api/agents"), [
-  { agentId: "agent-prefetched" },
-]);
-assert.doesNotMatch(agentHtml, /api%2Ffeature-switches/u);
+const prefetchedOrg = { orgId: "org_prefetch" };
+orgBody.resolve(prefetchedOrg);
+const orgChunk = await prefetchedReader.read();
+assert.equal(orgChunk.done, false);
+const orgHtml = prefetchedDecoder.decode(orgChunk.value, { stream: true });
+assert.deepEqual(prefetchedApiPaths(orgHtml), ["/api/org"]);
+assert.deepEqual(prefetchedApiJson(orgHtml, "/api/org"), prefetchedOrg);
+assert.doesNotMatch(orgHtml, /api%2Ffeature-switches/u);
 
 featureSwitchesBody.resolve({
   switches: { escaped: escapedScript },
@@ -1488,13 +1486,13 @@ while (true) {
   suffixHtml += prefetchedDecoder.decode(suffixChunk.value, { stream: true });
 }
 suffixHtml += prefetchedDecoder.decode();
-const prefetchedHtml = `${prefixHtml}${agentHtml}${featureSwitchesHtml}${suffixHtml}`;
+const prefetchedHtml = `${prefixHtml}${orgHtml}${featureSwitchesHtml}${suffixHtml}`;
 assert.match(suffixHtml, /<\/body>/u);
 assert.deepEqual(prefetchedApiPaths(prefetchedHtml), [
-  "/api/agents",
+  "/api/org",
   "/api/feature-switches",
 ]);
-assert.doesNotMatch(prefetchedHtml, /api%2Fuser-preferences/u);
+assert.doesNotMatch(prefetchedHtml, /api%2Fmember%2Fpreferences/u);
 assert.doesNotMatch(prefetchedHtml, /<script>alert\(1\)<\/script>/u);
 assert.ok(
   prefetchedHtml.indexOf('id="app-bootstrap-skeleton"') <
@@ -1522,7 +1520,7 @@ const timedOutPrefetch = await responseSnapshot(
           Response.json({ switches: {}, effectiveSwitches: {} }),
         );
       }
-      if (path !== "/api/agents") {
+      if (path !== "/api/org") {
         return Promise.resolve(new Response(null, { status: 402 }));
       }
       return new Promise((_resolve, reject) => {
@@ -1547,8 +1545,8 @@ assert.deepEqual(
   prefetchedApiJson(timedOutPrefetch.body, "/api/feature-switches"),
   { switches: {}, effectiveSwitches: {} },
 );
-assert.doesNotMatch(timedOutPrefetch.body, /api%2Fagents/u);
-assert.doesNotMatch(timedOutPrefetch.body, /api%2Fuser-preferences/u);
+assert.doesNotMatch(timedOutPrefetch.body, /api%2Forg/u);
+assert.doesNotMatch(timedOutPrefetch.body, /api%2Fmember%2Fpreferences/u);
 assert.deepEqual(clerkEdgeSessionJson(timedOutPrefetch.body), {
   userId: "user_prefetch_timeout",
   sessionId: "sess_prefetch_timeout",
@@ -2165,13 +2163,13 @@ for (const identity of ["pr-25304", "staging"]) {
       userId: "user_public_preview",
       sessionId: "sess_public_preview",
     });
-    assert.equal(apiRequests.length, 7);
+    assert.equal(apiRequests.length, 6);
     for (const { url, headers } of apiRequests) {
       assert.equal(url.origin, `https://${identity}-api.vm6.ai`);
       assert.equal(headers.get("Origin"), publicOrigin);
       assert.equal(headers.get("Cookie"), "__session=public-preview-session");
     }
-    assert.deepEqual(prefetchedApiJson(html, "/api/agents"), {
+    assert.deepEqual(prefetchedApiJson(html, "/api/org"), {
       publicPreview: true,
     });
   }

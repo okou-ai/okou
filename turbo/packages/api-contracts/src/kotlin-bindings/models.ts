@@ -765,7 +765,7 @@ ${types
     requestBinding = requestTypes.has(binding.name);
     const name = kotlinTypeName(binding.name);
     const result = render(
-      toJSONSchema(binding.readSchema ?? binding.schema, {
+      toJSONSchema(binding.schema, {
         io: binding.direction,
         override: ({ zodSchema, jsonSchema }) => {
           if (rawObjects.has(zodSchema)) {

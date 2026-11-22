@@ -13,7 +13,7 @@ describe("pure agent notification email rendering", () => {
           subject: "Next steps",
           text: "## Continue\n3. Third step\n4. Fourth step\n\n## Zero-based\n0. Zero step\n1. First step\n\n## Nested\n1. Outer step\n\n   5. Nested step\n   6. Next nested step",
           runUrl: "https://app.okou.ai/activities/run-1",
-          manageUrl: "https://app.okou.ai/agents?settings=preference",
+          manageUrl: "https://app.okou.ai/?settings=preference",
         },
         "https://app.okou.ai/unsubscribe",
       );
@@ -120,8 +120,7 @@ describe("pure agent notification email rendering", () => {
       subject: "Morning Brief",
       text: "## Today\n**Useful** [link](https://example.com) ![tracker](https://example.com/pixel.png) [unsafe](javascript:alert(1))",
       runUrl: "https://app.okou.ai/activities/run-1",
-      manageUrl:
-        "https://app.okou.ai/agents?settings=preference&focus=morning-brief",
+      manageUrl: "https://app.okou.ai/?settings=preference&focus=morning-brief",
     };
     const unsubscribeUrl = "https://app.okou.ai/email/unsubscribe?token=test";
     const email = renderAgentMorningBriefEmail(props, unsubscribeUrl);
@@ -150,7 +149,7 @@ describe("pure agent notification email rendering", () => {
           text,
           runUrl: "https://app.okou.ai/activities/run-1",
           manageUrl:
-            "https://app.okou.ai/agents?settings=preference&focus=morning-brief",
+            "https://app.okou.ai/?settings=preference&focus=morning-brief",
         },
         "https://app.okou.ai/unsubscribe",
       );

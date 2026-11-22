@@ -4,7 +4,6 @@ import Textual
 
 struct ChatDetailView: View {
   @Bindable var conversation: ConversationStore
-  let agents: ThreadListStore?
   let workspaceName: String?
   var didSend: (@MainActor () async -> Void)?
   let topContentInset: CGFloat
@@ -25,7 +24,7 @@ struct ChatDetailView: View {
   private struct UsageDetails: Identifiable { let id: String }
 
   init(
-    conversation: ConversationStore, agents: ThreadListStore? = nil, workspaceName: String? = nil,
+    conversation: ConversationStore, workspaceName: String? = nil,
     didSend: (@MainActor () async -> Void)? = nil,
     topContentInset: CGFloat = 0,
     mentionSource: ComposerMentionSource? = nil,
@@ -33,7 +32,6 @@ struct ChatDetailView: View {
     fork: ((ChatFeedbackSelection) -> Void)? = nil
   ) {
     self.conversation = conversation
-    self.agents = agents
     self.workspaceName = workspaceName
     self.didSend = didSend
     self.topContentInset = topContentInset
@@ -45,7 +43,7 @@ struct ChatDetailView: View {
 
   private var history: ChatHistory { conversation.history ?? .empty }
   private var agentName: String? {
-    agents?.agents.first(where: { $0.agentId == thread.agentID })?.displayName
+    "Okou"
   }
   private var rows: [ConversationCollectionRow] {
     ConversationRowProjection(conversation: conversation).rows
@@ -398,7 +396,7 @@ struct ChatDetailView: View {
   }
 
   private var assistantAvatar: some View {
-    ChatAgentAvatar(agents: agents, agentID: thread.agentID)
+    OkouAgentAvatar(avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.message)
       .accessibilityIdentifier("assistant-avatar")
   }
 

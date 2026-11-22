@@ -246,7 +246,7 @@ test("Creating a workspace opens onboarding after activating its organization", 
 
   await setupPage({
     context,
-    path: "/agents",
+    path: "/",
     auth: {
       user: {
         id: "test-user-123",

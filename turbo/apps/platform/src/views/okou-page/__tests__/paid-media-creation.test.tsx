@@ -16,7 +16,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  AGENT_ID,
   openTemplatePicker,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -46,7 +45,7 @@ function button(name: string, root: ParentNode = document.body) {
 async function setupComposer() {
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   return findComposerEditor();
 }
@@ -168,7 +167,7 @@ test("Gallery notices follow each paid branch for a member using default feature
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, { disabledTools: ["image-generation"] });
   });
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   await findComposerEditor();
   const dialog = await openTemplatePicker(
     userEvent.setup({ delay: null }),

@@ -954,7 +954,7 @@ function PermissionActionInlineStatus({
           <AlertCircle size={13} className="shrink-0" />
           <span className={textClassName}>
             {t(($) => {
-              return $.chat.permissions.agentNotFound;
+              return $.chat.permissions.memberNotFound;
             })}
           </span>
         </div>
@@ -1002,12 +1002,12 @@ function permissionActionHasControls(
 }
 
 function isPermissionActionLoading(params: {
-  agentLoading: boolean;
+  targetLoading: boolean;
   permissionMetadataLoading: boolean;
   userGrantsLoading: boolean;
 }): boolean {
   return (
-    params.agentLoading ||
+    params.targetLoading ||
     params.permissionMetadataLoading ||
     params.userGrantsLoading
   );
@@ -1018,23 +1018,23 @@ function isPermissionActionSaving(params: { grantLoading: boolean }): boolean {
 }
 
 function isPermissionActionLoadError(params: {
-  agentError: boolean;
+  targetError: boolean;
   permissionMetadataError: boolean;
   userGrantsError: boolean;
 }): boolean {
   return (
-    params.agentError ||
+    params.targetError ||
     params.permissionMetadataError ||
     params.userGrantsError
   );
 }
 
 function isPermissionActionAlreadyApplied(params: {
-  hasAgent: boolean;
+  hasTarget: boolean;
   userGrantPolicy: FirewallPolicyValue | undefined;
   action: "allow" | "deny";
 }): boolean {
-  if (!params.hasAgent) {
+  if (!params.hasTarget) {
     return false;
   }
   return params.userGrantPolicy === params.action;
@@ -1104,7 +1104,7 @@ function permissionActionGrantExpiresAt({
 }
 
 function createPermissionActionCardStatus(params: {
-  hasAgent: boolean;
+  hasTarget: boolean;
   hasPermission: boolean;
   loading: boolean;
   loadError: boolean;
@@ -1125,7 +1125,7 @@ function createPermissionActionCardStatus(params: {
   if (params.loadError) {
     return { kind: "load-error" };
   }
-  if (!params.hasAgent) {
+  if (!params.hasTarget) {
     return { kind: "missing-target" };
   }
   if (!params.hasPermission) {
@@ -1142,8 +1142,8 @@ function createPermissionActionCardStatus(params: {
 
 function createPermissionActionCardViewState(params: {
   block: PermissionSignals;
-  hasAgent: boolean;
-  agentLoadableState: string;
+  hasTarget: boolean;
+  targetLoadableState: string;
   permissionMetadataLoadable: LoadableLike<PlatformConnectorPermissionMetadata | null>;
   userGrantsLoadable: LoadableLike<readonly PermissionActionUserGrant[]>;
   grantLoadableState: string;
@@ -1159,13 +1159,13 @@ function createPermissionActionCardViewState(params: {
   );
   const actionLabel = permissionActionVerb(params.block.action);
   const loading = isPermissionActionLoading({
-    agentLoading: params.agentLoadableState === "loading",
+    targetLoading: params.targetLoadableState === "loading",
     permissionMetadataLoading:
       params.permissionMetadataLoadable.state === "loading",
     userGrantsLoading: params.userGrantsLoadable.state === "loading",
   });
   const loadError = isPermissionActionLoadError({
-    agentError: params.agentLoadableState === "hasError",
+    targetError: params.targetLoadableState === "hasError",
     permissionMetadataError:
       params.permissionMetadataLoadable.state === "hasError",
     userGrantsError: params.userGrantsLoadable.state === "hasError",
@@ -1180,14 +1180,14 @@ function createPermissionActionCardViewState(params: {
     permissionMetadata,
   );
   const alreadyApplied = isPermissionActionAlreadyApplied({
-    hasAgent: params.hasAgent,
+    hasTarget: params.hasTarget,
     userGrantPolicy,
     action: params.block.action,
   });
   const saveDone =
     params.grantLoadableState === "hasData" && params.savedGrantActive;
   const status = createPermissionActionCardStatus({
-    hasAgent: params.hasAgent,
+    hasTarget: params.hasTarget,
     hasPermission: Boolean(focusedPermission),
     loading,
     loadError,
@@ -1382,8 +1382,8 @@ function PermissionActionCardForTarget({
     : false;
   const actionState = createPermissionActionCardViewState({
     block: signals,
-    hasAgent: hasTarget,
-    agentLoadableState: targetLoadableState,
+    hasTarget,
+    targetLoadableState,
     permissionMetadataLoadable,
     userGrantsLoadable,
     grantLoadableState: grantLoadable.state,

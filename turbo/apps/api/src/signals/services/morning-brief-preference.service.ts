@@ -17,7 +17,6 @@ import {
   type MorningBriefMemberIdentity,
 } from "./morning-brief-enrollment-data.service";
 import {
-  loadMorningBriefDefaultAgentId$,
   loadMorningBriefState$,
   loadMorningBriefOwnership$,
   type MorningBriefState,
@@ -70,23 +69,6 @@ function conflict(
 const MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE =
   "Morning Brief changed concurrently. Retry the preference update.";
 
-function unavailableFailure(
-  reason: NonNullable<MorningBriefPreferenceResponse["unavailableReason"]>,
-): MorningBriefPreferenceFailure {
-  return reason === "missing-timezone"
-    ? {
-        kind: "bad-request",
-        code: "MORNING_BRIEF_MISSING_TIMEZONE",
-        message: "Set a valid time zone before enabling Morning Brief.",
-      }
-    : {
-        kind: "bad-request",
-        code: "MORNING_BRIEF_MISSING_DEFAULT_AGENT",
-        message:
-          "Okou is unavailable in this workspace. Contact a workspace administrator.",
-      };
-}
-
 function morningBriefOwner(
   args: MorningBriefPreferenceArgs,
 ): MorningBriefMemberIdentity {
@@ -109,10 +91,6 @@ const loadUnavailableReason$ = command(
       return "missing-timezone";
     }
 
-    const agentId = await set(loadMorningBriefDefaultAgentId$, owner, signal);
-    if (agentId === null) {
-      return "missing-default-agent";
-    }
     return null;
   },
 );
@@ -273,21 +251,9 @@ const createMorningBriefFromPreference$ = command(
     if (unavailableReason !== null) {
       return await set(loadInstalledPreference$, args, signal);
     }
-    const agentId = await set(
-      loadMorningBriefDefaultAgentId$,
-      identity,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (agentId === null) {
-      return unavailableFailure("missing-default-agent");
-    }
     const definitionName = await set(
       selectedMorningBriefDefinition$,
-      {
-        ...identity,
-        agentId,
-      },
+      identity,
       signal,
     );
     const installed = await set(

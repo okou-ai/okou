@@ -15,7 +15,6 @@ import {
   builtinConnector,
   chatConnectorOverviewFixture,
   connectorAccount,
-  SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
@@ -58,7 +57,7 @@ test("Read connected inventory without fetching the connector directory or old a
     });
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   click(await findFastControl("button", "Connectors"));
   await expect(
     findFastControl("button", /^GitHub/u),
@@ -91,7 +90,7 @@ test("Refresh the remote menu and Chat account inventory independently", async (
       vncHosts: [],
     });
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   const trigger = await findFastControl("button", "Connectors");
   expect(screen.queryByText("First computer")).not.toBeInTheDocument();
   click(trigger);
@@ -121,7 +120,7 @@ test("Render connected connectors while remote resources are unavailable", async
       error: { code: "FORBIDDEN", message: "Remote resources unavailable" },
     });
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   click(await findFastControl("button", "Connectors"));
   await expect(findFastControl("button", /^GitHub/u)).resolves.toBeVisible();
   await expect(screen.findByRole("alert")).resolves.toBeVisible();
@@ -141,7 +140,7 @@ test("Reopening a pending menu shares the Chat page's inventory request", async 
       return respond(200, [githubOverview("GitHub")]);
     },
   );
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
   await started.promise;
@@ -182,7 +181,7 @@ test("Render remote resources while connected connectors are unavailable", async
       vncHosts: [],
     });
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   click(await findFastControl("button", "Connectors"));
   await expect(screen.findByText("Available computer")).resolves.toBeVisible();
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(

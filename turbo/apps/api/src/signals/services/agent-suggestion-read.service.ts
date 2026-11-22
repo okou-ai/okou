@@ -228,6 +228,7 @@ export const readFeedItems$ = command(
       if (row.type === "event") {
         return platformEventSchema.parse({
           ...row,
+          sourceType: "platform-event",
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
           expiresAt: row.expiresAt?.toISOString() ?? null,

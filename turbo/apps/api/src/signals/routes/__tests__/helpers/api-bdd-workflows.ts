@@ -1,4 +1,3 @@
-import { retainedWorkflowCaller } from "./retained-workflow-caller";
 import {
   chatThreadMetadataContract,
   type ChatEvent,
@@ -121,7 +120,6 @@ export function mockNotionConnectorOAuth(
 }
 
 export function createWorkflowsBddApi(context: TestContext) {
-  const retainedHeaders = retainedWorkflowCaller(context);
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
@@ -200,7 +198,6 @@ export function createWorkflowsBddApi(context: TestContext) {
     async createWorkflow(
       actor: ApiTestUser,
       options: {
-        readonly agentId?: string;
         readonly name: string;
         readonly displayName?: string;
         readonly chatThreadId?: string;
@@ -209,23 +206,13 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly instruction?: string;
       },
     ): Promise<string> {
-      const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
-      const agentId = options.agentId ?? defaultAgentId;
-      if (!agentId) {
-        throw new Error("Expected a member workflow namespace");
-      }
-      const headers =
-        agentId === defaultAgentId
-          ? authenticate(actor)
-          : await retainedHeaders(actor);
       const client = setupApp({ context, routes: workflowsRoutes })(
         workflowsCollectionContract,
       );
       const response = await accept(
         client.create({
-          headers,
+          headers: authenticate(actor),
           body: {
-            agentId,
             name: options.name,
             ...(options.displayName === undefined
               ? {}
@@ -250,7 +237,6 @@ export function createWorkflowsBddApi(context: TestContext) {
     async copyWorkflow(
       actor: ApiTestUser,
       workflowId: string,
-      toAgentId: string,
     ): Promise<string> {
       const client = setupApp({ context, routes: workflowsRoutes })(
         workflowsDetailContract,
@@ -259,7 +245,7 @@ export function createWorkflowsBddApi(context: TestContext) {
         client.copy({
           headers: authenticate(actor),
           params: { workflowId },
-          body: { toAgentId },
+          body: {},
         }),
         [201],
       );

@@ -11,7 +11,6 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  AGENT_ID,
   createSidebarAccountHelpers,
   openAccountMenu,
 } from "./sidebar-account-test-helpers.ts";
@@ -57,7 +56,7 @@ test("Show a member’s latest package credits in the account menu", async () =>
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -115,7 +114,7 @@ test("Combine workspace and member-package credits for administrators", async ()
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -150,7 +149,7 @@ test.each([
     });
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
       auth: {
         user: {
           id: "test-user-123",
@@ -175,7 +174,7 @@ test("Export account data from the account menu", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -208,7 +207,7 @@ test("Open workspace Credit balance from the account menu", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",

@@ -15,7 +15,7 @@ import { bodyResultOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  loadProactiveWorkflowsEligibility$,
+  loadProactivePreferences$,
   type ProactiveWorkflowOwner,
 } from "../services/proactive-workflows-eligibility.service";
 import { ensureProactiveWorkflows$ } from "../services/proactive-workflows-lifecycle.service";
@@ -27,9 +27,7 @@ const readProactivePreference$ = command(
   async (
     { get },
     owner: ProactiveWorkflowOwner,
-    eligibility: Awaited<
-      ReturnType<typeof loadProactiveWorkflowsEligibility$.write>
-    >,
+    eligibility: Awaited<ReturnType<typeof loadProactivePreferences$.write>>,
     signal: AbortSignal,
   ): Promise<ProactivePreference> => {
     const definitions = Object.values(PROACTIVE_WORKFLOW_DEFINITIONS);
@@ -56,15 +54,14 @@ const readProactivePreference$ = command(
               );
             }),
           ),
+          eq(workflowAutomations.officialIntendedEnabled, true),
         ),
       );
     signal.throwIfAborted();
     const unavailableReason =
-      eligibility.agentId === null
-        ? "missing-default-agent"
-        : eligibility.suggestions.enabled && eligibility.timezone === null
-          ? "missing-timezone"
-          : null;
+      eligibility.suggestions.enabled && eligibility.timezone === null
+        ? "missing-timezone"
+        : null;
     return {
       enabled: eligibility.suggestions.enabled,
       status: !eligibility.suggestions.active
@@ -145,11 +142,7 @@ const preferenceRoute$ = command(
     }
     const auth = get(organizationAuthContext$);
     const owner = { orgId: auth.orgId, userId: auth.userId };
-    const eligibility = await set(
-      loadProactiveWorkflowsEligibility$,
-      owner,
-      signal,
-    );
+    const eligibility = await set(loadProactivePreferences$, owner, signal);
     if (!eligibility.suggestions.available) {
       return resourceUnavailable("Proactive is not enabled.");
     }
@@ -177,7 +170,7 @@ const preferenceRoute$ = command(
         signal,
       );
       const savedEligibility = await set(
-        loadProactiveWorkflowsEligibility$,
+        loadProactivePreferences$,
         owner,
         signal,
       );

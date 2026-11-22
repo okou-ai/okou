@@ -13,7 +13,6 @@ import {
 const ONBOARDING_GUARDED_PATHS = [
   ROUTES.activityDetail,
   ROUTES.activityInspect,
-  ROUTES.agents,
   ROUTES.artifacts,
   ROUTES.browser,
   ROUTES.browserAuthorize,
@@ -46,8 +45,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.workflowDetailInstructions,
   ROUTES.workflows,
   ROUTES.works,
-  "/team",
-  "/team/:id",
   "/firewall-allow/:id",
   "/activity/:id",
   "/activity/:id/context",

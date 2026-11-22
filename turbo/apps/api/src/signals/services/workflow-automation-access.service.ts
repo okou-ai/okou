@@ -1,13 +1,11 @@
-import { executionAgentId } from "./execution-agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { command } from "ccstate";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
 import {
   PROACTIVE_WORKFLOW_DEFINITIONS,
   RETIRED_PROACTIVE_DEFINITION_NAMES,
@@ -40,7 +38,6 @@ export const workflowAutomationCanFire$ = command(
     { set },
     args: {
       readonly automation: WorkflowAutomationRow;
-      readonly agentId: string;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -73,18 +70,10 @@ export const workflowAutomationCanFire$ = command(
         definitionName: workflows.officialDefinitionName,
       })
       .from(workflows)
-      .innerJoin(
-        agents,
-        eq(
-          agents.id,
-          executionAgentId(workflows.orgId, automation.ownerUserId),
-        ),
-      )
       .where(
         and(
           eq(workflows.id, automation.workflowId),
           eq(workflows.orgId, automation.orgId),
-          eq(agents.id, args.agentId),
           visibleWorkflowCondition(automation.ownerUserId),
         ),
       )
@@ -96,17 +85,14 @@ export const workflowAutomationCanFire$ = command(
     const proactiveKind = proactiveWorkflowKind(visible.definitionName);
     if (proactiveKind !== null) {
       const eligibility = await set(
-        loadProactiveWorkflowsEligibility$,
+        loadProactivePreferences$,
         { orgId: automation.orgId, userId: automation.ownerUserId },
         signal,
       );
-      if (
-        !eligibility[proactiveKind].active ||
-        eligibility.agentId !== args.agentId
-      ) {
+      if (!eligibility[proactiveKind].active) {
         return false;
       }
-      // Agent and mode changes wait for the previous proactive check.
+      // Wait for any previous proactive check owned by this member.
       // The current schedule already serializes its own occurrences.
       const [otherCheck] = await db
         .select({ id: agentRuns.id })

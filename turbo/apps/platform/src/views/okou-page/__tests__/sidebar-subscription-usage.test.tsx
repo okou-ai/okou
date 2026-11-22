@@ -16,7 +16,6 @@ import { mockNow } from "../../../__tests__/time.ts";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  AGENT_ID,
   connectedPersonalClaudeCodeProvider,
   connectedPersonalCodexProvider,
   createSidebarAccountHelpers,
@@ -52,7 +51,7 @@ test("Open subscriptions by clicking the rail and open Models in Settings", asyn
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -149,7 +148,7 @@ test.each(["Escape", "Close"])(
     ]);
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
     });
 
     const entry = await within(
@@ -230,7 +229,7 @@ test.each<{
     ]);
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
       locale: "zh-Hans",
       auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
     });
@@ -266,7 +265,7 @@ test("Keep the ChatGPT summary tied to its weekly limit", async () => {
   ]);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -324,7 +323,7 @@ test("Show an exhausted week with its own reset time", async () => {
   ]);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -375,7 +374,7 @@ test.each(["Escape", "Cancel"])(
     ]);
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
     });
 
     const panel = await openSubscriptionUsage();
@@ -451,7 +450,7 @@ test("Keep Codex reset pending until refreshed sidebar usage is ready", async ()
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -529,7 +528,7 @@ test.each([0, null])(
     ]);
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
       auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
     });
     const panel = await openSubscriptionUsage();
@@ -614,7 +613,7 @@ test.each([
     ]);
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
     });
     const entry = await screen.findByLabelText(
       "Subscription usage: less than 20% remaining",
@@ -654,7 +653,7 @@ test("Keep the account menu available without connected subscriptions", async ()
   context.mocks.data.personalModelProviders([]);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
   });
   const menu = await openAccountMenu();
@@ -680,7 +679,7 @@ test("Describe connected usage with an unknown percentage without treating it as
   ]);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   const entry = await within(
     screen.getByTestId("labeled-nav-rail"),
@@ -713,7 +712,7 @@ test.each([
     ]);
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
     });
     const panel = await openSubscriptionUsage();
     expect(

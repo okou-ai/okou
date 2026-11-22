@@ -1,6 +1,4 @@
 import { automationWorkflowJoinCondition } from "./workflow-visibility";
-import { executionAgentId } from "./execution-agent";
-import { agents } from "@okouai/db/schema/agent";
 import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -70,7 +68,6 @@ interface ExecuteResult {
 
 interface DueWorkflowAutomationRow {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly workflowDisplayName: string | null;
   readonly chatThreadId: string | null;
@@ -97,7 +94,6 @@ const startDueWorkflowAutomation$ = command(
       runWorkflowAutomationNow$,
       {
         automation,
-        proactiveAgentId: args.row.agentId,
         chatThreadId: args.chatThreadId,
         automationContext: args.scheduleContext,
         apiStartTime: now(),
@@ -242,7 +238,6 @@ const dueWorkflowAutomationRows$ = command(
     const rows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: agents.id,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -250,16 +245,6 @@ const dueWorkflowAutomationRows$ = command(
       })
       .from(workflowAutomations)
       .innerJoin(workflows, automationWorkflowJoinCondition())
-      .innerJoin(
-        agents,
-        eq(
-          agents.id,
-          executionAgentId(
-            workflowAutomations.orgId,
-            workflowAutomations.ownerUserId,
-          ),
-        ),
-      )
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -356,7 +341,7 @@ const dueWorkflowAutomationIsFireable$ = command(
     }
     const canFire = await set(
       workflowAutomationCanFire$,
-      { automation: row.automation, agentId: row.agentId },
+      { automation: row.automation },
       signal,
     );
     signal.throwIfAborted();
@@ -366,7 +351,6 @@ const dueWorkflowAutomationIsFireable$ = command(
         workflowId: row.automation.workflowId,
         orgId: row.automation.orgId,
         userId: row.automation.ownerUserId,
-        agentId: row.agentId,
       });
       return false;
     }
@@ -656,7 +640,6 @@ export const executeDueWorkflowAutomations$ = command(
           selectDueMorningBriefWorkflow$,
           {
             automation: row.automation,
-            agentId: row.agentId,
             workflowName: row.workflowName,
           },
           signal,

@@ -28,7 +28,7 @@ import {
 
 const DRAFT_SYNC_DEBOUNCE_MS = 500;
 
-interface AgentDraftEntry {
+export interface WorkspaceDraftEntry {
   readonly draft: DraftSignals;
   readonly load$: Command<Promise<void>, [AbortSignal]>;
   readonly queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -36,11 +36,9 @@ interface AgentDraftEntry {
   readonly flushDraftClear$: Command<Promise<void>, [AbortSignal]>;
 }
 
-export type EnsuredAgentDraft = AgentDraftEntry;
+const workspaceDraftCache$ = state(new Map<string, WorkspaceDraftEntry>());
 
-const agentDraftCache$ = state(new Map<string, AgentDraftEntry>());
-
-function userMessageAgentDraftState(args: {
+function userMessageWorkspaceDraftState(args: {
   readonly draftUserMessage?: UserMessageDocument | null;
   readonly draftAttachments: PersistedAttachment[] | null;
 }): RestoredDraftState | null {
@@ -61,7 +59,7 @@ function userMessageAgentDraftState(args: {
   };
 }
 
-function createAgentDraftSync(draft: DraftSignals) {
+function createWorkspaceDraftSync(draft: DraftSignals) {
   const draftSyncReset$ = resetSignal();
 
   const patchDraft$ = command(
@@ -148,29 +146,29 @@ function createAgentDraftSync(draft: DraftSignals) {
   return { queueDraftSync$, cancelDraftSync$, flushDraftClear$ };
 }
 
-export function createAgentDraftSignals(): EnsuredAgentDraft {
+export function createWorkspaceDraftSignals(): WorkspaceDraftEntry {
   const draft = createDraftSignals();
-  const sync = createAgentDraftSync(draft);
-  const load$ = createAgentDraftLoad(draft, sync.queueDraftSync$);
+  const sync = createWorkspaceDraftSync(draft);
+  const load$ = createWorkspaceDraftLoad(draft, sync.queueDraftSync$);
   return { draft, load$, ...sync };
 }
 
-export const ensureAgentDraft$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<EnsuredAgentDraft> => {
+export const ensureDraft$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<WorkspaceDraftEntry> => {
     const [org, user] = await Promise.all([
       get(currentOrgInfo$),
       get(currentUserInfo$),
     ]);
     signal.throwIfAborted();
     const scope = JSON.stringify([org?.id, user?.id]);
-    const cache = get(agentDraftCache$);
+    const cache = get(workspaceDraftCache$);
     const existing = cache.get(scope);
     if (existing) {
       return existing;
     }
 
-    const created = createAgentDraftSignals();
-    const entry: AgentDraftEntry = {
+    const created = createWorkspaceDraftSignals();
+    const entry: WorkspaceDraftEntry = {
       draft: created.draft,
       load$: created.load$,
       queueDraftSync$: created.queueDraftSync$,
@@ -179,14 +177,14 @@ export const ensureAgentDraft$ = command(
     };
     const next = new Map(cache);
     next.set(scope, entry);
-    set(agentDraftCache$, next);
+    set(workspaceDraftCache$, next);
     return created;
   },
 );
 
-function createAgentDraftHandoffSync(
+function createWorkspaceDraftHandoffSync(
   draft: DraftSignals,
-  queueDraftSync$: AgentDraftEntry["queueDraftSync$"],
+  queueDraftSync$: WorkspaceDraftEntry["queueDraftSync$"],
 ) {
   return command(
     async (
@@ -214,11 +212,14 @@ function createAgentDraftHandoffSync(
   );
 }
 
-function createAgentDraftLoad(
+function createWorkspaceDraftLoad(
   draft: DraftSignals,
-  queueDraftSync$: AgentDraftEntry["queueDraftSync$"],
-): AgentDraftEntry["load$"] {
-  const finishHandoff$ = createAgentDraftHandoffSync(draft, queueDraftSync$);
+  queueDraftSync$: WorkspaceDraftEntry["queueDraftSync$"],
+): WorkspaceDraftEntry["load$"] {
+  const finishHandoff$ = createWorkspaceDraftHandoffSync(
+    draft,
+    queueDraftSync$,
+  );
   const revision$ = state(0);
   const serverDraft$ = computed(async (get) => {
     get(revision$);
@@ -226,7 +227,9 @@ function createAgentDraftLoad(
       get(apiClient$)(composerDraftContract).get(),
       [200],
     );
-    return userMessageAgentDraftState(composerDraftSchema.parse(result.body));
+    return userMessageWorkspaceDraftState(
+      composerDraftSchema.parse(result.body),
+    );
   });
   const load$ = command(async ({ get, set }, signal: AbortSignal) => {
     const hasLocalDraft = (): boolean => {
@@ -313,7 +316,7 @@ function createAgentDraftLoad(
 
 export const clearComposerDraft$ = command(
   async ({ set }, signal: AbortSignal) => {
-    const entry = await set(ensureAgentDraft$, signal);
+    const entry = await set(ensureDraft$, signal);
     set(entry.draft.clear$);
     await set(entry.flushDraftClear$, signal);
   },

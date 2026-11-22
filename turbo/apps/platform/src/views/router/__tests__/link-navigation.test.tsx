@@ -21,17 +21,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const HOME_PATH = "/";
 
-function mockAPIs(): void {
-  context.mocks.data.agents([
-    {
-      agentId: "c0000000-0000-4000-a000-000000000001",
-      displayName: null,
-      description: null,
-      sound: null,
-      avatarUrl: null,
-    },
-  ]);
-}
+function mockAPIs(): void {}
 
 test("An unknown route offers both of its destinations", async () => {
   mockAPIs();
@@ -207,7 +197,7 @@ test("A valid sign-in ticket returns the user home", async () => {
 });
 
 test("A valid sign-in ticket returns to its trusted Okou destination", async () => {
-  const returnUrl = "https://app.okou.ai/agents?source=sign-in-ticket";
+  const returnUrl = "https://app.okou.ai/?source=sign-in-ticket";
   mockAPIs();
 
   await startPage({

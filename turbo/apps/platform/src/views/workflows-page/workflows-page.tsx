@@ -1,4 +1,3 @@
-// Workflow list surfaces for agent-scoped tabs and the workspace index page.
 import type { ReactElement, ReactNode } from "react";
 import { Avatar } from "@base-ui/react/avatar";
 import {
@@ -155,8 +154,6 @@ function ConnectorPillMarker({
     <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dotClassName)} />
   );
 }
-
-/** The agent that runs the workflow, drawn as its real avatar. */
 
 const MEMBER_AVATAR_FALLBACK_DELAY_MS = 600;
 

@@ -165,14 +165,14 @@ import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import type { ExistingSendThreadRow } from "./execution-org-member-context.signals";
 import {
-  agentRunSourceTitleSnapshot,
-  hasAgentRunSourceAnnotation,
+  chatRunSourceTitleSnapshot,
+  hasChatRunSourceAnnotation,
   projectUserMessage,
   repairUserMessageText,
   userMessagePhysicalFiles,
-  withAgentRunSourceAnnotation,
+  withChatRunSourceAnnotation,
+  type ChatRunSourceAnnotation,
   withServerSourceAnnotation,
-  type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
 import {
   workflowRewardQueuedEventInsert,
@@ -333,14 +333,14 @@ function normalSendTriggerSource(
 ): "web" | "agent" {
   return auth.tokenType === "agent" ? "agent" : "web";
 }
-const resolveChatAgentRunSourceById$ = command(
+const resolveChatRunSourceById$ = command(
   async (
     { get },
     auth: OrganizationAuthContext,
     sourceRunId: string,
     signal: AbortSignal,
   ): Promise<{
-    readonly annotation: ChatAgentRunSourceAnnotation | null;
+    readonly annotation: ChatRunSourceAnnotation | null;
     readonly autonomyBudget: number;
   } | null> => {
     const db = get(db$);
@@ -379,12 +379,12 @@ const resolveChatAgentRunSourceById$ = command(
         : {
             runId: source.runId,
             threadId: source.threadId,
-            titleSnapshot: agentRunSourceTitleSnapshot(source.title),
+            titleSnapshot: chatRunSourceTitleSnapshot(source.title),
           };
     return { annotation, autonomyBudget: source.autonomyBudget };
   },
 );
-const resolveNormalSendAgentRunSource$ = command(
+const resolveNormalSendChatRunSource$ = command(
   async (
     { set },
     params: {
@@ -395,17 +395,17 @@ const resolveNormalSendAgentRunSource$ = command(
     signal: AbortSignal,
   ): Promise<
     | {
-        readonly source: ChatAgentRunSourceAnnotation | null;
+        readonly source: ChatRunSourceAnnotation | null;
         readonly sourceAutonomyBudget: number | null;
       }
     | {
         readonly response: ReturnType<typeof badRequestMessage>;
       }
   > => {
-    if (hasAgentRunSourceAnnotation(params.userMessage)) {
+    if (hasChatRunSourceAnnotation(params.userMessage)) {
       return {
         response: badRequestMessage(
-          "Agent source annotations are server-managed",
+          "Forwarded chat references are server-managed",
         ),
       };
     }
@@ -421,7 +421,7 @@ const resolveNormalSendAgentRunSource$ = command(
         };
       }
       const resolved = await set(
-        resolveChatAgentRunSourceById$,
+        resolveChatRunSourceById$,
         params.auth,
         params.sourceRunId,
         signal,
@@ -442,18 +442,18 @@ const resolveNormalSendAgentRunSource$ = command(
       return { source: null, sourceAutonomyBudget: null };
     }
     const resolved = await set(
-      resolveChatAgentRunSourceById$,
+      resolveChatRunSourceById$,
       params.auth,
       params.auth.runId,
       signal,
     );
     if (resolved === null) {
-      return { response: badRequestMessage("Agent source run not found") };
+      return { response: badRequestMessage("Source run not found") };
     }
     if (resolved.annotation === null) {
       return {
         response: badRequestMessage(
-          "Agent source run is not linked to a chat thread",
+          "Source run is not linked to a chat thread",
         ),
       };
     }
@@ -464,9 +464,9 @@ const resolveNormalSendAgentRunSource$ = command(
   },
 );
 /** A started source resolution; its outcome is observed after authorization. */
-type NormalSendAgentRunSourceRead = ReturnType<
+type NormalSendChatRunSourceRead = ReturnType<
   typeof settle<
-    Awaited<ReturnType<(typeof resolveNormalSendAgentRunSource$)["write"]>>
+    Awaited<ReturnType<(typeof resolveNormalSendChatRunSource$)["write"]>>
   >
 >;
 /**
@@ -1318,7 +1318,7 @@ function userModelPreferencePlan(
 /** Reject a server-owned Official Workflow claim that cannot be authoritative. */
 function assertOfficialSourceClaim(
   args: NormalSendArgs,
-  agentRunSource: ChatAgentRunSourceAnnotation | null,
+  chatRunSource: ChatRunSourceAnnotation | null,
 ): void {
   if (args.requiredOfficialWorkflowIds?.length === 0) {
     throw new Error("Official Workflow source claim cannot be empty");
@@ -1326,7 +1326,7 @@ function assertOfficialSourceClaim(
   if (
     args.requiredOfficialWorkflowIds !== undefined &&
     normalSendTriggerSource(args.auth) === "agent" &&
-    agentRunSource === null
+    chatRunSource === null
   ) {
     throw new Error("Official agent queue source is missing its source Run");
   }
@@ -1337,11 +1337,11 @@ function assertOfficialSourceClaim(
  */
 function normalSendUserMessage(
   args: NormalSendArgs,
-  agentRunSource: ChatAgentRunSourceAnnotation | null,
+  chatRunSource: ChatRunSourceAnnotation | null,
 ): UserMessageDocument {
   const userMessage = repairUserMessageText(args.body.userMessage);
-  if (agentRunSource !== null) {
-    return withAgentRunSourceAnnotation(userMessage, agentRunSource);
+  if (chatRunSource !== null) {
+    return withChatRunSourceAnnotation(userMessage, chatRunSource);
   }
   return args.auth.tokenType !== "oauth"
     ? userMessage
@@ -1362,7 +1362,7 @@ function normalSendEvent(params: {
   readonly threadId: string;
   readonly userMessage: UserMessageDocument;
   readonly triggerSource: "web" | "agent";
-  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+  readonly chatRunSource: ChatRunSourceAnnotation | null;
   readonly requiredOfficialWorkflowIds: readonly string[] | undefined;
 }): Extract<
   NewChatEvent,
@@ -1391,12 +1391,12 @@ function normalSendEvent(params: {
           contextId: webChatContextId(),
         }
       : {}),
-    ...(params.triggerSource === "agent" && params.agentRunSource
+    ...(params.triggerSource === "agent" && params.chatRunSource
       ? params.requiredOfficialWorkflowIds === undefined
         ? {
             agentRunContext: {
-              sourceRunId: params.agentRunSource.runId,
-              sourceChatThreadId: params.agentRunSource.threadId,
+              sourceRunId: params.chatRunSource.runId,
+              sourceChatThreadId: params.chatRunSource.threadId,
             },
           }
         : {
@@ -1503,7 +1503,7 @@ function newSendThreadInsertPlan(args: NormalSendArgs, thread: NewSendThread) {
 }
 
 interface NormalSendInput {
-  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+  readonly chatRunSource: ChatRunSourceAnnotation | null;
   readonly sourceAutonomyBudget: number | null;
   readonly thread: SendThread;
   readonly event: ReturnType<typeof normalSendEvent>;
@@ -1524,7 +1524,7 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
     thread,
     event,
     relationSource:
-      args.auth.tokenType === "agent" ? input.agentRunSource : null,
+      args.auth.tokenType === "agent" ? input.chatRunSource : null,
     queueInput: { chatThreadId: thread.threadId, orgId: args.orgId },
     replacementTarget: input.replacementTarget,
     existingPlan: existing && {
@@ -2077,18 +2077,18 @@ const authorizeNormalSend$ = command(
     _context,
     args: NormalSendArgs & {
       readonly existing: ExistingSendThreadRow | undefined;
-      readonly agentRunSource: NormalSendAgentRunSourceRead;
+      readonly chatRunSource: NormalSendChatRunSourceRead;
     },
     signal: AbortSignal,
   ): Promise<
     | {
-        readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+        readonly chatRunSource: ChatRunSourceAnnotation | null;
         readonly sourceAutonomyBudget: number | null;
       }
     | NormalSendFailure
     | CreatedChatEventResponse
   > => {
-    const resolvedSource = await args.agentRunSource;
+    const resolvedSource = await args.chatRunSource;
     signal.throwIfAborted();
     if (args.existing?.isOfficialWorkflowThread) {
       return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
@@ -2108,7 +2108,7 @@ const authorizeNormalSend$ = command(
       return invalidTemplate;
     }
     return {
-      agentRunSource: source.source,
+      chatRunSource: source.source,
       sourceAutonomyBudget: source.sourceAutonomyBudget,
     };
   },
@@ -2352,16 +2352,16 @@ function preparedNormalSendEvent(
   args: NormalSendArgs,
   threadId: string,
   modelSelection: Parameters<typeof normalSendEvent>[0]["modelSelection"],
-  agentRunSource: ChatAgentRunSourceAnnotation | null,
+  chatRunSource: ChatRunSourceAnnotation | null,
   inputId: string,
 ) {
   return normalSendEvent({
     modelSelection,
     id: inputId,
     threadId: threadId,
-    userMessage: normalSendUserMessage(args, agentRunSource),
+    userMessage: normalSendUserMessage(args, chatRunSource),
     triggerSource: normalSendTriggerSource(args.auth),
-    agentRunSource,
+    chatRunSource,
     requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
   });
 }
@@ -2491,9 +2491,9 @@ const prepareNormalSendContext$ = command(
     // A forwarded or agent-token send also awaits its source Run. The read is
     // scoped to the caller's user and organization, and its outcome is used
     // only after authorization.
-    const agentRunSource = settle(
+    const chatRunSource = settle(
       set(
-        resolveNormalSendAgentRunSource$,
+        resolveNormalSendChatRunSource$,
         {
           auth: args.auth,
           userMessage: args.body.userMessage,
@@ -2502,7 +2502,7 @@ const prepareNormalSendContext$ = command(
         signal,
       ),
     );
-    waitUntil(agentRunSource);
+    waitUntil(chatRunSource);
     // Only a validated send consumes these records and verifies the objects.
     const attachmentRecords = set(
       startIncomingAttachmentRecords$,
@@ -2522,7 +2522,7 @@ const prepareNormalSendContext$ = command(
     set(preloadAgentRunContext$, context, signal);
     const prepared = await set(
       authorizeNormalSend$,
-      { ...args, existing: existing ?? undefined, agentRunSource },
+      { ...args, existing: existing ?? undefined, chatRunSource },
       signal,
     );
     if ("status" in prepared) {
@@ -2787,7 +2787,7 @@ const prepareNormalSendPublicationInput$ = command(
         args,
         thread.threadId,
         modelSelection,
-        prepared.agentRunSource,
+        prepared.chatRunSource,
         prepared.inputId,
       );
       return {
@@ -2798,7 +2798,7 @@ const prepareNormalSendPublicationInput$ = command(
             thread,
             event,
             attachFileMetadata,
-            agentRunSource: prepared.agentRunSource,
+            chatRunSource: prepared.chatRunSource,
             sourceAutonomyBudget: prepared.sourceAutonomyBudget,
             replacementTarget: revocation?.replacementTarget,
           },

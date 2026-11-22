@@ -1,3 +1,4 @@
+import { readStoredMessageParts } from "@okouai/api-contracts/contracts/stored-message-parts";
 import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
@@ -6,7 +7,7 @@ import { knownRunFailureReasonSchema } from "@okouai/api-contracts/contracts/run
 import { projectRunFailureRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQLWrapper } from "drizzle-orm";
-import { array, uuid } from "zod";
+import { array, preprocess, uuid } from "zod";
 
 import {
   nullableDriverValueDecoder,
@@ -15,7 +16,7 @@ import {
 } from "../../lib/db-structured-result";
 
 const chatEventUserMessageDecoder = zodDriverValueDecoder(
-  userMessageDocumentSchema,
+  preprocess(readStoredMessageParts, userMessageDocumentSchema),
 );
 const requiredOfficialWorkflowIdsDecoder = zodDriverValueDecoder(
   array(uuid())
@@ -87,7 +88,7 @@ export function canonicalArchivedChatEventUserMessage(row: ChatEventRow) {
   const userMessage = row.payload?.userMessage;
   return userMessage === undefined
     ? null
-    : userMessageDocumentSchema.parse(userMessage);
+    : chatEventUserMessageDecoder.mapFromDriverValue(userMessage);
 }
 
 export function canonicalArchivedChatEventError(

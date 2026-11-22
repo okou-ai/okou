@@ -505,7 +505,6 @@ test("Open linked automations from the mobile menu", async () => {
           scheduleSummary: "Every two hours",
           workflow: {
             id: "a0000000-0000-4000-a000-000000000952",
-            agentId: "c0000000-0000-4000-a000-000000000001",
             name: "header-check",
             displayName: "Header check",
             description: null,

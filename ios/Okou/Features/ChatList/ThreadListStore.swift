@@ -23,14 +23,9 @@ final class ThreadListStore {
     },
     didMarkRead: { [weak self] in self?.markRead($0, through: $1) },
     advanceReadRevision: { [weak self] in self?.readRevision += 1 }, didFail: didFail)
-  @ObservationIgnored private lazy var navigation = ThreadListNavigation(
-    resources: resources, sync: sync, lifecycleTasks: lifecycleTasks,
-    didLoadAgents: didLoadAgents, didFail: didFail,
-    didBlock: { [weak self] in self?.blocked = true })
   @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
   @ObservationIgnored private let replaceThreads: Command<Void, [ChatThread]>
   let threadsValue: Computed<[ChatThread]>
-  var agentsValue: Computed<[AgentRecord]> { navigation.agentsValue }
 
   private(set) var threads: [ChatThread] {
     get {
@@ -46,7 +41,6 @@ final class ThreadListStore {
       }
     }
   }
-  var agents: [AgentRecord] { navigation.agents }
   private(set) var unreadAgentIDs: Set<String> = []
   private(set) var markingAllRead = false
   private var readRevision = 0
@@ -64,7 +58,6 @@ final class ThreadListStore {
   private let commands: ChatCommands
   private let didRefresh: @MainActor ([ChatThread]) -> Void
   private let didChangeReadState: @MainActor () -> Void
-  private let didLoadAgents: @MainActor ([AgentRecord]) -> Void
   private let didFail: @MainActor (Error) -> Void
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let indicatorsBootstrap: WorkspaceReadBootstrap?
@@ -98,7 +91,6 @@ final class ThreadListStore {
     didRefresh: @escaping @MainActor ([ChatThread]) -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
     didChangeReadState: @escaping @MainActor () -> Void = {},
-    didLoadAgents: @escaping @MainActor ([AgentRecord]) -> Void = { _ in },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -122,15 +114,12 @@ final class ThreadListStore {
     self.commands = commands
     self.didRefresh = didRefresh
     self.didChangeReadState = didChangeReadState
-    self.didLoadAgents = didLoadAgents
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
     self.indicatorsBootstrap = indicatorsBootstrap
   }
 
   func restoreCached() async {
-    guard !closed, !Task.isCancelled else { return }
-    await navigation.restoreCached()
     guard !closed, !Task.isCancelled else { return }
     let revision = creationRevision
     let sequence = hasLoadedThreads ? appliedThreadSequence : nil
@@ -157,7 +146,6 @@ final class ThreadListStore {
   }
 
   var stateStore: CCState.Store { resources.store }
-  var navigationValue: Computed<Task<[AgentRecord], Error>> { resources.navigation }
   @ObservationIgnored lazy var listValue = makeListValue()
 
   private func makeListValue() -> Computed<Task<Void, Error>> {
@@ -249,8 +237,6 @@ final class ThreadListStore {
       preconditionFailure("Cannot read confirmed navigation: \(error)")
     }
   }
-
-  func refreshNavigation() async { await navigation.refreshNavigation() }
 
   /// Explicit invalidations coalesce into the resident read and one follow-up cycle.
   /// Only an awaited successful cycle can authorize navigation that needed fresh chats.
@@ -535,14 +521,12 @@ final class ThreadListStore {
     activeThreadIDs.removeAll()
     cancelRefresh()
     do { try stateStore.set(listLifetime, false) } catch { didFail(error) }
-    navigation.close()
     for task in updateTasks.values { task.cancel() }
     actions.close()
     cancelRename()
   }
 
   /// Startup retirement detaches confirmation without cancelling another consumer's I/O.
-  func cancelNavigationPublication() { navigation.cancelNavigationPublication() }
 
   private func show(_ failure: Error) {
     actions.show(failure)

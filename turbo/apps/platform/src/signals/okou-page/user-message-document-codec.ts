@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
@@ -29,7 +30,6 @@ import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
-import { legacyAgentMentionsToText } from "./legacy-agent-mention.ts";
 
 export const PROJECT_MENTION_NODE_NAME = "projectMention";
 export const CHAT_THREAD_MENTION_NODE_NAME = "chatThreadMention";
@@ -76,12 +76,18 @@ export function prependMessageDocument(
     return userMessageDocumentSchema.parse(prefix);
   }
   const hasCurrentSource = current.parts.some((part) => {
-    return part.type === "source" || part.type === "automation";
+    return (
+      part.type === "source" ||
+      part.type === "automation" ||
+      isChatRunReference(part)
+    );
   });
   const parts: UserMessagePart[] = prefix.parts.map((part) => {
     if (
       hasCurrentSource &&
-      (part.type === "source" || part.type === "automation")
+      (part.type === "source" ||
+        part.type === "automation" ||
+        isChatRunReference(part))
     ) {
       return {
         type: "additional_info",
@@ -350,7 +356,6 @@ function feedbackPart(node: ProseMirrorNode): UserMessagePart | null {
         part.type === "text" ||
         part.type === "chat_thread" ||
         part.type === "project" ||
-        part.type === "agent" ||
         part.type === "template"
       );
     })
@@ -677,9 +682,6 @@ function feedbackNoteToPrompt(note: readonly FeedbackNotePart[]): string {
       if (part.type === "project") {
         return `[${part.nameSnapshot}](/projects/${part.projectId})`;
       }
-      if (part.type === "agent") {
-        return part.nameSnapshot;
-      }
       return `Select ${part.titleSnapshot} ${part.template.type} template`;
     })
     .join("");
@@ -724,17 +726,12 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
       trailingParagraph = false;
       continue;
     }
-    if (part.type === "agent") {
-      paragraphContent.push({ type: "text", text: part.nameSnapshot });
-      trailingParagraph = false;
-      continue;
-    }
     const lines = part.text.split("\n");
     for (const [index, line] of lines.entries()) {
       if (line.length > 0) {
         paragraphContent.push({
           type: "text",
-          text: legacyAgentMentionsToText(line),
+          text: line,
         });
         trailingParagraph = false;
       }
@@ -753,7 +750,7 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
 
 function formattedFeedbackParts(
   parts: readonly Extract<UserMessagePart, { type: "feedback" }>[],
-  agentRunSourceTitle: string | undefined,
+  chatRunSourceTitle: string | undefined,
 ): string {
   return formatFeedbackPrompt(
     parts.map((part) => {
@@ -763,15 +760,15 @@ function formattedFeedbackParts(
         ...(part.source ? { source: part.source } : {}),
       };
     }),
-    agentRunSourceTitle,
+    chatRunSourceTitle,
   );
 }
 
-function agentRunSourceTitle(
+function chatRunSourceTitle(
   parts: readonly UserMessagePart[],
 ): string | undefined {
   return parts.find((part) => {
-    return part.type === "source" && part.kind === "agent";
+    return isChatRunReference(part);
   })?.titleSnapshot;
 }
 
@@ -803,7 +800,7 @@ function appendRestoredText(state: RestoredEditorState, text: string): void {
     if (line.length > 0) {
       state.paragraphContent.push({
         type: "text",
-        text: legacyAgentMentionsToText(line),
+        text: line,
       });
       state.trailingParagraph = false;
     }
@@ -827,6 +824,9 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
   }).length;
 
   for (const [partIndex, part] of parts.entries()) {
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "text") {
       appendRestoredText(state, part.text);
       continue;
@@ -847,11 +847,6 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
         type: PROJECT_MENTION_NODE_NAME,
         attrs: { projectId: part.projectId, name: part.nameSnapshot },
       });
-      state.trailingParagraph = false;
-      continue;
-    }
-    if (part.type === "agent") {
-      state.paragraphContent.push({ type: "text", text: part.nameSnapshot });
       state.trailingParagraph = false;
       continue;
     }
@@ -950,7 +945,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
-  const sourceTitle = agentRunSourceTitle(parsed.data.parts);
+  const sourceTitle = chatRunSourceTitle(parsed.data.parts);
   const flushInlineText = () => {
     if (inlineText.length > 0) {
       blocks.push(inlineText);
@@ -965,6 +960,9 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   };
 
   for (const part of parsed.data.parts) {
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "feedback") {
       flushInlineText();
       feedbackParts.push(part);
@@ -980,8 +978,6 @@ export function messageDocumentToPrompt(value: unknown): string | null {
       );
     } else if (part.type === "project") {
       inlineText += `[${part.nameSnapshot}](/projects/${part.projectId})`;
-    } else if (part.type === "agent") {
-      inlineText += part.nameSnapshot;
     } else if (part.type === "template") {
       inlineText += `Select ${part.titleSnapshot} ${part.template.type} template`;
     }
@@ -1006,7 +1002,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
-  const sourceTitle = agentRunSourceTitle(parsed.data.parts);
+  const sourceTitle = chatRunSourceTitle(parsed.data.parts);
   const flushInlineText = () => {
     if (inlineText.length > 0) {
       blocks.push(inlineText);
@@ -1021,6 +1017,9 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   };
 
   for (const part of parsed.data.parts) {
+    if (isChatRunReference(part)) {
+      continue;
+    }
     if (part.type === "feedback") {
       flushInlineText();
       const context = suggestionContexts.get(part);
@@ -1045,15 +1044,6 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
           return $.chat.messageDocument.chatThread;
         },
         { title: part.titleSnapshot },
-      );
-      continue;
-    }
-    if (part.type === "agent") {
-      inlineText += i18n.t(
-        ($) => {
-          return $.chat.messageDocument.agent;
-        },
-        { name: part.nameSnapshot },
       );
       continue;
     }

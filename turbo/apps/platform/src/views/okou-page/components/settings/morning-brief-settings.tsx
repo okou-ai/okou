@@ -25,7 +25,6 @@ type MorningBriefStatusKey =
   | "errorMessage"
   | "conflict"
   | "missingTimezone"
-  | "missingDefaultAgent"
   | "preparing"
   | "preparationFailed";
 
@@ -43,9 +42,6 @@ function morningBriefStatusKey({
   const { preference } = state;
   if (preference.unavailableReason === "missing-timezone") {
     return "missingTimezone";
-  }
-  if (preference.unavailableReason === "missing-default-agent") {
-    return "missingDefaultAgent";
   }
   if (preference.status === "preparing") {
     return "preparing";

@@ -66,7 +66,6 @@ import {
   type ChatThreadSuggestionRange,
   type ComposerChatThreadSuggestion,
 } from "./chat-thread-suggestion-domain.ts";
-import { legacyAgentMentionsToText } from "./legacy-agent-mention.ts";
 import {
   createComposerChatThreadSuggestions,
   type ComposerChatThreadSuggestionResult,
@@ -1413,7 +1412,7 @@ function composerInlineReferenceContent(line: string): JSONContent[] {
     if (segment.type === "text") {
       content.push({
         type: "text",
-        text: legacyAgentMentionsToText(segment.text),
+        text: segment.text,
       });
       continue;
     }
@@ -2974,7 +2973,6 @@ function createInsertUserMessageCommand(editor: Editor) {
       return (
         part.type === "text" ||
         part.type === "chat_thread" ||
-        part.type === "agent" ||
         part.type === "feedback" ||
         part.type === "template"
       );

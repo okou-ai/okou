@@ -10,10 +10,7 @@ import { expect } from "vitest";
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  AGENT_ID,
-  createChatLifecycleHelpers,
-} from "./chat-lifecycle-test-helpers.ts";
+import { createChatLifecycleHelpers } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 
@@ -326,14 +323,6 @@ export function createChatRunFixtures(context: TestContext) {
       requestedModel === null || mockCatalogHasModel(requestedModel)
         ? requestedModel
         : DEFAULT_MODEL;
-    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-    context.mocks.data.agents([
-      {
-        agentId: AGENT_ID,
-        displayName: "Run Agent",
-        description: "Handles visible chat work",
-      },
-    ]);
     if (options.selectedModel !== undefined) {
       context.mocks.data.userModelPreference({
         selectedModel,

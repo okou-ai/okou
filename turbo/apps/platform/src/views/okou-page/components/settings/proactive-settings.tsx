@@ -27,15 +27,13 @@ function preferenceStatusKey(
 ) {
   return failed
     ? "errorMessage"
-    : value?.unavailableReason === "missing-default-agent"
-      ? "missingDefaultAgent"
-      : value?.unavailableReason === "missing-timezone"
-        ? "missingTimezone"
-        : value?.status === "preparing"
-          ? "preparing"
-          : value?.status === "error"
-            ? "preparationFailed"
-            : null;
+    : value?.unavailableReason === "missing-timezone"
+      ? "missingTimezone"
+      : value?.status === "preparing"
+        ? "preparing"
+        : value?.status === "error"
+          ? "preparationFailed"
+          : null;
 }
 
 function MixedSuggestionsChoice({

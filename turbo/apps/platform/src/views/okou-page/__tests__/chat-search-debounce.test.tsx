@@ -6,10 +6,7 @@ import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads
 import { click, fill, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
-import {
-  CHAT_LIST_AGENT_ID,
-  chatListThread,
-} from "./chat-list-test-helpers.ts";
+import { chatListThread } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 const SEARCH_LABEL = "Search workspace...";
@@ -86,7 +83,7 @@ test("Search messages only after the latest input settles", async () => {
   const keywords = installMessageSearch(thread.id);
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     ...workspace.pageOptions,
   });
   const chatThreads = await screen.findByLabelText("Chat threads");
@@ -114,7 +111,7 @@ test("Clearing or closing search discards a pending message search", async () =>
   const keywords = installMessageSearch(thread.id);
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     ...workspace.pageOptions,
   });
   const chatThreads = await screen.findByLabelText("Chat threads");
@@ -160,7 +157,7 @@ test("Search artifacts only after the latest input settles", async () => {
   const keywords = installArtifactSearch();
   await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     ...workspace.pageOptions,
   });
   const chatThreads = await screen.findByLabelText("Chat threads");

@@ -49,7 +49,7 @@ test("Any other link stays external", () => {
     `https://app.okou.ai/chats/${THREAD_ID}/files`,
     `https://app.okou.ai/chats/${THREAD_ID.toUpperCase()}`,
     "https://app.okou.ai/chats/not-a-thread",
-    `https://app.okou.ai/agents/${THREAD_ID}/chat`,
+    `https://app.okou.ai/`,
     `chats/${THREAD_ID}`,
     ` /chats/${THREAD_ID}`,
   ]) {

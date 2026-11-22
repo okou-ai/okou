@@ -148,7 +148,7 @@ export function workflowCopySlugQuery(args: {
     .as("copy_slug");
 }
 export function copySlugConflict(name: string) {
-  return `You already have a private workflow named "/${name}" in this workspace. Rename the existing workflow or choose a different name.`;
+  return `You already have a private workflow named "/${name}". Rename the existing workflow or choose a different name.`;
 }
 const copyProjectionEventTypes = {
   gmail: ["gmail-new-message", "gmail-label-applied"],

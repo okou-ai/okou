@@ -29,15 +29,11 @@ extension WorkspaceStore {
     return true
   }
 
-  var currentAgentName: String {
-    list.agents.first(where: { $0.agentId == selectedAgentID })?.displayName ?? "Okou"
-  }
+  var currentAgentName: String { "Okou" }
 
   var billingURL: URL { webURL.appending(path: "settings/billing") }
 
-  var selectedAgentID: String? { selectedConversation?.thread.agentID ?? defaultAgentID }
-
-  var defaultAgentID: String? { list.agents.first(where: \.isDefaultAgent)?.agentId }
+  var selectedAgentID: String? { selectedConversation?.thread.agentID }
 
   var newChatProject: ChatProject? {
     projects.projects.first { $0.id == newChatProjectID }
@@ -49,10 +45,6 @@ extension WorkspaceStore {
   }
 
   var newAttachmentDraft: AttachmentDraftStore { newComposer.attachments }
-
-  func refreshNavigation() async {
-    await list.refreshNavigation()
-  }
 
   func setRead(_ thread: ChatThread, read: Bool) async {
     let conversation = residentConversations[thread.id]

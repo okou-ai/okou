@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "Tutup"
+  },
   "activity": {
     "codex": {
       "codexError": "Galat Codex",
@@ -987,8 +990,8 @@
         "twentyFourHours": "24 jam"
       },
       "errors": {
-        "loadAgent": "Gagal memuat agen",
         "loadGrants": "Gagal memuat pemberian izin",
+        "loadMember": "Gagal memuat anggota ruang kerja.",
         "loadMetadata": "Gagal memuat metadata izin",
         "missingPermission": "Izin tidak ada di parameter URL",
         "unknownAction": "Tindakan izin tidak dikenal: {{action}}",
@@ -2272,7 +2275,6 @@
       "unavailable": "Email ini tidak lagi tersedia."
     },
     "messageDocument": {
-      "agent": "[Agen: {{name}}]",
       "chatThread": "[Thread chat: {{title}}]",
       "file": "[File: {{filename}}]",
       "template": "[Template: {{title}}]",
@@ -2305,7 +2307,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "Agen tidak ditemukan",
       "allow": "Izinkan",
       "alreadyAllowed": "Sudah diizinkan",
       "alreadyDenied": "Sudah ditolak",
@@ -2320,6 +2321,7 @@
       "expiresInHours_one": "Kedaluwarsa dalam {{count}} jam",
       "expiresInHours_other": "Kedaluwarsa dalam {{count}} jam",
       "loadFailed": "Tidak dapat memuat status izin",
+      "memberNotFound": "Anggota ruang kerja tidak tersedia.",
       "otherEndpoints": "endpoint lainnya",
       "unknown": "Izin tidak dikenal",
       "updated": "Izin diperbarui",
@@ -3233,7 +3235,7 @@
         "tokenUrl": "URL token"
       },
       "delete": {
-        "description": "Ini akan menghapus konektor dan secret tersimpan milik setiap anggota untuk konektor ini. Agen yang berwenang untuk konektor ini akan langsung kehilangan akses. Tindakan ini tidak dapat dibatalkan.",
+        "description": "Menghapus konektor ini langsung mencabut akses dan menghapus rahasia yang disimpan oleh semua anggota ruang kerja. Tindakan ini tidak dapat dibatalkan.",
         "title": "Hapus {{connector}}?"
       },
       "edit": {
@@ -3341,13 +3343,13 @@
       },
       "github": {
         "accountFallback": "akun GitHub ini",
-        "alreadyDescription": "Anda sudah tersambung sebagai {{account}}. Sebut agen Anda di issue atau pull request GitHub untuk mulai mengobrol.",
+        "alreadyDescription": "Anda terhubung sebagai {{account}}. Sebut Okou dalam issue atau pull request GitHub untuk memulai percakapan.",
         "alreadyTitle": "Sudah tersambung ke GitHub",
         "back": "Kembali ke alur kerja",
         "checkingConnectionDescription": "Harap tunggu saat kami memeriksa koneksi GitHub Anda.",
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "checkingSession": "Harap tunggu saat kami memverifikasi sesi {{brandName}} Anda.",
-        "connectDescription": "Tautkan akun {{brandName}} Anda ke {{account}} agar mention GitHub dapat menjalankan agen Anda dari issue dan pull request.",
+        "connectDescription": "Tautkan akun {{brandName}} Anda ke {{account}} untuk memulai percakapan dari GitHub.",
         "connectTitle": "Hubungkan ke GitHub",
         "errorFallback": "Kami tidak dapat menghubungkan GitHub. Coba lagi dari GitHub.",
         "invalidInstallation": "Instalasi GitHub pada tautan ini tidak valid.",
@@ -3365,7 +3367,7 @@
         "signInCheckFailed": "Tidak dapat memeriksa status masuk",
         "signInDescription": "Gunakan akun {{brandName}} Anda sebelum menghubungkan pengguna GitHub ini.",
         "signInTitle": "Masuk untuk melanjutkan",
-        "successDescription": "Anda tersambung sebagai {{account}}. Sebut agen Anda di issue atau pull request GitHub untuk mulai mengobrol.",
+        "successDescription": "Anda terhubung sebagai {{account}}. Sebut Okou dalam issue atau pull request GitHub untuk memulai percakapan.",
         "successTitle": "Berhasil tersambung ke GitHub!",
         "wrongOrganizationDescription": "Organisasi aktif Anda tidak cocok dengan instalasi GitHub ini. Pindah ke organisasi yang benar dan buka tautannya lagi.",
         "wrongOrganizationTitle": "Pindah organisasi"
@@ -3380,7 +3382,7 @@
         "accountMismatchDescriptionWorkspace": "Akun Okou Anda saat ini menggunakan akun Slack {{currentAccount}} di {{workspace}}. Beralih ke {{requestedAccount}}, akun yang membuka tautan ini?",
         "accountMismatchTitle": "Beralih akun Slack?",
         "authorizationFailed": "Otorisasi Slack belum selesai. Koneksi Anda saat ini ditampilkan di bawah. Anda dapat mencoba lagi.",
-        "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Slack.",
         "connectTitle": "Hubungkan ke Slack",
         "currentConnection": "Slack terhubung",
         "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack.",
@@ -3398,7 +3400,7 @@
       },
       "teams": {
         "authorize": "Otorisasi Microsoft Teams",
-        "connectDescription": "Tautkan akun Teams Anda agar Anda dapat berinteraksi dengan agen Anda langsung dari Microsoft Teams.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Microsoft Teams.",
         "connectedDescription": "Akun Teams Anda terhubung.",
         "connectTitle": "Hubungkan Microsoft Teams",
         "identityMismatch": "Akun atau ruang kerja Teams yang diminta tidak cocok dengan koneksi saat ini.",
@@ -3419,7 +3421,7 @@
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "conflictDescription": "Anda terhubung sebagai {{current}}, tetapi tautan ini meminta {{requested}}. Pertahankan koneksi Anda atau kelola koneksi secara manual sebelum mencoba lagi.",
         "conflictTitle": "Akun Telegram lain sedang terhubung",
-        "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Telegram.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Telegram.",
         "connectionCheckFailed": "Telegram tidak dapat dijangkau untuk memeriksa koneksi.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
@@ -3474,7 +3476,6 @@
         "addBot": "Tambahkan bot",
         "addDialogDescription": "Buat aplikasi enterprise dengan tipe Agent, lalu selesaikan langkah-langkah ini di konsol pengembang Feishu.",
         "addDialogTitle": "Tambahkan bot Feishu",
-        "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Feishu",
         "botIconAlt": "Ikon bot {{bot}}",
@@ -3501,12 +3502,9 @@
           "imageAlt": "Hasil pembuatan aplikasi Feishu yang menunjukkan tempat menemukan App ID dan App Secret",
           "title": "Tambahkan kredensial aplikasi"
         },
-        "defaultAgent": "Agen default",
-        "defaultAgentAria": "Agen default untuk {{appId}}",
         "developerConsole": "Konsol developer Feishu",
         "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Feishu setelah penyiapan selesai.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Feishu ke agen.",
         "emptyMember": "Minta admin organisasi menambahkan bot Feishu.",
         "emptyTitle": "Belum ada bot Feishu",
         "events": {
@@ -3564,8 +3562,6 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Feishu ini.",
         "reviewGuideTitle": "Panduan tinjau Feishu",
-        "routeDescription": "Arahkan pesan Feishu ke agen",
-        "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
           "back": "Kembali",
@@ -3606,7 +3602,6 @@
         "addBot": "Tambahkan bot",
         "addDialogDescription": "Buat aplikasi enterprise dengan tipe Agent, lalu selesaikan langkah-langkah ini di konsol pengembang Lark.",
         "addDialogTitle": "Tambahkan bot Lark",
-        "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Lark",
         "botIconAlt": "Ikon bot {{bot}}",
@@ -3633,12 +3628,9 @@
           "imageAlt": "Hasil pembuatan aplikasi Feishu yang menunjukkan tempat menemukan App ID dan App Secret",
           "title": "Tambahkan kredensial aplikasi"
         },
-        "defaultAgent": "Agen default",
-        "defaultAgentAria": "Agen default untuk {{appId}}",
         "developerConsole": "Konsol developer Lark",
         "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Lark setelah penyiapan selesai.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Lark ke agen.",
         "emptyMember": "Minta admin organisasi menambahkan bot Lark.",
         "emptyTitle": "Belum ada bot Lark",
         "events": {
@@ -3701,8 +3693,6 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Lark ini.",
         "reviewGuideTitle": "Panduan tinjau Lark",
-        "routeDescription": "Arahkan pesan Lark ke agen",
-        "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
           "back": "Kembali",
@@ -3931,6 +3921,364 @@
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Permintaan gagal"
     }
+  },
+  "ideation": {
+    "all": "Semua",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimalkan dan ubah gambar secara massal",
+            "title": "Optimasi media Cloudinary"
+          },
+          "fal-ai-image-generation": {
+            "description": "Hasilkan gambar produk dari deskripsi di Notion",
+            "title": "Pembuatan gambar Fal AI"
+          }
+        },
+        "title": "Kreatif"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Tempel daftar dan {{assistantName}} akan membuka issue untuk Anda",
+            "title": "Buat issue secara massal"
+          },
+          "browserbase-web-testing": {
+            "description": "Pengujian browser otomatis untuk aplikasi web Anda",
+            "title": "Pengujian web Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Ringkasan mingguan Slack tentang lalu lintas dan peristiwa keamanan",
+            "title": "Laporan lalu lintas & keamanan Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "Berikan URL dan {{assistantName}} menelusuri bug melalui repo",
+            "title": "Investigasi basis kode"
+          },
+          "daily-standup-report": {
+            "description": "Metrik pagi menjadi slide deck yang diposting ke Slack",
+            "title": "Laporan standup harian"
+          },
+          "deep-research-code-analysis": {
+            "description": "Menjelaskan cara kerja sebuah subsistem di basis kode Anda",
+            "title": "Analisis kode riset mendalam"
+          },
+          "github-pr-summarizer": {
+            "description": "Ringkasan pull request yang digabung di Notion dengan posting Slack opsional",
+            "title": "Perangkum PR GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "Aktivitas repo mingguan diringkas berdasarkan fitur",
+            "title": "Progres mingguan GitHub"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Mencerminkan issue GitLab dan merge request ke GitHub",
+            "title": "Asisten migrasi GitLab ke GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "Menyinkronkan tiket Jira dan issue GitHub",
+            "title": "Sinkronisasi issue Jira ↔ GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "Rancang skenario Make multi-langkah dari sebuah deskripsi",
+            "title": "Penyusun skenario Make"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Peringatan keamanan dan dependensi mingguan dari GitHub",
+            "title": "Ringkasan peringatan keamanan & dependensi"
+          },
+          "sentry-issue-digest": {
+            "description": "Ringkasan pagi issue yang dikelompokkan berdasarkan tingkat keparahan",
+            "title": "Ringkasan issue Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "Menghubungkan setiap deployment ke commit-nya dan memberi peringatan ke Slack saat deployment gagal",
+            "title": "Ringkasan deployment Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Buat ulang alur kerja Zapier Anda di {{brandName}}",
+            "title": "Migrasi Zapier → {{brandName}}"
+          }
+        },
+        "title": "Teknik"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Membuka halaman di browser dan mengembalikan tangkapan layar",
+            "title": "Tangkapan layar browser"
+          },
+          "calendar-optimizer": {
+            "description": "Membantu dengan konflik, beban berlebih, dan waktu fokus",
+            "title": "Pengoptimal kalender"
+          },
+          "calendly-booking-sync": {
+            "description": "Pemesanan baru di kalender Anda dengan ping ke Slack",
+            "title": "Sinkronisasi pemesanan Calendly"
+          },
+          "email-assistant": {
+            "description": "Ringkasan inbox pagi dengan langkah selanjutnya yang disarankan",
+            "title": "Asisten email"
+          },
+          "granola-notes-to-notion": {
+            "description": "Catatan meeting Granola disinkronkan ke database Notion",
+            "title": "Catatan Granola ke Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Meneruskan pesan dua arah antara Lark dan Slack",
+            "title": "Relay pesan Lark ↔ Slack"
+          },
+          "line-message-relay": {
+            "description": "Teruskan pesan LINE ke Slack dan sebaliknya",
+            "title": "Relay pesan LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Catatan Fireflies ke Notion dengan tindak lanjut di Slack",
+            "title": "Alur catatan meeting"
+          },
+          "morning-brief": {
+            "description": "Email, kalender, dan catatan diubah menjadi rencana harian singkat",
+            "title": "Ringkasan pagi"
+          },
+          "perplexity-deep-research": {
+            "description": "Ringkasan riset bertenaga AI disimpan ke Notion",
+            "title": "Riset mendalam Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull request, email, dan kalender dalam satu pembaruan Slack",
+            "title": "Ringkasan mingguan pribadi"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Mengeposkan pengumuman tim ke Slack untuk Anda",
+            "title": "Kirim pesan atas nama Anda"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Ringkasan aktivitas tim mingguan diposting ke Slack",
+            "title": "Digest kebugaran tim Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Cari web dan susun temuan di Notion",
+            "title": "Alur riset web Tavily"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Rekaman meeting diringkas di Notion dengan item tindakan",
+            "title": "Rekap meeting tl;dv"
+          }
+        },
+        "title": "Semua orang"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify men-scrape situs ke baris Google Sheets terstruktur",
+            "title": "Web scraper Apify ke Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Rangkaian email otomatis dari event CRM",
+            "title": "Rangkaian nurture email Brevo"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl memantau situs pesaing dan mencatat perubahan di Notion",
+            "title": "Scraper intel kompetitif"
+          },
+          "competitor-research-to-notion": {
+            "description": "Riset di X disimpan sebagai catatan terstruktur di Notion",
+            "title": "Riset pesaing ke Notion"
+          },
+          "content-planner": {
+            "description": "Brainstorm topik dan susun kerangka kalender editorial",
+            "title": "Perencana konten"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Menerbitkan posting Notion ke Dev.to dan menautkannya di X",
+            "title": "Auto-publisher Dev.to"
+          },
+          "discord-community-insights": {
+            "description": "Umpan balik Discord di Notion dengan digest mingguan Slack",
+            "title": "Wawasan komunitas Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Engagement di Sheets dengan ringkasan mingguan Slack",
+            "title": "Pelacak engagement Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "Rancang dan kirim email transaksional via Loops",
+            "title": "Kampanye email Loops"
+          },
+          "marketing-content-planning": {
+            "description": "Merencanakan cerita peluncuran dari Slack, wawancara, dan pesaing",
+            "title": "Perencanaan konten pemasaran"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Menemukan sudut pandang onboarding dari Slack dan wawancara",
+            "title": "Use case email onboarding"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Lacak peringkat kata kunci setiap minggu dan catat ke Sheets",
+            "title": "Pelacak kata kunci SerpAPI"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Benchmark traffic versus pesaing disimpan di Notion",
+            "title": "Perbandingan traffic SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "Mengubah kalender Sheets menjadi posting untuk tiap jaringan",
+            "title": "Kalender konten media sosial"
+          },
+          "x-brand-monitor": {
+            "description": "Penyebutan merek di X disimpan di Notion dengan peringatan tim",
+            "title": "Pemantau merek X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Saat video YouTube baru dipublikasikan, buat ringkasan Notion dan thread X untuk mempromosikannya",
+            "title": "Pengubah fungsi video YouTube ke thread X"
+          }
+        },
+        "title": "Pemasaran"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Buat dan kelola inbox dengan API AgentMail",
+            "title": "Inbox AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "Tugas ClickUp harian diposting sebagai standup di Slack",
+            "title": "Standup ClickUp → Slack"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Batch Google Docs ke Notion dengan tata letak tetap terjaga",
+            "title": "Migrator Google Docs → Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "File baru diurutkan ke folder secara otomatis",
+            "title": "Pengatur file Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Jawaban formulir masuk ke Notion dengan notifikasi Slack",
+            "title": "Intake Jotform ke Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Kemajuan board mingguan dari Monday.com di Slack",
+            "title": "Digest mingguan Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "Field kontrak di Notion dengan pengingat sebelum kedaluwarsa",
+            "title": "Pemroses kontrak PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Metrik langganan di Sheets dengan peringatan churn di Slack",
+            "title": "Digest langganan RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Tugas Todoist dicerminkan ke Notion untuk tim",
+            "title": "Sinkronisasi tugas Todoist → Notion"
+          },
+          "wrike-project-reporter": {
+            "description": "Ringkasan progres Wrike mingguan di Slack",
+            "title": "Pelapor proyek Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "Laba dan arus kas mingguan dari Xero di Slack",
+            "title": "Ringkasan keuangan Xero"
+          }
+        },
+        "title": "Operasional"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Milestone dan tugas Asana dicerminkan ke Notion",
+            "title": "Sinkronisasi proyek Asana → Notion"
+          },
+          "feedback-router": {
+            "description": "Umpan balik Slack diarahkan sesuai aturan Anda ke tempat yang tepat",
+            "title": "Pengarah umpan balik"
+          },
+          "linear-prd-implementer": {
+            "description": "Spesifikasi Notion menjadi proyek dan issue Linear",
+            "title": "Implementer PRD Linear"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Cuplikan dashboard otomatis diposting ke Slack",
+            "title": "Digest dashboard Metabase"
+          },
+          "pricing-analysis": {
+            "description": "Menganalisis strategi harga pesaing dan membandingkannya dengan produk serupa",
+            "title": "Analisis harga"
+          },
+          "product-copy-naming": {
+            "description": "Nama yang lebih ramah untuk istilah teknis di produk",
+            "title": "Copy produk & penamaan"
+          }
+        },
+        "title": "Produk"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Deal disinkronkan ke Sheets dan Slack saat ditutup",
+            "title": "Pelacak deal Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Lead baru Bitrix mendapat tugas tindak lanjut dan ping Slack",
+            "title": "Nurture lead Bitrix24"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Ringkasan mingguan HubSpot disimpan sebagai laporan terstruktur",
+            "title": "Pelapor penjualan HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Lead baru menjadi tugas HubSpot dengan peringatan Slack",
+            "title": "Pipeline tindak lanjut lead"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Pembaruan peluang Salesforce mingguan di Slack",
+            "title": "Digest pipeline Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "Statistik pipeline CRM mingguan dari Gmail di Slack",
+            "title": "Laporan pipeline Streak"
+          },
+          "win-loss-reporter": {
+            "description": "Tren menang dan kalah dari pipeline di Slack",
+            "title": "Pelapor menang/kalah"
+          }
+        },
+        "title": "Penjualan"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Percakapan pelanggan dicatat dan dikategorikan di Notion",
+            "title": "Log dukungan Chatwoot → Notion"
+          },
+          "customer-support-bot": {
+            "description": "Jawaban dari basis pengetahuan dan tugas untuk celah yang ada",
+            "title": "Bot dukungan pelanggan"
+          },
+          "intercom-conversation-triager": {
+            "description": "Chat Intercom menjadi tugas Notion yang diprioritaskan",
+            "title": "Penyaring percakapan Intercom"
+          },
+          "support-ticket-router": {
+            "description": "Tiket masuk ke Notion dan yang mendesak memberi ping ke Slack",
+            "title": "Pengarah tiket dukungan"
+          }
+        },
+        "title": "Dukungan"
+      }
+    },
+    "categoryFilter": "Filter menurut kategori",
+    "chat": "Chat",
+    "description": "Klik kartu apa pun untuk memulai percakapan. Ini bisa menjadi tugas sesuai permintaan, alur kerja berulang, atau subagen.",
+    "search": {
+      "accessibilityLabel": "Cari use case",
+      "empty": "Tidak ada use case yang cocok dengan pencarian Anda.",
+      "placeholder": "Cari"
+    },
+    "title": "Ide & Use Case"
   },
   "invitationRedirect": {
     "accountMismatch": {
@@ -4806,7 +5154,7 @@
     "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
     "deletingThreads": "Deleting…",
-    "description": "Keep related chats together across Agents",
+    "description": "Kelompokkan percakapan yang berkaitan.",
     "empty": "No chats here yet",
     "expand": "Luaskan",
     "fromChat": "Create a Project from this chat",
@@ -4867,15 +5215,14 @@
       "pro": "Pro",
       "team": "Tim"
     },
-    "title": "Agen Anda sedang menunggu giliran",
+    "title": "Permintaan Anda sedang mengantre",
     "upgrade": {
       "action": "Upgrade ke {{plan}}",
       "features": {
         "creditsPerMonth": "{{credits}} kredit / bulan",
         "emailSupport": "Dukungan email",
         "payAsYouGo": "Bayar sesuai pemakaian setelah itu",
-        "prioritySupport": "Dukungan prioritas",
-        "unlimitedAgents": "Total agen tak terbatas"
+        "prioritySupport": "Dukungan prioritas"
       },
       "proDescription": "Jalankan beberapa tugas secara paralel dan lewati antrean.",
       "recommended": "Direkomendasikan",
@@ -5678,7 +6025,6 @@
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten.",
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
         "errorMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
@@ -5687,7 +6033,6 @@
       "proactiveSuggestions": {
         "description": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
@@ -5702,7 +6047,7 @@
       },
       "timezone": {
         "description": "Waktu ditampilkan kepada Anda dan digunakan untuk eksekusi otomatis.",
-        "rowDescription": "Agen Anda akan menggunakan zona waktu ini saat eksekusi",
+        "rowDescription": "Okou menggunakan zona waktu ini saat menjalankan tugas.",
         "rowTitle": "Zona waktu",
         "sectionTitle": "Zona Waktu",
         "zones": {
@@ -5756,7 +6101,7 @@
         "title": "Kartu Anda di Link"
       },
       "connect": "Hubungkan",
-      "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
+      "description": "Izinkan Okou mengajukan pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
       "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
@@ -5975,6 +6320,21 @@
     "signUp": "Daftar",
     "tryItYourself": "Coba sendiri"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "Semua",
+    "markAllRead": "Tandai semua sudah dibaca",
+    "noResults": "Tidak ada hasil ditemukan",
+    "resultCount_other": "{{count}} hasil",
+    "searching": "Mencari...",
+    "searchWorkspace": "Cari di ruang kerja...",
+    "sections": {
+      "artifacts": "Artefak",
+      "chats": "Chat",
+      "messages": "Pesan",
+      "workflows": "Alur kerja"
+    }
+  },
   "ssh": {
     "add": "Tambahkan host",
     "cancel": "Batal",
@@ -6018,8 +6378,8 @@
       "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host mana pun"
     },
-    "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
-    "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
+    "deleteHelp": "Hapus host ini? Kredensialnya akan disimpan. Okou akan kehilangan akses ke host ini.",
+    "description": "Izinkan Okou menjalankan perintah di komputer jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
     "errors": {
@@ -6065,7 +6425,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Autentikasi Tailscale SSH gagal. Periksa nama pengguna sistem, aktifkan Tailscale SSH pada tujuan yang memiliki tag, dan izinkan login ini dalam kebijakan SSH accept tailnet.",
-      "deleteHelp": "Hapus host ini? Agen tidak akan lagi melihat host ini di inventaris langsung.",
+      "deleteHelp": "Hapus host ini? Okou akan kehilangan akses.",
       "sshDocs": "Dokumentasi Tailscale SSH",
       "sshHelp": "Menggunakan identitas jaringan Tailscale yang dipilih, tanpa kata sandi SSH atau kunci privat. Aktifkan Tailscale SSH pada perangkat tujuan yang memiliki tag dan izinkan nama pengguna sistem ini dalam kebijakan SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -6100,6 +6460,9 @@
     },
     "title": "Akses SSH",
     "unavailable": "Permintaan ini tidak tersedia. Minta permintaan baru."
+  },
+  "status": {
+    "unread": "Belum dibaca"
   },
   "tailscale": {
     "changed": "Jaringan Tailscale ini berubah. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",
@@ -6263,7 +6626,7 @@
       "usernamePasswordMethod": "Nama pengguna dan kata sandi"
     },
     "deleteHelp": "Hapus host tersimpan ini? Kredensialnya yang dapat digunakan kembali akan tetap disimpan.",
-    "description": "Izinkan agen Anda melihat dan mengendalikan desktop jarak jauh Anda.",
+    "description": "Izinkan Okou melihat dan mengontrol desktop jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Perubahan berlaku pada host tersimpan ini dan membatalkan konfigurasi koneksinya saat ini.",
     "errors": {
@@ -6879,8 +7242,6 @@
     },
     "createDialog": {
       "addAutomation": "Tambahkan otomatisasi",
-      "chooseAgentAutomation": "Pilih agen untuk otomatisasi ini",
-      "chooseAgentWorkflow": "Pilih agen untuk alur kerja ini.",
       "chooseWorkflow": "Pilih alur kerja untuk diotomatisasi, atau buat satu di chat.",
       "createAutomation": "Buat Otomatisasi",
       "createInChat": "Buat di chat",
@@ -6911,11 +7272,9 @@
         "uploadAria": "Unggah berkas alur kerja"
       },
       "metadata": {
-        "agent": "Agen",
-        "agentDescription": "Alur kerja ini milik agen ini.",
         "aria": "Metadata alur kerja",
         "description": "Deskripsi",
-        "descriptionHelp": "Beri tahu agen kapan harus menggunakan alur kerja ini.",
+        "descriptionHelp": "Jelaskan kapan Okou perlu menggunakan alur kerja ini.",
         "name": "Nama",
         "nameHelp": "Ditampilkan di daftar alur kerja dan saat memilih alur kerja.",
         "namePlaceholder": "Nama alur kerja",
@@ -6941,8 +7300,8 @@
     },
     "editor": {
       "aria": "Editor instruksi",
-      "footer": "Edit instruksi secara langsung untuk menyesuaikan perilaku agen Anda.",
-      "placeholder": "Tulis instruksi untuk agen Anda...",
+      "footer": "Edit instruksi untuk alur kerja ini.",
+      "placeholder": "Tulis instruksi untuk alur kerja ini…",
       "toolbar": {
         "blockquote": "Blok kutip",
         "bold": "Tebal",
@@ -7049,7 +7408,7 @@
       "authorizationError": "Otorisasi Discord tidak dapat diselesaikan.",
       "cancelled": "Otorisasi Discord dibatalkan.",
       "chooseWorkspace": "Pilih ruang kerja",
-      "connectDescription": "Hubungkan akun Discord untuk mengobrol dengan agen Anda.",
+      "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Discord.",
       "connectedTitle": "Terhubung ke Discord",
       "connectTitle": "Hubungkan ke Discord",
       "defaultWorkspace": "Ruang kerja default untuk Discord",
@@ -7127,17 +7486,16 @@
       "uninstallTitle": "Copot pemasangan integrasi Microsoft Teams?"
     },
     "telegram": {
-      "description": "Rutekan pesan Telegram ke agen",
+      "description": "Hubungkan Telegram ke Okou.",
       "title": "Telegram"
     },
     "wechat": {
       "accountLabel": "Akun",
-      "agentLabel": "Agen",
       "code": "Kode verifikasi",
       "connect": "Hubungkan",
       "connected": "Terhubung",
       "creating": "Membuat kode QR…",
-      "description": "Mengobrol dengan agen Anda di WeChat.",
+      "description": "Mengobrol dengan Okou di WeChat.",
       "disconnect": "Putuskan koneksi",
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat.",
@@ -7151,7 +7509,7 @@
       "restoreDescription": "Hubungkan kembali WeChat ke akun dan ruang kerja di bawah ini.",
       "returnToWechat": "Kembali ke WeChat dan kirim pesan untuk mulai mengobrol.",
       "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
-      "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",
+      "scope": "Hanya pesan langsung Anda ke Okou yang terhubung. Pesan teks didukung.",
       "title": "Hubungkan WeChat",
       "unavailable": "Koneksi belum dikonfigurasi.",
       "verification_blocked": "Terlalu banyak percobaan. Buat kode QR baru.",
@@ -7163,7 +7521,7 @@
     "whatsapp": {
       "codeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
       "connect": "Hubungkan WhatsApp",
-      "connectDescription": "Hubungkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan agen Anda.",
+      "connectDescription": "Tautkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan Okou.",
       "connected": "WhatsApp terhubung",
       "description": "Mengobrol dengan Okou langsung dari WhatsApp",
       "disconnected": "WhatsApp terputus",

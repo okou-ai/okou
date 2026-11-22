@@ -17,7 +17,6 @@ import {
   connectorAccount,
   httpConnector,
   manualAuthMethod,
-  SCOUT_AGENT_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
@@ -66,7 +65,7 @@ function acme(connected = false) {
 
 async function openDirectory() {
   const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   await user.click(await findFastControl("button", "Connectors"));
   await user.click(await findFastControl("button", "Add connectors"));
   return screen.findByRole("dialog", { name: "Connectors" });

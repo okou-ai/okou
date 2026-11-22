@@ -21,7 +21,10 @@ import { Buffer } from "node:buffer";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { array, object, string } from "zod";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  threadEventCursor,
+} from "./helpers/api-bdd-chat-files";
 
 import {
   chatThreadConnectorSelectionContract,
@@ -233,6 +236,7 @@ interface FeishuInstallationFixture {
 }
 
 interface FeishuRunFixture extends FeishuInstallationFixture {
+  readonly sinceSetupSeqId?: number;
   readonly subscription: {
     readonly customerId: string;
     readonly subscriptionId: string;
@@ -1198,14 +1202,14 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       });
     });
     authOrgApi.acceptAgentStorageWrites();
-    const onboarding = await own(() => {
-      return authOrgApi.readOnboardingStatus(actor);
+    const onboardingAgentId = await own(() => {
+      return authOrgApi.readDefaultAgentId(actor);
     });
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
     const defaultAgentId = requireValue(
-      onboarding.defaultAgentId,
+      onboardingAgentId,
       "Expected the normal default Agent",
     );
     const defaultAgent = await own(() => {
@@ -1241,14 +1245,14 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       bundlesOnly: true,
     });
     runsApi.acceptTelemetryIngest();
-    const onboarding = await own(() => {
-      return authOrgApi.readOnboardingStatus(actor);
+    const onboardingAgentId = await own(() => {
+      return authOrgApi.readDefaultAgentId(actor);
     });
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
     const defaultAgentId = requireValue(
-      onboarding.defaultAgentId,
+      onboardingAgentId,
       "Expected the normal default Agent",
     );
     const defaultAgent = await own(() => {
@@ -1264,7 +1268,11 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     const { callbackUrl, installationId } = await configureTestInstallation({
       appId,
     });
+    const sinceSetupSeqId = await own(() => {
+      return threadEventCursor(context, actor);
+    });
     return {
+      sinceSetupSeqId,
       actor,
       runnerGroup,
       subscription,
@@ -3032,14 +3040,14 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, member);
         });
-        const onboarding = await own(() => {
-          return authOrgApi.readOnboardingStatus(admin);
+        const onboardingAgentId = await own(() => {
+          return authOrgApi.readDefaultAgentId(admin);
         });
         await own(() => {
           return authOrgApi.completeOnboarding(admin);
         });
         const defaultAgentId = requireValue(
-          onboarding.defaultAgentId,
+          onboardingAgentId,
           "Expected the normal default Agent",
         );
         await own(() => {
@@ -3896,14 +3904,14 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        const onboarding = await own(() => {
-          return authOrgApi.readOnboardingStatus(actor);
+        const onboardingAgentId = await own(() => {
+          return authOrgApi.readDefaultAgentId(actor);
         });
         await own(() => {
           return authOrgApi.completeOnboarding(actor);
         });
         const defaultAgentId = requireValue(
-          onboarding.defaultAgentId,
+          onboardingAgentId,
           "Expected the normal default Agent",
         );
         await own(() => {
@@ -4372,7 +4380,6 @@ export function registerFeishuIntegrationTests(
               setupCompleted: true,
               isConnected: true,
               tenantKey: TENANT_KEY,
-              defaultAgentId: fixture.defaultAgentId,
             });
             const connectorsAfter = await own(() => {
               return accept(
@@ -4517,7 +4524,7 @@ export function registerFeishuIntegrationTests(
         ).toBe(`${APP_ORIGIN}${provider.settingsPath}`);
       });
 
-      it("replies when the default agent has not been initialized", async () => {
+      it("offers connection to an unlinked sender before workspace onboarding", async () => {
         const actor = createActor({
           userId: `user_${randomUUID()}`,
           orgId: `org_${randomUUID()}`,
@@ -4540,7 +4547,6 @@ export function registerFeishuIntegrationTests(
         expect(status.body).toMatchObject({
           isInstalled: true,
           callbackVerified: true,
-          defaultAgentId: null,
         });
         const messageId = `om_${randomUUID()}`;
         const event = directMessage(
@@ -4562,15 +4568,12 @@ export function registerFeishuIntegrationTests(
         expect(replies).toHaveLength(1);
         const reply = requireValue(
           replies[0],
-          "Expected unavailable Agent reply",
+          "Expected account connection reply",
         );
         expect(reply.target).toBe(messageId);
         expect(reply.replyInThread).toBeTruthy();
         expect(reply.msgType).toBe("interactive");
-        expect(messageContent(reply)).toContain("Agent unavailable");
-        expect(messageContent(reply)).toContain(
-          `The configured ${provider.name} agent could not be found. Ask an admin to select another agent.`,
-        );
+        expect(messageContent(reply)).toContain("Connect your account");
         const duplicate = await own(() => {
           return postEvent(callbackUrl, event, { encrypted: true });
         });
@@ -4681,7 +4684,7 @@ export function registerFeishuIntegrationTests(
 
       it("preserves member permissions and retries welcome when reconnecting", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, appId, defaultAgentId } = fixture;
+        const { actor, appId } = fixture;
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
@@ -4842,7 +4845,6 @@ export function registerFeishuIntegrationTests(
           expect.objectContaining({
             id: fixture.installationId,
             appId,
-            defaultAgentId,
             isConnected: true,
             connectedUserName: "Feishu User",
           }),
@@ -5046,7 +5048,7 @@ export function registerFeishuIntegrationTests(
 
       it("rejects account rebinding and replaces the connected identity", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+        const { actor, appId, callbackUrl } = fixture;
         const connectUrl = await connectFixtureUser(fixture);
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -5201,7 +5203,6 @@ export function registerFeishuIntegrationTests(
           callbackVerified: true,
           messageReceived: true,
           tenantKey: TENANT_KEY,
-          defaultAgentId,
         });
         await own(() => {
           return accept(
@@ -5703,7 +5704,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -5980,7 +5981,7 @@ export function registerFeishuIntegrationTests(
                 chatThreadsContract,
               ).events({
                 headers: { authorization: "Bearer clerk-session" },
-                query: {},
+                query: { sinceSeqId: fixture.sinceSetupSeqId },
               }),
               [200],
             );
@@ -6507,7 +6508,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -6611,7 +6612,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -6773,7 +6774,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -8131,7 +8132,7 @@ export function registerSharedFeishuConversationTests(): void {
             chatThreadsContract,
           ).events({
             headers: { authorization: "Bearer clerk-session" },
-            query: {},
+            query: { sinceSeqId: fixture.sinceSetupSeqId },
           }),
           [200],
         );
@@ -8325,7 +8326,7 @@ export function registerSharedFeishuConversationTests(): void {
             chatThreadsContract,
           ).events({
             headers: { authorization: "Bearer clerk-session" },
-            query: {},
+            query: { sinceSeqId: fixture.sinceSetupSeqId },
           }),
           [200],
         );

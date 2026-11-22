@@ -1,15 +1,13 @@
-import { selectedExecutionAgent } from "./execution-agent";
 import { rootSignal$ } from "../context/root";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import {
@@ -198,28 +196,7 @@ interface SlackAgentRouteArgs {
   readonly isRetry: boolean;
 }
 
-interface WorkspaceAgentSummary {
-  readonly id: string;
-  readonly name: string;
-  readonly displayName: string | null;
-}
-
-type EffectiveComposeResolution =
-  | {
-      readonly status: "resolved";
-      readonly composeId: string;
-      readonly agent: WorkspaceAgentSummary;
-    }
-  | {
-      readonly status: "not_configured" | "not_found" | "not_accessible";
-    };
-
-type ResolvedEffectiveCompose = Extract<
-  EffectiveComposeResolution,
-  { readonly status: "resolved" }
->;
-
-interface SlackAgentAdmissionNoticeBase {
+interface SlackConnectionNotice {
   readonly installation: SlackInstallation;
   readonly workspaceId: string;
   readonly channelId: string;
@@ -228,15 +205,6 @@ interface SlackAgentAdmissionNoticeBase {
   readonly messageTs: string;
   readonly threadTs?: string;
 }
-
-type SlackAgentAdmissionNotice =
-  | (SlackAgentAdmissionNoticeBase & {
-      readonly kind: "not_connected";
-    })
-  | (SlackAgentAdmissionNoticeBase & {
-      readonly kind: "not_configured" | "not_found" | "not_accessible";
-      readonly connection: SlackConnection;
-    });
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -403,158 +371,28 @@ function decryptSlackBotToken(args: {
   });
 }
 
-const postSlackAgentAdmissionNotice$ = command(
-  async ({ get }, args: SlackAgentAdmissionNotice): Promise<void> => {
-    const connection =
-      args.kind === "not_connected" ? undefined : args.connection;
+const postSlackConnectionNotice$ = command(
+  async ({ get }, args: SlackConnectionNotice): Promise<void> => {
     const botToken = await get(
-      decryptSlackBotToken({
-        installation: args.installation,
-        userId: connection?.userId,
-      }),
+      decryptSlackBotToken({ installation: args.installation }),
     );
     const client = createSlackClient(botToken);
     const threadTs = args.threadTs ?? args.messageTs;
-
-    if (args.kind === "not_connected") {
-      const connectUrl = buildOrgConnectUrl(
-        args.workspaceId,
-        args.slackUserId,
-        args.channelId,
-        args.channelType === "dm" ? threadTs : undefined,
-      );
-      await postSlackUserNotice({
-        client,
-        channelId: args.channelId,
-        channelType: args.channelType,
-        slackUserId: args.slackUserId,
-        threadTs,
-        text: "Please connect your account first",
-        blocks: buildLoginPromptMessage(connectUrl),
-      });
-      return;
-    }
-
-    const notice = (() => {
-      switch (args.kind) {
-        case "not_configured": {
-          return "No agent is configured for this org. Please ask your org admin to set a default agent.";
-        }
-        case "not_found": {
-          return "The configured agent could not be found. Please contact your org admin.";
-        }
-        case "not_accessible": {
-          return "The configured agent is not available to your Slack account. Please contact your org admin.";
-        }
-      }
-    })();
+    const connectUrl = buildOrgConnectUrl(
+      args.workspaceId,
+      args.slackUserId,
+      args.channelId,
+      args.channelType === "dm" ? threadTs : undefined,
+    );
     await postSlackUserNotice({
       client,
       channelId: args.channelId,
       channelType: args.channelType,
       slackUserId: args.slackUserId,
       threadTs,
-      ephemeralThreadTs: args.threadTs ? threadTs : undefined,
-      text: notice,
+      text: "Please connect your account first",
+      blocks: buildLoginPromptMessage(connectUrl),
     });
-  },
-);
-
-const resolveSlackRouteCompose$ = command(
-  async (
-    { get, set },
-    args: SlackAgentAdmissionNoticeBase & {
-      readonly connection: SlackConnection;
-      readonly orgId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<ResolvedEffectiveCompose | undefined> => {
-    const routeDb = get(db$);
-    const routeUser = args.connection.userId;
-    const routeOrg = args.orgId;
-    const effectiveCompose =
-      await (async (): Promise<EffectiveComposeResolution> => {
-        const defaultAgentId = await (async () => {
-          const [row] = await routeDb
-            .select()
-            .from(selectedExecutionAgent(routeOrg, routeUser));
-          return row?.id ?? null;
-        })();
-        if (!defaultAgentId) {
-          return { status: "not_configured" };
-        }
-        const configuredDefaultAgent = await (async () => {
-          const [agent] = await routeDb
-            .select({
-              id: agents.id,
-              name: agents.name,
-              displayName: agents.displayName,
-            })
-            .from(agents)
-            .where(
-              routeOrg
-                ? and(eq(agents.id, defaultAgentId), eq(agents.orgId, routeOrg))
-                : eq(agents.id, defaultAgentId),
-            )
-            .limit(1);
-          return agent;
-        })();
-        if (!configuredDefaultAgent) {
-          return { status: "not_found" };
-        }
-        const visibleDefaultAgent = await (async () => {
-          const [agent] = await routeDb
-            .select({
-              id: agents.id,
-              name: agents.name,
-              displayName: agents.displayName,
-            })
-            .from(agents)
-            .where(
-              and(
-                eq(agents.id, defaultAgentId),
-                eq(agents.orgId, routeOrg),
-                or(
-                  eq(agents.visibility, "public"),
-                  eq(agents.owner, routeUser),
-                ),
-              ),
-            )
-            .limit(1);
-          return agent;
-        })();
-        if (!visibleDefaultAgent) {
-          return { status: "not_accessible" };
-        }
-        return {
-          status: "resolved",
-          composeId: defaultAgentId,
-          agent: visibleDefaultAgent,
-        };
-      })();
-    signal.throwIfAborted();
-    if (effectiveCompose.status === "resolved") {
-      return effectiveCompose;
-    }
-    waitUntil(
-      tapError(
-        set(postSlackAgentAdmissionNotice$, {
-          kind: effectiveCompose.status,
-          installation: args.installation,
-          connection: args.connection,
-          workspaceId: args.workspaceId,
-          channelId: args.channelId,
-          channelType: args.channelType,
-          slackUserId: args.slackUserId,
-          messageTs: args.messageTs,
-          ...(args.threadTs ? { threadTs: args.threadTs } : {}),
-        }),
-        (error) => {
-          L.error("Failed to post Slack admission notice", { error });
-        },
-      ),
-    );
-    return undefined;
   },
 );
 
@@ -615,22 +453,13 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       return { kind: "canonical", routeId: existingRoute.id };
     }
 
-    const effectiveCompose = await set(
-      resolveSlackRouteCompose$,
-      {
-        connection: args.connection,
-        orgId: args.orgId,
-        installation: args.installation,
-        workspaceId: args.workspaceId,
-        channelId: args.channelId,
-        channelType: args.channelType,
-        slackUserId: args.slackUserId,
-        messageTs: args.messageTs,
-        ...(args.threadTs ? { threadTs: args.threadTs } : {}),
-      },
+    const membership = await set(
+      getMemberRoleAndUpdateCache$,
+      args.orgId,
+      args.connection.userId,
       signal,
     );
-    if (!effectiveCompose) {
+    if (membership.kind !== "member") {
       return { kind: "ignored" };
     }
 
@@ -648,7 +477,6 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
         ),
         ...routeKey,
         orgId: args.orgId,
-        agentId: effectiveCompose.composeId,
         currentTime: nowDate(),
       },
       signal,
@@ -787,8 +615,7 @@ const resolveSlackAgentRouteAdmission$ = command(
       if (!args.isRetry) {
         waitUntil(
           tapError(
-            set(postSlackAgentAdmissionNotice$, {
-              kind: "not_connected",
+            set(postSlackConnectionNotice$, {
               installation,
               workspaceId: args.workspaceId,
               channelId: args.channelId,
@@ -846,14 +673,6 @@ const cleanupWorkspaceInstallation$ = command(
   },
 );
 
-function appHomeAgentSelection() {
-  return {
-    id: agents.id,
-    name: agents.name,
-    displayName: agents.displayName,
-  };
-}
-
 const refreshOrgAppHome$ = command(
   async (
     { get },
@@ -902,66 +721,6 @@ const refreshOrgAppHome$ = command(
       return;
     }
 
-    let agentName: string | undefined;
-    if (installation.orgId) {
-      const homeDb = db;
-      const userId = connection.userId;
-      const orgId = installation.orgId;
-      const effectiveCompose =
-        await (async (): Promise<EffectiveComposeResolution> => {
-          const defaultAgentId = await (async () => {
-            const [row] = await homeDb
-              .select()
-              .from(selectedExecutionAgent(orgId, userId));
-            return row?.id ?? null;
-          })();
-          if (!defaultAgentId) {
-            return { status: "not_configured" };
-          }
-          const configuredDefaultAgent = await (async () => {
-            const [agent] = await homeDb
-              .select(appHomeAgentSelection())
-              .from(agents)
-              .where(
-                orgId
-                  ? and(eq(agents.id, defaultAgentId), eq(agents.orgId, orgId))
-                  : eq(agents.id, defaultAgentId),
-              )
-              .limit(1);
-            return agent;
-          })();
-          if (!configuredDefaultAgent) {
-            return { status: "not_found" };
-          }
-          const visibleDefaultAgent = await (async () => {
-            const [agent] = await homeDb
-              .select(appHomeAgentSelection())
-              .from(agents)
-              .where(
-                and(
-                  eq(agents.id, defaultAgentId),
-                  eq(agents.orgId, orgId),
-                  or(eq(agents.visibility, "public"), eq(agents.owner, userId)),
-                ),
-              )
-              .limit(1);
-            return agent;
-          })();
-          if (!visibleDefaultAgent) {
-            return { status: "not_accessible" };
-          }
-          return {
-            status: "resolved",
-            composeId: defaultAgentId,
-            agent: visibleDefaultAgent,
-          };
-        })();
-      if (effectiveCompose.status === "resolved") {
-        agentName =
-          effectiveCompose.agent.displayName ?? effectiveCompose.agent.name;
-      }
-    }
-
     const [metadata] = await db
       .select({ email: userCache.email })
       .from(userCache)
@@ -975,7 +734,7 @@ const refreshOrgAppHome$ = command(
         isLinked: true,
         userId: connection.userId,
         userEmail: metadata?.email ?? undefined,
-        agentName,
+        agentName: BRAND_PRESENTATION.assistantName,
       }),
     );
   },
@@ -1221,34 +980,6 @@ const handleMessagesTabOpened$ = command(
     if (!connection || connection.dmWelcomeSent) {
       return;
     }
-    let agentName: string | undefined;
-    if (installation.orgId) {
-      const db = get(db$);
-      const orgId = installation.orgId;
-      const composeId = await (async () => {
-        const [row] = await db
-          .select()
-          .from(selectedExecutionAgent(orgId, connection.userId));
-        return row?.id ?? null;
-      })();
-      let agent: WorkspaceAgentSummary | undefined;
-      if (composeId) {
-        const db = get(db$);
-        agent = await (async () => {
-          const [row] = await db
-            .select({
-              id: agents.id,
-              name: agents.name,
-              displayName: agents.displayName,
-            })
-            .from(agents)
-            .where(eq(agents.id, composeId))
-            .limit(1);
-          return row;
-        })();
-      }
-      agentName = agent?.displayName ?? agent?.name;
-    }
     const client = createSlackClient(
       await get(
         decryptSlackBotToken({
@@ -1273,7 +1004,10 @@ const handleMessagesTabOpened$ = command(
       args.channelId,
       `Hi! I'm ${officialSlackBotMention(installation.botUserId)}. I can connect you to AI agents to help with your tasks.`,
       {
-        blocks: buildWelcomeMessage(installation.botUserId, agentName),
+        blocks: buildWelcomeMessage(
+          installation.botUserId,
+          BRAND_PRESENTATION.assistantName,
+        ),
       },
     );
     // A provider rejection is safe to retry; an unknown outcome retains the claim.

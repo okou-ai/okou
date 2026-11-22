@@ -1,3 +1,4 @@
+import type { ChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import {
   ChatShareHeaderControls,
   useChatShareRefresh,
@@ -400,11 +401,6 @@ import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
-
-type UserMessageNonContentPart = Extract<
-  UserMessagePart,
-  { readonly type: "source" | "automation" }
->;
 
 type UserMessageAnnotationRenderPart = Extract<
   UserMessageRenderPart,
@@ -7042,13 +7038,13 @@ function SourceMessageAnnotation({
 }: {
   renderPart: Extract<
     UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "agent" | "external" }
+    { type: "source"; kind: "chat" | "external" }
   >;
   className: string;
 }) {
-  if (renderPart.kind === "agent") {
+  if (renderPart.kind === "chat") {
     return (
-      <AgentRunSourceMessageAnnotation
+      <ChatRunSourceMessageAnnotation
         part={renderPart.part}
         className={className}
       />
@@ -7062,14 +7058,11 @@ function SourceMessageAnnotation({
   );
 }
 
-function AgentRunSourceMessageAnnotation({
+function ChatRunSourceMessageAnnotation({
   part,
   className,
 }: {
-  part: Extract<
-    Extract<UserMessageNonContentPart, { type: "source" }>,
-    { kind: "agent" }
-  >;
+  part: ChatRunReference;
   className: string;
 }) {
   const { t } = useTranslation();
@@ -7294,21 +7287,21 @@ function equalFeedbackSources(
 
 function userMessageFeedbackHeading(
   parts: readonly UserMessageFeedbackRenderPart[],
-  agentRunSourceTitle: string | undefined,
+  chatRunSourceTitle: string | undefined,
 ): string {
-  if (agentRunSourceTitle) {
+  if (chatRunSourceTitle) {
     return parts.length === 1
       ? i18n.t(
           ($) => {
             return $.chat.feedback.forwardPartHeading;
           },
-          { title: agentRunSourceTitle },
+          { title: chatRunSourceTitle },
         )
       : i18n.t(
           ($) => {
             return $.chat.feedback.forwardPartsHeading;
           },
-          { count: parts.length, title: agentRunSourceTitle },
+          { count: parts.length, title: chatRunSourceTitle },
         );
   }
   const source = parts[0]?.part.source;
@@ -7354,10 +7347,10 @@ function userMessageFeedbackHeading(
 
 function UserMessageFeedbackGroup({
   parts,
-  agentRunSourceTitle,
+  chatRunSourceTitle,
 }: {
   parts: readonly UserMessageFeedbackRenderPart[];
-  agentRunSourceTitle: string | undefined;
+  chatRunSourceTitle: string | undefined;
 }) {
   const partOccurrences = new Map<string, number>();
   let firstPart = true;
@@ -7368,7 +7361,7 @@ function UserMessageFeedbackGroup({
           ? i18n.t(($) => {
               return $.chat.agentSuggestions.label;
             })
-          : userMessageFeedbackHeading(parts, agentRunSourceTitle)}
+          : userMessageFeedbackHeading(parts, chatRunSourceTitle)}
       </div>
       {parts.map((renderPart) => {
         const identity = JSON.stringify(renderPart.part);
@@ -7463,8 +7456,8 @@ function UserMessageView({
   elevatedFileIds: ReadonlySet<string>;
 }) {
   const partOccurrences = new Map<string, number>();
-  const agentRunSourceTitle = document.parts.find((renderPart) => {
-    return renderPart.type === "source" && renderPart.kind === "agent";
+  const chatRunSourceTitle = document.parts.find((renderPart) => {
+    return renderPart.type === "source" && renderPart.kind === "chat";
   })?.part.titleSnapshot;
   const bodyParts = document.parts.filter(
     (renderPart): renderPart is UserMessageContentRenderPart => {
@@ -7502,7 +7495,7 @@ function UserMessageView({
         <UserMessageFeedbackGroup
           key={`feedback:${String(index)}`}
           parts={feedbackParts}
-          agentRunSourceTitle={agentRunSourceTitle}
+          chatRunSourceTitle={chatRunSourceTitle}
         />,
       );
       index = nextIndex;

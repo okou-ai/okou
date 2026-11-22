@@ -12,7 +12,7 @@ final class ChatSidebarStoreTests: XCTestCase {
     let fixture = SidebarProjectionFixture()
     let workspace = fixture.workspace()
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.list.refresh()
     await workspace.projects.activate()
 
@@ -87,7 +87,7 @@ final class ChatSidebarStoreTests: XCTestCase {
     let fixture = SidebarProjectionFixture()
     let workspace = fixture.workspace()
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     await workspace.list.refresh()
     await workspace.projects.activate()
     workspace.sidebar.select(.unread)
@@ -121,14 +121,14 @@ final class ChatSidebarStoreTests: XCTestCase {
       old.close()
       replacement.close()
     }
-    await old.refreshNavigation()
+    await old.prepareWorkspaceComposer()
     await old.list.refresh()
     old.sidebar.select(.archived)
     XCTAssertEqual(try snapshot(old).filter, .archived)
     old.close()
     XCTAssertThrowsError(try snapshot(old))
 
-    await replacement.refreshNavigation()
+    await replacement.prepareWorkspaceComposer()
     await replacement.list.refresh()
     old.sidebar.select(.muted)
     XCTAssertEqual(try snapshot(replacement).filter, .recent)

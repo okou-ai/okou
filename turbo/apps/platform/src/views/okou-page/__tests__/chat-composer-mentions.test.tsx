@@ -1,90 +1,19 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  agentsByIdContract,
-  agentsMainContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
 import { expect, test } from "vitest";
 
 import {
   fill,
-  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  continuityDraft,
-  continuitySidebarLink,
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import { AGENT_ID } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
-
-const REVIEWER_ID = "e1000000-0000-4000-a000-000000000201";
-const ZETA_ID = "e1000000-0000-4000-a000-000000000202";
-const PRIVATE_OPS_ID = "e1000000-0000-4000-a000-000000000203";
-const SALES_ID = "e1000000-0000-4000-a000-000000000204";
-const FINANCE_ID = "e1000000-0000-4000-a000-000000000205";
-
-const SCOUT_AVATAR = "https://cdn.vm7.io/avatars/scout.png";
-const REVIEWER_AVATAR = "https://cdn.vm7.io/avatars/reviewer.png";
-const ZETA_CURRENT_AVATAR =
-  "https://cdn.vm7.io/avatars/zeta-current-avatar.png";
-
-function agent(
-  agentId: string,
-  displayName: string,
-  avatarUrl: string | null,
-  visibility: "public" | "private" = "public",
-): AgentResponse {
-  return {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: "mention-owner",
-    displayName,
-    description: null,
-    sound: null,
-    avatarUrl,
-    visibility,
-  };
-}
-
-function installAgents(agents: readonly AgentResponse[]): void {
-  context.mocks.api(agentsMainContract.list, ({ respond }) => {
-    return respond(200, [...agents]);
-  });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const match = agents.find((candidate) => {
-      return candidate.agentId === params.id;
-    });
-    if (!match) {
-      return respond(404, {
-        error: { code: "AGENT_NOT_FOUND", message: "Agent not found" },
-      });
-    }
-    return respond(200, match);
-  });
-}
-
-async function openConversation(threadId: string): Promise<void> {
-  await waitFor(() => {
-    expect(continuitySidebarLink(threadId)).toBeVisible();
-  });
-  click(continuitySidebarLink(threadId));
-  await waitFor(() => {
-    expect(continuitySidebarLink(threadId)).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(
-      document.querySelector(`[data-chat-thread-container-id="${threadId}"]`),
-    ).toBeVisible();
-  });
-}
 
 function mentionMenu(): HTMLElement {
   return screen.getByTestId("chat-thread-suggestion-menu");
@@ -121,8 +50,6 @@ async function setupMentionSearch(newChat: boolean) {
     caseId: 61,
     threads: [current, projectBeta, untitledThread, projectBetaFollowUp],
   });
-  installAgents([agent(AGENT_ID, "Scout", SCOUT_AVATAR)]);
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
 
   await setupPage({
     context,
@@ -182,7 +109,6 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
     caseId: 64,
     threads: [current, archived],
   });
-  installAgents([agent(AGENT_ID, "Scout", SCOUT_AVATAR)]);
   await setupPage({
     context,
     path: `/chats/${current.id}`,
@@ -202,50 +128,28 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
   expect(within(menu).getByText("Archived mention context")).toBeVisible();
 });
 
-async function openAgentMentionWorkspace(newChat = false) {
+async function openMentionWorkspace(newChat = false) {
   const current = continuityThread(62, 1, "Scout planning");
   const matchingThread = continuityThread(62, 2, "Zeta launch notes");
-  const savedMentionThread = continuityThread(62, 3, "Saved Zeta mention");
-  const agents = [
-    agent(AGENT_ID, "Scout", SCOUT_AVATAR),
-    agent(REVIEWER_ID, "Reviewer", REVIEWER_AVATAR),
-    agent(PRIVATE_OPS_ID, "Private Ops", null, "private"),
-    agent(ZETA_ID, "Zeta Agent", ZETA_CURRENT_AVATAR),
-    agent(SALES_ID, "Sales Agent", null),
-    agent(FINANCE_ID, "Finance Agent", null, "private"),
-  ];
   const workspace = installContinuityWorkspace(context, {
     caseId: 62,
-    threads: [current, matchingThread, savedMentionThread],
-    drafts: new Map([
-      [
-        savedMentionThread.id,
-        continuityDraft([
-          {
-            type: "agent",
-            agentId: ZETA_ID,
-            nameSnapshot: "Zeta Agent",
-          },
-        ]),
-      ],
-    ]),
+    threads: [
+      current,
+      matchingThread,
+      continuityThread(62, 3, "Saved Zeta mention"),
+    ],
   });
-  installAgents(agents);
-  // My Okou always chats with the default agent, at `/` for a new chat.
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-
   await setupPage({
     context,
     path: newChat ? "/?compose=1" : `/chats/${current.id}`,
     ...workspace.pageOptions,
   });
-  return { current, savedMentionThread, workspace };
 }
 
 test.each([false, true])(
   "Show the @ search hint until typing, selection or dismissal (new chat: %s)",
   async (newChat) => {
-    await openAgentMentionWorkspace(newChat);
+    await openMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const user = userEvent.setup({ delay: null });
     const hint = () => {
@@ -308,7 +212,7 @@ test.each([false, true])(
 test.each([false, true])(
   "Show the @ hint before adjacent text and preserve it when inserting a mention (new chat: %s)",
   async (newChat) => {
-    await openAgentMentionWorkspace(newChat);
+    await openMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const user = userEvent.setup({ delay: null });
     const hint = () => {
@@ -355,7 +259,7 @@ test.each([false, true])(
   "Composer-anchored mentions keep priority order and select the top candidate by default (new chat: %s)",
   async (newChat) => {
     context.mocks.browser.matchMedia(false);
-    await openAgentMentionWorkspace(newChat);
+    await openMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const user = userEvent.setup({ delay: null });
     await user.click(composer);
@@ -371,12 +275,10 @@ test.each([false, true])(
       "Zeta launch notes",
       "Scout planning",
     ]);
-    expect(within(menu).queryByText("Agents")).not.toBeInTheDocument();
     expect(menuButton("Saved Zeta mention")).toHaveAttribute(
       "data-active",
       "true",
     );
-    expect(within(menu).queryByText("Scout")).toBeNull();
     expect(within(menu).getByText("Zeta launch notes")).toBeInTheDocument();
     expect(composer).toHaveFocus();
     await user.keyboard("{ArrowUp}");
@@ -404,7 +306,7 @@ test("Composer-anchored mentions open above the centred start page composer too"
   // A wide window centres the start page's composer; the menu still opens
   // above it, with the most relevant row at the top of the menu.
   context.mocks.browser.matchMedia(true);
-  await openAgentMentionWorkspace(true);
+  await openMentionWorkspace(true);
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(composer);
@@ -439,7 +341,7 @@ test("Composer-anchored mentions open above the centred start page composer too"
 });
 
 test("Composer-anchored mentions navigate downward and insert the visual target", async () => {
-  await openAgentMentionWorkspace();
+  await openMentionWorkspace();
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(composer);
@@ -466,7 +368,7 @@ test.each([false, true])(
   "Composer-anchored mentions reset after filtering and preserve IME confirmation and Escape (new chat: %s)",
   async (newChat) => {
     context.mocks.browser.matchMedia(false);
-    await openAgentMentionWorkspace(newChat);
+    await openMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const user = userEvent.setup({ delay: null });
     await user.click(composer);
@@ -510,27 +412,13 @@ test.each([false, true])(
   },
 );
 
-test("A saved mention keeps its name when the draft reopens", async () => {
-  const { savedMentionThread } = await openAgentMentionWorkspace();
-  await openConversation(savedMentionThread.id);
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "Zeta Agent",
-    );
-  });
-});
-
-test("Mention a chat thread from any agent", async () => {
+test("Mention another chat thread", async () => {
   const projectAlpha = continuityThread(63, 1, "Project Alpha");
   const otherAlpha = continuityThread(63, 2, "Other Alpha");
   const workspace = installContinuityWorkspace(context, {
     caseId: 63,
     threads: [projectAlpha, otherAlpha],
   });
-  installAgents([
-    agent(AGENT_ID, "Scout", SCOUT_AVATAR),
-    agent(REVIEWER_ID, "Reviewer", REVIEWER_AVATAR),
-  ]);
 
   await setupPage({
     context,
@@ -563,23 +451,4 @@ test("Mention a chat thread from any agent", async () => {
       }),
     ).toBeTruthy();
   });
-});
-
-test("Personal Okou mentions preserve authorized chat references without Agent destinations", async () => {
-  await openAgentMentionWorkspace(true);
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  await fill(composer, "Review @Zeta");
-  const chat = await waitFor(() => {
-    return menuButton("Zeta launch notes");
-  });
-  expect(
-    within(mentionMenu()).queryByText("Zeta Agent"),
-  ).not.toBeInTheDocument();
-  click(chat);
-  await waitFor(() => {
-    expect(composer).toHaveTextContent("Review Zeta launch notes");
-  });
-  expect(
-    composer.querySelector("[data-chat-thread-mention]"),
-  ).toHaveTextContent("Zeta launch notes");
 });

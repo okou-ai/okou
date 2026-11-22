@@ -10,7 +10,7 @@ final class ChatThreadDeleteTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
     let gate = ThreadActionGate()
@@ -44,7 +44,7 @@ final class ChatThreadDeleteTests: XCTestCase {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
     defer { store.close() }
-    await store.refreshNavigation()
+    await store.prepareWorkspaceComposer()
     await store.refresh()
     fixture.state.value.withLock { $0.failNext["delete"] = 503 }
 

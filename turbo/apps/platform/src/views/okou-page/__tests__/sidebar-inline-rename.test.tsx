@@ -17,8 +17,7 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
-const { mockSidebarThreadStory, prepareDefaultAgent } =
-  createSidebarHelpers(context);
+const { mockSidebarThreadStory } = createSidebarHelpers(context);
 
 const ROW_HEIGHT = 36;
 
@@ -27,7 +26,6 @@ async function setupConversations({
 }: {
   mockBeforePage?: () => void;
 } = {}): Promise<void> {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
@@ -120,7 +118,6 @@ test("Scrolling the field's row away saves it instead of reopening it", async ()
   const threadIdAt = (index: number) => {
     return `b3300000-0000-4000-a000-${String(index).padStart(12, "0")}`;
   };
-  prepareDefaultAgent();
   mockSidebarThreadStory(
     Array.from({ length: 40 }, (_, index) => {
       return createThread(threadIdAt(index), `Chat ${index + 1}`);

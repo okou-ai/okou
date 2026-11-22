@@ -1,4 +1,3 @@
-import { selectedExecutionAgent } from "./execution-agent";
 import {
   getAgentPhoneConversationParticipants,
   isAgentPhoneApiError,
@@ -414,13 +413,3 @@ export function markdownToImessagePlain(markdown: string): string {
   text = text.replace(/\n{3,}/g, "\n\n");
   return text.trim();
 }
-
-export const resolveOrgDefaultComposeId$ = command(
-  async ({ get }, orgId: string, userId: string): Promise<string | null> => {
-    const db = get(db$);
-    const [metadata] = await db
-      .select()
-      .from(selectedExecutionAgent(orgId, userId));
-    return metadata?.id ?? null;
-  },
-);

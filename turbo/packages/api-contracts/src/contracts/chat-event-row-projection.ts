@@ -1,3 +1,4 @@
+import { readStoredMessageParts } from "./stored-message-parts";
 import type { ChatEventRow } from "./chat-event-rows";
 import { formatChatRunFailure } from "./errors";
 import { normalizeRunFailureReason } from "./run-failure-reasons";
@@ -77,10 +78,12 @@ export function chatEventFromRow(source: ChatEventRow): ChatEvent {
     createdAt: row.createdAt,
   };
   const userMessage = (): UserMessageDocument => {
-    return requiredRowField(
-      payload?.userMessage ?? null,
-      row.eventType,
-      "userMessage",
+    return readStoredMessageParts(
+      requiredRowField(
+        payload?.userMessage ?? null,
+        row.eventType,
+        "userMessage",
+      ),
     ) as UserMessageDocument;
   };
   const candidates: Record<ChatEventType, () => ChatEvent> = {

@@ -132,7 +132,6 @@ export function userPreferences({
         timezone: null,
         locale: null,
         supportedLocales: [...SUPPORTED_USER_LOCALES],
-        pinnedAgentIds: [],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
         chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
@@ -147,7 +146,6 @@ export function userPreferences({
       timezone: row.timezone,
       locale: parseUserLocale(row.locale),
       supportedLocales: [...SUPPORTED_USER_LOCALES],
-      pinnedAgentIds: [],
       sendMode: parseSendMode(row.sendMode),
       cloudBrowserEnabledByDefault: row.cloudBrowserEnabledByDefault,
       chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
@@ -235,7 +233,6 @@ function mergeUserPreferences(
     timezone: preferences.timezone ?? existing.timezone,
     locale: preferences.locale ?? existing.locale,
     supportedLocales: [...SUPPORTED_USER_LOCALES],
-    pinnedAgentIds: [],
     sendMode: preferences.sendMode ?? existing.sendMode,
     cloudBrowserEnabledByDefault:
       preferences.cloudBrowserEnabledByDefault ??

@@ -26,7 +26,6 @@ import {
   createComposerConnectorHelpers,
   permissionDetail,
   noAuthMethod,
-  SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   OTHER_THREAD_ID,
   chatConnectorOverviewFixture,
@@ -78,12 +77,10 @@ function installAccess(
             {
               id: SCOUT_THREAD_ID,
               title: "Scout chat",
-              agentId: SCOUT_AGENT_ID,
             },
             {
               id: OTHER_THREAD_ID,
               title: "Other chat",
-              agentId: SCOUT_AGENT_ID,
             },
           ],
           threadId: SCOUT_THREAD_ID,

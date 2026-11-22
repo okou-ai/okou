@@ -23,17 +23,17 @@ async function openWhitespaceDraft(kind: "agent" | "thread") {
     caseId: 41,
     threads: [thread],
   });
-  let agentDraft = textContinuityDraft("");
+  let workspaceDraft = textContinuityDraft("");
   const agentPatches: ComposerDraft[] = [];
   context.mocks.api(composerDraftContract.get, ({ respond }) => {
-    return respond(200, agentDraft);
+    return respond(200, workspaceDraft);
   });
   context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
-    agentDraft = {
+    workspaceDraft = {
       draftUserMessage: body.draftUserMessage,
       draftAttachments: body.draftAttachments ?? null,
     };
-    agentPatches.push(agentDraft);
+    agentPatches.push(workspaceDraft);
     return respond(204);
   });
   const latestPatch = () => {

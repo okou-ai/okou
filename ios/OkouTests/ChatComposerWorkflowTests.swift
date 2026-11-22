@@ -238,7 +238,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
     })
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     let source = workspace.composerWorkflows
     let old = Task { try await source.load() }
     addTeardownBlock {
@@ -312,7 +312,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { workspace.close() }
     workspace.setPhase(.active)
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     workspace.newChatDraft = "Summarize /morning-brief "
     XCTAssertEqual(workspace.newChatDraft, "Summarize /morning-brief ")
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
@@ -321,7 +321,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
     let reopened = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
-    await reopened.refreshNavigation()
+    await reopened.prepareWorkspaceComposer()
     XCTAssertEqual(reopened.newChatDraft, "Summarize /morning-brief ")
     XCTAssertTrue(reopened.composerWorkflows.recentIDs().isEmpty)
     await reopened.sendNewChat()
