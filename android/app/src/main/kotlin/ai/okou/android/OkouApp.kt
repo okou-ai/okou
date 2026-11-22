@@ -218,8 +218,10 @@ internal fun OkouApp(
     val keyboard = LocalSoftwareKeyboardController.current
 
     fun closeFind() {
-        focus.clearFocus()
-        keyboard?.hide()
+        if (findVisit?.inputFocused == true) {
+            focus.clearFocus()
+            keyboard?.hide()
+        }
         findVisit = null
     }
 
@@ -529,7 +531,7 @@ internal fun OkouApp(
     BackHandler(
         !showArtifacts &&
             (settings != null || showWorkspaceBack || searchActive || findVisit != null),
-        onBack = ::back,
+        onBack = { if (settings == null && searchActive) closeSearch() else back() },
     )
 
     if (showArtifacts) {

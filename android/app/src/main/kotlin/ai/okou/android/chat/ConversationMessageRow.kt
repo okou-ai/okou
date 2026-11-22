@@ -377,7 +377,9 @@ private fun MessageBody(
     val colors = MaterialTheme.colorScheme
     val markdownHighlight = findHighlight?.takeIf { message.role == HistoryRole.Assistant }
     val bodyHighlight = findHighlight.takeUnless { markdownHighlight != null }
-    val foreground = if (bodyHighlight != null) colors.onSecondaryContainer else colors.onSurface
+    val foreground =
+        if (bodyHighlight?.target?.highlighted == true) colors.onSecondaryContainer
+        else colors.onSurface
     val style =
         if (compact) typography.bodyMedium
         else typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 28.sp, letterSpacing = 0.sp)
@@ -423,13 +425,15 @@ internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighl
         }
     }
     return drawBehind {
-            val edge = 2.dp.toPx()
-            drawRoundRect(
-                colors.secondaryContainer,
-                topLeft = Offset(-edge, -edge),
-                size = Size(size.width + 2 * edge, size.height + 2 * edge),
-                cornerRadius = CornerRadius(4.dp.toPx() + edge),
-            )
+            if (highlight.target.highlighted) {
+                val edge = 2.dp.toPx()
+                drawRoundRect(
+                    colors.secondaryContainer,
+                    topLeft = Offset(-edge, -edge),
+                    size = Size(size.width + 2 * edge, size.height + 2 * edge),
+                    cornerRadius = CornerRadius(4.dp.toPx() + edge),
+                )
+            }
         }
         .then(if (reveal != null) Modifier.onGloballyPositioned { coordinates = it } else Modifier)
         .focusRequester(focus)
