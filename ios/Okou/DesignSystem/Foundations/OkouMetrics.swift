@@ -113,8 +113,11 @@ enum OkouIconSize {
   static let mediaOverlay: CGFloat = 32
   static let filePreview: CGFloat = 48
   static let emptyState: CGFloat = 24
-  /// The breathing running dot; it scales with Dynamic Type from this base.
+  /// The breathing running dot and a working chat's spinner; both scale with Dynamic Type from
+  /// this base.
   static let runningIndicator: CGFloat = 14
+  /// A working chat's spinner badging a folded project's folder.
+  static let runningBadge: CGFloat = 10
   /// Partner logos (connector catalog) in a square slot.
   static let partnerLogo: CGFloat = 24
   static let partnerLogoLarge: CGFloat = 36
@@ -163,9 +166,8 @@ enum OkouMotion {
   static let skeletonDim: Double = 0.7
   /// Web `--duration-running-indicator`.
   static let runningCycle: Double = 2.4
-  /// One sweep of a working title's band (`OkouShimmerText`): faster than the web's 3.5 s
-  /// thinking label, so a working chat is obvious in a list read at a glance.
-  static let shimmerText: Double = 1.5
+  /// One turn of a working chat's spinner (`OkouRunningSpinner`).
+  static let runningSpin: Double = 1
   /// One frame of an animated `OkouAvatar`. Its moods are slow sways and blinks, so 30 frames a
   /// second reads as smooth and halves the drawing when several avatars move at once (Web's
   /// shared avatar clock).
