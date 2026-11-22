@@ -304,7 +304,7 @@ export const feedContract = c.router({
       }),
       ...errors,
     },
-    summary: "Read a page of all active suggestions for Agent curation",
+    summary: "Read a page of active suggestions for curation",
   },
   list: {
     method: "GET",

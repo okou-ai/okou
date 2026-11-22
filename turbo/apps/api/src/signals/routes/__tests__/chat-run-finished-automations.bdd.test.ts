@@ -1,3 +1,4 @@
+import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { randomUUID } from "node:crypto";
@@ -298,7 +299,11 @@ async function expectAutomationSourceAnnotation(
   }
   expect(
     automationInput.userMessage.parts.filter((part) => {
-      return part.type === "source" || part.type === "automation";
+      return (
+        part.type === "source" ||
+        part.type === "automation" ||
+        isChatRunReference(part)
+      );
     }),
   ).toStrictEqual([
     {
