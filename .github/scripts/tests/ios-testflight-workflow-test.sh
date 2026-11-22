@@ -161,23 +161,47 @@ for env in [evidence['env'], resolve['env'], ios['jobs']['publish-archive']['env
         assert env[key] == value
 simulator = next(step for step in native if step.get('name') == 'Build app and run isolated simulator tests')
 assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
-# On the native path a verified hit avoids setup in this job and a miss continues
-# in it; normal PR/manual requests retain it without an archive dependency.
+# A merge-group evidence hit skips simulator work. Failed-job reruns can run independently.
 cache = next(step for step in native if step.get('id') == 'build-cache')
 receive = next(step for step in native if step.get('name') == 'Receive locked source repositories')
 configure = next(step for step in native if step.get('name') == 'Configure locked package sources')
 capture = next(step for step in native if step.get('name') == 'Capture promotion inputs')
 assert native.index(capture) < native.index(evidence) < native.index(cache)
 assert cache['with']['toolchain-file'] == '${{ env.IOS_ARCHIVE_DIR }}/toolchain.json'
-for event in ['merge_group', 'pull_request', 'workflow_dispatch']:
-    for decision in ['true', 'false', '']:
-        for step in [cache, receive, configure, simulator]:
-            expression = (step['if'].replace('github.event_name', repr(event))
-                .replace('steps.evidence.outputs.run_tests', repr(decision)).replace('||', 'or'))
-            assert eval(expression, {'__builtins__': {}}, {}) is (event != 'merge_group' or decision == 'true')
 test_job = ios['jobs']['build-test']
 archive_job = ios['jobs']['build-archive']
 package_job = ios['jobs']['test-packages']
+producer = package_job['steps']
+compile_app = next(step for step in producer if 'ci-test.sh build' in step.get('run', ''))
+publish_products = next(step for step in producer if 'ios-ci-products-' in step.get('with', {}).get('name', ''))
+prepare = next(step for step in native if 'prepare-parallel-simulator.sh' in step.get('run', ''))
+packages = next(step for step in producer if 'ci-package-test.sh' in step.get('run', ''))
+assert producer.index(compile_app) < producer.index(publish_products) < producer.index(packages)
+assert native.index(prepare) < native.index(simulator)
+assert packages['if'] == "!cancelled() && steps.checkout.outcome == 'success'"
+assert publish_products['with']['name'] == 'ios-ci-products-${{ github.sha }}-${{ github.run_attempt }}'
+assert 'ci-test.sh run' in simulator['run'] and 'run-ci-tests.sh' in simulator['run']
+assert 'GH_TOKEN' not in simulator.get('env', {})
+assert prepare['env']['PR_HEAD_SHA'] == next(step for step in producer if step.get('id') == 'producer-sources')['env']['PR_HEAD_SHA'] == '${{ github.event.pull_request.head.sha }}'
+selector = ios['env']['IOS_PARALLEL_PR_TESTS'].removeprefix('${{').removesuffix('}}').strip()
+for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
+    for attempt in ['1', '2']:
+        for decision in ['true', 'false', '']:
+            parallel = event == 'pull_request' and attempt == '1'
+            run_tests = event != 'merge_group' or decision == 'true'
+            def enabled(expression):
+                expression = (expression.replace('github.event_name', repr(event))
+                    .replace('github.run_attempt', repr(attempt))
+                    .replace('env.IOS_PARALLEL_PR_TESTS', repr('true' if parallel else 'false'))
+                    .replace('steps.evidence.outputs.run_tests', repr(decision))
+                    .replace('&&', 'and').replace('||', 'or'))
+                return eval(expression, {'__builtins__': {}}, {})
+            assert enabled(selector) == ('true' if parallel else 'false')
+            for step in [cache, receive, configure]:
+                assert enabled(step['if']) is (run_tests and not parallel)
+            for step in [*producer[1:producer.index(packages)], prepare]:
+                assert enabled(step['if']) is parallel
+            assert enabled(simulator['if']) is run_tests
 assert test_job['needs'] == ['detect', 'prepare-package-sources']
 # Compilation, package tests, and simulator sources start together after the resolver.
 assert archive_job['needs'] == package_job['needs'] == ios['jobs']['prepare-package-sources']['needs'] == ['detect', 'resolve-release']

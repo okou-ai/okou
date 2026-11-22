@@ -23,6 +23,8 @@ permissions:
 
 env:
   npm_config_audit: "false"
+  # A failed-job rerun may start only the simulator, without a new product producer.
+  IOS_PARALLEL_PR_TESTS: ${{ github.event_name == 'pull_request' && github.run_attempt == '1' && 'true' || 'false' }}
   # SwiftPM clones hit HTTP/2 stream resets on the hosted image.
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: http.version
@@ -127,6 +129,7 @@ jobs:
           python3 ios/scripts/preboot-simulator.test.py
           python3 ios/scripts/prepare-package-sources.test.py
           python3 ios/scripts/run-ci-tests.test.py
+          python3 ios/scripts/parallel-ci-tests.test.py
           python3 ios/scripts/sample-xcode-startup.test.py
           python3 ios/scripts/build-cache.test.py
           python3 ios/scripts/reset-oversized-compilation-cache.test.py
@@ -234,7 +237,46 @@ jobs:
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
+      - name: Restore native build caches for the parallel build
+        id: producer-cache
+        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        uses: ./.github/actions/setup-ios-build-cache
+      - name: Await locked sources from this run
+        id: producer-sources
+        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 ios/scripts/wait-ci-test-artifact.py sources
+      - name: Receive locked sources for the parallel build
+        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ steps.producer-sources.outputs.name }}
+          path: ${{ runner.temp }}/ios-package-sources
+      - name: Compile the complete App test products
+        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        env:
+          IOS_BUILD_CACHE_ENABLED: "true"
+          IOS_PRODUCT_TOOLCHAIN: ${{ steps.producer-cache.outputs.toolchain-file }}
+        run: |
+          export IOS_PACKAGE_SOURCES_DIR="$RUNNER_TEMP/ios-package-sources"
+          # Xcode's system Git helper reads the locked mirrors prepared by ci-test.sh.
+          git config --global --add include.path "$RUNNER_TEMP/okou-ios-ci/package-sources.gitconfig"
+          bash ios/scripts/ci-test.sh build
+          bash ios/scripts/transfer-ci-test-products.sh pack
+      - name: Transfer the built App and its test specification
+        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-ci-products-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-native-products/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
       - name: Run isolated Swift package tests
+        if: "!cancelled() && steps.checkout.outcome == 'success'"
         run: bash ios/scripts/ci-package-test.sh
       - name: Capture package test inputs
         if: github.event_name == 'merge_group'
@@ -332,18 +374,18 @@ jobs:
         run: python3 ios/scripts/archive-promotion.py resolve-tests "$IOS_ARCHIVE_DIR"
       - name: Restore native build caches
         id: build-cache
-        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
+        if: env.IOS_PARALLEL_PR_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
         uses: ./.github/actions/setup-ios-build-cache
         with:
           toolchain-file: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
       - name: Receive locked source repositories
-        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
+        if: env.IOS_PARALLEL_PR_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ios-package-sources-${{ github.sha }}
           path: ${{ env.IOS_PACKAGE_SOURCES_DIR }}
       - name: Configure locked package sources
-        if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
+        if: env.IOS_PARALLEL_PR_TESTS != 'true' && (github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true')
         run: |
           mkdir -p "$RUNNER_TEMP/okou-ios-ci"
           python3 ios/scripts/prepare-package-sources.py ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved "$RUNNER_TEMP/okou-ios-ci" "$IOS_PACKAGE_SOURCES_DIR"
@@ -355,9 +397,24 @@ jobs:
           xcodebuild -version
           xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push ios/Widgets
           plutil -lint ios/Okou/Resources/Info.plist ios/Okou/Resources/Okou.entitlements ios/NotificationExtension/Info.plist ios/NotificationExtension/NotificationExtension.entitlements ios/Widgets/Info.plist ios/Widgets/OkouWidgets.entitlements ios/Okou.xcodeproj/project.pbxproj
+      - name: Prepare the simulator and receive its test products concurrently
+        if: env.IOS_PARALLEL_PR_TESTS == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash ios/scripts/prepare-parallel-simulator.sh
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
-        run: bash ios/scripts/run-ci-tests.sh
+        env:
+          IOS_PRODUCT_TOOLCHAIN: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
+        run: |
+          if [[ "$IOS_PARALLEL_PR_TESTS" == true ]]; then
+            bash ios/scripts/transfer-ci-test-products.sh unpack
+            echo "iOS starting test-without-building"
+            bash ios/scripts/ci-test.sh run
+          else
+            bash ios/scripts/run-ci-tests.sh
+          fi
       - name: Upload Xcode startup observations
         if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
