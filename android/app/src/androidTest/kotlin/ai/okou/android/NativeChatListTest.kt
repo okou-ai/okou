@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
 import android.os.SystemClock
 import android.util.Log
@@ -12,6 +13,7 @@ import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.StaleObjectException
@@ -54,29 +56,21 @@ class NativeChatListTest {
         val failures = mutableListOf<Throwable>()
         var scenario: ActivityScenario<MainActivity>? = null
         var chatJob: Job? = null
+        fun await(selector: BySelector) =
+            checkNotNull(device.wait(Until.findObject(selector), 10_000)) { "Missing $selector" }
+        fun text(value: String) = await(By.pkg(app.packageName).text(value))
+
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             device.awaitChatList(app)
-            scenario.onActivity { activity ->
-                chatJob =
-                    ViewModelProvider(activity)[SessionModel::class.java]
-                        .uiState
-                        .value
-                        .ready
-                        ?.chats
-                        ?.viewModelScope
-                        ?.coroutineContext
-                        ?.get(Job)
-            }
-            fun text(value: String) =
-                checkNotNull(
-                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
-                ) {
-                    "Missing $value"
-                }
-            val projectAction = app.getString(R.string.composer_new_project)
+            val projectAction =
+                By.pkg(app.packageName)
+                    .text(app.getString(R.string.composer_new_project))
+                    .clickable(true)
+                    .enabled(true)
+            val filterMenu = By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
             text("Research").click()
-            text(projectAction)
+            await(projectAction)
             assertFalse(
                 device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.chat_empty)))
             )
@@ -87,15 +81,7 @@ class NativeChatListTest {
                     R.string.chat_archived to R.string.chat_empty_archived,
                     R.string.chat_muted to R.string.chat_empty_muted,
                 )) {
-                checkNotNull(
-                        device.wait(
-                            Until.findObject(
-                                By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
-                            ),
-                            10_000,
-                        )
-                    )
-                    .click()
+                await(filterMenu).click()
                 text(app.getString(filter)).click()
                 text(app.getString(title))
                 assertFalse(device.hasObject(By.pkg(app.packageName).text("Research")))
@@ -103,13 +89,28 @@ class NativeChatListTest {
                     takeScreenshot().writeToTestStorage("android-list-empty-archived")
                 }
                 text(app.getString(R.string.chat_back_to_inbox)).click()
-                text(projectAction)
+                await(projectAction)
             }
         } catch (error: Throwable) {
             failures.add(error)
+            try {
+                takeScreenshot().writeToTestStorage("android-list-empty-failure")
+            } catch (diagnostic: Throwable) {
+                error.addSuppressed(diagnostic)
+            }
         } finally {
             for (cleanup in
                 listOf<() -> Unit>(
+                    {
+                        scenario?.onActivity { activity ->
+                            val state =
+                                ViewModelProvider(activity)[SessionModel::class.java].uiState.value
+                            val chats =
+                                state.ready?.chats
+                                    ?: (state.opening as? OpeningWorkspace.Authorized)?.chats
+                            chatJob = chats?.viewModelScope?.coroutineContext?.get(Job)
+                        }
+                    },
                     { scenario?.close() },
                     { runBlocking { withTimeout(10_000) { chatJob?.join() } } },
                     { fixture.close() },
