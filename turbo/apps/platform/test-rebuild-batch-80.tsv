@@ -13,42 +13,42 @@ Original test `Shared raw videos preserve playback with or without public poster
 - **Given** A signed-out visitor views a shared conversation containing one raw video with a public poster and one without a poster.
 - **When** The shared page renders both videos.
 - **Then** The video with a poster displays its poster through the image CDN; both videos retain the video source, controls, and preload=none."
-remote-control-guided-setup-004	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	222	pending					"## remote-control-guided-setup-004
+remote-control-guided-setup-004	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	222	first-verified	remote-control-guided-setup-004 The device guide walks forward and back to the parallel SSH setup	turbo/apps/platform/src/views/okou-page/__tests__/remote-setup-from-a-link.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-004
 
 Original test `Computer use opens its download guide from the parallel connection choices`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L222).
 
 - **Given** The user is on the add-connection page with parallel connection choices.
 - **When** They open Computer use and continue through its guide, then use browser Back and Previous before closing the guide.
 - **Then** The guide advances from installation to permissions to chat, browser Back returns to permissions, and Previous returns to installation. Escape closes the guide and returns to the add-connection choices, where the SSH form remains available."
-remote-control-guided-setup-005	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	273	pending					"## remote-control-guided-setup-005
+remote-control-guided-setup-005	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	273	first-verified	remote-control-guided-setup-005 A direct installation link shows the Mac requirement and restores the setup choices	turbo/apps/platform/src/views/okou-page/__tests__/remote-setup-from-a-link.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-005
 
 Original test `A Computer use URL restores the installation guide`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L273).
 
 - **Given** The user opens a URL for the Computer use installation step.
 - **When** The guide loads and the user closes it with Escape.
 - **Then** The installation guide shows the Apple silicon requirement and installation illustration; after closing, the Computer use link still targets the installation step and the command-running choice is available."
-remote-control-guided-setup-006	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	298	pending					"## remote-control-guided-setup-006
+remote-control-guided-setup-006	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	298	first-verified	remote-control-guided-setup-006 A shared final-step URL opens the chat instructions for This Mac	turbo/apps/platform/src/views/okou-page/__tests__/remote-setup-from-a-link.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-006
 
 Original test `A Computer use URL restores the final chat step`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L298).
 
 - **Given** The user opens a URL for the final Computer use chat step.
 - **When** The guide loads.
 - **Then** The chat step appears with “This Mac.”"
-remote-control-guided-setup-009	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	329	pending					"## remote-control-guided-setup-009
+remote-control-guided-setup-009	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	329	first-verified	remote-control-guided-setup-009 A password entered on the SSH login step stays in the form	turbo/apps/platform/src/views/okou-page/__tests__/remote-setup-from-a-link.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-009
 
 Original test `An SSH URL restores the connection form`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L329).
 
 - **Given** The user opens an SSH setup URL at the login step.
 - **When** They enter a password.
 - **Then** The SSH username form remains available and the password is not added to the URL."
-remote-control-guided-setup-010	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	338	pending					"## remote-control-guided-setup-010
+remote-control-guided-setup-010	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	338	first-verified	remote-control-guided-setup-010 A saved SSH link opens the named connection and points to its details	turbo/apps/platform/src/views/okou-page/__tests__/remote-setup-from-a-link.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-010
 
 Original test `A saved ssh URL restores the persisted connection rather than an empty success screen`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L338).
 
 - **Given** A saved SSH connection exists and the user opens its saved-connection setup URL.
 - **When** The saved step loads.
 - **Then** The Connection added screen shows the persisted connection’s display name, and View connection links to that SSH connection in the remote directory."
-remote-control-guided-setup-012	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	360	pending					"## remote-control-guided-setup-012
+remote-control-guided-setup-012	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	360	first-verified	remote-control-guided-setup-012 An inaccessible saved SSH link explains why the connection cannot be shown	turbo/apps/platform/src/views/okou-page/__tests__/remote-setup-from-a-link.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-012
 
 Original test `An unavailable saved connection cannot show a success screen`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L360).
 
@@ -69,28 +69,28 @@ Original test `Connecting my computer returns after creating a Tailscale network
 - **Given** The user is setting up computer access with no saved Tailscale networks; a Cloudflare network also exists.
 - **When** They create a Tailscale network named Home network, select it, and continue to configure SSH.
 - **Then** The new network is selected, the Continue action is initially disabled until selection, and Cloudflare is not offered. Continuing reaches the computer-action choice without a private-networks action; returning preserves Home network. The SSH form uses Home network, hides connection-method selection even in More settings, and starts with an empty device address."
-remote-control-guided-setup-022	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	630	pending					"## remote-control-guided-setup-022
+remote-control-guided-setup-022	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	630	first-verified	remote-control-guided-setup-022 Closing a saved network's connection dialog reveals the member's personal networks	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-022
 
 Original test `An account can open its network list and count dialog`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L630).
 
 - **Given** A member account has a saved network and opens its network-connections link.
 - **When** They close the Connections using this network dialog.
 - **Then** The dialog is available and closing it reveals the Personal networks region."
-remote-control-guided-setup-023	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	650	pending					"## remote-control-guided-setup-023
+remote-control-guided-setup-023	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	650	first-verified	remote-control-guided-setup-023 Manage device connections leaves private networks for the empty directory	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-023
 
 Original test `Private network links to connection management without starting device setup`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L650).
 
 - **Given** The user opens private-network setup with SSH in the URL.
 - **When** They select Manage device connections.
 - **Then** The remote directory’s empty state appears, and the Add remote connection setup page does not appear."
-remote-control-guided-setup-025	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	662	pending					"## remote-control-guided-setup-025
+remote-control-guided-setup-025	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	662	first-verified	remote-control-guided-setup-025 Only Manage opens personal Cloudflare settings and its enabled deletion action	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	network-management-red.json	"## remote-control-guided-setup-025
 
 Original test `A cloudflare network title is read-only and its Manage action opens details`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L662).
 
 - **Given** A Cloudflare Access network is listed on the private-networks page.
 - **When** The user clicks its plain title, then selects Manage and returns to the network list.
 - **Then** The title itself is not a link or button and does not open details. Manage opens details with Edit settings, enabled Delete Cloudflare Access, ownership shown as Only me, and no Add connection or delete-restriction action; returning leaves the title noninteractive and Manage links to that network’s details."
-remote-control-guided-setup-026	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	704	pending					"## remote-control-guided-setup-026
+remote-control-guided-setup-026	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	704	first-verified	remote-control-guided-setup-026 VNC setup returns directly to the connection choices	turbo/apps/platform/src/views/okou-page/__tests__/remote-setup-from-a-link.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-026
 
 Original test `The VNC entry opens protocol selection and Back returns to it`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L704).
 
@@ -363,14 +363,14 @@ Original test `vnc revision conflicts preserve the login draft and partial save 
 - **Given** A VNC connection and its shared credential are being edited; another connection is added to the credential after the initial load.
 - **When** The user changes the password and confirms the shared-login update, which encounters a credential revision conflict.
 - **Then** The password draft remains visible and a message says connection settings were saved but the login update needs review before leaving. Save is disabled."
-remote-control-guided-setup-108	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3413	pending					"## remote-control-guided-setup-108
+remote-control-guided-setup-108	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3413	first-verified	remote-control-guided-setup-108 A missing Tailscale edit link explains the failure and allows adding a network	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-108
 
 Original test `A missing private network URL stays unavailable and can return to creation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3413).
 
 - **Given** The user opens an edit URL for a Tailscale network that is not in the loaded list.
 - **When** The page attempts to load the network, then the user chooses Back and Add network.
 - **Then** An Unable to load alert appears without an edit form; the user can return to the Add a private network page."
-remote-control-guided-setup-109	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3429	pending					"## remote-control-guided-setup-109
+remote-control-guided-setup-109	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3429	first-verified	remote-control-guided-setup-109 A member cannot open the organization Tailscale editor	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-109
 
 Original test `A member cannot open an organization tailscale editor through a URL`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3429).
 
@@ -398,14 +398,14 @@ Original test `Private network starts with a provider selector and each guide ca
 - **Given** The private-network directory has no networks.
 - **When** The user starts adding a network, opens each provider's guide, closes it with Escape, and returns to the directory without taking an extra Back action from the guide.
 - **Then** The directory begins with one Add network action and the add page asks the user to choose a provider. Each provider opens its guide at step 1 with an Enter existing credentials option; choosing that option and saving a Cloudflare network returns to the empty directory with neither the dialog nor form open."
-remote-control-guided-setup-114	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3647	pending					"## remote-control-guided-setup-114
+remote-control-guided-setup-114	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3647	first-verified	remote-control-guided-setup-114 A member can add another network beside the only personal network	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-114
 
 Original test `Private network directory only shows the populated group for Tailscale personal networks`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3647).
 
 - **Given** A member has one personal Tailscale network and no other networks.
 - **When** The private-network directory finishes loading.
 - **Then** The Personal networks group shows the network and Add network remains available; the Organization networks group and empty-state message are absent."
-remote-control-guided-setup-116	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3683	pending					"## remote-control-guided-setup-116
+remote-control-guided-setup-116	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3683	first-verified	remote-control-guided-setup-116 The empty network action appears only after the held inventory loads	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-116
 
 Original test `Private network directory waits for the Tailscale list before showing the empty state`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3683).
 
@@ -419,14 +419,14 @@ Original test `Remote control keeps its count while entering the scope refreshes
 - **Given** The Remote control scope shows a connection count of 1 while another scope is selected.
 - **When** The user enters Remote control and its refreshed connection summary is still pending, then the refresh completes with count 2.
 - **Then** Remote control becomes selected while its displayed count stays at 1 during refresh, then updates to 2."
-remote-control-guided-setup-121	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3829	pending					"## remote-control-guided-setup-121
+remote-control-guided-setup-121	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3829	first-verified	remote-control-guided-setup-121 A member inspects only the devices for the chosen network and regains keyboard focus	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-121
 
 Original test `Network counts display only that network's connection names without navigation links`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3829).
 
 - **Given** A member's organization Cloudflare network uses one SSH connection, and their personal Tailscale network uses one VNC connection.
 - **When** They open each network's connection-count control.
 - **Then** Each dialog lists only that network's connection name, with no navigation links; closing a dialog returns focus to its count control, and closing the personal dialog leaves the Personal networks group visible."
-remote-control-guided-setup-123	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3909	pending					"## remote-control-guided-setup-123
+remote-control-guided-setup-123	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3909	first-verified	remote-control-guided-setup-123 Cloudflare details list both linked devices as read-only references	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-123
 
 Original test `cloudflare network details display linked connection names as a read-only list`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3909).
 
@@ -468,7 +468,7 @@ Original test `The remote directory cannot change a host with unavailable chat d
 - **Given** The SSH chat default is available, but the VNC chat default is missing.
 - **When** The Remote control directory loads.
 - **Then** SSH is shown enabled; the VNC switch is disabled and its Manage link remains available."
-remote-control-guided-setup-131	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4274	pending					"## remote-control-guided-setup-131
+remote-control-guided-setup-131	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4274	first-verified	remote-control-guided-setup-131 Engineering members see personal ownership and the organization administrator rule	turbo/apps/platform/src/views/okou-page/__tests__/private-network-directory-journeys.test.ts	wave2-green.json	wave2-red.json	"## remote-control-guided-setup-131
 
 Original test `Tailscale creation defaults to personal and explains the unavailable organization option for members`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L4274).
 
@@ -503,14 +503,14 @@ Original test `cloudflare sharing failure (403) keeps the edit draft and shows a
 - **Given** An administrator edits a personal Cloudflare Access network and the attempt to share it fails with status 403.
 - **When** They enter Retained after sharing failure as the name, select Organization members, and save.
 - **Then** An inline alert says the network is unavailable or the required administrator permission is no longer present; no dialog appears, the name remains in the form, and Save network is disabled."
-search-result-number-shortcuts-001	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.bdd.md	156	pending					"## search-result-number-shortcuts-001
+search-result-number-shortcuts-001	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.bdd.md	156	probe-insufficient	With 26 projection events seeded through cachedChatThreadEvents and the external chat-list reply retained, Chat 1 was not visible before release on the real Router. The proposed shortcut/order assertions therefore never reached the frozen cached-only Given. The standalone list becomes visible with the response released. A browser-persisted warm restart is still to be demonstrated.	numbers-cached-probe.ts.txt; nums6.json; wave2-green.json (released list controls)			"## search-result-number-shortcuts-001
 
 Original test `Limit empty search to 25 cached chats in sidebar order`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.test.tsx#L156).
 
 - **Given** The sidebar has 26 cached chats, with the first two pinned, and the remote chat list has not responded.
 - **When** The user hides the chat list and opens an empty workspace search.
 - **Then** Search shows 25 chats in sidebar order: Chat 1, Chat 2, then Chat 26 down through Chat 4. The remote chat-list request remains pending."
-search-result-number-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.bdd.md	211	pending					"## search-result-number-shortcuts-002
+search-result-number-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.bdd.md	211	probe-insufficient	With 10 projection events seeded through cachedChatThreadEvents and the external chat-list reply retained, Chat 1 was not visible before release on the real Router. The proposed shortcut/order assertions therefore never reached the frozen cached-only Given. The standalone list becomes visible with the response released. A browser-persisted warm restart is still to be demonstrated.	numbers-cached-probe.ts.txt; nums6.json; wave2-green.json (released list controls)			"## search-result-number-shortcuts-002
 
 Original test `Number only the first nine search results and open the ninth on Mac Chrome`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/search-result-number-shortcuts.test.tsx#L211).
 
@@ -671,7 +671,7 @@ Original test `My Okou's Chat link returns a filtered chat list to the inbox`. [
 - **Given** My Okou is enabled and the sidebar inbox contains Release plan while Archived context is archived.
 - **When** The user switches the list to Archived, then selects Chat in the navigation rail.
 - **Then** Archived context appears with an Archived heading. Chat returns to /, restores Release plan to the list, and clears the Archived heading."
-sidebar-controls-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.bdd.md	57	pending					"## sidebar-controls-001
+sidebar-controls-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.bdd.md	57	upstream-retired	`4e5707de` (#49556) removes per-agent chat pages and the keyboard shortcuts that moved between agents, and removes this upstream test. Retire this scenario.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-controls-001
 
 Original test `Move to the next relevant agent with a shortcut`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx#L57).
 
@@ -686,7 +686,7 @@ Original test `Open and use workspace search with the keyboard`. [Registration](
 - **Given** The sidebar contains a conversation titled “Support escalation.”
 - **When** The user presses Ctrl+Shift+F, searches for “support,” then selects the result with Arrow Down and Enter.
 - **Then** The workspace search closes and the page title becomes “Support escalation | Okou.”"
-sidebar-controls-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.bdd.md	193	pending					"## sidebar-controls-004
+sidebar-controls-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.bdd.md	193	upstream-retired	`4e5707de` (#49556) retires pinned agents and the Pin an agent manager and removes this upstream test. Retire this scenario.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-controls-004
 
 Original test `Keep a pending pin save owned while the manager closes and reopens`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx#L193).
 
@@ -724,7 +724,7 @@ Original test `Open a conversation with double-click and rename it from the side
 - **Given** The sidebar lists “Release plan” and “Incident notes,” with “Incident notes” open.
 - **When** The user double-clicks “Release plan,” renames it to “Launch plan,” opens “Incident notes,” then reopens the renamed conversation’s menu and renames it to “Final launch plan.”
 - **Then** “Release plan” becomes the active conversation, then its sidebar title changes to “Launch plan” and later “Final launch plan.” After the second rename, “Incident notes” remains the active conversation."
-sidebar-controls-015	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.bdd.md	682	pending					"## sidebar-controls-015
+sidebar-controls-015	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.bdd.md	682	upstream-retired	`4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-controls-015
 
 Original test `Reorder pinned agents while keeping Nova first`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx#L682).
 
@@ -732,7 +732,7 @@ Original test `Reorder pinned agents while keeping Nova first`. [Registration](h
 - **When** The user drags Support Agent onto Billing Agent, then tries to drag Research Agent onto Nova.
 - **Then** Support Agent moves to the end, after Billing Agent, while Nova remains first. The attempted drop onto Nova is rejected and the order stays unchanged.
 - **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario."
-sidebar-controls-017	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.bdd.md	772	pending					"## sidebar-controls-017
+sidebar-controls-017	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.bdd.md	772	upstream-retired	`4e5707de` (#49556) retires pinned agents, the Pin an agent manager, and per-agent chat pages, and removes this upstream test. Retire this scenario.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-controls-017
 
 Original test `Search, pin, and open an agent from the pin manager`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-controls.test.tsx#L772).
 
@@ -782,7 +782,7 @@ Original test `new pins receive a rank ahead of all existing pins`. [Registratio
 - **Given** An authenticated user sees pinned chats ranked ahead of “Regular thread.”
 - **When** The user pins “Regular thread” while the pin request is still pending.
 - **Then** The requested rank for the new pin is earlier than “a0,” and the sidebar optimistically shows “Regular thread” before all existing pins."
-sidebar-pinned-links-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	72	pending					"## sidebar-pinned-links-001
+sidebar-pinned-links-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	72	upstream-retired	`4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario; modified-click activation of conversation links remains in sidebar-pinned-links-010.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-pinned-links-001
 
 Original test `Pinned links preserve the current agent and unread filter for Alt activation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx#L72).
 
@@ -790,7 +790,7 @@ Original test `Pinned links preserve the current agent and unread filter for Alt
 - **When** The user activates Nova and then Research Agent while holding Alt.
 - **Then** The current URL and selected agent remain Nova’s chat. The unread conversation stays visible and the read conversation stays hidden.
 - **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario; modified-click activation of conversation links remains in sidebar-pinned-links-010."
-sidebar-pinned-links-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	89	pending					"## sidebar-pinned-links-005
+sidebar-pinned-links-005	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	89	upstream-retired	`4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-pinned-links-005
 
 Original test `Pinned links preserve the current agent and unread filter for [MouseMiddle] activation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx#L89).
 
@@ -798,7 +798,7 @@ Original test `Pinned links preserve the current agent and unread filter for [Mo
 - **When** The user activates Research Agent with the middle mouse button.
 - **Then** The current URL remains Nova’s chat, and the read conversation stays hidden.
 - **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario."
-sidebar-pinned-links-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	89	pending					"## sidebar-pinned-links-006
+sidebar-pinned-links-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	89	upstream-retired	`4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-pinned-links-006
 
 Original test `Pinned links preserve the current agent and unread filter for [MouseRight] activation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx#L89).
 
@@ -806,7 +806,7 @@ Original test `Pinned links preserve the current agent and unread filter for [Mo
 - **When** The user activates Research Agent with the right mouse button.
 - **Then** The current URL remains Nova’s chat, and the read conversation stays hidden.
 - **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario."
-sidebar-pinned-links-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	130	pending					"## sidebar-pinned-links-008
+sidebar-pinned-links-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.bdd.md	130	upstream-retired	`4e5707de` (#49556) retires pinned agents and per-agent chat pages and removes this upstream test. Retire this scenario.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-pinned-links-008
 
 Original test `Pinned links preserve the current agent and unread filter for keyboard activation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-pinned-links.test.tsx#L130).
 
@@ -920,7 +920,7 @@ Original test `Follow full-list wave positions across scrolling and pinning`. [R
 - **Given** A 120-conversation list has a running indicator on History 3, an unread History 2, and a five-row viewport.
 - **When** The user scrolls down and back to the top, then pins History 3.
 - **Then** Running indicator positions remain tied to full-list indices while scrolling; after pinning, History 3 moves to the first row, its indicator starts at zero, and the next row's indicator is at -11/12."
-sidebar-virtualization-027	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	1088	pending					"## sidebar-virtualization-027
+sidebar-virtualization-027	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	1088	upstream-retired	`4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario.	upstream-retirements.txt; 4e5707de3e (#49556); current Router and agent navigation			"## sidebar-virtualization-027
 
 Original test `Refresh virtualization after pinning adds a grid row and unpinning removes it`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L1088).
 
@@ -935,14 +935,14 @@ Original test `Remeasure the mobile chat list when a service notice arrives and 
 - **Given** On mobile, a 120-conversation list initially renders 20 rows because no service notice is present.
 - **When** A service notice arrives and the user dismisses it.
 - **Then** The list remeasures to 13 rows while the notice is present and returns to 20 rows after dismissal."
-thread-list-number-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.bdd.md	95	pending					"## thread-list-number-shortcuts-002
+thread-list-number-shortcuts-002	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.bdd.md	95	first-verified	thread-list-number-shortcuts-002 The standalone Mac shortcut opens the ninth visible chat and clears its hints	turbo/apps/platform/src/views/okou-page/__tests__/opening-numbered-conversations.test.ts	wave2-green.json	wave2-red.json	"## thread-list-number-shortcuts-002
 
 Original test `Open the ninth chat using its visible hint`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.test.tsx#L95).
 
 - **Given** The user is viewing a chat list with at least nine chats in standalone mode on Mac Chrome.
 - **When** The user holds Command and presses 9.
 - **Then** The ninth chat in the visible list opens, and the number hints disappear."
-thread-list-number-shortcuts-003	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.bdd.md	109	pending					"## thread-list-number-shortcuts-003
+thread-list-number-shortcuts-003	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.bdd.md	109	first-verified	thread-list-number-shortcuts-003 The browser retains its Ctrl+1 shortcut while a chat is open	turbo/apps/platform/src/views/okou-page/__tests__/opening-numbered-conversations.test.ts	wave2-green.json	wave2-red.json	"## thread-list-number-shortcuts-003
 
 Original test `Keep browser mode free of number shortcuts`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/thread-list-number-shortcuts.test.tsx#L109).
 
@@ -1453,56 +1453,56 @@ Original test `A signed-in recipient can copy the shared link without access con
 - **Given** A signed-in recipient views a shared conversation whose permission read returns HTTP 404.
 - **When** They open Share and copy the link.
 - **Then** Copy link is available and copies the conversation’s full share URL, while access controls are not shown."
-skill-import-dialog-001	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	171	pending					"## skill-import-dialog-001
+skill-import-dialog-001	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	171	first-verified	skill-import-dialog-001 Import skills immediately precedes Create in chat on Workflows	turbo/apps/platform/src/views/workflows-page/__tests__/importing-local-skills.test.ts	skills-green.json	skills-red.json	"## skill-import-dialog-001
 
 Original test `Import skills sits before Create in chat`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx#L171).
 
 - **Given** A user is on the Workflows page.
 - **When** The page displays its primary actions.
 - **Then** “Import skills” appears immediately before “Create in chat.”"
-skill-import-dialog-002	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	182	pending					"## skill-import-dialog-002
+skill-import-dialog-002	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	182	first-verified	skill-import-dialog-002 An empty Claude Code import presents the instructions and a folded provider-specific prompt	turbo/apps/platform/src/views/workflows-page/__tests__/importing-local-skills.test.ts	skills-green.json	skills-red.json	"## skill-import-dialog-002
 
 Original test `Import skills opens a Claude Code prompt by default`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx#L182).
 
 - **Given** A user is on the Workflows page with no workflows.
 - **When** They open Import skills using the default tool.
 - **Then** The dialog selects Claude Code, presents the import instructions and a folded prompt, and offers an empty imported-skills message. Expanding the prompt shows a Claude Code session token and ~/.claude/skills/, not ~/.codex/skills/."
-skill-import-dialog-005	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	260	pending					"## skill-import-dialog-005
+skill-import-dialog-005	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	260	first-verified	skill-import-dialog-005 Modified and auxiliary workflow-link activations preserve the live import session	turbo/apps/platform/src/views/workflows-page/__tests__/importing-local-skills.test.ts	skills-green.json	skills-red.json	"## skill-import-dialog-005
 
 Original test `Browser-owned View workflows activations keep the dialog listening for imports`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx#L260).
 
 - **Given** A user opens the import dialog and the “View workflows” link points to /workflows.
 - **When** They activate the link with Control, Meta, Shift, or Alt held, or with the middle or right mouse button, then an imported Claude Code workflow arrives.
 - **Then** The import dialog stays open through those browser-owned link activations and displays the imported workflow with “1 imported · listening for more.”"
-skill-import-dialog-006	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	301	pending					"## skill-import-dialog-006
+skill-import-dialog-006	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	301	first-verified	skill-import-dialog-006 View workflows closes the import dialog and clears the source query via click	turbo/apps/platform/src/views/workflows-page/__tests__/importing-local-skills.test.ts	skills-green.json	skills-red.json	"## skill-import-dialog-006
 
 Original test `View workflows click closes the import dialog and navigates in the current tab`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx#L301).
 
 - **Given** A user opens the import dialog from /workflows?source=skill-import.
 - **When** They activate “View workflows” by clicking it.
 - **Then** The dialog closes and the current page navigates to /workflows with no query string."
-skill-import-dialog-007	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	301	pending					"## skill-import-dialog-007
+skill-import-dialog-007	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	301	first-verified	skill-import-dialog-007 View workflows closes the import dialog and clears the source query via keyboard	turbo/apps/platform/src/views/workflows-page/__tests__/importing-local-skills.test.ts	skills-green.json	skills-red.json	"## skill-import-dialog-007
 
 Original test `View workflows Enter closes the import dialog and navigates in the current tab`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx#L301).
 
 - **Given** A user opens the import dialog from /workflows?source=skill-import.
 - **When** They focus “View workflows” and press Enter.
 - **Then** The dialog closes and the current page navigates to /workflows with no query string."
-skill-import-dialog-010	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	396	pending					"## skill-import-dialog-010
+skill-import-dialog-010	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	396	first-verified	skill-import-dialog-010 Reopening imports reconciles both uploads and retains the original session prompt	turbo/apps/platform/src/views/workflows-page/__tests__/importing-local-skills.test.ts	skills-green.json	skills-red.json	"## skill-import-dialog-010
 
 Original test `Reopening retains the prompt and resyncs the whole session including closed-window uploads`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx#L396).
 
 - **Given** A user opens the import dialog, sees one Claude Code upload arrive, and closes the dialog.
 - **When** Another upload arrives while the dialog is closed and the user reopens it.
 - **Then** The page list updates with the first import, and the reopened dialog shows both workflows while retaining the exact original prompt."
-skill-import-dialog-014	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	554	pending					"## skill-import-dialog-014
+skill-import-dialog-014	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx	turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.bdd.md	554	first-verified	skill-import-dialog-014 Escape returns focus to Import skills and releases its realtime subscription	turbo/apps/platform/src/views/workflows-page/__tests__/importing-local-skills.test.ts	skills-green.json	skills-red.json	"## skill-import-dialog-014
 
 Original test `Escape closes the import, releases realtime, and returns keyboard focus`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/skill-import/__tests__/skill-import-dialog.test.tsx#L554).
 
 - **Given** A user opens the import dialog from its trigger while the trigger has keyboard focus.
 - **When** They press Escape.
 - **Then** The dialog closes, realtime is released, and keyboard focus returns to the trigger."
-artifact-sharing-002	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.bdd.md	166	pending					"## artifact-sharing-002
+artifact-sharing-002	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.bdd.md	166	probe-insufficient	Batch 25 Router probe and its full BDD already retain all three checked audiences, ordered writes, clipboard link and pre-copy UI. The final one-status-read clause has no user-visible distinction under the independent permission response. Current docs prohibit a request-count oracle. No new registration or credit.	artifact-sharing.bdd.md, Batch 25 disposition			"## artifact-sharing-002
 
 Original test `owners can change three access levels separately from copying the stable app link`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-sharing.test.tsx#L166).
 
