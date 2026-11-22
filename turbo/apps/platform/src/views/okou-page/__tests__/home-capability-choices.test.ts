@@ -72,8 +72,8 @@ test("capability-home-page-004 Hiding compliance restores composer focus and per
 test("capability-home-page-018 Each card cover opens its own capability content", async () => {
   await home();
   for (const [name, content] of [
-    ["Research", /Compare website traffic/i],
-    ["Find people", /Potential customers/i],
+    ["Research", "Compare website traffic"],
+    ["Find people", "Potential customers"],
     ["Create", "Presentation"],
     ["Workflow", "Schedule a task"],
   ] as const) {
@@ -250,8 +250,8 @@ test("capability-home-page-005 Moving between capability tabs retains the draft,
   ).resolves.toBeVisible();
   expect(queryFastControl("button", "Tools")).toBeNull();
   for (const [tab, sample] of [
-    ["Find people", /Potential customers/i],
-    ["Research", /Compare website traffic/i],
+    ["Find people", "Potential customers"],
+    ["Research", "Compare website traffic"],
   ] as const) {
     click(await findFastControl("tab", tab));
     await expect(screen.findByText(sample)).resolves.toBeVisible();

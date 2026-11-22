@@ -2862,3 +2862,5 @@ The conversation-reading-position owner has six selections. Four are verified by
 Historical **1874/2,681**, current **1850/2,681**. The withdrawn cohort is 422 historical / 413 current. Outside it, 1452 / 1437. The 194 open owners contain 829 complete selections. The file closures, preserved BDD and four upstream-amended acceptances recorded in checkpoint 1 still apply.
 
 The next run continues batch 79 on the same PR and original 292-ID intake. [30 prospective files for a later batch](https://app.okou.ai/artifacts/f52pxh6o8q.md).
+
+A follow-up desktop-pointer probe for `chat-resources-004` observed the closed trigger’s tooltip and its disappearance after opening the panel. It remains outside the 103 accepted registrations pending an independent failure control and normal-suite admission. The probe is retained in the handoff evidence. The Home capability chooser now uses fixed suggestion patterns after Semgrep flagged a dynamic regular expression.
