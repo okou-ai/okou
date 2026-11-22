@@ -252,7 +252,6 @@ internal fun ConversationRoute(
         var restored by remember { mutableStateOf(false) }
         var restoredAnchor by remember { mutableStateOf<ConversationAnchor?>(null) }
         var positioned by remember { mutableStateOf(false) }
-        var findPositioned by remember(findTarget) { mutableStateOf(false) }
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
@@ -297,44 +296,47 @@ internal fun ConversationRoute(
                         it is ConversationMessage && it.includes(findTarget.id)
                     }
             }
+        val pendingFind = findTarget?.takeUnless { it.positioned }
         LaunchedEffect(restored, positioned, timeline, state.phase, list.offline, findTarget) {
             if (!restored || positioned || (!hasContent && !missing)) return@LaunchedEffect
             val anchor = restoredAnchor
             val index =
                 timeline.indexOfFirst { it is ConversationMessage && it.includes(anchor?.eventId) }
+            val jumpIndex = if (pendingFind == null) -1 else foundIndex
             // A cached checkpoint can be older than the saved anchor. Give catch-up a chance first.
             if (
-                (findTarget != null && foundIndex < 0 || anchor != null && index < 0) &&
+                (pendingFind != null && jumpIndex < 0 || anchor != null && index < 0) &&
                     state.phase == HistoryPhase.Loading &&
                     !list.offline
             )
                 return@LaunchedEffect
-            val row = (if (foundIndex >= 0) foundIndex else index) + 1
+            val row = (if (jumpIndex >= 0) jumpIndex else index) + 1
             val offset =
-                if (foundIndex < 0 && index >= 0 && anchor != null)
+                if (jumpIndex < 0 && index >= 0 && anchor != null)
                     with(density) { anchor.offsetDp.dp.roundToPx() }
                 else 0
-            if (findTarget == null) {
+            if (pendingFind == null) {
                 position.scrollToItem(row, offset)
             } else {
                 // A reader's gesture can cancel the scroll without cancelling this entry.
                 coroutineScope { launch { position.scrollToItem(row, offset) }.join() }
-                if (foundIndex < 0) findPositioned = true
+                if (jumpIndex < 0) pendingFind.finishPositioning()
             }
             positioned = true
         }
-        val awaitingFindPosition = foundIndex >= 0 && !findPositioned
-        val findRowKey = timeline.getOrNull(foundIndex)?.key
-        if (positioned && awaitingFindPosition) {
+        val awaitingFindPosition = foundIndex >= 0 && pendingFind != null
+        val revealTarget = pendingFind?.takeIf { positioned && foundIndex >= 0 }
+        if (revealTarget != null) {
+            val findRowKey = timeline[foundIndex].key
             LaunchedEffect(position, findRowKey) {
                 // A folded reply may still be laying out when the reader scrolls away.
                 snapshotFlow { position.layoutInfo.visibleItemsInfo.none { it.key == findRowKey } }
                     .first { it }
-                findPositioned = true
+                revealTarget.finishPositioning()
             }
         }
         val revealFindHit: (suspend (LayoutCoordinates) -> Unit)? =
-            if (positioned && awaitingFindPosition) {
+            if (revealTarget != null) {
                 { hit ->
                     try {
                         val viewport =
@@ -349,19 +351,19 @@ internal fun ConversationRoute(
                             position.scrollBy(targetTop - bounds.top)
                         }
                     } finally {
-                        findPositioned = true
+                        revealTarget.finishPositioning()
                     }
                 }
             } else null
-        LaunchedEffect(findTarget, findPositioned) {
-            if (findPositioned) findTarget?.expireHighlight()
+        LaunchedEffect(findTarget, pendingFind) {
+            if (pendingFind == null) findTarget?.expireHighlight()
         }
         val readingReady = positioned && !awaitingFindPosition
         LaunchedEffect(positioned, previewId) {
             // A newly submitted local preview is an action in this chat. A restored preview
             // belongs to the original attempt and should leave the restored reading position.
             if (positioned && previewId != null && previewId != lastPreviewId) {
-                if (findTarget != null) findPositioned = true
+                pendingFind?.finishPositioning()
                 position.scrollToItem(0)
             }
             lastPreviewId = previewId
