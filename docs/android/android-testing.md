@@ -108,10 +108,46 @@ that configuration; OEM input methods and physical-device latency need their own
 evidence.
 
 Prefer build-managed device provisioning/execution/teardown over a second custom
-emulator lifecycle. Isolate test-device state, snapshot and restore every changed
-setting/store, close Activity owners and release adopted test permissions on
-success and failure. Wait for observable UI/window/configuration conditions with
-bounded framework APIs; arbitrary stabilization sleeps are not synchronization.
+emulator lifecycle. Give each case an isolated fixture identity and store. Before
+changing device settings, save their original values, including whether an
+override was present. On success and failure, release held fixture responses,
+close Activity owners, restore settings and stores, and release adopted
+permissions. Run cleanup steps independently so one failure cannot skip the rest.
+
+### Drive And Verify User Actions
+
+Establish the action's prerequisites, perform it once, then wait for its observable
+outcome with a bounded framework API. Successful injection confirms acceptance
+by the input system. Navigation, focus, layout and asynchronous work need their own
+completion conditions. Use Compose's test clock for frame-dependent assertions
+and an explicit condition for work outside that clock. Avoid sleeps, longer
+timeouts or repeated input as substitutes for synchronization.
+
+- **Tap, long press, and navigation.** Resolve a unique target within the intended
+  screen or window and wait for it to be actionable. Then check the destination,
+  open menu, selected item or other visible result. Re-query the target after a
+  window change, recreation or scroll. Scroll within the owning container until
+  the target is visible or the container reaches its boundary.
+- **Keyboard, IME, and Back.** Check the editor's focus and IME visibility when
+  relevant. After input or Back, verify the expected text, focus, insets, or
+  dismissal of the intended keyboard, popup or destination.
+- **Gestures and animations.** Use controlled Compose input for exact distances,
+  thresholds and animation frames. On a device, calculate points from the current
+  visible bounds, allow margin from the system gesture area, and verify outcomes
+  such as a row returning, being archived or being restored by Undo. Android can
+  resample touch events before app delivery. A device assertion about geometry
+  needs a defined coordinate space and tolerance that accounts for sampling and
+  rounding.
+- **Configuration and recreation.** Wait for the active Activity or window to
+  expose the expected configuration and for the UI to reflect it. For example,
+  verify the new inset or pane arrangement and any retained selection. Obtain new
+  bounds before operating on the resulting UI.
+- **Asynchronous actions.** Control external responses at the fixture boundary.
+  When the in-flight state matters, observe that the request entered the fixture,
+  assert the interim UI, then release the response and verify the settled UI or
+  authoritative readback.
+
+### Diagnose And Verify Failures
 
 Capture failure diagnostics before device/Activity cleanup and preserve the
 original error if capture or restoration also fails. Use Test Storage for
@@ -121,6 +157,20 @@ device/API and failure-image context without turning diagnostics into golden
 tests. Selected device-test failures, cancellations and unexpected skips must
 reach the existing CI gate. Setup, commands and output paths live in the
 [Android README](../../android/README.md#debug-device-integration-tests).
+
+Name the failed wait and record the expected and last observed values. For an
+input failure, retain relevant bounds and injected coordinates, and capture the
+screen before canceling the gesture or restoring the window. Use controlled
+fixture data and omit credentials and user content from diagnostics.
+
+Distinguish a failed app assertion, an invalid test assumption, an infrastructure
+failure and a canceled run. Retain the first failure when a rerun passes. For a
+device-test fix, use the same device configuration for reproduction and
+verification, then verify the complete managed suite on a checkout that contains
+the submitted revision. Record the checkout, Android configuration, attempt and
+result alongside the failure evidence.
+
+### Verification Boundaries
 
 Release smoke tests install the verified publishing payload and drive its public
 launcher and UI from outside the app process. Keep in-process fixtures and
