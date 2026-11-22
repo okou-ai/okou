@@ -6,7 +6,8 @@
     <string name="chat_undo_unarchived">チャットのアーカイブを解除しました</string>
     <string name="chat_undo_marked_read">チャットを既読にしました</string>
     <string name="chat_undo">元に戻す</string>
-    <string name="chat_undo_offline">%1$s\nオンラインに戻ると元に戻せます</string>
+    <string name="chat_undo_connection_failed">変更を元に戻せませんでした。接続を確認してから、もう一度お試しください。</string>
+    <string name="chat_action_connection_failed">接続できませんでした。接続を確認してから、もう一度お試しください。</string>
     <string name="chat_undo_checking">元に戻せたか確認しています…</string>
     <string name="chat_undo_failed">元に戻せませんでした</string>
     <string name="chat_undo_unconfirmed">元に戻せたか確認できませんでした</string>
@@ -24,6 +25,9 @@
     <string name="chat_inbox">受信トレイ</string>
     <string name="chat_mark_all_read">すべて既読にする</string>
     <string name="chat_mark_all_read_unconfirmed">一部のチャットが未読のままの可能性があります。</string>
+    <plurals name="chat_mark_all_read_partial">
+        <item quantity="other">%2$d 件のチャットのうち %1$d 件を既読にしました。</item>
+    </plurals>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">%1$d 件のチャットを既読にしました。</item>
     </plurals>
@@ -67,7 +71,7 @@
     <string name="chat_rename_cancel">キャンセル</string>
     <string name="chat_delete">チャットを削除する</string>
     <string name="chat_delete_title">チャットを削除しますか?</string>
-    <string name="chat_delete_description">これにより、このチャットは完全に削除されます。このチャットで現在実行中のタスクはすぐに停止されます。リンクされている自動化は一時停止されます。この操作は元に戻すことができません。</string>
+    <string name="chat_delete_description">「%1$s」のメッセージと下書きは完全に削除されます。実行中のタスクは停止し、関連する自動化は一時停止します。</string>
     <string name="chat_delete_confirm">削除</string>
     <string name="chat_rename_project">プロジェクト名を変更</string>
     <string name="chat_project_name">プロジェクト名</string>
@@ -82,8 +86,8 @@
     <string name="chat_project_moved_named">%1$s に移動しました</string>
     <string name="chat_project_moved_outside">プロジェクト外に移動しました</string>
     <string name="chat_project_delete">プロジェクトを削除</string>
-    <string name="chat_project_delete_title">「%1$s」を削除しますか？</string>
-    <string name="chat_project_delete_description">このプロジェクト内のチャットはプロジェクト外に移動します。実行中のタスクは続行されます。</string>
+    <string name="chat_project_delete_title">プロジェクトを削除しますか？</string>
+    <string name="chat_project_delete_description">「%1$s」内のチャットはプロジェクト外に移動します。実行中のタスクは続行されます。</string>
     <string name="chat_project_delete_pending">プロジェクトを削除しています…</string>
     <string name="chat_project_deleted">プロジェクトを削除し、チャットをプロジェクト外に移動しました。</string>
     <string name="chat_project_delete_rejected">プロジェクトを削除できませんでした。</string>
