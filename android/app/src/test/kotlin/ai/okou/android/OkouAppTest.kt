@@ -22,12 +22,14 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
@@ -74,6 +76,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.test.platform.app.InstrumentationRegistry
 import java.text.NumberFormat
 import java.util.Locale
 import kotlinx.coroutines.CompletableDeferred
@@ -624,6 +627,74 @@ class OkouAppTest {
         assertEquals(320, workspaceListPaneWidth(840, 480))
         assertEquals(320, workspaceListPaneWidth(1099, 900))
         assertEquals(344, workspaceListPaneWidth(1100, 480))
+    }
+
+    @Test
+    @Config(qualifiers = "b+zh+Hans-w280dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun workspaceToolEntriesStackWithoutTruncatingChineseAtLargeFontScale() {
+        render(fontScale = 2f)
+        for (label in listOf("工作流", "连接器", "成果")) {
+            val entry = compose.onNodeWithContentDescription(label).assertIsDisplayed()
+            val title = compose.onNodeWithText(label, useUnmergedTree = true)
+            val layouts = mutableListOf<TextLayoutResult>()
+            title.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            assertEquals(1, layout.lineCount)
+            assertFalse(layout.isLineEllipsized(0))
+            assertTrue(
+                title.getUnclippedBoundsInRoot().top > entry.getUnclippedBoundsInRoot().top + 18.dp
+            )
+        }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun workspaceToolEntryKeepsFocusWhenWidthOrFontScaleChangesItsLayout() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val width = mutableStateOf(320.dp)
+            val fontScale = mutableStateOf(1f)
+            val requestFocus = FocusRequester()
+            val workflowFocus = FocusRequester()
+            compose.setContent {
+                CompositionLocalProvider(
+                    LocalDensity provides Density(LocalDensity.current.density, fontScale.value)
+                ) {
+                    OkouTheme(dark = false) {
+                        Box(Modifier.width(width.value)) {
+                            WorkspaceToolEntries(
+                                openWorkflows = {},
+                                workflowsFocus = workflowFocus,
+                                onWorkflowsFocusChanged = {},
+                                openArtifacts = {},
+                                artifactFocus = requestFocus,
+                            )
+                        }
+                    }
+                }
+            }
+            val entry = compose.onNodeWithContentDescription("Artifacts")
+            val title = compose.onNodeWithText("Artifacts", useUnmergedTree = true)
+            fun titleOffset() =
+                title.getUnclippedBoundsInRoot().top - entry.getUnclippedBoundsInRoot().top
+
+            entry.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            assertTrue(titleOffset() < 18.dp)
+            compose.runOnIdle { width.value = 300.dp }
+            assertTrue(titleOffset() > 18.dp)
+            entry.assertIsFocused()
+            compose.runOnIdle { width.value = 320.dp }
+            assertTrue(titleOffset() < 18.dp)
+            entry.assertIsFocused()
+            compose.runOnIdle { fontScale.value = 2f }
+            assertTrue(titleOffset() > 18.dp)
+            entry.assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
     }
 
     @Test

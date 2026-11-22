@@ -354,8 +354,10 @@ struct ChatSidebarView: View {
   private func projectRow(_ group: ChatSidebarPresentation.ProjectGroup) -> some View {
     let project = group.project
     let expanded = store.projects.isExpanded(project.id)
-    // An open project leaves unread to its chats' own dots.
+    // An open project leaves unread and working to its chats' own marks. The folder shows one
+    // badge, and unread wins.
     let unread = !expanded && group.section.hasUnread
+    let working = !expanded && !unread && group.section.isWorking
     return Button {
       withAnimation(reduceMotion ? nil : OkouMotion.disclosure) {
         store.projects.toggle(project.id)
@@ -369,10 +371,9 @@ struct ChatSidebarView: View {
         OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
           .foregroundStyle(OkouColor.mutedForeground)
           .modifier(OkouUnreadBadge(isVisible: unread))
+          .modifier(OkouRunningBadge(isVisible: working))
           .frame(width: statusColumn, alignment: .leading)
-        // Unread takes priority over working in a folded project.
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
-          .okouShimmerText(!expanded && !unread && group.section.isWorking)
         Spacer(minLength: 0)
         // The fold's own mark ends the row in the trailing column, turning from down (open)
         // to right (folded) with the disclosure.
@@ -390,7 +391,8 @@ struct ChatSidebarView: View {
     .accessibilityValue(
       [
         expanded ? String(localized: "Expanded") : String(localized: "Collapsed"),
-        unread ? String(localized: "Unread") : nil
+        unread ? String(localized: "Unread") : nil,
+        working ? String(localized: "Working") : nil
       ].compactMap { $0 }.joined(separator: ", ")
     )
     .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
@@ -486,10 +488,6 @@ struct ChatSidebarView: View {
     )
     .accessibilityIdentifier("chat-\(thread.id)")
     .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
-    .accessibilityValue(
-      thread.indicator == .active
-        ? Text("Working") : thread.pinnedAt != nil ? Text("Pinned") : Text(verbatim: "")
-    )
     .contextMenu {
       ChatThreadMenuContent(
         menu: ChatThreadMenu(
@@ -561,23 +559,19 @@ private struct ChatSidebarThreadLabel: View {
   let showsStatusColumn: Bool
 
   var body: some View {
-    let trailing: OkouChatTrailing =
-      if row.isUnread {
-        .unread
-      } else if workspace.hasDraft(row.id) {
-        .draft
-      } else if row.isPinned {
-        .pinned
-      } else {
-        .none
-      }
-    Group {
+    var states: OkouChatStates = []
+    if row.isWorking { states.insert(.working) }
+    if row.isMuted { states.insert(.muted) }
+    if row.isUnread { states.insert(.unread) }
+    if workspace.hasDraft(row.id) { states.insert(.draft) }
+    if row.isPinned { states.insert(.pinned) }
+    return Group {
       if showsStatusColumn {
-        OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing) {
+        OkouChatRowLabel(row.title, states: states) {
           OkouChatStatusMark(emoji: row.emoji)
         }
       } else {
-        OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing)
+        OkouChatRowLabel(row.title, states: states)
       }
     }
     .task { await workspace.activateDrafts() }

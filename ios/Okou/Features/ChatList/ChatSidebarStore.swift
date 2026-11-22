@@ -15,6 +15,7 @@ struct ChatSidebarPresentation {
     let emoji: String?
     let isWorking: Bool
     let isUnread: Bool
+    let isMuted: Bool
     let isPinned: Bool
     var id: String { thread.id }
 
@@ -25,6 +26,7 @@ struct ChatSidebarPresentation {
       emoji = parts.emoji
       isWorking = thread.indicator == .active
       isUnread = !thread.isMuted && thread.indicator == .unread
+      isMuted = thread.isMuted
       isPinned = thread.pinnedAt != nil
     }
   }

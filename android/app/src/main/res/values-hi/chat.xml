@@ -35,7 +35,10 @@
     <string name="chat_archived">संग्रहीत</string>
     <string name="chat_muted">म्यूट</string>
     <string name="chat_project_empty">इस प्रोजेक्ट में कोई चैट नहीं है।</string>
-    <string name="chat_empty">इस दृश्य में कोई चैट नहीं है।</string>
+    <string name="chat_empty">अभी कोई चैट नहीं है</string>
+    <string name="chat_empty_unread">कोई अपठित चैट नहीं है</string>
+    <string name="chat_empty_archived">कोई संग्रहित चैट नहीं है</string>
+    <string name="chat_empty_muted">कोई म्यूट की गई चैट नहीं है</string>
     <string name="chat_untitled">बिना शीर्षक की चैट</string>
     <string name="chat_pinned">पिन की गई</string>
     <string name="chat_active">सक्रिय</string>

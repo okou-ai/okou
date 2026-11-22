@@ -36,7 +36,10 @@
     <string name="chat_archived">Arquivadas</string>
     <string name="chat_muted">Silenciadas</string>
     <string name="chat_project_empty">Nenhuma conversa neste projeto.</string>
-    <string name="chat_empty">Nenhuma conversa nesta visualização.</string>
+    <string name="chat_empty">Ainda não há conversas</string>
+    <string name="chat_empty_unread">Nenhuma conversa não lida</string>
+    <string name="chat_empty_archived">Nenhuma conversa arquivada</string>
+    <string name="chat_empty_muted">Nenhuma conversa silenciada</string>
     <string name="chat_untitled">Conversa sem título</string>
     <string name="chat_pinned">Fixada</string>
     <string name="chat_active">Ativa</string>

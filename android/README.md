@@ -387,7 +387,7 @@ On a Linux x64 host with read/write access to `/dev/kvm`, run from `android/`:
 
 Gradle configures the Pixel 2 API 35 device and owns its lifecycle. Use
 `:app:assembleDebugAndroidTest` to compile without starting the device. CI
-requires all eleven cases and retains JUnit, Test Storage and logcat diagnostics
+requires every case to pass and retains JUnit, Test Storage and logcat diagnostics
 in the `android-instrumentation-api35-<revision>` artifact.
 
 ### Release Smoke Tests
@@ -602,10 +602,10 @@ release; only its exact GET recovery path bypasses installed-client exclusion.
 The release and `minimumSupportedVersion` use stable `x.y.z` versions, comparing
 each numeric component. APK `versionCode` is internal build/installation metadata
 and is absent from both the public response and the R2 manifest.
-Optional announcements follow available versions and the user's per-release
-deferral. Manual and required-update recovery remain available. Automatic checks
-run on foreground without holding the first native frame and reuse successful
-discovery for 10 minutes, including across process restarts.
+Optional releases appear in the chat-list toolbar and app update settings.
+Required updates own the full-screen recovery flow. Automatic checks run on
+foreground without holding the first native frame and reuse successful discovery
+for 10 minutes, including across process restarts.
 
 Startup retains and revalidates an eligible pending APK for the current
 installed version. It removes other updater-owned APKs, including the package

@@ -34,7 +34,10 @@
     <string name="chat_archived">已归档</string>
     <string name="chat_muted">已静音</string>
     <string name="chat_project_empty">此项目暂无聊天。</string>
-    <string name="chat_empty">此视图暂无聊天。</string>
+    <string name="chat_empty">还没有聊天</string>
+    <string name="chat_empty_unread">没有未读聊天</string>
+    <string name="chat_empty_archived">没有归档聊天</string>
+    <string name="chat_empty_muted">没有静音聊天</string>
     <string name="chat_untitled">未命名聊天</string>
     <string name="chat_pinned">已置顶</string>
     <string name="chat_active">活跃</string>

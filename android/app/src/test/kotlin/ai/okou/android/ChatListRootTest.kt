@@ -4,6 +4,7 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatRowAction
 import android.os.Looper
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.MouseButton
@@ -31,6 +32,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
@@ -39,12 +41,15 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -106,6 +111,23 @@ class ChatListRootTest {
                     .viewModelScope
                     .coroutineContext[Job]
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun inPlaceRowMenuActionReturnsFocusToItsKeyboardTrigger() {
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
+        compose.activityRule.scenario.recreate()
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val target = hasTestTag("chat_$CHAT_PERSONAL")
+        compose.onNodeWithTag("chat_list").performScrollToNode(target)
+        val row = compose.onNode(target)
+        row.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        row.performKeyInput { pressKey(Key.Menu) }
+        compose.onNodeWithText("Pin chat").performClick()
+        row.assertIsFocused()
     }
 
     @Test
@@ -653,10 +675,21 @@ class ChatListRootTest {
         val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
         val projectUnreadCount =
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
+        fun assertProjectWeight(expected: FontWeight) {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText("Research", useUnmergedTree = true).performSemanticsAction(
+                SemanticsActions.GetTextLayoutResult
+            ) {
+                it(layouts)
+            }
+            assertEquals(expected, layouts.single().layoutInput.style.fontWeight)
+        }
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
         compose.onNodeWithText("Research").assert(projectUnreadCount)
+        assertProjectWeight(FontWeight.SemiBold)
         compose.onNodeWithText("Project chat").assertDoesNotExist()
         setResearchExpanded(true)
+        assertProjectWeight(FontWeight.Normal)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.waitUntil(10_000) {
             compose
@@ -667,16 +700,17 @@ class ChatListRootTest {
         compose.onNodeWithText("Project chat").assert(unread)
         setResearchExpanded(false)
         compose.onNodeWithText("Research").assert(projectUnreadCount)
+        assertProjectWeight(FontWeight.SemiBold)
         compose.onNodeWithText("Project chat").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").performScrollToIndex(0)
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
-        compose.onNodeWithText("No chats in this view.").assertExists()
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No archived chats"))
+        compose.onNodeWithText("No archived chats").assertExists()
         compose.activityRule.scenario.recreate()
         awaitListAndNames()
-        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No chats in this view."))
-        compose.onNodeWithText("No chats in this view.").assertExists()
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("No archived chats"))
+        compose.onNodeWithText("No archived chats").assertExists()
     }
 
     @Test
@@ -687,7 +721,7 @@ class ChatListRootTest {
         awaitListAndNames()
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("No chats in this view.").assertExists()
+        compose.onNodeWithText("No archived chats").assertExists()
 
         app.fixture.events = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
         reconnectList(app)
@@ -696,7 +730,7 @@ class ChatListRootTest {
             currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Failed
         }
         compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
-        compose.onNodeWithText("No chats in this view.").assertExists()
+        compose.onNodeWithText("No archived chats").assertExists()
         compose.onNodeWithTag("chat_list_bottom_status").assertDoesNotExist()
     }
 
@@ -729,7 +763,7 @@ class ChatListRootTest {
         filter.performClick()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
-        compose.onNodeWithText("No chats in this view.").assertIsDisplayed()
+        compose.onNodeWithText("No archived chats").assertIsDisplayed()
         compose.onNodeWithText("Back to Inbox").performClick()
         row.assertIsDisplayed()
         assertEquals(top, row.fetchSemanticsNode().boundsInRoot.top)
@@ -2041,7 +2075,7 @@ class ChatListRootTest {
         compose.onNodeWithText("Unread").performClick()
         awaitListAndNames()
         compose.onNodeWithText(loadFailure).assertIsDisplayed()
-        compose.onNodeWithText("No chats in this view.").assertDoesNotExist()
+        compose.onNodeWithText("No unread chats").assertDoesNotExist()
 
         failing.set(false)
         compose.onNodeWithText("Try again").performClick()
