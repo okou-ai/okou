@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsModal
@@ -7,6 +8,7 @@ import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,6 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -67,7 +70,12 @@ import androidx.lifecycle.compose.currentStateAsState
 import java.text.NumberFormat
 
 @Composable
-internal fun DefaultModelSetting(model: DefaultModelSettings) {
+internal fun DefaultModelSetting(model: DefaultModelSettings?) {
+    val title = stringResource(R.string.settings_default_model)
+    if (model == null) {
+        DefaultModelLoadingRow(title)
+        return
+    }
     val state by model.state.collectAsStateWithLifecycle()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
@@ -75,24 +83,8 @@ internal fun DefaultModelSetting(model: DefaultModelSettings) {
         model.visible(active)
         onDispose { model.visible(false) }
     }
-    val title = stringResource(R.string.settings_default_model)
     if (state.options == null && !state.offline && !state.failed) {
-        SettingsRow(
-            title,
-            leading = { SettingsIcon(R.drawable.ic_memory) },
-            value = "",
-            valueLeading = {
-                Box(
-                    Modifier.width(64.dp)
-                        .height(12.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(4.dp),
-                        )
-                )
-            },
-        )
-        HorizontalDivider()
+        DefaultModelLoadingRow(title)
         return
     }
     val choices = state.options?.choices.orEmpty()
@@ -108,6 +100,23 @@ internal fun DefaultModelSetting(model: DefaultModelSettings) {
             onClick = open,
         )
     }
+    HorizontalDivider()
+}
+
+@Composable
+private fun DefaultModelLoadingRow(title: String) {
+    SettingsRow(
+        title,
+        leading = { SettingsIcon(R.drawable.ic_memory) },
+        value = "",
+        valueLeading = {
+            Box(
+                Modifier.width(64.dp)
+                    .height(12.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+            )
+        },
+    )
     HorizontalDivider()
 }
 
@@ -250,12 +259,16 @@ private fun ModelOption(
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    val focusColor = LocalActivityStatusColor.current
+    val disabledColor = colors.onSurface.copy(alpha = 0.38f)
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(shape)
+            .updateFocusOutline(shape, focusColor)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -277,7 +290,18 @@ private fun ModelOption(
                 )
             }
         }
-        RadioButton(selected, onClick = null, enabled = enabled)
+        RadioButton(
+            selected,
+            onClick = null,
+            enabled = enabled,
+            colors =
+                RadioButtonDefaults.colors(
+                    selectedColor = focusColor,
+                    unselectedColor = colors.onSurfaceVariant,
+                    disabledSelectedColor = disabledColor,
+                    disabledUnselectedColor = disabledColor,
+                ),
+        )
     }
 }
 
