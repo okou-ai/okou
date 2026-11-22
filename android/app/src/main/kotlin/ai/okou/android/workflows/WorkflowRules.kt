@@ -69,7 +69,8 @@ internal enum class RuleSource(
     Schedule(R.string.workflow_schedule, R.drawable.ic_event),
     Chat(R.string.workflow_chat, R.drawable.ic_chat_bubble),
     Gmail(R.string.workflow_gmail, R.drawable.ic_mail, "gmail"),
-    Github(R.string.workflow_github, R.drawable.ic_bolt, "github"),
+    // The enable endpoint validates the workspace's GitHub App installation.
+    Github(R.string.workflow_github, R.drawable.ic_bolt),
     Calendar(R.string.workflow_calendar, R.drawable.ic_event, "google-calendar"),
     Forms(R.string.workflow_forms, R.drawable.ic_bolt, "google-forms"),
     Meet(R.string.workflow_meet, R.drawable.ic_bolt, "google-meet"),

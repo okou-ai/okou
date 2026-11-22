@@ -217,6 +217,54 @@ class WorkflowRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun workspaceGithubAppCanEnableTheRuleWithoutAPersonalConnector() {
+        app.fixture.githubAppInstalled = true
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        waitFor("Paused · Needs connection")
+
+        compose
+            .onNodeWithTag("workflow_toggle_github")
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+
+        val enabled = hasText("Enabled") and hasAnyAncestor(hasTestTag("workflow_rule_github"))
+        compose.waitUntil(10_000) { compose.onAllNodes(enabled).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(enabled).assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun personalGithubConnectorCannotEnableTheRuleWithoutAWorkspaceApp() {
+        val fixture = app.fixture
+        fixture.githubAppInstalled = false
+        fixture.githubAccountConnected = true
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        waitFor("Paused · Needs connection")
+
+        compose
+            .onNodeWithTag("workflow_toggle_github")
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+
+        compose.waitUntil(10_000) {
+            fixture.requests.any {
+                it.method == "POST" &&
+                    it.requestUrl?.encodedPath == "/api/workflow-automations/github/enable"
+            }
+        }
+
+        waitFor("Could not save your changes.")
+        compose
+            .onNode(hasText("Paused") and hasAnyAncestor(hasTestTag("workflow_rule_github")))
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun returningWithAConnectedAccountKeepsFocusOnTheSameRule() {
         val scenario = compose.activityRule.scenario
         val instrumentation = InstrumentationRegistry.getInstrumentation()

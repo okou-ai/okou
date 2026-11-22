@@ -21,6 +21,9 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     val active = AtomicBoolean(false)
     val gmailEnabled = AtomicBoolean(false)
     val gmailConnected = AtomicBoolean(false)
+    private val githubEnabled = AtomicBoolean(false)
+    @Volatile var githubAppInstalled: Boolean? = null
+    @Volatile var githubAccountConnected = false
     @Volatile var beforeCatalog: () -> Unit = {}
     @Volatile var beforeConnectionsRead: () -> Unit = {}
     @Volatile var beforeDraftRead: () -> Unit = {}
@@ -47,11 +50,13 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         return when (path) {
             "/api/connectors/connected" -> {
                 beforeConnectionsRead()
-                val gmail =
-                    if (gmailConnected.get())
-                        """{"slug":"gmail","label":"Gmail","icon":{"url":"/gmail.svg","invertInDarkMode":false},"hasPermissions":true}"""
-                    else ""
-                jsonResponse("""{"builtinConnectors":[$gmail],"customConnectors":[]}""")
+                val connectors = buildList {
+                    if (gmailConnected.get()) add(connector("gmail", "Gmail"))
+                    if (githubAccountConnected) add(connector("github", "GitHub"))
+                }
+                jsonResponse(
+                    """{"builtinConnectors":[${connectors.joinToString()}],"customConnectors":[]}"""
+                )
             }
             "/api/workflows" -> {
                 assertNull(request.requestUrl?.query)
@@ -63,16 +68,21 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                     body["instruction"]?.jsonPrimitive?.content?.let { instruction = it }
                 }
-                jsonResponse(detail(release(), instruction, "[${schedule()},${gmail()}]"))
+                jsonResponse(detail(release(), instruction, "[${releaseRules().joinToString()}]"))
             }
             "/api/workflows/$WORKFLOW_SHARED" ->
                 jsonResponse(
                     detail(shared(), if (chinese) "整理发布发现。" else "Collect launch findings.", "[]")
                 )
-            "/api/workflow-automations" ->
+            "/api/workflow-automations" -> {
+                val rules =
+                    releaseRules().joinToString { automation ->
+                        """{"workflow":${release()},"automation":$automation}"""
+                    }
                 jsonResponse(
-                    """[{"workflow":${release()},"automation":${schedule()}},{"workflow":${release()},"automation":${gmail()}},{"workflow":${feedback()},"automation":${schedule(id = "feedback", enabled = true)}}]"""
+                    """[$rules,{"workflow":${feedback()},"automation":${schedule(id = "feedback", enabled = true)}}]"""
                 )
+            }
             "/api/workflow-automations/weekday/enable" -> {
                 active.set(true)
                 jsonResponse(schedule())
@@ -80,6 +90,17 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             "/api/workflow-automations/weekday/disable" -> {
                 active.set(false)
                 jsonResponse(schedule())
+            }
+            "/api/workflow-automations/github/enable" -> {
+                if (githubAppInstalled == true) {
+                    githubEnabled.set(true)
+                    jsonResponse(github())
+                } else {
+                    jsonResponse(
+                            """{"error":{"code":"BAD_REQUEST","message":"Install GitHub before creating GitHub webhook automations"}}"""
+                        )
+                        .setResponseCode(400)
+                }
             }
             "/api/onboarding/status" ->
                 jsonResponse(
@@ -153,6 +174,15 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
 
     private fun gmail() =
         """{"id":"gmail","ownerUserId":"user-a","enabled":${gmailEnabled.get()},"chatThreadId":null,"nextRunAt":null,"lastRunAt":null,"official":null,"kind":"event","eventType":"gmail-new-message","eventConfig":{"provider":"gmail","event":"new_message","match":{"subject":{"contains":"${if (chinese) "发布" else "Release"}"}}},"schedule":null,"scheduleSummary":null}"""
+
+    private fun github() =
+        """{"id":"github","ownerUserId":"user-a","enabled":${githubEnabled.get()},"chatThreadId":null,"nextRunAt":null,"lastRunAt":null,"official":null,"kind":"event","eventType":"github-pull-request","eventConfig":{"provider":"github","event":"pull_request","repository":"example/release","action":"opened","filters":{}},"schedule":null,"scheduleSummary":null}"""
+
+    private fun releaseRules() =
+        listOfNotNull(schedule(), gmail(), githubAppInstalled?.let { github() })
+
+    private fun connector(slug: String, label: String) =
+        """{"slug":"$slug","label":"$label","icon":{"url":"/$slug.svg","invertInDarkMode":false},"hasPermissions":true}"""
 
     override fun close() = chats.close()
 }
