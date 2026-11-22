@@ -39,7 +39,7 @@ test("Loading older messages restores mention names and attachment navigation", 
       },
     ],
   } satisfies UserMessageDocument;
-  const chatEvents = Array.from({ length: 9 }, (_, index) => {
+  const chatEvents = Array.from({ length: 12 }, (_, index) => {
     const turn = index + 1;
     const runId = `history-resource-run-${turn.toString()}`;
     const minute = turn.toString().padStart(2, "0");
@@ -81,7 +81,7 @@ test("Loading older messages restores mention names and attachment navigation", 
   await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   await expect(
-    screen.findByText("History answer 9"),
+    screen.findByText("History answer 12"),
   ).resolves.toBeInTheDocument();
   expect(queryFastControl("link", "Preview history-first.png")).toBeNull();
   const container = document.querySelector<HTMLElement>(
