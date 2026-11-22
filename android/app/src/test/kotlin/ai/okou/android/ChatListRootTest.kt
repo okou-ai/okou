@@ -1516,7 +1516,7 @@ class ChatListRootTest {
                     }
                     "/api/chat-threads/$CHAT_IN_PROJECT/mark-unread" ->
                         if (rejectUnread.get()) {
-                            okhttp3.mockwebserver.MockResponse().setResponseCode(503)
+                            okhttp3.mockwebserver.MockResponse().setResponseCode(409)
                         } else {
                             unread.set(true)
                             jsonResponse("""{"lastReadAt":null}""")
@@ -1553,7 +1553,7 @@ class ChatListRootTest {
         choose("Mark as unread")
         compose.waitUntil(10_000) {
             compose
-                .onAllNodesWithText("Could not update the read status.")
+                .onAllNodesWithText("Could not complete “Mark as unread”.")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
@@ -2451,7 +2451,7 @@ class ChatListRootTest {
             rejectWrite.countDown()
             compose.waitUntil(10_000) {
                 compose
-                    .onAllNodesWithText("Could not finish changing the chat.")
+                    .onAllNodesWithText("Could not complete “Archive chat”.")
                     .fetchSemanticsNodes()
                     .isNotEmpty()
             }
@@ -2513,6 +2513,48 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasTestTag("chat_$CHAT_PERSONAL")).fetchSemanticsNodes().isNotEmpty()
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun splitConversationShowsArchiveFailureAndUndoInTheConversationPane() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val events = fixture.rowEventTail()
+        val accept = AtomicBoolean(false)
+        fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath != "/api/chat-threads/$CHAT_PERSONAL/archive") null
+            else if (!accept.get()) MockResponse().setResponseCode(400)
+            else {
+                events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                MockResponse().setResponseCode(204)
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        row.performClick()
+
+        fun archiveFromConversation() {
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Archive chat").performClick()
+        }
+        fun assertConversationFeedback(message: String) {
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(message).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithTag("conversation_feedback").assertIsDisplayed()
+            compose.onNodeWithTag("chat_list_feedback").assertDoesNotExist()
+        }
+        archiveFromConversation()
+        assertConversationFeedback("Could not complete “Archive chat”.")
+        row.assertIsDisplayed()
+
+        accept.set(true)
+        archiveFromConversation()
+        assertConversationFeedback("Undo")
+        row.assertDoesNotExist()
     }
 
     @Test
@@ -2799,7 +2841,8 @@ class ChatListRootTest {
         fixture.events = {
             jsonResponse("""{"events":[${initial.joinToString(",")}],"hasMore":false}""")
         }
-        val events = fixture.rowEventTail()
+        val readbacks = AtomicInteger()
+        val events = fixture.rowEventTail { readbacks.incrementAndGet() }
         val rejectMoved = AtomicBoolean(true)
         val commands = CopyOnWriteArrayList<RecordedRequest>()
         fixture.commandResponse = { request ->
@@ -2848,28 +2891,45 @@ class ChatListRootTest {
                 first.fetchSemanticsNode().boundsInRoot.top
         )
         compose.onNodeWithContentDescription("Dismiss").assertIsDisplayed()
+        val readsBeforeRefresh = readbacks.get()
         compose.onNodeWithText("Refresh chats").performClick()
         compose.waitUntil(10_000) {
-            first.fetchSemanticsNode().boundsInRoot.top <
-                target.fetchSemanticsNode().boundsInRoot.top
+            readbacks.get() > readsBeforeRefresh &&
+                currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Ready
         }
         assertTrue(
-            first.fetchSemanticsNode().boundsInRoot.top <
-                target.fetchSemanticsNode().boundsInRoot.top
-        )
-        rejectMoved.set(false)
-        moveDown()
-        awaitRowActionSettled(CHAT_PERSONAL)
-        compose.waitUntil(10_000) {
             target.fetchSemanticsNode().boundsInRoot.top <
                 first.fetchSemanticsNode().boundsInRoot.top
+        )
+        assertEquals(2, commands.size)
+        val lost = commands.last().jsonCommandBody()
+        events.add(
+            26L to
+                chatEventWire(
+                    id = lost.getValue("eventId").jsonPrimitive.content,
+                    seq = 26,
+                    kind = "sort_touched",
+                    extra = ",\"pinOrder\":${lost.getValue("pinOrder")}",
+                )
+        )
+        reconnectList(app)
+        compose.waitUntil(10_000) {
+            currentList()?.confirmedThreads?.single { it.id == CHAT_PERSONAL }?.pinOrder == "a2"
+        }
+        rejectMoved.set(false)
+        first.performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.onNodeWithText("Move up").performClick()
+        awaitRowActionSettled(CHAT_PERSONAL)
+        compose.waitUntil(10_000) {
+            first.fetchSemanticsNode().boundsInRoot.top <
+                target.fetchSemanticsNode().boundsInRoot.top
         }
         val tied = compose.onNodeWithTag("chat_$CHAT_IN_PROJECT")
         assertTrue(
             first.fetchSemanticsNode().boundsInRoot.top < tied.fetchSemanticsNode().boundsInRoot.top
         )
         assertEquals(
-            listOf(CHAT_IN_PROJECT to "a3", CHAT_PERSONAL to "a2", CHAT_PERSONAL to "a2"),
+            listOf(CHAT_IN_PROJECT to "a3", CHAT_PERSONAL to "a2", CHAT_PERSONAL to "a0"),
             commands.map { command ->
                 command.requestUrl?.pathSegments?.get(2) to
                     command.jsonCommandBody().getValue("pinOrder").jsonPrimitive.content

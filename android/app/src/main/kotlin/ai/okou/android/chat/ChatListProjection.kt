@@ -9,12 +9,22 @@ internal class ChatListProjection {
     var confirmedRows = ReplayedChats(emptyList(), emptyList())
         private set
 
-    private class PendingRowEdit(val edit: ChatRowEdit, private val optimistic: Boolean) {
+    private class PendingRowEdit(
+        val edit: ChatRowEdit,
+        private val optimistic: Boolean,
+        var waitingForTargetChange: Boolean,
+    ) {
         var unconfirmed = false
         var confirmedMembershipChanged = false
 
         val optimisticEdit: ChatRowEdit?
             get() = edit.takeIf { optimistic && !(unconfirmed && confirmedMembershipChanged) }
+
+        val canRecoverByTarget: Boolean
+            get() = optimistic && edit.action.recoversInBackground
+
+        fun matchesTarget(row: ConfirmedChat): Boolean =
+            !waitingForTargetChange && edit.matchesRecoveryTarget(row)
     }
 
     private var rowEdits = emptyList<PendingRowEdit>()
@@ -32,6 +42,13 @@ internal class ChatListProjection {
 
     fun restore(checkpoint: ChatCheckpoint, rows: ReplayedChats) {
         recordMembershipChanges(rows)
+        for (pending in rowEdits) {
+            if (!pending.waitingForTargetChange) continue
+            val row = rows.byRecency.firstOrNull { it.id == pending.edit.threadId }
+            if (row != null && !pending.edit.matchesRecoveryTarget(row)) {
+                pending.waitingForTargetChange = false
+            }
+        }
         confirmedCheckpoint = checkpoint
         confirmedRows = rows
         acceptedNewChats = unobservedNewChats(acceptedNewChats)
@@ -45,10 +62,38 @@ internal class ChatListProjection {
     }
 
     fun addEdits(edits: List<ChatRowEdit>, optimistic: Boolean = true) {
-        rowEdits = rowEdits + edits.map { PendingRowEdit(it, optimistic) }
+        rowEdits =
+            rowEdits +
+                edits.map { edit ->
+                    // An inverse can match the baseline while an older write is still unconfirmed.
+                    // Only a changed baseline or the inverse's receipt can confirm that newer
+                    // write.
+                    val targetAlreadyMatches =
+                        optimistic &&
+                            edit.action.recoversInBackground &&
+                            confirmedRows.byRecency.any {
+                                it.id == edit.threadId && edit.matchesRecoveryTarget(it)
+                            }
+                    PendingRowEdit(edit, optimistic, targetAlreadyMatches)
+                }
     }
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = rowEdits.any { it.edit in edits }
+
+    fun matchesConfirmedTarget(edit: ChatRowEdit): Boolean {
+        val pending = rowEdits.firstOrNull { it.edit == edit } ?: return false
+        return confirmedRows.byRecency.any { it.id == edit.threadId && pending.matchesTarget(it) }
+    }
+
+    fun settleConfirmedTargets(edits: List<ChatRowEdit>): Boolean {
+        val matched =
+            rowEdits.mapNotNull { pending ->
+                pending.edit.takeIf { it in edits && matchesConfirmedTarget(it) }?.eventId
+            }
+        if (matched.isEmpty()) return false
+        settleRowEdits(matched.toSet(), emptySet())
+        return true
+    }
 
     fun discardEdits(edits: List<ChatRowEdit>): Boolean {
         if (!hasUnsettledEdits(edits)) return false
@@ -75,7 +120,11 @@ internal class ChatListProjection {
     fun hasConfirmedThread(threadId: String) = confirmedRows.byRecency.any { it.id == threadId }
 
     fun retryEvents(): Set<String> =
-        rowEdits.asSequence().filter { it.unconfirmed }.map { it.edit.eventId }.toSet()
+        rowEdits
+            .asSequence()
+            .filter { it.unconfirmed && !it.canRecoverByTarget }
+            .map { it.edit.eventId }
+            .toSet()
 
     fun confirmEdits(edits: List<ChatRowEdit>): Boolean {
         val unresolved = rowEdits.filter { it.edit in edits }
@@ -181,6 +230,15 @@ internal class ChatListProjection {
                     for (pending in editsBefore) {
                         val edit = pending.edit
                         if (edit.action == ChatRowAction.Delete && edit.threadId !in present)
+                            add(edit.eventId)
+                    }
+                }
+                if (editsBefore.any { it.unconfirmed && it.canRecoverByTarget }) {
+                    val byId = rows.byRecency.associateBy { it.id }
+                    for (pending in editsBefore) {
+                        if (!pending.unconfirmed || !pending.canRecoverByTarget) continue
+                        val edit = pending.edit
+                        if (byId[edit.threadId]?.let(pending::matchesTarget) == true)
                             add(edit.eventId)
                     }
                 }

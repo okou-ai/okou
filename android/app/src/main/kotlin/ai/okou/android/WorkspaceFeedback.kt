@@ -9,6 +9,8 @@ import ai.okou.android.chat.ChatUndoPhase
 import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.ProjectDeleteStatus
 import ai.okou.android.chat.canDeleteProject
+import ai.okou.android.chat.label
+import ai.okou.android.chat.recoversInBackground
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -220,14 +222,23 @@ internal fun WorkspaceChatFeedback(
         ?.let { failure ->
             val action = failure.action
             val message =
-                stringResource(
-                    when {
-                        failure.connectionFailed -> R.string.chat_action_connection_failed
-                        failure.rejected -> R.string.chat_row_action_rejected
-                        action.updatesChat -> R.string.chat_row_action_failed
-                        else -> R.string.chat_read_action_failed
-                    }
-                )
+                if (failure.rejected && action.recoversInBackground) {
+                    stringResource(
+                        if (failure.connectionFailed) R.string.chat_row_action_offline_named
+                        else R.string.chat_row_action_rejected_named,
+                        stringResource(action.label()),
+                    )
+                } else {
+                    stringResource(
+                        when {
+                            failure.connectionFailed -> R.string.chat_action_connection_failed
+                            failure.rejected -> R.string.chat_row_action_rejected
+                            action.updatesChat || failure.readIntent != null ->
+                                R.string.chat_row_action_failed
+                            else -> R.string.chat_read_action_failed
+                        }
+                    )
+                }
             val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
             LaunchedEffect(chats, failure, message, showRowActionFailure) {
                 if (

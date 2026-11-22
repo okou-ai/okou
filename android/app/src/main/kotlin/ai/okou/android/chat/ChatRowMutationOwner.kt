@@ -23,7 +23,11 @@ internal class ChatRowMutationOwner(
         val submittedCount: Int,
         val targetMissing: Boolean,
         val connectionFailed: Boolean,
+        val alreadySatisfied: Boolean,
+        val recoverByTarget: Boolean,
     )
+
+    class Confirmation(val failure: ChatRowActionFailure?, val ownWriteConfirmed: Boolean)
 
     enum class Rollback {
         Rejected,
@@ -73,6 +77,8 @@ internal class ChatRowMutationOwner(
         var submittedCount = 0
         var targetMissing = false
         var connectionFailed = false
+        var alreadySatisfied = false
+        val retries = if (optimistic && action.recoversInBackground) ChatWriteRetries() else null
         try {
             requireCurrent()
             if (edits.isNotEmpty()) {
@@ -84,7 +90,15 @@ internal class ChatRowMutationOwner(
             for (edit in edits.asReversed()) {
                 requireCurrent()
                 submittedCount++
-                write(edit)
+                if (retries == null) write(edit)
+                else
+                    retries.run { retrying ->
+                        requireCurrent()
+                        if (retrying && projection.matchesConfirmedTarget(edit)) {
+                            alreadySatisfied = true
+                            if (projection.discardEdits(listOf(edit))) publishRows()
+                        } else write(edit)
+                    }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -99,12 +113,26 @@ internal class ChatRowMutationOwner(
                 submittedCount--
             }
         }
-        return Submission(action, edits, submittedCount, targetMissing, connectionFailed)
+        return Submission(
+            action,
+            edits,
+            submittedCount,
+            targetMissing,
+            connectionFailed,
+            alreadySatisfied,
+            retries != null,
+        )
     }
 
     fun discardRejected(submission: Submission): Rollback? {
-        if (!projection.discardEdits(submission.edits.dropLast(submission.submittedCount)))
+        val rejected = submission.edits.dropLast(submission.submittedCount)
+        val failed =
+            !submission.recoverByTarget || rejected.any { !projection.matchesConfirmedTarget(it) }
+        if (!projection.discardEdits(rejected)) return null
+        if (!failed) {
+            publishRows()
             return null
+        }
         return when {
             submission.connectionFailed -> Rollback.ConnectionFailed
             !submission.targetMissing -> Rollback.Rejected
@@ -113,8 +141,11 @@ internal class ChatRowMutationOwner(
         }
     }
 
-    /** Returns the feedback for an unsettled action, if any. */
-    suspend fun confirm(submission: Submission, rollback: Rollback?): ChatRowActionFailure? {
+    suspend fun confirm(
+        submission: Submission,
+        rollback: Rollback?,
+        conversationId: String?,
+    ): Confirmation {
         requireCurrent()
         val edits = submission.edits.takeLast(submission.submittedCount)
         val missingDeleteTarget =
@@ -124,18 +155,41 @@ internal class ChatRowMutationOwner(
             projection.hasUnsettledEdits(edits) ||
                 missingDeleteTarget?.let(projection::hasConfirmedThread) == true
         }
-        if (!needsRead()) return null
+        val canOfferUndo = edits.isNotEmpty() && !submission.alreadySatisfied
+        if (!needsRead()) return Confirmation(null, canOfferUndo)
         // Even when a response is lost, the original event ID can confirm the write.
         awaitListRead(needsRead)
         requireCurrent()
         if (missingDeleteTarget != null) {
             // A concurrent deletion can make the requested result canonical after a 404.
-            return if (projection.hasConfirmedThread(missingDeleteTarget))
-                ChatRowActionFailure(submission.action, rejected = true)
-            else null
+            return Confirmation(
+                if (projection.hasConfirmedThread(missingDeleteTarget))
+                    ChatRowActionFailure(
+                        submission.action,
+                        rejected = true,
+                        conversationId = conversationId,
+                    )
+                else null,
+                false,
+            )
         }
-        return if (projection.confirmEdits(edits)) null
-        else ChatRowActionFailure(submission.action, edits = edits)
+        val confirmedElsewhere =
+            submission.recoverByTarget && projection.settleConfirmedTargets(edits)
+        if (confirmedElsewhere) publishRows()
+        val settled = projection.confirmEdits(edits)
+        // A move that never reached its requested rank write already reported failure.
+        // Its attempted rank edits still need event reconciliation.
+        return if (settled || rollback != null)
+            Confirmation(null, settled && canOfferUndo && !confirmedElsewhere)
+        else
+            Confirmation(
+                ChatRowActionFailure(
+                    submission.action,
+                    edits = edits,
+                    conversationId = conversationId,
+                ),
+                false,
+            )
     }
 
     private suspend fun write(edit: ChatRowEdit) {

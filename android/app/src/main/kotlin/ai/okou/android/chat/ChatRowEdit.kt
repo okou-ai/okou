@@ -50,6 +50,19 @@ internal data class ChatRowEdit(
             ChatRowAction.MarkRead,
             ChatRowAction.MarkUnread -> error("Read state is separate")
         }
+
+    fun matchesRecoveryTarget(row: ConfirmedChat): Boolean =
+        row.hidden != true &&
+            when (action) {
+                ChatRowAction.Archive -> row.archived
+                ChatRowAction.Unarchive -> !row.archived
+                ChatRowAction.Pin -> row.pinnedAt != null
+                ChatRowAction.Unpin -> row.pinnedAt == null
+                ChatRowAction.MovePinUp,
+                ChatRowAction.MovePinDown -> row.pinnedAt != null && row.pinOrder == value
+                ChatRowAction.MoveProject -> row.projectId == value
+                else -> false
+            }
 }
 
 internal fun ReplayedChats.withLocalChanges(

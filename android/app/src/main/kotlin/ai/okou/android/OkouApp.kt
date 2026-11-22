@@ -472,8 +472,25 @@ internal fun OkouApp(
         navigation = navigation.copy(target = WorkspaceTarget.List, search = search)
     }
 
+    val feedbackConversationId by
+        remember(listState) {
+            derivedStateOf {
+                val state = listState.value
+                val undo = state.rowUndo
+                if (undo == null) state.failedRowAction?.conversationId
+                else undo.threadId.takeIf { undo.fromConversation }
+            }
+        }
     val showConversationFeedback =
-        settings == null && !showChatList && !showWorkflows && !showingConnectors && thread != null
+        settings == null &&
+            !showWorkflows &&
+            !showingConnectors &&
+            thread != null &&
+            (!showChatList ||
+                feedbackConversationId == thread.id &&
+                    resourcesId == null &&
+                    inlineArtifactLink == null &&
+                    !showingFind)
     val showWorkflowFeedback = showWorkflows && workflowRoute.id != null
     val showRowFeedback = showChatList || showConversationFeedback
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
@@ -965,8 +982,8 @@ internal fun OkouApp(
         )
             conversationRunControls(controls, checkNotNull(chats).history, thread.id, list.offline)
         else null
-    fun rowAction(id: String, action: ChatRowAction) {
-        val started = chats?.performRowAction(id, action) == true
+    fun rowAction(id: String, action: ChatRowAction, fromConversation: Boolean = false) {
+        val started = chats?.performRowAction(id, action, fromConversation) == true
         if (
             started && action == ChatRowAction.Delete && (target as? WorkspaceTarget.Chat)?.id == id
         ) {
@@ -979,7 +996,11 @@ internal fun OkouApp(
     LaunchedEffect(showChatList) { if (!showChatList) moveFocus = null }
     fun moveChat(from: ChatMoveTarget, destination: String?) {
         if (
-            chats?.moveThreadToProject(from.threadId, destination) == true &&
+            chats?.moveThreadToProject(
+                from.threadId,
+                destination,
+                fromConversation = !from.fromList,
+            ) == true &&
                 from.fromList &&
                 destination != null &&
                 inputMode.inputMode == InputMode.Keyboard
@@ -1010,9 +1031,9 @@ internal fun OkouApp(
             ConversationToolbarActions(
                 state = listState.value,
                 thread = thread,
-                onRowAction = ::rowAction,
+                onRowAction = { id, action -> rowAction(id, action, fromConversation = true) },
                 onMove = { requestMove(it, fromList = false) },
-                onRename = { id, title -> chats?.renameThread(id, title) },
+                onRename = { id, title -> chats?.renameThread(id, title, fromConversation = true) },
                 openResources =
                     thread
                         ?.id
@@ -1303,7 +1324,7 @@ internal fun OkouApp(
                                     },
                                     provisionalChats,
                                     ::openProvisionalChat,
-                                    ::rowAction,
+                                    { id, action -> rowAction(id, action) },
                                     { requestMove(it, fromList = true) },
                                     moveFocus = moveFocus,
                                     onMoveFocusFinished = { request ->
@@ -1329,10 +1350,11 @@ internal fun OkouApp(
                                         chats?.dismissProjectRenameRejection(it)
                                     },
                                     feedback = {
-                                        WorkspaceFeedbackHost(
-                                            snackbar,
-                                            Modifier.testTag("chat_list_feedback"),
-                                        )
+                                        if (!showConversationFeedback)
+                                            WorkspaceFeedbackHost(
+                                                snackbar,
+                                                Modifier.testTag("chat_list_feedback"),
+                                            )
                                     },
                                 )
                             }
