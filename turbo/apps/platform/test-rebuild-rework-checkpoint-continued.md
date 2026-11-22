@@ -2508,3 +2508,287 @@ Across 30 frozen files, 119 of the 160 retained scenarios have their first passi
 - Historical first acceptances reached 1,695 of 2,681 and current complete coverage reached 1,671. The withdrawal cohort accounts for 422 historical and 413 current cases. Other files account for 1,273 and 1,258 respectively. Across the inventory, 275 files closed with 946 selections including four retirements. The 210 open files have 729 covered of 1,735 retained selections. The original 86 withdrawals, the historical losses of 17 and 7, and the 68 upstream cases retain their prior ownership.
 
 The third checkpoint ran the ten affected files with the original five-second test deadline. Two earlier Slack regressions timed out during a competing type check. Both the restored full-file run and shuffle seed 7738 passed all 41 rows. Platform production, test and build-config types, scoped ESLint, both Oxlint configurations and changed-file formatting passed. Main synchronization through [72ecc819a9](https://github.com/okou-ai/okou/commit/72ecc819a9a20d2ad3e8df5ac5e9a89f7b748bf5) incorporated the latest iOS changes. [Next 30 open file candidates and 139 frozen registrations](https://app.okou.ai/artifacts/bw97welhyt.md).
+
+## Batch 78 file reconciliation
+
+Opening `1fd1340d1e`. Synchronized through `1e43c5505f`. The [fixed intake](https://app.okou.ai/artifacts/bw97welhyt.md) has 139 pending retain IDs in 30 distinct frozen files. The intake excludes batches 76 and 77. The registration-level comparison and local results are anchored to [the implementation](https://github.com/okou-ai/okou/commit/c8514079e486ad9e089641281e7fa06b7c65f5cf).
+
+**76 first acceptances, 63 open IDs.** 13 files closed, 8 partially covered and 9 with all selected IDs still open. Vitest expanded the accepted cases to 79 rows across 28 executable files. The whole-file run and shuffled run (seed 7829) agreed on every ID and parameterized title. No existing regression contributed another first acceptance.
+
+| Frozen test file                                                                                                                                                                                                                             | Selected | First accepted                                             | Still open                                                                                    | Expanded rows | File outcome |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------: | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------: | ------------ |
+| [`__tests__/authentication-startup.test.tsx`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/__tests__/authentication-startup.bdd.md)                                                 |        9 | 001, 003, 011, 012, 013, 014, 015, 016, 018                | —                                                                                             |             9 | closed       |
+| [`__tests__/clerk-bootstrap.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/__tests__/clerk-bootstrap.bdd.md)                                                                |        4 | 001, 003, 004, 005                                         | —                                                                                             |             4 | closed       |
+| [`__tests__/platform-entrypoint.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/__tests__/platform-entrypoint.bdd.md)                                                        |       12 | 001, 002, 012, 013, 014, 015, 016, 020, 021, 022, 023, 024 | —                                                                                             |            12 | closed       |
+| [`__tests__/shared-worker-failure.test.tsx`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/__tests__/shared-worker-failure.bdd.md)                                                   |        2 | 002, 003                                                   | —                                                                                             |             2 | closed       |
+| [`__tests__/shared-worker-preload.test.tsx`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/__tests__/shared-worker-preload.bdd.md)                                                   |        2 | 002, 003                                                   | —                                                                                             |             2 | closed       |
+| [`lib/__tests__/chat-thread-link.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/lib/__tests__/chat-thread-link.bdd.md)                                                      |        2 | 001, 002                                                   | —                                                                                             |             3 | closed       |
+| [`lib/__tests__/preview-bypass-cookie.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/lib/__tests__/preview-bypass-cookie.bdd.md)                                            |        5 | 001, 004, 005, 006, 007                                    | —                                                                                             |             5 | closed       |
+| [`lib/__tests__/sentry-reporting.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/lib/__tests__/sentry-reporting.bdd.md)                                                      |        5 | 003, 004, 005, 007, 008                                    | —                                                                                             |             5 | closed       |
+| [`lib/__tests__/visual-viewport-keyboard.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/lib/__tests__/visual-viewport-keyboard.bdd.md)                                      |        2 | 001, 002                                                   | —                                                                                             |             2 | closed       |
+| [`shared-database/__tests__/message-port.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md)                                      |       20 | 019                                                        | 002, 010, 011, 014, 015, 017, 018, 020, 022, 023, 027, 030, 032, 033, 034, 036, 037, 038, 039 |             1 | partial      |
+| [`shared-database/__tests__/platform-direct-bridge.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/shared-database/__tests__/platform-direct-bridge.bdd.md)                  |        3 | 001, 006                                                   | 002                                                                                           |             2 | partial      |
+| [`shared-database/__tests__/single-connection-client.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/shared-database/__tests__/single-connection-client.bdd.md)              |        2 | —                                                          | 001, 002                                                                                      |             0 | blocked      |
+| [`shared-database/__tests__/worker-runtime.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/shared-database/__tests__/worker-runtime.bdd.md)                                  |        6 | 001, 002, 007, 012                                         | 005, 008                                                                                      |             4 | partial      |
+| [`signals/__tests__/api-client-bootstrap.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.bdd.md)                                      |        1 | —                                                          | 001                                                                                           |             0 | blocked      |
+| [`signals/__tests__/auth-oauth-consent.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/auth-oauth-consent.bdd.md)                                          |        2 | 001, 003                                                   | —                                                                                             |             2 | closed       |
+| [`signals/__tests__/bootstrap-feature-switch.test.tsx`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/bootstrap-feature-switch.bdd.md)                             |        2 | 001, 002                                                   | —                                                                                             |             2 | closed       |
+| [`signals/__tests__/clerk-user.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/clerk-user.bdd.md)                                                          |        4 | —                                                          | 003, 005, 006, 007                                                                            |             0 | blocked      |
+| [`signals/__tests__/command-scheduling.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/command-scheduling.bdd.md)                                          |        5 | —                                                          | 001, 002, 003, 004, 006                                                                       |             0 | blocked      |
+| [`signals/__tests__/fetch.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/fetch.bdd.md)                                                                    |        2 | 002, 003                                                   | —                                                                                             |             2 | closed       |
+| [`signals/__tests__/realtime.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/realtime.bdd.md)                                                              |       10 | —                                                          | 001, 002, 004, 005, 006, 008, 010, 011, 019, 020                                              |             0 | blocked      |
+| [`signals/__tests__/shared-database-browser.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/shared-database-browser.bdd.md)                                |        4 | 001, 002, 005                                              | 006                                                                                           |             3 | partial      |
+| [`signals/__tests__/startup-diagnostics.test.tsx`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/__tests__/startup-diagnostics.bdd.md)                                       |        2 | 001                                                        | 003                                                                                           |             1 | partial      |
+| [`signals/bootstrap/__tests__/user-timezone-initialization.test.tsx`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/bootstrap/__tests__/user-timezone-initialization.bdd.md) |        2 | 001, 003                                                   | —                                                                                             |             2 | closed       |
+| [`signals/browser/__tests__/client.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/browser/__tests__/client.bdd.md)                                                  |        7 | —                                                          | 001, 002, 003, 004, 006, 007, 008                                                             |             0 | blocked      |
+| [`signals/chat-page/__tests__/session-output-stream.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/chat-page/__tests__/session-output-stream.bdd.md)                |        1 | —                                                          | 002                                                                                           |             0 | blocked      |
+| [`signals/chat-page/__tests__/unread-through-at.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/chat-page/__tests__/unread-through-at.bdd.md)                        |        1 | —                                                          | 001                                                                                           |             0 | blocked      |
+| [`signals/external/__tests__/chat-idb.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/external/__tests__/chat-idb.bdd.md)                                            |        1 | —                                                          | 002                                                                                           |             0 | blocked      |
+| [`signals/external/__tests__/indexeddb-client.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.bdd.md)                            |        4 | 001, 006                                                   | 002, 003                                                                                      |             2 | partial      |
+| [`signals/okou-page/__tests__/user-message-document.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/okou-page/__tests__/user-message-document.bdd.md)                |        9 | 006, 007, 008, 011, 012, 016, 017                          | 003, 014                                                                                      |             9 | partial      |
+| [`signals/voice-io/__tests__/voice-draft-audio.test.ts`](https://github.com/okou-ai/okou/blob/1fd1340d1e91ca29a1b8dca07266eb97f80e0c71/turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-audio.bdd.md)                          |        8 | 001, 002, 003, 007, 014                                    | 010, 013, 015                                                                                 |             5 | partial      |
+
+### Per-ID evidence
+
+For each accepted ID the linked test is the executable entry point. Each open row records its outstanding clause. The [139-ID ledger](https://app.okou.ai/artifacts/7pfzf7e0w9.tsv) additionally includes the complete original Given, When and Then, expanded counts, diagnostic provenance, and targeted controls.
+
+#### authentication-startup.test.tsx
+
+- `authentication-startup-001` — [Workflows stays hidden until the current member's identity is ready](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/workspace-startup-gates.test.ts#L30).
+- `authentication-startup-003` — [Workflows leaves foreground presence while the tab is hidden and keeps realtime](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#L71).
+- `authentication-startup-011` — [Workflows reuses the identity load already in progress](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#L15).
+- `authentication-startup-012` — [Unavailable identity service replaces the startup screen with an error](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#L34).
+- `authentication-startup-013` — [An old onboarding response cannot redirect the member after the active workspace changes](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/workspace-startup-gates.test.ts#L79).
+- `authentication-startup-014` — [opens the hosted sign-in form for app.okou.ai](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#L51).
+- `authentication-startup-015` — [opens the hosted sign-in form for pr-30199-app.omby.ai](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#L52).
+- `authentication-startup-016` — [opens the hosted sign-in form for okou.ai.evil.example](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#L53).
+- `authentication-startup-018` — [Changing the workspace leaves Workflows for home](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/identity-startup.test.ts#L95).
+
+#### clerk-bootstrap.test.ts
+
+- `clerk-bootstrap-001` — [Agents requests the production identity resource with same-origin account URLs](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/clerk-shell-startup.test.ts#L45).
+- `clerk-bootstrap-003` — [Early Clerk navigation sends sign-in to the browser](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/clerk-shell-startup.test.ts#L76).
+- `clerk-bootstrap-004` — [Shell publishes the same pending load that belongs to the loaded SDK](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/clerk-shell-startup.test.ts#L60).
+- `clerk-bootstrap-005` — [Each shell uses its own host for sign-in](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/clerk-shell-startup.test.ts#L89).
+
+#### platform-entrypoint.test.ts
+
+- `platform-entrypoint-001` — [An abandoned page preserves its original cancellation reason](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L116).
+- `platform-entrypoint-002` — [Chrome 138 enters the application and shows the signed-out page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/supported-platform-startup.test.ts#L8).
+- `platform-entrypoint-012` — [directs a visitor using desktop Chrome to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L12).
+- `platform-entrypoint-013` — [directs a visitor using desktop Chromium to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L21).
+- `platform-entrypoint-014` — [directs a visitor using desktop Edge to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L30).
+- `platform-entrypoint-015` — [directs a visitor using mobile Edge to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L39).
+- `platform-entrypoint-016` — [directs a visitor using desktop Opera to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L48).
+- `platform-entrypoint-020` — [directs a visitor using desktop Firefox to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L57).
+- `platform-entrypoint-021` — [directs a visitor using macOS Safari to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L66).
+- `platform-entrypoint-022` — [directs a visitor using iPhone Chrome to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L75).
+- `platform-entrypoint-023` — [The application removes Discord approval data before either analytics provider initializes](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/entrypoint-analytics-boundaries.test.ts#L10).
+- `platform-entrypoint-024` — [directs a visitor using Android Chrome without SharedWorker to its download page](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/browser-upgrade-guidance.test.ts#L84).
+
+#### shared-worker-failure.test.tsx
+
+- `shared-worker-failure-002` — [Two native worker failures interrupt the open page and flush a single report](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/workspace-worker-startup.test.ts#L125).
+- `shared-worker-failure-003` — [Switching sessions releases the old worker error listener](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/workspace-worker-startup.test.ts#L173).
+
+#### shared-worker-preload.test.tsx
+
+- `shared-worker-preload-002` — [An early failure on the matching preload reaches the interruption dialog](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/workspace-worker-startup.test.ts#L108).
+- `shared-worker-preload-003` — [A worker preloaded for another workspace stays separate](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/workspace-worker-startup.test.ts#L88).
+
+#### chat-thread-link.test.ts
+
+- `chat-thread-link-001` — [A transcript on localhost recognizes production, relative, and current-origin chat destinations](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/transcript-thread-destinations.test.ts#L38); [A transcript on staging-app.omby.ai recognizes production, relative, and current-origin chat destinations](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/transcript-thread-destinations.test.ts#L38).
+- `chat-thread-link-002` — [Links in a reply retain both the view query and the chosen fragment](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/transcript-thread-destinations.test.ts#L52).
+
+#### preview-bypass-cookie.test.ts
+
+- `preview-bypass-cookie-001` — [Opening the preview shell stores its one-hour credential with browser cookie protections](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/preview-shell-cookie.test.ts#L6).
+- `preview-bypass-cookie-004` — [Opening the Teams authorization link sends only the credential belonging to its destination](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/preview-authorization-destinations.test.ts#L13).
+- `preview-bypass-cookie-005` — [Opening the Teams authorization link sends only the credential belonging to its destination](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/preview-authorization-destinations.test.ts#L18).
+- `preview-bypass-cookie-006` — [Opening the Teams authorization link sends only the credential belonging to its destination](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/preview-authorization-destinations.test.ts#L23).
+- `preview-bypass-cookie-007` — [Opening the Teams authorization link sends only the credential belonging to its destination](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/preview-authorization-destinations.test.ts#L28).
+
+#### sentry-reporting.test.ts
+
+- `sentry-reporting-003` — [The reporting SDK filters the callback /connectors/slack/callback from errors and navigation](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/entrypoint-analytics-boundaries.test.ts#L38).
+- `sentry-reporting-004` — [The reporting SDK filters the callback /connectors/microsoft-365/callback from errors and navigation](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/entrypoint-analytics-boundaries.test.ts#L39).
+- `sentry-reporting-005` — [The reporting SDK filters the callback /connectors/github/callback from errors and navigation](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/entrypoint-analytics-boundaries.test.ts#L40).
+- `sentry-reporting-007` — [The reporting SDK filters the callback /api/integrations/teams/oauth/callback from errors and navigation](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/entrypoint-analytics-boundaries.test.ts#L41).
+- `sentry-reporting-008` — [The reporting SDK filters the callback /api/github/app/setup/callback from errors and navigation](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/entrypoint-analytics-boundaries.test.ts#L42).
+
+#### visual-viewport-keyboard.test.ts
+
+- `visual-viewport-keyboard-001` — [Five keyboard sessions reveal the focused standalone composer once apiece](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/mobile-keyboard-reveal.test.ts#L38).
+- `visual-viewport-keyboard-002` — [An ordinary mobile tab reserves keyboard space without moving the composer](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/mobile-keyboard-reveal.test.ts#L73).
+
+#### message-port.test.ts
+
+- `message-port-002` — Open. The local Clerk rejection reached the native get-token exchange during registration. The Router sent no subsequent get-computed request, so the trace has no correlated computed started/error pair or application rejection with AggregateError.
+- `message-port-010` — Open. The real page and visibility fixture exercise one tab. Independent visible tabs sharing one worker, including an observed last-tab disconnect, are missing. Child test runtimes share the document and each owns a worker.
+- `message-port-011` — Open. The observed production subscriptions contain concrete named topics. No production interaction registers newFeature:changed, so the right-name/wrong-user matrix cannot be exercised from this Router.
+- `message-port-014` — Open. The live worker processed a suspended/reconnected connection. The two-tab shared attachment, one resync for each caller, and survival after the first real tab closes require independent tab owners.
+- `message-port-015` — Open. The organ­ization-scoped native subscription and exact revision were observed in the experiment. The recorded Workflows page had no visible change establishing application handling of that revision.
+- `message-port-017` — Open. A held snapshot denial produces the required-update dialog. SharedDatabaseHttpError and its status were visible in an internal port reply only. The Router readiness promise for this Workflows route does not expose the snapshot read.
+- `message-port-018` — Open. The indicator denial reached the update dialog. Only the diagnostic reply exposed ApiError together with REQUEST_FAILED and status 426. The generic update dialog does not distinguish these fields.
+- `message-port-019` — [Split conversations receive the right rows when the second response finishes first](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/concurrent-chat-row-delivery.test.ts#L16).
+- `message-port-020` — Open. One page can hold its local token provider. An independent second registered tab able to satisfy the same pending read with a different bearer was not constructed at the public boundary.
+- `message-port-022` — Open. The single registered tab can reject its local provider. There is no second simultaneously live tab with an independent pending bearer on the same worker to survive the first disconnect.
+- `message-port-023` — Open. The first native token-error was observed during startup. The all-providers AggregateError for a shared read needs two real token providers and the requesting caller receipt.
+- `message-port-027` — Open. The child runtime experiment exercises cache reopening. Its app/worker domain is independent and its document is shared. Closing one native tab while a second tab continues reading on that same worker is unproved.
+- `message-port-030` — Open. The first real browser messages include register-tab before queries. Issuing a pre-registration read would require sending a private bridge message on behalf of a tab.
+- `message-port-032` — Open. The current indicator schema carries threads and unreadAt. It no longer carries the frozen agent indicators. The page cannot establish the complete two-kind initial and empty final result.
+- `message-port-033` — Open. Credential-scope notifications, catch-up and rendered rows were exercised. No public handler receipt separates exactly three indicator reloads from two independent warms two seconds apart.
+- `message-port-034` — Open. Background warming and later cache visibility were exercised on the Router. The failed warm, continued readable unread indicators, and recovered two-row offline history were not all observed in one lifetime.
+- `message-port-036` — Open. The Router registers production user and organization template topics. It does not expose four separately owned subscriptions and independent release of two callers on the same port.
+- `message-port-037` — Open. A delayed native attachment and UI replacement were exercised. Each real acquisition generated a new subscriptionId. The frozen reused-ID race requires an ID chosen by the subscriber.
+- `message-port-038` — Open. The local attach gate can fail and release one native subscriber. The two independent ports sharing that pending topic, both rejection receipts, and successful reacquisition remain unproved.
+- `message-port-039` — Open. Independent child worker domains are available. The Router assigns its own subscription identifiers and does not expose identical IDs or listener counts across worker stores.
+
+#### platform-direct-bridge.test.ts
+
+- `platform-direct-bridge-001` — [The Debug panel measures the UTF-8 bytes of the thread shown in the workspace](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/workspace-snapshot-inspection.test.ts#L19).
+- `platform-direct-bridge-002` — Open. The cold-start experiment displayed cached / caught-up / notified passages. Warming via a real first Router produced service cursors [1,2,2]; explicit early owner disposal rejected with AbortError. There is no verified strict cursor advance and post-reset completion under this construction.
+- `platform-direct-bridge-006` — [A second rename arrives on the live workspace list](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/workspace-snapshot-inspection.test.ts#L49).
+
+#### single-connection-client.test.ts
+
+- `single-connection-client-001` — Open. The native query trace shows real cache reads with afterSeqId null. The production chat cache reader does not issue the stipulated cache-only request with afterSeqId 42.
+- `single-connection-client-002` — Open. At the preview origin, no query telemetry was ingested and the chat editor mounted. Only a diagnostic port result established the precise empty array of the cache-only operation. The empty editor has no distinct completed-cache signal.
+
+#### worker-runtime.test.ts
+
+- `worker-runtime-001` — [A worker catch-up failure propagates its HTTP status and offers an update](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts#L74).
+- `worker-runtime-002` — [Reopening a conversation reads only rows belonging to the member's selected workspace](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/workspace-transcript-isolation.test.ts#L16).
+- `worker-runtime-005` — Open. The stored conversation was displayed after delivery from the signed object and again while remote events were held. Only an internal protocol observer verified the exact empty event arrays on both reads.
+- `worker-runtime-007` — [An expired transcript and thread list recover their fresh snapshots and both tails](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/expired-conversation-cursors.test.ts#L25).
+- `worker-runtime-008` — Open. A genuine two-thread catch-up, changed-only invalidation, and both cache results passed in the transport experiment. The changed-ID report is internal. The returned invalidation list has no complete user-facing consumer receipt.
+- `worker-runtime-012` — [A project refreshed after cursor expiration is cached at the new sequence for its owner](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/reopened-project-metadata.test.ts#L15).
+
+#### api-client-bootstrap.test.ts
+
+- `api-client-bootstrap-001` — Open. The Lab consumed the bootstrapped switch payload and a later user action reached the network. The local Clerk fixture sees token arguments, without the per-request lifecycle signal needed to establish the frozen ownership claim.
+
+#### auth-oauth-consent.test.ts
+
+- `auth-oauth-consent-001` — [Local sign-in continues to the same port's consent request](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/local-consent-origin.test.ts#L25).
+- `auth-oauth-consent-003` — [A Marketing consent destination leaves the member at the local sign-in form](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/local-consent-origin.test.ts#L33).
+
+#### bootstrap-feature-switch.test.tsx
+
+- `bootstrap-feature-switch-001` — [Workspace features stay private while the signed-out member sees sign-in](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/signed-out-feature-startup.test.ts#L8).
+- `bootstrap-feature-switch-002` — [Workspace features release the page and the feature guide request](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/auth-v1/__tests__/workspace-startup-gates.test.ts#L48).
+
+#### clerk-user.test.ts
+
+- `clerk-user-003` — Open. The signed-out transition probe failed at root lifecycle setup when publishing the replacement local identity. It did not capture a pending user reader that resolved to user-a.
+- `clerk-user-005` — Open. A repeated user publication is observable in the Clerk fixture. No user interaction exposes JavaScript promise identity for the settled reader.
+- `clerk-user-006` — Open. The page owns startup and installs its reader internally. A synchronous read ahead of owner completion and the identity of the owner-resolved promise are not exposed on this route.
+- `clerk-user-007` — Open. A Clerk session switch cancels the previous real page owner. The fixture has no public read of the prior settled promise under the replacement owner or listener-observation identity.
+
+#### command-scheduling.test.ts
+
+- `command-scheduling-001` — Open. Successive editor edits reached only the latest persisted draft. Their call values/repetition arguments and the first returned AbortError are private to the generic command.
+- `command-scheduling-002` — Open. The draft edit reached the persistence boundary. No user-facing caller observes the old running command cooperatively rejecting after release and the precise value of the new call.
+- `command-scheduling-003` — Open. A production edit cannot resubmit with a deliberately cancelled caller signal, nor retrieve the two returned AbortErrors and their original reason.
+- `command-scheduling-004` — Open. The worker warm and draft UI produce observable updates. Two trailing throttle callers sharing the returned latestlatest promise at the 1000 ms boundary have no user-facing equivalent.
+- `command-scheduling-006` — Open. Separate runtime domains were exercised on real pages. The generic debounced command invocation, private store identity and its two completion values have no production user operation.
+
+#### fetch.test.ts
+
+- `fetch-002` — [An empty connector denial surfaces the thrown HTTP status in the connection page and its notification](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/connector-service-denial.test.ts#L7).
+- `fetch-003` — [Searching the connector catalog reveals a required client refresh after delivery](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts#L27).
+
+#### realtime.test.ts
+
+- `realtime-001` — Open. Actual production subscribers were observed. The UI does not independently cancel two shared-topic callers and expose final detach plus later reacquisition for those two original owners.
+- `realtime-002` — Open. A native subscription was registered and its payload received. The Router did not expose the stipulated one-shot waiter completing, removing itself and bypassing an app-side token request.
+- `realtime-004` — Open. The organization queue visibly changed and its user-channel subscription was absent. One visible change cannot distinguish duplicate internal handler calls. The single reload receipt is available only in the transport probe.
+- `realtime-005` — Open. A terminal worker failure can be injected through local Ably. The two initial callers and a later independent subscription rejecting the same failure were not publicly observable.
+- `realtime-006` — Open. The route can be closed during attach. The typed cancellation reason returned to its one-shot waiting promise is not observable by the user.
+- `realtime-008` — Open. The open-chat experiment suspended the existing credential connection before opening the viewer. No run-output registration was observed while suspended. Suspending after attachment starts covers a different initial condition.
+- `realtime-010` — Open. A terminal loss was delivered to the active local provider. No public component exposes the original subscriber error callback and removal of that exact subscription together.
+- `realtime-011` — Open. The native trace includes payload, gap and reconnect. The startup-vs-reconnect initializations with runOnSubscribe omitted and their independent application completion are not observable for the same payload consumer.
+- `realtime-019` — Open. The chat registered thread-detail and automation invalidations. The current kind-specific callbacks and visible resources do not establish all the original preference/detail/automation invalidations in the stipulated order.
+- `realtime-020` — Open. The live automation subscription exists. No public component accepts a failing initialization callback and returns its rejection while keeping that exact subscription active.
+
+#### shared-database-browser.test.ts
+
+- `shared-database-browser-001` — [Chats starts a module worker bound to its workspace and member](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/__tests__/workspace-worker-startup.test.ts#L157).
+- `shared-database-browser-002` — [The connected workspace uses its locally cached default Clerk token for the worker's private read](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/workspace-token-delivery.test.ts#L8).
+- `shared-database-browser-005` — [The indicator service requires the member to update](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts#L50).
+- `shared-database-browser-006` — Open. The native SharedWorker constructor threw the local TypeError. The real startup promise rejected with the same object. The attempted consumer connection check has no independent public entry after startup fails.
+
+#### startup-diagnostics.test.tsx
+
+- `startup-diagnostics-001` — [A failed workspace stylesheet leaves the mounted page inert and its loading announcement active](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/workspace-stylesheet-failure.test.ts#L18).
+- `startup-diagnostics-003` — Open. The signed-in missing chat emitted exactly one bounded not_found timing event. A separate real entrypoint emitted the rounded first-paint fields. The same authenticated startup and its dispatched, sanitized anonymous analytics envelope were not established together.
+
+#### user-timezone-initialization.test.tsx
+
+- `user-timezone-initialization-001` — [A first visit to Workflows saves the member's Shanghai timezone and English locale](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/workspace-timezone-startup.test.ts#L56).
+- `user-timezone-initialization-003` — [Account preferences show the saved Pacific timezone on a Shanghai device](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/workspace-timezone-startup.test.ts#L69).
+
+#### client.test.ts
+
+- `client-001` — Open. The public viewer issued Browser.getVersion. Holding it and advancing the clock produced subsequent protocol traffic without a surfaced timeout of the frozen request.
+- `client-002` — Open. Closing the real viewer left the remote target intact with zero later requests. Independent rejections for both outstanding requests and a new post-close notification attempt were not user-visible.
+- `client-003` — Open. A genuine attach was delayed and the viewer was closed. Its connection closed; continued Browser.getVersion and late detach on that same live connection were not observed.
+- `client-004` — Open. Cancelling the browser page disposed its control connection. The native startup rejection, late detached session and continued control connection were not all observable.
+- `client-006` — Open. The streaming viewer used one control connection. Two independently open clients with a shared native session ID and client-specific notification delivery were not constructed.
+- `client-007` — Open. The real viewer produced CDP traffic. Two Page.navigate operations, distinct session IDs, reverse replies and different returned frame IDs have no pair of simultaneous public viewer actions in this probe.
+- `client-008` — Open. The public close path cancelled attachment by closing the connection. The late cleanup on the original target/connection and later successful Browser.getVersion remain unproved.
+
+#### session-output-stream.test.ts
+
+- `session-output-stream-002` — Open. Both live viewer attachment gates were exercised. Switching panes remounted the replacement and changed its subscription ID, and the experiment used different threads. It does not establish the same-thread replacement owner surviving the obsolete cancellation.
+
+#### unread-through-at.test.ts
+
+- `unread-through-at-001` — Open. The reopened conversation clears the unread dot optimistically. That visible read state cannot distinguish the newer terminal timestamp from the older marker inside the maximum calculation. Prior evidence and ownership remain in place.
+
+#### chat-idb.test.ts
+
+- `chat-idb-002` — Open. A legacy IndexedDB upgrade preserved the snapshot and the Debug UI listed all seven stores. Sequence 1/2/3, the index and owner notification were established by physical database/port inspection. No public route verified their complete semantics.
+
+#### indexeddb-client.test.ts
+
+- `indexeddb-client-001` — [Opening a workspace emits a successful duration without disclosing the member or organization](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts#L39).
+- `indexeddb-client-002` — Open. An externally failing native IndexedDB open emitted failure telemetry. The page intentionally recovered and its readiness promise fulfilled. The original exception did not reach that caller.
+- `indexeddb-client-003` — Open. The full port test runs the worker host in the window realm. Redacted open/API diagnostics were observed, but the shared_worker transaction creation and two-request execution on the same private pair were not exposed.
+- `indexeddb-client-006` — [Opening a private chat reports its event-rows route without the token, cursor or thread identity](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts#L58).
+
+#### user-message-document.test.ts
+
+- `user-message-document-003` — Open. The current input document union omits the frozen agent mention. Restored attachments, templates and project references were exercised; the original full mixed document cannot be represented by this current public input schema.
+- `user-message-document-006` — [Forwarding draft with note preserves its source and the order of its quotes](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/linked-message-representations.test.ts#L59); [Forwarding sent correspondence preserves its source and the order of its quotes](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/linked-message-representations.test.ts#L59); [Forwarding two draft excerpts preserves its source and the order of its quotes](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/linked-message-representations.test.ts#L59).
+- `user-message-document-007` — [Copying the sent PDF preserves its saved attachment and empty prompt representation](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/restored-message-copy.test.ts#L15).
+- `user-message-document-008` — [Sending the annotated drawing preserves the original image and its marked region](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/restored-message-send.test.ts#L88).
+- `user-message-document-011` — [Templates embedded in the draft and in quoted feedback reach the run in order](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/restored-message-send.test.ts#L119).
+- `user-message-document-012` — [Saving a restored multiline draft keeps its hard break, blank paragraph and edge spaces](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/restored-message-send.test.ts#L186).
+- `user-message-document-014` — Open. The external-source and model cases retained rich clipboard metadata and text. The two automation render variants used their workflow action and produced no rich clipboard payload in the probe. All four frozen variants are required.
+- `user-message-document-016` — [A restored suggestion keeps its feedback while the linked message shows its title](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/restored-message-send.test.ts#L196).
+- `user-message-document-017` — [The editor and outgoing prompt keep both mentions of the same project](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/restored-message-send.test.ts#L162).
+
+#### voice-draft-audio.test.ts
+
+- `voice-draft-audio-001` — [A live window one sample short stays pending until the final sample arrives](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/voice-draft-wav-windows.test.ts#L128).
+- `voice-draft-audio-002` — [The first full window is delivered while the microphone is still recording](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/voice-draft-wav-windows.test.ts#L96).
+- `voice-draft-audio-003` — [A live window one sample short stays pending until the final sample arrives](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/voice-draft-wav-windows.test.ts#L129).
+- `voice-draft-audio-007` — [Stopping at 448000 samples retains the previous window's last two seconds](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/voice-draft-wav-windows.test.ts#L108).
+- `voice-draft-audio-010` — Open. The microphone fixture with zero input never exposed an enabled Stop recording action. Neither an empty captured buffer nor no initial packet produced the finished public state in this experiment.
+- `voice-draft-audio-013` — Open. The restored UI offers finalization for an existing recording. A live recovery checkpoint at exactly 960000 samples with 1168000 retained samples was not established through the recorder. The observed normal 15/13-second windows do not hit that boundary.
+- `voice-draft-audio-014` — [A stopped 42-second recording transcribes four overlapping windows](https://github.com/okou-ai/okou/blob/c8514079e486ad9e089641281e7fa06b7c65f5cf/turbo/apps/platform/src/views/okou-page/__tests__/voice-draft-wav-windows.test.ts#L73).
+- `voice-draft-audio-015` — Open. The full-scale PCM input traversed the actual AudioWorklet and WAV upload. The normalized positive sample was about 0.99993896, beyond the frozen four-decimal tolerance of 0.00005. The original tolerance is retained.
+
+### Totals and earlier ownership
+
+Historical 1,771/2,681; current fully supported 1,747/2,681. The withdrawal cohort changed by 0 to 422 historical / 413 current of 506. Outside that cohort, 1,349 historical / 1,334 current of 2,175. 288 closed files contain 1,845 frozen rows and 997 retain selections including four previously recorded retirements. 197 open files contain 3,266 frozen rows and 1,684 retain selections, with 754 fully supported selections among them.
+
+The upstream Agents-page and feature-switch changes documented in the original BDD retain their previous attribution. The missing agent indicators and agent mention are changed prerequisites on two still-open cases. This batch records no new formal retirement. The previous 86 original withdrawal dispositions, 17 + 7 historical losses and 68 upstream-only items retain their previous attribution. Batch 77’s 41 open IDs, including chat-session-output-stream-002, keep their prior evidence status. The late-summary gap chat-activity-summary-002 and the prior chat-continuity-drafts-002 gap were not recredited. The separately owned session-output-stream-002 is still open.
+
+### Validation
+
+Local provider and credential fixtures drive the real Router, the bootstrapped production entrypoint or the documented browser startup boundary. Negative controls and subsequent restored runs are retained with the handoff. Copy review includes the freeze, both pre-withdrawal refs, restored version, opening branch, current main, other test paths and shared helpers. The literal matches include ordinary imports, UI selectors, and native provider/voice fixture setup. See the per-ID and full cross-path audit for the scope of that review.
+
+[Next 30 open frozen files and their 292 pending selections](https://app.okou.ai/artifacts/3gcjjmfuii.md).
