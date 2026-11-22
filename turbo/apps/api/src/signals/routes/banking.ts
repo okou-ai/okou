@@ -1,23 +1,17 @@
-import { findLegacyBankingAgent$ } from "../services/banking-connect-read.service";
 import {
   bankingContract,
   bankingPublicContract,
-  bankingUserContract,
   bankingWorkspaceContract,
 } from "@okouai/api-contracts/contracts/banking";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { command, computed, type Computed } from "ccstate";
+import { command, computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
-import {
-  bodyResultOf,
-  pathParamsOf,
-  type BodyResult,
-} from "../context/request";
+import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   bankingAccounts$,
@@ -72,14 +66,11 @@ const bankingEnabled$ = command(async ({ get }) => {
 const accountsBody$ = bodyResultOf(bankingContract.accounts);
 const balancesBody$ = bodyResultOf(bankingContract.balances);
 const transactionsBody$ = bodyResultOf(bankingContract.transactions);
-const accessRequestParams$ = pathParamsOf(
-  bankingUserContract.accessRequestStatus,
-);
 const connectSessionBody$ = bodyResultOf(
-  bankingUserContract.createConnectSession,
+  bankingWorkspaceContract.createConnectSession,
 );
-const saveGrantBody$ = bodyResultOf(bankingUserContract.saveAgentGrant);
-const revokeGrantBody$ = bodyResultOf(bankingUserContract.revokeAgentGrant);
+const saveGrantBody$ = bodyResultOf(bankingWorkspaceContract.saveGrant);
+const revokeGrantBody$ = bodyResultOf(bankingWorkspaceContract.revokeGrant);
 
 const accountsInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -157,146 +148,73 @@ const bankingUserAuth = {
   accept: ["session"],
 } as const;
 
-function missingLegacyBankingAgent() {
-  return {
-    status: 404 as const,
-    body: { error: { code: "AGENT_NOT_FOUND", message: "Agent not found" } },
-  };
-}
-
 const bankingOwner$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   return { orgId: auth.orgId, userId: auth.userId };
 });
 
-function managementBody<T, Legacy extends { agentId: string }>(
-  workspace: boolean,
-  currentBody$: Computed<Promise<BodyResult<T>>>,
-  legacyBody$: Computed<Promise<BodyResult<Legacy>>>,
-) {
-  return command(async ({ get, set }) => {
-    if (workspace) {
-      const body = await get(currentBody$);
-      return body.ok ? { ...body, agent: null } : body;
-    }
-    const body = await get(legacyBody$);
-    if (!body.ok) {
-      return body;
-    }
-    const agent = await set(
-      findLegacyBankingAgent$,
-      get(bankingOwner$),
-      body.data.agentId,
-    );
-    return agent
-      ? { ...body, agent }
-      : { ok: false as const, response: missingLegacyBankingAgent() };
-  });
-}
+const accessRequestStatus$ = command(async ({ get, set }) => {
+  if (!(await set(bankingEnabled$))) {
+    return bankingDisabled;
+  }
+  return await set(bankingAccessRequestStatus$, { owner: get(bankingOwner$) });
+});
 
-function createAccessRequestStatus(workspace: boolean) {
-  return command(async ({ get, set }) => {
-    if (!(await set(bankingEnabled$))) {
-      return bankingDisabled;
-    }
-    const owner = get(bankingOwner$);
-    const agent = workspace
-      ? null
-      : await set(
-          findLegacyBankingAgent$,
-          owner,
-          get(accessRequestParams$).agentId,
-        );
-    if (!workspace && !agent) {
-      return missingLegacyBankingAgent();
-    }
-    const result = await set(bankingAccessRequestStatus$, { owner });
-    return agent ? { ...result, body: { ...result.body, agent } } : result;
-  });
-}
-
-function createConnectSession(workspace: boolean) {
-  const readBody$ = managementBody(
-    workspace,
-    bodyResultOf(bankingWorkspaceContract.createConnectSession),
-    connectSessionBody$,
-  );
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(bankingEnabled$))) {
-      return bankingDisabled;
-    }
-    const body = await set(readBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    const owner = get(bankingOwner$);
-    const configuredAppUrl = env("APP_URL");
-    const redirectOrigin = new URL(configuredAppUrl).origin;
-    const webhookOrigin = new URL(
-      env("FINICITY_WEBHOOK_BASE_URL") ?? configuredAppUrl,
-    ).origin;
-    return await set(
-      startBankingConnectSession$,
-      {
-        owner,
-        body: body.data,
-        redirectOrigin,
-        webhookOrigin,
-      },
-      signal,
-    );
-  });
-}
-
-function createSaveGrant(workspace: boolean) {
-  const readBody$ = managementBody(
-    workspace,
-    bodyResultOf(bankingWorkspaceContract.saveGrant),
-    saveGrantBody$,
-  );
-  return command(async ({ get, set }) => {
-    if (!(await set(bankingEnabled$))) {
-      return bankingDisabled;
-    }
-    const body = await set(readBody$);
-    if (!body.ok) {
-      return body.response;
-    }
-    const owner = get(bankingOwner$);
-    const result = await set(saveBankingGrant$, {
+const connectSession$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await set(bankingEnabled$))) {
+    return bankingDisabled;
+  }
+  const body = await get(connectSessionBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const owner = get(bankingOwner$);
+  const configuredAppUrl = env("APP_URL");
+  const redirectOrigin = new URL(configuredAppUrl).origin;
+  const webhookOrigin = new URL(
+    env("FINICITY_WEBHOOK_BASE_URL") ?? configuredAppUrl,
+  ).origin;
+  return await set(
+    startBankingConnectSession$,
+    {
       owner,
       body: body.data,
-    });
-    return body.agent && result.status === 200
-      ? { ...result, body: { ...result.body, agent: body.agent } }
-      : result;
-  });
-}
-
-function createRevokeGrant(workspace: boolean) {
-  const readBody$ = managementBody(
-    workspace,
-    bodyResultOf(bankingWorkspaceContract.revokeGrant),
-    revokeGrantBody$,
+      redirectOrigin,
+      webhookOrigin,
+    },
+    signal,
   );
-  return command(async ({ get, set }) => {
-    if (!(await set(bankingEnabled$))) {
-      return bankingDisabled;
-    }
-    const body = await set(readBody$);
-    if (!body.ok) {
-      return body.response;
-    }
-    const owner = get(bankingOwner$);
-    const result = await set(revokeBankingGrant$, {
-      owner,
-    });
-    return body.agent && result.status === 200
-      ? { ...result, body: { ...result.body, agent: body.agent } }
-      : result;
+});
+
+const saveGrant$ = command(async ({ get, set }) => {
+  if (!(await set(bankingEnabled$))) {
+    return bankingDisabled;
+  }
+  const body = await get(saveGrantBody$);
+  if (!body.ok) {
+    return body.response;
+  }
+  const owner = get(bankingOwner$);
+  return await set(saveBankingGrant$, {
+    owner,
+    body: body.data,
   });
-}
+});
+
+const revokeGrant$ = command(async ({ get, set }) => {
+  if (!(await set(bankingEnabled$))) {
+    return bankingDisabled;
+  }
+  const body = await get(revokeGrantBody$);
+  if (!body.ok) {
+    return body.response;
+  }
+  const owner = get(bankingOwner$);
+  return await set(revokeBankingGrant$, {
+    owner,
+  });
+});
 
 const connectReturn$ = command(() => {
   const { assistantName } = BRAND_PRESENTATION;
@@ -376,35 +294,19 @@ export const bankingRoutes: readonly RouteEntry[] = [
   },
   {
     route: bankingWorkspaceContract.accessRequestStatus,
-    handler: authRoute(bankingUserAuth, createAccessRequestStatus(true)),
+    handler: authRoute(bankingUserAuth, accessRequestStatus$),
   },
   {
     route: bankingWorkspaceContract.createConnectSession,
-    handler: authRoute(bankingUserAuth, createConnectSession(true)),
+    handler: authRoute(bankingUserAuth, connectSession$),
   },
   {
     route: bankingWorkspaceContract.saveGrant,
-    handler: authRoute(bankingUserAuth, createSaveGrant(true)),
+    handler: authRoute(bankingUserAuth, saveGrant$),
   },
   {
     route: bankingWorkspaceContract.revokeGrant,
-    handler: authRoute(bankingUserAuth, createRevokeGrant(true)),
-  },
-  {
-    route: bankingUserContract.accessRequestStatus,
-    handler: authRoute(bankingUserAuth, createAccessRequestStatus(false)),
-  },
-  {
-    route: bankingUserContract.createConnectSession,
-    handler: authRoute(bankingUserAuth, createConnectSession(false)),
-  },
-  {
-    route: bankingUserContract.saveAgentGrant,
-    handler: authRoute(bankingUserAuth, createSaveGrant(false)),
-  },
-  {
-    route: bankingUserContract.revokeAgentGrant,
-    handler: authRoute(bankingUserAuth, createRevokeGrant(false)),
+    handler: authRoute(bankingUserAuth, revokeGrant$),
   },
   {
     route: bankingPublicContract.connectReturn,

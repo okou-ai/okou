@@ -11,7 +11,6 @@ import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 export function createAutomationThreadPrompt(
   snapshot$: ThreadContext["automationSnapshot$"],
   payload$: ThreadContext["automationPayload$"],
-  singleAgent$: Computed<Promise<boolean>>,
 ): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const snapshot = await get(snapshot$);
@@ -39,8 +38,7 @@ export function createAutomationThreadPrompt(
     // https://github.com/okou-ai/okou/issues/46783
     const workflowName =
       target?.ordinaryWorkflowName ??
-      (target?.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
-      (await get(singleAgent$))
+      (target?.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
         ? target.workflow.name
         : context.workflowName);
     return {

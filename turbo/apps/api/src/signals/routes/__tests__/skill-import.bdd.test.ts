@@ -89,7 +89,7 @@ function bootstrapActor(): { readonly actor: OrgActor } {
   if (!actor.orgId) {
     throw new Error("Expected the test actor to have an organization");
   }
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   installWorkflowVolumeS3Fixture(context);
   return {
     actor: { ...actor, orgId: actor.orgId },

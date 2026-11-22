@@ -24,7 +24,7 @@ import {
   mockDiscordMemberships,
   createPublicDiscordBinding,
 } from "./helpers/discord";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { launchPublicDiscordTestRun } from "./helpers/discord-run";
 
 const context = testContext();
@@ -79,7 +79,7 @@ async function fixture(
     discordUserId,
     botUserId,
   });
-  const auth = createAuthOrgAgentsBddApi(context);
+  const auth = createAuthOrgBddApi(context);
   const actor = { ...auth.user({ orgId, userId }), orgId };
   let headers: { authorization: string };
   if (options.runToken || options.sandboxToken) {
@@ -323,7 +323,7 @@ async function bindAnotherOrganization(f: Fixture, runToken = false) {
       });
     }),
   );
-  const auth = createAuthOrgAgentsBddApi(context);
+  const auth = createAuthOrgBddApi(context);
   const actor = auth.user({ orgId, userId: f.userId });
   const headers = runToken
     ? (await launchPublicDiscordTestRun(context, actor)).headers

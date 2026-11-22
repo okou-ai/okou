@@ -469,7 +469,6 @@ describe("GET /api/mcp-connectors", () => {
 describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
   const ownedReauthorizations: {
     readonly actor: ApiTestUser;
-    agentId?: string;
     connectorId?: string;
     runId?: string;
     sandboxToken?: string;
@@ -561,7 +560,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       advertisedMethods,
       requestedMethod,
     }) => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = await runs.configureRunnerGroup();
@@ -589,10 +588,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       ownedReauthorizations.push(owned);
       await runs.grantProEntitlement(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "MCP scope reauthorization Agent",
-      });
-      owned.agentId = agent.agentId;
+
       const connector = await connectors.createCustomConnector(actor, {
         kind: "mcp",
         displayName: "MCP scope reauthorization",
@@ -647,7 +643,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         throw new Error("Expected default and sibling MCP accounts");
       }
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Use the MCP connector with incremental scope",
       });
       owned.runId = run.runId;
@@ -857,7 +852,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
   );
 
   it("discovers Automatic no-auth accounts without offering OAuth reauthorization", async () => {
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
@@ -871,9 +866,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     const actor = bdd.user({ orgRole: "org:admin" });
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "MCP no-auth reauthorization Agent",
-    });
+
     const connector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "MCP no-auth reauthorization",
@@ -893,7 +886,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       throw new Error("Expected Automatic MCP no-auth connection");
     }
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the no-auth MCP connector",
     });
     expect(run.status).toBe("running");

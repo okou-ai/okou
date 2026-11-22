@@ -1,5 +1,5 @@
 import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";

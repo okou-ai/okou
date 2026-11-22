@@ -83,7 +83,7 @@ final class AttachmentDraftTests: XCTestCase {
             count == 1 || deleted.withLock { $0 }
             ? ""
             : """
-            {"id":"\(AttachmentFlowFixture.threadID)","agentId":"\(AttachmentFlowFixture.agentID)","title":"Screenshot conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
+            {"id":"\(AttachmentFlowFixture.threadID)","title":"Screenshot conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
             """
           if count == 1 {
             oldListReady.fulfill()
@@ -98,7 +98,7 @@ final class AttachmentDraftTests: XCTestCase {
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
         case "/api/indicators":
-          return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+          return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
         default: throw URLError(.unsupportedURL)
         }
       })
@@ -217,7 +217,7 @@ final class AttachmentDraftTests: XCTestCase {
     }
   }
 
-  func testWorkspaceRestoresSeparateAgentAndExistingThreadDraftsAcrossSwitchesAndRestart()
+  func testWorkspaceRestoresSeparateWorkspaceAndThreadDraftsAcrossSwitchesAndRestart()
     async throws
   {
     let fixture = AttachmentFlowFixture()
@@ -231,7 +231,7 @@ final class AttachmentDraftTests: XCTestCase {
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { store.close() }
     await store.prepareWorkspaceComposer()
-    store.newChatDraft = "Agent draft"
+    store.newChatDraft = "workspace draft"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
@@ -239,14 +239,14 @@ final class AttachmentDraftTests: XCTestCase {
       store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
     }
     store.startNewChat()
-    XCTAssertEqual(store.newChatDraft, "Agent draft")
+    XCTAssertEqual(store.newChatDraft, "workspace draft")
     XCTAssertTrue(store.newAttachmentDraft.hasAttachments)
     let result = await store.createChat()
     let created = try XCTUnwrap(result)
     let conversation = try XCTUnwrap(store.selectedConversation)
     conversation.draft = "Thread draft"
     store.startNewChat()
-    XCTAssertEqual(store.newChatDraft, "Agent draft")
+    XCTAssertEqual(store.newChatDraft, "workspace draft")
     store.selectChat(created.id)
     XCTAssertEqual(store.selectedConversation?.draft, "Thread draft")
     store.close()
@@ -254,14 +254,12 @@ final class AttachmentDraftTests: XCTestCase {
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
     await reopened.prepareWorkspaceComposer()
-    XCTAssertNil(reopened.selectedAgentID)
-    XCTAssertEqual(reopened.newChatDraft, "Agent draft")
+    XCTAssertEqual(reopened.newChatDraft, "workspace draft")
     XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
     _ = await reopened.createChat()
     XCTAssertEqual(reopened.selectedConversation?.draft, "Thread draft")
     reopened.startNewChat()
-    XCTAssertNil(reopened.selectedAgentID)
-    XCTAssertEqual(reopened.newChatDraft, "Agent draft")
+    XCTAssertEqual(reopened.newChatDraft, "workspace draft")
     XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
     reopened.newComposer.clear()
   }
@@ -488,7 +486,7 @@ final class NewChatAttachmentTests: XCTestCase {
     XCTAssertEqual(store.newChatDraft, "Second conversation")
   }
 
-  func testFirstSendBeforeAgentNavigationCannotRestoreTheOldAgentDraftAfterward() async throws {
+  func testFirstSendBeforeComposerPreparationCannotRestoreTheOldDraftAfterward() async throws {
     let creating = expectation(description: "Server-default first chat is being created")
     let gate = AsyncStream<Void>.makeStream()
     defer { gate.continuation.finish() }
@@ -506,14 +504,14 @@ final class NewChatAttachmentTests: XCTestCase {
           let threads =
             created.withLock { $0 }
             ? """
-            {"id":"\(AttachmentFlowFixture.threadID)","agentId":"\(AttachmentFlowFixture.agentID)","title":"First conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
+            {"id":"\(AttachmentFlowFixture.threadID)","title":"First conversation","sortAt":"2026-10-19T10:00:00Z","createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z"}
             """ : ""
           return ChatHTTPResponse(
             body: "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case "/api/indicators":
-          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+          return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
         default: throw URLError(.unsupportedURL)
         }
       })
@@ -524,16 +522,15 @@ final class NewChatAttachmentTests: XCTestCase {
         apiBaseURL: fixture.http.baseURL,
         userID: "user", workspaceID: "org"), directory: directory)
     var old = ChatDraftDocument()
-    old.replaceText("Previously saved Agent draft")
+    old.replaceText("Previously saved workspace draft")
     fixture.state.value.withLock {
-      $0.agentDrafts["/api/chat-drafts/composer"] = ComposerDraft(
+      $0.composerDrafts["/api/chat-drafts/composer"] = ComposerDraft(
         document: old)
     }
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { store.close() }
     store.setPhase(.active)
-    XCTAssertNil(store.selectedAgentID)
     store.newChatDraft = "First message before navigation finishes"
     let sending = Task { await store.sendNewChat() }
     addTeardownBlock { @MainActor in
@@ -543,7 +540,7 @@ final class NewChatAttachmentTests: XCTestCase {
       await sending.value
     }
     await fulfillment(of: [creating], timeout: 3)
-    // Navigation can now select the default Agent before the first creation returns.
+    // The workspace composer can finish loading before the first creation returns.
     await store.prepareWorkspaceComposer()
     gate.continuation.finish()
     await sending.value
@@ -579,7 +576,6 @@ final class NewChatAttachmentTests: XCTestCase {
     gate.continuation.finish()
     await sending.value
     XCTAssertEqual(store.newChatDraft, "Keep the first message for retry")
-    XCTAssertNil(store.selectedAgentID)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertNotNil(store.error)
   }
@@ -632,7 +628,6 @@ final class NewChatAttachmentTests: XCTestCase {
       store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
     }
     let connectors = store.newModelSelection.connectors
-    connectors.configure(agentID: AttachmentFlowFixture.agentID)
     await connectors.refresh()
     await connectors.setAccountAccess(
       target: .builtin("slack"), connectionID: accountID, enabled: false)

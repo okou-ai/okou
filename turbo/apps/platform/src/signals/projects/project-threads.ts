@@ -1,5 +1,5 @@
 import { computed } from "ccstate";
-import { currentChatThreadList$ } from "../agent-chat.ts";
+import { currentChatThreadList$ } from "../chat-thread-list.ts";
 import { groupProjectThreadIds } from "../chat-page/chat-thread-list-rows.ts";
 import { sidebarActiveThreadIds$ } from "../chat-page/chat-thread-indicators-from-worker.ts";
 import { sidebarUnreadThreadIds$ } from "../chat-page/sidebar-unread-threads.ts";

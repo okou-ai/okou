@@ -115,7 +115,7 @@ class ComposerJournalRecoveryTest {
         val key = "agent:$CHAT_PERSONAL"
         val file = fixture.root.resolve("${fixture.api.identity.workspaceStorageKey()}.json")
         file.writeText(
-            """{"format":3,"defaultAgentId":"$CHAT_PERSONAL","drafts":{"$key":{"text":"Offline edit","dirty":true}},"retainedDrafts":{"$key":"Earlier edit"}}"""
+            """{"format":3,"drafts":{"$key":{"text":"Offline edit","dirty":true}},"retainedDrafts":{"$key":"Earlier edit"}}"""
         )
         val workspace = ComposerTarget()
         val path = "/api/chat-drafts/composer"

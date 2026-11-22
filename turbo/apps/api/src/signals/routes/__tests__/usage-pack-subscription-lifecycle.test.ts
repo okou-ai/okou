@@ -43,7 +43,7 @@ import { billingCheckoutRoutes } from "../billing-checkout";
 import { billingStatusRoutes } from "../billing-status";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -1268,12 +1268,12 @@ describe("usage pack subscription Stripe lifecycle", () => {
       20,
       "pro",
     );
-    const authOrgApi = createAuthOrgAgentsBddApi(context);
+    const authOrgApi = createAuthOrgBddApi(context);
     const actor = authOrgApi.user({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
-    authOrgApi.acceptAgentStorageWrites();
+    authOrgApi.acceptStorageWrites();
     authOrgApi.mockClerkOrg(actor);
     await authOrgApi.provisionWorkspace(actor);
     await authOrgApi.completeOnboarding(actor);

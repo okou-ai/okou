@@ -86,7 +86,7 @@ test("dispatches a Teams personal message as the connected member", async () => 
   const owner = createPublicTeamsDispatchFixture(context);
   await owner.run(async () => {
     const runs = createRunsApi(context);
-    const fixture = await owner.create({ withDefaultAgent: true });
+    const fixture = await owner.create({ onboarded: true });
     server.use(
       http.post(
         `https://login.microsoftonline.com/${fixture.installation.teamsTenantId}/oauth2/v2.0/token`,
@@ -114,7 +114,6 @@ test("dispatches a Teams personal message as the connected member", async () => 
       { limit: 50 },
       [200],
     );
-    expect(fixture.defaultAgentId).toStrictEqual(expect.any(String));
     expect(listed.body.data).toHaveLength(1);
     const run = listed.body.data[0];
     if (!run) {
@@ -147,7 +146,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
   const owner = createPublicTeamsDispatchFixture(context);
   await owner.run(async () => {
     const runs = createRunsApi(context);
-    const fixture = await owner.create({ withDefaultAgent: true });
+    const fixture = await owner.create({ onboarded: true });
     configurePersonalConversationMocks(fixture.installation.teamsTenantId);
     const originalAccount = {
       tenantId: fixture.installation.teamsTenantId,
@@ -190,7 +189,6 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
       { limit: 50 },
       [200],
     );
-    expect(fixture.defaultAgentId).toStrictEqual(expect.any(String));
     expect(listed.body.data).toHaveLength(1);
     const run = listed.body.data[0];
     if (!run) {
@@ -222,7 +220,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
 test("returns a connection notice without starting a Run when Teams sender identity is absent", async () => {
   const owner = createPublicTeamsDispatchFixture(context);
   await owner.run(async () => {
-    const fixture = await owner.create({ withDefaultAgent: true });
+    const fixture = await owner.create({ onboarded: true });
     configurePersonalConversationMocks(fixture.installation.teamsTenantId);
     const before = await owner.status(fixture);
     expect(before.linkedAccounts).toStrictEqual([

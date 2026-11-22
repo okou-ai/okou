@@ -23,7 +23,7 @@ async function launchFixture() {
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
   const callbacks = createChatCallbacksApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   callbacks.acceptChatObjectStorage();
@@ -32,12 +32,8 @@ async function launchFixture() {
   const group = await api.configureRunnerGroup({ registerRunner: false });
   await api.grantProEntitlement(actor);
   await api.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Direct dispatch agent",
-    description: "Exercises full input delivery.",
-    visibility: "private",
-  });
-  return { api, actor, group, agentId: agent.agentId };
+
+  return { api, actor, group };
 }
 
 test("delivers complete input after binding its process", async () => {
@@ -65,7 +61,6 @@ test("delivers complete input after binding its process", async () => {
     },
   });
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "direct complete input",
   });
   const input = await f.api.executionInput(run.runId);
@@ -86,7 +81,6 @@ test("delivers complete input after binding its process", async () => {
 test("fails a Run with no serving process and releases its concurrency slot", async () => {
   const f = await launchFixture();
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "no serving process",
   });
   expect(run).toMatchObject({
@@ -137,7 +131,6 @@ test("persists preparation failure and releases admission before another Run", a
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   f.api.acceptStorageDownloads();
   const next = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     threadId: sent.body.threadId,
     prompt: "Continue after preparation recovered",
   });
@@ -173,7 +166,6 @@ test("keeps PAT-advertised serving capacity outside the official fleet", async (
     maxConcurrent: 100,
   });
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "Use an official process",
   });
   expect(run.status).toBe("running");
@@ -262,7 +254,6 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   const next = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     threadId: sent.body.threadId,
     prompt: "Continue after interrupted delivery recovered",
   });
@@ -329,7 +320,6 @@ test.each(["lost", "process", "generation", "run"] as const)(
       },
     });
     const run = await f.api.createThreadRun(f.actor, {
-      agentId: f.agentId,
       prompt: "ambiguous delivery",
     });
     expect(run.status).toBe("running");
@@ -371,7 +361,6 @@ test("switches candidates only after a definite refusal", async () => {
     reply,
   });
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "definite rejection",
   });
   expect(run.status).toBe("running");
@@ -412,7 +401,6 @@ test("tries every capacity-ranked candidate with the same prepared execution inp
     );
   }
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "Visit all capacity-ranked processes",
   });
   expect(run.status).toBe("running");
@@ -467,7 +455,6 @@ test.each([
     heartbeat: resources,
   });
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: `Use ${kind} capacity`,
   });
   expect(run.status).toBe("running");
@@ -492,7 +479,6 @@ test("keeps another group's serving process when a heartbeat observes a later cl
   await f.api.registerDirectRunner(`vm0/other-${randomUUID()}`);
   mockNow(clock);
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "Use this group's serving process",
   });
   expect(run.status).toBe("running");
@@ -564,7 +550,6 @@ test("selects a fresh serving process after stale, unavailable and untrusted-hos
     mode: "starting",
   });
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "Use a current serving process",
   });
   expect(run.status).toBe("running");
@@ -609,7 +594,6 @@ test("launches the following queued input after a definite refusal releases its 
     },
   });
   const first = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "Refuse this input",
   });
   expect(first.status).toBe("failed");
@@ -647,7 +631,6 @@ test("preserves a concurrent cancellation after the process proves it did not ac
     },
   });
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "cancel before acceptance",
   });
   expect(run.status).toBe("cancelled");
@@ -667,7 +650,6 @@ test("definite refusal releases a preselected Run even though startedAt is set",
     },
   });
   const run = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "reject input",
   });
   expect(run).toMatchObject({
@@ -683,7 +665,6 @@ test("waits through short preferred-process 429s before using a roomier candidat
     maxConcurrent: 1,
   });
   const first = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "establish the preferred process",
     model: "claude-fable-5-1",
   });
@@ -726,7 +707,6 @@ test("waits through short preferred-process 429s before using a roomier candidat
     },
   });
   const next = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     threadId: first.threadId,
     prompt: "resume on the preferred process",
   });
@@ -751,7 +731,6 @@ test("advances when preferred busy pressure outlasts its preference without rene
     maxConcurrent: 1,
   });
   const first = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     prompt: "Establish the preferred process",
     model: "claude-fable-5-1",
   });
@@ -792,7 +771,6 @@ test("advances when preferred busy pressure outlasts its preference without rene
     },
   });
   const next = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
     threadId: first.threadId,
     prompt: "Continue after preference expires",
   });

@@ -22,7 +22,7 @@ import { createPublicComputerUseHosts } from "./public-computer-use-hosts";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { captureSessionStorageMocks } from "./prepared-session-history";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
-import { createAuthOrgAgentsBddApi } from "./api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./api-bdd-auth-org";
 
 /** Own this case's normal Desktop requests and the real Runs issuing its tokens. */
 export function createPublicComputerUseScenario(
@@ -44,10 +44,7 @@ export function createPublicComputerUseScenario(
   const activeExecutions = new Map<string, string>();
   const resources: (() => Promise<void>)[] = [];
   const personalTokens = new Map<string, ApiTestUser>();
-  const prepared = new Map<
-    string,
-    Promise<{ agentId: string; runnerGroup: string }>
-  >();
+  const prepared = new Map<string, Promise<{ runnerGroup: string }>>();
   function captureExternalState() {
     const base = captureConnectorExternalState(
       context,
@@ -264,7 +261,7 @@ export function createPublicComputerUseScenario(
     let existing = prepared.get(key);
     if (!existing) {
       existing = run(async () => {
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const runnerGroup = await runs.configureRunnerGroup();
@@ -287,13 +284,8 @@ export function createPublicComputerUseScenario(
         await run(() => {
           return runs.updateUserModelPreference(actor, "claude-fable-5-1");
         });
-        const agent = await run(() => {
-          return bdd.createAgent(actor, {
-            displayName: "Computer Use public authorization",
-            visibility: "private",
-          });
-        });
-        return { agentId: agent.agentId, runnerGroup };
+
+        return { runnerGroup };
       });
       prepared.set(key, existing);
     }
@@ -322,7 +314,7 @@ export function createPublicComputerUseScenario(
     },
     async createCliToken(actor: ApiTestUser) {
       return await run(async () => {
-        const result = await createAuthOrgAgentsBddApi(context).createCliToken(
+        const result = await createAuthOrgBddApi(context).createCliToken(
           remember(actor),
           run,
         );
@@ -340,7 +332,7 @@ export function createPublicComputerUseScenario(
         // caller's screenshot adapter, including its existing bytes, afterwards.
         const restoreStorage = captureSessionStorageMocks(context);
         const result = await settleIncludingAbort(async () => {
-          bdd.acceptAgentStorageWrites();
+          bdd.acceptStorageWrites();
           runs.acceptStorageDownloads();
           const setup = await prepareActor(actor);
           mockOptionalEnv("RUNNER_DEFAULT_GROUP", setup.runnerGroup);

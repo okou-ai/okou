@@ -93,7 +93,7 @@ async function expectPiActivitySummary(
 
 describe("CHAT-02: model-first routing", () => {
   async function piActivityScenario(): Promise<void> {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const model = "gpt-6-luna";
     await configureSubscriptionPiModel(actor, {}, model);
     mockPiResourceArchiveDownloads();
@@ -441,7 +441,6 @@ describe("CHAT-02: model-first routing", () => {
 
     await api.updateUserModelPreference(actor, model);
     const explicitResume = await api.createThreadRun(actor, {
-      agentId,
       threadId: run.threadId,
       prompt: "keep an incompatible run off the Pi history",
       model: "claude-fable-5-1",

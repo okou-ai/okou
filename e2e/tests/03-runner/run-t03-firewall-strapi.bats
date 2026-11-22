@@ -18,11 +18,6 @@ teardown() {
     # The custom connector account fixture uses example.com in the same workspace.
     local strapi_host="example.org"
     local strapi_base_url="https://${strapi_host}"
-    run create_runner_agent "runner-firewall-strapi-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local values
     values=$(jq -nc \
         --arg apiToken "e2e-strapi-token-${TEST_ID}" \
@@ -53,7 +48,7 @@ curl --ipv4 --silent --show-error --max-time 15 \
 printf 'STRAPI_REQUEST_SENT=%s\n' "$curl_status"
 EOF
 )
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

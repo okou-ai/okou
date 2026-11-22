@@ -4,7 +4,7 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
-const fixture = createChatEventsFixture(context);
+const { cancelChatRun } = createChatEventsFixture(context);
 
 describe("captured My Okou execution guidance", () => {
   it("keeps fixed identity and personal scope through dispatch", async () => {
@@ -14,16 +14,6 @@ describe("captured My Okou execution guidance", () => {
       throw new Error("Expected a workspace member");
     }
     await owned.run(async () => {
-      fixture.bdd.acceptAgentStorageWrites();
-      const statusAgentId = await fixture.bdd.readDefaultAgentId(actor);
-      if (!statusAgentId) {
-        throw new Error("Expected the workspace executor");
-      }
-      await fixture.bdd.updateAgentMetadata(actor, statusAgentId, {
-        description: "MUTABLE_SHARED_ROLE_DO_NOT_INHERIT",
-        sound: "friendly",
-      });
-
       const run = await owned.sendChatRun(actor, {
         prompt: "Work with my personal Instructions",
       });
@@ -54,37 +44,7 @@ describe("captured My Okou execution guidance", () => {
       expect(prompt).toContain(
         "a successful switch also saves this Chat's current account for subsequent Runs",
       );
-      expect(prompt).not.toContain("MUTABLE_SHARED_ROLE_DO_NOT_INHERIT");
-      expect(prompt).not.toContain("Communicate in a warm, approachable");
-      expect(prompt).not.toContain("Agent instructions are team-shared");
-      expect(prompt).not.toContain("okou agent edit");
-      expect(prompt).not.toContain("okou agent view");
-      await fixture.cancelChatRun(actor, run.runId);
-    });
-  });
-
-  it("uses member Instructions on a thread with a historical non-default binding", async () => {
-    const owned = await publicChatActor(context);
-    const { actor } = owned;
-    if (!actor.orgId) {
-      throw new Error("Expected a workspace member");
-    }
-    await owned.run(async () => {
-      const thread = await fixture.chat.createThread(actor, {});
-      const run = await owned.sendChatRun(actor, {
-        threadId: thread.id,
-        prompt: "Read this retained executor's history",
-      });
-      const { execution } = await owned.runExecution(run.runId);
-      expect(execution.appendSystemPrompt).not.toContain(
-        "Exercises the web chat send route.",
-      );
-      expect(execution.appendSystemPrompt).not.toContain(
-        "Agent instructions are team-shared",
-      );
-      expect(execution.appendSystemPrompt).toContain(
-        "# Personal Instructions and memory",
-      );
+      await cancelChatRun(actor, run.runId);
     });
   });
 });

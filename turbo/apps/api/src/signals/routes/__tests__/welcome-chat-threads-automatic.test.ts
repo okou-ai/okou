@@ -157,7 +157,7 @@ describe("automatic welcome thread delivery", () => {
     "delivers a workspace creator's welcome from $registration",
     async ({ deliver }) => {
       const creator = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       await deliver(creator);
 
       const threadId = await onlyCreatedThreadId(creator);

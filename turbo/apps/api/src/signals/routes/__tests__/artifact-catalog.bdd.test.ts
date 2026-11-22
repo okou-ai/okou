@@ -69,7 +69,6 @@ const catalogStorage = createCatalogStorage();
 type RunnerExecutionInput = Awaited<ReturnType<typeof api.executionInput>>;
 interface CatalogActor {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly runnerGroup: string;
   readonly storage: ReturnType<typeof chatCallbacks.acceptChatObjectStorage>;
 }
@@ -108,11 +107,8 @@ async function catalogActor(
   if (!actor.orgId) {
     throw new Error("Expected artifact catalog test actor to have an org");
   }
-  const agent = await bdd.createAgent(actor, {
-    displayName,
-    visibility: "private",
-  });
-  return { actor, agentId: agent.agentId, runnerGroup, storage };
+
+  return { actor, runnerGroup, storage };
 }
 
 async function sendChatRun(
@@ -1238,7 +1234,6 @@ describe("GET /api/artifacts/catalog", () => {
     const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
 
     await flushWaitUntilForTest();
-    await bdd.expectAgentDeleteUnavailable(owner.actor, owner.agentId);
 
     await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
       catalog,
@@ -1273,7 +1268,6 @@ describe("GET /api/artifacts/catalog", () => {
         contentType: "text/plain",
         objectStorage,
       });
-      await bdd.expectAgentDeleteUnavailable(owner.actor, owner.agentId);
       const catalog = await chat.listArtifactCatalog(owner.actor);
       const artifactId = catalog.artifacts[0]?.id;
       if (!artifactId) {

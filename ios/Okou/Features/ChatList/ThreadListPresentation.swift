@@ -14,7 +14,7 @@ extension ThreadListStore {
 
   var error: String? { actionError ?? syncError }
 
-  func threads(agentID: String?, archived: Bool, onlyUnread: Bool = false) -> [ChatThread] {
+  func threads(archived: Bool, onlyUnread: Bool = false) -> [ChatThread] {
     threads.filter {
       if onlyUnread {
         // PWA's unread list includes archived chats and retains active-indicator precedence.

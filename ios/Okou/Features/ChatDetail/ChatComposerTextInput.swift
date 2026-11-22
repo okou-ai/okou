@@ -554,7 +554,7 @@ final class ComposerTextView: UITextView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    // Long agent names truncate inside the field instead of running under the controls.
+    // Long placeholders truncate inside the field instead of running under the controls.
     let fitted = placeholder.sizeThatFits(bounds.size)
     placeholder.frame = CGRect(
       origin: .zero, size: CGSize(width: min(fitted.width, bounds.width), height: fitted.height))

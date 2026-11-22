@@ -96,7 +96,6 @@ interface GoogleMeetProviderAccountRecorder {
 interface GoogleMeetFixture {
   readonly volumeObjects: Map<string, Buffer>;
   readonly actor: OrgActor;
-  readonly agentId: string;
   readonly workflowId: string;
   readonly connectorId: string;
   readonly provider: GoogleMeetProviderRecorder;
@@ -422,7 +421,6 @@ async function connectGoogleMeet(
   actor: OrgActor,
   provider: GoogleMeetProviderRecorder,
   accountKey: GoogleMeetProviderAccountKey = "primary",
-  agentId?: string,
   account?: ConnectorAccountMutationIntent,
 ): Promise<string> {
   const started = await connectors.startOauth(
@@ -461,7 +459,7 @@ async function setupFixture(
 ): Promise<GoogleMeetFixture> {
   const provider = configureGoogleMeetBoundaries(options);
   await runs.registerDirectRunner(provider.runnerGroup);
-  const { defaultAgentId: agentId, actor } = await workflows.setupWorkflowOrg();
+  const { actor } = await workflows.setupWorkflowOrg();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
@@ -478,7 +476,6 @@ async function setupFixture(
   return {
     volumeObjects,
     actor: orgActor,
-    agentId,
     workflowId,
     connectorId,
     provider,
@@ -706,7 +703,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       fixture.actor,
       fixture.provider,
       "secondary",
-      fixture.agentId,
       { intent: "add", displayName: "Secondary Google Meet" },
     );
     const secondaryWorkflowId = await workflows.createWorkflow(fixture.actor, {
@@ -803,7 +799,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       fixture.actor,
       fixture.provider,
       "secondary",
-      fixture.agentId,
       { intent: "add", displayName: "Secondary Google Meet" },
     );
     const target = { kind: "builtin", connectorSlug: "google-meet" } as const;
@@ -868,7 +863,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       fixture.actor,
       fixture.provider,
       "secondary",
-      fixture.agentId,
       { intent: "add", displayName: "Secondary Google Meet" },
     );
     await accept(
@@ -959,7 +953,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       fixture.actor,
       fixture.provider,
       "primary",
-      fixture.agentId,
       { intent: "reconnect", connectionId: fixture.connectorId },
     );
     expect(reconnectedConnectorId).toBe(fixture.connectorId);
@@ -1086,7 +1079,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       fixture.actor,
       fixture.provider,
       "secondary",
-      fixture.agentId,
       { intent: "add", displayName: "Secondary Google Meet" },
     );
 
@@ -1145,7 +1137,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       fixture.actor,
       fixture.provider,
       "primary",
-      fixture.agentId,
     );
     expect(readdedConnectorId).not.toBe(fixture.connectorId);
     expect(fixture.provider.accounts.primary.createdNames).toHaveLength(2);

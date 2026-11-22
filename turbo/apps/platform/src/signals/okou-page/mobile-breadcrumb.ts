@@ -103,7 +103,7 @@ export const mobileBreadcrumb$ = computed(
           ($) => {
             return $.appShell.sidebar.navigation.works;
           },
-          { agentName: get(assistantName$) },
+          { assistantName: get(assistantName$) },
         ),
         sectionPath: ROUTES.works,
       };

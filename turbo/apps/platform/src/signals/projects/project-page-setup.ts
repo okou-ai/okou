@@ -4,16 +4,16 @@ import { command } from "ccstate";
 import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
-import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
+import { HomeChatPage } from "../../views/okou-page/home-chat-page.tsx";
 
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { ensureDraft$ } from "../okou-page/workspace-draft.ts";
 import {
-  agentChatComposerSignals$,
-  setAgentComposerContext$,
-} from "../okou-page/agent-composer-signals.ts";
-import { setupProjectPageKeyboardShortcuts$ } from "../okou-page/agent-chat-keyboard.ts";
+  workspaceChatComposerSignals$,
+  setWorkspaceComposerContext$,
+} from "../okou-page/workspace-composer-signals.ts";
+import { setupProjectPageKeyboardShortcuts$ } from "../okou-page/chat-keyboard.ts";
 import { setTalkDraft$ } from "../okou-page/chat-draft.ts";
 import { resetChatPageModelSelection$ } from "../okou-page/chat-page.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -31,15 +31,11 @@ export const setupProjectPage$ = command(
       throw new Error("A Project page requires a Project");
     }
     const workspaceDraft = await set(ensureDraft$, signal);
-    set(setAgentComposerContext$, { workspaceDraft, projectId });
-    set(get(agentChatComposerSignals$).setup$, signal);
+    set(setWorkspaceComposerContext$, { workspaceDraft, projectId });
+    set(get(workspaceChatComposerSignals$).setup$, signal);
     set(setTalkDraft$, workspaceDraft.draft);
     set(resetChatPageModelSelection$);
-    set(
-      updatePage$,
-      createElement(AgentChatPage, { project: true }),
-      "sidebar",
-    );
+    set(updatePage$, createElement(HomeChatPage, { project: true }), "sidebar");
     set(setupProjectPageKeyboardShortcuts$, projectId, signal);
     await set(hideAppSkeleton$, signal);
     signal.throwIfAborted();

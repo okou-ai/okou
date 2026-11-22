@@ -108,11 +108,6 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         locale: "ja-JP",
         memoryInitialized: true,
       });
-
-      await bdd.createAgent(member, {
-        displayName: "Member memory agent",
-        visibility: "private",
-      });
       // The member runs with their own connected subscription, never the owner's
       // account. Memory initialization remains independent of provider ownership.
       const launched = await sendChatRun(member, {
@@ -166,11 +161,10 @@ describe("CHAT-02: on-demand member memory initialization", () => {
 
 describe("CHAT-02: web chat send and client ids", () => {
   it("keeps one input and one launch when the first web send races its retry", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const clientThreadId = randomUUID();
     const clientEventId = randomUUID();
     const body = {
-      agentId,
       prompt: "concurrent first input",
       clientThreadId,
       clientEventId,
@@ -700,13 +694,10 @@ describe("CHAT-02: admission without spendable credits", () => {
     await fixture.run(async () => {
       mockEnv("APP_URL", "https://app.okou.ai");
       const actor = fixture.actor;
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       fixture.captureStorageMocks();
       const completed = await bdd.completeOnboarding(actor);
       expect(completed.status).toBe(200);
-      await bdd.createAgent(actor, {
-        displayName: "Suspended chat agent",
-      });
       const thread = await chat.createThread(actor, {});
       await fixture.activateWithoutCredits();
       await fixture.suspend(0);
@@ -910,7 +901,7 @@ describe("CHAT-02: admission without spendable credits", () => {
 
 describe("CHAT-02: Okou Mail link delivery", () => {
   it("delivers a linked Gmail draft exactly once through the agent reply", async () => {
-    const { actor, defaultAgentId: agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     mockGmailConnectorOAuth({
       accessToken: "gmail-agent-reply-token",
       email: "sender@example.com",
@@ -970,7 +961,6 @@ describe("CHAT-02: Okou Mail link delivery", () => {
         },
         body: {
           threadId: run.threadId,
-          agentId,
           gmailDraftId,
         },
       }),

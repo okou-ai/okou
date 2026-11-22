@@ -567,7 +567,7 @@ test.each([
   async (scenario) => {
     const installations = createPublicTeamsDispatchFixture(context);
     await installations.run(async () => {
-      const receiving = await installations.create({ withDefaultAgent: true });
+      const receiving = await installations.create({ onboarded: true });
       const actor = accountActor("org:admin");
       const ownRuns = publicRunOwner(context, actor);
       await ownRuns.run(async () => {
@@ -576,9 +576,7 @@ test.each([
         const runnerGroup = await runs.configureRunnerGroup();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
-        await bdd.bootstrapLimitedFreeOnboarding(actor, {
-          displayName: "Identity's own Agent",
-        });
+        await bdd.bootstrapLimitedFreeOnboarding(actor);
         await runs.grantProEntitlement(actor);
         await runs.ensurePersonalSubscriptionModel(actor, {
           model: "claude-fable-5-1",

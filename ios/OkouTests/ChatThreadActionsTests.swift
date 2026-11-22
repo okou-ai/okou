@@ -224,7 +224,6 @@ final class ChatThreadActionsTests: XCTestCase {
     let thread = try XCTUnwrap(store.list.threads.first)
     XCTAssertFalse(thread.isMuted)
     XCTAssertFalse(thread.isUnread)
-    XCTAssertFalse(store.list.unreadAgentIDs.contains(ThreadActionsFixture.agent))
     XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
 
     // A new reply after unmuting can become unread normally.
@@ -344,7 +343,6 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertTrue(archivedThread.isUnread)
     XCTAssertEqual(archivedThread.unreadAt, before.unreadAt)
     XCTAssertFalse(store.list.hasUnreadThreads)
-    XCTAssertFalse(store.list.unreadAgentIDs.contains(ThreadActionsFixture.agent))
     XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
 
     await (try XCTUnwrap(store.threadFeedback)).action()
@@ -352,7 +350,6 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
     XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
     XCTAssertTrue(store.list.hasUnreadThreads)
-    XCTAssertTrue(store.list.unreadAgentIDs.contains(ThreadActionsFixture.agent))
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }
 
@@ -492,10 +489,9 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertNil(store.threadFeedback?.actionTitle)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
     XCTAssertEqual(store.selectedConversation?.draft, "Keep my reply after undo")
-    XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
-    XCTAssertTrue(store.list.threads(agentID: ThreadActionsFixture.agent, archived: false).isEmpty)
+    XCTAssertTrue(store.list.threads(archived: false).isEmpty)
     XCTAssertEqual(
-      store.list.threads(agentID: ThreadActionsFixture.agent, archived: true).map(\.id),
+      store.list.threads(archived: true).map(\.id),
       [ThreadActionsFixture.thread])
     XCTAssertEqual(store.sidebar.filter, .unread)
     // The user can start unrelated work before the archive confirmation arrives.
@@ -564,7 +560,6 @@ final class ChatThreadArchiveTests: XCTestCase {
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.newChatDraft, "A separate task")
-    XCTAssertNil(store.selectedAgentID)
     XCTAssertEqual(
       fixture.writes.filter { $0.action == "archive" }.map(\.eventID),
       Array(repeating: try XCTUnwrap(fixture.writes.first?.eventID), count: 2))
@@ -579,7 +574,6 @@ final class ChatThreadArchiveTests: XCTestCase {
     await (try XCTUnwrap(store.threadFeedback)).action()
     XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
-    XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
     // Opening an archived chat (including via a deep link) and unarchiving keeps it open.
     fixture.remote(kind: "archived")
     await store.refresh()

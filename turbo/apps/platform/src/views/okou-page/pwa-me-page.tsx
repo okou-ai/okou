@@ -255,7 +255,7 @@ function MeNavigation({
           ($) => {
             return $.appShell.sidebar.navigation.works;
           },
-          { agentName: assistantName },
+          { assistantName },
         )}
       </MeLink>
       {profile.labEnabled && (

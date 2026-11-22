@@ -20,7 +20,6 @@ async function initializedPredecessor() {
   const owned = await publicChatActor(context);
   const first = await owned.run(async () => {
     const run = await api.createThreadRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "establish the predecessor's native context",
       model: "claude-fable-5-1",
     });
@@ -88,7 +87,6 @@ describe("Runner first-start Thread binding", () => {
         cancellationRecoveryPending: false,
       });
       const next = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         threadId: first.threadId,
         prompt: "Continue after preparing input was cancelled",
       });
@@ -105,7 +103,6 @@ describe("Runner first-start Thread binding", () => {
     await owned.run(async () => {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const blocker = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Occupy capacity on another Thread",
       });
       const chat = createChatFilesBddApi(context);
@@ -136,7 +133,6 @@ describe("Runner first-start Thread binding", () => {
         "Capacity released",
       );
       const next = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         threadId: first.threadId,
         prompt: "Continue after recalling the waiting input",
       });
@@ -154,7 +150,6 @@ describe("Runner first-start Thread binding", () => {
       const { owned, first } = await initializedPredecessor();
       await owned.run(async () => {
         const second = await api.createThreadRun(owned.actor, {
-          agentId: owned.agentId,
           threadId: first.threadId,
           prompt: "start without publishing a native session",
         });
@@ -196,7 +191,6 @@ describe("Runner first-start Thread binding", () => {
           api.readRun(owned.actor, second.runId),
         ).resolves.toMatchObject({ status, startedAt: expect.any(String) });
         const next = await api.createThreadRun(owned.actor, {
-          agentId: owned.agentId,
           threadId: first.threadId,
           prompt: "recover the Thread without skipping the last executed Run",
         });
@@ -218,7 +212,6 @@ describe("Runner first-start Thread binding", () => {
       const { owned, first } = await initializedPredecessor();
       await owned.run(async () => {
         const second = await api.createThreadRun(owned.actor, {
-          agentId: owned.agentId,
           threadId: first.threadId,
           prompt: "initialize exactly one accepted execution",
         });
@@ -259,7 +252,6 @@ describe("Runner first-start Thread binding", () => {
         );
         await flushWaitUntilForTest();
         const next = await api.createThreadRun(owned.actor, {
-          agentId: owned.agentId,
           threadId: first.threadId,
           prompt: "resume the confirmed session after Runner settlement",
         });

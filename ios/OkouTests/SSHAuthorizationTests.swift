@@ -161,7 +161,7 @@ final class SSHAuthorizationTests: XCTestCase {
     let sync = ChatSync(client: client)
     let commands = ChatCommands(client: client, sync: sync)
     let thread = ChatThread(
-      id: SSHAuthorizationFixture.threadID, agentID: UUID().uuidString,
+      id: SSHAuthorizationFixture.threadID,
       title: "SSH", createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     let registry = ApprovalCardRegistry(
       thread: thread, commands: commands, sync: sync, didFail: { _ in }, didContinue: {})

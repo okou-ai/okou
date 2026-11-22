@@ -77,14 +77,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
   mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
   const group = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  const [, agent] = await Promise.all([
-    runs.ensurePersonalSubscriptionModel(actor),
-    bdd.createAgent(actor, {
-      displayName: "Activity summary",
-      description: "Activity API integration",
-      visibility: "private",
-    }),
-  ]);
+  await runs.ensurePersonalSubscriptionModel(actor);
   // The activity suite needs a live Runner execution, not a Pi API-first turn.
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   const sent = await chat.sendAndLaunch(actor, {
@@ -100,7 +93,6 @@ async function fixture(prompt = "Prepare a launch checklist") {
   return {
     actor,
     run,
-    agentId: agent.agentId,
     sandboxToken: execution.sandboxToken,
     headers: { authorization: `Bearer ${execution.sandboxToken}` },
   };

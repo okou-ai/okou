@@ -21,7 +21,7 @@ import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";

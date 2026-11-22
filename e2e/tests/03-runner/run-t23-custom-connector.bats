@@ -22,11 +22,6 @@ teardown() {
 }
 
 @test "runner resolves custom connector credentials for an outbound HTTP request" {
-    run create_runner_agent "runner-custom-connector-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local connector_slug="_runner-probe-${TEST_ID}"
     local connector_payload
     connector_payload=$(jq -nc \
@@ -99,7 +94,7 @@ printf 'CUSTOM_CONNECTOR_REQUEST_SENT\n'
 EOF
 )
 
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er \
@@ -135,11 +130,6 @@ EOF
 }
 
 @test "runner resolves an exact custom connector account on thread continuation" {
-    run create_runner_agent "runner-custom-connector-account-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local connector_slug="_runner-account-probe-${TEST_ID}"
     local connector_payload
     connector_payload=$(jq -nc \
@@ -306,7 +296,7 @@ EOF
     local default_marker="CUSTOM_CONNECTOR_DEFAULT_ACCOUNT_${TEST_ID}"
     local default_prompt="${account_probe_template//__REQUEST_URL__/https:\/\/example.com\/}"
     default_prompt="${default_prompt//__MARKER__/$default_marker}"
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$default_prompt"
+    run runner_e2e_start_mock_shell_chat_run "$default_prompt"
     echo "$output"
     assert_success
     local first_send_response="$output"
@@ -413,7 +403,6 @@ EOF
     local selected_prompt="${account_probe_template//__REQUEST_URL__/https:\/\/www.google.com\/robots.txt}"
     selected_prompt="${selected_prompt//__MARKER__/$selected_marker}"
     run runner_e2e_continue_chat_run \
-        "$AGENT_ID" \
         "$THREAD_ID" \
         "$selected_prompt"
     echo "$output"

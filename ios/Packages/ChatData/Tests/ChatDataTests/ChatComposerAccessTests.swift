@@ -75,7 +75,7 @@ final class ChatComposerAccessTests: XCTestCase {
         let value = try XCTUnwrap(selected.withLock { $0 })
         return ChatHTTPResponse(
           body: """
-            {"id":"\(FixtureData.threadID)","agentId":"\(FixtureData.agentID)","computerUseHostId":null,"cloudBrowserEnabled":\(value.cloudBrowserEnabled)}
+            {"id":"\(FixtureData.threadID)","computerUseHostId":null,"cloudBrowserEnabled":\(value.cloudBrowserEnabled)}
             """)
       }
       throw URLError(.unsupportedURL)
@@ -135,7 +135,7 @@ final class ChatComposerAccessTests: XCTestCase {
     }
     let service = ChatConnectorService(client: fixture.client)
     let action = ChatConnectorAction.configuration(
-      target: .builtin("slack"), agentID: nil, threadID: nil)
+      target: .builtin("slack"), threadID: nil)
     let loaded = try await service.status(action)
     let status = try XCTUnwrap(loaded)
     XCTAssertNil(status.account)

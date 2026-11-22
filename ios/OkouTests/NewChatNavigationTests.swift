@@ -16,7 +16,6 @@ final class NewChatNavigationTests: XCTestCase {
     workspace.selectChat(MentionNavigationFixture.thread(31))
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     conversation.draft = "Keep this conversation's draft"
-    XCTAssertEqual(conversation.thread.agentID, MentionNavigationFixture.agent(1))
     let requests = NewChatRequests()
 
     XCTAssertTrue(
@@ -26,7 +25,6 @@ final class NewChatNavigationTests: XCTestCase {
 
     XCTAssertNil(workspace.selectedThreadID)
     XCTAssertNil(workspace.selectedConversation)
-    XCTAssertNil(workspace.selectedAgentID)
     XCTAssertEqual(workspace.newChatDraft, "Keep the next chat's draft")
     XCTAssertEqual(conversation.draft, "Keep this conversation's draft")
 
@@ -57,7 +55,7 @@ final class NewChatNavigationTests: XCTestCase {
     }
 
     _ = try await NewChatIntent().perform()
-    // The request arrives before an active workspace or its Agent is available.
+    // The request arrives before the workspace is available.
     XCTAssertFalse(requests.open(in: workspace))
     await workspace.prepareWorkspaceComposer()
     workspace.setPhase(.active)

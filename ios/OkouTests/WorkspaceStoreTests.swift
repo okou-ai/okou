@@ -18,7 +18,7 @@ final class WorkspaceStoreTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case "/api/chat-thread-drafts":
         return ChatHTTPResponse(body: #"{"draftThreadIds":["\#(storeThreadID)","\#(otherID)"]}"#)
       case "/api/chat-drafts/composer", "/api/chat-threads/\(storeThreadID)/draft":
@@ -77,7 +77,7 @@ final class WorkspaceStoreTests: XCTestCase {
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
         return ChatHTTPResponse(
-          body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{\"\(activeID)\":\"active\"}}")
+          body: "{\"unreadAt\":{},\"threads\":{\"\(activeID)\":\"active\"}}")
       case "/api/chat/events/catch-up":
         let body = try XCTUnwrap(
           JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [[Any]])
@@ -123,7 +123,7 @@ final class WorkspaceStoreTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       case "/api/chat/events/catch-up":
         return ChatHTTPResponse(status: 426, body: "{\"error\":{\"message\":\"Update required\"}}")
       default: throw URLError(.unsupportedURL)
@@ -161,7 +161,7 @@ final class WorkspaceStoreTests: XCTestCase {
         let timestamps =
           unread.withLock { $0 } ? "\"\(storeThreadID)\":\"2026-09-17T12:00:00Z\"" : ""
         return ChatHTTPResponse(
-          body: "{\"agents\":{},\"unreadAt\":{\(timestamps)},\"threads\":{\(indicators)}}")
+          body: "{\"unreadAt\":{\(timestamps)},\"threads\":{\(indicators)}}")
       case "/api/chat-threads/\(storeThreadID)/event-snapshot":
         return ChatHTTPResponse(
           status: 404,
@@ -231,13 +231,13 @@ final class WorkspaceStoreTests: XCTestCase {
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
         case "/api/indicators":
-          return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+          return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
         case "/api/chat-threads/\(storeThreadID)/connector-selections":
           return ChatHTTPResponse(body: "{\"selections\":[],\"selectedConnections\":[]}")
         case "/api/chat-threads/\(storeThreadID)/metadata":
           return ChatHTTPResponse(
             body: """
-              {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"Existing chat","selectedModel":"gpt-5.6-sol","computerUseHostId":null,"cloudBrowserEnabled":false}
+              {"id":"\(storeThreadID)","title":"Existing chat","selectedModel":"gpt-5.6-sol","computerUseHostId":null,"cloudBrowserEnabled":false}
               """)
         case "/api/chat/events":
           guard request.httpMethod == "POST" else { throw URLError(.unsupportedURL) }
@@ -327,7 +327,7 @@ final class WorkspaceStoreTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       default:
         let id = path.contains(otherID) ? otherID : storeThreadID
         if path.hasSuffix("/event-snapshot") {
@@ -397,12 +397,6 @@ final class WorkspaceStoreTests: XCTestCase {
             status: 426, body: "{\"error\":{\"message\":\"Update required\"}}")
         }
         switch path {
-        case "/api/agents":
-          return ChatHTTPResponse(
-            body:
-              "[{\"agentId\":\"\(storeAgentID)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
-          )
-
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Chat")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
@@ -446,7 +440,7 @@ final class WorkspaceRefreshTests: XCTestCase {
           sidebarStarted.fulfill()
           await releaseSidebar.wait()
         }
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case "/api/chat-threads/\(storeThreadID)/event-snapshot": return missingHistorySnapshot()
       case "/api/chat-threads/\(storeThreadID)/event-rows":
         let after =
@@ -504,7 +498,7 @@ final class WorkspaceRefreshTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       case "/api/chat-thread-drafts":
         return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
       case "/api/chat-drafts/composer":
@@ -604,7 +598,7 @@ final class WorkspaceRefreshTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -660,7 +654,7 @@ final class WorkspaceRefreshTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -693,7 +687,7 @@ final class WorkspaceRefreshTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       default:
         let id = path.contains(otherID) ? otherID : storeThreadID
         if path.hasSuffix("/event-snapshot") { return missingHistorySnapshot() }

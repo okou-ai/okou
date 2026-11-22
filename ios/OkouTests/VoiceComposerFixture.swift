@@ -143,7 +143,7 @@ final class VoiceComposerFixture: Sendable {
   }
 
   @MainActor func composer(
-    root: URL, capture: VoiceCaptureFixture, agent: String = "voice-agent",
+    root: URL, capture: VoiceCaptureFixture, target: ChatDraftTarget = .workspace,
     syncDrafts: Bool = false,
     didFail: @escaping @MainActor (Error) -> Void = { XCTFail($0.localizedDescription) }
   )
@@ -155,7 +155,8 @@ final class VoiceComposerFixture: Sendable {
         apiBaseURL: http.baseURL, userID: "voice-user", workspaceID: "voice-org"),
       directory: root)
     return ComposerDraftStore(
-      target: .agent(agent), commands: ChatCommands(client: client, sync: ChatSync(client: client)),
+      target: target,
+      commands: ChatCommands(client: client, sync: ChatSync(client: client)),
       repository: syncDrafts ? ChatDraftRepository(client: client) : nil,
       storage: storage, didFail: didFail, voiceCapture: capture)
   }

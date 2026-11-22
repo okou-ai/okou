@@ -22,22 +22,17 @@ const runs = createRunsApi(context);
 async function prepareActor(tier: "pro" | "team" = "pro") {
   mockEnv("ABLY_API_KEY", "test.key:secret");
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor, { tier });
   await runs.ensurePersonalSubscriptionModel(actor);
-  const { agentId } = await bdd.createAgent(actor);
-  return { actor, agentId, runnerGroup };
+
+  return { actor, runnerGroup };
 }
 
-async function startRun(
-  actor: ApiTestUser,
-  agentId: string,
-  runnerGroup: string,
-) {
+async function startRun(actor: ApiTestUser, runnerGroup: string) {
   const run = await runs.createThreadRun(actor, {
-    agentId,
     prompt: "Exercise runtime wakeups",
   });
   await runs.heartbeatRunner(runnerGroup);
@@ -69,13 +64,13 @@ function message(runId: string, customConnectorId: string) {
 
 describe("connector runtime wakeups", () => {
   it("notifies eligible Runner groups after connector deletion even if one batch fails", async () => {
-    const { actor, agentId, runnerGroup } = await prepareActor("team");
+    const { actor, runnerGroup } = await prepareActor("team");
     const custom = await createConnector(actor);
-    const runId = await startRun(actor, agentId, runnerGroup);
+    const runId = await startRun(actor, runnerGroup);
     const secondGroup = await runs.configureRunnerGroup();
-    const otherAgent = await bdd.createAgent(actor);
-    const otherRun = await startRun(actor, otherAgent.agentId, secondGroup);
-    const cancelled = await startRun(actor, agentId, secondGroup);
+
+    const otherRun = await startRun(actor, secondGroup);
+    const cancelled = await startRun(actor, secondGroup);
     await runs.requestCancelRun(actor, cancelled, [200]);
     const expected = [
       { runnerGroup, runId },
@@ -85,11 +80,11 @@ describe("connector runtime wakeups", () => {
       const group = await runs.configureRunnerGroup();
       expected.push({
         runnerGroup: group,
-        runId: await startRun(actor, agentId, group),
+        runId: await startRun(actor, group),
       });
     }
     const outsider = await prepareActor();
-    await startRun(outsider.actor, outsider.agentId, outsider.runnerGroup);
+    await startRun(outsider.actor, outsider.runnerGroup);
     context.mocks.ably.batchPublish.mockClear();
 
     const started = createDeferredPromise<void>(context.signal);
@@ -164,9 +159,9 @@ describe("connector runtime wakeups", () => {
   ] as const)(
     "uses the native Ably HTTP batch contract: %s",
     async (outcome) => {
-      const { actor, agentId, runnerGroup } = await prepareActor();
+      const { actor, runnerGroup } = await prepareActor();
       const custom = await createConnector(actor);
-      const runId = await startRun(actor, agentId, runnerGroup);
+      const runId = await startRun(actor, runnerGroup);
       context.mocks.ably.batchPublish.mockClear();
       context.mocks.ably.useRealBatchPublish.mockReturnValue(true);
       const received: unknown[] = [];

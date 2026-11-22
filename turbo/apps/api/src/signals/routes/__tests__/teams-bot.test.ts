@@ -35,7 +35,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { integrationsTeamsDownloadFileRoutes } from "../integrations-teams-download-file";
 import { teamsBotRoutes } from "../teams-bot";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -68,7 +68,7 @@ import { teamsConnectRoutes } from "../teams-connect";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const runsApi = createRunsApi(context);
 const runReadsApi = createRunReadsApi(context);
 const userConfigApi = createUserConfigBddApi(context);
@@ -84,7 +84,6 @@ interface PublicTeamsAdmissionFixture {
   readonly kmsKeyId: string | undefined;
   readonly storageBucket: string;
   readonly subscriptionId: string;
-  defaultAgentId: string | null;
 }
 
 async function deletePublicTeamsAdmissionFixture(
@@ -972,7 +971,6 @@ async function setupConnectedTeamsBotActor(
   readonly actor: ReturnType<typeof authOrgApi.user>;
   readonly runnerGroup: string;
   readonly outboundRequests: TeamsOutboundRequests;
-  readonly defaultAgentId: string;
 }> {
   const fixture =
     ownedFixture ??
@@ -985,13 +983,11 @@ async function setupConnectedTeamsBotActor(
   });
   const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
-  const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Teams default agent",
-  });
-  await authOrgApi.readAgent(actor, defaultAgent.body.agentId);
+  await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
+
   await runsApi.grantProEntitlement(actor);
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -1013,7 +1009,6 @@ async function setupConnectedTeamsBotActor(
     actor,
     runnerGroup,
     outboundRequests,
-    defaultAgentId: defaultAgent.body.agentId,
   };
 }
 
@@ -1303,22 +1298,15 @@ async function readHistoricalTeamsDownloadExecution(
   const { actor, fixture } = owned;
   const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   authOrgApi.mockClerkUsers([actor]);
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   await owned.run(() => {
     return authOrgApi.completeOnboarding(actor);
   });
-  const defaultAgentId = await owned.run(() => {
-    return authOrgApi.readDefaultAgentId(actor);
-  });
-  if (!defaultAgentId) {
-    throw new Error("Expected the normal onboarding Agent");
-  }
-  await owned.run(() => {
-    return authOrgApi.readAgent(actor, defaultAgentId);
-  });
+  await authOrgApi.provisionWorkspace(actor);
+
   await owned.run(() => {
     return runsApi.grantProEntitlement(actor, {
       run: owned.run,
@@ -2210,16 +2198,11 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
     const runnerGroup = await runsApi.configureRunnerGroup();
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    authOrgApi.acceptAgentStorageWrites();
+    authOrgApi.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
-    const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(
-      actor,
-      {
-        displayName: "Teams file agent",
-      },
-    );
-    await authOrgApi.readAgent(actor, defaultAgent.body.agentId);
+    await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
+
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -2886,7 +2869,6 @@ describe("POST /api/webhooks/teams/bot", () => {
       kmsKeyId: env("SECRETS_KMS_KEY_ID"),
       storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
       subscriptionId: `sub_teams_admission_${randomUUID()}`,
-      defaultAgentId: null,
     };
     const owner = createFixtureOperationOwner(async () => {
       await deletePublicTeamsAdmissionFixture(owned);
@@ -2903,15 +2885,9 @@ describe("POST /api/webhooks/teams/bot", () => {
         orgRole: "org:admin",
       });
       context.mocks.ably.publish.mockResolvedValue(undefined);
-      authOrgApi.acceptAgentStorageWrites();
-      const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(
-        actor,
-        {
-          displayName: "Teams default agent",
-        },
-      );
-      owned.defaultAgentId = defaultAgent.body.agentId;
-      await authOrgApi.readAgent(actor, defaultAgent.body.agentId);
+      authOrgApi.acceptStorageWrites();
+      await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
+
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [
@@ -2948,9 +2924,6 @@ describe("POST /api/webhooks/teams/bot", () => {
       const subscription = await runsApi.grantProEntitlement(actor, {
         subscriptionId: owned.subscriptionId,
       });
-      await expect(
-        createBddApi(context).readDefaultAgentId(actor),
-      ).resolves.toBe(defaultAgent.body.agentId);
       await webhooksApi.postStripeEvent(
         {
           type: "customer.subscription.updated",
@@ -3118,16 +3091,14 @@ describe("POST /api/webhooks/teams/bot", () => {
       });
       const runnerGroup = await runsApi.configureRunnerGroup();
       context.mocks.ably.publish.mockResolvedValue(undefined);
-      authOrgApi.acceptAgentStorageWrites();
+      authOrgApi.acceptStorageWrites();
       runsApi.acceptStorageDownloads();
       runsApi.acceptTelemetryIngest();
       const ownedRuns = publicRunOwner(context, actor);
-      const { defaultAgentId } = await ownedRuns.run(() => {
+      await ownedRuns.run(() => {
         return runsApi.grantProEntitlement(actor);
       });
-      await ownedRuns.run(() => {
-        return authOrgApi.readAgent(actor, defaultAgentId);
-      });
+
       await ownedRuns.run(() => {
         return runsApi.ensurePersonalSubscriptionModel(actor, {
           model: "claude-fable-5-1",
@@ -3631,16 +3602,8 @@ describe("POST /api/webhooks/teams/bot", () => {
         await removeTeamsForTest(context.signal, fixture);
       });
       const { runnerGroup } = await scenario.prepareActor(actor);
-      const onboardingAgentId = await scenario.run(() => {
-        return authOrgApi.readDefaultAgentId(actor);
-      });
-      if (!onboardingAgentId) {
-        throw new Error("Expected the normal Teams default Agent");
-      }
-      const defaultAgentId = onboardingAgentId;
-      await scenario.run(() => {
-        return authOrgApi.readAgent(actor, defaultAgentId);
-      });
+      await authOrgApi.provisionWorkspace(actor);
+
       botFrameworkHandlers();
       teamsOutboundHandlers(fixture.serviceUrl);
       const installResponse = await scenario.run(() => {

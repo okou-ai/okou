@@ -91,18 +91,13 @@ interface Scenario {
   readonly customerId: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId: string;
   readonly workflowId: string;
   readonly runnerGroup: string;
 }
 
 async function setup(): Promise<Scenario> {
   const runnerGroup = await runsApi.configureRunnerGroup();
-  const {
-    actor,
-    defaultAgentId: agentId,
-    customerId,
-  } = await wf.setupWorkflowOrg({ tier: "team" });
+  const { actor, customerId } = await wf.setupWorkflowOrg({ tier: "team" });
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
@@ -123,7 +118,6 @@ async function setup(): Promise<Scenario> {
     customerId,
     orgId: actor.orgId,
     userId: actor.userId,
-    agentId,
     workflowId,
     runnerGroup,
   };

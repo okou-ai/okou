@@ -407,10 +407,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     const { actor } = owner;
     await connectDrive(actor);
     const peer = bdd.user({ orgId: actor.orgId });
-    await bdd.createAgent(peer, {
-      displayName: "Peer context",
-      visibility: "private",
-    });
     const peerThread = await chat.createThread(peer, {
       model: null,
     });

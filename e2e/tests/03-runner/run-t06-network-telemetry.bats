@@ -15,11 +15,6 @@ teardown() {
 }
 
 @test "runner publishes protocol, diagnostic, browser, and captured-body network telemetry" {
-    run create_runner_agent "runner-network-telemetry-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local prompt
     prompt=$(cat <<'EOF'
 python3 - <<'PY'
@@ -110,7 +105,7 @@ printf 'BROWSER_REQUEST_DONE\n'
 printf 'NETWORK_PROBES_DONE\n'
 EOF
 )
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt" true
+    run runner_e2e_start_mock_shell_chat_run "$prompt" true
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

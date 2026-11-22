@@ -267,15 +267,9 @@ describe("recurring automation auto-disable platform feed events", () => {
     if (!event) {
       throw new Error("Expected the disabled automation's platform event");
     }
-    const defaultAgentId = await createBddApi(context).readDefaultAgentId(
-      scenario.actor,
-    );
-    if (!defaultAgentId) {
-      throw new Error("Expected the owner's primary Agent");
-    }
+    await createBddApi(context).provisionWorkspace(scenario.actor);
     await runs.heartbeatRunner(scenario.runnerGroup);
     const run = await runs.createThreadRun(scenario.actor, {
-      agentId: defaultAgentId,
       model: "claude-fable-5-1",
       prompt: "Review the failed automation and curate a useful suggestion.",
     });

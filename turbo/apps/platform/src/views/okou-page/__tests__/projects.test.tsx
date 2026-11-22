@@ -19,7 +19,7 @@ import {
   chatThreadDraftContract,
   chatEventsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import {
   click,
   fill,

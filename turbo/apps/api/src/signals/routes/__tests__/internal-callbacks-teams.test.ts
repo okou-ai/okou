@@ -23,7 +23,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -52,7 +52,7 @@ import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 const context = testContext();
 const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const runsApi = createRunsApi(context);
 const runReadsApi = createRunReadsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
@@ -105,7 +105,6 @@ interface ConnectedTeamsActor {
   readonly fixture: TeamsConnectFixture;
   readonly actor: ReturnType<typeof authOrgApi.user>;
   readonly runnerGroup: string;
-  readonly defaultAgentId: string;
 }
 
 function teamsServiceBaseUrl(serviceUrl: string): string {
@@ -396,21 +395,11 @@ async function setupConnectedTeamsActor(
   const runnerGroup = await runsApi.configureRunnerGroup();
 
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   // The paid entitlement helper already bootstraps and completes onboarding.
   const subscription = await runsApi.grantProEntitlement(actor);
-  const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
-  if (!defaultAgentId) {
-    throw new Error(
-      "Expected paid onboarding to create a Teams callback agent",
-    );
-  }
-  await Promise.all([
-    runsApi.ensurePersonalSubscriptionModel(actor),
-    authOrgApi.readAgent(actor, defaultAgentId),
-  ]);
   // Queued Teams callbacks inspect and complete the Runner execution. Fable keeps
   // this native fixture claimable while eligible Pi routes remain enabled.
   await api.ensurePersonalSubscriptionModel(actor, {
@@ -441,7 +430,6 @@ async function setupConnectedTeamsActor(
     actor,
     runnerGroup,
     subscription,
-    defaultAgentId,
   };
 }
 
@@ -606,7 +594,7 @@ async function startThreadFollowUpExecution(args: {
 async function setupOwnedTeamsSteering() {
   const fixtures = createPublicTeamsDispatchFixture(context);
   const teams = await fixtures.run(() => {
-    return fixtures.create({ withDefaultAgent: true, paidNative: true });
+    return fixtures.create({ onboarded: true, paidNative: true });
   });
   teamsApiMocks({ fixture: teams.installation });
   const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");

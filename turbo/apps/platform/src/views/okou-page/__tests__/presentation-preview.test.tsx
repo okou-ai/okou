@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 
 import {

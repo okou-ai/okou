@@ -9,14 +9,13 @@ import XCTest
 final class StructuredMessageTests: XCTestCase {
   func testSendingTrimsTheCanonicalDocumentWithoutChangingTheDraft() async throws {
     let threadID = "40000000-0000-4000-8000-000000000001"
-    let agentID = "40000000-0000-4000-8000-000000000002"
     let sent = Mutex<Data?>(nil)
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/chat-threads/\(threadID)/metadata":
         return ChatHTTPResponse(
           body:
-            "{\"id\":\"\(threadID)\",\"agentId\":\"\(agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+            "{\"id\":\"\(threadID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
         )
       case "/api/chat/events":
         sent.withLock { $0 = chatRequestBody(request) }
@@ -30,7 +29,7 @@ final class StructuredMessageTests: XCTestCase {
     ])
     let now = Date()
     let thread = ChatThread(
-      id: threadID, agentID: agentID, title: "Trim", createdAt: now, updatedAt: now, sortAt: now)
+      id: threadID, title: "Trim", createdAt: now, updatedAt: now, sortAt: now)
 
     _ = try await ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
       .send(thread: thread, text: text, document: document)

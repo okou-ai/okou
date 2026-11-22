@@ -11,7 +11,6 @@ import {
 export interface IntegrationChatThreadCreation {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId?: string;
   readonly currentTime: Date;
   readonly initialModel: DefaultModelFirstPin;
 }

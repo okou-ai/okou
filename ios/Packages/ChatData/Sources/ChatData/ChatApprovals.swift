@@ -1,6 +1,6 @@
 import Foundation
 
-/// A mail draft the agent prepared and left for the user to send ("drafts, not sends").
+/// A mail draft Okou prepared and left for the user to send ("drafts, not sends").
 public struct ChatMailDraft: Decodable, Equatable, Sendable {
   public struct Attachment: Decodable, Equatable, Sendable {
     public let filename: String

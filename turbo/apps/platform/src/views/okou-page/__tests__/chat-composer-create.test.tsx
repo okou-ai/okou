@@ -3,7 +3,7 @@ import {
   readSingleRichClipboardWrite,
 } from "./chat-clipboard-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";

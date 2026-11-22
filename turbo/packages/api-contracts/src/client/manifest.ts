@@ -3,22 +3,6 @@
 
 export const clientDescriptorManifest = [
   {
-    module: "agent-draft",
-    contracts: ["agentDraftContract", "composerDraftContract"],
-  },
-  {
-    module: "agent-setup-prompts",
-    contracts: ["agentSetupPromptsContract"],
-  },
-  {
-    module: "agents",
-    contracts: [
-      "agentInstructionsContract",
-      "agentsByIdContract",
-      "agentsMainContract",
-    ],
-  },
-  {
     module: "android-updates",
     contracts: ["androidUpdatesContract"],
   },
@@ -59,7 +43,6 @@ export const clientDescriptorManifest = [
     contracts: [
       "bankingContract",
       "bankingPublicContract",
-      "bankingUserContract",
       "bankingWorkspaceContract",
     ],
   },
@@ -174,6 +157,10 @@ export const clientDescriptorManifest = [
   {
     module: "codex-device-auth",
     contracts: ["codexDeviceAuthContract"],
+  },
+  {
+    module: "composer-draft",
+    contracts: ["composerDraftContract"],
   },
   {
     module: "computer-use",

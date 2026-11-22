@@ -111,7 +111,6 @@ async function threadRunIds(
 
 async function sendWaiting(
   actor: ApiTestUser,
-  agentId: string,
   prompt: string,
   threadId?: string,
 ) {
@@ -142,7 +141,7 @@ async function createWebhookAutomation(actor: ApiTestUser): Promise<{
   readonly token: string;
   readonly secret: string;
 }> {
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   const workflowId = await wf.createWorkflow(actor, {
     name: WORKFLOW_NAME,
   });
@@ -223,7 +222,7 @@ async function automationRunIds(
 describe("CHAT-02: queued chat thread picks", () => {
   it("launches only the FIFO head of a waiting thread and resumes its latest session", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, runnerGroup } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
       prompt: "establish the thread session",
     });
@@ -234,13 +233,11 @@ describe("CHAT-02: queued chat thread picks", () => {
     });
     const head = await sendWaiting(
       actor,
-      agentId,
       "first queued message",
       first.threadId,
     );
     const second = await sendWaiting(
       actor,
-      agentId,
       "second queued message",
       first.threadId,
     );
@@ -273,21 +270,16 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("gives the freed slot to another thread that waited longer than the ending run's thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, runnerGroup } = await entitledNativeChatActor();
     const running = await sendChatRun(actor, {
       prompt: "thread A holds the only slot",
     });
     const runningExecution = await runExecution(running.runId);
     await waitForRunStatus(actor, running.runId, "running");
 
-    const olderThread = await sendWaiting(
-      actor,
-      agentId,
-      "thread B queued first",
-    );
+    const olderThread = await sendWaiting(actor, "thread B queued first");
     const sameThread = await sendWaiting(
       actor,
-      agentId,
       "thread A queued second",
       running.threadId,
     );
@@ -313,14 +305,14 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("gives the slot of a cancelled running run to a waiting thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const running = await sendChatRun(actor, {
       prompt: "thread A holds the only slot",
     });
     const runningExecution = await runExecution(running.runId);
     await waitForRunStatus(actor, running.runId, "running");
 
-    const waiting = await sendWaiting(actor, agentId, "thread B waits");
+    const waiting = await sendWaiting(actor, "thread B waits");
 
     // Cancel side effects finish before the Runner stops: the started run
     // still holds its slot, so they cannot launch the waiting thread yet.
@@ -345,11 +337,7 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("launches an automation event appended before a user message first (strict FIFO)", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const {
-      actor,
-      defaultAgentId: agentId,
-      runnerGroup,
-    } = await entitledNativeChatActor({}, "team");
+    const { actor, runnerGroup } = await entitledNativeChatActor({}, "team");
     const automation = await createWebhookAutomation(actor);
     const blocker = await sendChatRun(actor, {
       prompt: "occupy the only organization slot",
@@ -358,7 +346,6 @@ describe("CHAT-02: queued chat thread picks", () => {
     await postWorkflowWebhook(automation, "automation before the user");
     const user = await sendWaiting(
       actor,
-      agentId,
       "user after automation",
       automation.threadId,
     );
@@ -392,7 +379,7 @@ describe("CHAT-02: queued chat thread picks", () => {
   }, 90_000);
 
   it("takes over input sent while the thread's run was running", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const running = await sendChatRun(actor, {
       prompt: "the thread's running run",
     });
@@ -402,7 +389,6 @@ describe("CHAT-02: queued chat thread picks", () => {
     // The send only steers the running run; the run end launches it.
     const steered = await sendWaiting(
       actor,
-      agentId,
       "sent while the run is running",
       running.threadId,
     );
@@ -500,14 +486,13 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("keeps a waiting thread pickable after a concurrency update finds the organization full", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, runnerGroup } = await entitledNativeChatActor();
     const blocker = await sendChatRun(actor, {
       prompt: "occupy the only organization slot",
     });
-    const older = await sendWaiting(actor, agentId, "oldest waiting thread");
+    const older = await sendWaiting(actor, "oldest waiting thread");
     const waiting = await sendWaiting(
       actor,
-      agentId,
       "waits after the concurrency update",
     );
 
@@ -587,11 +572,11 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("skips a recalled head and launches a later message on the thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, runnerGroup } = await entitledNativeChatActor();
     const blocker = await sendChatRun(actor, {
       prompt: "occupy the only organization slot",
     });
-    const recalled = await sendWaiting(actor, agentId, "recalled message");
+    const recalled = await sendWaiting(actor, "recalled message");
     const recall = await chat.requestSendEvent(
       actor,
       {

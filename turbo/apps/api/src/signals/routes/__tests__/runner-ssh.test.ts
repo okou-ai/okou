@@ -21,7 +21,7 @@ import { runnerSshRoutes } from "../runner-ssh";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -110,7 +110,6 @@ async function setThreadHostOverride(f: Fixture, enabled: boolean | null) {
 interface Fixture extends Owner {
   readonly connectionCreatedAt: string;
   readonly runId: string;
-  readonly agentId: string;
   readonly threadId?: string;
   readonly sandboxToken: string;
   readonly runnerIdentity: {
@@ -183,7 +182,7 @@ function useExecutionFixture() {
       throw new Error("Expected an SSH owner organization");
     }
     const owner = { orgId: actor.orgId, userId: actor.userId };
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerIdentity = {
@@ -198,10 +197,6 @@ function useExecutionFixture() {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agentId = await bdd.readDefaultAgentId(actor);
-    if (!agentId) {
-      throw new Error("Expected onboarding to provide the default Agent");
-    }
     authenticate(owner);
     const connection = await accept(
       config().create({
@@ -217,7 +212,6 @@ function useExecutionFixture() {
     );
     await enableHostDefault(owner, connection.body.id);
     const { runId, threadId } = await runs.createThreadRun(actor, {
-      agentId,
       prompt: "Use my configured SSH host",
     });
     const input = await runs.executionInput(runId);
@@ -240,7 +234,6 @@ function useExecutionFixture() {
     authenticate(owner);
     return {
       ...owner,
-      agentId,
       runId,
       threadId,
       runnerIdentity,
@@ -1282,7 +1275,7 @@ describe("official Runner SSH authority", () => {
       });
       expect(r.status).toBe(401);
     }
-    const authApi = createAuthOrgAgentsBddApi(context);
+    const authApi = createAuthOrgBddApi(context);
     const actor = authApi.user();
     authApi.mockClerkOrg(actor);
     const pat = await authApi.createCliToken(actor);

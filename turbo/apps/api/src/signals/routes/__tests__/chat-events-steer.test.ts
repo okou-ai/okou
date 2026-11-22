@@ -39,7 +39,6 @@ const {
 
 async function sendQueuedPrompt(
   actor: Parameters<typeof chat.requestSendEvent>[0],
-  agentId: string,
   threadId: string,
   prompt: string,
 ): Promise<string> {
@@ -185,7 +184,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   );
 
   it("steers Document input with its pinned source before the next queued prompt", async () => {
-    const { actor: owner, agentId } = await entitledNativeChatActor();
+    const { actor: owner } = await entitledNativeChatActor();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
     }
@@ -209,7 +208,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     );
     const nextEventId = await sendQueuedPrompt(
       actor,
-      agentId,
       active.threadId,
       "Then summarize the invoice",
     );
@@ -286,7 +284,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   });
 
   it("returns the next prompt after the run's own input and declares it steered once", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
       prompt: "run that steers queued prompts",
     });
@@ -300,13 +298,11 @@ describe("CHAT-02: steering input prompts into a running run", () => {
 
     const firstEventId = await sendQueuedPrompt(
       actor,
-      agentId,
       active.threadId,
       "first steered prompt",
     );
     const secondEventId = await sendQueuedPrompt(
       actor,
-      agentId,
       active.threadId,
       "second steered prompt",
     );
@@ -406,7 +402,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   }, 90_000);
 
   it("skips recalled prompts and rejects unknown input", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
       prompt: "run that skips unsteerable input",
     });
@@ -423,13 +419,11 @@ describe("CHAT-02: steering input prompts into a running run", () => {
 
     const recalledEventId = await sendQueuedPrompt(
       actor,
-      agentId,
       active.threadId,
       "recalled before steering",
     );
     const keptEventId = await sendQueuedPrompt(
       actor,
-      agentId,
       active.threadId,
       "kept for steering",
     );
@@ -491,14 +485,13 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   }, 90_000);
 
   it("rejects a declaration once the run ended and another run took the prompt", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
       prompt: "run that ends before steering",
     });
     const firstExecution = await runExecution(first.runId);
     const queuedEventId = await sendQueuedPrompt(
       actor,
-      agentId,
       first.threadId,
       "picked by the next run",
     );
@@ -563,7 +556,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
 
   it("accepts only the run's own sandbox token", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     await owned.run(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const other = await owned.sendChatRun(actor, {
@@ -578,7 +571,6 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       const execution = await owned.runExecution(active.runId);
       const eventId = await sendQueuedPrompt(
         actor,
-        agentId,
         active.threadId,
         "only the owning run may steer",
       );

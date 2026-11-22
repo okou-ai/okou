@@ -1,4 +1,4 @@
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

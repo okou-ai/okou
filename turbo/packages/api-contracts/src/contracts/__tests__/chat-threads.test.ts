@@ -666,7 +666,6 @@ describe("chat thread generation template contract", () => {
 describe("Ultrafast service tier", () => {
   const thread = {
     id: "00000000-0000-4000-8000-000000000001",
-    agentId: "00000000-0000-4000-8000-000000000002",
     title: null,
     sortAt: "2026-10-07T00:00:00.000Z",
     createdAt: "2026-10-07T00:00:00.000Z",

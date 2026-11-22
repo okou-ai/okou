@@ -46,13 +46,12 @@ async function prepareChatTitle() {
   const runs = createRunsApi(context);
   const chat = createChatFilesBddApi(context);
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  await bdd.createAgent(actor, { displayName: "Outcome title" });
   let threadId: string | undefined;
   const events = async () => {
     const listed = await accept(

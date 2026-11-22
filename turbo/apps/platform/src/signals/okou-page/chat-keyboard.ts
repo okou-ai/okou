@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
+import { workspaceChatComposerSignals$ } from "./workspace-composer-signals.ts";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import {
@@ -48,7 +48,7 @@ const setupChatListNavigationShortcuts$ = command(
   },
 );
 
-export const setupAgentChatKeyboardShortcuts$ = command(
+export const setupChatKeyboardShortcuts$ = command(
   ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     setupGlobalShortcut(
@@ -56,7 +56,7 @@ export const setupAgentChatKeyboardShortcuts$ = command(
         [COMPOSER_VOICE_INPUT_SHORTCUT]: {
           allowInEditableTarget: true,
           run: () => {
-            set(get(agentChatComposerSignals$).voice.toggle$);
+            set(get(workspaceChatComposerSignals$).voice.toggle$);
           },
         },
       },
@@ -73,7 +73,7 @@ export const setupProjectPageKeyboardShortcuts$ = command(
         [COMPOSER_VOICE_INPUT_SHORTCUT]: {
           allowInEditableTarget: true,
           run: () => {
-            set(get(agentChatComposerSignals$).voice.toggle$);
+            set(get(workspaceChatComposerSignals$).voice.toggle$);
           },
         },
       },

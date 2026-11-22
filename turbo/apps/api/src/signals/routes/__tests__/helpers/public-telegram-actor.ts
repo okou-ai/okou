@@ -164,7 +164,7 @@ export function createPublicTelegramActor(
       cleanupFeatures = true;
     },
     onboard: () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       return run(async () => {
         await bdd.provisionWorkspace(actor);
         const completed = await bdd.completeOnboarding(actor);

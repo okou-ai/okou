@@ -86,9 +86,7 @@ async function seedSendableContext() {
   await fixture.run(() => {
     return runsApi.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
   });
-  await fixture.run(() => {
-    return bdd.createAgent(fixture.actor, { displayName: "Telegram upload" });
-  });
+
   const sent = await fixture.run(() => {
     return chatApi.sendAndLaunch(fixture.actor, {
       prompt: "Create a run for Telegram upload completion",
@@ -147,7 +145,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
         },
       ),
     );
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
   });

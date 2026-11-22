@@ -384,7 +384,7 @@
         "connectors": "커넥터",
         "settings": "설정",
         "workflows": "워크플로",
-        "works": "{{agentName}}가(이) 작업하는 곳"
+        "works": "{{assistantName}}가(이) 작업하는 곳"
       },
       "rail": {
         "workflows": "워크플로",
@@ -1507,115 +1507,6 @@
       "description": "이 작업은 이 채팅에 속하지 않거나 더 이상 유효하지 않습니다.",
       "title": "작업을 사용할 수 없음"
     },
-    "agentPage": {
-      "getStarted": {
-        "checkedIn": "출석 완료",
-        "checkin": {
-          "action": "출석하기",
-          "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
-          "name": "매일 출석하기",
-          "unit": "하루당"
-        },
-        "connector": {
-          "action": "연결",
-          "description": "Gmail, Notion 등 4,000개 이상",
-          "name": "도구 연결하기",
-          "unit": "커넥터당"
-        },
-        "howRewardsWork": "보상 안내",
-        "imessage": {
-          "action": "추가",
-          "description": "iPhone에서 {{assistantName}}에게 문자하기",
-          "name": "iMessage에 추가"
-        },
-        "inReview": "검토 중",
-        "intro": {
-          "connector": {
-            "confirm": "모든 커넥터 보기",
-            "connected": "연결됨",
-            "description": "하나를 선택하면 {{assistantName}}이(가) 그 안에서 작업을 시작합니다.",
-            "notConnected": "연결 안 됨",
-            "pickerFailed": "커넥터를 불러오지 못했습니다.",
-            "pickerLoading": "커넥터 불러오는 중…",
-            "title": "{{assistantName}}는 이미 쓰고 있는 도구 안에서 일합니다"
-          },
-          "invite": {
-            "confirm": "팀원 초대하기",
-            "description": "이 워크스페이스로 팀원을 초대합니다.",
-            "note": "한 번 만들어 둔 것이 더는 나만의 것이 아니게 됩니다. 오늘 아침에 합류한 사람도 방법을 묻지 않고 오후에 바로 돌릴 수 있습니다.",
-            "title": "한 사람이 아는 것을 모두가 실행합니다"
-          },
-          "later": "나중에",
-          "slack": {
-            "confirm": "Slack에 추가",
-            "description": "팀의 Slack 워크스페이스에 {{assistantName}}를 추가합니다.",
-            "note": "팀원들이 매번 나를 거치지 않아도 됩니다. 채널에서 부탁하면 결과가 그 스레드로 돌아오고, 모두가 함께 봅니다.",
-            "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
-          },
-          "workflow": {
-            "description": "반복하는 일을 팀이 실행할 수 있는 워크플로로 만듭니다.",
-            "title": "잘된 실행 한 번이 팀의 자산이 됩니다"
-          }
-        },
-        "invite": {
-          "action": "초대",
-          "description": "추가하는 사람마다 적립됩니다",
-          "name": "팀 초대하기",
-          "unit": "멤버당"
-        },
-        "pendingState": "{{amount}}명 대기 중",
-        "rewardsNote": "작업 보상은 지급 후 7일이 지나면 만료돼요. 출석은 UTC 00:00에 초기화됩니다. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
-        "slack": {
-          "action": "추가",
-          "description": "팀이 이미 일하고 있는 곳으로",
-          "name": "Slack에 추가"
-        },
-        "stepCount": "{{completed}}/{{total}}",
-        "streak": "{{amount}}일 연속",
-        "title": "크레딧 더 받기",
-        "toGo": "{{amount}} 남음",
-        "workflow": {
-          "action": "만들기",
-          "description": "반복 작업을 재사용 가능한 스킬로 만들기",
-          "name": "워크플로 만들기"
-        }
-      },
-      "growth": {
-        "addInSlack": "Slack에 {{assistantName}} 추가",
-        "connect": "연결",
-        "credits": "크레딧",
-        "inSlack": "{{assistantName}}이(가) Slack에 있습니다",
-        "inviteMember": "사람 초대 🤝",
-        "otherChannels": "Telegram, 전화"
-      },
-      "taglines": {
-        "anonymous": {
-          "buildSomething": "무언가 만들 준비가 되셨나요?",
-          "goodToSeeYou": "만나서 반갑습니다.",
-          "readyToRoll": "준비되셨나요?",
-          "welcomeBack": "다시 오신 것을 환영합니다.",
-          "whatAreWeWorkingOn": "무엇을 작업하고 있나요?",
-          "whatsOnYourMind": "무슨 생각을 하고 있나요?",
-          "whatsTheMove": "계획은 무엇인가요?"
-        },
-        "anotherWin": "오늘도 또 한 번의 성공인가요, {{userName}}?",
-        "coffeeReady": "커피가 준비되었습니다, {{userName}}.",
-        "enteredChat": "{{userName}}님이 채팅에 입장했습니다.",
-        "goodToSeeYou": "만나서 반갑습니다, {{userName}}.",
-        "knewYouWouldCome": "다시 오실 줄 알았어요, {{userName}}.",
-        "makeTodayCount": "오늘을 의미 있게 만듭시다, {{userName}}.",
-        "newIdeas": "오늘 새로운 아이디어가 있나요, {{userName}}?",
-        "readyToBuild": "준비되셨나요, {{userName}}?",
-        "rightOnTime": "정시에 도착했습니다, {{userName}}.",
-        "savedYourSeat": "자리 예약해 두었어요, {{userName}}.",
-        "theUsual": "평소처럼 하실래요, {{userName}}?",
-        "welcomeBack": "다시 만나서 반갑습니다, {{userName}}.",
-        "whatAreWeWorkingOn": "무엇을 작업할까요, {{userName}}?",
-        "whatsCooking": "무슨 일이 있나요, {{userName}}?",
-        "whatsOnYourMind": "무슨 생각 중이신가요, {{userName}}?",
-        "whatsTheMove": "어떤 계획이 있나요, {{userName}}?"
-      }
-    },
     "agentSuggestions": {
       "addReason": "Add a reason",
       "alreadyDone": "Already done",
@@ -2212,6 +2103,115 @@
       "composerPlaceholder": "메시지 추가",
       "title": "전달 대상"
     },
+    "homePage": {
+      "getStarted": {
+        "checkedIn": "출석 완료",
+        "checkin": {
+          "action": "출석하기",
+          "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
+          "name": "매일 출석하기",
+          "unit": "하루당"
+        },
+        "connector": {
+          "action": "연결",
+          "description": "Gmail, Notion 등 4,000개 이상",
+          "name": "도구 연결하기",
+          "unit": "커넥터당"
+        },
+        "howRewardsWork": "보상 안내",
+        "imessage": {
+          "action": "추가",
+          "description": "iPhone에서 {{assistantName}}에게 문자하기",
+          "name": "iMessage에 추가"
+        },
+        "inReview": "검토 중",
+        "intro": {
+          "connector": {
+            "confirm": "모든 커넥터 보기",
+            "connected": "연결됨",
+            "description": "하나를 선택하면 {{assistantName}}이(가) 그 안에서 작업을 시작합니다.",
+            "notConnected": "연결 안 됨",
+            "pickerFailed": "커넥터를 불러오지 못했습니다.",
+            "pickerLoading": "커넥터 불러오는 중…",
+            "title": "{{assistantName}}는 이미 쓰고 있는 도구 안에서 일합니다"
+          },
+          "invite": {
+            "confirm": "팀원 초대하기",
+            "description": "이 워크스페이스로 팀원을 초대합니다.",
+            "note": "한 번 만들어 둔 것이 더는 나만의 것이 아니게 됩니다. 오늘 아침에 합류한 사람도 방법을 묻지 않고 오후에 바로 돌릴 수 있습니다.",
+            "title": "한 사람이 아는 것을 모두가 실행합니다"
+          },
+          "later": "나중에",
+          "slack": {
+            "confirm": "Slack에 추가",
+            "description": "팀의 Slack 워크스페이스에 {{assistantName}}를 추가합니다.",
+            "note": "팀원들이 매번 나를 거치지 않아도 됩니다. 채널에서 부탁하면 결과가 그 스레드로 돌아오고, 모두가 함께 봅니다.",
+            "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
+          },
+          "workflow": {
+            "description": "반복하는 일을 팀이 실행할 수 있는 워크플로로 만듭니다.",
+            "title": "잘된 실행 한 번이 팀의 자산이 됩니다"
+          }
+        },
+        "invite": {
+          "action": "초대",
+          "description": "추가하는 사람마다 적립됩니다",
+          "name": "팀 초대하기",
+          "unit": "멤버당"
+        },
+        "pendingState": "{{amount}}명 대기 중",
+        "rewardsNote": "작업 보상은 지급 후 7일이 지나면 만료돼요. 출석은 UTC 00:00에 초기화됩니다. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
+        "slack": {
+          "action": "추가",
+          "description": "팀이 이미 일하고 있는 곳으로",
+          "name": "Slack에 추가"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "streak": "{{amount}}일 연속",
+        "title": "크레딧 더 받기",
+        "toGo": "{{amount}} 남음",
+        "workflow": {
+          "action": "만들기",
+          "description": "반복 작업을 재사용 가능한 스킬로 만들기",
+          "name": "워크플로 만들기"
+        }
+      },
+      "growth": {
+        "addInSlack": "Slack에 {{assistantName}} 추가",
+        "connect": "연결",
+        "credits": "크레딧",
+        "inSlack": "{{assistantName}}이(가) Slack에 있습니다",
+        "inviteMember": "사람 초대 🤝",
+        "otherChannels": "Telegram, 전화"
+      },
+      "taglines": {
+        "anonymous": {
+          "buildSomething": "무언가 만들 준비가 되셨나요?",
+          "goodToSeeYou": "만나서 반갑습니다.",
+          "readyToRoll": "준비되셨나요?",
+          "welcomeBack": "다시 오신 것을 환영합니다.",
+          "whatAreWeWorkingOn": "무엇을 작업하고 있나요?",
+          "whatsOnYourMind": "무슨 생각을 하고 있나요?",
+          "whatsTheMove": "계획은 무엇인가요?"
+        },
+        "anotherWin": "오늘도 또 한 번의 성공인가요, {{userName}}?",
+        "coffeeReady": "커피가 준비되었습니다, {{userName}}.",
+        "enteredChat": "{{userName}}님이 채팅에 입장했습니다.",
+        "goodToSeeYou": "만나서 반갑습니다, {{userName}}.",
+        "knewYouWouldCome": "다시 오실 줄 알았어요, {{userName}}.",
+        "makeTodayCount": "오늘을 의미 있게 만듭시다, {{userName}}.",
+        "newIdeas": "오늘 새로운 아이디어가 있나요, {{userName}}?",
+        "readyToBuild": "준비되셨나요, {{userName}}?",
+        "rightOnTime": "정시에 도착했습니다, {{userName}}.",
+        "savedYourSeat": "자리 예약해 두었어요, {{userName}}.",
+        "theUsual": "평소처럼 하실래요, {{userName}}?",
+        "welcomeBack": "다시 만나서 반갑습니다, {{userName}}.",
+        "whatAreWeWorkingOn": "무엇을 작업할까요, {{userName}}?",
+        "whatsCooking": "무슨 일이 있나요, {{userName}}?",
+        "whatsOnYourMind": "무슨 생각 중이신가요, {{userName}}?",
+        "whatsTheMove": "어떤 계획이 있나요, {{userName}}?"
+      }
+    },
     "mail": {
       "bcc": "숨은 참조",
       "cc": "참조",
@@ -2500,7 +2500,7 @@
     "sidebar": {
       "archive": "채팅 보관",
       "archived": "보관됨",
-      "chatsWith": "{{agentName}}와의 채팅",
+      "chatsWith": "{{assistantName}}와의 채팅",
       "chatThreads": "채팅 스레드",
       "delete": "채팅 삭제",
       "deleteDescription": "이 채팅을 영구 삭제합니다. 현재 실행 중인 작업은 즉시 중단됩니다. 연결된 자동화는 일시 중지됩니다. 이 작업은 되돌릴 수 없습니다.",
@@ -2515,7 +2515,7 @@
       "movePinUp": "위로 이동",
       "mute": "채팅 알림 끄기",
       "muted": "알림 꺼짐",
-      "newChatWith": "{{agentName}}와 새 채팅",
+      "newChatWith": "{{assistantName}}와 새 채팅",
       "noArchived": "보관된 채팅 없음",
       "noMuted": "음소거된 채팅 없음",
       "noUnread": "읽지 않은 채팅 없음",
@@ -3260,7 +3260,7 @@
     "directed": {
       "connectDocumentTitle": "{{connector}} 연결",
       "connected": "{{connector}} 연결됨",
-      "needsConnector": "{{agent}}가 진행하려면 {{connector}}가 필요합니다",
+      "needsConnector": "{{assistantName}}가 진행하려면 {{connector}}가 필요합니다",
       "reconnecting": "다시 연결 중..."
     },
     "expiration": {
@@ -7287,7 +7287,7 @@
         "visibilityHelp": "워크스페이스 내에서 이 워크플로가 공유되는 방식을 선택하세요."
       },
       "notFound": "워크플로를 찾을 수 없습니다.",
-      "refineWith": "{{agent}}와 함께 다듬기",
+      "refineWith": "{{assistantName}}와 함께 다듬기",
       "sectionNavigation": "워크플로 상세 섹션",
       "visibility": {
         "automationWarning": "자동화가 중지됩니다",

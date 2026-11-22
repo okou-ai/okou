@@ -130,7 +130,7 @@ describe("Codex execution switch", () => {
   it("uses the switch when an event-triggered workflow launches a subscription chat", async () => {
     const owned = await ownedChatActor("team");
     await owned.run(async () => {
-      const { actor, agentId, runExecution } = owned;
+      const { actor, runExecution } = owned;
       const accountId = `codex-workflow-${randomUUID()}`;
       await configureSubscriptionPiModel(actor, { accountId }, "gpt-6-luna");
       const thread = await chat.createThread(actor, {
@@ -144,7 +144,7 @@ describe("Codex execution switch", () => {
 
       const workflowRun = await createWorkflowsBddApi(
         context,
-      ).startEventAutomationRun(actor, agentId, thread.id);
+      ).startEventAutomationRun(actor, thread.id);
       const { execution } = await runExecution(workflowRun.runId);
       expect(execution.cliAgentType).toBe("codex");
       expect(execution.piLaunchConfig).toBeUndefined();

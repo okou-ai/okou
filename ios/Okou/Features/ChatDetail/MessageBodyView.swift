@@ -4,7 +4,7 @@ import SwiftUI
 import Textual
 
 struct MessageActionContext: Hashable, Sendable {
-  let agentID: String?
+
   let threadID: String
 }
 

@@ -5,13 +5,13 @@ import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import {
-  createAuthOrgAgentsBddApi,
+  createAuthOrgBddApi,
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
 function organization(actor: ApiTestUser, name: string) {
@@ -28,7 +28,7 @@ function organization(actor: ApiTestUser, name: string) {
 
 async function createdWebhook(data: unknown): Promise<void> {
   webhooks.configureClerkWebhookSecret();
-  api.acceptAgentStorageWrites();
+  api.acceptStorageWrites();
   webhooks.verifyNextClerkWebhook({ type: "organization.created", data });
   const response = await webhooks.requestClerkWebhook("{}", {}, [200]);
   expect(response.body).toBe("OK");

@@ -15,11 +15,6 @@ teardown() {
 }
 
 @test "runner captures a safe marker request header in network telemetry" {
-    run create_runner_agent "runner-network-request-headers-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     # Date is a low-risk value-preserving capture header. Derive a unique valid
     # value from this test so the assertion does not weaken arbitrary-header redaction.
     local marker_checksum marker_epoch marker_value
@@ -37,7 +32,7 @@ curl --silent --show-error --max-time 10 \
 printf 'NETWORK_REQUEST_HEADERS_DONE\n'
 EOF
 )
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt" true
+    run runner_e2e_start_mock_shell_chat_run "$prompt" true
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

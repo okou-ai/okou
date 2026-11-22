@@ -261,6 +261,9 @@ export function createBillingCheckoutFixture() {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user(fixture);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [{ organization: { id: fixture.orgId }, role: "org:admin" }],
+    });
     let restoreAccepted = captureCheckoutExternalState();
     const owner = publicRunOwner(context, actor, {
       restoreEnvironment: () => {
@@ -268,18 +271,14 @@ export function createBillingCheckoutFixture() {
       },
     });
     return await owner.run(async () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = await runs.configureRunnerGroup();
       await createAuthDeviceSupportApi(context).initializePreferences(actor);
       await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Billing credential carrier",
-        visibility: "private",
-      });
+
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         model: "claude-fable-5-1",
         prompt: "Use the issued agent credential for billing",
       });

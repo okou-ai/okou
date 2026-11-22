@@ -172,7 +172,7 @@ final class ComputerAuthorizationStore {
             if !history.persistedEventIDs.contains(current.id.lowercased()) {
               _ = try await commands.send(
                 thread: thread, text: prompt, clientEventID: current.id,
-                chatThreadSortEventID: current.id, expectedAgentID: thread.agentID)
+                chatThreadSortEventID: current.id)
             }
             try checkOwner(generation)
             needsContinuation = false

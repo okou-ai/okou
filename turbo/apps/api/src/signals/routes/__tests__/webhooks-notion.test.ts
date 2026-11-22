@@ -448,11 +448,10 @@ describe("POST /api/webhooks/notion", () => {
   async function setupFixture(): Promise<{
     readonly fixture: WorkflowsFixture;
     readonly actor: ApiTestUser;
-    readonly agentId: string;
     readonly workflowId: string;
     readonly entities: NotionEntities;
   }> {
-    const { defaultAgentId: agentId, actor } = await wf.setupWorkflowOrg();
+    const { actor } = await wf.setupWorkflowOrg();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
@@ -469,7 +468,6 @@ describe("POST /api/webhooks/notion", () => {
     return {
       fixture,
       actor,
-      agentId,
       workflowId,
       entities: newNotionEntities(),
     };
@@ -1315,7 +1313,6 @@ describe("POST /api/webhooks/notion", () => {
   it("synchronizes Notion listeners after Chat, Run, approval and account allowance changes", async () => {
     const {
       actor,
-      agentId,
       threadId,
       runnerGroup,
       firstAccount,
@@ -1343,7 +1340,6 @@ describe("POST /api/webhooks/notion", () => {
     await expectAutomationConnector(secondAccount.id);
 
     const run = await runsApi.createThreadRun(actor, {
-      agentId,
       threadId,
       model: "claude-fable-5-1",
       prompt: "Switch this automation Chat's Notion account",

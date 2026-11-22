@@ -19,7 +19,6 @@ import type { AppRouter } from "../../contracts/trpc-contract";
 import {
   discoverClientContractModules,
   generateClientDescriptors,
-  renderAgentsClientDescriptors,
   renderClientContractImportManifest,
   renderClientDescriptorManifest,
   renderClientDescriptorModule,
@@ -150,9 +149,6 @@ describe("HTTP client descriptor generation", () => {
     expect(
       await readFile(new URL("../testing.ts", import.meta.url), "utf8"),
     ).toBe(renderClientDescriptorTestingRegistry(modules));
-    expect(
-      await readFile(new URL("../agents.ts", import.meta.url), "utf8"),
-    ).toBe(renderAgentsClientDescriptors());
   });
 
   it("renders deterministic schema-free contract import metadata", async () => {

@@ -1243,7 +1243,7 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("keeps a queued send drainable when thread-list publication fails", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
       prompt: "thread list publication failure anchor",
@@ -1264,7 +1264,6 @@ describe("CHAT-02: shared user message queue", () => {
 
     const queuedMessageId = randomUUID();
     const queuedBody = {
-      agentId,
       threadId: anchor.threadId,
       prompt: "queued send survives thread list publication failure",
       clientEventId: queuedMessageId,

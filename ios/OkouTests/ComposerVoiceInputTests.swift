@@ -113,7 +113,7 @@ final class ComposerVoiceInputTests: XCTestCase {
     await fulfillment(of: [gate.started], timeout: 3)
     composer.close()
     let replacement = fixture.composer(
-      root: root, capture: VoiceCaptureFixture(), agent: "another-agent")
+      root: root, capture: VoiceCaptureFixture(), target: .thread("other"))
     defer { replacement.close() }
     replacement.text = "Replacement draft"
     gate.release()
@@ -432,7 +432,7 @@ final class ComposerVoiceInputTests: XCTestCase {
     unmount(window)
     let replacementCapture = VoiceCaptureFixture()
     let replacement = fixture.composer(
-      root: root, capture: replacementCapture, agent: "another-agent")
+      root: root, capture: replacementCapture, target: .thread("other"))
     defer { replacement.close() }
     let replacementHost = UIHostingController(rootView: MentionComposerHarness(state: replacement))
     let replacementWindow = try await mountMentionHost(replacementHost)

@@ -17,7 +17,6 @@ describe("Direct Run launch defaults", () => {
     await owned.run(async () => {
       await bdd.updateUserTimezone(owned.actor, "America/Los_Angeles");
       const queued = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "prepare the accepted Run with current missing preferences",
       });
       await bdd.updateUserTimezone(owned.actor, "Asia/Shanghai");
@@ -38,7 +37,6 @@ describe("Direct Run launch defaults", () => {
       expect(execution.vars ?? {}).not.toHaveProperty("OKOU_AGENT_ID");
       await api.requestCancelRun(owned.actor, queued.runId, [200]);
       const next = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "use the edited timezone in the next Run",
       });
       const later = await owned.runExecution(next.runId);

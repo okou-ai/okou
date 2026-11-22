@@ -51,8 +51,6 @@ describe("Android generated consumption CLI", () => {
     'import retrofit2.http.GET as Fetch\ninterface Extra { @Fetch("/api/unknown") suspend fun get(): String }',
     'interface Extra { @retrofit2.http.DELETE("/api/org") suspend fun delete(): String }',
     'val path = "/api/unregistered"',
-    'interface OldProfiles { @GET("/api/agents") suspend fun profiles(): String }',
-    'interface OldDrafts { @PATCH("/api/agents/{id}/draft") suspend fun save(): String }',
   ])(
     "rejects uninventoried methods/paths including aliases and qualified annotations",
     async (source) => {

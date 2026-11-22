@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import {
   click,
   fill,
