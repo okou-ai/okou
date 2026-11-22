@@ -59,6 +59,9 @@ class ScreenshotScenario {
         fun text(label: String) = find(By.pkg(app.packageName).text(label), label)
         fun description(label: String) = find(By.pkg(app.packageName).desc(label), label)
         fun enabled(label: String) = find(By.pkg(app.packageName).text(label).enabled(true), label)
+        fun touchTarget(node: UiObject2): UiObject2 =
+            generateSequence(node) { it.parent }.first { it.isClickable }
+
         fun capture(name: String) {
             device.waitForIdle()
             ScreenshotCapture.capture(name)
@@ -131,7 +134,9 @@ class ScreenshotScenario {
                                 .click()
                             text("推荐")
                             text("Google Calendar")
-                            val filter = description("筛选服务类别").visibleBounds
+                            val filterIcon = description("筛选服务类别")
+                            assertEquals(24, filterIcon.visibleBounds.width())
+                            val filter = touchTarget(filterIcon).visibleBounds
                             assertEquals(48, filter.width())
                             assertEquals(48, filter.height())
                             capture("discover-phone.png")
@@ -144,7 +149,7 @@ class ScreenshotScenario {
                             enabled("重命名").click()
                             edit("账号名称", "会议日历")
                             val ready = enabled("保存")
-                            assertTrue(ready.visibleBounds.height() >= 48)
+                            assertTrue(touchTarget(ready).visibleBounds.height() >= 48)
                             assertFalse(device.hasObject(By.text(networkFailure)))
                             capture("rename-ready-phone.png")
                             fixture.rejectConnection = true
@@ -190,7 +195,7 @@ class ScreenshotScenario {
                             enabled("前往服务方").click()
                             text(CONNECTOR_EXAMPLE_DEVICE_CODE)
                             val provider = enabled("前往服务方")
-                            assertTrue(provider.visibleBounds.height() >= 48)
+                            assertTrue(touchTarget(provider).visibleBounds.height() >= 48)
                             capture("device-authorization-phone.png")
                             enabled("取消").click()
                             enabled("连接账号")
@@ -203,7 +208,7 @@ class ScreenshotScenario {
                             enabled("连接账号").click()
                             val titleLabel = "连接账号 · Manual setup sample"
                             val titleBounds = text(titleLabel).visibleBounds
-                            val cancelBounds = enabled("取消").visibleBounds
+                            val cancelBounds = touchTarget(enabled("取消")).visibleBounds
                             val scrollBody =
                                 find(
                                     By.pkg(app.packageName)
@@ -218,7 +223,7 @@ class ScreenshotScenario {
                                 )
                             )
                             assertEquals(titleBounds, text(titleLabel).visibleBounds)
-                            assertEquals(cancelBounds, enabled("取消").visibleBounds)
+                            assertEquals(cancelBounds, touchTarget(enabled("取消")).visibleBounds)
                             capture("authorization-short-large-text.png")
                             enabled("取消").click()
                             enabled("连接账号")
