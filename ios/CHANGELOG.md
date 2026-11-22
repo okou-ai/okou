@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.1](https://github.com/okou-ai/okou/compare/ios-v0.52.0...ios-v0.52.1) (2026-11-22)
+
+
+### Refactoring
+
+* retire product agent apis and use member identity across clients ([#49933](https://github.com/okou-ai/okou/issues/49933)) ([1d34e53](https://github.com/okou-ai/okou/commit/1d34e531ac4c777d6df6236fa871ce6c834f5380))
+
 ## [0.52.0](https://github.com/okou-ai/okou/compare/ios-v0.51.12...ios-v0.52.0) (2026-11-22)
 
 

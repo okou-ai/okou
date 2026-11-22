@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.96](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.95...runner-rs-v0.249.96) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** centralize decoded response inspection setup ([#49949](https://github.com/okou-ai/okou/issues/49949)) ([c56a8e9](https://github.com/okou-ai/okou/commit/c56a8e9ee73ebfcea289fb6a0039d613338f4ed4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.95](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.94...runner-rs-v0.249.95) (2026-11-22)
 
 

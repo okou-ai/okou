@@ -35,6 +35,28 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
+internal fun ChatArtifactLinkPreview(
+    model: ArtifactCatalogModel,
+    link: String,
+    wide: Boolean,
+    onClose: () -> Unit,
+) {
+    val state by model.state.collectAsStateWithLifecycle()
+    val page = rememberArtifactPageState()
+    val saveLauncher = rememberArtifactSaveLauncher(model, page)
+    LifecycleStartEffect(model, link) {
+        model.select(link)
+        model.setActive(true, showCatalog = false)
+        onStopOrDispose { model.setActive(false) }
+    }
+    BackHandler(onBack = onClose)
+    Column(Modifier.fillMaxSize()) {
+        ArtifactToolbar(R.string.artifact_title, R.string.back, onClose, if (wide) 28.dp else 12.dp)
+        ArtifactSelectionPreview(model, state, page, link, wide, saveLauncher)
+    }
+}
+
+@Composable
 internal fun ChatArtifactResources(
     model: ArtifactCatalogModel,
     threadId: String,
@@ -131,7 +153,7 @@ internal fun ChatArtifactResources(
             items(result?.items.orEmpty(), key = { it.id }) { item ->
                 ChatArtifactResourceRow(
                     item,
-                    dates.timestamp(item.createdAt, showDay = true),
+                    dates.timestamp(checkNotNull(item.createdAt), showDay = true),
                     if (item.id == restoreRow) {
                         Modifier.focusRequester(rowFocus).onGloballyPositioned {
                             if (page.restoreRow == item.id) {
