@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import threading
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import state_file
@@ -57,19 +58,26 @@ def _source_ip(value: str) -> str | None:
     return str(address)
 
 
-def publish_unavailable(state: registry.RegistryUnavailable) -> None:
+def publish[State: registry.RegistryState](
+    state: State, project: Callable[[State], dict[str, object]]
+) -> None:
+    """Publish a completed load result from the registry owner loop."""
     global _last_state, _status
     if state is _last_state:
         return
-    result: dict[str, object] = {
+    result = project(state)
+    with _lock:
+        _last_state = state
+        _status = result
+
+
+def project_unavailable(state: registry.RegistryUnavailable) -> dict[str, object]:
+    return {
         "state": "unavailable",
         "digest": state.digest,
         "file": file_identity(state.loaded_key),
         "reason": state.reason,
     }
-    with _lock:
-        _last_state = state
-        _status = result
 
 
 def catalog_snapshot(
@@ -91,11 +99,7 @@ def catalog_snapshot(
     }
 
 
-def publish_available(state: registry._RegistrySnapshot) -> None:
-    """Called only by the main-loop registry owner after a complete load result."""
-    global _last_state, _status
-    if state is _last_state:
-        return
+def project_available(state: registry._RegistrySnapshot) -> dict[str, object]:
     result: dict[str, object] = {
         "digest": state.digest,
         "file": file_identity(state.loaded_key),
@@ -129,6 +133,4 @@ def publish_available(state: registry._RegistrySnapshot) -> None:
         entries=entries,
         truncated=len(state.invalid_sandboxes) + len(omitted_ips) > len(entries),
     )
-    with _lock:
-        _last_state = state
-        _status = result
+    return result

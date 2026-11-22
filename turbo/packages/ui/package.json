@@ -1,6 +1,6 @@
 {
   "name": "@okouai/ui",
-  "version": "1.21.84",
+  "version": "1.21.85",
   "type": "module",
   "private": true,
   "exports": {
@@ -38,7 +38,7 @@
     "postcss": "^8.5.23",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
