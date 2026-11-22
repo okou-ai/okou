@@ -243,6 +243,8 @@ internal fun ConnectorDetails(
                                 rows = 1,
                             )
                     }
+                } else if (state.offline && detail == null) {
+                    ConnectorLoadWhenOnline()
                 }
                 if (detail != null && state.accounts.data != null) {
                     Spacer(Modifier.height(8.dp))
@@ -274,6 +276,20 @@ internal fun ConnectorDetails(
                         )
                     }
                 }
+                if (
+                    state.offline &&
+                        detail != null &&
+                        hasAccountContent &&
+                        (accounts.isNotEmpty() || detail.methods.isNotEmpty())
+                ) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.connector_offline_action),
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        style = connectorFeedbackType(),
+                        color = color.onSurfaceVariant,
+                    )
+                }
                 if (detail?.hasPermissions == true) {
                     ConnectorSectionDivider()
                     ConnectorAccountAction(
@@ -285,19 +301,15 @@ internal fun ConnectorDetails(
                         model.showPermissions()
                     }
                 }
-                if (state.offline) {
-                    if (hasAccountContent) {
-                        if (detail == null) ConnectorLoadWhenOnline()
-                        else ConnectorStatusBanner(R.string.connector_offline_action)
+                if (!state.offline) {
+                    when {
+                        detail == null && state.detail.failure != null ->
+                            ConnectorStatusBanner(R.string.connector_load_failed)
+                        state.detail.failure == ConnectorReadFailure.Sustained ||
+                            hasAccountContent &&
+                                state.accounts.failure == ConnectorReadFailure.Sustained ->
+                            ConnectorStatusBanner(R.string.connector_refresh_failed)
                     }
-                } else if (detail == null && state.detail.failure != null) {
-                    ConnectorStatusBanner(R.string.connector_load_failed)
-                } else if (
-                    state.detail.failure == ConnectorReadFailure.Sustained ||
-                        hasAccountContent &&
-                            state.accounts.failure == ConnectorReadFailure.Sustained
-                ) {
-                    ConnectorStatusBanner(R.string.connector_refresh_failed)
                 }
                 if (panel == null) ConnectorActionFeedback(action)
             } else if (state.offline) {

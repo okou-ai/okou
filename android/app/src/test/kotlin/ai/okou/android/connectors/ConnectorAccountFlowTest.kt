@@ -19,6 +19,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -41,6 +42,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,6 +50,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 private const val LOAD_WHEN_ONLINE = "Content will load when you’re back online."
+private const val OFFLINE_ACCOUNT_ACTION = "Connect to the internet to manage accounts."
 
 @OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -157,9 +160,8 @@ class ConnectorAccountFlowTest {
             compose.onNodeWithText("Gmail").assertIsDisplayed()
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertIsDisplayed()
             compose.onNodeWithText("Connect account").assertDoesNotExist()
-            compose
-                .onNodeWithText("Connect to the internet to manage accounts.")
-                .assertDoesNotExist()
+            val offlineAction = compose.onNodeWithText(OFFLINE_ACCOUNT_ACTION)
+            offlineAction.assertDoesNotExist()
 
             compose.runOnIdle { connectivity.value = true }
             awaitText("Connect account")
@@ -167,6 +169,13 @@ class ConnectorAccountFlowTest {
             val permissions = "Permissions this service can request"
             awaitText(permissions)
             compose.runOnIdle { connectivity.value = false }
+            awaitText(OFFLINE_ACCOUNT_ACTION)
+            val connect = compose.onNodeWithText("Connect account").assertIsNotEnabled()
+            assertEquals(
+                8.dp,
+                offlineAction.getUnclippedBoundsInRoot().top -
+                    connect.getUnclippedBoundsInRoot().bottom,
+            )
             compose.onNodeWithText(permissions).performClick()
             val inSheet = hasAnyAncestor(hasTestTag("connector-sheet"))
             compose.onNode(hasText(LOAD_WHEN_ONLINE) and inSheet).assertIsDisplayed()
@@ -175,6 +184,7 @@ class ConnectorAccountFlowTest {
             compose.runOnIdle { connectivity.value = true }
             awaitText("读取日历与日程")
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
+            offlineAction.assertDoesNotExist()
         }
 
     @Test
