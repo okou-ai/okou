@@ -619,6 +619,25 @@ class OkouAppTest {
     }
 
     @Test
+    @Config(qualifiers = "b+zh+Hans-w280dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun workspaceToolEntriesStackWithoutTruncatingChineseAtLargeFontScale() {
+        render(fontScale = 2f)
+        for (label in listOf("工作流", "连接器", "成果")) {
+            val entry = compose.onNodeWithContentDescription(label).assertIsDisplayed()
+            val title = compose.onNodeWithText(label, useUnmergedTree = true)
+            val layouts = mutableListOf<TextLayoutResult>()
+            title.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            assertEquals(1, layout.lineCount)
+            assertFalse(layout.isLineEllipsized(0))
+            assertTrue(
+                title.getUnclippedBoundsInRoot().top > entry.getUnclippedBoundsInRoot().top + 18.dp
+            )
+        }
+    }
+
+    @Test
     @Config(qualifiers = "de-rDE-w400dp-h800dp")
     fun longLocalizedLabelsRemainOperableAtLargeFontScale() {
         val initialListResponse = CompletableDeferred<Unit>()

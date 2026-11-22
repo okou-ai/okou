@@ -135,8 +135,9 @@ class ChatListRootTest {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
         awaitListAndNames()
+        val labels = listOf("Workflows", "Connectors", "Artifacts")
         val entries =
-            listOf("Workflows", "Connectors", "Artifacts").map {
+            labels.map {
                 val entry = compose.onNodeWithContentDescription(it).assertIsDisplayed()
                 if (it == "Artifacts") entry.assertIsEnabled()
                 else entry.assertIsNotEnabled().assertHasNoClickAction()
@@ -147,16 +148,18 @@ class ChatListRootTest {
         val entryBounds = entries.map { it.getUnclippedBoundsInRoot() }
         assertTrue(entryBounds.all { it.top >= searchBounds.bottom && it.bottom - it.top >= 48.dp })
         assertTrue(entryBounds.zipWithNext().all { (start, end) -> start.right < end.left })
-        val connectorLabel = "Connectors"
-        val connectorLayouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText(connectorLabel, useUnmergedTree = true).performSemanticsAction(
-            SemanticsActions.GetTextLayoutResult
-        ) {
-            it(connectorLayouts)
+        for ((label, bounds) in labels.zip(entryBounds)) {
+            val title = compose.onNodeWithText(label, useUnmergedTree = true)
+            val titleBounds = title.getUnclippedBoundsInRoot()
+            val layouts = mutableListOf<TextLayoutResult>()
+            title.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertEquals(1, layouts.single().lineCount)
+            assertEquals(
+                (bounds.top + bounds.bottom).value / 2,
+                (titleBounds.top + titleBounds.bottom).value / 2,
+                1f,
+            )
         }
-        val connectorLayout = connectorLayouts.single()
-        assertEquals(connectorLabel.length, connectorLayout.getLineEnd(0, visibleEnd = true))
-        assertTrue(connectorLayout.size.width >= connectorLayout.multiParagraph.maxIntrinsicWidth)
         search.performClick()
         entries.forEach { it.assertDoesNotExist() }
         compose.onNodeWithContentDescription("Back").performClick()

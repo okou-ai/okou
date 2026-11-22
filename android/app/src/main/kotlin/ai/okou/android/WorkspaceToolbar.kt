@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -287,14 +286,27 @@ private fun WorkspaceToolEntry(
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(9.dp))
             .then(interaction)
-            .padding(horizontal = 4.dp, vertical = 4.dp)
-    val content: @Composable () -> Unit = {
+            .padding(
+                horizontal = if (stacked) 0.dp else 6.dp,
+                vertical = if (stacked) 4.dp else 2.dp,
+            )
+    val iconContent: @Composable () -> Unit = {
         Icon(painterResource(icon), null, Modifier.size(18.dp), tint = color)
+    }
+    val titleContent: @Composable (Modifier) -> Unit = { titleModifier ->
         Text(
             title,
+            modifier = titleModifier,
             color = color,
             textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style =
+                MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    letterSpacing = 0.sp,
+                ),
         )
     }
     if (stacked) {
@@ -303,16 +315,17 @@ private fun WorkspaceToolEntry(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
         ) {
-            content()
+            iconContent()
+            titleContent(Modifier)
         }
     } else {
-        FlowRow(
+        Row(
             entry,
             horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically),
-            itemVerticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            content()
+            iconContent()
+            titleContent(Modifier.weight(1f, fill = false))
         }
     }
 }
