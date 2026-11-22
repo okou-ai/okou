@@ -390,7 +390,13 @@ class ConnectorModel(
         val pending = pendingChange ?: return
         val action = mutableState.value.action ?: return
         if (actionJob?.isActive == true || action.busy) return
-        runAction(action) { verifyChange(pending) }
+        runAction(action) {
+            verifyChange(pending)
+            if (open) {
+                refreshDirectory()
+                refreshDetail()
+            }
+        }
     }
 
     private suspend fun verifyChange(change: PendingChange) {

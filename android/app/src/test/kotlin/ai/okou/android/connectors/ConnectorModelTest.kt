@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +73,34 @@ class ConnectorModelTest {
             )
             assertEquals(2, renamed.accountsFor(CONNECTOR_CALENDAR).size)
         }
+
+    @Test
+    fun delayedAccountReadbackRestartsTheDirectoryLoad() {
+        val releaseDiscovery = CountDownLatch(1)
+        withModel(CONNECTOR_CALENDAR, configure = { it.discoveryGate = releaseDiscovery }) {
+            fixture,
+            model ->
+            fixture.loseRenameReply = true
+            fixture.failAccountReads = true
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+            model.await {
+                it.action?.busy == false &&
+                    it.action.problem == ConnectorProblem.VerificationPending
+            }
+
+            fixture.failAccountReads = false
+            model.resume()
+            model.await { it.action?.result == ConnectorResult.Renamed }
+            releaseDiscovery.countDown()
+
+            val directory = model.await { it.browse.data != null }
+            val renamed =
+                directory.accountsFor(CONNECTOR_CALENDAR).single {
+                    it.id == CONNECTOR_CALENDAR_PRIMARY
+                }
+            assertEquals("Meeting calendar", renamed.displayName)
+        }
+    }
 
     @Test
     fun disconnectingTheLastAccountKeepsTheSelectedService() =
