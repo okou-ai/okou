@@ -2978,3 +2978,9 @@ The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts
 The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts/ojoskbx5gp.md) opened at `a5a95d9bd9`. 58 IDs have their first accepted Vitest row, 3 retain an evidence gap, 9 have a documented upstream disposition, and 191 await implementation. 10 owners are closed, 3 are partially accepted, and 2 are wholly blocked. Historical first acceptances are 2,067, with 2,043 currently complete. Batch 79 retains its separate 54 open dispositions.
 
 [Full GWT, row names, controls and status by ID](https://app.okou.ai/artifacts/tudgbgfjr7.tsv). [Exact remaining IDs by frozen owner](https://app.okou.ai/artifacts/chn7h56rpy.md). [Sources, comparison, runnable controls and Vitest records](https://app.okou.ai/artifacts/4mz2czdxlj.zip).
+
+## Batch 80 checkpoint 4
+
+The fixed [intake of 30 owners and 261 unique IDs](https://app.okou.ai/artifacts/ojoskbx5gp.md) opened at `a5a95d9bd9`. 76 IDs have their first accepted Vitest row, 4 retain an evidence gap, 11 have a documented upstream disposition, and 170 await implementation. 10 owners are closed, 5 are partially accepted, and 2 are wholly blocked. Historical first acceptances are 2,085, with 2,061 currently complete. Batch 79 retains its separate 54 open dispositions.
+
+[Full GWT, row names, controls and status by ID](https://app.okou.ai/artifacts/3infggers5.tsv). [Exact remaining IDs by frozen owner](https://app.okou.ai/artifacts/9cqbr2kb6p.md). [Sources, comparison, runnable controls and Vitest records](https://app.okou.ai/artifacts/2nica8cji5.zip).

@@ -181,7 +181,7 @@ Original test `VNC displays saved Cloudflare connection details`. [Registration]
 - **Given** The user is adding VNC and one Cloudflare Access network is saved.
 - **When** They choose Apple screen sharing, select Cloudflare Access and the saved network, enter an address, open address help, and continue through the connection step.
 - **Then** Origin TLS is checked and cannot be changed, the address-help dialog contains three items, and dismissing it preserves the address. After entering an origin TLS server name, the user can continue to device login information."
-remote-control-guided-setup-048	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1442	pending					"## remote-control-guided-setup-048
+remote-control-guided-setup-048	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1442	first-verified	remote-control-guided-setup-048 The deletion explanation identifies the linked hosts and returns focus on dismissal	turbo/apps/platform/src/views/okou-page/__tests__/editing-private-network-ownership.test.ts	stage4-new.json	network-ownership-red.json	"## remote-control-guided-setup-048
 
 Original test `tailscale network deletion explains its ssh dependency beside the disabled action`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1442).
 
@@ -475,28 +475,28 @@ Original test `Tailscale creation defaults to personal and explains the unavaila
 - **Given** A member starts creating a Tailscale network and chooses to enter existing credentials.
 - **When** The credential form opens.
 - **Then** Only me is selected by default, the Organization members option is disabled, and the page explains that Engineering members can use the network while organization administrators create and manage organization networks."
-remote-control-guided-setup-133	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4306	pending					"## remote-control-guided-setup-133
+remote-control-guided-setup-133	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4306	first-verified	remote-control-guided-setup-133 An administrator can share the edited tailscale network with its saved SSH reference intact	turbo/apps/platform/src/views/okou-page/__tests__/editing-private-network-ownership.test.ts	stage4-new.json	network-ownership-red.json	"## remote-control-guided-setup-133
 
 Original test `Sharing tailscale saves directly with the edited name and preserves connection references`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L4306).
 
 - **Given** An administrator edits a personal Tailscale network that has a saved SSH connection reference.
 - **When** They change its name to Shared office draft, select Organization members, and save while the sharing operation is pending.
 - **Then** Saving proceeds without a confirmation dialog; after sharing completes, details show the edited name and organization scope, and the saved SSH connection reference remains intact."
-remote-control-guided-setup-134	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4306	pending					"## remote-control-guided-setup-134
+remote-control-guided-setup-134	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4306	first-verified	remote-control-guided-setup-134 An administrator can share the edited cloudflare network with its saved SSH reference intact	turbo/apps/platform/src/views/okou-page/__tests__/editing-private-network-ownership.test.ts	stage4-new.json	network-ownership-red.json	"## remote-control-guided-setup-134
 
 Original test `Sharing cloudflare saves directly with the edited name and preserves connection references`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L4306).
 
 - **Given** An administrator edits a personal Cloudflare Access network that has a saved SSH connection reference.
 - **When** They change its name to Shared office draft, select Organization members, and save while the sharing operation is pending.
 - **Then** Saving proceeds without a confirmation dialog; after sharing completes, details show the edited name and organization scope, and the saved SSH connection reference remains intact."
-remote-control-guided-setup-136	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4451	pending					"## remote-control-guided-setup-136
+remote-control-guided-setup-136	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4451	first-verified	remote-control-guided-setup-136 A failed tailscale ownership transfer preserves the unsaved name and disables saving	turbo/apps/platform/src/views/okou-page/__tests__/editing-private-network-ownership.test.ts	stage4-new.json	network-ownership-red.json	"## remote-control-guided-setup-136
 
 Original test `tailscale sharing failure (409) keeps the edit draft and shows an inline error`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L4451).
 
 - **Given** An administrator edits a personal Tailscale network and the attempt to share it fails with status 409.
 - **When** They enter Retained after sharing failure as the name, select Organization members, and save.
 - **Then** An inline alert says the network or its linked connections changed and the draft is kept; no dialog appears, the name remains in the form, and Save network is disabled."
-remote-control-guided-setup-137	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4451	pending					"## remote-control-guided-setup-137
+remote-control-guided-setup-137	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	4451	first-verified	remote-control-guided-setup-137 A failed cloudflare ownership transfer preserves the unsaved name and disables saving	turbo/apps/platform/src/views/okou-page/__tests__/editing-private-network-ownership.test.ts	stage4-new.json	network-ownership-red.json	"## remote-control-guided-setup-137
 
 Original test `cloudflare sharing failure (403) keeps the edit draft and shows an inline error`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L4451).
 
@@ -517,14 +517,14 @@ Original test `Number only the first nine search results and open the ninth on M
 - **Given** On Mac Chrome, the sidebar has 10 cached chats, with the first two pinned, and the remote chat list has not responded.
 - **When** The user opens empty search with Command, then presses Command+9.
 - **Then** The first nine results have numbered shortcuts and the tenth has none; the first shortcut is ⌘1. Pressing 9 opens Chat 4, closes search, and leaves the chat list hidden; the remote request remains pending."
-settings-refresh-state-002	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	92	pending					"## settings-refresh-state-002
+settings-refresh-state-002	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	92	upstream-changed	The Cloud browser switch already becomes checked with all post-save GET responses held. The single-write UI consumes the confirmed field from the PUT (ec30a968b5, #48940). The original required unchecked state during a subsequent refresh was not observable.	probes/settings-refresh-original-002-005-011.ts.txt; pref4.json			"## settings-refresh-state-002
 
 Original test `saving cloud browser keeps the selected send mode unchanged during refresh`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L92).
 
 - **Given** Settings is open on Chat, and ⌘ Enter is selected while Cloud browser is unchecked.
 - **When** The user enables Cloud browser, and the updated preferences are being refreshed.
 - **Then** Cloud browser remains unchecked and unavailable during refresh, while ⌘ Enter remains selected and enabled. After refresh completes, Cloud browser is checked and enabled, and ⌘ Enter remains selected."
-settings-refresh-state-003	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	117	pending					"## settings-refresh-state-003
+settings-refresh-state-003	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	117	first-verified	settings-refresh-state-003 Morning brief remains usable while a Suggestions save is held	turbo/apps/platform/src/views/okou-page/__tests__/preferences-during-a-save.test.ts	stage4-new.json	saved-preference-red.json,morning-brief-reread-red.json	"## settings-refresh-state-003
 
 Original test `saving Learning (initially false) keeps enabled Suggestions unchanged during refresh`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L117).
 
@@ -533,7 +533,7 @@ Original test `saving Learning (initially false) keeps enabled Suggestions uncha
 - **Then** During refresh, Learning remains off and unavailable, while Suggestions remains checked and enabled. After refresh completes, Learning is on and available, and Suggestions remains checked.
 - **Upstream change** `ec5330db` (#49438) retires the separate Learning preference, so daily profile learning follows Suggestions, and removes this upstream test. The current save-isolation test is `updates $name from the save response while leaving other preferences usable` ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L306)). Rebuild this scenario with Suggestions as the saved preference and Morning brief as the preference that stays unchanged.
 - **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so with the Suggestions rollout on, Suggestions and Morning brief are edited in the My Okou settings section, where a Suggestions save also updates the For You feed source and reads Suggestions back once; the upstream row is now `updates Suggestions from the save response while leaving other preferences usable` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L324)). Rebuild this scenario from `/?settings=my-okou`: while the Suggestions save is pending, Suggestions stays checked and unavailable and Morning brief can be turned on; afterwards Suggestions is off and enabled."
-settings-refresh-state-005	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	186	pending					"## settings-refresh-state-005
+settings-refresh-state-005	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	186	first-verified	settings-refresh-state-005 Reopening My Okou displays a Suggestions change made outside this page	turbo/apps/platform/src/views/okou-page/__tests__/preferences-during-a-save.test.ts	stage4-new.json	preferences-return-red.json,saved-preference-red.json,morning-brief-reread-red.json	"## settings-refresh-state-005
 
 Original test `reopening Settings refreshes a Learning preference changed elsewhere`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L186).
 
@@ -542,14 +542,14 @@ Original test `reopening Settings refreshes a Learning preference changed elsewh
 - **Then** Learning is checked and enabled in the reopened Settings.
 - **Upstream change** `ec5330db` (#49438) retires the separate Learning preference; the upstream test is now `%s refreshes a Suggestions preference changed elsewhere after a save` ([Registration](https://github.com/okou-ai/okou/blob/ec5330dbee67ad46e9dee4e000ba92863b223681/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L202)). Rebuild this scenario with the Suggestions switch.
 - **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so with the Suggestions rollout on, the Suggestions switch lives in the My Okou settings section; the upstream row is now `reopening Settings refreshes a Suggestions preference changed elsewhere after a save` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L203)), and its sibling row returns to My Okou instead of Preference. Rebuild this scenario from `/?settings=my-okou`, selecting My Okou in the reopened Settings navigation before checking Suggestions."
-settings-refresh-state-007	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	250	pending					"## settings-refresh-state-007
+settings-refresh-state-007	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	250	first-verified	settings-refresh-state-007 Morning brief remains available throughout changing the account time zone to Eastern Time	turbo/apps/platform/src/views/okou-page/__tests__/preferences-during-a-save.test.ts	stage4-new.json	saved-preference-red.json	"## settings-refresh-state-007
 
 Original test `saving time zone keeps enabled Morning brief unchanged during refresh`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L250).
 
 - **Given** Morning brief is enabled in Settings.
 - **When** The user changes the time zone to Eastern Time (ET) while preferences are being refreshed.
 - **Then** Morning brief remains checked and enabled during the refresh and remains checked after the new time zone appears."
-settings-refresh-state-008	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	286	pending					"## settings-refresh-state-008
+settings-refresh-state-008	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	286	first-verified	settings-refresh-state-008 Saving Morning brief leaves Suggestions usable and publishes the confirmation independently of rereads	turbo/apps/platform/src/views/okou-page/__tests__/preferences-during-a-save.test.ts	stage4-new.json	saved-preference-red.json,morning-brief-reread-red.json	"## settings-refresh-state-008
 
 Original test `keeps Morning brief pending until its saved preference has been read back`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L286).
 
@@ -557,7 +557,7 @@ Original test `keeps Morning brief pending until its saved preference has been r
 - **When** The user turns Morning brief off and interacts with an independent preference while the read-back is pending.
 - **Then** Morning brief remains checked and unavailable until the saved preference is read back, then becomes unchecked and enabled. The independent preference can be turned on and remains enabled.
 - **Upstream change** `4e5707de` (#49556) makes My Okou permanent, so with the Suggestions rollout on, Morning brief and Suggestions are edited in the My Okou settings section; the upstream row is now `updates Morning brief from the save response while leaving other preferences usable` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L324)). Rebuild this scenario from `/?settings=my-okou` with Suggestions as the independent preference: Morning brief stays checked and unavailable until its save response arrives, then is unchecked and enabled without another Morning brief read."
-settings-refresh-state-011	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	348	pending					"## settings-refresh-state-011
+settings-refresh-state-011	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.bdd.md	348	upstream-changed	A successful Morning brief write confirms the off state directly. Returning HTTP 500 on every subsequent preference read did not display the frozen error. Single-write confirmations are reused by 9f88551fad (#48985).	probes/settings-refresh-original-002-005-011.ts.txt; pref4.json			"## settings-refresh-state-011
 
 Original test `a Morning brief refresh failure still reports the error and disables the switch`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/settings-refresh-state.test.tsx#L348).
 
@@ -1299,70 +1299,70 @@ Original test `A late RSA import cannot associate its old pin with a newer publi
 - **Given** I am adding an RSA-AES connection with pin ab repeated 32 times and have started importing an old public-key draft.
 - **When** I replace that PEM with a newer draft before the old import responds.
 - **Then** An alert appears; the original pin and newer PEM remain unchanged, and no imported-key size is shown."
-wallet-action-card-001	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	113	pending					"## wallet-action-card-001
+wallet-action-card-001	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	113	first-verified	wallet-action-card-001 Authorization that finishes during subscription attachment continues the owning chat once	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-double-message-red.json,wallet-transcript-red.json	"## wallet-action-card-001
 
 Original test `a workspace notification completes wallet consent and continues the owning chat once`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L113).
 
 - **Given** A chat contains a wallet authorization link, and authorization is initially pending.
 - **When** The user opens the link while the wallet-change subscription is attaching; authorization completes before attachment finishes, followed by notifications for other organizations and duplicate notifications for the user's organization.
 - **Then** The exact authorization URL is shown. The owning chat receives the continuation message exactly once, and the completed authorization control is disabled."
-wallet-action-card-002	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	167	pending					"## wallet-action-card-002
+wallet-action-card-002	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	167	first-verified	wallet-action-card-002 Authorization alone leaves the conversation untouched until the user continues once	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-double-message-red.json,wallet-transcript-red.json	"## wallet-action-card-002
 
 Original test `wallet consent completed before the user's click continues from the current authorization`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L167).
 
 - **Given** A chat contains a wallet authorization link, and authorization is initially pending.
 - **When** Authorization completes before the user clicks Continue.
 - **Then** No continuation is sent before the click. Clicking Continue sends the continuation once and leaves the Authorized control disabled."
-wallet-action-card-005	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	222	pending					"## wallet-action-card-005
+wallet-action-card-005	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	222	first-verified	wallet-action-card-005 An authorized notification cannot override failed consent or send a continuation	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-transcript-red.json	"## wallet-action-card-005
 
 Original test `a failed consent stops waiting without sending a message even when its notification claims authorization`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L222).
 
 - **Given** A chat contains a wallet authorization link, and authorization is pending.
 - **When** The user opens the link and consent fails, despite the notification claiming authorization.
 - **Then** Waiting stops, the disabled control says “Authorization not completed,” and no chat message is sent."
-wallet-action-card-007	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	253	pending					"## wallet-action-card-007
+wallet-action-card-007	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	253	first-verified	wallet-action-card-007 A confirmed continuation remains busy until the owning chat accepts it	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-transcript-red.json	"## wallet-action-card-007
 
 Original test `an authorized wallet card reports continuation success after confirmation`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L253).
 
 - **Given** A chat contains an already authorized wallet card and a continuation request is pending.
 - **When** The request succeeds after the user confirms continuation.
 - **Then** The card reports “Authorized,” and that control is disabled."
-wallet-action-card-009	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	287	pending					"## wallet-action-card-009
+wallet-action-card-009	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	287	first-verified	wallet-action-card-009 An expired authorization gives no action or continuation	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-transcript-red.json	"## wallet-action-card-009
 
 Original test `a expired authorization cannot continue the chat`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L287).
 
 - **Given** A chat contains an expired wallet authorization.
 - **When** The chat is opened.
 - **Then** The disabled control says “Authorization expired”; no action links are shown and no continuation message is sent."
-wallet-action-card-012	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	305	pending					"## wallet-action-card-012
+wallet-action-card-012	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	305	first-verified	wallet-action-card-012 Consent and purchase cards preserve their URLs, domains and surrounding instructions	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-transcript-red.json	"## wallet-action-card-012
 
 Original test `wallet authorization and purchase links show cards with the exact provider destinations`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L305).
 
 - **Given** A chat contains a Link authorization URL and a Link purchase-approval URL with query strings, along with surrounding explanatory text.
 - **When** The chat is displayed.
 - **Then** Two action cards link to the exact respective provider URLs, open in a new tab with safe rel attributes, and show the provider domains while preserving the surrounding text."
-wallet-action-card-015	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	372	pending					"## wallet-action-card-015
+wallet-action-card-015	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	372	first-verified	wallet-action-card-015 Path and query approval URLs both retain their address and Review purchase action	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-transcript-red.json	"## wallet-action-card-015
 
 Original test `both purchase approval URL formats render review actions`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L372).
 
 - **Given** A chat contains purchase approval links in both path and query URL formats.
 - **When** The chat is displayed.
 - **Then** Both exact URLs appear as review actions accessible as “Review purchase.”"
-wallet-action-card-017	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	432	pending					"## wallet-action-card-017
+wallet-action-card-017	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	432	first-verified	wallet-action-card-017 Ordinary and untrusted provider destinations retain their original links	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-transcript-red.json	"## wallet-action-card-017
 
 Original test `ordinary provider links and untrusted wallet lookalikes stay ordinary links`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L432).
 
 - **Given** A chat contains ordinary provider links and lookalike wallet URLs using an untrusted host, embedded credentials, a nonstandard port, or HTTP.
 - **When** The chat is displayed.
 - **Then** None becomes a wallet action card; each remains an ordinary link to its original URL."
-wallet-action-card-019	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	483	pending					"## wallet-action-card-019
+wallet-action-card-019	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	483	probe-insufficient	The message-port Router run observed pending → approved for the matching organization → continued after a worker connection gap. Removing the organization predicate still let the complete probe pass: there is no distinguishing completion signal for the preceding unrelated notification. Original scenario retained.	probes/wallet-foreign-notification.ts.txt; pref-wallet3.json; wallet-foreign-org-red.json and .patch			"## wallet-action-card-019
 
 Original test `purchase approval cards show approval and continuation after notifications and connection gaps`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L483).
 
 - **Given** A chat contains a purchase approval link whose status is pending, and the status later changes to approved and then continued.
 - **When** An unrelated-organization notification arrives, then the user's organization notification arrives; later the connection is suspended while status changes to continued and then reconnects.
 - **Then** The unrelated notification does not show approval. The matching notification shows “Approved; waiting to continue” and a disabled “Status recorded” control; after reconnection, the card shows “Purchase request continued” and the control remains disabled."
-wallet-action-card-020	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	525	pending					"## wallet-action-card-020
+wallet-action-card-020	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.bdd.md	525	first-verified	wallet-action-card-020 A stopped purchase replaces the approved waiting message and keeps the status control disabled	turbo/apps/platform/src/views/okou-page/__tests__/wallet-links-in-a-conversation.test.ts	stage4-new.json	wallet-transcript-red.json	"## wallet-action-card-020
 
 Original test `a stopped approval watch shows its terminal status`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/wallet-action-card.test.tsx#L525).
 
