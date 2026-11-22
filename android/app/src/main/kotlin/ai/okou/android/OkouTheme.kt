@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.core.graphics.ColorUtils
 
 internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB5790C) }
+internal val LocalOkouDarkTheme = staticCompositionLocalOf { false }
 internal val LocalUndoActionColor = staticCompositionLocalOf { Color.Unspecified }
 
 private fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
@@ -93,6 +94,7 @@ fun OkouTheme(
         content = {
             CompositionLocalProvider(
                 LocalActivityStatusColor provides activityStatusColor(palette, dark),
+                LocalOkouDarkTheme provides dark,
                 LocalUndoActionColor provides undoAction,
                 LocalTextSelectionColors provides
                     TextSelectionColors(
