@@ -17,6 +17,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -103,6 +104,19 @@ class NativeUpdateTest {
             }
             fun click(label: Int) = requireNotNull(text(app.getString(label))).click()
             fun exists(label: Int) = assertNotNull(text(app.getString(label)))
+            fun revealSettingsUpdate(label: String = app.getString(R.string.updates_title)) {
+                val target = By.pkg(app.packageName).text(label)
+                if (device.hasObject(target)) return
+                val settings = checkNotNull(find(By.pkg(app.packageName).scrollable(true)))
+                val visible =
+                    object : Condition<UiObject2, Boolean> {
+                        override fun apply(container: UiObject2) = device.hasObject(target)
+                    }
+                assertTrue(
+                    "Expected Settings update control $label",
+                    settings.scrollUntil(Direction.DOWN, visible) == true,
+                )
+            }
             fun captureState(name: String) {
                 device.waitForIdle()
                 takeScreenshot().writeToTestStorage("android-update-$name")
@@ -128,6 +142,7 @@ class NativeUpdateTest {
                     device.wait(Until.findObject(By.desc(app.getString(R.string.settings))), 10_000)
                 )
                 .click()
+            revealSettingsUpdate()
             click(R.string.updates_title)
             exists(R.string.updates_check_in_progress)
             captureState("details-checking")
@@ -210,6 +225,7 @@ class NativeUpdateTest {
                 requireNotNull(device.wait(Until.findObject(By.desc(moreLabel)), 10_000)).click()
             openOverflow()
             click(R.string.settings)
+            revealSettingsUpdate(app.getString(R.string.updates_new_version))
             exists(R.string.updates_new_version)
             captureState("settings-available")
             click(R.string.updates_title)
@@ -244,6 +260,7 @@ class NativeUpdateTest {
 
             openOverflow()
             click(R.string.settings)
+            revealSettingsUpdate(progressLabel)
             assertNotNull(text(progressLabel))
             captureState("settings-progress")
             backToChatList()
@@ -284,6 +301,7 @@ class NativeUpdateTest {
             captureState("toolbar-ready")
             openOverflow()
             click(R.string.settings)
+            revealSettingsUpdate(app.getString(R.string.updates_ready))
             exists(R.string.updates_ready)
             captureState("settings-ready")
             click(R.string.updates_title)
