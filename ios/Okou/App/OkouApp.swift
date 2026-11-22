@@ -316,6 +316,7 @@ private struct WorkspaceRootView: View {
         ChatDetailView(
           conversation: conversation,
           agents: store.list,
+          workspaceName: authentication.workspacePresentation(workspaceID)?.name,
           didSend: { await notifications.requestAfterSend() },
           topContentInset: topContentHeight,
           mentionSource: ComposerMentionSource(threads: store.list.threads),
