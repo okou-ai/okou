@@ -117,10 +117,8 @@ enum MessageActionBody {
     if let action = ChatSSHAuthorizationAction.parse(value, webURL: webURL, threadID: threadID) {
       return .sshAuthorization(action)
     }
-    if let action = ChatComputerAuthorizationAction.parse(value, webURL: webURL, threadID: threadID)
-    {
-      return .computerAuthorization(action)
-    }
+    let computer = ChatComputerAuthorizationAction.parse(value, webURL: webURL, threadID: threadID)
+    if let computer { return .computerAuthorization(computer) }
     return ChatConnectorAction.parse(value, webURL: webURL, agentID: agentID, threadID: threadID)
       .map(Block.connector)
   }
