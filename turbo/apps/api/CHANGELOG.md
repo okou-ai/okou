@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.101.2](https://github.com/okou-ai/okou/compare/api-v2.101.1...api-v2.101.2) (2026-11-22)
+
+
+### Refactoring
+
+* remove workflow and workspace default agent references ([#49886](https://github.com/okou-ai/okou/issues/49886)) ([53b3b5e](https://github.com/okou-ai/okou/commit/53b3b5ea7efb21dc4d0d7802346fa5cbbf08c443))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.5
+    * @okouai/core bumped to 8.858.10
+    * @okouai/db bumped to 2.57.11
+    * @okouai/pi-agent-runtime bumped to 1.52.29
+
 ## [2.101.1](https://github.com/okou-ai/okou/compare/api-v2.101.0...api-v2.101.1) (2026-11-22)
 
 
