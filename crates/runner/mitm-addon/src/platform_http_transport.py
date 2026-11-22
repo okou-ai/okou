@@ -322,13 +322,6 @@ async def _resolve_addresses(host: str, port: int) -> tuple[_ResolvedAddress, ..
     return tuple(addresses)
 
 
-def _abort_socket(sock: socket.socket) -> None:
-    with suppress(OSError):
-        sock.shutdown(socket.SHUT_RDWR)
-    with suppress(OSError):
-        sock.close()
-
-
 async def _connect_socket(address: _ResolvedAddress) -> socket.socket:
     sock = socket.socket(address.family, socket.SOCK_STREAM)
     try:
@@ -345,7 +338,7 @@ async def _connect_socket(address: _ResolvedAddress) -> socket.socket:
             if exc.errno != errno.ENOPROTOOPT:
                 raise
     except BaseException:
-        _abort_socket(sock)
+        platform_http_pool.abort_socket(sock)
         raise
     return sock
 
@@ -360,7 +353,7 @@ async def _abort_connection_attempts(
         if attempt.cancelled():
             continue
         if attempt.exception() is None:
-            _abort_socket(attempt.result())
+            platform_http_pool.abort_socket(attempt.result())
 
 
 async def _open_connected_socket(
@@ -413,7 +406,7 @@ async def _open_connected_socket(
                 winner_socket = unclaimed_sockets[0]
                 for connected_socket in unclaimed_sockets:
                     if connected_socket is not winner_socket:
-                        _abort_socket(connected_socket)
+                        platform_http_pool.abort_socket(connected_socket)
                 unclaimed_sockets[:] = [winner_socket]
                 await _abort_connection_attempts(tuple(attempts))
                 attempts.clear()
@@ -434,7 +427,7 @@ async def _open_connected_socket(
                 start_next_attempt()
     finally:
         for connected_socket in unclaimed_sockets:
-            _abort_socket(connected_socket)
+            platform_http_pool.abort_socket(connected_socket)
         if attempts:
             await _abort_connection_attempts(tuple(attempts))
 
@@ -533,7 +526,7 @@ async def _open_stream(
                 limit=_MAX_RESPONSE_HEADER_BYTES,
             )
     except BaseException:
-        _abort_socket(sock)
+        platform_http_pool.abort_socket(sock)
         raise
     return platform_http_pool.ConnectedStream(reader, writer, sock)
 

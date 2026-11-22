@@ -60,12 +60,15 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +79,8 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import okhttp3.HttpUrl
+
+private const val HostedPreviewAspectRatio = 16f / 9f
 
 /** One preview layout for catalog entries and future chat/search entry points. */
 @Composable
@@ -162,8 +167,7 @@ internal fun ArtifactPreview(
                 }
             }
             val save = preview?.access?.save
-            val open = preview?.info?.browserUrl
-            if (source != null || save != null || open != null) {
+            if (source != null || save != null) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -186,23 +190,10 @@ internal fun ArtifactPreview(
                             onSave(save)
                         }
                     }
-                    if (open != null) {
-                        ArtifactAction(
-                            R.string.artifact_open_website,
-                            icon = R.drawable.ic_open_in_new,
-                            enabled = !offline,
-                        ) {
-                            browserUnavailable =
-                                try {
-                                    browser.openUri(open.toString())
-                                    false
-                                } catch (_: IllegalArgumentException) {
-                                    true
-                                }
-                        }
-                    }
                 }
             }
+            val browserUrl = preview?.info?.browserUrl
+            val open = browserUrl?.takeUnless { offline }
             val feedback =
                 when (saveResult) {
                     ArtifactSaveResult.Saving -> R.string.artifact_saving
@@ -214,14 +205,51 @@ internal fun ArtifactPreview(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PreviewContent(preview, offline)
                 if (feedback != null) {
-                    Text(
-                        stringResource(feedback),
-                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.onSurfaceVariant,
-                    )
+                    KeepSpaceWhenHidden(visible = saveResult != null || open != null) {
+                        Text(
+                            stringResource(feedback),
+                            Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant,
+                        )
+                    }
                 }
             }
+            // Keep the action's space while inline sites wait for preview authorization.
+            if (browserUrl != null || preview?.info?.resource is ArtifactResource.Site) {
+                KeepSpaceWhenHidden(visible = open != null) {
+                    ArtifactAction(
+                        R.string.artifact_open_website,
+                        icon = R.drawable.ic_open_in_new,
+                        enabled = open != null,
+                    ) {
+                        val destination = open ?: return@ArtifactAction
+                        browserUnavailable =
+                            try {
+                                browser.openUri(destination.toString())
+                                false
+                            } catch (_: IllegalArgumentException) {
+                                true
+                            }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Keep the scroll range stable when browser controls disappear on disconnect. */
+@Composable
+private fun KeepSpaceWhenHidden(visible: Boolean, content: @Composable () -> Unit) {
+    if (visible) {
+        content()
+    } else {
+        Layout(
+            content = content,
+            modifier = Modifier.clearAndSetSemantics { hideFromAccessibility() },
+        ) { measurables, constraints ->
+            val child = measurables.single().measure(constraints)
+            layout(child.width, child.height) {}
         }
     }
 }
@@ -257,91 +285,105 @@ internal fun ArtifactAction(
 @Composable
 private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
     val content = preview?.content
-    var siteScroll by rememberArtifactWebScroll()
     val problem = preview?.problem
-    val web =
-        preview?.item?.kind in setOf(ArtifactKind.Website, ArtifactKind.Presentation) &&
-            preview?.info?.resource !is ArtifactResource.File
-    val media = content as? ArtifactContent.Media
+    val hosted = preview?.isHosted == true
     val waiting = content == null && problem == null && !offline
     val showLoading = rememberChatWaitIndicator(waiting)
-    if (waiting && !showLoading) return
+    if (!hosted && waiting && !showLoading) return
     val colors = MaterialTheme.colorScheme
     Surface(
-        Modifier.fillMaxWidth().testTag("artifact_preview_surface"),
+        Modifier.fillMaxWidth()
+            .then(if (hosted) Modifier.aspectRatio(HostedPreviewAspectRatio) else Modifier)
+            .testTag("artifact_preview_surface"),
         shape = RoundedCornerShape(16.dp),
-        color = if (web) colors.surfaceVariant else colors.surface,
+        color = if (hosted) colors.surfaceVariant else colors.surface,
         border = BorderStroke(1.dp, colors.outline),
     ) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val inset =
-                when {
-                    !web -> 0.dp
-                    maxWidth >= 600.dp -> 32.dp
-                    else -> 16.dp
-                }
-            Box(Modifier.fillMaxWidth().padding(inset)) {
-                when {
-                    offline && (web || media != null) ->
-                        PreviewStatus(
-                            R.string.artifact_online_preview,
-                            ratio = web || media?.video == true,
+        if (hosted) {
+            HostedPreviewContent(content, problem, offline, showLoading)
+        } else {
+            when (content) {
+                is ArtifactContent.Text ->
+                    SelectionContainer(Modifier.padding(16.dp)) {
+                        ProvideTextStyle(
+                            MaterialTheme.typography.bodyLarge.copy(
+                                lineHeight = if (content.markdown) 28.sp else 24.sp
+                            )
+                        ) {
+                            if (content.markdown)
+                                HistoryMarkdown(content.source, compactLists = true)
+                            else Text(content.source)
+                        }
+                    }
+                is ArtifactContent.Image ->
+                    Box(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val bitmap = remember(content) { content.bitmap.asImageBitmap() }
+                        Image(
+                            bitmap,
+                            preview.item?.title,
+                            Modifier.sizeIn(maxWidth = 440.dp, maxHeight = 440.dp),
+                            contentScale = ContentScale.Fit,
                         )
-                    content is ArtifactContent.Text ->
-                        SelectionContainer(Modifier.padding(16.dp)) {
-                            ProvideTextStyle(
-                                MaterialTheme.typography.bodyLarge.copy(
-                                    lineHeight = if (content.markdown) 28.sp else 24.sp
-                                )
+                    }
+                is ArtifactContent.Media ->
+                    if (offline)
+                        PreviewStatus(R.string.artifact_online_preview, ratio = content.video)
+                    else key(content.url) { MediaArtifactPreview(content) }
+                else ->
+                    when {
+                        offline -> PreviewStatus(R.string.artifact_online_preview)
+                        problem != null -> PreviewStatus(problem.label())
+                        content == ArtifactContent.Unsupported ->
+                            PreviewStatus(R.string.artifact_preview_unsupported)
+                        else ->
+                            Box(
+                                Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                if (content.markdown)
-                                    HistoryMarkdown(content.source, compactLists = true)
-                                else Text(content.source)
+                                PreviewLoading()
                             }
-                        }
-                    content is ArtifactContent.Image ->
-                        Box(
-                            Modifier.fillMaxWidth().padding(16.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            val bitmap = remember(content) { content.bitmap.asImageBitmap() }
-                            Image(
-                                bitmap,
-                                preview.item?.title,
-                                Modifier.sizeIn(maxWidth = 440.dp, maxHeight = 440.dp),
-                                contentScale = ContentScale.Fit,
-                            )
-                        }
-                    content is ArtifactContent.Website ->
-                        key(content.url) {
-                            HostedArtifactPreview(content.url, siteScroll) { siteScroll = it }
-                        }
-                    media != null -> key(media.url) { MediaArtifactPreview(media) }
-                    offline -> PreviewStatus(R.string.artifact_online_preview, ratio = false)
-                    problem != null -> PreviewStatus(problem.label(), ratio = web)
-                    content == ArtifactContent.Unsupported ->
-                        PreviewStatus(R.string.artifact_preview_unsupported, ratio = web)
-                    else ->
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .then(
-                                    if (web) Modifier.aspectRatio(16f / 9f)
-                                    else Modifier.heightIn(min = 96.dp)
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                Modifier.size(24.dp).testTag("artifact_preview_loading")
-                            )
-                        }
-                }
+                    }
             }
         }
     }
 }
 
 @Composable
-private fun PreviewStatus(@StringRes label: Int, ratio: Boolean) {
+private fun HostedPreviewContent(
+    content: ArtifactContent?,
+    problem: ArtifactProblem?,
+    offline: Boolean,
+    showLoading: Boolean,
+) {
+    var siteScroll by rememberArtifactWebScroll()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val inset = if (maxWidth >= 600.dp) 32.dp else 16.dp
+        Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) {
+            when {
+                offline -> PreviewStatusText(R.string.artifact_online_preview)
+                content is ArtifactContent.Website ->
+                    key(content.url) {
+                        HostedArtifactPreview(content.url, siteScroll) { siteScroll = it }
+                    }
+                problem != null -> PreviewStatusText(problem.label())
+                content == ArtifactContent.Unsupported ->
+                    PreviewStatusText(R.string.artifact_preview_unsupported)
+                showLoading -> PreviewLoading()
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewLoading() {
+    CircularProgressIndicator(Modifier.size(24.dp).testTag("artifact_preview_loading"))
+}
+
+@Composable
+private fun PreviewStatus(@StringRes label: Int, ratio: Boolean = false) {
     Box(
         Modifier.fillMaxWidth()
             .then(
@@ -351,24 +393,29 @@ private fun PreviewStatus(@StringRes label: Int, ratio: Boolean) {
             .padding(16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            stringResource(label),
-            Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        PreviewStatusText(label)
     }
+}
+
+@Composable
+private fun PreviewStatusText(@StringRes label: Int) {
+    Text(
+        stringResource(label),
+        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        textAlign = TextAlign.Center,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
 private fun HostedArtifactPreview(url: HttpUrl, scrollY: Int, onScroll: (Int) -> Unit) {
     var failed by remember { mutableStateOf(false) }
     if (failed) {
-        PreviewStatus(R.string.artifact_unavailable, ratio = true)
+        PreviewStatusText(R.string.artifact_unavailable)
     } else {
         AndroidView(
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            modifier = Modifier.fillMaxSize(),
             factory = {
                 val initialScroll = scrollY
                 isolatedPreview(
