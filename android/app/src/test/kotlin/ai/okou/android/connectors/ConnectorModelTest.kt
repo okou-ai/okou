@@ -117,6 +117,8 @@ class ConnectorModelTest {
             model.select("gmail")
             assertNull(model.uiState.value.detail.data)
             assertNull(model.uiState.value.permissions.data)
+            assertEquals(ConnectorReadFailure.Unavailable, model.uiState.value.detail.failure)
+            assertEquals(ConnectorReadFailure.Unavailable, model.uiState.value.permissions.failure)
         }
     }
 
@@ -184,6 +186,32 @@ class ConnectorModelTest {
                     .displayName,
             )
             assertEquals(2, renamed.accountsFor(CONNECTOR_CALENDAR).size)
+        }
+
+    @Test
+    fun renameReplyDoesNotPromoteTheOverviewToAnExactAccountReadAfterReselection() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            model.await { it.connected.data != null }
+            val reply = CountDownLatch(1)
+            fixture.renameReplyGate = reply
+            try {
+                model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+                fixture.failAccountReads = true
+                model.select("slack")
+                model.select(CONNECTOR_CALENDAR)
+                model.await { it.accounts.failure != null }
+            } finally {
+                reply.countDown()
+            }
+            val renamed = model.await { it.action?.result == ConnectorResult.Renamed }
+            assertNull(renamed.accounts.data)
+            assertEquals(
+                "Meeting calendar",
+                renamed
+                    .accountsFor(CONNECTOR_CALENDAR)
+                    .first { it.id == CONNECTOR_CALENDAR_PRIMARY }
+                    .displayName,
+            )
         }
 
     @Test

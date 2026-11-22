@@ -37,6 +37,7 @@ internal class ConnectorApiFixture : Closeable {
     @Volatile var failDiscovery = false
     @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
+    @Volatile var renameReplyGate: CountDownLatch? = null
     @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
     private val entries = buildList {
@@ -132,7 +133,13 @@ internal class ConnectorApiFixture : Closeable {
                             }
                         )
                     }
-                    return synchronized(accounts) { respond(request) }
+                    val response = synchronized(accounts) { respond(request) }
+                    if (
+                        request.method == "PATCH" &&
+                            url.pathSegments.getOrNull(1) == "connector-accounts"
+                    )
+                        renameReplyGate?.await()
+                    return response
                 }
             }
         api = ApiClient(https.server.url("/"), { "connector-test" })
@@ -357,6 +364,7 @@ internal class ConnectorApiFixture : Closeable {
 
     override fun close() {
         discoveryGate?.countDown()
+        renameReplyGate?.countDown()
         https.use { api.close() }
     }
 

@@ -277,7 +277,16 @@ private fun ConnectorDirectory(
             listOfNotNull(directory.connected.failure, filtered?.failure).maxOrNull()
         else catalogRead.failure
     val entries =
-        remember(route.connected, route.category, query, recommended, serviceEntries, connected) {
+        remember(
+            route.connected,
+            route.category,
+            query,
+            recommended,
+            serviceEntries,
+            connected,
+            directory.slug,
+            directory.accounts.data,
+        ) {
             when {
                 route.connected -> {
                     if (filtered != null && serviceEntries == null) return@remember null
@@ -290,7 +299,7 @@ private fun ConnectorDirectory(
                                     else ConnectorEntry(slug, service.label, "", null, null)
                             if (
                                 entry.matches(query) ||
-                                    service.accounts.any { account ->
+                                    directory.accountsFor(slug).any { account ->
                                         account.displayName?.contains(query, ignoreCase = true) ==
                                             true ||
                                             account.identity?.contains(query, ignoreCase = true) ==
@@ -330,6 +339,8 @@ private fun ConnectorDirectory(
                     when {
                         entries == null ->
                             when {
+                                failure == ConnectorReadFailure.Unavailable ->
+                                    ConnectorEmpty(R.string.connector_load_failed)
                                 state.offline ->
                                     ConnectorLoadWhenOnline(Modifier.padding(horizontal = 12.dp))
                                 failure != null -> ConnectorEmpty(R.string.connector_load_failed)

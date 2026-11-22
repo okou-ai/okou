@@ -18,8 +18,15 @@ internal data class ConnectorRead<T>(
     val data: T? = null,
     val failure: ConnectorReadFailure? = null,
 ) {
+    val isConfirmed: Boolean
+        get() = data != null || failure == ConnectorReadFailure.Unavailable
+
+    fun confirmed(): ConnectorRead<T> =
+        if (failure == ConnectorReadFailure.Unavailable) this else copy(failure = null)
+
     fun retaining(previous: ConnectorRead<T>?): ConnectorRead<T> =
         if (data != null || previous == null || failure == ConnectorReadFailure.Unavailable) this
+        else if (previous.failure == ConnectorReadFailure.Unavailable) previous
         else
             copy(
                 data = previous.data,

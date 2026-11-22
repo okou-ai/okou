@@ -83,9 +83,9 @@ internal data class ConnectorUiState(
 }
 
 private data class ServiceReadSnapshot(
-    val detail: ConnectorServiceDetail?,
-    val accounts: List<ConnectorSavedAccount>?,
-    val permissions: List<ConnectorPermission>?,
+    val detail: ConnectorRead<ConnectorServiceDetail>,
+    val accounts: ConnectorRead<List<ConnectorSavedAccount>>,
+    val permissions: ConnectorRead<List<ConnectorPermission>>,
 )
 
 class ConnectorModel(
@@ -97,7 +97,11 @@ class ConnectorModel(
     private val mutableState = MutableStateFlow(ConnectorUiState())
     internal val uiState = mutableState.asStateFlow()
     private val recentMatches =
-        LinkedHashMap<ConnectorBrowseFilter, ConnectorBrowse>(RECENT_READ_LIMIT, 0.75f, true)
+        LinkedHashMap<ConnectorBrowseFilter, ConnectorRead<ConnectorBrowse>>(
+            RECENT_READ_LIMIT,
+            0.75f,
+            true,
+        )
     private val recentServices =
         LinkedHashMap<String, ServiceReadSnapshot>(RECENT_READ_LIMIT, 0.75f, true)
     private var browseJob: Job? = null
@@ -129,15 +133,13 @@ class ConnectorModel(
                     mutableState.update { state ->
                         state.copy(
                             offline = false,
-                            browse = state.browse.copy(failure = null),
-                            connected = state.connected.copy(failure = null),
+                            browse = state.browse.confirmed(),
+                            connected = state.connected.confirmed(),
                             matches =
-                                state.matches?.let {
-                                    it.copy(entries = it.entries.copy(failure = null))
-                                },
-                            detail = state.detail.copy(failure = null),
-                            accounts = state.accounts.copy(failure = null),
-                            permissions = state.permissions.copy(failure = null),
+                                state.matches?.let { it.copy(entries = it.entries.confirmed()) },
+                            detail = state.detail.confirmed(),
+                            accounts = state.accounts.confirmed(),
+                            permissions = state.permissions.confirmed(),
                             impact =
                                 state.impact?.let { it.copy(read = it.read.copy(failure = null)) },
                         )
@@ -236,7 +238,9 @@ class ConnectorModel(
         matchesJob = null
         if (next != null) {
             val cached = recentMatches[next]
-            mutableState.update { it.copy(matches = ConnectorMatches(next, ConnectorRead(cached))) }
+            mutableState.update {
+                it.copy(matches = ConnectorMatches(next, cached ?: ConnectorRead()))
+            }
             refreshMatches()
         }
     }
@@ -249,9 +253,7 @@ class ConnectorModel(
                 if (selected.keyword != null) delay(250)
                 load({ service.discover(selected.keyword, selected.category) }) { read ->
                     if (filter != selected) return@load
-                    if (read.failure == ConnectorReadFailure.Unavailable)
-                        recentMatches.remove(selected)
-                    else read.data?.let { recentMatches.rememberRead(selected, it) }
+                    if (read.isConfirmed) recentMatches.rememberRead(selected, read)
                     mutableState.update { state ->
                         val previous = state.matches?.takeIf { it.filter == selected }
                         state.copy(
@@ -268,12 +270,14 @@ class ConnectorModel(
         previous.slug?.let { previousSlug ->
             val snapshot =
                 ServiceReadSnapshot(
-                    previous.detail.data,
-                    previous.accounts.data ?: previous.cachedAccounts,
-                    previous.permissions.data,
+                    previous.detail.confirmed(),
+                    previous.accounts.confirmed().retaining(ConnectorRead(previous.cachedAccounts)),
+                    previous.permissions.confirmed(),
                 )
             if (
-                snapshot.detail != null || snapshot.accounts != null || snapshot.permissions != null
+                snapshot.detail.isConfirmed ||
+                    snapshot.accounts.isConfirmed ||
+                    snapshot.permissions.isConfirmed
             ) {
                 recentServices.rememberRead(previousSlug, snapshot)
             } else recentServices.remove(previousSlug)
@@ -286,10 +290,10 @@ class ConnectorModel(
         mutableState.update {
             it.copy(
                 slug = slug,
-                detail = ConnectorRead(cached?.detail),
-                accounts = ConnectorRead(),
-                cachedAccounts = cached?.accounts,
-                permissions = ConnectorRead(cached?.permissions),
+                detail = cached?.detail ?: ConnectorRead(),
+                accounts = ConnectorRead(failure = cached?.accounts?.failure),
+                cachedAccounts = cached?.accounts?.data,
+                permissions = cached?.permissions ?: ConnectorRead(),
                 impact = null,
             )
         }
@@ -703,25 +707,49 @@ class ConnectorModel(
         id: String,
         replace: (ConnectorSavedAccount) -> ConnectorSavedAccount?,
     ) {
-        val state = mutableState.value
-        val baseline =
-            if (state.slug != target.slug && state.connected.data == null)
-                recentServices[target.slug]?.accounts.orEmpty()
-            else state.accountsFor(target.slug)
-        val accounts = baseline.mapNotNull { if (it.id == id) replace(it) else it }
+        val slug = target.slug
+        fun update(accounts: List<ConnectorSavedAccount>) =
+            accounts.mapNotNull { if (it.id == id) replace(it) else it }
+
         invalidateConnectionReads()
-        publishAccounts(target.slug, accounts)
+        recentServices[slug]?.let { cached ->
+            recentServices[slug] =
+                cached.copy(
+                    accounts = cached.accounts.copy(data = cached.accounts.data?.let(::update))
+                )
+        }
+        mutableState.update { state ->
+            val overview = state.connected.data
+            val service = overview?.get(slug)
+            val updated =
+                if (overview == null || service == null) overview
+                else {
+                    val accounts = update(service.accounts)
+                    if (accounts.isEmpty()) overview - slug
+                    else overview + (slug to service.copy(accounts = accounts))
+                }
+            state.copy(
+                connected = state.connected.copy(data = updated),
+                accounts =
+                    if (state.slug == slug)
+                        state.accounts.copy(data = state.accounts.data?.let(::update))
+                    else state.accounts,
+                cachedAccounts =
+                    if (state.slug == slug) state.cachedAccounts?.let(::update)
+                    else state.cachedAccounts,
+            )
+        }
     }
 
     private fun publishAccounts(slug: String, accounts: List<ConnectorSavedAccount>) {
         val cached = recentServices[slug]
-        if (cached != null) recentServices[slug] = cached.copy(accounts = accounts)
+        if (cached != null) recentServices[slug] = cached.copy(accounts = ConnectorRead(accounts))
         mutableState.update { state ->
             val knownServices = state.connected.data
             val label =
                 state.detail.data?.entry?.takeIf { it.slug == slug }?.name
                     ?: knownServices?.get(slug)?.label
-                    ?: cached?.detail?.entry?.name
+                    ?: cached?.detail?.data?.entry?.name
             val services =
                 when {
                     knownServices == null -> null

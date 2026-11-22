@@ -220,6 +220,14 @@ class ConnectorAccountFlowTest {
             compose.onNodeWithText("Close").performClick()
             compose.onNodeWithText("gmail@example.com").assertIsDisplayed()
             compose.onNodeWithText(permissions).assertDoesNotExist()
+
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.onNodeWithText("Connected").performClick()
+            compose.runOnIdle { connectivity.value = false }
+            awaitText("Offline")
+            compose.onNodeWithTag("connector-gmail").performClick()
+            compose.onNodeWithText("Could not load connectors.").assertIsDisplayed()
+            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
         }
 
     @Test

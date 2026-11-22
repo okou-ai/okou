@@ -73,6 +73,7 @@ internal fun ConnectorDetails(
     wide: Boolean,
 ) {
     val detail = state.detail.data
+    val detailUnavailable = state.detail.failure == ConnectorReadFailure.Unavailable
     val entry = detail?.entry ?: preview
     val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
     val hasAccountContent =
@@ -233,8 +234,12 @@ internal fun ConnectorDetails(
                     }
                 }
 
-                if (!hasAccountContent) {
+                if (detailUnavailable) {
+                    ConnectorStatusBanner(R.string.connector_load_failed)
+                } else if (!hasAccountContent) {
                     when {
+                        state.accounts.failure == ConnectorReadFailure.Unavailable ->
+                            ConnectorStatusBanner(R.string.connector_accounts_failed)
                         state.offline -> ConnectorLoadWhenOnline()
                         state.accounts.failure != null ->
                             ConnectorStatusBanner(R.string.connector_accounts_failed)
@@ -302,7 +307,7 @@ internal fun ConnectorDetails(
                         model.showPermissions()
                     }
                 }
-                if (!state.offline) {
+                if (!state.offline && !detailUnavailable) {
                     when {
                         detail == null && state.detail.failure != null ->
                             ConnectorStatusBanner(R.string.connector_load_failed)
@@ -316,6 +321,8 @@ internal fun ConnectorDetails(
                     }
                 }
                 if (panel == null) ConnectorActionFeedback(action)
+            } else if (detailUnavailable) {
+                ConnectorStatusBanner(R.string.connector_load_failed)
             } else if (state.offline) {
                 ConnectorLoadWhenOnline()
             } else if (state.detail.failure != null) {
@@ -531,6 +538,8 @@ private fun ConnectorPermissionSheet(
     when {
         permissions.data == null ->
             when {
+                permissions.failure == ConnectorReadFailure.Unavailable ->
+                    ConnectorStatusBanner(R.string.connector_permissions_failed)
                 offline -> ConnectorLoadWhenOnline()
                 permissions.failure != null ->
                     ConnectorStatusBanner(R.string.connector_permissions_failed)
