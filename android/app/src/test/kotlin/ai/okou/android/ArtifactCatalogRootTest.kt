@@ -187,6 +187,18 @@ class ArtifactCatalogRootTest {
         awaitText(fixture.slides.title)
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
+
+        val onlinePages = fixture.catalogScopes.size
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Chat resources").performClick()
+        awaitText("Showing saved results offline")
+        compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
+        assertEquals(onlinePages, fixture.catalogScopes.size)
+
+        compose.runOnIdle { app.connectivity.value = true }
+        compose.waitUntil(10_000) { fixture.catalogScopes.size > onlinePages }
+        compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
     }
 
     @After
