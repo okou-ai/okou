@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1162.5](https://github.com/okou-ai/okou/compare/app-v0.1162.4...app-v0.1162.5) (2026-11-22)
+
+
+### Bug Fixes
+
+* **mobile:** prepare native clients for workspace apis without agent ids ([#49889](https://github.com/okou-ai/okou/issues/49889)) ([acc1180](https://github.com/okou-ai/okou/commit/acc1180b74cc5401511eb40984f43c64db058604))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.4
+    * @okouai/core bumped to 8.858.9
+    * @okouai/ui bumped to 1.21.85
+
 ## [0.1162.4](https://github.com/okou-ai/okou/compare/app-v0.1162.3...app-v0.1162.4) (2026-11-21)
 
 
