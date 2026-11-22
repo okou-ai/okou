@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
 import {
   artifactVisibilityUnavailable,
   badRequestMessage,
+  resourceUnavailable,
 } from "../../lib/error";
 import {
   MAX_UPLOAD_SIZE_BYTES,
@@ -24,6 +27,8 @@ import {
 } from "../external/s3";
 import { allocateUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { MAX_TOTAL_AUDIO_BYTES } from "../services/voice-clips.service";
 import type { RouteEntry } from "../route-entry";
 import { onRejection, tapError } from "../utils";
 
@@ -54,6 +59,29 @@ const allocatePreparedUpload$ = command(
     const contentType = normalizeWebUploadContentType(
       bodyResult.data.contentType,
     );
+
+    if (auth.tokenType === "oauth") {
+      const context = await set(
+        loadUserFeatureSwitchContext$,
+        auth.orgId,
+        auth.userId,
+        signal,
+      );
+      if (!isFeatureEnabled(FeatureSwitchKey.VoiceMessages, context)) {
+        return resourceUnavailable("Voice messages are disabled");
+      }
+      if (
+        contentType !== "audio/wav" ||
+        size <= 44 ||
+        size > MAX_TOTAL_AUDIO_BYTES ||
+        bodyResult.data.multipart ||
+        bodyResult.data.purpose
+      ) {
+        return badRequestMessage(
+          "Expected a single WAV recording up to 25 MiB",
+        );
+      }
+    }
 
     if (size > MAX_UPLOAD_SIZE_BYTES) {
       return badRequestMessage(`File too large (max ${MAX_UPLOAD_SIZE_LABEL})`);
@@ -209,7 +237,7 @@ export const uploadsPrepareRoutes: readonly RouteEntry[] = [
   {
     route: uploadsContract.preparePrivate,
     handler: authRoute(
-      { requiredCapability: "file:write" },
+      { requiredCapability: "file:write", oauthScope: "okou:chat:send" },
       command(({ set }, signal: AbortSignal) => {
         return set(prepareUploadInner$, true, signal);
       }),

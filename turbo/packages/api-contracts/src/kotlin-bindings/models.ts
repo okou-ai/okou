@@ -39,6 +39,19 @@ function nullableSchema(
   return undefined;
 }
 
+function isUnrestrictedStringUnion(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  // A URI or a hostless reference still has one wire representation.
+  return (
+    value.every((branch) => {
+      return schemaObject(branch) && branch.type === "string";
+    }) &&
+    value.some((branch) => {
+      return schemaObject(branch) && Object.keys(branch).length === 1;
+    })
+  );
+}
+
 function stringValues(value: unknown): string[] | undefined {
   if (!schemaObject(value)) return undefined;
   if (Array.isArray(value.anyOf)) {
@@ -974,6 +987,7 @@ ${types
       throw new Error(`${name}: unsupported literal`);
     }
     const union = value.anyOf ?? value.oneOf;
+    if (isUnrestrictedStringUnion(value.anyOf)) return "String";
     if (Array.isArray(union)) return renderUnion(union, name);
     return renderValue(value, name, parent);
   };

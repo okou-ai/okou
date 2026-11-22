@@ -74,7 +74,7 @@ class ScreenshotScenario {
                 val entry =
                     checkNotNull(
                         device.wait(
-                            Until.findObject(By.pkg(app.packageName).text("工作流").enabled(true)),
+                            Until.findObject(By.pkg(app.packageName).desc("工作流").enabled(true)),
                             10_000,
                         )
                     )

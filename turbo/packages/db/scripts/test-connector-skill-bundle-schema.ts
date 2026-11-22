@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { schema } from "../src/index";
@@ -26,7 +27,7 @@ export async function validateConnectorSkillBundleSchema(
   }
   try {
     const db = drizzle(client, { schema });
-    const create = db
+    const created = await db
       .insert(orgCustomConnectors)
       .values({
         id: connectorId,
@@ -38,13 +39,13 @@ export async function validateConnectorSkillBundleSchema(
         createdBy: "schema-user",
       })
       .returning();
-    // Drizzle includes even omitted columns in implicit INSERT/RETURNING and SELECT lists.
-    assert.doesNotMatch(create.toSQL().sql, /skill_storage_version_id/);
-    assert.doesNotMatch(
-      db.select().from(schema.orgCustomConnectors).toSQL().sql,
-      /skill_storage_version_id/,
+    assert.deepEqual(
+      await db
+        .select()
+        .from(schema.orgCustomConnectors)
+        .where(eq(schema.orgCustomConnectors.id, connectorId)),
+      created,
     );
-    await create;
     assert.deepEqual(await readPublication(), []);
     await client.query(
       `INSERT INTO connector_catalog_entries(hash,slug,label,description,category,icon,tags,generation,auth_methods,mcp,skill,firewall,permission_summary)
@@ -151,11 +152,6 @@ export async function validateConnectorSkillBundleSchema(
         skill_content_bundle_source_version_id: source,
       },
     ]);
-    // API 2.100.1 can still dual-write. A later native edit leaves the mirror unchanged.
-    await client.query(
-      "UPDATE org_custom_connectors SET skill_storage_version_id=$1 WHERE id=$2",
-      [source, connectorId],
-    );
     await client.query(
       `UPDATE org_custom_connectors SET skill_markdown='New Skill', skill_content_bundle_source_version_id=$1
        WHERE id=$2`,
@@ -193,11 +189,6 @@ export async function validateConnectorSkillBundleSchema(
       [connectorId],
     );
     assert.deepEqual(await readPublication(), []);
-    const retained = await client.query(
-      "SELECT skill_storage_version_id FROM org_custom_connectors WHERE id=$1",
-      [connectorId],
-    );
-    assert.deepEqual(retained.rows, [{ skill_storage_version_id: source }]);
   } finally {
     await client.query("DELETE FROM connector_catalog_entries WHERE hash=$1", [
       hash,

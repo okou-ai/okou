@@ -125,7 +125,7 @@ _MODEL_INPUT_PARTITION_CATEGORIES = frozenset(
 def is_model_provider_usage_billable(flow: http.HTTPFlow) -> bool:
     """Return whether the flow can produce billable model-provider usage."""
     firewall_name = flow_metadata.firewall_name(flow.metadata)
-    if not firewall_name.startswith("model-provider:"):
+    if not flow_metadata.is_model_provider_firewall(firewall_name):
         return False
     return flow_metadata.is_firewall_billable(flow.metadata)
 
@@ -190,7 +190,7 @@ def report_model_provider_usage(
     if not run_id:
         return False
     firewall_name = flow_metadata.firewall_name(flow.metadata)
-    if not firewall_name.startswith("model-provider:"):
+    if not flow_metadata.is_model_provider_firewall(firewall_name):
         return False
     if not flow_metadata.is_firewall_billable(flow.metadata):
         return False

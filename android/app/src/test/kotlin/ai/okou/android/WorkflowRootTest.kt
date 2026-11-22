@@ -2,11 +2,15 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -89,13 +93,13 @@ class WorkflowRootTest {
     @Test
     fun workflowDirectoryScopesRulesAndReturnsFromDraftWithoutSending() {
         assertFalse(app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/workflows" })
-        compose.onNodeWithText("Workflows").performClick()
+        compose.onNodeWithContentDescription("Workflows").performClick()
         compose.onNodeWithTag("workflow_query").assertIsDisplayed()
         app.gate.countDown()
         waitFor("Release checklist")
         val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").getUnclippedBoundsInRoot()
         assertTrue(row.bottom - row.top >= 80.dp)
-        compose.onNodeWithText("Workspace shared").performClick()
+        selectScope("Workspace shared")
         compose.onNodeWithText("Release checklist").assertDoesNotExist()
         compose.onNodeWithTag("workflow_row_$WORKFLOW_SHARED").performClick()
         waitForTag("workflow_detail_title")
@@ -103,7 +107,7 @@ class WorkflowRootTest {
         assertTrue(use.bottom - use.top >= 48.dp)
         compose.onNodeWithText("Edit instructions").assertDoesNotExist()
         back()
-        compose.onNodeWithText("All").performClick()
+        selectScope("All")
         compose.onNodeWithTag("workflow_query").performTextInput("/release-review")
         compose.onNodeWithText("Release follow-up").assertDoesNotExist()
         compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
@@ -154,7 +158,7 @@ class WorkflowRootTest {
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     fun wideChatClosesSearchBeforeReturningToTheWorkflowTab() {
         app.gate.countDown()
-        compose.onNodeWithText("Workflows").performClick()
+        compose.onNodeWithContentDescription("Workflows").performClick()
         waitFor("Release checklist")
         compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
         waitForTag("workflow_detail_title")
@@ -171,6 +175,14 @@ class WorkflowRootTest {
         back()
         compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
     }
+
+    private fun selectScope(label: String) =
+        compose
+            .onNode(
+                hasText(label) and
+                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)
+            )
+            .performClick()
 
     private fun waitFor(label: String) =
         compose.waitUntil(10_000) {

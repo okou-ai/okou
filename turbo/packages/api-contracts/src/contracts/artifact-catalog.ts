@@ -9,6 +9,7 @@ import {
   string,
   uuid,
   enum as zEnum,
+  type ZodType,
 } from "zod";
 
 import { artifactIdPathParamsSchema } from "../validators/artifact-catalog";
@@ -23,7 +24,6 @@ import type {
   AppRoute,
   AppRouteSpec,
   NoBodyMarker,
-  ZodLikeSchema,
   ZodSchema,
 } from "./trpc-contract";
 
@@ -87,6 +87,7 @@ interface ArtifactHostedSite {
 }
 
 interface ArtifactDetailCommon extends ArtifactSummaryBase {
+  sourceChatThreadId?: string;
   googleDriveConnectionId?: string;
   googleDriveSync?: ChatThreadArtifactGoogleDriveSync;
 }
@@ -349,6 +350,7 @@ const artifactHostedSiteSchema = object({
 
 // Drive metadata is loaded lazily for detail requests with thread context only.
 const artifactDetailBaseSchema = artifactSummaryBaseSchema.extend({
+  sourceChatThreadId: uuid().optional(),
   googleDriveConnectionId: uuid().optional(),
   googleDriveSync: chatThreadArtifactGoogleDriveSyncSchema.optional(),
 });
@@ -391,103 +393,87 @@ const artifactDetailSchema = discriminatedUnion("kind", [
   }),
 ]);
 
-const artifactCatalogAuthHeadersSchema: ZodSchema<
-  ArtifactCatalogAuthHeaders,
-  ArtifactCatalogAuthHeaders
-> = authHeadersSchema;
-const artifactCatalogQuerySchema: ZodSchema<
-  ArtifactCatalogListQuery,
-  ArtifactCatalogListClientQuery
-> = artifactCatalogListQuerySchema;
-const artifactCatalogGetRequestQuerySchema: ZodSchema<
-  ArtifactCatalogGetQuery,
-  ArtifactCatalogGetClientQuery
-> = artifactCatalogGetQuerySchema;
-const artifactCatalogPathParamsSchema: ZodSchema<
-  ArtifactIdPathParams,
-  ArtifactIdPathParams
-> = artifactIdPathParamsSchema;
-const artifactCatalogListResultSchema: ZodLikeSchema<ArtifactCatalogListResponse> =
-  artifactCatalogListResponseSchema;
-const artifactCatalogDetailResultSchema: ZodLikeSchema<ArtifactDetail> =
-  artifactDetailSchema;
-const artifactCatalogApiErrorSchema: ZodLikeSchema<ApiErrorResponse> =
-  apiErrorSchema;
-
 const artifactCatalogRuntimeSpec = {
   list: {
     method: "GET",
     path: "/api/artifacts/catalog",
-    headers: artifactCatalogAuthHeadersSchema,
-    query: artifactCatalogQuerySchema,
+    headers: authHeadersSchema,
+    query: artifactCatalogListQuerySchema,
     responses: {
-      200: artifactCatalogListResultSchema,
-      401: artifactCatalogApiErrorSchema,
-      403: artifactCatalogApiErrorSchema,
+      200: artifactCatalogListResponseSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
     },
     summary: "List the caller's artifacts from the artifact catalog",
   },
   get: {
     method: "GET",
     path: "/api/artifacts/catalog/:artifactId",
-    headers: artifactCatalogAuthHeadersSchema,
-    pathParams: artifactCatalogPathParamsSchema,
-    query: artifactCatalogGetRequestQuerySchema,
+    headers: authHeadersSchema,
+    pathParams: artifactIdPathParamsSchema,
+    query: artifactCatalogGetQuerySchema,
     responses: {
-      200: artifactCatalogDetailResultSchema,
-      401: artifactCatalogApiErrorSchema,
-      403: artifactCatalogApiErrorSchema,
-      404: artifactCatalogApiErrorSchema,
+      200: artifactDetailSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
     },
     summary: "Get one artifact with its kind-specific detail",
   },
   delete: {
     method: "DELETE",
     path: "/api/artifacts/catalog/:artifactId",
-    headers: artifactCatalogAuthHeadersSchema,
-    pathParams: artifactCatalogPathParamsSchema,
+    headers: authHeadersSchema,
+    pathParams: artifactIdPathParamsSchema,
     body: c.noBody(),
     responses: {
       200: object({ deleted: literal(true) }),
-      400: artifactCatalogApiErrorSchema,
-      401: artifactCatalogApiErrorSchema,
-      403: artifactCatalogApiErrorSchema,
-      404: artifactCatalogApiErrorSchema,
-      500: artifactCatalogApiErrorSchema,
-      503: artifactCatalogApiErrorSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+      503: apiErrorSchema,
     },
     summary: "Delete an owned artifact and withdraw its Okou links",
   },
 } as const satisfies Record<"list" | "get" | "delete", AppRouteSpec>;
 
-const artifactCatalogRuntimeContract = c.router(artifactCatalogRuntimeSpec);
+type ArtifactCatalogReadResponses<T> = Readonly<Record<number, ZodType>> & {
+  readonly 200: ZodType<T>;
+};
 
 export type ArtifactCatalogListRoute =
   AppRoute<ArtifactCatalogListRouteTypes> & {
     readonly method: "GET";
     readonly path: "/api/artifacts/catalog";
+    readonly body?: never;
+    readonly pathParams?: never;
     readonly headers: ZodSchema<
       ArtifactCatalogAuthHeaders,
       ArtifactCatalogAuthHeaders
     >;
-    readonly query: ZodSchema<
+    readonly query: ZodType<
       ArtifactCatalogListQuery,
       ArtifactCatalogListClientQuery
     >;
+    readonly responses: ArtifactCatalogReadResponses<ArtifactCatalogListResponse>;
   };
 
 export type ArtifactCatalogGetRoute = AppRoute<ArtifactCatalogGetRouteTypes> & {
   readonly method: "GET";
   readonly path: "/api/artifacts/catalog/:artifactId";
+  readonly body?: never;
   readonly headers: ZodSchema<
     ArtifactCatalogAuthHeaders,
     ArtifactCatalogAuthHeaders
   >;
-  readonly pathParams: ZodSchema<ArtifactIdPathParams, ArtifactIdPathParams>;
-  readonly query: ZodSchema<
+  readonly pathParams: ZodType<ArtifactIdPathParams, ArtifactIdPathParams>;
+  readonly query: ZodType<
     ArtifactCatalogGetQuery,
     ArtifactCatalogGetClientQuery
   >;
+  readonly responses: ArtifactCatalogReadResponses<ArtifactDetail>;
 };
 
 export type ArtifactCatalogContract = {
@@ -507,8 +493,9 @@ export type ArtifactCatalogContract = {
 
 // Keep runtime validation from the Zod-backed router while exposing compact,
 // explicit request and response slots to downstream API and app typechecks.
-export const artifactCatalogContract: ArtifactCatalogContract =
-  artifactCatalogRuntimeContract;
+export const artifactCatalogContract: ArtifactCatalogContract = c.router(
+  artifactCatalogRuntimeSpec,
+);
 export {
   artifactIdPathParamsSchema,
   chatArtifactCatalogChangedEvent,

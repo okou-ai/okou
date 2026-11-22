@@ -13,6 +13,7 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
+import ai.okou.android.auth.CanonicalWorkspaceSession
 import ai.okou.android.auth.MembershipAccess
 import ai.okou.android.auth.NativeAccount
 import ai.okou.android.auth.NativeSession
@@ -130,6 +131,8 @@ open class TestOkouApplication : OkouApplication() {
     ): WorkspaceSession {
         val key = Triple(identity.apiOrigin, identity.userId, identity.workspaceId)
         fun stored() = preferences.getOrPut(key) { initialPreferences ?: testPreferences() }
+        val fixture = chatService as? WorkspaceSession
+        val canonical = lazy { CanonicalWorkspaceSession(identity, tokens) }
         return object :
             WorkspaceSession,
             ai.okou.android.chat.AssistantRecoveryService by recoveryService,
@@ -137,6 +140,7 @@ open class TestOkouApplication : OkouApplication() {
             ChatListService by chatService,
             ChatComposerService by composerService {
 
+            override val artifacts = (fixture ?: canonical.value).artifacts
             override val workflowService = workflows
 
             override suspend fun sendControl(request: SendRequest) =
@@ -175,7 +179,9 @@ open class TestOkouApplication : OkouApplication() {
                 return updated
             }
 
-            override fun close() = Unit
+            override fun close() {
+                if (canonical.isInitialized()) canonical.value.close()
+            }
         }
     }
 }

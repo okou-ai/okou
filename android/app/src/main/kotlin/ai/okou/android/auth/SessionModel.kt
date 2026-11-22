@@ -3,6 +3,7 @@ package ai.okou.android.auth
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
@@ -64,6 +65,7 @@ data class ReadyWorkspace(
     val composer: ChatComposerModel,
     val controls: RunControlsModel,
     val recovery: AssistantRecoveryModel,
+    val artifacts: ArtifactCatalogModel,
     val workflows: WorkflowModel?,
 )
 
@@ -80,6 +82,7 @@ sealed interface OpeningWorkspace {
         val composer: ChatComposerModel,
         val controls: RunControlsModel,
         val recovery: AssistantRecoveryModel,
+        val artifacts: ArtifactCatalogModel,
     ) : OpeningWorkspace
 }
 
@@ -345,6 +348,11 @@ class SessionModel(
                             composer,
                             controls,
                             recovery,
+                            store.workspaceModel {
+                                ArtifactCatalogModel(owner.artifacts, connectivity) {
+                                    workspaceFailure(ticket, snapshot, it)
+                                }
+                            },
                         )
                     val knownMemberships =
                         if (fastAccess == null) memberships
@@ -503,6 +511,7 @@ class SessionModel(
                         opened.composer,
                         opened.controls,
                         opened.recovery,
+                        opened.artifacts,
                         workflows,
                     ),
                 working = false,

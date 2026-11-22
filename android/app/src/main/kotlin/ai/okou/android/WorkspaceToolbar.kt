@@ -228,9 +228,11 @@ internal fun WorkspaceListToolbar(
 
 @Composable
 internal fun WorkspaceToolEntries(
-    openWorkflows: (() -> Unit)? = null,
-    workflowsFocus: FocusRequester? = null,
-    onWorkflowsFocusChanged: (Boolean) -> Unit = {},
+    openWorkflows: (() -> Unit)?,
+    workflowsFocus: FocusRequester,
+    onWorkflowsFocusChanged: (Boolean) -> Unit,
+    openArtifacts: (() -> Unit)?,
+    artifactFocus: FocusRequester,
 ) {
     val stackBelow = with(LocalDensity.current) { 16.sp.toDp() * 19 }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -244,15 +246,10 @@ internal fun WorkspaceToolEntries(
                 R.drawable.ic_account_tree,
                 R.string.workspace_workflows,
                 stacked,
-                Modifier.weight(1f)
-                    .then(
-                        if (workflowsFocus == null) Modifier
-                        else
-                            Modifier.focusRequester(workflowsFocus).onFocusChanged {
-                                onWorkflowsFocusChanged(it.isFocused)
-                            }
-                    ),
-                openWorkflows,
+                Modifier.weight(1f).focusRequester(workflowsFocus).onFocusChanged {
+                    onWorkflowsFocusChanged(it.isFocused)
+                },
+                onClick = openWorkflows,
             )
             WorkspaceToolEntry(
                 R.drawable.ic_extension,
@@ -264,7 +261,8 @@ internal fun WorkspaceToolEntries(
                 R.drawable.ic_inventory_2,
                 R.string.workspace_artifacts,
                 stacked,
-                Modifier.weight(1f),
+                Modifier.weight(1f).focusRequester(artifactFocus),
+                onClick = openArtifacts,
             )
         }
     }
@@ -277,23 +275,27 @@ private fun WorkspaceToolEntry(
     @StringRes label: Int,
     stacked: Boolean,
     modifier: Modifier,
-    action: (() -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
 ) {
     val title = stringResource(label)
-    val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (action == null) 0.4f else 1f)
-    val semantics =
-        if (action == null)
+    val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (onClick == null) 0.4f else 1f)
+    val interaction =
+        if (onClick != null) {
+            Modifier.clickable(role = Role.Button, onClick = onClick).clearAndSetSemantics {
+                contentDescription = title
+            }
+        } else {
             Modifier.clearAndSetSemantics {
                 contentDescription = title
                 role = Role.Button
                 disabled()
             }
-        else Modifier.clickable(role = Role.Button, onClick = action)
+        }
     val entry =
         modifier
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(9.dp))
-            .then(semantics)
+            .then(interaction)
             .padding(horizontal = 4.dp, vertical = 4.dp)
     val content: @Composable () -> Unit = {
         Icon(painterResource(icon), null, Modifier.size(18.dp), tint = color)
