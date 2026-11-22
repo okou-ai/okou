@@ -394,7 +394,6 @@ const chatThreadDetailSchema = object({
 
 const chatThreadMetadataSchema = object({
   id: string(),
-  agentId: uuid().optional(),
   title: string().nullable(),
   selectedModel: string().nullable(),
   modelSettings: modelSettingsSchema,
@@ -725,7 +724,7 @@ export const chatThreadMarkAgentReadContract = c.router({
     path: "/api/chat-thread-unreads/mark-read",
     headers: authHeadersSchema,
     body: object({
-      agentId: string().min(1),
+      agentId: string().min(1).optional(),
     }),
     responses: {
       204: c.noBody(),
@@ -733,7 +732,7 @@ export const chatThreadMarkAgentReadContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "Mark all unread chat threads under an agent as read",
+    summary: "Mark all unread chat threads for the workspace member as read",
   },
 });
 
@@ -1062,7 +1061,6 @@ const chatSearchMatchRangeSchema = object({
 
 const chatSearchResultSchema = object({
   chatThreadId: string(),
-  agentName: string(),
   matchedMessage: chatSearchMessageSchema,
   matchedRanges: array(chatSearchMatchRangeSchema),
 });
@@ -1097,8 +1095,6 @@ export const chatSearchContract = c.router({
     headers: authHeadersSchema,
     query: object({
       keyword: string().trim().min(1),
-      // Accepted for older clients. Search is scoped to the member, not the executor.
-      agentId: uuid().optional(),
     }),
     responses: {
       200: chatSearchResponseSchema,

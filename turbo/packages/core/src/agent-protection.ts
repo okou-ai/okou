@@ -41,12 +41,3 @@ export function agentIdentityUpdateError(
   }
   return null;
 }
-
-export function agentDeletionError(isDefaultAgent: boolean) {
-  return isDefaultAgent
-    ? {
-        code: "DEFAULT_AGENT_DELETE_LOCKED",
-        message: "The workspace default Okou agent cannot be deleted.",
-      }
-    : null;
-}

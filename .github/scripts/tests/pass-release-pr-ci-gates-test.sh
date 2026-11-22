@@ -415,8 +415,8 @@ jq -e '
   .jobs["release-workspace-coverage"] as $validation |
   .jobs["action-pins"] as $pins |
   .jobs["ci-gate-security"] as $gate |
-  ($pins | has("if") | not) and
-  ($pins | has("needs") | not) and
+  ($pins.if | contains("merge_group")) and
+  $pins.needs == ["detect-release"] and
   $pins.permissions == {"contents": "read"} and
   any($pins.steps[];
     ((.uses // "") | startswith("actions/checkout@")) and
@@ -429,7 +429,7 @@ jq -e '
   $gate.steps[0].env.ACTION_PINS_RESULT == "${{ needs.action-pins.result }}" and
   $validation.needs == ["detect-release"] and
   ($validation.if | contains("needs.detect-release.outputs.skip == '\''true'\''")) and
-  ($validation.if | contains("github.event_name != '\''push'\''")) and
+  ($validation.if | contains("github.event_name == '\''pull_request'\''")) and
   any($validation.steps[];
     ((.uses // "") | startswith("actions/checkout@")) and
     .with.ref == "${{ github.event_name == '\''pull_request'\'' && github.event.pull_request.head.sha || github.sha }}"
@@ -445,5 +445,35 @@ jq -e '
   ($gate.steps[0].run | contains("$RELEASE_WORKSPACE_COVERAGE_RESULT"))
 ' <<<"$security_json" >/dev/null ||
   fail "Security must validate action pins and release workspace coverage before its fast path"
+
+# Execute the actual queue classifier against the fixture commit ancestry.
+queue_script=$(jq -r '.jobs["detect-release"].steps[] | select(.id == "queue").run' <<<"$security_json")
+queue_dir="$TEST_ROOT/queue"
+git clone -q "$REMOTE" "$queue_dir"
+git -C "$queue_dir" checkout -q "$VALID_HEAD"
+queue_base=$(git -C "$queue_dir" rev-parse HEAD^)
+pr='{"base":{"ref":"main"},"head":{"repo":{"full_name":"test/repo"},"ref":"release-please--branches--main"},"user":{"login":"github-actions[bot]"}}'
+mkdir -p "$queue_dir/bin"
+cat >"$queue_dir/bin/gh" <<'BASH'
+#!/usr/bin/env bash
+[[ "$*" == "api repos/test/repo/pulls/42" && -n "$MOCK_PULL" ]] || exit 1
+printf '%s\n' "$MOCK_PULL"
+BASH
+chmod +x "$queue_dir/bin/gh"
+queue_decision() (
+  cd "$queue_dir"
+  export GITHUB_REPOSITORY=test/repo QUEUE_REF=refs/heads/gh-readonly-queue/main/pr-42-abc
+  export PATH="$queue_dir/bin:$PATH" QUEUE_BASE="$1" MOCK_PULL="$2" GITHUB_OUTPUT="$queue_dir/output"
+  : > "$GITHUB_OUTPUT"
+  bash -eu -o pipefail -c "$queue_script" || exit 1
+  cat "$GITHUB_OUTPUT"
+)
+[[ $(queue_decision "$queue_base" "$pr") == skip=true ]] || fail "standalone release must fast-pass"
+for filter in '.base.ref="other"' '.head.repo.full_name="fork/repo"' '.head.ref="feature"' '.user.login="other"'; do
+  [[ $(queue_decision "$queue_base" "$(jq "$filter" <<<"$pr")") == skip=false ]] || fail "untrusted release identity: $filter"
+done
+[[ $(queue_decision "$queue_base" "") == skip=false ]] || fail "lookup failure must select ordinary CI"
+git -C "$queue_dir" -c user.name=Test -c user.email=test@example.com commit --allow-empty -qm "second queued entry"
+[[ $(queue_decision "$queue_base" "$pr") == skip=false ]] || fail "mixed queue must select ordinary CI"
 
 echo "pass-release-pr-ci-gates-test: ok"

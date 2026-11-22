@@ -153,7 +153,7 @@ describe("OPS-01: user data export", () => {
       if (peerOnboarded.status !== 200) {
         throw new Error("Expected peer onboarding to complete");
       }
-      const peerAgent = await bdd.createAgent(peer, { visibility: "private" });
+      await bdd.createAgent(peer, { visibility: "private" });
       const peerThread = await chat.createThread(peer, {
         title: "Another user's private thread",
       });
@@ -190,7 +190,6 @@ describe("OPS-01: user data export", () => {
         id: workflow.body.id,
         instruction: "Use the exported workflow instructions.",
       });
-      await bdd.deleteAgent(peer, peerAgent.agentId);
       await flushWaitUntilForTest();
     });
   });

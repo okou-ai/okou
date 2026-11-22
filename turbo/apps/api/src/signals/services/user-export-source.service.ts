@@ -53,6 +53,7 @@ import {
   pgIntegerDecoder,
   pgInt8ToBigIntDecoder,
   pgInt8ToSafeIntegerDecoder,
+  pgNullDecoder,
 } from "../../lib/db-structured-result";
 import {
   USER_EXPORT_RESTORE_SCRIPT,
@@ -277,7 +278,6 @@ const collectThread$ = command(
         id: chatThreads.id,
         userId: chatThreads.userId,
         title: chatThreads.title,
-        agentId: chatThreads.agentId,
         orgId: chatThreads.orgId,
         sourceScheduleRunId: chatThreads.sourceScheduleRunId,
         createdAt: chatThreads.createdAt,
@@ -348,7 +348,7 @@ const collectThread$ = command(
           id: threadRoot.id,
           userId: threadRoot.userId,
           title: threadRoot.title,
-          agentId: threadRoot.agentId,
+          agentId: sql`NULL::uuid`.mapWith(pgNullDecoder),
           orgId: threadRoot.orgId,
           sourceScheduleRunId: threadRoot.sourceScheduleRunId,
           createdAt: threadRoot.createdAt,
@@ -899,7 +899,6 @@ const collectWorkflow$ = command(
       .select({
         id: workflows.id,
         orgId: workflows.orgId,
-        agentId: workflows.agentId,
         name: workflows.name,
         displayName: workflows.displayName,
         description: workflows.description,
@@ -963,7 +962,6 @@ const collectWorkflow$ = command(
       jsonEntry(`workflows/${workflow.id}.json`, record, {
         sourceKind: "workflow",
         workflowId: workflow.id,
-        agentId: workflow.agentId,
         orgId: workflow.orgId,
       }),
     ]);

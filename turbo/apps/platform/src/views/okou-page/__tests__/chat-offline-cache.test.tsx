@@ -34,7 +34,6 @@ import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const EMPTY_CONVERSATION = "Send a message to start the conversation";
 
 interface CacheIdentity {
@@ -66,7 +65,6 @@ function threadSnapshot(
 ): ChatThreadSnapshotProjection {
   return {
     id,
-    agentId: AGENT_ID,
     title,
     sortAt: "2026-08-20T12:00:00.000Z",
     createdAt: "2026-08-20T11:00:00.000Z",

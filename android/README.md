@@ -76,13 +76,13 @@ transactions with their synchronization position. Changed chat lists await the
 write transaction before publication and read back from disk if it kept a newer
 checkpoint. Changed Projects await persistence and readback. Unchanged catch-up
 reuses the confirmed chat rows without another disk transaction when the cache is
-current. Changed Agent/settings references still persist independently. A storage
+current. A storage
 failure leaves the network result usable with a visible cache warning, and a later
 refresh retries unsaved data.
 Data is scoped to API origin/user/workspace and the current authorization snapshot;
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
-Agent/Project references keep the scoped list usable after a process restart while
-their network reads are unavailable. Cache display precedes network catch-up;
+chat and Project data keep the scoped list usable after a process restart while
+the network is unavailable. Cache display precedes network catch-up;
 chat tails over 100 events check the server's snapshot cursor in the background
 after publishing the incremental result. An advancing cursor triggers a download
 and replay. The workspace list worker applies that snapshot and its tail if a newer
@@ -671,7 +671,7 @@ separate evidence; a configured Secret name proves only its presence.
 
 The native text composer reads and saves the same server draft as Web. Existing
 conversations use their thread ID; My Okou and Project new-chat editors share the
-default agent draft. Project selection only changes the new conversation context.
+workspace composer draft. Project selection only changes the new conversation context.
 Draft GET does not delay the initial screen. Edits persist locally before PATCH,
 with Web's 500ms debounce and immediate explicit clears. Requests are serialized
 per target, and delayed hydration/save completions cannot replace newer local
@@ -865,7 +865,7 @@ pnpm -F @okouai/api-contracts lint-android-api-consumption
 Generation/checking also owns test-only chat read fixtures under
 `app/src/test/kotlin/ai/okou/android/api/fixtures` and
 `app/src/test/resources/api-bindings`. They are derived from the real canonical
-snapshot, lifecycle, indicator, agent, project and persisted-archive schemas.
+snapshot, lifecycle, indicator, Project and persisted-archive schemas.
 `ChatReadBindingsTest` compiles/decodes those generated types with the existing
 kotlinx.serialization and Retrofit/MockWebServer setup, including branch rejection,
 nullable/empty values and optional query construction. The archive fixture uses

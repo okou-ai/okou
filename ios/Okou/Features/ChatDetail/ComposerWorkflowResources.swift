@@ -14,7 +14,6 @@ final class ComposerWorkflowResources {
   private struct Request: Equatable {
     let id = UUID()
     let source: ComposerWorkflowSource
-    let agentID: String
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
   }
 
@@ -60,7 +59,7 @@ final class ComposerWorkflowResources {
       let task = Task<[ComposerWorkflow], Error> { @MainActor in
         guard let request else { return [] }
         try Task.checkCancellation()
-        let result = try await request.source.load(agentID: request.agentID)
+        let result = try await request.source.load()
         try Task.checkCancellation()
         try signal.checkCancellation()
         return result
@@ -91,10 +90,10 @@ final class ComposerWorkflowResources {
     perform(.filter(Filter(query: query, recent: recent)))
   }
 
-  func reload(source: ComposerWorkflowSource, agentID: String) {
+  func reload(source: ComposerWorkflowSource) {
     task?.cancel()
     task = nil
-    perform(.reload(Request(source: source, agentID: agentID)))
+    perform(.reload(Request(source: source)))
   }
 
   func dismiss() {

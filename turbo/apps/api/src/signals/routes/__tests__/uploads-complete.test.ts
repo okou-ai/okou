@@ -39,6 +39,7 @@ interface RunUploadFixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
   readonly agentId: string;
   readonly runId: string;
+  readonly threadId: string;
   readonly bearer: string;
   readonly objectStore: ChatObjectStore;
 }
@@ -105,17 +106,20 @@ async function createRunUploadFixture(
   });
 
   let runId: string;
+  let threadId: string;
   if (options.chatThread) {
     const sent = await chat.sendAndLaunch(actor, {
       prompt: "produce a thread-linked uploaded artifact",
     });
     runId = sent.runId;
+    threadId = sent.threadId;
   } else {
     const run = await runsApi.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "produce an uploaded artifact",
     });
     runId = run.runId;
+    threadId = run.threadId;
   }
   const orgActor = { ...actor, orgId };
   mockClerkMembership(context, orgActor, "org:admin");
@@ -124,6 +128,7 @@ async function createRunUploadFixture(
     actor: orgActor,
     agentId: agent.agentId,
     runId,
+    threadId,
     bearer: `Bearer ${okouToken({
       userId: actor.userId,
       orgId,
@@ -537,8 +542,7 @@ describe("POST /api/uploads/complete", () => {
     addUploadObject(fixture, fileId, "late.txt", 11);
     await runsApi.requestCancelRun(fixture.actor, fixture.runId, [200]);
     await flushWaitUntilForTest();
-    // Agent deletion also removes its threads; owner, bearer and pending upload remain.
-    await bdd.deleteAgent(fixture.actor, fixture.agentId);
+    await chat.deleteThread(fixture.actor, fixture.threadId);
 
     const response = await chat.completeUploadWithBearer(
       fixture.bearer,

@@ -393,7 +393,7 @@ class ApiClientTest {
             """{"id":"org_one","name":"Workspace","role":"admin","futureField":true}"""
         const val error = """{"error":{"code":"FIXTURE_ERROR","message":"Try again"}}"""
         const val preferences =
-            """{"timezone":null,"locale":null,"supportedLocales":["en-US","zh-Hant"],"pinnedAgentIds":[],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":null,"captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
+            """{"timezone":null,"locale":null,"supportedLocales":["en-US","zh-Hant"],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":null,"captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
     }
 }
 

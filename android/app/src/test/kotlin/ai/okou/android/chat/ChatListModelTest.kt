@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_EVENT
 import ai.okou.android.CHAT_IN_PROJECT
@@ -11,9 +10,6 @@ import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.generated.Agents
-import ai.okou.android.api.generated.AgentsItem
-import ai.okou.android.api.generated.AgentsItemVisibility
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
@@ -106,27 +102,9 @@ class ChatListModelTest {
         )
 
     private open inner class Service : TestChatService() {
-        var agentRead: suspend () -> Agents = {
-            listOf(
-                AgentsItem(
-                    CHAT_AGENT,
-                    true,
-                    "user-a",
-                    null,
-                    "My Okou",
-                    null,
-                    null,
-                    AgentsItemVisibility.PRIVATE,
-                )
-            )
-        }
         var listRead: suspend () -> ChatEvents = { page() }
         var statusRead: suspend () -> Indicators = {
-            Indicators(
-                emptyMap(),
-                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
-                emptyMap(),
-            )
+            Indicators(mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD), emptyMap())
         }
 
         override suspend fun chatSnapshot() =
@@ -135,8 +113,6 @@ class ChatListModelTest {
             )
 
         override suspend fun chatEvents(since: Long?) = listRead()
-
-        override suspend fun agents() = agentRead()
 
         override suspend fun indicators() = statusRead()
     }
@@ -249,7 +225,6 @@ class ChatListModelTest {
         val relaunchedStore = ViewModelStore()
         val initial =
             Indicators(
-                emptyMap(),
                 mapOf(
                     CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
                     CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
@@ -359,7 +334,7 @@ class ChatListModelTest {
             assertEquals(ChatReadPhase.Failed, relaunched.uiState.value.indicatorsPhase)
             assertNull(relaunched.uiState.value.displayUnreadAt)
 
-            service.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            service.statusRead = { Indicators(emptyMap(), emptyMap()) }
             relaunched.refreshIndicators()
             runCurrent()
             assertEquals(ChatReadPhase.Ready, relaunched.uiState.value.indicatorsPhase)
@@ -440,7 +415,7 @@ class ChatListModelTest {
             advanceUntilIdle()
             assertFalse(model.uiState.value.threads.single { it.id == CHAT_PERSONAL }.archived)
             assertNull(model.uiState.value.rowUndo)
-            indicators.complete(Indicators(emptyMap(), emptyMap(), emptyMap()))
+            indicators.complete(Indicators(emptyMap(), emptyMap()))
             advanceUntilIdle()
         }
     }
@@ -520,11 +495,10 @@ class ChatListModelTest {
     fun aDefinitiveUnreadUndoSettlesWhileIndicatorsAreStillRefreshing() = runTest {
         val unread =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to CHAT_DATE),
             )
-        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val read = Indicators(emptyMap(), emptyMap())
         for (rejected in listOf(false, true)) {
             val receipt = CompletableDeferred<ReadState>()
             val readback = CompletableDeferred<Indicators>()
@@ -570,7 +544,6 @@ class ChatListModelTest {
         val displayedRead = CompletableDeferred<Unit>()
         val unread =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to CHAT_DATE),
             )
@@ -613,7 +586,7 @@ class ChatListModelTest {
             model.refresh()
             advanceUntilIdle()
             model.selectFilter(ChatListFilter.Unread)
-            source.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             advanceUntilIdle()
             val offer = checkNotNull(model.uiState.value.rowUndo)
@@ -1124,11 +1097,10 @@ class ChatListModelTest {
         val commitUnread = CompletableDeferred<ReadState>()
         fun status(time: String) =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to time),
             )
-        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val read = Indicators(emptyMap(), emptyMap())
         val source =
             object : Service() {
                     override suspend fun markRead(threadId: String) = commitRead.await()
@@ -1171,10 +1143,9 @@ class ChatListModelTest {
     fun earlierUnreadReadbackCannotUndoAReadWithoutAPreviousWatermark() = runTest {
         val unreadReadback = CompletableDeferred<Indicators>()
         val readWrite = CompletableDeferred<ReadState>()
-        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val read = Indicators(emptyMap(), emptyMap())
         val unread =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to CHAT_DATE),
             )
@@ -1220,7 +1191,6 @@ class ChatListModelTest {
                 .apply {
                     statusRead = {
                         Indicators(
-                            emptyMap(),
                             mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                             mapOf(CHAT_PERSONAL to CHAT_DATE),
                         )
@@ -1247,7 +1217,7 @@ class ChatListModelTest {
             assertNull(model.uiState.value.failedRowAction)
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
 
-            source.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
             model.refreshIndicators()
             advanceUntilIdle()
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
@@ -1260,7 +1230,6 @@ class ChatListModelTest {
         val readback = CompletableDeferred<Indicators>()
         fun unread(time: String) =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to time),
             )
@@ -1300,14 +1269,13 @@ class ChatListModelTest {
         val source =
             object : Service() {
                     override suspend fun markRead(threadId: String): ReadState {
-                        statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+                        statusRead = { Indicators(emptyMap(), emptyMap()) }
                         throw IOException("response lost")
                     }
                 }
                 .apply {
                     statusRead = {
                         Indicators(
-                            emptyMap(),
                             mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                             mapOf(CHAT_PERSONAL to CHAT_DATE),
                         )
@@ -1331,7 +1299,7 @@ class ChatListModelTest {
             object : Service() {
                     override suspend fun markUnread(threadId: String) = response.await()
                 }
-                .apply { statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) } }
+                .apply { statusRead = { Indicators(emptyMap(), emptyMap()) } }
         withCatchUpModel(source) { model ->
             model.refresh()
             advanceUntilIdle()
@@ -1347,7 +1315,6 @@ class ChatListModelTest {
 
             source.statusRead = {
                 Indicators(
-                    emptyMap(),
                     mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                     mapOf(CHAT_PERSONAL to CHAT_DATE),
                 )
@@ -1564,7 +1531,7 @@ class ChatListModelTest {
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
 
-            statusResponse.complete(Indicators(emptyMap(), emptyMap(), emptyMap()))
+            statusResponse.complete(Indicators(emptyMap(), emptyMap()))
             advanceUntilIdle()
             assertEquals(initialReads + 1, reads)
             val state = model.uiState.value
@@ -1995,7 +1962,7 @@ class ChatListModelTest {
                 }
                 statusRead = {
                     indicatorReads++
-                    Indicators(emptyMap(), emptyMap(), emptyMap())
+                    Indicators(emptyMap(), emptyMap())
                 }
             }
         val service =
@@ -2120,7 +2087,7 @@ class ChatListModelTest {
     @Test
     fun aRejectedUnmuteKeepsItsReadReceiptWhileIndicatorsAreHeld() = runTest {
         val refresh = CompletableDeferred<Indicators>()
-        val unread = Indicators(emptyMap(), emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
+        val unread = Indicators(emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
         val source =
             object : Service() {
                 override suspend fun chatEvents(since: Long?) =
@@ -2187,7 +2154,7 @@ class ChatListModelTest {
                         """{"events":[${tail.joinToString(",")}],"hasMore":false}"""
                     )
                 }
-                statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+                statusRead = { Indicators(emptyMap(), emptyMap()) }
             }
         val service =
             object : ChatListService by source {
@@ -2233,7 +2200,6 @@ class ChatListModelTest {
 
             oldStatus.complete(
                 Indicators(
-                    emptyMap(),
                     mapOf(
                         CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
                         CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
@@ -2283,17 +2249,12 @@ class ChatListModelTest {
             model.refresh()
             runCurrent()
             assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.agentsPhase)
             assertEquals(
                 IndicatorsThreadsValue.UNREAD,
                 model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
             )
             service.statusRead = {
-                Indicators(
-                    emptyMap(),
-                    mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.ACTIVE),
-                    emptyMap(),
-                )
+                Indicators(mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.ACTIVE), emptyMap())
             }
             model.refreshIndicators()
             runCurrent()
@@ -2402,15 +2363,10 @@ class ChatListModelTest {
         val store = ViewModelStore()
         val gate = CompletableDeferred<ChatEvents>()
         try {
-            cache
-                .open(identity) { true }
-                .use {
-                    it.save(checkpoint, 1234, CachedChatNavigation(agents = Service().agents()))
-                }
+            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
             val service =
                 Service().apply {
                     listRead = { gate.await() }
-                    agentRead = { throw IOException("offline") }
                     statusRead = { throw IOException("offline") }
                 }
             val model =
@@ -2431,7 +2387,6 @@ class ChatListModelTest {
                 "Personal chat",
                 chatListGroups(model.uiState.value).last().threads.single().title,
             )
-            assertEquals(ChatListSource.Cache, model.uiState.value.agentsSource)
             gate.completeExceptionally(IOException("offline"))
             advanceUntilIdle()
             assertEquals(ChatReadPhase.Failed, model.uiState.value.listPhase)
@@ -2494,7 +2449,6 @@ class ChatListModelTest {
             assertSame(unsaved.threads, model.uiState.value.threads)
             assertEquals(unsaved.confirmedAt, model.uiState.value.confirmedAt)
             assertFalse(model.uiState.value.cacheUnavailable)
-            service.agentRead = { Service().agents().map { it.copy(displayName = "Updated Okou") } }
             model.refreshMetadata()
             advanceUntilIdle()
             store.clear()
@@ -2505,7 +2459,6 @@ class ChatListModelTest {
                     val saved = checkNotNull(it.load())
                     assertEquals(23L, saved.checkpoint.cursor.seqId)
                     assertEquals("Updated", replayChats(saved.checkpoint).single().title)
-                    assertEquals("Updated Okou", saved.navigation.agents?.single()?.displayName)
                 }
         } finally {
             store.clear()
@@ -3389,7 +3342,6 @@ class ChatListModelTest {
             runCurrent()
             assertEquals(ChatListSource.Network, model.uiState.value.source)
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.agentsPhase)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
             snapshot.completeExceptionally(IOException("offline"))
             advanceUntilIdle()
@@ -3413,64 +3365,126 @@ class ChatListModelTest {
     }
 
     @Test
-    fun lateDiskRestoreDoesNotReplaceNetworkConfirmedAgentNames() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val cache = cache(temporary.newFolder())
-        val checkpoint =
-            ChatCheckpoint(
-                ai.okou.android.api.generated.ChatArchive(emptyList()),
-                ChatCursor(),
-                page().events,
-                ChatCursor(CHAT_EVENT, 17),
-            )
-        val store = ViewModelStore()
-        val entered = CompletableDeferred<Unit>()
-        val release = CountDownLatch(1)
-        val list = CompletableDeferred<ChatEvents>()
-        var owner: Job? = null
-        try {
-            cache
-                .open(identity) { true }
-                .use {
-                    it.save(checkpoint, 1234, CachedChatNavigation(agents = Service().agents()))
-                }
-            val service =
-                Service().apply {
-                    listRead = { list.await() }
-                    agentRead = { Service().agents().map { it.copy(displayName = "Updated Okou") } }
-                }
-            val authorized = {
-                if (Thread.currentThread().name.startsWith("DefaultDispatcher")) {
-                    entered.complete(Unit)
-                    release.await()
-                }
-                true
+    fun cachedChatsStayInTheirScopeUntilProjectMetadataAndChatMembershipConverge() = runTest {
+        val root = temporary.newFolder()
+        val cache = cache(root, StandardTestDispatcher(testScheduler))
+        val project = ConfirmedProject(CHAT_PROJECT, "Research", CHAT_DATE, CHAT_DATE)
+        val cachedEvents =
+            page(
+                    listOf(
+                        chatEventWire(),
+                        chatEventWire(
+                            id = "77777777-7777-4777-8777-777777777777",
+                            seq = 18,
+                            thread = CHAT_IN_PROJECT,
+                            extra = ",\"projectId\":\"$CHAT_PROJECT\"",
+                        ),
+                    )
+                )
+                .events
+        cache
+            .open(identity) { true }
+            .use {
+                it.save(
+                    ChatCheckpoint(
+                        ChatArchive(emptyList()),
+                        ChatCursor(),
+                        cachedEvents,
+                        cachedEvents.last().cursor(),
+                    ),
+                    100,
+                )
+                it.saveProjects(ProjectCheckpoint(ProjectArchive(listOf(project), null, 0)), 100)
             }
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(service, cache, identity, authorized, {}, dispatcher)
-                        }
-                    },
-                )[ChatListModel::class.java]
-            owner = model.viewModelScope.coroutineContext[Job]
+        execute(root, "UPDATE project_snapshot SET payload = 'invalid JSON'")
+
+        val projectResponse = CompletableDeferred<ProjectSnapshot>()
+        val chatResponse = CompletableDeferred<ChatEvents>()
+        var projectTail = ProjectEvents(emptyList(), false)
+        val service =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) = chatResponse.await()
+
+                override suspend fun projectSnapshot() = projectResponse.await()
+
+                override suspend fun projectEvents(since: Long) = projectTail
+            }
+        withCatchUpModel(service, chatCache = cache) { model ->
             model.refresh()
-            entered.await()
-            model.uiState.first { it.agentsSource == ChatListSource.Network }
-            release.countDown()
-            val restored = model.uiState.first { it.source == ChatListSource.Cache }
-            assertEquals("Updated Okou", restored.agents.single().displayName)
-            assertEquals(ChatListSource.Network, restored.agentsSource)
-        } finally {
-            release.countDown()
-            list.completeExceptionally(IOException("offline"))
-            store.clear()
-            owner?.join()
             runCurrent()
-            Dispatchers.resetMain()
+            val cached = model.uiState.value
+            assertEquals(ChatListSource.Cache, cached.source)
+            assertEquals(ChatReadPhase.Loading, cached.projectsPhase)
+            assertNull(cached.projectsSource)
+            assertTrue(cached.projectCacheUnavailable)
+            val (awaitingProject, outside) = chatListGroups(cached)
+            assertNull(awaitingProject.project)
+            assertEquals(CHAT_PROJECT, awaitingProject.projectId)
+            assertEquals(CHAT_IN_PROJECT, awaitingProject.threads.single().id)
+            assertEquals(CHAT_PERSONAL, outside.threads.single().id)
+
+            projectResponse.complete(
+                ProjectSnapshotVariant1(
+                    listOf(
+                        ProjectSnapshotVariant1ProjectsItem(
+                            CHAT_PROJECT,
+                            "Research",
+                            CHAT_DATE,
+                            CHAT_DATE,
+                        )
+                    ),
+                    null,
+                    0,
+                )
+            )
+            runCurrent()
+            val ready = model.uiState.value
+            assertEquals(project, chatListGroups(ready).first().project)
+            assertEquals(ChatListSource.Cache, ready.source)
+            assertFalse(ready.projectCacheUnavailable)
+
+            projectTail =
+                ProjectEvents(
+                    listOf(
+                        ProjectEventsEventsItem(
+                            id = "99999999-9999-4999-8999-999999999999",
+                            seqId = 1,
+                            projectId = CHAT_PROJECT,
+                            kind = ProjectEventsEventsItemKind.DELETED,
+                            name = project.name,
+                            createdAt = CHAT_DATE,
+                        )
+                    ),
+                    false,
+                )
+            model.refreshMetadata()
+            runCurrent()
+            val afterDeletion = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, afterDeletion.projectsPhase)
+            assertEquals(ChatListSource.Network, afterDeletion.projectsSource)
+            assertEquals(awaitingProject, chatListGroups(afterDeletion).first())
+            assertEquals(outside, chatListGroups(afterDeletion).last())
+
+            chatResponse.complete(
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = HISTORY_LAST_EVENT,
+                            seq = 19,
+                            thread = CHAT_IN_PROJECT,
+                            kind = "project_updated",
+                            extra = ",\"projectId\":null",
+                        )
+                    )
+                )
+            )
+            runCurrent()
+            val detached = chatListGroups(model.uiState.value).single()
+            assertNull(detached.projectId)
+            assertEquals(
+                setOf(CHAT_IN_PROJECT, CHAT_PERSONAL),
+                detached.threads.map { it.id }.toSet(),
+            )
         }
     }
 }

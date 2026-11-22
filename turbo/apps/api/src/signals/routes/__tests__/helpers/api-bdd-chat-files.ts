@@ -707,20 +707,6 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
-    async listUnreadAgents(actor: ApiTestUser): Promise<readonly string[]> {
-      const response = await accept(
-        threadsClient().indicators({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
-      return Object.entries(response.body.agents).flatMap(
-        ([agentId, indicator]) => {
-          return indicator === "unread" ? [agentId] : [];
-        },
-      );
-    },
-
     async markAgentThreadsRead(
       actor: ApiTestUser,
       agentId: string,

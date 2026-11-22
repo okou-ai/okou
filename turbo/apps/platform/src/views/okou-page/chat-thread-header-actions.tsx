@@ -194,7 +194,7 @@ export function MobileChatThreadMoreMenu({
                 {
                   threadId: thread.threadId,
                   archived: !archived,
-                  leaveToAgentId: thread.agentId,
+                  leaveThread: true,
                 },
                 // Archiving navigates away immediately, which aborts the page signal.
                 rootSignal,

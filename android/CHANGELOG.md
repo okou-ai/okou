@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.37.2](https://github.com/okou-ai/okou/compare/android-v0.37.1...android-v0.37.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* **mobile:** prepare native clients for workspace apis without agent ids ([#49889](https://github.com/okou-ai/okou/issues/49889)) ([acc1180](https://github.com/okou-ai/okou/commit/acc1180b74cc5401511eb40984f43c64db058604))
+
+## [0.37.1](https://github.com/okou-ai/okou/compare/android-v0.37.0...android-v0.37.1) (2026-11-21)
+
+
+### Refactoring
+
+* contract legacy chat and run agent storage ([#49868](https://github.com/okou-ai/okou/issues/49868)) ([abbf9f8](https://github.com/okou-ai/okou/commit/abbf9f8e672ac56f0f98583cfb0b536e9225e905))
+
+## [0.37.0](https://github.com/okou-ai/okou/compare/android-v0.36.0...android-v0.37.0) (2026-11-21)
+
+
+### Features
+
+* **android:** align settings and timezone with the current design ([#49845](https://github.com/okou-ai/okou/issues/49845)) ([a472a5f](https://github.com/okou-ai/okou/commit/a472a5f0d17863f992676460b8df1a762f2d008d))
+
+
+### Bug Fixes
+
+* **android:** align chat-list undo with adaptive snackbar design ([#49819](https://github.com/okou-ai/okou/issues/49819)) ([3332b52](https://github.com/okou-ai/okou/commit/3332b52f8303e4ba0705300ac6bed8cccfbc1d67))
+* **android:** roll back rejected chat row edits immediately ([#49835](https://github.com/okou-ai/okou/issues/49835)) ([546fbd2](https://github.com/okou-ai/okou/commit/546fbd26756051d2df68141c76dff2b476e3415b))
+* **android:** stabilize project grouping during cached chat startup ([#49836](https://github.com/okou-ai/okou/issues/49836)) ([f5c1347](https://github.com/okou-ai/okou/commit/f5c13476bc33d151d12bdc86756dadfc1927fced))
+
+
+### Refactoring
+
+* stage retirement of chat and run agent identity ([#49839](https://github.com/okou-ai/okou/issues/49839)) ([01b34f9](https://github.com/okou-ai/okou/commit/01b34f9b9f1a7f7b117739ad834931fa646a1b8b))
+
+
+### Performance Improvements
+
+* **android:** reuse confirmed project rows on unchanged sync ([#49833](https://github.com/okou-ai/okou/issues/49833)) ([61d27f3](https://github.com/okou-ai/okou/commit/61d27f33c1d7f29cc9996a3c485d8bffc52890c0))
+
 ## [0.36.0](https://github.com/okou-ai/okou/compare/android-v0.35.0...android-v0.36.0) (2026-11-21)
 
 

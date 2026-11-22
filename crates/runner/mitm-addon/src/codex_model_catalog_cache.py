@@ -88,7 +88,7 @@ import secrets
 import time
 import urllib.parse
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import NamedTuple
@@ -150,8 +150,6 @@ _RAW_REQUEST_CONDITIONAL_HEADERS = frozenset(
     )
 )
 
-_ResponseStream = Callable[[bytes], bytes | Iterable[bytes]]
-
 
 @dataclass(frozen=True)
 class _CacheKey:
@@ -196,8 +194,8 @@ class _FlowState:
     upstream_encoding: str | None = None
     compressed_content_length: int | None = None
     capture: stream_capture.StreamCapture | None = field(default=None, repr=False)
-    downstream_stream: _ResponseStream | None = field(default=None, repr=False)
-    wrapper_stream: _ResponseStream | None = field(default=None, repr=False)
+    downstream_stream: stream_capture.StreamCallback | None = field(default=None, repr=False)
+    wrapper_stream: stream_capture.StreamCallback | None = field(default=None, repr=False)
     finalized: bool = False
     capacity_reserved: bool = True
     result_published: bool = False
@@ -795,13 +793,9 @@ def wrap_response_stream(flow: http.HTTPFlow) -> None:
 
 
 def _unwrap_response_stream(flow: http.HTTPFlow, state: _FlowState) -> None:
-    response = flow.response
-    if (
-        response is not None
-        and state.wrapper_stream is not None
-        and response.stream is state.wrapper_stream
-    ):
-        response.stream = state.downstream_stream or False
+    stream_capture.replace_owned_stream(
+        flow.response, state.wrapper_stream, replacement=state.downstream_stream
+    )
     state.wrapper_stream = None
     state.downstream_stream = None
 

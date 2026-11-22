@@ -637,7 +637,6 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
 
     expect(response.body).toStrictEqual({
       id: fixture.threadId,
-      agentId: (await bdd.readOnboardingStatus(fixture.actor)).defaultAgentId,
       title: "Launch plan",
       pinnedAt: null,
       archived: false,

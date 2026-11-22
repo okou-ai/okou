@@ -6,7 +6,6 @@ import { Client } from "pg";
 export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
-  const agentId = randomUUID();
   const orgId = `workflow-scopes-${randomUUID()}`;
 
   const insert = async (
@@ -16,10 +15,10 @@ export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
     state: "installing" | "installed" | null = null,
   ) => {
     return await client.query(
-      `INSERT INTO workflows (org_id, agent_id, owner_user_id, name, visibility,
+      `INSERT INTO workflows (org_id, owner_user_id, name, visibility,
         official_definition_name, official_installation_state, created_by, updated_by)
-       VALUES ($1, $2, 'owner', $3, $4, $5, $6, 'owner', 'owner') RETURNING id`,
-      [orgId, agentId, name, visibility, definition, state],
+       VALUES ($1, 'owner', $2, $3, $4, $5, 'owner', 'owner') RETURNING id`,
+      [orgId, name, visibility, definition, state],
     );
   };
   const duplicate = (constraint: string) => {
@@ -35,10 +34,6 @@ export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
   };
 
   try {
-    await client.query(
-      `INSERT INTO agents (id, org_id, owner, name) VALUES ($1, $2, 'owner', 'scopes')`,
-      [agentId, orgId],
-    );
     await insert("ordinary-first");
     await insert("ordinary-first", "private", "ordinary-first", "installing");
     await insert("official-first", "private", "official-first", "installed");
@@ -47,32 +42,42 @@ export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
 
     await assert.rejects(
       insert("ordinary-first"),
-      duplicate("idx_workflows_ordinary_private_owner_agent_name_unique"),
+      duplicate("idx_workflows_ordinary_private_owner_name_unique"),
     );
     await assert.rejects(
       insert("ordinary-first", "public"),
-      duplicate("idx_workflows_public_agent_name_unique"),
+      duplicate("idx_workflows_public_org_name_unique"),
     );
     for (const state of ["installing", "installed"] as const) {
       await assert.rejects(
         insert("ordinary-first", "private", "ordinary-first", state),
-        duplicate("idx_workflows_official_owner_agent_definition_unique"),
+        duplicate("idx_workflows_official_owner_definition_unique"),
       );
     }
     assert.equal(
       (
         await client.query(
-          `SELECT id FROM workflows WHERE org_id = $1 AND agent_id = $2
+          `SELECT id FROM workflows WHERE org_id = $1
            AND owner_user_id = 'owner' AND name = 'ordinary-first'
            AND visibility = 'private' AND official_definition_name IS NULL`,
-          [orgId, agentId],
+          [orgId],
         )
       ).rowCount,
       1,
       "Ordinary readers select one identity even beside a same-name Official installation",
     );
+    await insert("morning-brief", "private", "morning-brief", "installed");
+    await assert.rejects(
+      insert(
+        "internal-test-morning-brief",
+        "private",
+        "internal-test-morning-brief",
+        "installing",
+      ),
+      duplicate("idx_workflows_morning_brief_owner_unique"),
+    );
   } finally {
-    await client.query(`DELETE FROM agents WHERE id = $1`, [agentId]);
+    await client.query(`DELETE FROM workflows WHERE org_id = $1`, [orgId]);
     await client.end();
   }
 }

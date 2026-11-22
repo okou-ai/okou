@@ -37,8 +37,6 @@ export const logStatusSchema = zEnum([
 export const activityDetailSchema = object({
   id: uuid(),
   sessionId: string().nullable(),
-  agentId: string().nullable(),
-  displayName: string().nullable(),
   framework: string().nullable(),
   modelProvider: string().nullable(),
   selectedModel: string().nullable(),

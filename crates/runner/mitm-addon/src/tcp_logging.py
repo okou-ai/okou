@@ -47,9 +47,8 @@ def start(flow: tcp.TCPFlow, *, registry_path: str) -> None:
             flow.kill()
         return
 
-    flow.metadata[metadata_keys.SANDBOX_RUN_ID] = sandbox_info.get("runId", "")
-    flow.metadata[metadata_keys.SANDBOX_NETWORK_LOG_PATH] = sandbox_info.get("networkLogPath", "")
-    flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH] = sandbox_info.get("proxyLogPath", "")
+    run_id = sandbox_info.get("runId", "")
+    flow_metadata.set_sandbox_log_context(flow.metadata, sandbox_info, run_id=run_id)
     flow.metadata[metadata_keys.TCP_START_MONOTONIC] = time.monotonic()
 
 

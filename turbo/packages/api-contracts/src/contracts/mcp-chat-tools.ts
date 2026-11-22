@@ -17,12 +17,19 @@ import { runsCancelContract } from "./run-routes";
 
 const normal = chatEventNormalSendBodySchema.shape;
 export const mcpSendChatMessageInputSchema = object({
-  prompt: normal.prompt,
+  prompt: normal.prompt.optional(),
+  userMessage: normal.userMessage.optional(),
   threadId: mcpThreadIdSchema.optional(),
   projectId: uuid().toLowerCase().optional(),
   model: normal.model,
 })
   .strict()
+  .refine(
+    (input) => {
+      return (input.prompt === undefined) !== (input.userMessage === undefined);
+    },
+    { message: "Provide either prompt or userMessage", path: ["prompt"] },
+  )
   .refine(
     (input) => {
       return input.threadId === undefined || input.projectId === undefined;
@@ -31,7 +38,8 @@ export const mcpSendChatMessageInputSchema = object({
       message: "projectId is only allowed when starting a new Chat",
       path: ["projectId"],
     },
-  );
+  )
+  .meta({ oneOf: [{ required: ["prompt"] }, { required: ["userMessage"] }] });
 
 export const mcpRevokeQueuedMessageInputSchema = object({
   threadId: mcpThreadIdSchema,
@@ -102,15 +110,10 @@ export const mcpCancelRunOutputSchema = runsCancelContract.cancel.responses[200]
   .omit({ id: true })
   .extend({ runId: mcpRunIdSchema });
 
-export const mcpGetChatIndicatorsOutputSchema = indicatorsSchema
-  .omit({ agents: true })
-  .extend({
-    threads: record(
-      mcpThreadIdSchema,
-      indicatorsSchema.shape.threads.valueType,
-    ),
-    unreadAt: record(
-      mcpThreadIdSchema,
-      indicatorsSchema.shape.unreadAt.valueType,
-    ),
-  });
+export const mcpGetChatIndicatorsOutputSchema = indicatorsSchema.extend({
+  threads: record(mcpThreadIdSchema, indicatorsSchema.shape.threads.valueType),
+  unreadAt: record(
+    mcpThreadIdSchema,
+    indicatorsSchema.shape.unreadAt.valueType,
+  ),
+});

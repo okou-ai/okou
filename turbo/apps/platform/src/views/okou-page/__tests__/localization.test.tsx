@@ -87,8 +87,6 @@ test("French uses local number formatting", async () => {
     return respond(200, {
       id: runId,
       sessionId: null,
-      agentId: null,
-      displayName: null,
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,

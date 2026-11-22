@@ -2212,8 +2212,10 @@ ruby - \
     raise "production migrations must finish before API deployment"
   end
 
-  artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Upload canonical app artifact" }
-  artifact_upload_run = artifact_upload_step.fetch("run")
+  artifact_upload_step = turbo.fetch("deploy-app").fetch("steps").find { |step| step["name"] == "Publish app artifact and immutable assets to R2" }
+  script = ".github/scripts/artifacts/upload-okou-app-artifact.sh"
+  raise "deploy-app must publish the archive" unless artifact_upload_step.fetch("run").include?(script)
+  artifact_upload_run = File.read(File.join(File.dirname(ARGV[0]), "../../", script))
   raise "deploy-app must upload the archived App artifact" unless artifact_upload_run.include?("/dist.tar.gz")
   raise "deploy-app must not upload per-file App artifacts" if artifact_upload_run.include?("aws s3 cp turbo/apps/platform/dist")
 RUBY

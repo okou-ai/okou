@@ -1,6 +1,6 @@
 -- One caller-owned statement; no explicit transaction, trigger or new lock.
 -- VOLATILE is required: internal statements take fresh READ COMMITTED snapshots.
-CREATE FUNCTION public.update_agent_metadata(
+CREATE OR REPLACE FUNCTION public.update_agent_metadata(
   p_org_id text, p_agent_id uuid, p_member_id text, p_is_admin boolean,
   p_identity_changes boolean, p_visibility text, p_public_limit integer,
   p_body bytea, p_now timestamp without time zone
@@ -12,16 +12,12 @@ DECLARE
   public_count bigint := 0;
   patch jsonb;
 BEGIN
-  -- Preserve the original lock statement, then take a fresh READ COMMITTED
-  -- snapshot. In particular, an outgoing bootstrap may publish a default
-  -- pointer while this statement is waiting for its existing Agent row lock.
   PERFORM a.id FROM public.agents AS a
     WHERE a.org_id = p_org_id AND a.id = p_agent_id FOR UPDATE;
 
-  SELECT a.id, a.owner, a.visibility, m.default_agent_id
+  SELECT a.id, a.owner, a.visibility, CASE WHEN a.name = 'default-agent' AND a.visibility = 'public' THEN a.id END AS default_executor_id
     INTO current_agent
     FROM public.agents AS a
-    LEFT JOIN public.org_metadata AS m ON m.org_id = a.org_id
     WHERE a.org_id = p_org_id AND a.id = p_agent_id LIMIT 1;
   IF NOT FOUND THEN
     RETURN;
@@ -30,14 +26,14 @@ BEGIN
   existing := pg_catalog.jsonb_build_object(
     'id', current_agent.id, 'owner', current_agent.owner,
     'visibility', current_agent.visibility,
-    'defaultAgentId', current_agent.default_agent_id, 'publicAgentCount', 0);
+    'defaultAgentId', current_agent.default_executor_id, 'publicAgentCount', 0);
   agent := NULL;
 
   -- Return locked facts for the existing HTTP error classifiers. No body text
   -- is admitted and no Agent write occurs for any rejected operation.
   IF NOT (current_agent.owner = p_member_id OR
       (p_is_admin AND current_agent.visibility = 'public')) OR
-    (p_identity_changes AND current_agent.id = current_agent.default_agent_id) OR
+    (p_identity_changes AND current_agent.id = current_agent.default_executor_id) OR
     (p_visibility IS NOT NULL AND current_agent.owner <> p_member_id) THEN
     RETURN NEXT;
     RETURN;
@@ -67,11 +63,10 @@ BEGIN
     WHERE a.org_id = p_org_id AND a.id = p_agent_id;
 
   SELECT pg_catalog.jsonb_build_object(
-    'agentId', a.id, 'defaultAgentId', m.default_agent_id, 'owner', a.owner,
+    'agentId', a.id, 'defaultAgentId', CASE WHEN a.name = 'default-agent' AND a.visibility = 'public' THEN a.id END, 'owner', a.owner,
     'displayName', a.display_name, 'description', a.description,
     'sound', a.sound, 'avatarUrl', a.avatar_url, 'visibility', a.visibility)
     INTO agent FROM public.agents AS a
-    LEFT JOIN public.org_metadata AS m ON m.org_id = a.org_id
     WHERE a.org_id = p_org_id AND a.id = p_agent_id LIMIT 1;
   IF agent IS NULL THEN
     RAISE EXCEPTION 'Canonical Agent missing after update: %', p_agent_id;

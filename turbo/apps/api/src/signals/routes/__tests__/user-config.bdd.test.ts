@@ -424,7 +424,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
         }
       }
       await flushWaitUntilForTest();
-      await api.deleteAgent(carrier.actor, carrier.agentId);
       await flushWaitUntilForTest();
     });
     await owner.run(async () => {

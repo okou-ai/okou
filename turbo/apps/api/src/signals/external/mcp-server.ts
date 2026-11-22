@@ -476,17 +476,9 @@ async function getThreadSnapshot(
   return toolBody({
     snapshot,
     ...page,
-    events: page.events.map(
-      ({
-        id,
-        chatThreadId,
-        agentId: _agentId,
-        reassignedAgentId: _reassignedAgentId,
-        ...event
-      }) => {
-        return { ...event, eventId: id, threadId: chatThreadId };
-      },
-    ),
+    events: page.events.map(({ id, chatThreadId, ...event }) => {
+      return { ...event, eventId: id, threadId: chatThreadId };
+    }),
   });
 }
 
@@ -613,7 +605,6 @@ function registerProjectTools(
       description:
         "List Chats currently in your Project. Pass nextAfter as after to read the next page.",
       inputSchema: projectsContract.threads.query
-        .omit({ agentId: true })
         .extend({
           projectId: projectsContract.threads.pathParams.shape.id,
         })
@@ -639,7 +630,7 @@ function registerProjectTools(
           projectsContract.threads.responses[200].parse(await response.json());
         return toolBody({
           nextAfter,
-          threads: threads.map(({ id, agentId: _agentId, ...thread }) => {
+          threads: threads.map(({ id, ...thread }) => {
             return { ...thread, threadId: id };
           }),
         });
@@ -841,7 +832,7 @@ function registerMutationTools(
       name: "send_chat_message",
       scope: "okou:chat:send",
       description:
-        "Send plain text to a new Chat with optional projectId, or continue a Chat by threadId. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its retained Chat disposition and matching terminal event. Consumption alone does not prove completion. Does not wait for execution or provide safe retries after a lost acknowledgement.",
+        "Start a Chat with optional projectId, or continue by threadId. Supply either a plain text prompt or the full version 1 Chat userMessage document with ordered parts. The server records the authenticated MCP client as the source. Each voice part contains ordered clips referencing previously uploaded private audio file IDs. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its retained Chat disposition and matching terminal event. Consumption alone does not prove completion. Does not wait for execution or provide safe retries after a lost acknowledgement.",
       inputSchema: mcpSendChatMessageInputSchema,
       outputSchema: mcpSendChatMessageOutputSchema,
       annotations: writeAnnotations,

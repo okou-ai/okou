@@ -318,9 +318,7 @@ private struct WorkspaceRootView: View {
           agents: store.list,
           didSend: { await notifications.requestAfterSend() },
           topContentInset: topContentHeight,
-          mentionSource: ComposerMentionSource(
-            agentID: conversation.thread.agentID,
-            threads: store.list.threads),
+          mentionSource: ComposerMentionSource(threads: store.list.threads),
           onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) },
           fork: { store.startFork($0, from: conversation) }
         )
@@ -388,9 +386,7 @@ private struct WorkspaceRootView: View {
         refresh: nil,
         modelSelection: store.newModelSelection,
         connectorSelection: store.newModelSelection.connectors,
-        mentionSource: ComposerMentionSource(
-          agentID: store.defaultAgentID,
-          threads: store.list.threads),
+        mentionSource: ComposerMentionSource(threads: store.list.threads),
         workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
         placeholder: String(localized: "Message \(store.currentAgentName)"),
         project: store.newChatProject,

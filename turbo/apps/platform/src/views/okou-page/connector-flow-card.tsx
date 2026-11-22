@@ -17,8 +17,8 @@ export function ConnectorFlowCard({
   readonly children: ReactNode;
 }): React.JSX.Element {
   return (
-    <div className="fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto bg-background pt-safe-offset-8 pr-safe-offset-6 pb-safe-offset-8 pl-safe-offset-6 pointer-events-none">
-      <div className="pointer-events-auto my-auto flex w-[430px] max-w-full shrink-0 flex-col items-center gap-12 rounded-[20px] border border-border bg-background px-6 py-12 text-center">
+    <div className="fixed inset-0 flex h-viewport flex-col items-center overflow-y-auto bg-background pt-safe-offset-8 pr-safe-offset-6 pb-safe-offset-8 pl-safe-offset-6">
+      <div className="my-auto flex w-[430px] max-w-full shrink-0 flex-col items-center gap-12 rounded-[20px] border border-border bg-background px-6 py-12 text-center">
         <ProductBrandMarkLink />
         <div
           className="flex w-full flex-col items-center gap-4"

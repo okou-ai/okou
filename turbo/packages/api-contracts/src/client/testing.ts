@@ -5,8 +5,11 @@
 
 import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
-import { agentDraftContract as OriginalAgentDraftContract } from "../contracts/agent-draft";
-import { agentDraftContract } from "./agent-draft";
+import {
+  agentDraftContract as OriginalAgentDraftContract,
+  composerDraftContract as OriginalComposerDraftContract,
+} from "../contracts/agent-draft";
+import { agentDraftContract, composerDraftContract } from "./agent-draft";
 import { agentSetupPromptsContract as OriginalAgentSetupPromptsContract } from "../contracts/agent-setup-prompts";
 import { agentSetupPromptsContract } from "./agent-setup-prompts";
 import {
@@ -41,11 +44,13 @@ import {
   bankingContract as OriginalBankingContract,
   bankingPublicContract as OriginalBankingPublicContract,
   bankingUserContract as OriginalBankingUserContract,
+  bankingWorkspaceContract as OriginalBankingWorkspaceContract,
 } from "../contracts/banking";
 import {
   bankingContract,
   bankingPublicContract,
   bankingUserContract,
+  bankingWorkspaceContract,
 } from "./banking";
 import {
   billingAutoRechargeContract as OriginalBillingAutoRechargeContract,
@@ -513,14 +518,8 @@ import { marketingRewardNotificationContract as OriginalMarketingRewardNotificat
 import { marketingRewardNotificationContract } from "./marketing-reward-notification";
 import { marketingRewardSettlementContract as OriginalMarketingRewardSettlementContract } from "../contracts/marketing-reward-settlement";
 import { marketingRewardSettlementContract } from "./marketing-reward-settlement";
-import {
-  mcpChatSearchContract as OriginalMcpChatSearchContract,
-  mcpProjectChatSearchContract as OriginalMcpProjectChatSearchContract,
-} from "../contracts/mcp-chat-search";
-import {
-  mcpChatSearchContract,
-  mcpProjectChatSearchContract,
-} from "./mcp-chat-search";
+import { mcpProjectChatSearchContract as OriginalMcpProjectChatSearchContract } from "../contracts/mcp-chat-search";
+import { mcpProjectChatSearchContract } from "./mcp-chat-search";
 import { mcpThreadSnapshotContract as OriginalMcpThreadSnapshotContract } from "../contracts/mcp-chat-snapshots";
 import { mcpThreadSnapshotContract } from "./mcp-chat-snapshots";
 import { mcpChatCommandContract as OriginalMcpChatCommandContract } from "../contracts/mcp-chat-tools";
@@ -701,6 +700,8 @@ import { teamsOauthContract as OriginalTeamsOauthContract } from "../contracts/t
 import { teamsOauthContract } from "./teams-oauth";
 import { thirdPartySubscriptionsMainContract as OriginalThirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { thirdPartySubscriptionsMainContract } from "./third-party-subscriptions";
+import { transcribeContract as OriginalTranscribeContract } from "../contracts/transcribe";
+import { transcribeContract } from "./transcribe";
 import { uploadsContract as OriginalUploadsContract } from "../contracts/uploads";
 import { uploadsContract } from "./uploads";
 import { usageRecordContract as OriginalUsageRecordContract } from "../contracts/usage-record";
@@ -805,6 +806,7 @@ export const clientDescriptorContracts: readonly (readonly [
   AppRouter,
 ])[] = [
   [agentDraftContract, OriginalAgentDraftContract],
+  [composerDraftContract, OriginalComposerDraftContract],
   [agentSetupPromptsContract, OriginalAgentSetupPromptsContract],
   [agentInstructionsContract, OriginalAgentInstructionsContract],
   [agentsByIdContract, OriginalAgentsByIdContract],
@@ -821,6 +823,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [bankingContract, OriginalBankingContract],
   [bankingPublicContract, OriginalBankingPublicContract],
   [bankingUserContract, OriginalBankingUserContract],
+  [bankingWorkspaceContract, OriginalBankingWorkspaceContract],
   [billingAutoRechargeContract, OriginalBillingAutoRechargeContract],
   [billingCheckoutContract, OriginalBillingCheckoutContract],
   [
@@ -1233,7 +1236,6 @@ export const clientDescriptorContracts: readonly (readonly [
     marketingRewardSettlementContract,
     OriginalMarketingRewardSettlementContract,
   ],
-  [mcpChatSearchContract, OriginalMcpChatSearchContract],
   [mcpProjectChatSearchContract, OriginalMcpProjectChatSearchContract],
   [mcpThreadSnapshotContract, OriginalMcpThreadSnapshotContract],
   [mcpChatCommandContract, OriginalMcpChatCommandContract],
@@ -1329,6 +1331,7 @@ export const clientDescriptorContracts: readonly (readonly [
     thirdPartySubscriptionsMainContract,
     OriginalThirdPartySubscriptionsMainContract,
   ],
+  [transcribeContract, OriginalTranscribeContract],
   [uploadsContract, OriginalUploadsContract],
   [usageRecordContract, OriginalUsageRecordContract],
   [usageMembersContract, OriginalUsageMembersContract],

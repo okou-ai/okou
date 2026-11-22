@@ -86,7 +86,6 @@
           "title": "제공자 일시적 사용 불가"
         }
       },
-      "fallbackAgent": "에이전트",
       "fields": {
         "duration": "소요 시간",
         "model": "모델",
@@ -378,7 +377,6 @@
         "openAutomations": "모바일 자동화 열기"
       },
       "navigation": {
-        "agents": "에이전트",
         "artifacts": "아티팩트",
         "connectors": "커넥터",
         "settings": "설정",
@@ -1811,7 +1809,7 @@
       "repair": "복구",
       "repairRequired": "{{institution}}에 복구가 필요합니다",
       "revoke": "철회",
-      "revokeConfirm": "이 에이전트의 뱅킹 접근을 철회하시겠습니까?",
+      "revokeConfirm": "이 워크스페이스의 뱅킹 접근 권한을 철회하시겠습니까?",
       "selectAccounts": "계좌 선택",
       "sevenDays": "7일",
       "thirtyDays": "30일",
@@ -2277,7 +2275,9 @@
       "agent": "[에이전트: {{name}}]",
       "chatThread": "[채팅 스레드: {{title}}]",
       "file": "[파일: {{filename}}]",
-      "template": "[템플릿: {{title}}]"
+      "template": "[템플릿: {{title}}]",
+      "voice": "음성 메시지",
+      "voiceClip": "음성 클립 {{index}}"
     },
     "newChat": "새 채팅",
     "origins": {
@@ -2786,7 +2786,6 @@
       "noEmojiFound": "이모지가 없습니다",
       "notFound": "채팅 스레드를 찾을 수 없습니다",
       "openBrowser": "브라우저 열기",
-      "openNamedAgent": "에이전트 {{name}} 열기",
       "openNamedChat": "채팅 {{title}} 열기",
       "pickEmoji": "이모지 선택",
       "scrollToBottom": "맨 아래로 스크롤",
@@ -4799,7 +4798,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
     "deleteProjectOnly": "Delete project only",

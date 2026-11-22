@@ -451,7 +451,7 @@ class ConversationRouteTest {
             )
         val thread =
             Json.decodeFromString<ChatArchive>(
-                    """{"chatThreads":[{"id":"$CHAT_PERSONAL","agentId":"agent-original","projectId":null,"title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                    """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
                 )
                 .chatThreads
                 .single()

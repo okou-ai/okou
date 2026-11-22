@@ -1136,7 +1136,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.90"
+version = "0.12.91"
 dependencies = [
  "chrono",
  "clap",
@@ -2042,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.110.20"
+version = "0.110.21"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.240"
+version = "0.1.241"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.123"
+version = "0.23.124"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.219"
+version = "0.12.220"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.86"
+version = "0.249.91"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4233,7 +4233,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.23.12"
+version = "0.23.14"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4415,7 +4415,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.96"
+version = "0.31.97"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4560,7 +4560,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.27.13"
+version = "0.27.15"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4894,7 +4894,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.135"
+version = "0.53.136"
 dependencies = [
  "api-contracts",
  "async-trait",

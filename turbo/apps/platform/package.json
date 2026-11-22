@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.1162.2",
+  "version": "0.1162.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -129,9 +129,9 @@
     "pdfjs-dist": "^6.4.299",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "^8.72.2",
+    "typescript-eslint": "^8.73.0",
     "unicode-emoji-json": "^0.9.0",
     "vite": "^8.1.6",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }

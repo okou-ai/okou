@@ -14,7 +14,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
 const RUN_ID = "a0000000-0000-4000-a000-000000000071";
 
 function getLink(name: string): HTMLElement {
@@ -213,8 +212,6 @@ test("Opening Instructions keeps rich Activity logs readable", async () => {
     return respond(200, {
       id: RUN_ID,
       sessionId: "markdown-isolation-session",
-      agentId: AGENT_ID,
-      displayName: "Markdown activity",
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,

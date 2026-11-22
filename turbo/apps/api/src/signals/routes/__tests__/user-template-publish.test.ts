@@ -1047,7 +1047,7 @@ describe("POST /api/user-templates", () => {
     });
     const fixture = installS3Fixture(context);
     const sendS3 = context.mocks.s3.send.getMockImplementation()!;
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Template package consumer",
       visibility: "private",
     });
@@ -1073,7 +1073,6 @@ describe("POST /api/user-templates", () => {
           [204],
         );
       }
-      await bdd.deleteAgent(actor, agent.agentId);
     });
     signIn(actor);
 

@@ -196,7 +196,6 @@ describe("GET /api/indicators", () => {
 
     const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
-      agents: {},
       threads: { [unread.threadId]: "unread" },
       unreadAt: { [unread.threadId]: unread.unreadAt },
     });
@@ -246,7 +245,6 @@ describe("GET /api/indicators", () => {
 
     const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
-      agents: {},
       threads: { [ownerUnread.threadId]: "unread" },
       unreadAt: { [ownerUnread.threadId]: ownerUnread.unreadAt },
     });
@@ -314,7 +312,6 @@ describe("GET /api/indicators", () => {
       [200],
     );
     expect(indicators.body).toStrictEqual({
-      agents: {},
       threads: {
         [rerun.threadId]: "active",
         [unread.threadId]: "unread",
@@ -405,7 +402,6 @@ describe("GET /api/indicators", () => {
     };
     const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
-      agents: {},
       threads: recent,
       unreadAt: {},
     });
@@ -421,7 +417,6 @@ describe("GET /api/indicators", () => {
       return response.body;
     };
     await expect(readIndependentIndicators()).resolves.toStrictEqual({
-      agents: {},
       threads: { ...recent, [older.threadId]: "unread" },
       unreadAt: { [older.threadId]: older.unreadAt },
     });

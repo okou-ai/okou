@@ -16,7 +16,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { agents } from "@okouai/db/schema/agent";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import { workflows } from "@okouai/db/schema/workflow";
 import {
@@ -38,7 +37,7 @@ import {
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
-import { visibleWorkflowCondition } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 import {
   acceptedCatalogDefinitionRevision,
   acceptedOfficialWorkflowCatalogReadPlan,
@@ -159,7 +158,7 @@ const feedAutomationDescriptions$ = command(
         )`.mapWith(nullableDriverValueDecoder(pgTextDecoder)),
       })
       .from(workflows)
-      .innerJoin(agents, eq(agents.id, workflows.agentId))
+
       .leftJoin(
         officialWorkflowCatalogState,
         and(isNotNull(workflows.officialDefinitionName), catalog.condition),
@@ -182,10 +181,7 @@ const feedAutomationDescriptions$ = command(
         and(
           eq(workflows.orgId, auth.orgId),
           inArray(workflows.id, workflowIds),
-          visibleWorkflowCondition({
-            userId: auth.userId,
-            role: auth.orgRole ?? "member",
-          }),
+          visibleWorkflowCondition(auth.userId),
         ),
       );
     signal.throwIfAborted();

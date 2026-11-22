@@ -24,10 +24,9 @@ import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
 } from "./action-callback.ts";
-import {
-  chatActionIdMatches,
-  type ChatActionContext,
-  type ChatActionParseResult,
+import type {
+  ChatActionContext,
+  ChatActionParseResult,
 } from "./chat-action-context.ts";
 import {
   createCardSignalsRegistry,
@@ -116,23 +115,17 @@ export function parseConnectorAccountActionUrl(
   if (!url) {
     return { status: "unrelated" };
   }
-  const legacy = url.pathname.match(
-    /^\/agents\/([^/]+)\/connector-accounts\/([^/]+)\/select$/u,
-  );
   const current = url.pathname.match(
     /^\/connectors\/accounts\/([^/]+)\/select$/u,
   );
-  const connectionId = legacy?.[2] ?? current?.[1];
+  const connectionId = current?.[1];
   if (!connectionId) {
     return { status: "unrelated" };
   }
-  const agentId = legacy?.[1];
   const selection = selectionFromUrl(url, connectionId);
   const callback = context ? chatActionCallbackFromUrl(url, context) : null;
   if (
     !context ||
-    (agentId !== undefined &&
-      (!context.agentId || !chatActionIdMatches(agentId, context.agentId))) ||
     !selection ||
     !callback?.callbackPrompt ||
     !callback.threadId

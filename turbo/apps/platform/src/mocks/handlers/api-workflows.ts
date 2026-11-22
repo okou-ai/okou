@@ -118,7 +118,7 @@ export const apiWorkflowsHandlers = [
       200,
       mockWorkflows
         .filter((workflow) => {
-          return workflow.agentId === query.agentId;
+          return !query.agentId || workflow.agentId === query.agentId;
         })
         .map((workflow) => {
           return {

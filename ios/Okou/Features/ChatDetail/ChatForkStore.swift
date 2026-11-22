@@ -115,7 +115,7 @@ final class ChatForkStore: Identifiable {
       }
       do {
         let workflows = try await workflowSource.prepareUse(
-          in: pending.text, document: pending.document, agentID: agentID)
+          in: pending.text, document: pending.document)
         try Task.checkCancellation()
         guard !closed else { return nil }
         let target: ChatThread

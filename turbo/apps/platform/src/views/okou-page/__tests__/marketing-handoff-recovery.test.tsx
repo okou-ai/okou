@@ -1,5 +1,5 @@
 import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -20,7 +20,7 @@ const NOTICE =
 const HASH = "a".repeat(12);
 
 function preserveDraft() {
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
         version: 1,

@@ -21,7 +21,6 @@ import {
 } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import { ROUTES, type RouteKey } from "../../signals/route-paths.ts";
-import { defaultAgentName$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import { okouRailEntryEnabled$ } from "../../signals/okou-page/okou-rail-entry.ts";
 import {
@@ -150,8 +149,6 @@ function useManageNavItems() {
 function useFooterNavItems() {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const defaultDisplayName =
-    useLastResolved(defaultAgentName$) ?? assistantName;
   return FOOTER_NAV.map((item) => {
     return {
       ...item,
@@ -159,7 +156,7 @@ function useFooterNavItems() {
         ($) => {
           return $.appShell.sidebar.navigation.works;
         },
-        { agentName: defaultDisplayName },
+        { agentName: assistantName },
       ),
     };
   });
@@ -332,10 +329,7 @@ function LabeledChatRailLink() {
             })
       }
       icon={okouEntry ? OkouRailIcon : (MessageCircle as NavIcon)}
-      isActive={
-        activeId !== null &&
-        ["home", "agentChat", "agentIdeas", "chat"].includes(activeId)
-      }
+      isActive={activeId !== null && ["home", "chat"].includes(activeId)}
       showBadge={false}
       onNavigate={showInbox}
     />

@@ -1,4 +1,4 @@
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
@@ -92,16 +92,16 @@ export const apiAgentsHandlers = [
     });
   }),
 
-  // GET /api/agents/:id/draft
-  mockApi(agentDraftContract.get, ({ respond }) => {
+  // GET /api/chat-drafts/composer
+  mockApi(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: null,
       draftAttachments: null,
     });
   }),
 
-  // PATCH /api/agents/:id/draft
-  mockApi(agentDraftContract.patch, ({ respond }) => {
+  // PATCH /api/chat-drafts/composer
+  mockApi(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   }),
 
@@ -129,7 +129,7 @@ export const apiAgentsHandlers = [
 
   // GET /api/indicators
   mockApi(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   }),
 
   // GET /api/chat-thread-drafts

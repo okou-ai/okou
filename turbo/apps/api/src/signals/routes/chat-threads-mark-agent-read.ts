@@ -6,7 +6,10 @@ import { chatThreadMarkAgentReadContract } from "@okouai/api-contracts/contracts
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
+import {
+  publishChatIndicatorsChangedSafely,
+  publishChatThreadReadCursorUpdatedSafely,
+} from "../external/realtime";
 import {
   advanceChatThreadReadCursors$,
   createAgentThreadReadPreparation,
@@ -71,12 +74,16 @@ const markAgentReadInner$ = command(
       waitUntil(
         set(synchronizeUserPushBadge$, userId, new AbortController().signal),
       );
-      await publishChatThreadReadCursorUpdatedSafely(
-        { userId, orgId },
-        updatedThreadIds.length > NOTIFIED_THREAD_ID_BUDGET
-          ? { agentId, threadIds: [], scope: "agent" }
-          : { agentId, threadIds: updatedThreadIds },
-      );
+      if (agentId === undefined) {
+        await publishChatIndicatorsChangedSafely({ userId, orgId });
+      } else {
+        await publishChatThreadReadCursorUpdatedSafely(
+          { userId, orgId },
+          updatedThreadIds.length > NOTIFIED_THREAD_ID_BUDGET
+            ? { agentId, threadIds: [], scope: "agent" }
+            : { agentId, threadIds: updatedThreadIds },
+        );
+      }
       signal.throwIfAborted();
     }
 

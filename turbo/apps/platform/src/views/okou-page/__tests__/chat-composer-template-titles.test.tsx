@@ -1,7 +1,7 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { expect, test } from "vitest";
 
@@ -36,7 +36,7 @@ async function openBuiltInTitleHint() {
   if (!template || !selected) {
     throw new Error("Expected presentation templates to preview and retain");
   }
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, savedPresentationDraft(selected));
   });
   mockPresentationHtml(template.embedUrl, ["Opening"]);

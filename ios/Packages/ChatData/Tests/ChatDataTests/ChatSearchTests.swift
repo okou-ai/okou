@@ -16,7 +16,7 @@ final class ChatSearchTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(items, [URLQueryItem(name: "keyword", value: "needle")])
       return ChatHTTPResponse(
         body: """
-          {"results":[{"chatThreadId":"thread","agentName":"Research","matchedMessage":{"chatThreadId":"thread","role":"assistant","content":\(encoded),"createdAt":"2026-10-19T12:00:00Z","seqId":21,"runId":null},"matchedRanges":[{"start":\(start),"end":\(start + 6)}]}]}
+          {"results":[{"chatThreadId":"thread","matchedMessage":{"chatThreadId":"thread","role":"assistant","content":\(encoded),"createdAt":"2026-10-19T12:00:00Z","seqId":21,"runId":null},"matchedRanges":[{"start":\(start),"end":\(start + 6)}]}]}
           """)
     }
     let results = try await ChatSync(client: fixture.client).searchMessages(keyword: "needle")

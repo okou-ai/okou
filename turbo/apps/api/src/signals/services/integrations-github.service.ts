@@ -1,3 +1,4 @@
+import { selectedExecutionAgent } from "./execution-agent";
 import { command, computed } from "ccstate";
 import type {
   GithubConnectUserBody,
@@ -6,7 +7,6 @@ import type {
 import { connectors } from "@okouai/db/schema/connector";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -51,12 +51,10 @@ const githubInstallUrl$ = command(
 
     const db = get(db$);
     const [orgRow] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
+      .select()
+      .from(selectedExecutionAgent(args.orgId, args.userId));
     signal.throwIfAborted();
-    const composeId = orgRow?.defaultAgentId ?? null;
+    const composeId = orgRow?.id ?? null;
 
     return await set(
       buildGithubAppInstallUrl$,

@@ -29,13 +29,9 @@ import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
-import {
-  serializeAgentMention,
-  splitAgentMentionSegments,
-} from "./composer-agent-suggestion-domain.ts";
+import { legacyAgentMentionsToText } from "./legacy-agent-mention.ts";
 
 export const PROJECT_MENTION_NODE_NAME = "projectMention";
-export const AGENT_MENTION_NODE_NAME = "agentMention";
 export const CHAT_THREAD_MENTION_NODE_NAME = "chatThreadMention";
 export const TEMPLATE_ATTACHMENT_NODE_NAME = "templateAttachment";
 export const INLINE_TEMPLATE_NODE_NAME = "inlineTemplate";
@@ -135,21 +131,6 @@ function chatThreadPart(
   };
 }
 
-function agentPart(
-  node: ProseMirrorNode,
-): Extract<UserMessagePart, { type: "agent" }> | null {
-  const agentId: unknown = node.attrs.agentId;
-  const name: unknown = node.attrs.name;
-  if (typeof agentId !== "string" || typeof name !== "string") {
-    return null;
-  }
-  return {
-    type: "agent",
-    agentId,
-    nameSnapshot: name,
-  };
-}
-
 function selectedTemplatePart(
   node: ProseMirrorNode,
   selectedTemplate: GenerationTemplateRequest | undefined,
@@ -214,14 +195,6 @@ function appendParagraphParts(
         return false;
       }
       parts.push(parsed.data);
-      continue;
-    }
-    if (node.type.name === AGENT_MENTION_NODE_NAME) {
-      const part = agentPart(node);
-      if (!part) {
-        return false;
-      }
-      parts.push(part);
       continue;
     }
     if (node.type.name === CHAT_THREAD_MENTION_NODE_NAME) {
@@ -692,32 +665,6 @@ function templateNode(part: Extract<UserMessagePart, { type: "template" }>) {
   } satisfies JSONContent;
 }
 
-function agentMentionNode(part: Extract<UserMessagePart, { type: "agent" }>) {
-  return {
-    type: AGENT_MENTION_NODE_NAME,
-    attrs: {
-      agentId: part.agentId,
-      name: part.nameSnapshot,
-      avatarUrl: null,
-    },
-  } satisfies JSONContent;
-}
-
-function agentMentionInlineContent(line: string): JSONContent[] {
-  return splitAgentMentionSegments(line).map((segment): JSONContent => {
-    return segment.type === "text"
-      ? { type: "text", text: segment.text }
-      : {
-          type: AGENT_MENTION_NODE_NAME,
-          attrs: {
-            agentId: segment.agentId,
-            name: segment.name,
-            avatarUrl: null,
-          },
-        };
-  });
-}
-
 function feedbackNoteToPrompt(note: readonly FeedbackNotePart[]): string {
   return note
     .map((part) => {
@@ -731,7 +678,7 @@ function feedbackNoteToPrompt(note: readonly FeedbackNotePart[]): string {
         return `[${part.nameSnapshot}](/projects/${part.projectId})`;
       }
       if (part.type === "agent") {
-        return serializeAgentMention(part.agentId, part.nameSnapshot);
+        return part.nameSnapshot;
       }
       return `Select ${part.titleSnapshot} ${part.template.type} template`;
     })
@@ -778,14 +725,17 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
       continue;
     }
     if (part.type === "agent") {
-      paragraphContent.push(agentMentionNode(part));
+      paragraphContent.push({ type: "text", text: part.nameSnapshot });
       trailingParagraph = false;
       continue;
     }
     const lines = part.text.split("\n");
     for (const [index, line] of lines.entries()) {
       if (line.length > 0) {
-        paragraphContent.push(...agentMentionInlineContent(line));
+        paragraphContent.push({
+          type: "text",
+          text: legacyAgentMentionsToText(line),
+        });
         trailingParagraph = false;
       }
       if (index < lines.length - 1) {
@@ -851,7 +801,10 @@ function appendRestoredText(state: RestoredEditorState, text: string): void {
   const lines = text.split("\n");
   for (const [index, line] of lines.entries()) {
     if (line.length > 0) {
-      state.paragraphContent.push(...agentMentionInlineContent(line));
+      state.paragraphContent.push({
+        type: "text",
+        text: legacyAgentMentionsToText(line),
+      });
       state.trailingParagraph = false;
     }
     if (index < lines.length - 1) {
@@ -898,7 +851,7 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
       continue;
     }
     if (part.type === "agent") {
-      state.paragraphContent.push(agentMentionNode(part));
+      state.paragraphContent.push({ type: "text", text: part.nameSnapshot });
       state.trailingParagraph = false;
       continue;
     }
@@ -1028,7 +981,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
     } else if (part.type === "project") {
       inlineText += `[${part.nameSnapshot}](/projects/${part.projectId})`;
     } else if (part.type === "agent") {
-      inlineText += serializeAgentMention(part.agentId, part.nameSnapshot);
+      inlineText += part.nameSnapshot;
     } else if (part.type === "template") {
       inlineText += `Select ${part.titleSnapshot} ${part.template.type} template`;
     }
@@ -1124,6 +1077,16 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
         { title: part.titleSnapshot },
       );
       inlineText += templateLabel;
+      continue;
+    }
+
+    if (part.type === "voice") {
+      flushInlineText();
+      blocks.push(
+        i18n.t(($) => {
+          return $.chat.messageDocument.voice;
+        }),
+      );
       continue;
     }
 

@@ -1,9 +1,8 @@
 import { command } from "ccstate";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { resourceUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$ } from "../external/db";
@@ -29,16 +28,6 @@ export const proactivePreferenceAccess$ = command(
     const [run] = await get(db$)
       .select({ id: agentRuns.id })
       .from(agentRuns)
-      .innerJoin(
-        orgMetadata,
-        and(
-          eq(orgMetadata.orgId, auth.orgId),
-          or(
-            isNull(agentRuns.agentId),
-            eq(orgMetadata.defaultAgentId, agentRuns.agentId),
-          ),
-        ),
-      )
       .where(
         and(
           eq(agentRuns.id, auth.runId),
@@ -52,7 +41,7 @@ export const proactivePreferenceAccess$ = command(
     return run
       ? null
       : resourceUnavailable(
-          "Proactive settings are available only to a running Okou primary Agent.",
+          "Proactive settings are available only to a running Okou session.",
         );
   },
 );

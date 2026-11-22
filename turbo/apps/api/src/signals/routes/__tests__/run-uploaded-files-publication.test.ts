@@ -173,11 +173,11 @@ test("keeps one file identity and captured owner across concurrent replay and me
   }
 });
 
-test("records a late completion through a surviving issued token after the owner deletes its agent", async () => {
+test("records a late completion through a surviving issued token after the retired Agent deletion endpoint rejects the request", async () => {
   const upload = await executionUpload();
   await fixture.completeChatRunOk(upload.run.runId, upload.sandboxHeaders);
   await flushWaitUntilForTest();
-  await bdd.deleteAgent(upload.actor, upload.owner.agentId);
+  await bdd.expectAgentDeleteUnavailable(upload.actor, upload.owner.agentId);
   await chat.completeUploadWithBearer(
     upload.bearer,
     { id: upload.prepared.id },

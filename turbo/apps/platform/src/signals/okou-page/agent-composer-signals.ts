@@ -104,7 +104,6 @@ interface AgentComposerOptions {
 }
 
 function createAgentSubmitMessage(
-  agentId: string,
   draft: DraftSignals,
   connector: ReturnType<typeof createComposerConnectorSignals>,
   pendingRemoteAccess: ReturnType<typeof createPendingRemoteAccessSignals>,
@@ -139,7 +138,6 @@ function createAgentSubmitMessage(
       const sent = await set(
         send,
         {
-          agentId,
           ...(options.projectId ? { projectId: options.projectId } : {}),
           ...(options.title ? { title: options.title } : {}),
           draft,
@@ -189,14 +187,12 @@ function createAgentSubmitMessage(
 }
 
 function createAgentComposerSignalsWithDraft(
-  agentId: string,
   agentDraft: EnsuredAgentDraft,
   options: AgentComposerOptions = {},
 ) {
   const connector = createComposerConnectorSignals();
   const pendingRemoteAccess = createPendingRemoteAccessSignals();
   const submitMessage$ = createAgentSubmitMessage(
-    agentId,
     agentDraft.draft,
     connector,
     pendingRemoteAccess,
@@ -207,9 +203,8 @@ function createAgentComposerSignalsWithDraft(
   // initial Project for creation without exposing that picker.
   const project = options.inPlace
     ? undefined
-    : createComposerProjectSignals(agentId, options.projectId ?? null);
+    : createComposerProjectSignals(options.projectId ?? null);
   const composer = createComposerSignals({
-    agentId,
     ...(project ? { project } : {}),
     connector,
     pendingRemoteAccess,
@@ -219,7 +214,7 @@ function createAgentComposerSignalsWithDraft(
       save$: options.inPlace ? noOpAction$ : agentDraft.queueDraftSync$,
     },
     eventSignals: createChatEventProjectionSignals(chatEvents$),
-    voiceDraftTarget: `agent:${agentId}`,
+    voiceDraftTarget: "new-chat",
     singleLineOnMobile: false,
     forwardComposer: options.inPlace === true,
     modelSelection$: chatPageModelSelection$,
@@ -240,36 +235,34 @@ function createAgentComposerSignalsWithDraft(
 }
 
 export function createForwardAgentComposerSignals(
-  agentId: string,
   forward: ChatForwardContext,
   onOptimisticSend: () => void,
   projectId?: string,
 ) {
-  return createAgentComposerSignalsWithDraft(
-    agentId,
-    createAgentDraftSignals(agentId),
-    { forward, inPlace: true, onOptimisticSend, projectId },
-  );
+  return createAgentComposerSignalsWithDraft(createAgentDraftSignals(), {
+    forward,
+    inPlace: true,
+    onOptimisticSend,
+    projectId,
+  });
 }
 
 /**
- * A dialog composer that starts a new thread of `agentId` from its own unsaved
+ * A dialog composer that starts a new thread from its own unsaved
  * draft and keeps the current page.
  */
 export function createInPlaceAgentComposerSignals(
-  agentId: string,
   onOptimisticSend: (threadId: string, submission: ComposerSubmission) => void,
   title: string,
 ) {
-  return createAgentComposerSignalsWithDraft(
-    agentId,
-    createAgentDraftSignals(agentId),
-    { inPlace: true, onOptimisticSend, title },
-  );
+  return createAgentComposerSignalsWithDraft(createAgentDraftSignals(), {
+    inPlace: true,
+    onOptimisticSend,
+    title,
+  });
 }
 
 interface AgentComposerContext {
-  readonly agentId: string;
   readonly agentDraft: EnsuredAgentDraft;
   readonly projectId?: string;
 }
@@ -285,10 +278,9 @@ export const setAgentComposerContext$ = command(
 export const agentChatComposerSignals$ = computed((get) => {
   const context = get(internalAgentComposerContext$);
   if (!context) {
-    throw new Error("Chat composer requires an initialized agent context");
+    throw new Error("Chat composer requires an initialized draft context");
   }
   return createAgentComposerSignalsWithDraft(
-    context.agentId,
     context.agentDraft,
     context.projectId ? { projectId: context.projectId } : {},
   );

@@ -1,4 +1,3 @@
-import { legacyThreadAgentId } from "./chat-thread-organization.service";
 import { db$ } from "../external/db";
 import { randomUUID } from "node:crypto";
 import {
@@ -232,7 +231,6 @@ type ChatThreadEventRow = {
   readonly kind: ChatThreadEventKind;
   readonly projectId: string | null;
   readonly chatThreadId: string;
-  readonly agentId: string | null;
   readonly title: string | null;
   readonly pinOrder: string | null;
   readonly muted: boolean | null;
@@ -252,10 +250,6 @@ const chatThreadEventSelection = Object.freeze({
   kind: chatThreadEvents.kind,
   projectId: chatThreadEvents.projectId,
   chatThreadId: chatThreadEvents.chatThreadId,
-  agentId: legacyThreadAgentId(
-    chatThreadEvents.eventExecutorId,
-    chatThreadEvents.orgId,
-  ),
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
   muted: chatThreadEvents.muted,
@@ -275,10 +269,6 @@ const pageChatThreadEventSelection = Object.freeze({
   kind: pageChatThreadEvent.kind,
   projectId: pageChatThreadEvent.projectId,
   chatThreadId: pageChatThreadEvent.chatThreadId,
-  agentId: legacyThreadAgentId(
-    pageChatThreadEvent.eventExecutorId,
-    pageChatThreadEvent.orgId,
-  ),
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
   muted: pageChatThreadEvent.muted,
@@ -303,10 +293,6 @@ function toApiChatThreadEvent(row: ChatThreadEventRow): ChatThreadEvent {
     id: row.id,
     seqId: row.seqId,
     chatThreadId: row.chatThreadId,
-    ...(row.agentId ? { agentId: row.agentId } : {}),
-    ...(row.kind === "agent_reassigned" && row.agentId
-      ? { reassignedAgentId: row.agentId }
-      : {}),
     title: row.title,
     pinOrder: row.pinOrder,
     ...(row.muted === null ? {} : { muted: row.muted }),

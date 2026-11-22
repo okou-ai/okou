@@ -1,3 +1,4 @@
+import { MAX_VOICE_CLIPS } from "../contracts/voice-clips";
 import {
   modelSettingsPatchSchema,
   modelSettingsSchema,
@@ -186,7 +187,6 @@ export const indicatorSchema = zEnum(["active", "unread"]);
  * indicators or event history does not advance the thread's read watermark.
  */
 export const indicatorsSchema = object({
-  agents: record(uuid(), indicatorSchema),
   threads: record(uuid(), indicatorSchema),
   /** Latest unread terminal marker. With includeActiveUnread, threads can also be active. */
   unreadAt: record(uuid(), iso.datetime()),
@@ -205,7 +205,6 @@ export const chatThreadSnapshotProjectionSchema = object({
    * retained snapshots are rewritten and those API rollback targets retire (#44591).
    */
   projectId: uuid().nullable().optional(),
-  agentId: uuid().optional(),
   title: string().nullable(),
   sortAt: string(),
   createdAt: string(),
@@ -249,9 +248,6 @@ const ordinaryChatThreadEventSchema = object({
   ]),
   chatThreadId: uuid(),
   projectId: uuid().nullable().optional(),
-  agentId: uuid().optional(),
-  /** On sort_touched, an explicit canonical agent reassignment. */
-  reassignedAgentId: uuid().optional(),
   title: string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: string().nullable().optional(),
@@ -406,6 +402,13 @@ export const generationTemplateRequestSchema = discriminatedUnion("type", [
   documentGenerationTemplateRequestSchema,
 ]);
 
+const userMessageVoicePartSchema = object({
+  type: literal("voice"),
+  clips: array(object({ fileId: uuid() }).strict())
+    .min(1)
+    .max(MAX_VOICE_CLIPS),
+}).strict();
+
 const userMessageTextPartSchema = object({
   type: literal("text"),
   text: string().min(1),
@@ -557,6 +560,7 @@ export const userMessageInputPartSchema = discriminatedUnion("type", [
         message: "Feedback eventId and range must be provided together",
       },
     ),
+  userMessageVoicePartSchema,
 ]);
 
 const userMessageModelPartSchema = object({

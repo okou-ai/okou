@@ -1,6 +1,7 @@
-/** Base64-encoded 16 kHz PCM WAV. */
+/** Base64 audio. Draft capture defaults to 16 kHz PCM WAV. */
 export interface VoiceAudio {
   readonly data: string;
+  readonly mimeType?: string;
 }
 export type VoiceContentPart =
   | { readonly type: "text"; readonly text: string }

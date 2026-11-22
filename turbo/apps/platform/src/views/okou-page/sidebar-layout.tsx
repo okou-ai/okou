@@ -4,7 +4,6 @@ import {
 } from "./chat-share-selection-controls.tsx";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
@@ -12,12 +11,7 @@ import {
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
 import type { ReactNode } from "react";
-import {
-  useGet,
-  useSet,
-  useLastLoadable,
-  useLastResolved,
-} from "ccstate-react";
+import { useGet, useSet, useLastLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Share2, UserPlus } from "lucide-react";
 import type { RouteKey } from "../../signals/route-paths.ts";
@@ -33,13 +27,13 @@ import {
   ChatThreadSidebarPane,
   SettledChatThreadActions,
 } from "./chat-thread-page.tsx";
-import { currentChatAgent$ } from "../../signals/agent-chat.ts";
+
 import {
   currentLeftThread$,
   currentRightThread$,
 } from "../../signals/chat-page/chat-thread-panes.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import { AvatarFromUrl } from "./sidebar-shared.tsx";
+
 import { QueueDrawer } from "../queue-page/queue-drawer.tsx";
 import { sidebarOff$, isChatRoute } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
@@ -110,23 +104,6 @@ function ThreadComposerDialogsMount() {
         <ThreadComposerDialogs key={right.threadId} thread={right} />
       )}
     </>
-  );
-}
-
-function AgentAvatarInTopBar() {
-  const agent = useLastResolved(currentChatAgent$);
-  if (!agent) {
-    return (
-      <div className="h-6 w-6 shrink-0 rounded-full bg-muted" aria-hidden />
-    );
-  }
-  return (
-    <AvatarFromUrl
-      avatarUrl={agent.avatarUrl}
-      alt=""
-      className="h-6 w-6 shrink-0 rounded-full object-cover object-top"
-      data-testid="agent-avatar"
-    />
   );
 }
 
@@ -308,7 +285,6 @@ function MobileTopBar() {
         </div>
       ) : breadcrumb ? (
         <div className="flex-1 min-w-0 flex items-center gap-2 min-w-0">
-          {breadcrumb.avatarAgentId && <AgentAvatarInTopBar />}
           <div className="flex items-center gap-2 min-w-0">
             <div className="text-sm font-medium text-foreground flex items-center gap-1 min-w-0">
               {breadcrumb.sectionPath ? (
@@ -433,7 +409,7 @@ function SidebarWorkspace({
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
 
-  const agentChatPage = activeRoute === "agentChat" || activeRoute === "home";
+  const agentChatPage = activeRoute === "home";
 
   const workspaceHeader = (
     <>
@@ -511,7 +487,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const shellRef = useSet(threadSidebarLayoutRootRef$);
   const pwaNavigation = useGet(mobileChatViewport$);
 
-  return withChatScrollLayout(
+  return (
     <div
       ref={shellRef}
       data-slot="app-shell"
@@ -554,7 +530,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
           {children}
         </SidebarWorkspace>
       </WorkspaceSheet>
-    </div>,
+    </div>
   );
 }
 

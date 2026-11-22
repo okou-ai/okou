@@ -1,3 +1,4 @@
+import { executionAgentId } from "./execution-agent";
 import { and, eq, exists, or, type SQL } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
@@ -26,7 +27,7 @@ export function proactiveWorkflowOwnerPreferenceQuery(
     .innerJoin(
       agent,
       and(
-        eq(agent.id, organization.defaultAgentId),
+        eq(agent.id, executionAgentId(organization.orgId, owner.userId)),
         eq(agent.orgId, organization.orgId),
       ),
     )

@@ -104,7 +104,7 @@ function submit(fixture: RunFixture, events: UsageEvent[]) {
 }
 
 describe("X daily resource usage webhook", () => {
-  it("validates Run identity after deletion of a legacy Agent", async () => {
+  it("validates Run identity after a rejected legacy Agent deletion", async () => {
     const deleted = await createRun();
     const survivor = await createRun();
     const sharedId = resourceId();
@@ -112,7 +112,7 @@ describe("X daily resource usage webhook", () => {
     await accept(submit(deleted, [observation([sharedId])]), [200]);
     await runs.requestCancelRun(deleted.actor, deleted.runId, [200]);
     await flushWaitUntilForTest();
-    await bdd.requestDeleteAgent(deleted.actor, deleted.agentId, [204]);
+    await bdd.expectAgentDeleteUnavailable(deleted.actor, deleted.agentId);
     await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
 
     const rejected = await accept(

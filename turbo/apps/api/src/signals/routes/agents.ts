@@ -1,8 +1,9 @@
+import { executionAgentId } from "../services/execution-agent";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, lt, ne, or, sql } from "drizzle-orm";
 import { enum as zodEnum, int, object, string } from "zod";
 import {
   agentsByIdContract,
@@ -13,7 +14,7 @@ import {
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { DEFAULT_AGENT_NAME } from "../services/default-agent-profile";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -28,13 +29,10 @@ import {
 import { conflict, notFound } from "../../lib/error";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import { deleteAgentById$ } from "../services/agent-deletion.service";
-import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wakeup.service";
 import {
   agentResponse,
   visibleAgentIdentityCondition,
   agentList,
-  nonDefaultAgentCondition,
   publicAgentCountReadPlan,
 } from "../services/agent-data.service";
 import type { RouteEntry } from "../route-entry";
@@ -199,19 +197,6 @@ function agentConfigurationUpdateRejection(
   return null;
 }
 
-function agentUpdateResponseSelection() {
-  return {
-    agentId: agents.id,
-    defaultAgentId: orgMetadata.defaultAgentId,
-    owner: agents.owner,
-    displayName: agents.displayName,
-    description: agents.description,
-    sound: agents.sound,
-    avatarUrl: agents.avatarUrl,
-    visibility: agents.visibility,
-  };
-}
-
 function agentCreateSelection(values: typeof agents.$inferSelect) {
   // Defer text admission until the eligible INSERT row is projected. Binding
   // raw NUL text would reject before the public-count predicate can run.
@@ -298,7 +283,7 @@ const createAgentBody$ = bodyResultOf(agentsMainContract.create);
 function createdAgentSelection() {
   return {
     agentId: agents.id,
-    defaultAgentId: orgMetadata.defaultAgentId,
+    defaultAgentId: executionAgentId(agents.orgId).as("default_executor_id"),
     owner: agents.owner,
     displayName: agents.displayName,
     description: agents.description,
@@ -317,7 +302,6 @@ const committedClientAgent$ = computed(async (get) => {
   const [agent] = await get(db$)
     .select(createdAgentSelection())
     .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
     .where(
       and(
         eq(agents.id, body.data.clientAgentId),
@@ -419,7 +403,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const [agent] = await writeDb
     .select(createdAgentSelection())
     .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
     .where(
       and(
         eq(agents.orgId, auth.orgId),
@@ -467,7 +450,7 @@ const getAgentInner$ = computed(async (get) => {
   const [row] = await get(db$)
     .select({
       agentId: agents.id,
-      defaultAgentId: orgMetadata.defaultAgentId,
+      defaultAgentId: executionAgentId(agents.orgId).as("default_executor_id"),
       owner: agents.owner,
       displayName: agents.displayName,
       description: agents.description,
@@ -476,7 +459,6 @@ const getAgentInner$ = computed(async (get) => {
       visibility: agents.visibility,
     })
     .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
     .where(visibleAgentIdentityCondition(agentScope))
     .limit(1);
   const agent = row ? agentResponse(row) : null;
@@ -513,7 +495,9 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         id: agents.id,
         owner: agents.owner,
         visibility: agents.visibility,
-        defaultAgentId: orgMetadata.defaultAgentId,
+        defaultAgentId: executionAgentId(agents.orgId).as(
+          "default_executor_id",
+        ),
         publicAgentCount: (updateBody.visibility === "public"
           ? sql`CASE WHEN ${and(eq(agents.visibility, "private"), eq(agents.owner, member.userId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
           : sql`0::bigint`
@@ -522,7 +506,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           .as("public_agent_count"),
       })
       .from(agents)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
       .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
       .for("update", { of: agents }),
   );
@@ -537,7 +520,10 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           eq(agents.orgId, auth.orgId),
           eq(agents.id, locked.id),
           agentIdentityUpdateError(true, updateBody)
-            ? nonDefaultAgentCondition(auth.orgId)
+            ? or(
+                ne(agents.name, DEFAULT_AGENT_NAME),
+                ne(agents.visibility, "public"),
+              )
             : undefined,
           or(
             eq(locked.owner, member.userId),
@@ -557,8 +543,13 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         ),
       )
       .returning({
-        ...agentUpdateResponseSelection(),
-        defaultAgentId: locked.defaultAgentId,
+        agentId: agents.id,
+        owner: agents.owner,
+        displayName: agents.displayName,
+        description: agents.description,
+        sound: agents.sound,
+        avatarUrl: agents.avatarUrl,
+        visibility: agents.visibility,
       }),
   );
   const [row] = await writeDb
@@ -573,7 +564,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       agent: {
         agentId: updated.agentId,
-        defaultAgentId: updated.defaultAgentId,
         owner: updated.owner,
         displayName: updated.displayName,
         description: updated.description,
@@ -600,22 +590,12 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw new Error(`Canonical Agent missing after update: ${params.id}`);
   }
 
-  if (body.data.visibility === "private") {
-    await set(
-      publishVncLifecycleInvalidation$,
-      {
-        kind: "agent",
-        orgId: auth.orgId,
-        agentId: params.id,
-        ownerId: row.agent.owner,
-      },
-      signal,
-    );
-  }
-
   return {
     status: 200 as const,
-    body: agentResponse(row.agent),
+    body: agentResponse({
+      ...row.agent,
+      defaultAgentId: row.existing.defaultAgentId,
+    }),
   };
 });
 
@@ -724,77 +704,12 @@ const updateAgentMetadataInner$ = command(
       throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
 
-    if (body.data.visibility === "private") {
-      await set(
-        publishVncLifecycleInvalidation$,
-        {
-          kind: "agent",
-          orgId: auth.orgId,
-          agentId: params.id,
-          ownerId: result.agent.owner,
-        },
-        signal,
-      );
-    }
-
     return {
       status: 200 as const,
       body: agentResponse(result.agent),
     };
   },
 );
-
-const initialDeleteAgent$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(agentsByIdContract.delete));
-  const db = get(db$);
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-    .limit(1);
-  return agent;
-});
-
-const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const member = { userId: auth.userId, role: auth.orgRole ?? "member" };
-  const params = get(pathParamsOf(agentsByIdContract.delete));
-
-  const agent = await get(initialDeleteAgent$);
-  signal.throwIfAborted();
-
-  if (!agent) {
-    return agentNotFound(params.id);
-  }
-
-  const permissionError = requireAgentPermission(
-    agent.owner,
-    member,
-    "delete agent",
-    { visibility: agent.visibility },
-  );
-  if (permissionError) {
-    return permissionError;
-  }
-
-  const result = await set(
-    deleteAgentById$,
-    { agentId: agent.id, orgId: auth.orgId, member },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  if (result) {
-    return result;
-  }
-
-  return { status: 204 as const, body: undefined };
-});
 
 const agentReadAuth = {
   requireOrganization: true,
@@ -806,12 +721,6 @@ const agentWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
   requiredCapability: "agent:write",
-} as const;
-
-const agentDeleteAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-  requiredCapability: "agent:delete",
 } as const;
 
 export const agentsRoutes: readonly RouteEntry[] = [
@@ -837,9 +746,5 @@ export const agentsRoutes: readonly RouteEntry[] = [
   {
     route: agentsByIdContract.updateMetadata,
     handler: authRoute(agentWriteAuth, updateAgentMetadataInner$),
-  },
-  {
-    route: agentsByIdContract.delete,
-    handler: authRoute(agentDeleteAuth, deleteAgentInner$),
   },
 ];

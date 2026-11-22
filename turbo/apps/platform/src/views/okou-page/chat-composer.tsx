@@ -13,7 +13,6 @@ import { DocumentTemplatePreviewPage } from "./document-template-preview-page.ts
 
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
   startComposerSubmission,
   useComposerActions,
@@ -576,9 +575,9 @@ function PendingItemsStrip({ signals }: { signals: ComposerSignals }) {
           },
         );
   if (count === 0) {
-    return withChatScrollLayout(null);
+    return null;
   }
-  return withChatScrollLayout(
+  return (
     <div className="relative z-0 mx-5 -mb-6 overflow-hidden rounded-xl bg-gray-50 dark:bg-gray-100">
       <PendingItemsStripHeader
         label={label}
@@ -626,7 +625,7 @@ function PendingItemsStrip({ signals }: { signals: ComposerSignals }) {
           );
         })}
       </div>
-    </div>,
+    </div>
   );
 }
 
@@ -5386,7 +5385,7 @@ function ComposerTemporaryModelNotice({
     models === undefined ||
     (!modelChanged && !serviceTierChanged && !effortChanged)
   ) {
-    return withChatScrollLayout(null);
+    return null;
   }
   const updating = updateLoadable.state === "loading";
   const modelName = selectedModelDisplayName(catalog, selection.selectedModel);
@@ -5431,7 +5430,7 @@ function ComposerTemporaryModelNotice({
       Reason.DomCallback,
     );
   };
-  return withChatScrollLayout(
+  return (
     <ComposerModelScopeCard
       label={t(($) => {
         return $.chat.composer.modelForThisChat;
@@ -5441,7 +5440,7 @@ function ComposerTemporaryModelNotice({
       onUseForFutureChats={
         selectionServiceTier === "ultrafast" ? undefined : useForFutureChats
       }
-    />,
+    />
   );
 }
 
@@ -5451,11 +5450,9 @@ function ComposerTemporaryModelNoticeSlot({
   signals: ComposerSignals;
 }) {
   if (!signals.model.temporaryModelNoticeEnabled) {
-    return withChatScrollLayout(null);
+    return null;
   }
-  return withChatScrollLayout(
-    <ComposerTemporaryModelNotice signals={signals} />,
-  );
+  return <ComposerTemporaryModelNotice signals={signals} />;
 }
 
 /** The one tray above the card, and the notice that currently owns it. */
@@ -5519,9 +5516,9 @@ function ComposerAttachments({ signals }: { signals: ComposerSignals }) {
   const notifyDraftChanged = useComposerDraftChange(signals);
 
   if (attachments.length === 0) {
-    return withChatScrollLayout(null);
+    return null;
   }
-  return withChatScrollLayout(
+  return (
     <AttachmentChips
       attachments={attachments}
       previewHost={signals}
@@ -5529,7 +5526,7 @@ function ComposerAttachments({ signals }: { signals: ComposerSignals }) {
         removeAttachment(attachment);
         notifyDraftChanged();
       }}
-    />,
+    />
   );
 }
 
@@ -5900,7 +5897,7 @@ function ComposerFooter({
     ComposerVoiceInputStatus,
     "idle"
   > | null = status !== undefined && status !== "idle" ? status : null;
-  return withChatScrollLayout(
+  return (
     <div
       className={cn(
         // One row that wraps. A control that does not fit takes the next line
@@ -5924,7 +5921,7 @@ function ComposerFooter({
       >
         {children}
       </VoiceDraftFooter>
-    </div>,
+    </div>
   );
 }
 

@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
@@ -41,8 +40,6 @@ interface ChatListService : ConversationHistoryService {
     suspend fun chatEvents(since: Long?): ChatEvents
 
     suspend fun indicators(): Indicators
-
-    suspend fun agents(): Agents
 
     suspend fun projectSnapshot(): ProjectSnapshot
 

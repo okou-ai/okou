@@ -5,7 +5,6 @@ import type { WorkflowImportSource } from "@okouai/api-contracts/contracts/workf
 import { buildSkillImportPrompt } from "@okouai/core/skill-import-prompt";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
@@ -28,11 +27,8 @@ export function createSkillImportSignals(options: SkillImportOptions) {
   const session$ = computed(async (get) => {
     get(sessionVersion$);
     const provider = options.provider;
-    const agentId = await get(defaultAgentId$);
-    if (!agentId || !provider) {
-      throw new Error(
-        "Select an import tool in a workspace with a default agent",
-      );
+    if (!provider) {
+      throw new Error("Select an import tool");
     }
     const result = await accept(
       get(apiClient$)(skillImportSessionsContract).create({

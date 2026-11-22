@@ -1,3 +1,4 @@
+import { sharedExecutorCondition } from "./agent-data.service";
 import { command, computed, type Computed } from "ccstate";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
@@ -132,12 +133,12 @@ function defaultAgentId(orgId: string): Computed<Promise<string | null>> {
   return computed(async (get): Promise<string | null> => {
     const db = get(db$);
     const [row] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
+      .select({ id: agents.id })
+      .from(agents)
+      .where(sharedExecutorCondition(orgId))
       .limit(1);
 
-    return row?.defaultAgentId ?? null;
+    return row?.id ?? null;
   });
 }
 

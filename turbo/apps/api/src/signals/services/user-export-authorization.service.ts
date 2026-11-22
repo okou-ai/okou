@@ -21,7 +21,7 @@ import { listAllUserOrganizationMemberships } from "../external/clerk-organizati
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { visibleWorkflowCondition } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 
 function identifiers(
   rows: readonly { readonly metadata: Record<string, unknown> }[],
@@ -170,12 +170,11 @@ export const authorizeUserExportPage$ = command(
         const visible = await db
           .select({ id: workflows.id })
           .from(workflows)
-          .innerJoin(agents, eq(agents.id, workflows.agentId))
           .where(
             and(
               inArray(workflows.id, workflowIds),
               inArray(workflows.orgId, orgIds),
-              visibleWorkflowCondition({ userId, role: "member" }),
+              visibleWorkflowCondition(userId),
             ),
           );
         signal.throwIfAborted();
@@ -305,16 +304,15 @@ function userExportPublicationChecks(
     readable: db
       .select({ id: workflows.id })
       .from(workflows)
-      .innerJoin(agents, eq(agents.id, workflows.agentId))
       .where(
         and(
           inArray(workflows.id, workflowIds),
           inArray(workflows.orgId, args.orgIds),
-          visibleWorkflowCondition({ userId: args.userId, role: "member" }),
+          visibleWorkflowCondition(args.userId),
         ),
       )
       .orderBy(asc(workflows.id))
-      .for("share", { of: [workflows, agents] })
+      .for("share", { of: workflows })
       .getSQL(),
   });
   const threadIds = authorityIds(

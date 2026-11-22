@@ -3711,6 +3711,34 @@
       "when": 1795260992027,
       "tag": "1608_prepare_custom_connector_skill_cutover",
       "breakpoints": true
+    },
+    {
+      "idx": 1609,
+      "version": "7",
+      "when": 1795286891342,
+      "tag": "1609_stage-agent-retirement",
+      "breakpoints": true
+    },
+    {
+      "idx": 1610,
+      "version": "7",
+      "when": 1795292457882,
+      "tag": "1610_contract_chat_run_agent_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1611,
+      "version": "7",
+      "when": 1795299232423,
+      "tag": "1611_workspace_workflow_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1612,
+      "version": "7",
+      "when": 1795310579598,
+      "tag": "1612_voice_transcription",
+      "breakpoints": true
     }
   ]
 }

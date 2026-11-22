@@ -42,6 +42,7 @@ import {
   chatThreadSnapshotProjectionSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
+import { migrationTimestamp } from "../../migration-timestamp";
 import { applyPendingMigrations } from "../../migration-runner";
 import { checkPrivileges } from "./production-database";
 import { BRANCH, PROJECT, STAFF_ORG } from "./production-model";
@@ -268,7 +269,12 @@ async function eventsState() {
 
 try {
   await admin.unsafe(`CREATE DATABASE "${database}"`);
-  await applyPendingMigrations(sql);
+  // This operator migrates historical Agent associations before their columns are retired.
+  await applyPendingMigrations(sql, {
+    beforeMillis: await migrationTimestamp(
+      "1610_contract_chat_run_agent_storage",
+    ),
+  });
   const login = object({ value: string() }).parse(
     (await sql`SELECT session_user AS value`)[0],
   ).value;
@@ -677,7 +683,6 @@ try {
     published = puts;
   const replayed = await replayPublishedMetadata();
   assert.ok(replayed);
-  assert.equal(replayed.agentId, target);
   assert.notEqual(replayed.projectId, originalProject);
   assert.equal(
     replayed.sortAt,
@@ -819,7 +824,6 @@ try {
   );
   const restoredProjection = await replayPublishedMetadata();
   assert.ok(restoredProjection);
-  assert.equal(restoredProjection.agentId, privateAgent);
   assert.equal(restoredProjection.projectId, originalProject);
   assert.equal(restoredProjection.sortAt, snapshotProjection.sortAt);
   const recoveredEvents = await eventsState();

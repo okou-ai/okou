@@ -11,6 +11,7 @@ import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-m
 import type { RouteEntry } from "./route-entry";
 import {
   agentDraftRoutes,
+  composerDraftRoutes,
   projectAgentDraftRoutes,
 } from "./routes/agent-draft";
 import { feedRoutes } from "./routes/feed";
@@ -233,6 +234,7 @@ import { vncAccessRoutes } from "./routes/vnc-access";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
 import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
+import { transcribeRoutes } from "./routes/transcribe";
 import { voiceIoTranscribeRoutes } from "./routes/voice-io-transcribe";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 
@@ -328,6 +330,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
+  ...composerDraftRoutes,
   ...feedRoutes,
   ...agentInstructionsRoutes,
   ...instructionsRoutes,
@@ -419,6 +422,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...voiceIoQuotaRoutes,
   ...voiceIoPolishRoutes,
   ...agentSetupPromptRoutes,
+  ...transcribeRoutes,
   ...voiceIoTranscribeRoutes,
   ...webFileUrlRoutes,
   ...realtimeTokenRoutes,

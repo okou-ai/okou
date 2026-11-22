@@ -737,7 +737,10 @@ internal fun OkouApp(
                                         conversations.Content(target.id) {
                                             val composerTarget =
                                                 thread?.let {
-                                                    ComposerTarget(it.id, it.agentId, it.projectId)
+                                                    ComposerTarget(
+                                                        threadId = it.id,
+                                                        projectId = it.projectId,
+                                                    )
                                                 }
                                             ConversationRoute(
                                                 chats.history,

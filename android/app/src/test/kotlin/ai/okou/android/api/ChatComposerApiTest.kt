@@ -1,6 +1,5 @@
 package ai.okou.android.api
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
@@ -28,11 +27,7 @@ class ChatComposerApiTest {
     @Test
     fun sharedChatFixtureServesCanonicalDraftsAlongsideConversationHistory() = runTest {
         ChatListApiFixture().use { fixture ->
-            for (target in
-                listOf(
-                    ServerDraftTarget(CHAT_AGENT, false),
-                    ServerDraftTarget(CHAT_PERSONAL, true),
-                )) {
+            for (target in listOf(ServerDraftTarget(), ServerDraftTarget(CHAT_PERSONAL))) {
                 assertEquals("", fixture.service.composerDraft(target).plainText())
                 fixture.service.saveComposerDraft(target, "A healthy realtime composer draft")
                 assertEquals(
@@ -49,8 +44,7 @@ class ChatComposerApiTest {
     @Test
     fun canonicalDraftsRoundTripBothTargetsAndAcceptActualEmpty204Responses() = runTest {
         ComposerApiFixture().use { fixture ->
-            val targets =
-                listOf(ServerDraftTarget(CHAT_AGENT, false), ServerDraftTarget(CHAT_PERSONAL, true))
+            val targets = listOf(ServerDraftTarget(), ServerDraftTarget(CHAT_PERSONAL))
             for (target in targets) {
                 assertEquals("", fixture.service.composerDraft(target).plainText())
                 val text = "  Web ↔ Android 你好 👋\n**literal**  "
@@ -58,8 +52,8 @@ class ChatComposerApiTest {
                 assertEquals(text, fixture.service.composerDraft(target).plainText())
                 val patch = fixture.requests.last { it.method == "PATCH" }
                 assertEquals(
-                    if (target.thread) "/api/chat-threads/${target.id}"
-                    else "/api/agents/${target.id}/draft",
+                    if (target.threadId != null) "/api/chat-threads/${target.threadId}"
+                    else "/api/chat-drafts/composer",
                     patch.requestUrl!!.encodedPath,
                 )
                 val wire = Json.parseToJsonElement(patch.body.clone().readUtf8())
@@ -170,7 +164,7 @@ class ChatComposerApiTest {
     @Test
     fun installedCreateAndSendUse201CanonicalDefaultsAndOriginalInputStatus() = runTest {
         ComposerApiFixture().use { fixture ->
-            assertEquals(CHAT_AGENT, fixture.service.newChatAgent())
+            assertTrue(fixture.service.newChatReady())
             val thread = UUID.randomUUID().toString()
             val created =
                 fixture.service.createThread(
@@ -183,13 +177,11 @@ class ChatComposerApiTest {
             assertEquals(thread, created.id)
             assertEquals(CHAT_PROJECT, created.projectId)
             val create = fixture.created.single()
-            assertFalse(create.containsKey("agentId"))
             assertFalse(create.containsKey("model"))
             assertFalse(create.containsKey("serviceTier"))
             val send = input(thread)
             assertEquals(thread, fixture.service.sendInput(send).threadId)
             val wire = fixture.inputs.values.single()
-            assertFalse(wire.containsKey("agentId"))
             for (key in listOf("model", "computerUseHostId", "cloudBrowserEnabled")) assertFalse(
                 wire.containsKey(key)
             )

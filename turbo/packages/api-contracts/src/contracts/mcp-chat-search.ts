@@ -1,6 +1,5 @@
 import { array, object, string, uuid, type infer as zInfer } from "zod";
 
-import { agentResponseSchema } from "../validators/agents";
 import { initContract } from "./base";
 import { CHAT_SEARCH_RESULT_LIMIT, chatSearchContract } from "./chat-threads";
 import { mcpRunIdSchema, mcpThreadIdSchema } from "./mcp-identifiers";
@@ -11,9 +10,8 @@ const nativeResult = nativeSearch.responses[200].shape.results.element;
 const nativeRange = nativeResult.shape.matchedRanges.element;
 
 const mcpChatSearchResultSchema = nativeResult
-  .omit({ agentName: true, chatThreadId: true })
+  .omit({ chatThreadId: true })
   .extend({
-    ...agentResponseSchema.pick({ agentId: true, displayName: true }).shape,
     threadId: mcpThreadIdSchema,
     matchedRanges: array(
       nativeRange.extend({
@@ -35,46 +33,26 @@ const mcpChatSearchResultSchema = nativeResult
       }),
   });
 
-/** Published search descriptor retained for the iOS runtime API inventory. */
-export const mcpChatSearchContract = c.router({
-  search: {
-    ...nativeSearch,
-    query: nativeSearch.query.extend({
-      keyword: nativeSearch.query.shape.keyword.describe(
-        "Lexical search: CJK runs use adjacent two-character (bigram) tokens; any single-character CJK run returns no results, including in mixed queries. Other letter/number runs match whole-word tokens after lowercasing; token groups are combined with AND. Non-token characters such as emoji and punctuation are ignored; queries with no indexable tokens return no results. For example, 中文 🧪 searches 中文, and 1️⃣ contributes the digit 1. No Unicode normalization, semantic matching or general substring guarantee.",
-      ),
-    }),
-    responses: {
-      ...nativeSearch.responses,
-      200: object({
-        results: array(mcpChatSearchResultSchema).max(CHAT_SEARCH_RESULT_LIMIT),
-      }),
-    },
-    summary: "Search chat messages with canonical visible Agent metadata",
-  },
-});
-
-// Only the MCP route slice serves this contract.
 export const mcpProjectChatSearchContract = c.router({
   search: {
-    ...mcpChatSearchContract.search,
+    ...nativeSearch,
     path: "/internal/mcp/chat/search",
-    query: mcpChatSearchContract.search.query
-      .omit({ agentId: true })
+    query: nativeSearch.query
       .extend({
+        keyword: nativeSearch.query.shape.keyword.describe(
+          "Lexical search: CJK runs use adjacent two-character (bigram) tokens; any single-character CJK run returns no results, including in mixed queries. Other letter/number runs match whole-word tokens after lowercasing; token groups are combined with AND. Non-token characters such as emoji and punctuation are ignored; queries with no indexable tokens return no results. For example, 中文 🧪 searches 中文, and 1️⃣ contributes the digit 1. No Unicode normalization, semantic matching or general substring guarantee.",
+        ),
         projectId: uuid().toLowerCase().optional(),
       })
       .strict(),
     responses: {
-      ...mcpChatSearchContract.search.responses,
+      ...nativeSearch.responses,
       200: object({
         results: array(
-          mcpChatSearchResultSchema
-            .omit({ agentId: true, displayName: true })
-            .extend({
-              projectId: uuid().nullable(),
-              projectName: string().nullable(),
-            }),
+          mcpChatSearchResultSchema.extend({
+            projectId: uuid().nullable(),
+            projectName: string().nullable(),
+          }),
         ).max(CHAT_SEARCH_RESULT_LIMIT),
       }),
     },

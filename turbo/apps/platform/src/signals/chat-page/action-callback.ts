@@ -56,7 +56,6 @@ export const runChatActionCallback$ = command(
     { get },
     args: {
       readonly threadId: string;
-      readonly agentId?: string;
       readonly callbackPrompt: string;
       readonly callbackIds?: ChatActionCallbackIds;
     },

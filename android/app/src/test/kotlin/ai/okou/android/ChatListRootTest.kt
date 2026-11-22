@@ -122,7 +122,6 @@ class ChatListRootTest {
                         thread = CHAT_IN_PROJECT,
                         extra = ",\"projectId\":\"$CHAT_PROJECT\"",
                         title = "Project chat",
-                        agent = CHAT_OTHER_AGENT,
                     )
                 val archived =
                     chatEventWire(
@@ -130,7 +129,6 @@ class ChatListRootTest {
                         seq = 24,
                         thread = CHAT_IN_PROJECT,
                         kind = "archived",
-                        agent = CHAT_OTHER_AGENT,
                     )
                 jsonResponse(
                     """{"events":[${chatEventWire()},$project,$archived],"hasMore":false}"""
@@ -188,7 +186,6 @@ class ChatListRootTest {
                         thread = CHAT_IN_PROJECT,
                         extra = ",\"projectId\":\"$CHAT_PROJECT\"",
                         title = other,
-                        agent = CHAT_OTHER_AGENT,
                     )
                 jsonResponse(
                     """{"events":[${chatEventWire(title = title)},$project],"hasMore":false}"""
@@ -507,6 +504,67 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun lateProjectHeadersPreserveTheVisibleChatAndItsOffset() {
+        val app = compose.activity.application as ChatListApplication
+        val projectRequested = CountDownLatch(1)
+        val projectGate = CountDownLatch(1)
+        val projectResponse = app.fixture.projects
+        app.fixture.projects = {
+            projectRequested.countDown()
+            projectGate.await()
+            projectResponse()
+        }
+        val rows =
+            (1..190).joinToString(",") { index ->
+                val suffix = index.toString().padStart(12, '0')
+                chatEventWire(
+                    id = "61000000-0000-4000-8000-$suffix",
+                    seq = index.toLong(),
+                    thread = "62000000-0000-4000-8000-$suffix",
+                    title = "Startup chat $index",
+                    extra = if (index <= 160) ",\"projectId\":\"$CHAT_PROJECT\"" else "",
+                )
+            }
+        app.fixture.events = { request ->
+            val events = if (request.requestUrl?.queryParameter("sinceSeqId") == null) rows else ""
+            jsonResponse("""{"events":[$events],"hasMore":false}""")
+        }
+        try {
+            app.responseGate.countDown()
+            compose.waitUntil(10_000) {
+                projectRequested.count == 0L &&
+                    currentList()?.source == ai.okou.android.chat.ChatListSource.Network
+            }
+            val list = compose.onNodeWithTag("chat_list")
+            val projectChat = compose.onNodeWithText("Startup chat 160")
+            projectChat.assertIsDisplayed()
+            val projectInset = projectChat.fetchSemanticsNode().boundsInRoot.left
+            compose.onNodeWithText("Research").assertDoesNotExist()
+
+            // The header will replace 160 rows, taking the anchor outside Compose's key window.
+            list.performScrollToIndex(165)
+            list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 12f) }
+            val anchor = compose.onNodeWithText("Startup chat 185")
+            anchor.assertIsDisplayed()
+            val anchorBounds = anchor.getUnclippedBoundsInRoot()
+            assertTrue(projectInset > anchor.fetchSemanticsNode().boundsInRoot.left)
+            projectGate.countDown()
+            awaitListAndNames()
+            assertEquals(anchorBounds, anchor.getUnclippedBoundsInRoot())
+
+            list.performScrollToIndex(0)
+            compose.onNodeWithText("Research").assertIsDisplayed()
+            projectChat.assertDoesNotExist()
+            setResearchExpanded(true)
+            projectChat.assertIsDisplayed()
+            assertEquals(projectInset, projectChat.fetchSemanticsNode().boundsInRoot.left)
+        } finally {
+            projectGate.countDown()
+        }
+    }
+
+    @Test
     fun expiredSignedStorageKeepsTheWorkspaceOpenAndRetriesWithAFreshDescriptor() {
         val app = compose.activity.application as ChatListApplication
         val descriptors = AtomicInteger()
@@ -745,7 +803,6 @@ class ChatListRootTest {
                     seq = 18,
                     thread = CHAT_IN_PROJECT,
                     extra = ",\"projectId\":\"$CHAT_PROJECT\"",
-                    agent = CHAT_OTHER_AGENT,
                     title = "Project chat",
                 ),
                 chatEventWire(
@@ -753,7 +810,6 @@ class ChatListRootTest {
                     seq = 19,
                     thread = CHAT_IN_PROJECT,
                     kind = "archived",
-                    agent = CHAT_OTHER_AGENT,
                 ),
                 chatEventWire(
                     id = UUID.randomUUID().toString(),
@@ -1766,21 +1822,13 @@ class ChatListRootTest {
         val fixture = app.fixture
         val neighbor = "99999999-9999-4999-8999-999999999999"
         val outside = "18888888-8888-4888-8888-888888888888"
-        fun seed(
-            seq: Long,
-            id: String,
-            title: String,
-            rank: String,
-            project: Boolean,
-            agent: String = CHAT_AGENT,
-        ) =
+        fun seed(seq: Long, id: String, title: String, rank: String, project: Boolean) =
             listOf(
                 chatEventWire(
                     id = "00000000-0000-4000-8000-${seq.toString().padStart(12, '0')}",
                     seq = seq,
                     thread = id,
                     title = title,
-                    agent = agent,
                     extra = if (project) ",\"projectId\":\"$CHAT_PROJECT\"" else "",
                 ),
                 chatEventWire(
@@ -1788,13 +1836,12 @@ class ChatListRootTest {
                     seq = seq + 1,
                     thread = id,
                     kind = "pinned",
-                    agent = agent,
                     extra = ",\"pinOrder\":\"$rank\"",
                 ),
             )
         val initial =
             seed(17, CHAT_PERSONAL, "First Project pin", "a0", true) +
-                seed(19, neighbor, "Other agent pin", "a1", true, CHAT_OTHER_AGENT) +
+                seed(19, neighbor, "Neighbor pin", "a1", true) +
                 seed(21, CHAT_IN_PROJECT, "Tied Project pin", "a1", true) +
                 seed(23, outside, "Outside pin", "a1", false)
         fixture.events = {
@@ -1914,7 +1961,6 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             val state = currentList() ?: return@waitUntil false
             state.confirmedAt != null &&
-                state.agentsPhase != ai.okou.android.chat.ChatReadPhase.Loading &&
                 state.projectsPhase != ai.okou.android.chat.ChatReadPhase.Loading &&
                 state.indicatorsPhase != ai.okou.android.chat.ChatReadPhase.Loading
         }

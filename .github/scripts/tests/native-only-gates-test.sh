@@ -224,14 +224,22 @@ released = context(ios=False, ts=True, event='merge_group', release=True)
 for job in ['detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit', 'actionlint',
             'workflow-script-tests', 'gitleaks']:
     released[f'needs.{job}.result'] = 'skipped'
+for job in ['action-pins', 'release-workspace-coverage']:
+    assert not condition(security[job], released)
+    released[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', released, True)
-assert condition(security['action-pins'], released)
+gate(security, 'ci-gate-security', released | {'needs.detect-release.result': 'failure'}, False)
 assert 'action-pins' in security['ci-gate-security']['needs']
 for event in ['pull_request', 'merge_group', 'push']:
     for result in ['failure', 'cancelled', 'skipped']:
         for release in [False, True]:
             values = context(event=event, release=release)
             values['needs.action-pins.result'] = result
+            if event == 'merge_group' and release:
+                values['needs.release-workspace-coverage.result'] = 'skipped'
+                assert not condition(security['action-pins'], values)
+                gate(security, 'ci-gate-security', values, result == 'skipped')
+                continue
             assert condition(security['action-pins'], values)
             gate(security, 'ci-gate-security', values, False)
 

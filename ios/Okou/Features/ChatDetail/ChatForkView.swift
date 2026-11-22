@@ -62,7 +62,7 @@ struct ChatForkView: View {
           submit: { await flow.send() }, refresh: nil,
           modelSelection: flow.modelSelection,
           connectorSelection: flow.modelSelection.connectors,
-          mentionSource: ComposerMentionSource(agentID: flow.agentID, threads: threads),
+          mentionSource: ComposerMentionSource(threads: threads),
           workflowSource: flow.workflowSource, agentID: flow.agentID,
           showsTrailingFeedbackInput: false, project: project
         )
