@@ -3,12 +3,14 @@ package ai.okou.android.settings
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.DefaultModelApiFixture
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.jsonResponse
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonNull
@@ -75,7 +77,94 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun unreadableSaveResponseConfirmsTheCommittedPreferenceWithoutAnotherWrite() = runTest {
+    fun initialReadFailureReplacesThePlaceholderBeforeTheFirstRetry() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val respond = api.commandResponse
+            val reads = AtomicInteger()
+            api.commandResponse = { request ->
+                if (
+                    request.requestUrl?.encodedPath == "/api/user-model-preference" &&
+                        reads.incrementAndGet() == 1
+                )
+                    jsonResponse("{}").setResponseCode(503)
+                else respond(request)
+            }
+            val errors = Channel<Exception>(capacity = 1)
+            val model =
+                DefaultModelSettings(backgroundScope, api.service, { true }) {
+                    check(errors.trySend(it).isSuccess)
+                }
+            model.visible(true)
+
+            assertEquals(503, (errors.receive() as ApiFailure.Http).status)
+            runCurrent()
+            assertEquals(DefaultModelFailure.Read, model.state.value.failure)
+            assertNull(model.state.value.options)
+            assertEquals(1, reads.get())
+
+            val recovered = model.state.first { it.options != null }
+            assertFalse(recovered.failed)
+            assertEquals("gpt-test", recovered.selected?.id)
+        }
+    }
+
+    @Test
+    fun cachedOptionsReportAReadFailureOnlyAfterThreeAttemptsAndThirtySeconds() = runTest {
+        ChatListApiFixture().use { api ->
+            DefaultModelApiFixture(api)
+            val preference = api.service.defaultModelPreference()
+            val catalog = api.service.recoveryCatalog()
+            val models = api.service.recoveryModels()
+            var unavailable = false
+            val attempts = mutableListOf<Long>()
+            val service =
+                object : WorkspaceSession by api.service {
+                    override suspend fun recoveryCatalog() = catalog
+
+                    override suspend fun recoveryModels() = models
+
+                    override suspend fun defaultModelPreference() =
+                        if (unavailable) {
+                            attempts += currentTime
+                            throw ApiFailure.Http(503, null, null, null)
+                        } else preference
+                }
+            val model = DefaultModelSettings(backgroundScope, service, { true }, {})
+            model.visible(true)
+            runCurrent()
+            assertEquals("gpt-test", model.state.value.selected?.id)
+
+            model.visible(false)
+            unavailable = true
+            val started = currentTime
+            model.visible(true)
+            runCurrent()
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertFalse(model.state.value.failed)
+            advanceTimeBy(10_000)
+            runCurrent()
+            assertEquals(listOf(started, started + 5_000, started + 15_000), attempts)
+
+            advanceTimeBy(14_999)
+            runCurrent()
+            assertFalse(model.state.value.failed)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(3, attempts.size)
+            assertEquals(DefaultModelFailure.Read, model.state.value.failure)
+            assertEquals("gpt-test", model.state.value.selected?.id)
+
+            unavailable = false
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertFalse(model.state.value.failed)
+        }
+    }
+
+    @Test
+    fun reconnectImmediatelyConfirmsAnUnreadableSaveResponseWithoutAnotherWrite() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val respond = api.commandResponse
@@ -88,13 +177,26 @@ class DefaultModelSettingsTest {
                     jsonResponse("{}")
                 else response
             }
-            val model = DefaultModelSettings(backgroundScope, api.service, { true }, {})
+            val errors = Channel<Exception>(capacity = 1)
+            val model =
+                DefaultModelSettings(backgroundScope, api.service, { true }) {
+                    check(errors.trySend(it).isSuccess)
+                }
             model.visible(true)
             assertFalse(model.state.first { it.options != null }.fast)
 
             model.fast(true)
 
+            assertTrue(errors.receive() is ApiFailure.IncompatibleResponse)
+            runCurrent()
+            val failedAt = currentTime
+            model.online(false)
+            advanceTimeBy(1_000)
+            assertTrue(model.state.value.pending != null)
+            model.online(true)
+
             val saved = model.state.first { it.pending == null }
+            assertEquals(failedAt + 1_000, currentTime)
             assertTrue(saved.fast)
             assertFalse(saved.failed)
             assertEquals(JsonPrimitive("priority"), fixture.writes.single()["serviceTier"])
