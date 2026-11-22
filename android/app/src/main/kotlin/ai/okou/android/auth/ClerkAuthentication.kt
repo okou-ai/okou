@@ -6,6 +6,7 @@ import android.content.Context
 import com.clerk.api.Clerk
 import com.clerk.api.ClerkConfigurationOptions
 import com.clerk.api.network.serialization.ClerkResult
+import com.clerk.api.session.Session
 import com.clerk.api.session.SessionTaskKey
 import com.clerk.api.session.pendingTaskKey
 import com.clerk.api.user.getOrganizationMemberships
@@ -91,8 +92,10 @@ class ClerkAuthentication(private val context: Context) : Authentication {
         }
     }
 
-    private fun requireSession(expected: NativeSession) {
-        val session = Clerk.session
+    private fun requireSession(
+        expected: NativeSession,
+        session: Session? = Clerk.session,
+    ): Session {
         if (
             session?.id != expected.sessionId ||
                 session.user?.id != expected.userId ||
@@ -100,14 +103,23 @@ class ClerkAuthentication(private val context: Context) : Authentication {
         ) {
             throw ApiFailure.Unauthenticated()
         }
+        return session
     }
 
     override suspend fun refresh(expected: NativeSession): MembershipAccess? {
         requireSession(expected)
-        Clerk.refreshClient().required()
+        val client = Clerk.refreshClient().required()
         currentCoroutineContext().ensureActive()
         requireSession(expected)
-        return Clerk.user
+        val refreshed =
+            requireSession(
+                expected,
+                client.sessions.firstOrNull { it.id == client.lastActiveSessionId },
+            )
+        if (expected.active && refreshed.status != Session.SessionStatus.ACTIVE) {
+            throw ApiFailure.Unauthenticated()
+        }
+        return refreshed.user
             ?.organizationMemberships
             ?.firstOrNull { it.organization.id == expected.workspaceId }
             ?.let { MembershipAccess(it.organization.id, it.role, it.permissions?.sorted()) }

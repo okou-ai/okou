@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -186,19 +188,17 @@ internal fun SettingsRow(
 internal fun SettingsSwitchRow(
     title: String,
     leading: @Composable () -> Unit,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+    checked: Boolean?,
+    onCheckedChange: ((Boolean) -> Unit)?,
     supportingText: String? = null,
-    enabled: Boolean = true,
 ) {
+    val action =
+        if (checked == null || onCheckedChange == null) {
+            Modifier.semantics(mergeDescendants = true) { disabled() }
+        } else Modifier.toggleable(checked, role = Role.Switch, onValueChange = onCheckedChange)
     Row(
         Modifier.fillMaxWidth()
-            .toggleable(
-                checked,
-                enabled = enabled,
-                role = Role.Switch,
-                onValueChange = onCheckedChange,
-            )
+            .then(action)
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -215,14 +215,21 @@ internal fun SettingsSwitchRow(
                 )
             }
         }
-        val outline = MaterialTheme.colorScheme.onSurfaceVariant
-        Switch(
-            checked,
-            onCheckedChange = null,
-            enabled = enabled,
-            colors =
-                SwitchDefaults.colors(uncheckedThumbColor = outline, uncheckedBorderColor = outline),
-        )
+        Box(Modifier.width(52.dp)) {
+            if (checked != null) {
+                val outline = MaterialTheme.colorScheme.onSurfaceVariant
+                Switch(
+                    checked,
+                    onCheckedChange = null,
+                    enabled = onCheckedChange != null,
+                    colors =
+                        SwitchDefaults.colors(
+                            uncheckedThumbColor = outline,
+                            uncheckedBorderColor = outline,
+                        ),
+                )
+            }
+        }
     }
 }
 
@@ -255,7 +262,7 @@ internal fun SettingsTrigger(
             open = true
         }
     }
-    if (open) content { open = false }
+    if (open && enabled) content { open = false }
     LaunchedEffect(open, enabled) {
         if (!open && enabled && restoreFocus) {
             restoreFocus = false
