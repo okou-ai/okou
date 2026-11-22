@@ -57,7 +57,9 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
@@ -188,6 +190,17 @@ class ChatListRootTest {
                 .isNotEmpty()
         }
         val text = compose.onNodeWithText("Release notes", substring = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single().layoutInput
+        assertEquals(16.sp, layout.style.fontSize)
+        assertEquals(28.sp, layout.style.lineHeight)
+        val linkStyle =
+            checkNotNull(
+                layout.text.getLinkAnnotations(0, layout.text.length).single().item.styles?.style
+            )
+        assertEquals(FontWeight.SemiBold, linkStyle.fontWeight)
+        assertEquals(TextDecoration.Underline, linkStyle.textDecoration)
         text.performFirstLinkClick()
         val intent = shadowOf(compose.activity).nextStartedActivity
         assertEquals(android.content.Intent.ACTION_VIEW, intent.action)
