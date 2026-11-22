@@ -41,6 +41,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.platform.app.InstrumentationRegistry
+import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -145,8 +146,17 @@ class ConnectorAccountFlowTest {
             offline.assertIsDisplayed()
             waiting.assertDoesNotExist()
 
+            compose.onNodeWithContentDescription("Filter by service category").performClick()
+            compose.onNodeWithText("Email").performClick()
+            val categoryEmpty = compose.onNodeWithText("No connectors in this category")
+            categoryEmpty.assertIsDisplayed()
+            offline.assertIsDisplayed()
+            waiting.assertDoesNotExist()
+
             compose.runOnIdle { connectivity.value = true }
             compose.waitUntilDoesNotExist(hasText("Offline"), 10_000)
+            categoryEmpty.assertIsDisplayed()
+            compose.onNodeWithText("Clear category filter").performClick()
             compose.onNodeWithText(empty).assertIsDisplayed()
         }
 
@@ -182,9 +192,67 @@ class ConnectorAccountFlowTest {
             compose.onNode(hasText("Offline") and inSheet).assertDoesNotExist()
 
             compose.runOnIdle { connectivity.value = true }
-            awaitText("读取日历与日程")
+            awaitText("读取邮件")
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
             offlineAction.assertDoesNotExist()
+        }
+
+    @Test
+    fun unavailableServicePermissionPanelCanCloseAfterItsLaunchControlDisappears() =
+        withDirectory(initiallyOnline = false) { fixture, connectivity ->
+            fixture.authorizeGmail()
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("Gmail")
+            compose.onNodeWithTag("connector-gmail").performClick()
+            awaitText("gmail@example.com")
+            val permissions = "Permissions this service can request"
+            awaitText(permissions)
+            compose.onNodeWithText(permissions).performClick()
+            awaitText("读取邮件")
+
+            compose.runOnIdle { connectivity.value = false }
+            awaitText("Offline")
+            fixture.unavailableCatalogSlugs = setOf("gmail")
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("Could not load permissions.")
+            awaitText("Could not load connectors.")
+            compose.onNodeWithText("读取邮件").assertDoesNotExist()
+            compose.onNodeWithText("Close").performClick()
+            compose.onNodeWithText("gmail@example.com").assertIsDisplayed()
+            compose.onNodeWithText(permissions).assertDoesNotExist()
+
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.onNodeWithText("Connected").performClick()
+            compose.runOnIdle { connectivity.value = false }
+            awaitText("Offline")
+            compose.onNodeWithTag("connector-gmail").performClick()
+            compose.onNodeWithText("Could not load connectors.").assertIsDisplayed()
+            compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
+        }
+
+    @Test
+    fun connectedCategoryFindsAccountsOutsideTheDefaultBrowseSnapshot() =
+        withDirectory(initiallyOnline = false) { fixture, connectivity ->
+            fixture.omittedFromDefaultBrowse = setOf("gmail")
+            fixture.authorizeGmail()
+            compose.runOnIdle { connectivity.value = true }
+            awaitText("Google Calendar")
+            compose.onNodeWithText("Connected").performClick()
+            awaitText("Gmail")
+
+            val releaseCategory = CountDownLatch(1)
+            fixture.discoveryGate = releaseCategory
+            try {
+                compose.onNodeWithContentDescription("Filter by service category").performClick()
+                compose.onNodeWithText("Email").performClick()
+                compose.onNodeWithText("No connectors in this category").assertDoesNotExist()
+            } finally {
+                releaseCategory.countDown()
+            }
+            awaitText("Gmail")
+            compose.onNodeWithTag("connector-search").performTextReplacement("gmail@example.com")
+            compose.onNodeWithTag("connector-gmail").assertIsDisplayed()
+            compose.onNodeWithTag("connector-$CONNECTOR_CALENDAR").assertDoesNotExist()
         }
 
     @Test

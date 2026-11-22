@@ -11,6 +11,7 @@ internal class ChatRowMutationOwner(
     private val service: ChatListService,
     private val projection: ChatListProjection,
     private val dispatcher: CoroutineDispatcher,
+    private val wallMillis: () -> Long,
     private val requireCurrent: suspend () -> Unit,
     private val onFailure: (Exception) -> Unit,
     private val publishRows: () -> Unit,
@@ -32,7 +33,7 @@ internal class ChatRowMutationOwner(
     suspend fun prepareEdits(
         threadId: String,
         action: ChatRowAction,
-        title: String?,
+        value: String?,
         pinGroup: ChatListGroup?,
         index: Int,
         state: ChatListUiState,
@@ -52,7 +53,11 @@ internal class ChatRowMutationOwner(
                         val target = checkNotNull(group.pinNeighbor(index, if (before) -1 else 1))
                         ChatPinOrder.move(group.rankScope(state), threadId, target.id, before)
                     }
-                else -> return listOf(ChatRowEdit(threadId, newEventId(), action, title))
+                ChatRowAction.MoveProject ->
+                    return listOf(
+                        ChatRowEdit(threadId, newProjectOperationId(wallMillis()), action, value)
+                    )
+                else -> return listOf(ChatRowEdit(threadId, newEventId(), action, value))
             }
         return orders.map { ChatRowEdit(it.threadId, newEventId(), action, it.pinOrder) }
     }
@@ -135,6 +140,7 @@ internal class ChatRowMutationOwner(
             ChatRowAction.Unarchive ->
                 service.setArchived(threadId, action == ChatRowAction.Archive, eventId)
             ChatRowAction.Rename -> service.renameThread(threadId, checkNotNull(value), eventId)
+            ChatRowAction.MoveProject -> service.moveThreadToProject(threadId, value, eventId)
             ChatRowAction.Delete -> service.deleteThread(threadId, eventId)
             ChatRowAction.Pin,
             ChatRowAction.Unpin -> service.setPinned(threadId, value, eventId)
@@ -159,6 +165,7 @@ internal class ChatRowMutationOwner(
                     403,
                     404 -> true
                     402 -> action == ChatRowAction.Delete
+                    409 -> action == ChatRowAction.MoveProject
                     else -> false
                 }
             else -> false

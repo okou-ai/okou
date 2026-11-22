@@ -9,7 +9,12 @@ import later_parking_report as later
 import report
 import speculative_fault_report as saving
 import status_evidence
-from native_transition_report import wait_progress, wire
+from native_transition_report import (
+    validate_preparation_loss,
+    validate_producer_join,
+    wait_progress,
+    wire,
+)
 from cleanup_report import supplied_policy
 from report import exact
 
@@ -85,21 +90,14 @@ def validate(directory):
             "restore_callback_reached":True,"internal_vmm_inflight_claimed":False,
             "original_full_lease_active":True,"original_exit_polled_pending":True,"allocated":[2,4096,1]},
             "native pause lacked actual success with public API wait still pending")
-        requested = batch.clock(lost.get("cancel_requested_ns"), events[2]["monotonic_ns"], events[3]["monotonic_ns"])
-        dropped = batch.clock(lost.get("observation_dropped_ns"), requested, events[3]["monotonic_ns"])
-        exact(lost, {"cancel_requested_ns":requested,"observation_dropped_ns":dropped,
-            "observer_unwound":mode=="PauseObserverUnwind","state":"Uncertain","commit_refused":True,
-            "repark_refused":True,"incoming_refused":True,"original_metadata_preserved":True,
-            "original_full_lease_active":True,"original_exit_polled_pending":True,"pool_empty":True,
-            "allocated":[2,4096,1]}, "native cancellation lost original uncertain custody")
+        validate_preparation_loss(
+            lost, events[2], events[3], observer_unwound=mode == "PauseObserverUnwind",
+        )
         runner = wait_progress(progress, events[3], events[4])
-        released = batch.clock(joined.get("response_released_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
-        finished = batch.clock(joined.get("producer_joined_ns"), released, events[5]["monotonic_ns"])
-        exact(joined, {"response_released_ns":released,"producer_joined_ns":finished,"producer_joined":True,
-            "producer_unwound":mode=="PauseProducerUnwind","backend_status":204,
-            "joined_request_sha256":None if mode=="PauseProducerUnwind" else request_sha,
-            "accepted_response_before_cancellation":True,"internal_vmm_inflight_claimed":False},
-            "accepted request producer was not joined before required cleanup")
+        validate_producer_join(
+            joined, events[4], events[5],
+            producer_unwound=mode == "PauseProducerUnwind", request_sha=request_sha,
+        )
         exact(ready, {"pause_and_resume_readiness_joined":True,"ordinary_reuse_reopened":False,
             "state":"Uncertain","original_full_lease_active":True,"original_exit_polled_pending":True,
             "allocated":[2,4096,1]}, "original pause/resume readiness did not join under terminal-only custody")

@@ -2,12 +2,9 @@ package ai.okou.android
 
 import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
-import android.graphics.Point
 import android.os.SystemClock
 import android.util.Log
-import android.view.InputDevice
 import android.view.KeyEvent
-import android.view.MotionEvent
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -27,7 +24,6 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.abs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -560,96 +556,12 @@ class NativeChatListTest {
             assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
 
             revealText("Personal chat")
-            val row = text("Personal chat").visibleBounds
-            val swipeDensity = app.resources.displayMetrics.density
-            val start = Point(row.centerX(), row.centerY())
-            fun swipePoint(horizontal: Int, vertical: Int) =
-                Point(
-                    start.x + (horizontal * swipeDensity).toInt(),
-                    start.y + (vertical * swipeDensity).toInt(),
-                )
-            val downAt = SystemClock.uptimeMillis()
-            val finger =
-                MotionEvent.PointerProperties().apply {
-                    id = 0
-                    toolType = MotionEvent.TOOL_TYPE_FINGER
-                }
-            fun injectSwipeEvent(action: Int, point: Point): Boolean {
-                val coordinates =
-                    MotionEvent.PointerCoords().apply {
-                        x = point.x.toFloat()
-                        y = point.y.toFloat()
-                        pressure =
-                            if (
-                                action == MotionEvent.ACTION_UP ||
-                                    action == MotionEvent.ACTION_CANCEL
-                            )
-                                0f
-                            else 1f
-                        this.size = 1f
-                    }
-                val event =
-                    MotionEvent.obtain(
-                        downAt,
-                        SystemClock.uptimeMillis(),
-                        action,
-                        1, // pointerCount
-                        arrayOf(finger),
-                        arrayOf(coordinates),
-                        0, // metaState
-                        0, // buttonState
-                        1f, // xPrecision
-                        1f, // yPrecision
-                        0, // deviceId
-                        0, // edgeFlags
-                        InputDevice.SOURCE_TOUCHSCREEN,
-                        0, // flags
-                    )
-                try {
-                    return instrumentation.uiAutomation.injectInputEvent(event, true)
-                } finally {
-                    event.recycle()
-                }
-            }
+            // Held-drag geometry is covered by Compose tests. Android can resample injected
+            // touch coordinates before delivering them to the app.
             val personalChat = By.pkg(app.packageName).text("Personal chat")
-            fun captureSwipe(displacement: Int, name: String) {
-                val point = swipePoint(displacement, 0)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
-                val targetRight = row.right + point.x - start.x
-                assertTrue(
-                    "Chat row failed to follow the $displacement dp swipe",
-                    device.wait(
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean =
-                                device.findObject(personalChat)?.visibleBounds?.right?.let {
-                                    abs(it - targetRight) <= 2
-                                } == true
-                        },
-                        10_000,
-                    ),
-                )
-                takeScreenshot().writeToTestStorage(name)
-            }
-            assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
-            var released = false
-            try {
-                captureSwipe(-36, "android-swipe-archive-icon")
-                captureSwipe(-104, "android-swipe-archive-ready")
-                val diagonal = swipePoint(-96, 72)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, diagonal))
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_UP, diagonal))
-                released = true
-            } finally {
-                if (!released) {
-                    runCatching { check(injectSwipeEvent(MotionEvent.ACTION_CANCEL, start)) }
-                        .exceptionOrNull()
-                        ?.let(failures::add)
-                }
-            }
-            text("Personal chat")
-            device.waitForIdle()
-            assertTrue("A diagonal release must not archive the chat", rowEvents.isEmpty())
-            assertTrue(device.swipe(arrayOf(start, swipePoint(-96, 0)), 16))
+            val start = text("Personal chat").visibleCenter
+            val swipeDistance = (96 * app.resources.displayMetrics.density).toInt()
+            assertTrue(device.swipe(start.x, start.y, start.x - swipeDistance, start.y, 16))
             val message = By.pkg(app.packageName).text(app.getString(R.string.chat_undo_archived))
             val undo = By.pkg(app.packageName).text(app.getString(R.string.chat_undo))
             val dismiss =
@@ -677,6 +589,10 @@ class NativeChatListTest {
                 )
             }
             awaitUndoLayout(stacked = false)
+            assertTrue(
+                "Archived chat stayed in Inbox",
+                device.wait(Until.gone(personalChat), 10_000),
+            )
             takeScreenshot().writeToTestStorage("android-chat-list-undo")
             val fontScale = device.executeShellCommand("settings get system font_scale").trim()
             try {

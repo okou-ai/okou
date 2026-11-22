@@ -21,6 +21,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,7 @@ class AndroidUpdateClient(
     private val json = Json { ignoreUnknownKeys = true }
     private val apkFileName = Regex("[a-f0-9]{64}\\.apk")
     private val sessionId = UUID.randomUUID().toString()
+    private val closed = AtomicBoolean(false)
     private val transfers = SignedTransferClient(dispatcher, 10.minutes)
     private val http =
         httpClient()
@@ -260,6 +262,7 @@ class AndroidUpdateClient(
     }
 
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         transfers.close()
         http.closeTransport()
     }

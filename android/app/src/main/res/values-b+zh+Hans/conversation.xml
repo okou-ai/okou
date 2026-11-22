@@ -14,4 +14,14 @@
     <string name="conversation_reply_copied">已复制回复</string>
     <string name="conversation_revoke">撤回</string>
     <string name="conversation_stop">停止</string>
+    <string name="conversation_find">查找消息</string>
+    <string name="conversation_find_turns">按轮次浏览</string>
+    <string name="conversation_find_empty">暂无可查找的消息</string>
+    <string name="conversation_find_no_match">没有匹配的消息</string>
+    <string name="conversation_find_you">你的消息</string>
+    <string name="conversation_find_unavailable">这条消息暂不可用。</string>
+    <plurals name="conversation_find_matches">
+        <item quantity="other">%d 条匹配消息</item>
+    </plurals>
+    <string name="conversation_find_attachment">附件</string>
 </resources>

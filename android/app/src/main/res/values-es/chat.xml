@@ -77,4 +77,17 @@
     <string name="chat_project_rename_rejected">No se pudo cambiar el nombre del proyecto.</string>
     <string name="chat_project_rename_save">Guardar</string>
     <string name="chat_project_rename_pending">Renombrando proyecto…</string>
+    <string name="chat_move_project">Mover chat</string>
+    <string name="chat_move_project_outside">Mover fuera de los proyectos</string>
+    <string name="chat_move_project_named">Mover a %1$s</string>
+    <string name="chat_project_outside">Fuera de los proyectos</string>
+    <string name="chat_project_moved_named">Movido a %1$s</string>
+    <string name="chat_project_moved_outside">Movido fuera de los proyectos</string>
+    <string name="chat_project_delete">Eliminar proyecto</string>
+    <string name="chat_project_delete_title">¿Eliminar «%1$s»?</string>
+    <string name="chat_project_delete_description">Los chats de este proyecto se moverán fuera de los proyectos. Las tareas en curso continuarán.</string>
+    <string name="chat_project_delete_pending">Eliminando proyecto…</string>
+    <string name="chat_project_deleted">Se eliminó el proyecto y sus chats se movieron fuera de los proyectos.</string>
+    <string name="chat_project_delete_rejected">No se pudo eliminar el proyecto.</string>
+    <string name="chat_project_delete_unconfirmed">No se pudo confirmar la eliminación del proyecto.</string>
 </resources>
