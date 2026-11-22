@@ -397,54 +397,54 @@ export const DEFAULT_FOR_YOU_COVER_ID: ForYouCoverId = forYouCovers[0].id;
 
 // Shown once the last card is handled: Okou takes a breather with the user.
 export const forYouCompleteIllustration = platformStaticAssetUrl(
-  "views/for-you/assets/take-a-breather-dca874a0e7cc.svg",
+  "views/for-you/assets/take-a-breather-f38f669c7fbb.svg",
 );
 
 export const forYouIllustrations = [
   platformStaticAssetUrl(
-    "views/for-you/assets/unlock-opportunities-df205d066f73.svg",
+    "views/for-you/assets/unlock-opportunities-a8af035a649b.svg",
   ),
-  platformStaticAssetUrl("views/for-you/assets/set-the-pace-8129ba271efa.svg"),
+  platformStaticAssetUrl("views/for-you/assets/set-the-pace-6ff5ad24d986.svg"),
   platformStaticAssetUrl(
-    "views/for-you/assets/nurture-growth-bd4b29d9cb71.svg",
+    "views/for-you/assets/nurture-growth-93823ce150f4.svg",
   ),
-  platformStaticAssetUrl("views/for-you/assets/build-bridges-d996b40b8ca6.svg"),
-  platformStaticAssetUrl("views/for-you/assets/weigh-options-5198bad812af.svg"),
+  platformStaticAssetUrl("views/for-you/assets/build-bridges-ceb3f0055e34.svg"),
+  platformStaticAssetUrl("views/for-you/assets/weigh-options-54ba5ca7abeb.svg"),
   platformStaticAssetUrl(
-    "views/for-you/assets/safeguard-work-71c5f2d60e83.svg",
-  ),
-  platformStaticAssetUrl(
-    "views/for-you/assets/set-priorities-7fd1efde23b5.svg",
-  ),
-  platformStaticAssetUrl("views/for-you/assets/create-ideas-05756efdaaf6.svg"),
-  platformStaticAssetUrl("views/for-you/assets/launch-plans-fed67ceb981b.svg"),
-  platformStaticAssetUrl(
-    "views/for-you/assets/connect-the-dots-6b7b56bb34af.svg",
+    "views/for-you/assets/safeguard-work-e424352134df.svg",
   ),
   platformStaticAssetUrl(
-    "views/for-you/assets/move-work-forward-f4421f9dd07e.svg",
+    "views/for-you/assets/set-priorities-be9fc024b776.svg",
   ),
-  platformStaticAssetUrl("views/for-you/assets/bring-clarity-120561bda6d4.svg"),
+  platformStaticAssetUrl("views/for-you/assets/create-ideas-c0006849002b.svg"),
+  platformStaticAssetUrl("views/for-you/assets/launch-plans-633169f1b1cb.svg"),
   platformStaticAssetUrl(
-    "views/for-you/assets/read-and-review-c806fca0b281.svg",
-  ),
-  platformStaticAssetUrl(
-    "views/for-you/assets/sort-the-inbox-c637c5f7e920.svg",
+    "views/for-you/assets/connect-the-dots-2fad645a96ba.svg",
   ),
   platformStaticAssetUrl(
-    "views/for-you/assets/deliver-results-e9fa33a2ddd5.svg",
+    "views/for-you/assets/move-work-forward-aa94ea42d39e.svg",
   ),
-  platformStaticAssetUrl("views/for-you/assets/find-the-way-ba0737b61726.svg"),
+  platformStaticAssetUrl("views/for-you/assets/bring-clarity-77942326e9f0.svg"),
   platformStaticAssetUrl(
-    "views/for-you/assets/organize-threads-94fa3101ceed.svg",
-  ),
-  platformStaticAssetUrl(
-    "views/for-you/assets/take-a-breather-dca874a0e7cc.svg",
+    "views/for-you/assets/read-and-review-f4169266852e.svg",
   ),
   platformStaticAssetUrl(
-    "views/for-you/assets/share-insights-db9a8576770b.svg",
+    "views/for-you/assets/sort-the-inbox-386847720a75.svg",
   ),
   platformStaticAssetUrl(
-    "views/for-you/assets/investigate-details-2d895c30c412.svg",
+    "views/for-you/assets/deliver-results-d9f9faa63888.svg",
+  ),
+  platformStaticAssetUrl("views/for-you/assets/find-the-way-c03429e0e8cc.svg"),
+  platformStaticAssetUrl(
+    "views/for-you/assets/organize-threads-5be22d93a78a.svg",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/take-a-breather-f38f669c7fbb.svg",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/share-insights-14f09242a083.svg",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/investigate-details-3a903d981cd9.svg",
   ),
 ] as const;
