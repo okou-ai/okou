@@ -59,7 +59,7 @@ internal data class ArtifactItem(
     val id: String,
     val title: String,
     val kind: ArtifactKind,
-    val createdAt: Long,
+    val createdAt: Long?,
     val thumbnail: String? = null,
 )
 
@@ -76,6 +76,7 @@ internal data class ArtifactInfo(
     val sourceChatId: String?,
     val resource: ArtifactResource,
     val browserUrl: HttpUrl? = null,
+    val resolvedAccess: ArtifactAccess? = null,
 )
 
 internal sealed interface ArtifactResource {
@@ -83,6 +84,8 @@ internal sealed interface ArtifactResource {
         ArtifactResource
 
     data class Site(val url: HttpUrl) : ArtifactResource
+
+    data class ResolvedHtml(val url: HttpUrl) : ArtifactResource
 
     data object Unsupported : ArtifactResource
 }
@@ -171,16 +174,69 @@ internal constructor(
         }
     }
 
-    internal suspend fun info(id: String): ArtifactInfo =
-        api.artifactDetail(id).toInfo().also {
+    internal suspend fun info(id: String): ArtifactInfo {
+        val link = messageArtifactLink(id)
+        if (link != null) {
+            val reference = artifactReference(link)
+            if (reference != null) {
+                val resolved = api.resolveArtifactReference(reference)
+                if (resolved.target.kind == ArtifactReferenceTargetKind.HTML) {
+                    val url =
+                        artifactHttpsUrl(resolved.url) ?: throw ApiFailure.IncompatibleResponse()
+                    return ArtifactInfo(
+                        ArtifactItem(id, resolved.filename, ArtifactKind.Website, null),
+                        null,
+                        ArtifactResource.ResolvedHtml(url),
+                    )
+                }
+                val kind =
+                    when {
+                        resolved.contentType.startsWith("image/") -> ArtifactKind.Image
+                        resolved.contentType.startsWith("video/") -> ArtifactKind.Video
+                        resolved.filename.endsWith(".pptx", ignoreCase = true) ->
+                            ArtifactKind.Presentation
+                        else -> ArtifactKind.File
+                    }
+                val file =
+                    ArtifactResource.File(
+                        link,
+                        resolved.filename,
+                        resolved.contentType,
+                        resolved.previewImageUrl,
+                    )
+                val access = resolvedFileAccess(reference, file, resolved)
+                return ArtifactInfo(
+                    ArtifactItem(id, resolved.filename, kind, null),
+                    null,
+                    file,
+                    resolvedAccess = access,
+                )
+            }
+            val site = checkNotNull(artifactHttpsUrl(link))
+            return ArtifactInfo(
+                ArtifactItem(id, site.host, ArtifactKind.Website, null),
+                null,
+                ArtifactResource.Site(site),
+            )
+        }
+        return api.artifactDetail(id).toInfo().also {
             if (it.item.id != id) throw ApiFailure.IncompatibleResponse()
         }
+    }
 
     internal suspend fun fileAccess(file: ArtifactResource.File): ArtifactAccess {
         val reference = artifactReference(file.url)
         if (reference == null)
             return ArtifactAccess(artifactHttpsUrl(file.url), file.type, file.name)
         val resolved = api.resolveArtifactReference(reference)
+        return resolvedFileAccess(reference, file, resolved)
+    }
+
+    private fun resolvedFileAccess(
+        reference: String,
+        file: ArtifactResource.File,
+        resolved: ai.okou.android.api.generated.ArtifactReference,
+    ): ArtifactAccess {
         if (resolved.target.kind != ArtifactReferenceTargetKind.FILE) {
             return ArtifactAccess(null, file.type, file.name)
         }
@@ -278,6 +334,33 @@ internal constructor(
 
 private val artifactReferencePath =
     Regex("/artifacts/((?:[a-f0-9]{32}|[a-z0-9]{10})(?:\\.[a-z0-9]{1,12})?)")
+
+private val messageArtifactOrigins =
+    listOf(BuildConfig.WEB_ORIGIN, BuildConfig.API_ORIGIN).mapNotNull { it.toHttpUrlOrNull() }
+private val hostedArtifactHost =
+    Regex("[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.(?:okou\\.app|sites\\.vm[07]\\.io)")
+
+internal fun messageArtifactLink(value: String): String? {
+    val path = value.substringBefore('#')
+    if (artifactReferencePath.matches(path)) return path
+    val url = artifactHttpsUrl(value) ?: return null
+    if (
+        messageArtifactOrigins.any { it.host == url.host && it.port == url.port } &&
+            url.query == null &&
+            artifactReferencePath.matches(url.encodedPath)
+    )
+        return url.encodedPath
+    return url.takeIf {
+            it.port == 443 && it.host != "files.sites.vm7.io" && hostedArtifactHost.matches(it.host)
+        }
+        ?.newBuilder()
+        ?.encodedPath("/")
+        ?.query(null)
+        ?.fragment(null)
+        ?.build()
+        ?.toString()
+}
+
 private const val MAX_IMAGE_BYTES = 16L * 1024 * 1024
 private const val MAX_TEXT_BYTES = 256L * 1024
 private val documentTypes =

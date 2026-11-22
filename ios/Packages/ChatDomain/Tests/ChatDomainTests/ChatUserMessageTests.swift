@@ -3,6 +3,54 @@ import Foundation
 import XCTest
 
 final class ChatUserMessageTests: XCTestCase {
+  func testHistorySkipsUnknownPartsAndSourcesWithoutLosingMessagesOrAnnotations() throws {
+    let document = try storedMessage(
+      """
+      {"type":"text","text":"Before "},
+      {"type":"source","kind":"agent","threadId":"\(identity(21))","titleSnapshot":"Old chat"},
+      {"type":"future","text":{"value":1}},
+      {"type":"source","kind":"future","source":42},
+      {"type":"text","text":"after"},
+      {"type":"source","kind":"slack","href":"https://example.slack.com/archives/C1/p1"}
+      """)
+    let unknownOnly = try storedMessage(#"{"type":"future","text":"Hidden"}"#)
+    let forwarded = try storedMessage(
+      """
+      {"type":"chat_thread","threadId":"\(identity(21))","runId":"\(identity(22))","titleSnapshot":"Current chat"},
+      {"type":"text","text":"Next message"}
+      """)
+    let messages = try history([document, unknownOnly, forwarded]).messages
+
+    XCTAssertEqual(messages.map(\.text), ["Before after", "Next message"])
+    XCTAssertEqual(document.parts.map(\.type), ["text", "text", "source"])
+    XCTAssertEqual(document.annotation?.kind, "slack")
+    XCTAssertEqual(forwarded.annotation?.runId, identity(22))
+  }
+
+  func testStoredFeedbackKeepsReadableNotePartsInOrder() throws {
+    let document = try storedMessage(
+      """
+      {"type":"feedback","quote":"A passage","note":[
+        {"type":"text","text":"Read "},{"type":"future","text":42},{"type":"file","fileId":false},
+        {"type":"template","titleSnapshot":"the note"}
+      ]}
+      """)
+    let message = try XCTUnwrap(history([document]).messages.first)
+    XCTAssertEqual(message.text, "\nA passage\nRead the note\n")
+  }
+
+  func testMalformedKnownPartsAndDiscriminatorsStillFail() throws {
+    for raw in [
+      #"{"text":"Missing type"}"#, #"{"type":42}"#, #"{"type":"source"}"#,
+      #"{"type":"source","kind":42}"#, #"{"type":"text","text":42}"#,
+      #"{"type":"feedback","quote":"A passage","note":[{"type":"text","text":42}]}"#
+    ] {
+      XCTAssertThrowsError(try storedMessage(raw), raw)
+    }
+    let missingText = try storedMessage(#"{"type":"text"}"#)
+    XCTAssertThrowsError(try history([missingText]))
+  }
+
   func testProjectReferencesKeepTheirSavedNameAndIdentityInHistory() throws {
     let project = identity(71)
     let document = try JSONDecoder().decode(
@@ -162,6 +210,11 @@ final class ChatUserMessageTests: XCTestCase {
           id: identity(index + 1), createdAt: .now, eventType: .inputPrompt,
           payload: .init(userMessage: document))
       }, recovering: false)
+  }
+
+  private func storedMessage(_ parts: String) throws -> ChatUserMessage {
+    try JSONDecoder().decode(
+      ChatUserMessage.self, from: Data("{\"version\":1,\"parts\":[\(parts)]}".utf8))
   }
 
   private func identity(_ index: Int) -> String {

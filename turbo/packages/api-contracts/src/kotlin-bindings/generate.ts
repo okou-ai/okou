@@ -57,18 +57,14 @@ export function renderKotlinTypes(
   return renderKotlinModels(bindings, packageName, requestTypes);
 }
 
-function retrofitMethodAnnotation(
-  method: string,
-  path: string,
-  hasBody: boolean,
-) {
-  if (method === "DELETE" && hasBody) {
-    return {
-      name: "HTTP",
-      source: `@HTTP(method = "DELETE", path = ${quote(path)}, hasBody = true)`,
-    };
-  }
-  return { name: method, source: `@${method}(${quote(path)})` };
+function retrofitHttpMethod(method: string, request: string | undefined) {
+  return method === "DELETE" && request ? "HTTP" : method;
+}
+
+function renderHttpAnnotation(method: string, path: string) {
+  return method === "HTTP"
+    ? `@HTTP(method = "DELETE", path = ${quote(path)}, hasBody = true)`
+    : `@${method}(${quote(path)})`;
 }
 
 export function renderKotlinFiles(
@@ -99,7 +95,6 @@ export function renderKotlinFiles(
   });
   if (new Set(names).size !== names.length)
     throw new Error("Duplicate Retrofit method");
-  const imports = new Set(["retrofit2.Response", "retrofit2.http.Header"]);
   const methods = routes.map(
     ({ name, response, request, route, authenticated }, index) => {
       if (!/^(GET|POST|PUT|PATCH|DELETE)$/u.test(route.method)) {
@@ -152,13 +147,11 @@ export function renderKotlinFiles(
     ${identifier(`${name}Wire`)}(${[...(authenticated === false ? [] : ["token"]), ...path.arguments, ...(request ? ["body"] : []), "query.toQueryParameters()"].join(", ")})`);
         helpers.push(query.helper!);
       }
-      const annotation = retrofitMethodAnnotation(
-        route.method,
+      const annotation = renderHttpAnnotation(
+        retrofitHttpMethod(route.method, request),
         path.path,
-        Boolean(request),
       );
-      imports.add(`retrofit2.http.${annotation.name}`);
-      return `    ${annotation.source}\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
+      return `    ${annotation}\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
     },
   );
   const constants = {
@@ -168,7 +161,9 @@ export function renderKotlinFiles(
     SESSION_HEADER: CLIENT_SESSION_ID_HEADER,
     REQUEST_HEADER: CLIENT_REQUEST_ID_HEADER,
   };
+  const imports = new Set(["retrofit2.Response", "retrofit2.http.Header"]);
   for (const [index, { route, request }] of routes.entries()) {
+    imports.add(`retrofit2.http.${retrofitHttpMethod(route.method, request)}`);
     if (request) imports.add("retrofit2.http.Body");
     if (route.pathParams) imports.add("retrofit2.http.Path");
     if (route.query)

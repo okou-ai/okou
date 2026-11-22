@@ -1,16 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 /**
- * Identity and S3 prefix for a new storage row: `{orgId}/{storageId}`.
- *
- * The storage id goes into the prefix because it is the only immutable,
- * globally unique attribute of a storage row. Prefixes that encode mutable
- * or shared attributes went stale twice already: org slugs broke on rename
- * (#7186), and `{orgId}/{type}/{name}` collides across users because the
- * per-user ownership model landed after the user segment was dropped from
- * the path (#22148). Several historical prefix formats coexist in
- * production, so a prefix must always be read from `storages.s3_prefix`
- * and never derived from other columns.
+ * Allocate an object prefix for a new member Memory. Its ID is immutable
+ * across org renames and independent of other members in the same org.
+ * Existing memories retain historical layouts in member_memories.object_prefix.
  */
 export function newStorageS3Location(orgId: string): {
   readonly storageId: string;

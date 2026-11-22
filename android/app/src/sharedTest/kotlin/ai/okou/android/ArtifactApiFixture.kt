@@ -84,7 +84,13 @@ internal class ArtifactApiFixture(
     val catalogQueries = CopyOnWriteArrayList<Pair<String?, String?>>()
     val catalogScopes = CopyOnWriteArrayList<Pair<String?, String?>>()
     val requestedDownloads = CopyOnWriteArrayList<String>()
+    val requestedReferences = CopyOnWriteArrayList<String>()
     private val currentDispatcher = api.commandResponse
+
+    fun installInlineHistory() {
+        val intro = title("The release summary is ready.", "发布摘要已准备好。")
+        api.historyReply = "$intro\n\n[${summary.title}](/artifacts/artifacts2.md)"
+    }
 
     fun install() {
         val chatEvents = api.events
@@ -114,8 +120,10 @@ internal class ArtifactApiFixture(
                         detail != null -> detail(detail)
                         path == "/api/artifact-references/checklist1.md" ->
                             reference(checklist, "checklist", true)
-                        path == "/api/artifact-references/artifacts2.md" ->
+                        path == "/api/artifact-references/artifacts2.md" -> {
+                            requestedReferences.add(path)
                             reference(summary, "summary", summaryDownloadAllowed)
+                        }
                         path == "/api/artifact-references/checklist1.md/download" -> {
                             requestedDownloads.add(path)
                             beforeDownload()
