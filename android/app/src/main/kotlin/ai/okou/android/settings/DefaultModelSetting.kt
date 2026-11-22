@@ -89,7 +89,7 @@ internal fun DefaultModelSetting(model: DefaultModelSettings?) {
         val status =
             when {
                 state.offline -> stringResource(R.string.chat_list_offline)
-                state.failed -> stringResource(R.string.settings_model_save_unavailable)
+                state.failed -> stringResource(R.string.chat_list_first_load_failed)
                 else -> null
             }
         DefaultModelPlaceholder(title, status)
