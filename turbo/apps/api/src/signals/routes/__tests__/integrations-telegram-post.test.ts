@@ -43,7 +43,7 @@ import {
   settleIncludingAbort,
 } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
@@ -64,7 +64,7 @@ const TELEGRAM_COMPLETION_CHUNK_THROTTLE_MS = 1100;
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
 const context = testContext();
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
 const webhooksApi = createWebhookCallbackApi(context);
@@ -77,7 +77,6 @@ const OFFICIAL_WEBHOOK_SECRET = "official-webhook-secret";
 interface TelegramPostFixture {
   readonly orgId: string;
   readonly userId: string;
-  readonly composeId: string;
   readonly telegramBotId: string;
   readonly webhookSecret: string;
   readonly telegramUserId?: string;
@@ -257,7 +256,7 @@ async function linkOfficialTelegramUser(
 
 /**
  * Builds a Telegram poster through production APIs: onboarding creates the
- * org, member and default agent; an optional signed official-bot link binds a
+ * org and member; an optional signed official-bot link binds a
  * unique Telegram user to that member.
  */
 async function createTelegramPostFixture(
@@ -270,10 +269,7 @@ async function createTelegramPostFixture(
     throw new Error("Expected an organization for the Telegram poster");
   }
   await authOrgApi.completeOnboarding(actor);
-  const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
-  if (!defaultAgentId) {
-    throw new Error("Expected onboarding to create a default agent");
-  }
+  await authOrgApi.provisionWorkspace(actor);
   await runsApi.grantProEntitlement(actor);
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -281,7 +277,6 @@ async function createTelegramPostFixture(
   return {
     orgId: actor.orgId,
     userId: actor.userId,
-    composeId: defaultAgentId,
     runs: publicRunOwner(context, actor),
     telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
     webhookSecret: OFFICIAL_WEBHOOK_SECRET,
@@ -471,7 +466,7 @@ async function postWebhook(args: {
 async function configureCanonicalTelegramRunner(): Promise<string> {
   const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.acceptStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
   return runnerGroup;
@@ -514,7 +509,7 @@ async function completeCanonicalChatRun(args: {
 }
 
 async function readTelegramSourcePart(
-  fixture: Pick<TelegramPostFixture, "userId" | "orgId" | "composeId">,
+  fixture: Pick<TelegramPostFixture, "userId" | "orgId">,
   threadId: string,
   prompt: string,
   foreground?: TestContext,
@@ -972,15 +967,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const runnerGroup = await configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
-    const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
-    if (!actor.orgId || !defaultAgentId) {
+    await authOrgApi.provisionWorkspace(actor);
+    if (!actor.orgId) {
       throw new Error("Expected onboarding to create the Telegram Agent");
     }
     await authOrgApi.completeOnboarding(actor);
     const fixture: TelegramPostFixture = {
       orgId: actor.orgId,
       userId: actor.userId,
-      composeId: defaultAgentId,
       runs: publicRunOwner(context, actor),
       telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
       webhookSecret: OFFICIAL_WEBHOOK_SECRET,
@@ -1203,14 +1197,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     const owned = createTelegramDmOwner(actor);
     const foreground = owned.context;
-    const authOrg = createAuthOrgAgentsBddApi(foreground);
+    const authOrg = createAuthOrgBddApi(foreground);
     const runs = createRunsApi(foreground);
     const prepared = owned.run(async () => {
       await authOrg.completeOnboarding(actor);
-      const defaultAgentId = await authOrg.readDefaultAgentId(actor);
-      if (!defaultAgentId) {
-        throw new Error("Expected onboarding to create a default agent");
-      }
+      await authOrg.provisionWorkspace(actor);
       await runs.grantProEntitlement(actor, {
         run: owned.run,
         onExternalStateReady: owned.retainWebhook,
@@ -1221,7 +1212,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       return {
         orgId,
         userId: actor.userId,
-        composeId: defaultAgentId,
         telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
         webhookSecret: OFFICIAL_WEBHOOK_SECRET,
         telegramUserId: await linkOfficialTelegramUser(
@@ -1273,7 +1263,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     const ownedRuns = createTelegramDmOwner(actor);
     const foreground = ownedRuns.context;
-    const authOrg = createAuthOrgAgentsBddApi(foreground);
+    const authOrg = createAuthOrgBddApi(foreground);
     const runs = createRunsApi(foreground);
     const reads = createRunReadsApi(foreground);
     const chat = createChatFilesBddApi(foreground);
@@ -2045,15 +2035,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const runnerGroup = await configureCanonicalTelegramRunner();
       configureOfficialBotEnv();
       const actor = authOrgApi.user();
-      const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
-      if (!actor.orgId || !defaultAgentId) {
+      await authOrgApi.provisionWorkspace(actor);
+      if (!actor.orgId) {
         throw new Error("Expected onboarding to create the Telegram Agent");
       }
       await authOrgApi.completeOnboarding(actor);
       const fixture: TelegramPostFixture = {
         orgId: actor.orgId,
         userId: actor.userId,
-        composeId: defaultAgentId,
         runs: publicRunOwner(context, actor),
         telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
         webhookSecret: OFFICIAL_WEBHOOK_SECRET,

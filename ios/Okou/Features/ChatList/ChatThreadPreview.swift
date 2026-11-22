@@ -77,7 +77,7 @@ private struct ChatThreadPreviewMessage: View {
     VStack(alignment: .leading, spacing: OkouSpace.six) {
       HStack(spacing: OkouSpace.six) {
         if message.role == .assistant {
-          OkouAgentAvatar(avatarURL: nil, name: "Okou", isDefault: true, size: OkouIconSize.menu)
+          OkouAvatar(size: OkouIconSize.menu, label: "Okou")
         }
         Text(message.role == .user ? String(localized: "You") : "Okou")
           .font(.okou(.footnote).weight(.medium))

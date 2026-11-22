@@ -42,7 +42,6 @@ async function fixture(
       });
     }
     const run = await runs.createThreadRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Create a report",
       model: "claude-fable-5-1",
     });

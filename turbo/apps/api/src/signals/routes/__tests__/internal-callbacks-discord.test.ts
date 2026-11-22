@@ -901,79 +901,75 @@ describe("canonical Discord terminal replies", () => {
     );
   });
 
-  it.each([{ agent: "the org default agent", footer: "" }])(
-    "delivers a queued admission failure once for $agent without launching another run",
-    async ({ footer }) => {
-      const started = await startDiscordRun({});
-      const receivedExecution = await readRunExecution(
-        started.actor,
-        started.runId,
-      );
-      const followup = discordMessageForTest(started.actor, {
-        channelId: started.channelId,
-        content: `<@${started.actor.botUserId}> Reject this queued follow-up.`,
-      });
-      started.provider.messages.set(followup.id, followup);
-      await postDiscordMessage(context, followup);
-      await flushWaitUntilForTest();
-      const pending = await readProjectedChatEvents(context, {
-        threadId: started.threadId,
-        headers: { authorization: "Bearer clerk-session" },
-      });
-      const revokedIds = revokedChatEventIds(pending);
-      expect(
-        pending.filter((event) => {
-          return (
-            event.eventType === "input.prompt" &&
-            event.runId === undefined &&
-            !revokedIds.has(event.id)
-          );
-        }),
-      ).toHaveLength(1);
-      await misc.deletePersonalModelProvider(
-        started.actor.actor,
-        "claude-code-oauth-token",
-        [204],
-      );
-      await completeRun({
-        runId: started.runId,
-        sandboxToken: receivedExecution.sandboxToken,
-        text: "The original task finished.",
-      });
-      const events = await readProjectedChatEvents(context, {
-        threadId: started.threadId,
-        headers: { authorization: "Bearer clerk-session" },
-      });
-      const rejected = events.filter((event) => {
-        return event.eventType === "input.rejected";
-      });
-      expect(rejected).toHaveLength(1);
-      expect(rejected[0]?.runId).toBeUndefined();
-      expect(
-        new Set(
-          events.flatMap((event) => {
-            return event.runId === undefined ? [] : [event.runId];
-          }),
-        ),
-      ).toStrictEqual(new Set([started.runId]));
-      const errors = events.filter((event) => {
-        return event.eventType === "output.error" && event.runId === undefined;
-      });
-      expect(errors).toHaveLength(1);
-      const errorText = errors[0]?.content;
-      if (!errorText) {
-        throw new Error(
-          "Discord admission failure must have canonical error text",
+  it("delivers a queued admission failure once without launching another run", async () => {
+    const started = await startDiscordRun({});
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
+    const followup = discordMessageForTest(started.actor, {
+      channelId: started.channelId,
+      content: `<@${started.actor.botUserId}> Reject this queued follow-up.`,
+    });
+    started.provider.messages.set(followup.id, followup);
+    await postDiscordMessage(context, followup);
+    await flushWaitUntilForTest();
+    const pending = await readProjectedChatEvents(context, {
+      threadId: started.threadId,
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    const revokedIds = revokedChatEventIds(pending);
+    expect(
+      pending.filter((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.runId === undefined &&
+          !revokedIds.has(event.id)
         );
-      }
-      const notices = started.provider.sentMessages.filter((message) => {
-        return message.content.includes(errorText);
-      });
-      expect(notices).toHaveLength(1);
-      // An admission failure has no run, so only the agent is named.
-      expect(notices[0]?.content).toBe(`${errorText}${footer}`);
-    },
-  );
+      }),
+    ).toHaveLength(1);
+    await misc.deletePersonalModelProvider(
+      started.actor.actor,
+      "claude-code-oauth-token",
+      [204],
+    );
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: receivedExecution.sandboxToken,
+      text: "The original task finished.",
+    });
+    const events = await readProjectedChatEvents(context, {
+      threadId: started.threadId,
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    const rejected = events.filter((event) => {
+      return event.eventType === "input.rejected";
+    });
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.runId).toBeUndefined();
+    expect(
+      new Set(
+        events.flatMap((event) => {
+          return event.runId === undefined ? [] : [event.runId];
+        }),
+      ),
+    ).toStrictEqual(new Set([started.runId]));
+    const errors = events.filter((event) => {
+      return event.eventType === "output.error" && event.runId === undefined;
+    });
+    expect(errors).toHaveLength(1);
+    const errorText = errors[0]?.content;
+    if (!errorText) {
+      throw new Error(
+        "Discord admission failure must have canonical error text",
+      );
+    }
+    const notices = started.provider.sentMessages.filter((message) => {
+      return message.content.includes(errorText);
+    });
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.content).toBe(errorText);
+  });
 
   it.each(["binding", "channel", "dm-recipient"] as const)(
     "suppresses a final reply after %s revocation without losing canonical completion",

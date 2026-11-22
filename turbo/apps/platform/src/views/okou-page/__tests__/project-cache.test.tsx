@@ -2,7 +2,7 @@ import { cleanup, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
 import {
   chatThreadDraftContract,
   chatThreadEventsContract,

@@ -3,7 +3,6 @@ import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   bankingContract,
-  bankingUserContract,
   bankingWorkspaceContract,
 } from "@okouai/api-contracts/contracts/banking";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -39,7 +38,6 @@ interface BankingFixture {
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string;
-  readonly agentId: string;
   readonly connectionId: string;
   readonly providerCustomerId: string;
   readonly enabledAccountId: string;
@@ -47,7 +45,6 @@ interface BankingFixture {
 }
 
 interface BankingFixtureArgs {
-  readonly grantOnAnotherAgent?: boolean;
   readonly triggerSource?: (typeof UNATTENDED_TRIGGER_SOURCES)[number];
   readonly featureSwitchEnabled?: boolean;
   readonly bankingEnabledAtLaunch?: boolean;
@@ -68,7 +65,7 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   if (!actor.orgId) {
     throw new Error("Banking fixtures require an org-scoped actor");
   }
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   const runnerGroup = await api.configureRunnerGroup();
@@ -77,10 +74,6 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
     tier: args.triggerSource === "automation-event" ? "team" : "pro",
   });
   await api.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Banking Agent",
-    visibility: "private",
-  });
   await updateFeatureSwitchesForUser(
     context,
     { userId: actor.userId, orgId: actor.orgId },
@@ -91,14 +84,8 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   const workflows = createWorkflowsBddApi(context);
   const run =
     args.triggerSource === "automation-event"
-      ? await workflows.startEventAutomationRun(
-          actor,
-          await bdd.bootstrapLimitedFreeOnboarding(actor, {
-            displayName: "Okou",
-          }),
-        )
+      ? await workflows.startEventAutomationRun(actor)
       : await api.createThreadRun(actor, {
-          agentId: agent.agentId,
           prompt: "banking precondition",
         });
   await api.heartbeatRunner(runnerGroup);
@@ -121,7 +108,6 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
 
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId: agent.agentId,
     runId: run.runId,
     okouToken: token,
   };
@@ -153,12 +139,7 @@ async function postWebhook(body: Record<string, unknown>) {
 async function connectBankingFixture(
   args: BankingFixtureArgs = {},
 ): Promise<BankingFixture> {
-  const {
-    actor,
-    agentId,
-    runId,
-    okouToken: token,
-  } = await createBankingRun(args);
+  const { actor, runId, okouToken: token } = await createBankingRun(args);
   const providerCustomerId = randomProviderId("customer");
   const enabledAccountId = randomProviderId("acct-enabled");
   const disabledAccountId = randomProviderId("acct-disabled");
@@ -206,20 +187,17 @@ async function connectBankingFixture(
     { [FeatureSwitchKey.Banking]: true },
   );
   const client = setupApp({ context, routes: bankingRoutes })(
-    bankingUserContract,
+    bankingWorkspaceContract,
   );
   const headers = { authorization: "Bearer clerk-session" };
   const session = await accept(
     client.createConnectSession({
       headers,
-      body: { agentId, mode: "connect" },
+      body: { mode: "connect" },
     }),
     [200],
   );
-  const pending = await accept(
-    client.accessRequestStatus({ headers, params: { agentId } }),
-    [200],
-  );
+  const pending = await accept(client.accessRequestStatus({ headers }), [200]);
   const connectionId = pending.body.connection?.id;
   if (!connectionId) {
     throw new Error("Expected a banking connection from the connect API");
@@ -247,7 +225,7 @@ async function connectBankingFixture(
   });
   expect(done.status).toBe(200);
   const connected = await accept(
-    client.accessRequestStatus({ headers, params: { agentId } }),
+    client.accessRequestStatus({ headers }),
     [200],
   );
   expect(connected.body.connection?.accounts).toHaveLength(1);
@@ -255,19 +233,10 @@ async function connectBankingFixture(
   if (!accountId) {
     throw new Error("Expected a publicly connected banking account");
   }
-  const grantAgentId = args.grantOnAnotherAgent
-    ? (
-        await createBddApi(context).createAgent(actor, {
-          displayName: "Historical authorization",
-          visibility: "private",
-        })
-      ).agentId
-    : agentId;
   await accept(
-    client.saveAgentGrant({
+    client.saveGrant({
       headers,
       body: {
-        agentId: grantAgentId,
         accountIds: [accountId],
         duration: "7d",
         purpose: "Read the connected checking account",
@@ -287,7 +256,6 @@ async function connectBankingFixture(
     orgId: actor.orgId,
     userId: actor.userId,
     runId,
-    agentId,
     connectionId,
     providerCustomerId,
     enabledAccountId,
@@ -346,8 +314,8 @@ describe("/api/banking/*", () => {
     expect(authRequestCount).toBe(0);
   });
 
-  it("honors another historical agent grant for the same member and filters accounts", async () => {
-    const fixture = await connectBankingFixture({ grantOnAnotherAgent: true });
+  it("filters the member’s accounts by their saved grant", async () => {
+    const fixture = await connectBankingFixture();
     let accountsRequestHeaders: Headers | undefined;
     server.use(
       finicityAuthHandler(),
@@ -413,7 +381,7 @@ describe("/api/banking/*", () => {
     });
   });
 
-  it("denies balances for accounts not enabled for the agent", async () => {
+  it("denies balances for accounts not enabled by the member", async () => {
     const fixture = await connectBankingFixture();
     let accountsRequestCount = 0;
     server.use(
@@ -644,7 +612,7 @@ describe("banking access request lifecycle", () => {
 
   it("reuses each owner connection while keeping users and organizations separate", async () => {
     const bdd = createBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const firstOwner = bdd.user();
     const owners = [
       firstOwner,
@@ -652,7 +620,7 @@ describe("banking access request lifecycle", () => {
       bdd.user({ userId: firstOwner.userId }),
     ];
     const client = setupApp({ context, routes: bankingRoutes })(
-      bankingUserContract,
+      bankingWorkspaceContract,
     );
     server.use(
       finicityAuthHandler(),
@@ -685,10 +653,6 @@ describe("banking access request lifecycle", () => {
       if (!owner.orgId) {
         throw new Error("Banking requires an org-scoped actor");
       }
-      const agent = await bdd.createAgent(owner, {
-        displayName: "Banking Connection Owner",
-        visibility: "private",
-      });
       await updateFeatureSwitchesForUser(
         context,
         { userId: owner.userId, orgId: owner.orgId },
@@ -697,7 +661,6 @@ describe("banking access request lifecycle", () => {
       const before = await accept(
         client.accessRequestStatus({
           headers: sessionHeaders(),
-          params: { agentId: agent.agentId },
         }),
         [200],
       );
@@ -716,7 +679,7 @@ describe("banking access request lifecycle", () => {
       const initial = await accept(
         client.createConnectSession({
           headers: sessionHeaders(),
-          body: { agentId: agent.agentId, mode: "connect" },
+          body: { mode: "connect" },
         }),
         [200],
       );
@@ -726,7 +689,6 @@ describe("banking access request lifecycle", () => {
       const connected = await accept(
         client.accessRequestStatus({
           headers: sessionHeaders(),
-          params: { agentId: agent.agentId },
         }),
         [200],
       );
@@ -740,7 +702,7 @@ describe("banking access request lifecycle", () => {
       const repeated = await accept(
         client.createConnectSession({
           headers: sessionHeaders(),
-          body: { agentId: agent.agentId, mode: "connect" },
+          body: { mode: "connect" },
         }),
         [200],
       );
@@ -749,7 +711,6 @@ describe("banking access request lifecycle", () => {
       const reused = await accept(
         client.accessRequestStatus({
           headers: sessionHeaders(),
-          params: { agentId: agent.agentId },
         }),
         [200],
       );
@@ -767,11 +728,7 @@ describe("banking access request lifecycle", () => {
     if (!owner.orgId) {
       throw new Error("Banking requires an org-scoped actor");
     }
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Banking Connection Retry",
-      visibility: "private",
-    });
+    bdd.acceptStorageWrites();
     await updateFeatureSwitchesForUser(
       context,
       { userId: owner.userId, orgId: owner.orgId },
@@ -792,12 +749,12 @@ describe("banking access request lifecycle", () => {
       }),
     );
     const client = setupApp({ context, routes: bankingRoutes })(
-      bankingUserContract,
+      bankingWorkspaceContract,
     );
     const failed = await accept(
       client.createConnectSession({
         headers: sessionHeaders(),
-        body: { agentId: agent.agentId, mode: "connect" },
+        body: { mode: "connect" },
       }),
       [502],
     );
@@ -805,7 +762,6 @@ describe("banking access request lifecycle", () => {
     const empty = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: agent.agentId },
       }),
       [200],
     );
@@ -819,7 +775,7 @@ describe("banking access request lifecycle", () => {
     const recovered = await accept(
       client.createConnectSession({
         headers: sessionHeaders(),
-        body: { agentId: agent.agentId, mode: "connect" },
+        body: { mode: "connect" },
       }),
       [200],
     );
@@ -829,7 +785,6 @@ describe("banking access request lifecycle", () => {
     const ready = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: agent.agentId },
       }),
       [200],
     );
@@ -844,15 +799,12 @@ describe("banking access request lifecycle", () => {
   });
 
   it("creates an expiring account-scoped grant and revokes it independently", async () => {
-    const fixture = await connectBankingFixture();
+    await connectBankingFixture();
     const client = setupApp({ context, routes: bankingRoutes })(
-      bankingUserContract,
-    );
-    const workspaceClient = setupApp({ context, routes: bankingRoutes })(
       bankingWorkspaceContract,
     );
     const status = await accept(
-      workspaceClient.accessRequestStatus({ headers: sessionHeaders() }),
+      client.accessRequestStatus({ headers: sessionHeaders() }),
       [200],
     );
     const accountId = status.body.connection?.accounts[0]?.id;
@@ -861,7 +813,7 @@ describe("banking access request lifecycle", () => {
     }
 
     const saved = await accept(
-      workspaceClient.saveGrant({
+      client.saveGrant({
         headers: sessionHeaders(),
         body: {
           accountIds: [accountId],
@@ -882,7 +834,6 @@ describe("banking access request lifecycle", () => {
     const savedStatus = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: fixture.agentId },
       }),
       [200],
     );
@@ -890,7 +841,7 @@ describe("banking access request lifecycle", () => {
     expect(savedStatus.body.connection).toStrictEqual(saved.body.connection);
 
     const revoked = await accept(
-      workspaceClient.revokeGrant({
+      client.revokeGrant({
         headers: sessionHeaders(),
         body: {},
       }),
@@ -902,7 +853,6 @@ describe("banking access request lifecycle", () => {
     const revokedStatus = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: fixture.agentId },
       }),
       [200],
     );
@@ -918,7 +868,7 @@ describe("banking access request lifecycle", () => {
       "FINICITY_WEBHOOK_BASE_URL",
       "https://public-api-tunnel.example.test",
     );
-    const fixture = await connectBankingFixture();
+    await connectBankingFixture();
     const generatedBodies: Record<string, unknown>[] = [];
     server.use(
       finicityAuthHandler(),
@@ -931,7 +881,7 @@ describe("banking access request lifecycle", () => {
     );
 
     const client = setupApp({ context, routes: bankingRoutes })(
-      bankingUserContract,
+      bankingWorkspaceContract,
     );
     const brandCases = [
       {
@@ -945,7 +895,7 @@ describe("banking access request lifecycle", () => {
         client.createConnectSession({
           headers: sessionHeaders(),
           extraHeaders: { origin: brandCase.origin },
-          body: { agentId: fixture.agentId, mode: "connect" },
+          body: { mode: "connect" },
         }),
         [200],
       );
@@ -962,11 +912,7 @@ describe("banking access request lifecycle", () => {
     if (!actor.orgId) {
       throw new Error("Banking requires an org-scoped actor");
     }
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Banking Connect Agent",
-      visibility: "private",
-    });
+    bdd.acceptStorageWrites();
     await updateFeatureSwitchesForUser(
       context,
       { userId: actor.userId, orgId: actor.orgId },
@@ -1004,13 +950,13 @@ describe("banking access request lifecycle", () => {
     );
 
     const client = setupApp({ context, routes: bankingRoutes })(
-      bankingUserContract,
+      bankingWorkspaceContract,
     );
     const createSession = async () => {
       return await accept(
         client.createConnectSession({
           headers: sessionHeaders(),
-          body: { agentId: agent.agentId, mode: "connect" },
+          body: { mode: "connect" },
         }),
         [200],
       );
@@ -1023,7 +969,6 @@ describe("banking access request lifecycle", () => {
     const status = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: agent.agentId },
       }),
       [200],
     );
@@ -1052,7 +997,6 @@ describe("banking access request lifecycle", () => {
     const afterCallbacks = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: agent.agentId },
       }),
       [200],
     );
@@ -1101,12 +1045,12 @@ describe("banking access request lifecycle", () => {
     );
 
     const client = setupApp({ context, routes: bankingRoutes })(
-      bankingUserContract,
+      bankingWorkspaceContract,
     );
     const started = await accept(
       client.createConnectSession({
         headers: sessionHeaders(),
-        body: { agentId: fixture.agentId, mode: "connect" },
+        body: { mode: "connect" },
       }),
       [200],
     );
@@ -1154,7 +1098,6 @@ describe("banking access request lifecycle", () => {
     const beforeDone = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: fixture.agentId },
       }),
       [200],
     );
@@ -1176,7 +1119,6 @@ describe("banking access request lifecycle", () => {
     const completed = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: fixture.agentId },
       }),
       [200],
     );
@@ -1189,7 +1131,7 @@ describe("banking access request lifecycle", () => {
     const doneOnlySession = await accept(
       client.createConnectSession({
         headers: sessionHeaders(),
-        body: { agentId: fixture.agentId, mode: "connect" },
+        body: { mode: "connect" },
       }),
       [200],
     );
@@ -1207,7 +1149,6 @@ describe("banking access request lifecycle", () => {
     const cancelled = await accept(
       client.accessRequestStatus({
         headers: sessionHeaders(),
-        params: { agentId: fixture.agentId },
       }),
       [200],
     );

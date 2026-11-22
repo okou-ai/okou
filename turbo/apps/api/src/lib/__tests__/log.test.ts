@@ -47,7 +47,7 @@ describe("native Worker logging", () => {
         provider_status: 503,
         failure_class: "transient_read_exhausted",
         method: "GET",
-        route: "/api/agents",
+        route: "/api/chat-threads",
       });
       await flushLogs();
     });
@@ -62,14 +62,14 @@ describe("native Worker logging", () => {
       provider_status: 503,
       failure_class: "transient_read_exhausted",
       method: "GET",
-      route: "/api/agents",
+      route: "/api/chat-threads",
       fields: {
         type: "provider_unavailable",
         provider: "clerk",
         provider_status: 503,
         failure_class: "transient_read_exhausted",
         method: "GET",
-        route: "/api/agents",
+        route: "/api/chat-threads",
         context: "NativeLogger",
       },
       axiom_dataset: "vm0-web-logs-dev",

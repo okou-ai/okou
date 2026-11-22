@@ -10,7 +10,6 @@ import XCTest
 
 final class AttachmentFlowFixture: Sendable {
   static let fileID = "42000000-0000-4000-8000-000000000001"
-  static let agentID = "42000000-0000-4000-8000-000000000002"
   static let threadID = "42000000-0000-4000-8000-000000000003"
   struct State: Sendable {
     var uploads = 0
@@ -18,7 +17,7 @@ final class AttachmentFlowFixture: Sendable {
     var messages: [Data] = []
     var accepted: Data?
     var draft = ComposerDraft()
-    var agentDrafts: [String: ComposerDraft] = [:]
+    var composerDrafts: [String: ComposerDraft] = [:]
   }
   let state = AttachmentFlowState()
   let http: ChatHTTPFixture
@@ -46,7 +45,7 @@ final class AttachmentFlowFixture: Sendable {
           url: "artifact://\(Self.fileID)")
       let metadata = try JSONEncoder().encodeString(file)
       if path == "/api/chat-drafts/composer" {
-        return try Self.agentDraftResponse(request, path: path, state: state)
+        return try Self.composerDraftResponse(request, path: path, state: state)
       }
       if let response = try await Self.settingsResponse(
         request, path: path, connectorSettings: connectorSettings)
@@ -136,7 +135,7 @@ final class AttachmentFlowFixture: Sendable {
     case "/api/chat-threads/events":
       return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
     default:
-      return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
     }
   }
 
@@ -146,12 +145,6 @@ final class AttachmentFlowFixture: Sendable {
     case "/api/chat-thread-drafts":
       return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
     case "/api/web/file-url": return ChatHTTPResponse(body: "{}")
-    case "/api/agents":
-      return ChatHTTPResponse(
-        body:
-          "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
-    case "/api/agents/\(Self.agentID)":
-      return ChatHTTPResponse(body: "{\"agentId\":\"\(Self.agentID)\"}")
     case "/api/remotes/overview":
       return ChatHTTPResponse(
         body:
@@ -166,21 +159,21 @@ final class AttachmentFlowFixture: Sendable {
     case let path where path.hasSuffix("/metadata"):
       return ChatHTTPResponse(
         body:
-          "{\"id\":\"\(Self.threadID)\",\"agentId\":\"\(Self.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+          "{\"id\":\"\(Self.threadID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
       )
     default: return nil
     }
   }
 
-  private static func agentDraftResponse(
+  private static func composerDraftResponse(
     _ request: URLRequest, path: String, state: AttachmentFlowState
   ) throws -> ChatHTTPResponse {
     if request.httpMethod == "PATCH" {
       let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
-      state.value.withLock { $0.agentDrafts[path] = draft }
+      state.value.withLock { $0.composerDrafts[path] = draft }
       return ChatHTTPResponse(status: 204, body: "")
     }
-    let draft = state.value.withLock { $0.agentDrafts[path] ?? ComposerDraft() }
+    let draft = state.value.withLock { $0.composerDrafts[path] ?? ComposerDraft() }
     return try ChatHTTPResponse(
       json: draft)
   }
@@ -236,7 +229,7 @@ final class AttachmentFlowFixture: Sendable {
     let sync = ChatSync(client: http.client)
     return ConversationStore(
       thread: ChatThread(
-        id: Self.threadID, agentID: Self.agentID, title: "Attachments",
+        id: Self.threadID, title: "Attachments",
         createdAt: .now, updatedAt: .now, sortAt: .now),
       sync: sync, commands: ChatCommands(client: http.client, sync: sync), webURL: http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),

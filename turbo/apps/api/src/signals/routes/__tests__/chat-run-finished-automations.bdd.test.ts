@@ -48,7 +48,6 @@ function authHeaders() {
 
 interface ChatAutomationFixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
-  readonly agentId: string;
   readonly providerId: string;
   readonly workflowId: string;
   readonly runnerGroup: string;
@@ -65,7 +64,7 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
   const runnerGroup = await api.configureRunnerGroup();
-  const { defaultAgentId: agentId } = await api.grantProEntitlement(actor);
+  await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
   // Completion and queue fixtures use the retained native Claude route.
   await api.ensurePersonalSubscriptionModel(actor, {
@@ -77,7 +76,6 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
   context.mocks.s3.send.mockResolvedValue({});
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId,
     providerId,
     workflowId,
     runnerGroup,
@@ -109,7 +107,7 @@ function ownAutomationRuns(
  * would not record `lastRunAt` until the prior automation run completes.
  */
 async function createChatRunFinishedAutomation(
-  fixture: Pick<ChatAutomationFixture, "actor" | "agentId">,
+  fixture: Pick<ChatAutomationFixture, "actor">,
   eventConfig: {
     readonly chatThreadId: string;
     readonly runStatuses?: readonly ("completed" | "failed" | "cancelled")[];
@@ -428,10 +426,6 @@ describe("chat-run-finished workflow automations", () => {
     const otherUser = bdd.user({
       orgId: fixture.actor.orgId ?? undefined,
       orgRole: "org:member",
-    });
-    await bdd.createAgent(otherUser, {
-      displayName: "Other member agent",
-      visibility: "private",
     });
     const otherThread = await chat.createThread(otherUser, {
       model: null,

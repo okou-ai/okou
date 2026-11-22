@@ -8,7 +8,7 @@ import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { runnerCancellationRoutes } from "../runner-cancellation";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
@@ -24,7 +24,7 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user(options);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const identity = {
@@ -36,13 +36,8 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
   });
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Cancellation state agent",
-    description: "Exercises cancellation reconciliation.",
-    visibility: "private",
-  });
+
   const run = await runs.createThreadRun(actor, {
-    agentId: agent.agentId,
     prompt: "exercise cancellation reconciliation",
   });
   let identityDeleted = false;
@@ -59,7 +54,6 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
     bdd,
     runs,
     actor,
-    agentId: agent.agentId,
     runId: run.runId,
     headers: { authorization: `Bearer ${execution.sandboxToken}` },
     agentToken: execution.platformEnvironment.OKOU_TOKEN,
@@ -87,7 +81,7 @@ async function directFixture(runCounts: readonly number[]) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const webhooks = createWebhookCallbackApi(context);
-  const workspaces = createAuthOrgAgentsBddApi(context);
+  const workspaces = createAuthOrgBddApi(context);
   const actors = runCounts.map(() => {
     return bdd.user();
   });
@@ -118,7 +112,7 @@ async function directFixture(runCounts: readonly number[]) {
       await flushWaitUntilForTest();
     }
   });
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const identity = {
@@ -133,14 +127,9 @@ async function directFixture(runCounts: readonly number[]) {
   for (const [actorIndex, actor] of actors.entries()) {
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Direct cancellation agent",
-      description: "Exercises cancellation after direct process selection.",
-      visibility: "private",
-    });
+
     for (let index = 0; index < runCounts[actorIndex]!; index++) {
       const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "reconcile a directly dispatched Run",
       });
       const owned: (typeof ownedRuns)[number] = {
@@ -334,11 +323,10 @@ describe("Run cancellation reconciliation", () => {
     });
   });
 
-  it("keeps the cancelled member Run visible to its sandbox after a rejected legacy Agent deletion", async () => {
+  it("keeps the cancelled member Run visible to its sandbox", async () => {
     const f = await fixture();
     await f.runs.requestCancelRun(f.actor, f.runId, [200]);
     await flushWaitUntilForTest();
-    await f.bdd.expectAgentDeleteUnavailable(f.actor, f.agentId);
     expect((await read(f)).body).toStrictEqual({
       protocolVersion: 1,
       runId: f.runId,

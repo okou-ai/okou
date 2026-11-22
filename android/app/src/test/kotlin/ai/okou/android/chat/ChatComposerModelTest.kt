@@ -289,22 +289,23 @@ class ChatComposerModelTest {
     }
 
     @Test
-    fun myOkouAndProjectsShareOneAgentDraftButKeepCreateContext() = check { service, _, create ->
-        val personal = ComposerTarget()
-        val project = ComposerTarget(projectId = CHAT_PROJECT)
-        val model = create(false, identity)
-        service.drafts[ServerDraftTarget()] = plainDraftDocument("From Web")
-        model.open(personal)
-        runCurrent()
-        assertEquals("From Web", model.uiState.value.entry(project).text)
-        model.edit(project, "Same shared draft")
-        assertEquals("Same shared draft", model.uiState.value.entry(personal).text)
-        model.send(project)
-        advanceUntilIdle()
-        assertEquals(CHAT_PROJECT, service.creates.single().projectId)
-        assertEquals("Same shared draft", service.requests.single().prompt)
-        assertEquals("", service.drafts[ServerDraftTarget()]!!.plainText())
-    }
+    fun myOkouAndProjectsShareOneWorkspaceDraftButKeepCreateContext() =
+        check { service, _, create ->
+            val personal = ComposerTarget()
+            val project = ComposerTarget(projectId = CHAT_PROJECT)
+            val model = create(false, identity)
+            service.drafts[ServerDraftTarget()] = plainDraftDocument("From Web")
+            model.open(personal)
+            runCurrent()
+            assertEquals("From Web", model.uiState.value.entry(project).text)
+            model.edit(project, "Same shared draft")
+            assertEquals("Same shared draft", model.uiState.value.entry(personal).text)
+            model.send(project)
+            advanceUntilIdle()
+            assertEquals(CHAT_PROJECT, service.creates.single().projectId)
+            assertEquals("Same shared draft", service.requests.single().prompt)
+            assertEquals("", service.drafts[ServerDraftTarget()]!!.plainText())
+        }
 
     @Test
     fun legacyProjectCandidatesSurviveMigrationUntilExplicitRestore() = check { _, store, create ->

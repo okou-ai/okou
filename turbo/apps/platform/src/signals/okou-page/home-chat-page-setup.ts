@@ -7,7 +7,7 @@ import {
 } from "../prompt-page/marketing-handoff.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
-import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
+import { HomeChatPage } from "../../views/okou-page/home-chat-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { searchParams$, updateSearchParams$ } from "../route.ts";
@@ -20,15 +20,15 @@ import {
 } from "./chat-page.ts";
 import { ensureDraft$, type WorkspaceDraftEntry } from "./workspace-draft.ts";
 import {
-  agentChatComposerSignals$,
-  setAgentComposerContext$,
-} from "./agent-composer-signals.ts";
+  workspaceChatComposerSignals$,
+  setWorkspaceComposerContext$,
+} from "./workspace-composer-signals.ts";
 import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { checkUnifiedSettingsParam$ } from "./settings/settings-dialog.ts";
-import { setupAgentChatKeyboardShortcuts$ } from "./agent-chat-keyboard.ts";
+import { setupChatKeyboardShortcuts$ } from "./chat-keyboard.ts";
 import {
-  isPwaAgentComposeRequested,
-  setPwaAgentComposeRequested$,
+  isPwaComposeRequested,
+  setPwaComposeRequested$,
 } from "./pwa-navigation.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -84,17 +84,14 @@ export const setupHomeChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const workspaceDraft: WorkspaceDraftEntry = await set(ensureDraft$, signal);
     set(resetProjectUi$);
-    set(
-      setPwaAgentComposeRequested$,
-      isPwaAgentComposeRequested(get(searchParams$)),
-    );
-    set(setAgentComposerContext$, { workspaceDraft });
-    set(get(agentChatComposerSignals$).setup$, signal);
+    set(setPwaComposeRequested$, isPwaComposeRequested(get(searchParams$)));
+    set(setWorkspaceComposerContext$, { workspaceDraft });
+    set(get(workspaceChatComposerSignals$).setup$, signal);
     set(setTalkDraft$, workspaceDraft.draft);
     set(startChatGreetingVisit$);
     set(resetChatPageModelSelection$);
     set(setAgentPhoneConnectDialogOpen$, false);
-    set(updatePage$, createElement(AgentChatPage), "sidebar");
+    set(updatePage$, createElement(HomeChatPage), "sidebar");
     // Keep the phone link current while Get started can open its connect
     // dialog here, so a link made from the phone closes it the way it does on
     // the pages that also offer the link. Link status never delays the chat,
@@ -113,7 +110,7 @@ export const setupHomeChatPage$ = command(
         return $.chat.documentTitle;
       }),
     );
-    set(setupAgentChatKeyboardShortcuts$, signal);
+    set(setupChatKeyboardShortcuts$, signal);
     await set(hydrateProjects$, signal);
     await set(checkUnifiedSettingsParam$, signal);
 
@@ -133,13 +130,13 @@ export const setupHomeChatPage$ = command(
       const targetDraft = workspaceDraft?.draft ?? get(talkDraft$);
       set(targetDraft.clear$);
       set(targetDraft.setInput$, prompt);
-      set(get(agentChatComposerSignals$).editor.focus$);
+      set(get(workspaceChatComposerSignals$).editor.focus$);
       const next = new URLSearchParams(params);
       next.delete("prompt");
       set(updateSearchParams$, next);
     }
     if (templatePicker) {
-      const composerSignals = get(agentChatComposerSignals$);
+      const composerSignals = get(workspaceChatComposerSignals$);
       set(composerSignals.template.setTemplatePickerSearch$, "");
       set(composerSignals.template.clearPresentationTemplatePreviews$);
       set(composerSignals.template.setTemplatePickerReferenceValue$, null);

@@ -33,7 +33,6 @@ const context = testContext();
 
 async function connectAutomaticRuntime(args: {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly slug: string;
   readonly methodId: string;
   readonly issuer: string;
@@ -155,19 +154,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const fw = createFirewallApi(context);
       const bdd = createBddApi(context);
       const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
       const runnerGroup = await api.configureRunnerGroup();
       await api.grantProEntitlement(actor);
       await api.ensurePersonalSubscriptionModel(actor);
-      const { agentId } = await bdd.createAgent(actor, {
-        displayName: "Automatic runtime agent",
-        visibility: "private",
-      });
+
       const connectionId = await connectAutomaticRuntime({
         actor,
-        agentId,
         ...catalog,
         issuer: provider.issuer,
       });
@@ -189,7 +184,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         );
       });
       const run = await api.createThreadRun(actor, {
-        agentId,
         prompt: `use builtin Automatic ${resolution}`,
       });
       const runOwner: { sandboxToken?: string } = {};
@@ -312,7 +306,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         await expect(
           connectAutomaticRuntime({
             actor,
-            agentId,
             ...catalog,
             issuer: provider.issuer,
             connectionId,

@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import { projectRowKey } from "../chat-page/chat-thread-list-rows.ts";
 import { scrollToChatListRow$ } from "../chat-page/sidebar-chat-thread-scroll.ts";

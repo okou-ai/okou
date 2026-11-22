@@ -285,7 +285,6 @@ final class ChatComposerReturnKeyTests: XCTestCase {
   ) -> String {
     let paths = fixture.paths.value.withLock { $0 }
     return "Chat reference suggestions after native readiness wait: "
-      + "agent=\(String(describing: workspace.selectedAgentID)); "
       + "threads=\(workspace.list.threads.count); "
       + "threadsLoaded=\(workspace.list.hasLoadedThreads); "
       + "workspaceError=\(String(describing: workspace.error)); "

@@ -114,7 +114,7 @@ import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
 import * as builtInSkillSchema from "./schema/built-in-skill";
 import * as usagePricingSchema from "./runtime/usage-pricing";
-import * as agentDraftSchema from "./schema/agent-draft";
+import * as composerDraftSchema from "./schema/composer-draft";
 import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
 import * as runUploadedFileSchema from "./schema/run-uploaded-file";
 import * as builtInModelKeySchema from "./schema/built-in-model-key";
@@ -295,7 +295,7 @@ export const schema = {
   ...emailSuppressionSchema,
   ...builtInSkillSchema,
   ...usagePricingSchema,
-  ...agentDraftSchema,
+  ...composerDraftSchema,
   ...chatThreadDraftSchema,
   ...runUploadedFileSchema,
   ...builtInModelKeySchema,

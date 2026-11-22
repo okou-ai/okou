@@ -40,7 +40,7 @@ _runner_api_vercel_logs_url_prefix() {
 }
 
 # The general helper retries only a plain GET: the API may already have applied
-# a write whose response never arrived. Replayable writes opt in at their owner.
+# a write whose response never arrived. Only reads can be repeated.
 _runner_api_request_is_repeatable() {
     local arg
     for arg in "$@"; do
@@ -61,13 +61,6 @@ runner_api_curl() {
     if _runner_api_request_is_repeatable "${@:2}"; then
         max_attempts=2
     fi
-    _runner_api_curl "$max_attempts" "$@"
-}
-
-# Only callers with an API-enforced replay identity may opt a write into retries.
-_runner_api_curl() {
-    local max_attempts="$1"
-    shift
     local path="$1"
     shift
 
@@ -210,53 +203,20 @@ runner_chat_event_rows() {
     return 1
 }
 
-create_runner_agent() {
-    local display_name="$1"
-    local agent_id payload response
-
-    agent_id="$(_runner_uuid)" || return
-    payload="$(jq -nc \
-        --arg clientAgentId "$agent_id" \
-        --arg displayName "$display_name" \
-        '{clientAgentId: $clientAgentId, displayName: $displayName, visibility: "private"}')" || return
-    response="$(_runner_api_curl 2 "/api/agents" -X POST -d "$payload")" || return
-    jq -er --arg agentId "$agent_id" \
-        '.agentId | select(. == $agentId)' <<< "$response"
-}
-
-set_runner_agent_instructions() {
-    local agent_id="$1"
-    local content="$2"
-    local payload
-
-    payload="$(jq -nc --arg content "$content" '{content: $content}')"
-    runner_api_curl "/api/agents/$agent_id/instructions" \
-        -X PUT \
-        -d "$payload" \
-        >/dev/null
-}
-
-delete_runner_agent() {
-    local agent_id="$1"
-    runner_api_curl "/api/agents/$agent_id" -X DELETE >/dev/null
-}
-
 _runner_uuid() {
     tr -d '\n' < /proc/sys/kernel/random/uuid
 }
 
 runner_chat_send() {
-    local agent_id="$1"
-    local prompt="$2"
-    local thread_id="$3"
-    local selected_model="$4"
-    local client_event_id="${5:-}"
-    local capture_network_bodies="${6:-false}"
+    local prompt="$1"
+    local thread_id="$2"
+    local selected_model="$3"
+    local client_event_id="${4:-}"
+    local capture_network_bodies="${5:-false}"
     local parts
 
     parts="$(jq -nc --arg prompt "$prompt" '[{type: "text", text: $prompt}]')"
     runner_chat_send_parts \
-        "$agent_id" \
         "$prompt" \
         "$parts" \
         "$thread_id" \
@@ -270,12 +230,12 @@ runner_chat_send() {
 # that revokes the sent input and carries its `runId`.
 # Prints the send response with that `runId` added.
 runner_chat_send_parts() {
-    local prompt="$2"
-    local parts="$3"
-    local thread_id="$4"
-    local selected_model="$5"
-    local client_event_id="${6:-}"
-    local capture_network_bodies="${7:-false}"
+    local prompt="$1"
+    local parts="$2"
+    local thread_id="$3"
+    local selected_model="$4"
+    local client_event_id="${5:-}"
+    local capture_network_bodies="${6:-false}"
     local send_response resolved_thread_id run_id
 
     if [[ -z "$client_event_id" ]]; then
@@ -575,16 +535,14 @@ _wait_for_runner_chat_steer_consumed() {
 }
 
 runner_chat_steer() {
-    local agent_id="$1"
-    local initial_prompt="$2"
-    local steer_prompt="$3"
-    local selected_model="$4"
-    local expected_output="$5"
-    local run_timeout="${6:-180}"
+    local initial_prompt="$1"
+    local steer_prompt="$2"
+    local selected_model="$3"
+    local expected_output="$4"
+    local run_timeout="${5:-180}"
     local send_response run_id thread_id steer_event_id steer_response run_response
 
     send_response="$(runner_chat_send \
-        "$agent_id" \
         "$initial_prompt" \
         "" \
         "$selected_model")" || return 1
@@ -643,16 +601,14 @@ runner_chat_steer() {
 }
 
 runner_chat_send_after_completion() {
-    local agent_id="$1"
-    local thread_id="$2"
-    local completed_run_id="$3"
-    local prompt="$4"
-    local expected_output="$5"
-    local run_timeout="${6:-180}"
+    local thread_id="$1"
+    local completed_run_id="$2"
+    local prompt="$3"
+    local expected_output="$4"
+    local run_timeout="${5:-180}"
     local send_response run_id run_response
 
     send_response="$(runner_chat_send \
-        "$agent_id" \
         "$prompt" \
         "$thread_id" \
         "")" || return 1
@@ -696,14 +652,12 @@ runner_chat_send_after_completion() {
 }
 
 _runner_chat_execute() {
-    local agent_id="$1"
-    local prompt="$2"
-    local thread_id="$3"
-    local selected_model="$4"
+    local prompt="$1"
+    local thread_id="$2"
+    local selected_model="$3"
     local send_response run_id resolved_thread_id run_response chat_output
 
     send_response="$(runner_chat_send \
-        "$agent_id" \
         "$prompt" \
         "$thread_id" \
         "$selected_model")" || return 1
@@ -748,17 +702,15 @@ runner_e2e_require_mock_codex_profile() {
 }
 
 runner_chat_start_mock_codex() {
-    local agent_id="$1"
-    local prompt="$2"
+    local prompt="$1"
     runner_e2e_require_mock_codex_profile || return 1
-    _runner_chat_execute "$agent_id" "$prompt" "" "$E2E_MOCK_CODEX_MODEL"
+    _runner_chat_execute "$prompt" "" "$E2E_MOCK_CODEX_MODEL"
 }
 
 runner_chat_continue() {
-    local agent_id="$1"
-    local thread_id="$2"
-    local prompt="$3"
-    _runner_chat_execute "$agent_id" "$prompt" "$thread_id" ""
+    local thread_id="$1"
+    local prompt="$2"
+    _runner_chat_execute "$prompt" "$thread_id" ""
 }
 
 runner_chat_field() {

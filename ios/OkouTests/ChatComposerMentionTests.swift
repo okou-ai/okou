@@ -22,7 +22,7 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertEqual(
       filtered.map(\.referenceID),
       [MentionNavigationFixture.thread(31)])
-    XCTAssertEqual(filtered.map(\.title), ["Cross Agent archived plan"])
+    XCTAssertEqual(filtered.map(\.title), ["Archived plan"])
 
     // The current chat is a valid reference, as on the PWA.
     XCTAssertEqual(
@@ -301,7 +301,6 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     try await eventually { mentionTable(in: host.view) == nil }
     XCTAssertFalse(workspace.selectedConversation?.composer.hasContent ?? true)
-    XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(1))
     XCTAssertNil(mentionTable(in: host.view))
   }
 }

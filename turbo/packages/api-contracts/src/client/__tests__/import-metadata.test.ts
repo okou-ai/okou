@@ -329,10 +329,10 @@ describe("client contract import metadata", () => {
         return entry.module === module;
       })?.bindings;
     };
-    expect(bindings("agents")).toContainEqual({
-      name: "agentVisibilitySchema",
-      source: "validators/agents",
-      imported: "agentVisibilitySchema",
+    expect(bindings("workflows")).toContainEqual({
+      name: "GMAIL_LABEL_NOT_FOUND_ERROR_CODE",
+      source: "validators/workflows",
+      imported: "GMAIL_LABEL_NOT_FOUND_ERROR_CODE",
     });
     expect(bindings("chat-threads")).toContainEqual({
       name: "chatThreadDraftSchema",

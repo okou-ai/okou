@@ -15,11 +15,6 @@ teardown() {
 }
 
 @test "runner firewall rewrites the Discord Webhook auth.base placeholder" {
-    run create_runner_agent "runner-firewall-discord-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
     local values
     values=$(jq -nc \
         --arg url "https://discord.com/api/webhooks/1234567890/e2e-${TEST_ID}" \
@@ -44,7 +39,7 @@ curl --silent --show-error --max-time 15 \
 printf 'DISCORD_REQUEST_SENT\n'
 EOF
 )
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

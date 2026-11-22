@@ -320,7 +320,7 @@ describe("email-native signup", () => {
         return Promise.resolve(organization);
       },
     );
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const group = await runs.configureRunnerGroup();
@@ -690,7 +690,7 @@ async function entitledActor(email?: string) {
     orgId,
     ...(email ? { email } : {}),
   });
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   const group = await runs.configureRunnerGroup();
@@ -1982,9 +1982,6 @@ describe("Email integration", () => {
 
   it("does not infer an email recipient for a Web-originated run", async () => {
     const { actor } = await entitledActor();
-    await bdd.createAgent(actor, {
-      displayName: "Web-only agent",
-    });
     const sent = await files.sendAndLaunch(actor, {
       prompt: "A web request",
     });
@@ -2489,7 +2486,7 @@ describe("Email integration", () => {
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
     });
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const group = await runs.configureRunnerGroup();
@@ -2802,7 +2799,6 @@ describe("Email workspace binding", () => {
   it("does not use an account's binding for a Web run or a browser session", async () => {
     const { actor } = await entitledActor();
     await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
-    await bdd.createAgent(actor, { displayName: "Web agent" });
     const sent = await files.sendAndLaunch(actor, {
       prompt: "Inspect my email workspace",
     });

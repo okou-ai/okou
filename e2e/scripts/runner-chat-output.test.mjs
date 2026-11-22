@@ -52,7 +52,7 @@ if (method === "POST" && url === "https://preview.example/api/chat/events") {
       `source "$1"
 source "$2"
 runner_e2e_setup_live_test
-if (runner_chat_send test-agent prompt "" auto); then
+if (runner_chat_send prompt "" auto); then
   exit 1
 fi
 runner_e2e_teardown_test`,

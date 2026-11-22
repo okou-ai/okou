@@ -1,6 +1,6 @@
 import { match } from "path-to-regexp";
 import { ROUTES } from "../route-paths.ts";
-import { isPwaAgentComposeRequested } from "./pwa-navigation.ts";
+import { isPwaComposeRequested } from "./pwa-navigation.ts";
 
 export type PwaPageTransitionDirection = "push" | "pop" | "none";
 
@@ -26,7 +26,7 @@ function isTabRootPage({ pathname, searchParams }: PwaPageLocation): boolean {
       return Boolean(matchChatPage(pathname));
     })
   ) {
-    return !isPwaAgentComposeRequested(searchParams);
+    return !isPwaComposeRequested(searchParams);
   }
   return matchTabRoots.some((matchTabRoot) => {
     return Boolean(matchTabRoot(pathname));

@@ -23,8 +23,6 @@ final class ThreadActionGate: Sendable {
 final class ThreadActionsFixture: Sendable {
   static let thread = "78000000-0000-4000-8000-000000000001"
   static let createdThread = "78000000-0000-4000-8000-000000000004"
-  static let agent = "78000000-0000-4000-8000-000000000002"
-  static let otherAgent = "78000000-0000-4000-8000-000000000003"
   static let project = "78000000-0000-4000-8000-000000000071"
   static let otherProject = "78000000-0000-4000-8000-000000000072"
   static let date = "2026-10-21T00:00:00Z"
@@ -198,7 +196,7 @@ final class ThreadActionsFixture: Sendable {
     case "/api/chat-threads/\(Self.thread)/metadata":
       return ChatHTTPResponse(
         body:
-          "{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+          "{\"id\":\"\(Self.thread)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
       )
     case "/api/chat-threads/\(Self.thread)/event-snapshot":
       return ChatHTTPResponse(
@@ -233,18 +231,12 @@ final class ThreadActionsFixture: Sendable {
       return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
     case "/api/chat-threads/\(Self.thread)/connector-selections":
       return ChatHTTPResponse(body: "{\"selections\":[]}")
-    case "/api/agents":
-      return ChatHTTPResponse(
-        body:
-          "[{\"agentId\":\"\(Self.agent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"},{\"agentId\":\"\(Self.otherAgent)\",\"isDefaultAgent\":false,\"displayName\":\"Research\"}]"
-      )
-
     case "/api/feature-switches":
       return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
     case "/api/chat-threads/snapshot":
       return ChatHTTPResponse(
         body:
-          "{\"chatThreads\":[{\"id\":\"\(Self.thread)\",\"agentId\":\"\(Self.agent)\",\"title\":\"Planning a useful week\",\"muted\":\(muted),\"createdAt\":\"\(Self.date)\",\"updatedAt\":\"\(Self.date)\",\"sortAt\":\"\(Self.date)\"}],\"latestEventId\":null,\"latestSeqId\":null}"
+          "{\"chatThreads\":[{\"id\":\"\(Self.thread)\",\"title\":\"Planning a useful week\",\"muted\":\(muted),\"createdAt\":\"\(Self.date)\",\"updatedAt\":\"\(Self.date)\",\"sortAt\":\"\(Self.date)\"}],\"latestEventId\":null,\"latestSeqId\":null}"
       )
     case "/api/chat-threads/events":
       if let status = state.value.withLock({ $0.failNext.removeValue(forKey: "events") }) {
@@ -264,11 +256,8 @@ final class ThreadActionsFixture: Sendable {
       let unread = state.value.withLock { $0.unread }
       let indicator = unread ? "{\"\(Self.thread)\":\"unread\"}" : "{}"
       let unreadAt = unread ? "{\"\(Self.thread)\":\"\(Self.date)\"}" : "{}"
-      let agents =
-        state.value.withLock { $0.unread && !$0.muted && !$0.archived }
-        ? "{\"\(Self.agent)\":\"unread\"}" : "{}"
       return ChatHTTPResponse(
-        body: "{\"agents\":\(agents),\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
+        body: "{\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
     default: throw URLError(.unsupportedURL)
     }
   }
@@ -283,7 +272,7 @@ final class ThreadActionsFixture: Sendable {
   }
 
   private static func event(kind: String, id: String, seq: Int, extra: String) -> String {
-    "{\"id\":\"\(id.lowercased())\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"agentId\":\"\(agent)\",\"createdAt\":\"\(date)\"\(extra)}"
+    "{\"id\":\"\(id.lowercased())\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"createdAt\":\"\(date)\"\(extra)}"
   }
 
   private static func messageID(_ seq: Int) -> String {

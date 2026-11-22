@@ -233,7 +233,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
           status: 503, body: #"{"error":{"message":"Workflows temporarily unavailable"}}"#)
         : ChatHTTPResponse(
           body:
-            #"[{"id":"fresh","name":"fresh","displayName":null,"description":"Current Agent only"}]"#
+            #"[{"id":"fresh","name":"fresh","displayName":null,"description":"Current workspace only"}]"#
         )
     })
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
@@ -471,7 +471,7 @@ extension XCTestCase {
       error: conversation.error, attachmentURL: conversation.webURL,
       attachments: conversation.attachmentDraft, draftState: conversation.composer,
       submit: { await conversation.send() }, refresh: nil,
-      workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID
+      workflowSource: conversation.workflowSource
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .background(Color(uiColor: .systemBackground))
@@ -522,7 +522,7 @@ private struct WorkflowNewChatHost: View {
       attachmentURL: workspace.webURL, attachments: composer.attachments, draftState: composer,
       submit: { await workspace.sendNewChat() }, refresh: nil,
       mentionSource: workspace.mentionTestSource,
-      workflowSource: workspace.composerWorkflows, agentID: workspace.selectedAgentID
+      workflowSource: workspace.composerWorkflows
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .composerSuggestionOverlay()

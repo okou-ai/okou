@@ -419,19 +419,17 @@ private final class ActivityScenario: Sendable {
     fixture = ChatHTTPFixture { request in
       let path = "/api/chat-threads/\(Self.thread)"
       switch request.url?.path {
-      case "/api/agents": return ChatHTTPResponse(body: "[]")
-
       case "/api/feature-switches":
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(Self.thread)","agentId":"\(Self.thread)","title":"Activity summary","sortAt":"2026-10-20T00:00:00Z","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","pinnedAt":null,"renamedAt":null,"selectedModel":null,"serviceTier":null,"computerUseHostId":null,"cloudBrowserEnabled":false}],"latestEventId":null,"latestSeqId":null}
+            {"chatThreads":[{"id":"\(Self.thread)","title":"Activity summary","sortAt":"2026-10-20T00:00:00Z","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","pinnedAt":null,"renamedAt":null,"selectedModel":null,"serviceTier":null,"computerUseHostId":null,"cloudBrowserEnabled":false}],"latestEventId":null,"latestSeqId":null}
             """)
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+        return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
       case path + "/mark-read":
         return ChatHTTPResponse(body: #"{"lastReadAt":"2026-10-20T00:00:00Z"}"#)
       case path + "/activity-summary":
@@ -503,7 +501,7 @@ private final class ActivityScenario: Sendable {
     let sync = ChatSync(client: fixture.client)
     let conversation = ConversationStore(
       thread: ChatThread(
-        id: Self.thread, agentID: Self.thread, title: "Activity summary", createdAt: .now,
+        id: Self.thread, title: "Activity summary", createdAt: .now,
         updatedAt: .now, sortAt: .now),
       sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
       webURL: fixture.baseURL,

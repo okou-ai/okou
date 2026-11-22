@@ -42,11 +42,11 @@ async function lint(eslint, source, filePath) {
 await test("App fixes use generated router, validator, and type destinations", async () => {
   const { platform } = createLinters();
   const source = `
-      import { agentsMainContract, agentVisibilitySchema, type AgentVisibility } from "@okouai/api-contracts/contracts/agents";
+      import { chatThreadsContract, chatThreadDraftSchema, type ChatThreadDraft } from "@okouai/api-contracts/contracts/chat-threads";
       import { apiClient$ } from "./api-client.ts";
       import { computed } from "ccstate";
-      export const client$ = computed((get) => { return get(apiClient$)(agentsMainContract); });
-      export function visibility(value: AgentVisibility) { return agentVisibilitySchema.parse(value); }
+      export const client$ = computed((get) => { return get(apiClient$)(chatThreadsContract); });
+      export function visibility(value: ChatThreadDraft) { return chatThreadDraftSchema.parse(value); }
     `;
   const { result, violations } = await lint(
     platform,
@@ -55,10 +55,10 @@ await test("App fixes use generated router, validator, and type destinations", a
   );
   assert.deepEqual(violations, []);
   assert.ok(result.output);
-  assert.match(result.output, /api-contracts\/client\/agents/u);
-  assert.match(result.output, /api-contracts\/validators\/agents/u);
+  assert.match(result.output, /api-contracts\/client\/chat-threads/u);
+  assert.match(result.output, /api-contracts\/validators\/chat-threads/u);
   assert.match(result.output, /import type/u);
-  assert.match(result.output, /agentVisibilitySchema\.parse\(value\)/u);
+  assert.match(result.output, /chatThreadDraftSchema\.parse\(value\)/u);
   const second = await lint(
     platform,
     result.output,
@@ -72,22 +72,22 @@ await test("schema type queries retain the original source as an erased import",
   const { platform } = createLinters();
   const { result, violations } = await lint(
     platform,
-    `import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-       export type BodySchema = typeof agentsMainContract.create.body;`,
+    `import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+       export type BodySchema = typeof chatThreadsContract.create.body;`,
     "src/signals/lint-schema-type-fixture.ts",
   );
   assert.deepEqual(violations, []);
   assert.match(result.output ?? "", /import type/u);
-  assert.match(result.output ?? "", /contracts\/agents/u);
-  assert.doesNotMatch(result.output ?? "", /client\/agents/u);
+  assert.match(result.output ?? "", /contracts\/chat-threads/u);
+  assert.doesNotMatch(result.output ?? "", /client\/chat-threads/u);
 });
 
 await test("runtime schema parsing is reported without an unsafe fix", async () => {
   const { platform } = createLinters();
   const { result, violations } = await lint(
     platform,
-    `import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-       export function parse(value) { return agentsMainContract.create.body.safeParse(value); }`,
+    `import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+       export function parse(value) { return chatThreadsContract.create.body.safeParse(value); }`,
     "src/signals/lint-schema-runtime-fixture.ts",
   );
   assert.equal(violations.length, 1);
@@ -119,27 +119,27 @@ await test("relative validator imports and descriptor files share the boundary",
   const { contracts } = createLinters();
   const independent = await lint(
     contracts,
-    `import { agentVisibilitySchema } from "../contracts/agents";
-       export const visibility = agentVisibilitySchema;`,
+    `import { chatThreadDraftSchema } from "../contracts/chat-threads";
+       export const visibility = chatThreadDraftSchema;`,
     "src/validators/lint-contract-fixture.ts",
   );
   assert.deepEqual(independent.violations, []);
   assert.ok(independent.result.output);
   assert.doesNotMatch(
     independent.result.output,
-    /from ["']\.\.\/contracts\/agents["']/u,
+    /from ["']\.\.\/contracts\/chat-threads["']/u,
   );
   const descriptor = await lint(
     contracts,
-    `import { agentsMainContract } from "../contracts/agents";
-       export const leaked = agentsMainContract;`,
-    "src/client/agents.ts",
+    `import { chatThreadsContract } from "../contracts/chat-threads";
+       export const leaked = chatThreadsContract;`,
+    "src/client/chat-threads.ts",
   );
   assert.equal(descriptor.violations.length, 1);
   const server = await lint(
     contracts,
-    `import { agentsMainContract } from "./agents";
-       export const original = agentsMainContract;`,
+    `import { chatThreadsContract } from "./chat-threads";
+       export const original = chatThreadsContract;`,
     "src/contracts/lint-contract-fixture.ts",
   );
   assert.deepEqual(server.violations, []);
@@ -147,8 +147,8 @@ await test("relative validator imports and descriptor files share the boundary",
 
 await test("full-schema test and mock imports remain outside the production policy", async () => {
   const { platform, core, contracts } = createLinters();
-  const source = `import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-      export const fixture = agentsMainContract;`;
+  const source = `import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+      export const fixture = chatThreadsContract;`;
   for (const filePath of [
     "src/signals/__tests__/lint-contract-fixture.test.ts",
     "src/mocks/lint-contract-fixture.ts",

@@ -26,7 +26,7 @@ import { feishuOauthRoutes } from "../feishu-oauth";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
@@ -36,7 +36,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
-const authOrgApi = createAuthOrgAgentsBddApi(context);
+const authOrgApi = createAuthOrgBddApi(context);
 const runsApi = createRunsApi(context);
 describe("Lark integration", () => {
   const headers = { authorization: "Bearer clerk-session" };
@@ -126,11 +126,9 @@ describe("Lark integration", () => {
       [FeatureSwitchKey.LarkIntegration]: true,
       [FeatureSwitchKey.FeishuIntegration]: true,
     });
-    authOrgApi.acceptAgentStorageWrites();
-    const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-      displayName: "Bot agent",
-    });
-    const agent = await authOrgApi.readAgent(actor, bootstrap.body.agentId);
+    authOrgApi.acceptStorageWrites();
+    await authOrgApi.bootstrapLimitedFreeOnboarding(actor);
+
     await runsApi.grantProEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
@@ -178,7 +176,6 @@ describe("Lark integration", () => {
       larkClient,
       install,
       token,
-      defaultAgentId: agent.agentId,
     };
   }
 

@@ -1,5 +1,4 @@
 import type { BankingWorkspaceStatus } from "@okouai/api-contracts/contracts/banking";
-import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 import {
   bankingAccounts,
   bankingAgentEnablements,
@@ -47,34 +46,6 @@ export function bankingConnectionCondition(owner: BankingOwner) {
     ),
   );
 }
-
-export const findLegacyBankingAgent$ = command(
-  async (
-    { get },
-    owner: BankingOwner,
-    agentId: string,
-  ): Promise<{ readonly id: string; readonly name: string } | null> => {
-    const db = get(db$);
-    const [agent] = await db
-      .select({
-        id: legacyAgentApiProfiles.id,
-        name: legacyAgentApiProfiles.name,
-        displayName: legacyAgentApiProfiles.displayName,
-      })
-      .from(legacyAgentApiProfiles)
-      .where(
-        and(
-          eq(legacyAgentApiProfiles.id, agentId),
-          eq(legacyAgentApiProfiles.orgId, owner.orgId),
-        ),
-      )
-      .limit(1);
-
-    return agent
-      ? { id: agent.id, name: agent.displayName ?? agent.name }
-      : null;
-  },
-);
 
 export const findBankingConnection$ = command(
   async (

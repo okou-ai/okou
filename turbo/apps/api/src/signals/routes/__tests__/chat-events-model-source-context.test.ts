@@ -26,7 +26,6 @@ describe("chat send authorization, validation and cancellation", () => {
     const clientEventId = randomUUID().toUpperCase();
     const canonicalId = clientEventId.toLowerCase();
     const input = {
-      agentId: owner.agentId,
       clientEventId,
       prompt: "Use the same input identity across preparation and retry",
     };

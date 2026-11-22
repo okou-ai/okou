@@ -39,18 +39,15 @@ function sshClient() {
 }
 
 async function ownerWithThread(actor = bdd.user()) {
-  bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Remote access test agent",
-    visibility: "private",
-  });
+  bdd.acceptStorageWrites();
+
   const thread = await chat.createThread(actor, {});
   if (!actor.orgId) {
     throw new Error("Expected an organization");
   }
   const actorWithOrg = { ...actor, orgId: actor.orgId };
   vnc.authenticate(actorWithOrg);
-  return { actor: actorWithOrg, agentId: agent.agentId, threadId: thread.id };
+  return { actor: actorWithOrg, threadId: thread.id };
 }
 
 async function createSshHost(displayName: string, id = randomUUID()) {

@@ -111,12 +111,9 @@ describe("POST /api/integrations/slack/message", () => {
       orgRole: "org:admin",
       email: `${base.userId}@example.test`,
     };
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await api.grantProEntitlement(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "My <Assistant> & Reports",
-      visibility: "private",
-    });
+
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-sonnet-5-5",
     });
@@ -128,7 +125,6 @@ describe("POST /api/integrations/slack/message", () => {
     });
     return await owner.run(async () => {
       const run = await api.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "send slack message",
       });
       // Product run creation authenticates through the Clerk session mocks;

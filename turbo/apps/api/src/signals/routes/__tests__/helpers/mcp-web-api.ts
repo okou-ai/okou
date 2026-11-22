@@ -1,3 +1,4 @@
+import { billingStatusRoutes } from "../../billing-status";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { http, HttpResponse } from "msw";
@@ -18,7 +19,6 @@ import { mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { projectRoutes } from "../../projects";
-import { agentsRoutes } from "../../agents";
 import { chatEventsRoutes } from "../../chat-events";
 import { chatThreadRoutes } from "../../chat-threads";
 import { mcpServerRoutes } from "../../mcp-server";
@@ -157,9 +157,9 @@ export function createMcpWebApi(context: TestContext) {
   const raw = setupRawAppRequest({
     context,
     routes: [
-      ...agentsRoutes,
       ...projectRoutes,
       ...runModelsRoutes,
+      ...billingStatusRoutes,
       ...chatThreadRoutes,
       ...chatEventsRoutes,
       ...runsCancelRoutes,

@@ -62,29 +62,16 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
     throw new Error("Wallet carrier needs an organization");
   }
   mocks.clerk.session(actor.userId, actor.orgId);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor, { tier: unattended ? "team" : "pro" });
   await api.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Wallet agent",
-    visibility: "private",
-  });
-  const workflowAgentId = unattended
-    ? await bdd.readDefaultAgentId(actor)
-    : undefined;
-  if (unattended && !workflowAgentId) {
-    throw new Error("Expected the personal workflow namespace");
-  }
-  const run = workflowAgentId
-    ? await createWorkflowsBddApi(context).startEventAutomationRun(
-        actor,
-        workflowAgentId,
-      )
+
+  const run = unattended
+    ? await createWorkflowsBddApi(context).startEventAutomationRun(actor)
     : await api.createThreadRun(actor, {
-        agentId: agent.agentId,
         prompt: "Prepare a test Link purchase approval",
       });
   await api.heartbeatRunner(runnerGroup);
@@ -123,7 +110,6 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
       await flushWaitUntilForTest();
     },
     actor: { ...actor, orgId: actor.orgId },
-    agentId: agent.agentId,
     prompt: execution.appendSystemPrompt ?? "",
     environmentNames: Object.keys(execution.platformEnvironment),
     headers: { authorization: `Bearer ${token}` },
@@ -3221,7 +3207,6 @@ test("cancelling a watched purchase from another chat fails before contacting Li
   const fixture = await trackedPurchase();
   await fixture.complete();
   const other = await fixture.api.createThreadRun(fixture.actor, {
-    agentId: fixture.agentId,
     prompt: "Inspect an existing purchase from another chat",
   });
   await fixture.api.heartbeatRunner(fixture.runnerGroup);

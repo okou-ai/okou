@@ -78,7 +78,7 @@ function completion(content = "**Launch checklist**", finishReason = "stop") {
 
 async function prepareShare(content = selectedContent) {
   const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   await runs.configureRunnerGroup();
@@ -88,7 +88,6 @@ async function prepareShare(content = selectedContent) {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  await bdd.createAgent(actor, { displayName: "Sharing test" });
   const { threadId, runId } = await chat.sendAndLaunch(actor, {
     prompt: content,
   });
@@ -262,7 +261,7 @@ describe("optional shared-thread titles", () => {
 
   it("removes forwarded chat provenance from the public snapshot", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -270,9 +269,7 @@ describe("optional shared-thread titles", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Forwarded share test",
-    });
+
     const source = await chat.sendAndLaunch(actor, {
       prompt: "Source message",
     });
@@ -335,7 +332,6 @@ describe("optional shared-thread titles", () => {
       sourceTitle,
       source.runId,
       source.threadId,
-      agent.agentId,
       mailId,
       sentId,
     ]) {

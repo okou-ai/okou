@@ -132,11 +132,6 @@ const bankingWorkspaceStatusSchema = object({
   }).nullable(),
 });
 
-export const bankingAccessRequestStatusResponseSchema =
-  bankingWorkspaceStatusSchema.extend({
-    agent: object({ id: uuid(), name: string() }),
-  });
-
 const bankingConnectSessionShape = {
   mode: zEnum(["connect", "fix"]),
   institutionLoginId: string().trim().min(1).max(128).optional(),
@@ -162,11 +157,6 @@ const validateBankingConnectSession = (
   }
 };
 
-export const bankingConnectSessionRequestSchema = object({
-  ...bankingConnectSessionShape,
-  agentId: uuid(),
-}).superRefine(validateBankingConnectSession);
-
 export const bankingConnectSessionResponseSchema = object({
   sessionId: uuid(),
   url: url(),
@@ -176,14 +166,6 @@ const bankingGrantRequestSchema = object({
   accountIds: array(uuid()).min(1),
   duration: bankingGrantDurationSchema,
   purpose: string().trim().min(1).max(500),
-});
-
-export const bankingAgentGrantRequestSchema = bankingGrantRequestSchema.extend({
-  agentId: uuid(),
-});
-
-export const bankingAgentGrantRevokeRequestSchema = object({
-  agentId: uuid(),
 });
 
 const bankingAccountsResponses = {
@@ -241,7 +223,7 @@ export const bankingContract = c.router({
 });
 
 const bankingUserMutationResponses = {
-  200: bankingAccessRequestStatusResponseSchema,
+  200: bankingWorkspaceStatusSchema,
   400: apiErrorSchema,
   401: apiErrorSchema,
   403: apiErrorSchema,
@@ -250,55 +232,6 @@ const bankingUserMutationResponses = {
   502: apiErrorSchema,
   503: apiErrorSchema,
 } as const;
-
-export const bankingUserContract = c.router({
-  accessRequestStatus: {
-    method: "GET",
-    path: "/api/banking/access-requests/:agentId",
-    headers: authHeadersSchema,
-    pathParams: object({ agentId: uuid() }),
-    responses: {
-      200: bankingAccessRequestStatusResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Read the live state for a banking access request card",
-  },
-  createConnectSession: {
-    method: "POST",
-    path: "/api/banking/connect-sessions",
-    headers: authHeadersSchema,
-    body: bankingConnectSessionRequestSchema,
-    responses: {
-      200: bankingConnectSessionResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      409: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "Start a Mastercard Data Connect or repair session",
-  },
-  saveAgentGrant: {
-    method: "POST",
-    path: "/api/banking/agent-grants",
-    headers: authHeadersSchema,
-    body: bankingAgentGrantRequestSchema,
-    responses: bankingUserMutationResponses,
-    summary: "Create or replace a banking grant for an agent",
-  },
-  revokeAgentGrant: {
-    method: "POST",
-    path: "/api/banking/agent-grants/revoke",
-    headers: authHeadersSchema,
-    body: bankingAgentGrantRevokeRequestSchema,
-    responses: bankingUserMutationResponses,
-    summary: "Revoke an agent banking grant",
-  },
-});
 
 export type BankingWorkspaceStatus = zInfer<
   typeof bankingWorkspaceStatusSchema
@@ -310,7 +243,9 @@ export const bankingWorkspaceContract = c.router({
     path: "/api/banking/access-requests/current",
     headers: authHeadersSchema,
     responses: {
-      ...bankingUserContract.accessRequestStatus.responses,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
       200: bankingWorkspaceStatusSchema,
     },
   },
@@ -321,27 +256,24 @@ export const bankingWorkspaceContract = c.router({
     body: object(bankingConnectSessionShape).superRefine(
       validateBankingConnectSession,
     ),
-    responses: bankingUserContract.createConnectSession.responses,
+    responses: {
+      ...bankingUserMutationResponses,
+      200: bankingConnectSessionResponseSchema,
+    },
   },
   saveGrant: {
     method: "POST",
     path: "/api/banking/workspace/grant",
     headers: authHeadersSchema,
     body: bankingGrantRequestSchema,
-    responses: {
-      ...bankingUserMutationResponses,
-      200: bankingWorkspaceStatusSchema,
-    },
+    responses: bankingUserMutationResponses,
   },
   revokeGrant: {
     method: "POST",
     path: "/api/banking/workspace/grant/revoke",
     headers: authHeadersSchema,
     body: object({}),
-    responses: {
-      ...bankingUserMutationResponses,
-      200: bankingWorkspaceStatusSchema,
-    },
+    responses: bankingUserMutationResponses,
   },
 });
 
@@ -378,7 +310,6 @@ export const bankingPublicContract = c.router({
 });
 
 export type BankingContract = typeof bankingContract;
-export type BankingUserContract = typeof bankingUserContract;
 export type BankingPublicContract = typeof bankingPublicContract;
 export type BankingAccount = zInfer<typeof bankingAccountSchema>;
 export type BankingBalance = zInfer<typeof bankingBalanceSchema>;
@@ -399,15 +330,6 @@ export type BankingTransactionsResponse = zInfer<
   typeof bankingTransactionsResponseSchema
 >;
 export type BankingGrantDuration = zInfer<typeof bankingGrantDurationSchema>;
-export type BankingAccessRequestStatusResponse = zInfer<
-  typeof bankingAccessRequestStatusResponseSchema
->;
-export type BankingConnectSessionRequest = zInfer<
-  typeof bankingConnectSessionRequestSchema
->;
 export type BankingConnectSessionResponse = zInfer<
   typeof bankingConnectSessionResponseSchema
->;
-export type BankingAgentGrantRequest = zInfer<
-  typeof bankingAgentGrantRequestSchema
 >;

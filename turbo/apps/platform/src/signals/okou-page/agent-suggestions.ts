@@ -24,7 +24,7 @@ import {
   restoreAgentSuggestion$,
   settleAgentSuggestion$,
 } from "./agent-suggestion-session.ts";
-import { createInPlaceAgentComposerSignals } from "./agent-composer-signals.ts";
+import { createInPlaceChatComposerSignals } from "./workspace-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
 import type {
   ComposerSignals,
@@ -139,7 +139,7 @@ const directionGraph$ = computed((get) => {
   if (target.kind === "new") {
     return {
       kind: target.kind,
-      composer: createInPlaceAgentComposerSignals((threadId, submission) => {
+      composer: createInPlaceChatComposerSignals((threadId, submission) => {
         session.finish(threadId, submission);
       }, session.entry.item.content.title),
     };

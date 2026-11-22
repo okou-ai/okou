@@ -1,5 +1,5 @@
 import { command, computed, state, type Command } from "ccstate";
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { logger } from "../log.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";

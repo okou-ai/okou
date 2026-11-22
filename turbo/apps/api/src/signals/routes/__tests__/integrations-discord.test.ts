@@ -21,7 +21,7 @@ import {
   type DiscordFixture,
 } from "./helpers/discord";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { launchPublicDiscordTestRun } from "./helpers/discord-run";
 
@@ -126,7 +126,7 @@ async function expectDiscordChanges(userIds: readonly string[]): Promise<void> {
 }
 
 async function registerMemberCache(value: DiscordActor): Promise<void> {
-  const api = createAuthOrgAgentsBddApi(context);
+  const api = createAuthOrgBddApi(context);
   const profile = api.user(value);
   const { token } = await api.createCliToken(profile);
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValueOnce(
@@ -245,7 +245,7 @@ describe("Discord installation link run access", () => {
   it("grants a run Discord installation link access without requiring a server binding", async () => {
     const { actor, restore } = createActors();
     const owner = actor();
-    const profile = createAuthOrgAgentsBddApi(context).user(owner);
+    const profile = createAuthOrgBddApi(context).user(owner);
     const run = await launchPublicDiscordTestRun(context, profile);
     // Web runs can use the CLI, but must not receive Discord-only invite guidance.
     expect(run.execution.appendSystemPrompt).not.toContain(

@@ -142,7 +142,7 @@ final class PermissionBatchStore {
           }
           if !delivered {
             let thread = ChatThread(
-              id: action.threadID, agentID: nil, title: "", createdAt: .now,
+              id: action.threadID, title: "", createdAt: .now,
               updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
             continuationUncertain = true
             _ = try await commands.send(

@@ -88,9 +88,33 @@ export async function publishedIosVersion({
       const jobs = await read(
         `actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
       );
-      const publisher = jobs?.jobs.find(
+      let publisher = jobs?.jobs.find(
         (job) => job.name === "publish-ios-testflight",
       );
+      // A partial workflow rerun can carry forward a successful job without
+      // its steps. Recover the records of that same execution only.
+      if (
+        publisher?.conclusion === "success" &&
+        !publisher.steps?.length &&
+        publisher.run_attempt > 1 &&
+        publisher.started_at &&
+        publisher.completed_at
+      ) {
+        const attempts = await read(
+          `actions/runs/${run.id}/jobs?filter=all&per_page=100`,
+        );
+        const carried = publisher;
+        publisher = attempts?.jobs.find(
+          (job) =>
+            job.name === carried.name &&
+            job.head_sha === sha &&
+            job.started_at === carried.started_at &&
+            job.completed_at === carried.completed_at &&
+            job.run_attempt < carried.run_attempt &&
+            job.conclusion === "success" &&
+            job.steps?.length,
+        );
+      }
       const verified = publisher?.steps.find(
         (step) => step.name === availabilityStep,
       );

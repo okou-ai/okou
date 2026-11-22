@@ -25,13 +25,13 @@ import { larkOfficialReadRoutes } from "../lark-official-read";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuConnectRoutes } from "../feishu-connect";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const authOrg = createAuthOrgAgentsBddApi(context);
+const authOrg = createAuthOrgBddApi(context);
 describe("Okou Official Lark bot", () => {
   const headers = { authorization: "Bearer clerk-session" };
   let appId: string;
@@ -71,7 +71,7 @@ describe("Okou Official Lark bot", () => {
     if (!actor.orgId) {
       throw new Error("Expected workspace");
     }
-    authOrg.acceptAgentStorageWrites();
+    authOrg.acceptStorageWrites();
     await authOrg.provisionWorkspace(actor);
     await authOrg.completeOnboarding(actor);
     await updateFeatureSwitchesForUser(

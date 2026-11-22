@@ -16,7 +16,6 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { store.close() }
     await store.prepareWorkspaceComposer()
     await store.refresh()
-    let agent = SearchUnreadFixture.agent
     let otherThread = try XCTUnwrap(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(2) })
     let started = expectation(description: "Bulk read reached the API")
@@ -37,16 +36,12 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertFalse(store.list.markingAllRead)
     XCTAssertTrue(store.list.updatingThreads.isEmpty)
     XCTAssertNotNil(store.list.error)
-    XCTAssertTrue(store.list.unreadAgentIDs.contains(agent))
-    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.otherAgent))
 
     fixture.state.value.withLock { $0.failWrites = false }
     await store.list.markAllRead()
     XCTAssertNil(store.list.error)
     XCTAssertFalse(store.list.markingAllRead)
     XCTAssertTrue(store.list.updatingThreads.isEmpty)
-    XCTAssertFalse(store.list.unreadAgentIDs.contains(agent))
-    XCTAssertTrue(store.list.unreadAgentIDs.isEmpty)
     XCTAssertFalse(store.list.threads.first { $0.id == otherThread.id }?.isUnread == true)
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
@@ -341,7 +336,7 @@ final class ChatSearchUnreadTests: XCTestCase {
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
           body: """
-            {"chatThreads":[{"id":"\(SearchUnreadFixture.id(1))","agentId":"\(SearchUnreadFixture.agent)","title":"Chat","createdAt":"\(SearchUnreadFixture.timestamp)","updatedAt":"\(SearchUnreadFixture.timestamp)","sortAt":"\(SearchUnreadFixture.timestamp)"}],"latestEventId":null,"latestSeqId":null}
+            {"chatThreads":[{"id":"\(SearchUnreadFixture.id(1))","title":"Chat","createdAt":"\(SearchUnreadFixture.timestamp)","updatedAt":"\(SearchUnreadFixture.timestamp)","sortAt":"\(SearchUnreadFixture.timestamp)"}],"latestEventId":null,"latestSeqId":null}
             """)
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
@@ -359,11 +354,11 @@ final class ChatSearchUnreadTests: XCTestCase {
           await freshGate.wait()
         }
         if alreadyRead {
-          return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+          return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
         }
         return ChatHTTPResponse(
           body:
-            "{\"agents\":{},\"threads\":{\"\(SearchUnreadFixture.id(1))\":\"unread\"},\"unreadAt\":{\"\(SearchUnreadFixture.id(1))\":\"\(SearchUnreadFixture.timestamp)\"}}"
+            "{\"threads\":{\"\(SearchUnreadFixture.id(1))\":\"unread\"},\"unreadAt\":{\"\(SearchUnreadFixture.id(1))\":\"\(SearchUnreadFixture.timestamp)\"}}"
         )
       case "/api/chat-threads/\(SearchUnreadFixture.id(1))/mark-read":
         read.withLock { $0 = true }
@@ -429,10 +424,9 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.prepareWorkspaceComposer()
     await store.refresh()
     store.sidebar.select(.unread)
-    let agent = SearchUnreadFixture.agent
     XCTAssertEqual(
       store.list.threads(
-        agentID: agent, archived: false, onlyUnread: store.sidebar.filter == .unread
+        archived: false, onlyUnread: store.sidebar.filter == .unread
       ).map(\.id), [5, 2].map(SearchUnreadFixture.id))
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
@@ -440,7 +434,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.list.markAllRead()
     XCTAssertTrue(
       store.list.threads(
-        agentID: agent, archived: false, onlyUnread: store.sidebar.filter == .unread
+        archived: false, onlyUnread: store.sidebar.filter == .unread
       ).isEmpty)
     XCTAssertFalse(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(2) }?.isUnread == true)
@@ -448,20 +442,18 @@ final class ChatSearchUnreadTests: XCTestCase {
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
   }
 
-  func testBulkReadUsesAgentIndicatorsWhenThreadResultsAreBounded() async throws {
+  func testBulkReadReachesUnreadThreadsOutsideTheClientSnapshot() async throws {
     let fixture = SearchUnreadFixture()
     fixture.state.value.withLock { $0.omitThreadIndicators = true }
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
-    XCTAssertTrue(store.list.unreadAgentIDs.contains(SearchUnreadFixture.agent))
     XCTAssertFalse(store.list.threads.contains(where: \.isUnread))
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
     await store.setRead(thread, read: true)
     XCTAssertFalse(fixture.state.value.withLock { $0.unread.contains(1) })
     XCTAssertTrue(fixture.state.value.withLock { $0.unread.contains(5) })
     await store.list.markAllRead()
-    XCTAssertFalse(store.list.unreadAgentIDs.contains(SearchUnreadFixture.agent))
-    XCTAssertTrue(store.list.unreadAgentIDs.isEmpty)
+    XCTAssertEqual(fixture.state.value.withLock { $0.unread }, [3])
   }
 }

@@ -18,7 +18,6 @@ import { mockEnv } from "../../../lib/env";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
-import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -34,7 +33,6 @@ describe("builtin MCP account surfaces", () => {
     ...connectorCatalogRoutes,
     ...connectorAccountRoutes,
     ...builtinConnectorsRoutes,
-    ...agentsRoutes,
   ];
   function accounts() {
     return setupApp({ context, routes })(connectorAccountsContract);
@@ -222,12 +220,9 @@ describe("builtin MCP account surfaces", () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
-    await bdd.createAgent(actor, {
-      displayName: "Scoped MCP selections",
-    });
     const connected = await accept(
       setupApp({ context, routes })(
         builtinConnectorNoAuthGrantContract,

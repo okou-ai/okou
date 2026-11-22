@@ -9,16 +9,9 @@ import { marketingHandoffsRoutes } from "./routes/marketing-handoffs";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
 import type { RouteEntry } from "./route-entry";
-import {
-  agentDraftRoutes,
-  composerDraftRoutes,
-  projectAgentDraftRoutes,
-} from "./routes/agent-draft";
+import { composerDraftRoutes } from "./routes/composer-draft";
 import { feedRoutes } from "./routes/feed";
 import { instructionsRoutes } from "./routes/instructions";
-import { agentInstructionsRoutes } from "./routes/agent-instructions";
-import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
-import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
 import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
@@ -329,12 +322,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronSyncSkillsRoutes,
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
-  ...agentDraftRoutes,
   ...composerDraftRoutes,
   ...feedRoutes,
-  ...agentInstructionsRoutes,
   ...instructionsRoutes,
-  ...agentsRoutes,
   ...artifactCatalogRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
@@ -353,7 +343,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...bankingRoutes,
   ...projectRoutes,
   ...projectChatRoutes,
-  ...projectAgentDraftRoutes,
   ...chatThreadRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
@@ -421,7 +410,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...meModelProvidersUpsertRoutes,
   ...voiceIoQuotaRoutes,
   ...voiceIoPolishRoutes,
-  ...agentSetupPromptRoutes,
   ...transcribeRoutes,
   ...voiceIoTranscribeRoutes,
   ...webFileUrlRoutes,

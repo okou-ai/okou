@@ -86,7 +86,7 @@ const noOpEventAction$ = command(
   },
 );
 
-interface AgentComposerOptions {
+interface WorkspaceComposerOptions {
   readonly forward?: ChatForwardContext;
   /**
    * A dialog composer sends from its own unsaved draft and keeps the current
@@ -103,11 +103,11 @@ interface AgentComposerOptions {
   ) => void;
 }
 
-function createAgentSubmitMessage(
+function createSubmitMessage(
   draft: DraftSignals,
   connector: ReturnType<typeof createComposerConnectorSignals>,
   pendingRemoteAccess: ReturnType<typeof createPendingRemoteAccessSignals>,
-  options: AgentComposerOptions,
+  options: WorkspaceComposerOptions,
 ) {
   return command(
     async (
@@ -186,13 +186,13 @@ function createAgentSubmitMessage(
   );
 }
 
-function createAgentComposerSignalsWithDraft(
+function createComposerSignalsWithDraft(
   workspaceDraft: WorkspaceDraftEntry,
-  options: AgentComposerOptions = {},
+  options: WorkspaceComposerOptions = {},
 ) {
   const connector = createComposerConnectorSignals();
   const pendingRemoteAccess = createPendingRemoteAccessSignals();
-  const submitMessage$ = createAgentSubmitMessage(
+  const submitMessage$ = createSubmitMessage(
     workspaceDraft.draft,
     connector,
     pendingRemoteAccess,
@@ -239,7 +239,7 @@ export function createForwardChatComposerSignals(
   onOptimisticSend: () => void,
   projectId?: string,
 ) {
-  return createAgentComposerSignalsWithDraft(createWorkspaceDraftSignals(), {
+  return createComposerSignalsWithDraft(createWorkspaceDraftSignals(), {
     forward,
     inPlace: true,
     onOptimisticSend,
@@ -251,36 +251,37 @@ export function createForwardChatComposerSignals(
  * A dialog composer that starts a new thread from its own unsaved
  * draft and keeps the current page.
  */
-export function createInPlaceAgentComposerSignals(
+export function createInPlaceChatComposerSignals(
   onOptimisticSend: (threadId: string, submission: ComposerSubmission) => void,
   title: string,
 ) {
-  return createAgentComposerSignalsWithDraft(createWorkspaceDraftSignals(), {
+  return createComposerSignalsWithDraft(createWorkspaceDraftSignals(), {
     inPlace: true,
     onOptimisticSend,
     title,
   });
 }
 
-interface AgentComposerContext {
+interface WorkspaceComposerContext {
   readonly workspaceDraft: WorkspaceDraftEntry;
   readonly projectId?: string;
 }
 
-const internalAgentComposerContext$ = state<AgentComposerContext | null>(null);
+const internalWorkspaceComposerContext$ =
+  state<WorkspaceComposerContext | null>(null);
 
-export const setAgentComposerContext$ = command(
-  ({ set }, context: AgentComposerContext): void => {
-    set(internalAgentComposerContext$, context);
+export const setWorkspaceComposerContext$ = command(
+  ({ set }, context: WorkspaceComposerContext): void => {
+    set(internalWorkspaceComposerContext$, context);
   },
 );
 
-export const agentChatComposerSignals$ = computed((get) => {
-  const context = get(internalAgentComposerContext$);
+export const workspaceChatComposerSignals$ = computed((get) => {
+  const context = get(internalWorkspaceComposerContext$);
   if (!context) {
     throw new Error("Chat composer requires an initialized draft context");
   }
-  return createAgentComposerSignalsWithDraft(
+  return createComposerSignalsWithDraft(
     context.workspaceDraft,
     context.projectId ? { projectId: context.projectId } : {},
   );

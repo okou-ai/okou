@@ -20,28 +20,26 @@ local previews, upload progress, removal and retry. Uploads use the existing
 direct-to-storage API with a 512 MB chat attachment limit; files of 5 MB or more
 use multipart uploads. A message can contain files with or without text. Selected files and
 uploads belong to their workspace and draft. Draft text, canonical message context
-and completed-upload metadata persist per API origin, user, workspace and
-Agent/thread, and synchronize through the existing draft APIs. New-chat drafts
-belong to their Agent without creating a thread. Local file copies are removed
+and completed-upload metadata persist per API origin, user and workspace. New-chat
+drafts synchronize through the member’s workspace composer. Replies synchronize
+through the conversation’s draft endpoint. Local file copies are removed
 when removed from a draft or sent; closing retains recovery metadata. File bytes
 remain temporary: interrupted uploads require explicit retry through the existing
 uploader, and purged copies require reselection. Restored uploads are checked
 against the file authority before sending. Its home screen follows the mobile
-web agent-chat structure with an agent avatar, greeting, and composer; focusing
+web home screen with Okou’s avatar, greeting, and composer. Focusing
 the compact composer animates it into a multiline field. The full-screen
 sidebar (Grok-style: the chat slides away and blurs) contains recent chats,
 filtered like the web (Inbox, Unread, Archived, Muted). Workspace switching and "back to chat" sit at the top; the
 bottom bar has the account photo for Settings, search, and new chat. Native list actions support pinning,
 archiving, and renaming chats. The chat header has no title; its native More menu
 also supports muting. Opening a new chat is local and immediate;
-the thread is created when the first message is sent. New chats always use the
-workspace default Agent and the existing saved model preference. Existing
-conversations retain their Agent. A native model sheet supports
+the thread is created when the first message is sent. New chats use the saved
+model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
 Workspace setup remains on the web. Settings shows the profile, workspace,
 notifications, appearance, language, support and version, and offers sign-out.
 Account deletion is available only on the web.
-The new-chat screen greets with Okou. Agent selection is not available on iOS.
 
 Conversation history renders durable user messages and assistant results using
 the official Textual 0.5.0 release. The renderer supports Markdown headings, lists,
@@ -86,7 +84,7 @@ the conversation selects one enabled current account. Connector permissions belo
 to the current user and connector across conversations and accounts. Supported
 connectors expose permissions even when all saved accounts are disabled. Remote
 host overrides belong to the conversation.
-New-chat account and host choices remain with their Agent composer until the
+New-chat account and host choices remain with the workspace composer until the
 first message creates a conversation. Account overrides and current
 choices are saved before the first message; a failed initialization retains the
 draft for ordinary retry. An uncertain settings write requires fresh

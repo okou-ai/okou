@@ -39,7 +39,7 @@ import {
   createChatFilesBddApi,
   threadEventCursor,
 } from "./helpers/api-bdd-chat-files";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -960,7 +960,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
             },
           ),
         );
-        bdd.acceptAgentStorageWrites();
+        bdd.acceptStorageWrites();
         runs.acceptStorageDownloads();
         runs.acceptTelemetryIngest();
         const { runnerGroup } = await scenario.prepareActor(actor);
@@ -2152,8 +2152,7 @@ async function statusAfterCacheProbe(
 async function patWithWarmMembershipCache(
   actor: ApiTestUser,
 ): Promise<WarmMembershipCache> {
-  const { token } =
-    await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+  const { token } = await createAuthOrgBddApi(context).createCliToken(actor);
   mockClerkMembership(context, actor, "org:admin");
 
   const warmedAt = now();
@@ -2260,7 +2259,7 @@ describe("AUTH-05 computer-use auth boundary Clerk classification", () => {
 
   it("keeps a non-member identity on the degraded user-only context", async () => {
     const actor = bdd.user();
-    const authOrg = createAuthOrgAgentsBddApi(context);
+    const authOrg = createAuthOrgBddApi(context);
     const { token } = await patWithWarmMembershipCache(actor);
 
     // The identity exists; it simply holds no role in this organization.

@@ -7,25 +7,22 @@ import XCTest
 @testable import ChatData
 
 let fixtureThread = "10000000-0000-4000-8000-000000000001"
-let fixtureAgent = "10000000-0000-4000-8000-000000000002"
 let fixtureRun = "10000000-0000-4000-8000-000000000003"
 let deletedThread = "10000000-0000-4000-8000-000000000004"
 let newThread = "10000000-0000-4000-8000-000000000005"
 let fixtureDate = "2026-09-17T10:00:00.000Z"
 
 struct CapturedSend: Decodable, Sendable {
-  let hasAgentId: Bool
   let prompt: String
   let clientEventId: String
   let cloudBrowserEnabled: Bool
   let hostIsExplicitNull: Bool
   let hasModelOverride: Bool
   enum Keys: String, CodingKey {
-    case agentId, prompt, clientEventId, cloudBrowserEnabled, computerUseHostId, model
+    case prompt, clientEventId, cloudBrowserEnabled, computerUseHostId, model
   }
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: Keys.self)
-    hasAgentId = c.contains(.agentId)
     prompt = try c.decode(String.self, forKey: .prompt)
     clientEventId = try c.decode(String.self, forKey: .clientEventId)
     cloudBrowserEnabled = try c.decode(Bool.self, forKey: .cloudBrowserEnabled)
@@ -42,7 +39,7 @@ struct CapturedControl: Decodable, Sendable {
 
 func sampleThread() -> ChatThread {
   ChatThread(
-    id: fixtureThread, agentID: fixtureAgent, title: "Existing chat",
+    id: fixtureThread, title: "Existing chat",
     selectedModel: "claude-opus-5-5",
     createdAt: Date(timeIntervalSince1970: 0), updatedAt: Date(timeIntervalSince1970: 0),
     sortAt: Date(timeIntervalSince1970: 0),
@@ -50,13 +47,13 @@ func sampleThread() -> ChatThread {
 }
 
 func threadJSON(id: String, date: String = fixtureDate) -> String {
-  "{\"id\":\"\(id)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"Original title\",\"sortAt\":\"\(date)\",\"createdAt\":\"\(date)\",\"updatedAt\":\"\(date)\",\"pinnedAt\":null,\"renamedAt\":null,\"selectedModel\":\"gpt-5.6-sol\",\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+  "{\"id\":\"\(id)\",\"title\":\"Original title\",\"sortAt\":\"\(date)\",\"createdAt\":\"\(date)\",\"updatedAt\":\"\(date)\",\"pinnedAt\":null,\"renamedAt\":null,\"selectedModel\":\"gpt-5.6-sol\",\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
 }
 
 func threadEventJSON(seq: Int, kind: String, thread: String, title: String = "New chat")
   -> String
 {
-  "{\"id\":\"\(eventIdentity(seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"\(title)\",\"selectedModel\":\"gpt-5.6-sol\",\"createdAt\":\"\(fixtureDate)\"}"
+  "{\"id\":\"\(eventIdentity(seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"title\":\"\(title)\",\"selectedModel\":\"gpt-5.6-sol\",\"createdAt\":\"\(fixtureDate)\"}"
 }
 
 func eventJSON(seq: Int, type: String, run: String? = fixtureRun, payload: String = "null")
@@ -87,5 +84,5 @@ func userPayload(_ text: String) -> String {
 }
 
 func metadataJSON(browser: Bool) -> String {
-  "{\"id\":\"\(fixtureThread)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"Existing chat\",\"selectedModel\":\"claude-opus-5-5\",\"modelSettings\":{},\"serviceTier\":null,\"pinnedAt\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":\(browser),\"selectedImageModel\":null}"
+  "{\"id\":\"\(fixtureThread)\",\"title\":\"Existing chat\",\"selectedModel\":\"claude-opus-5-5\",\"modelSettings\":{},\"serviceTier\":null,\"pinnedAt\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":\(browser),\"selectedImageModel\":null}"
 }

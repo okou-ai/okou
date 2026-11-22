@@ -6,7 +6,7 @@
  */
 
 import { resetAblySubscriptions } from "../ably.ts";
-import { apiAgentsHandlers } from "./api-agents.ts";
+import { chatThreadHandlers } from "./api-chat-threads.ts";
 import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
 import { apiBuildInfoHandlers } from "./api-build-info.ts";
 import {
@@ -131,7 +131,7 @@ export const handlers = [
   ...apiIntegrationsDiscordHandlers,
   ...apiIntegrationsAgentPhoneHandlers,
   ...apiIntegrationsGithubHandlers,
-  ...apiAgentsHandlers,
+  ...chatThreadHandlers,
   ...apiWorkflowsHandlers,
   ...apiSkillImportHandlers,
   ...apiRunsHandlers,

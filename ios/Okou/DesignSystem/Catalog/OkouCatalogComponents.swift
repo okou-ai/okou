@@ -405,7 +405,7 @@
     var body: some View {
       OkouCatalogPage(.identity, close: close) {
         OkouCatalogSection("Okou") {
-          // The default agent at the sizes the app draws it (a long-press preview, the
+          // Okou at the sizes the app draws it (a long-press preview, the
           // transcript, the new-chat greeting), then held still.
           HStack(alignment: .bottom, spacing: OkouSpace.md) {
             ForEach(

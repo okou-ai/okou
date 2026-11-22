@@ -311,13 +311,6 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       kind: query.first { $0.name == "kind" }?.value ?? "",
       connectorSlug: query.first { $0.name == "connectorSlug" }?.value,
       customConnectorId: query.first { $0.name == "customConnectorId" }?.value)
-    if path == "/api/agents" {
-      return ChatHTTPResponse(
-        body: "[{\"agentId\":\"\(FixtureData.agentID)\",\"isDefaultAgent\":true}]")
-    }
-    if parts.count == 3, parts[1] == "agents" {
-      return ChatHTTPResponse(body: "{\"agentId\":\"\(parts[2])\",\"displayName\":\"Assistant\"}")
-    }
     if path == "/api/connectors/connected" {
       return connectedResponse(state: state)
     }

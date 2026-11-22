@@ -27,7 +27,6 @@ const {
 
 async function expectAgentTokenThreadOwnershipBoundaries(args: {
   readonly own: Awaited<ReturnType<typeof publicChatActor>>["run"];
-  readonly agentId: string;
   readonly orgId: string;
   readonly sourceToken: string;
 }): Promise<void> {
@@ -113,7 +112,6 @@ describe("CHAT-02: model-first routing", () => {
     const {
       run: own,
       actor,
-      agentId,
       runExecution,
       sendChatRun,
       requestSendEventWithBearer,
@@ -122,11 +120,6 @@ describe("CHAT-02: model-first routing", () => {
       return await api.updateUserModelPreference(actor, "claude-fable-5-1");
     });
     const orgId = requireOrgId(actor);
-    await own(async () => {
-      return await bdd.updateAgentMetadata(actor, agentId, {
-        visibility: "public",
-      });
-    });
     const sourceThread = await own(() => {
       return chat.createThread(actor, {});
     });
@@ -209,7 +202,6 @@ describe("CHAT-02: model-first routing", () => {
     });
     await expectAgentTokenThreadOwnershipBoundaries({
       own,
-      agentId,
       orgId,
       sourceToken,
     });

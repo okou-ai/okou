@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Independent chat threads on one agent must not share an agent session.
+# Independent chat threads on one member must have separate runtime sessions.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
@@ -29,25 +29,10 @@ teardown() {
     if [[ -n "${SECOND_THREAD_ID:-}" ]]; then
         runner_e2e_delete_chat_thread "$SECOND_THREAD_ID" >/dev/null 2>&1 || true
     fi
-    if [[ -n "${AGENT_ID:-}" ]]; then
-        delete_runner_agent "$AGENT_ID" >/dev/null 2>&1 || true
-    fi
 }
 
-@test "independent chat threads use separate agent sessions" {
-    run create_runner_agent "e2e-independent-thread-sessions-${TEST_ID}"
-    echo "$output"
-    assert_success
-    AGENT_ID="$output"
-
-    run set_runner_agent_instructions \
-        "$AGENT_ID" \
-        "Independent thread session isolation test instructions."
-    echo "$output"
-    assert_success
-
+@test "independent chat threads use separate runtime sessions" {
     run runner_e2e_start_mock_shell_chat_run \
-        "$AGENT_ID" \
         "printf 'FIRST_INDEPENDENT_THREAD_${TEST_ID}\\n'"
     echo "$output"
     assert_success
@@ -70,7 +55,6 @@ teardown() {
         <<<"$first_run_response")
 
     run runner_e2e_start_mock_shell_chat_run \
-        "$AGENT_ID" \
         "printf 'SECOND_INDEPENDENT_THREAD_${TEST_ID}\\n'"
     echo "$output"
     assert_success

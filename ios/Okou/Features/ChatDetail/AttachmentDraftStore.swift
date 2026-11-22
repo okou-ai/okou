@@ -283,7 +283,7 @@ final class AttachmentDraftStore {
 
   func reset() {
     // A native text paste can finish asynchronously too. Replacing the input
-    // detaches its binding when this draft is reset for a send or another agent.
+    // detaches its binding when this draft is reset after sending or switching drafts.
     inputID = UUID()
     for task in imports.values { task.cancel() }
     for task in uploads.values { task.cancel() }

@@ -38,7 +38,7 @@ final class ChatClientTests: XCTestCase {
             """)
       case "/api/indicators":
         return ChatHTTPResponse(
-          body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{\"\(fixtureThread)\":\"unread\"}}")
+          body: "{\"unreadAt\":{},\"threads\":{\"\(fixtureThread)\":\"unread\"}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -72,7 +72,7 @@ final class ChatClientTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -108,7 +108,7 @@ final class ChatClientTests: XCTestCase {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -126,7 +126,7 @@ final class ChatClientTests: XCTestCase {
             "{\"events\":[\(threadEventJSON(seq: 11, kind: "unarchived", thread: fixtureThread))],\"hasMore\":false}"
         )
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -160,7 +160,7 @@ final class ChatClientTests: XCTestCase {
         guard since == "11" else { throw URLError(.badServerResponse) }
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       case "/api/chat-threads/\(fixtureThread)/event-snapshot":
         return ChatHTTPResponse(
           body: """
@@ -249,7 +249,7 @@ final class ChatClientTests: XCTestCase {
         return ChatHTTPResponse(
           body: "{\"events\":[\(events.joined(separator: ","))],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"threads\":{},\"unreadAt\":{}}")
+        return ChatHTTPResponse(body: "{\"threads\":{},\"unreadAt\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -329,7 +329,7 @@ final class ChatCursorRecoveryTests: XCTestCase {
         }
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       case "/api/chat-threads/\(fixtureThread)/event-snapshot":
         let sequence = current == 1 ? 1 : 3
         return ChatHTTPResponse(
@@ -439,7 +439,7 @@ final class ChatCursorRecoveryTests: XCTestCase {
         default: throw URLError(.badServerResponse)
         }
       case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       default: throw URLError(.unsupportedURL)
       }
     }

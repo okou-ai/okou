@@ -49,10 +49,6 @@ import {
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import {
-  agentsMainContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
-import {
   hostContract,
   type HostedSiteCompleteResponse,
   type HostedSiteDeploymentsResponse,
@@ -73,7 +69,6 @@ import {
   buildArtifactKey,
   sanitizeArtifactFilename,
 } from "../../../../lib/file-url";
-import { agentsRoutes } from "../../agents";
 import { chatEventsRoutes } from "../../chat-events";
 import { artifactCatalogRoutes } from "../../artifact-catalog";
 import { chatThreadComputerUseHostRoutes } from "../../chat-threads-computer-use-host";
@@ -214,7 +209,6 @@ function mockObjectStorageObjectsExist(context: TestContext): void {
 }
 
 const chatFilesRoutes = [
-  ...agentsRoutes,
   ...artifactCatalogRoutes,
   ...chatThreadRoutes,
   ...chatThreadCreateRoutes,
@@ -522,20 +516,6 @@ export function createChatFilesBddApi(context: TestContext) {
 
     mockObjectStorageObjectsExist(): void {
       mockObjectStorageObjectsExist(context);
-    },
-
-    async createAgentForChatThread(
-      actor: ApiTestUser,
-      displayName = `BDD chat ${randomUUID().slice(0, 8)}`,
-    ): Promise<AgentResponse> {
-      const response = await accept(
-        chatFilesApp(context)(agentsMainContract).create({
-          headers: authenticate(context, actor),
-          body: { displayName, visibility: "private" },
-        }),
-        [201],
-      );
-      return response.body;
     },
 
     async createThread(
@@ -1048,7 +1028,7 @@ export function createChatFilesBddApi(context: TestContext) {
     /**
      * The read-cursor writers driven through an app whose operation signal the
      * caller aborts, which is the signal those route commands actually receive:
-     * the two single-thread writers and the bulk per-Agent one. The requests
+     * the two single-thread writers and the workspace-wide bulk writer. The requests
      * are returned unnarrowed so a caller can assert the off-contract response
      * a cancelled operation produces.
      */
@@ -1461,14 +1441,11 @@ export function createChatFilesBddApi(context: TestContext) {
     async searchChat(
       actor: ApiTestUser,
       keyword: string,
-      query: {
-        readonly agentId?: string;
-      } = {},
     ): Promise<ChatSearchResponse> {
       const response = await accept(
         chatSearchClient().search({
           headers: authenticate(context, actor),
-          query: { keyword, ...query },
+          query: { keyword },
         }),
         [200],
       );
@@ -1479,7 +1456,6 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       keyword: string,
       query: {
-        readonly agentId?: string;
         // Previous clients still send this retired parameter during rollout.
         readonly limit?: number;
       },

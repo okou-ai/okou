@@ -23,7 +23,6 @@ runner_e2e_use_mock_codex_profile() {
 
 runner_e2e_setup_test() {
     TEST_ID="${E2E_RUNNER_SHARD_INDEX:-local}-$(date +%s)-$RANDOM"
-    AGENT_ID=""
     THREAD_ID=""
     RUN_ID=""
     CONNECTOR_ACCOUNT_ID=""
@@ -44,9 +43,6 @@ runner_e2e_teardown_test() {
     fi
     if [[ -n "${THREAD_ID:-}" ]]; then
         runner_e2e_delete_chat_thread "$THREAD_ID" >/dev/null 2>&1 || true
-    fi
-    if [[ -n "${AGENT_ID:-}" ]]; then
-        delete_runner_agent "$AGENT_ID" >/dev/null 2>&1 || true
     fi
     if [[ -n "$connector_slug" && -n "${CONNECTOR_ACCOUNT_ID:-}" ]]; then
         runner_e2e_delete_connector_account \
@@ -231,14 +227,12 @@ runner_e2e_shell_prompt() {
 }
 
 runner_e2e_start_mock_shell_chat_run() {
-    local agent_id="$1"
-    local prompt="$2"
-    local capture_network_bodies="${3:-false}"
+    local prompt="$1"
+    local capture_network_bodies="${2:-false}"
     local shell_prompt
     runner_e2e_require_mock_codex_profile || return 1
     shell_prompt=$(runner_e2e_shell_prompt "$prompt")
     runner_chat_send \
-        "$agent_id" \
         "$shell_prompt" \
         "" \
         "$E2E_MOCK_CODEX_MODEL" \
@@ -247,24 +241,22 @@ runner_e2e_start_mock_shell_chat_run() {
 }
 
 runner_e2e_continue_chat_run() {
-    local agent_id="$1"
-    local thread_id="$2"
-    local prompt="$3"
+    local thread_id="$1"
+    local prompt="$2"
     local shell_prompt
     shell_prompt=$(runner_e2e_shell_prompt "$prompt")
-    runner_chat_send "$agent_id" "$shell_prompt" "$thread_id" ""
+    runner_chat_send "$shell_prompt" "$thread_id" ""
 }
 
 runner_e2e_start_mock_checkpointed_chat_run() {
-    local agent_id="$1"
-    local checkpoint_script="$2"
-    local continuation_script="$3"
+    local checkpoint_script="$1"
+    local continuation_script="$2"
     local shell_prompt
     runner_e2e_require_mock_codex_profile || return 1
     shell_prompt=$(printf '@shell-checkpoint@\n%s\n@continue@\n%s' \
         "$checkpoint_script" \
         "$continuation_script")
-    runner_chat_send "$agent_id" "$shell_prompt" "" "$E2E_MOCK_CODEX_MODEL"
+    runner_chat_send "$shell_prompt" "" "$E2E_MOCK_CODEX_MODEL"
 }
 
 runner_e2e_delete_chat_thread() {

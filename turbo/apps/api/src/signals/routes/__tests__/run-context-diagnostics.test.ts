@@ -18,17 +18,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function diagnosticFixture() {
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   await api.configureRunnerGroup();
   const actor = bdd.user();
   await api.grantProEntitlement(actor);
   await api.ensurePersonalSubscriptionModel(actor);
-  const { agentId } = await bdd.createAgent(actor, {
-    displayName: "Snapshot diagnostics",
-    visibility: "private",
-  });
 
   // Replay the diagnostic provider's captured documents through the read API,
   // rather than asserting incidental telemetry calls or privately seeding Runs.
@@ -76,7 +72,7 @@ async function diagnosticFixture() {
       }
       run = { runId, threadId: sent.body.threadId };
     } else {
-      run = await api.createThreadRun(actor, { agentId, prompt });
+      run = await api.createThreadRun(actor, { prompt });
     }
     onTestFinished(async () => {
       await api.requestCancelRun(actor, run.runId, [200]);
@@ -84,7 +80,7 @@ async function diagnosticFixture() {
     return run;
   }
 
-  return { api, bdd, actor, agentId, snapshots, launch };
+  return { api, bdd, actor, snapshots, launch };
 }
 
 test.each(["data router", "Preview"])(

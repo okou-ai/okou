@@ -1,5 +1,5 @@
 import { apiClient$ } from "../api-client.ts";
-import { chatThreads$ } from "../agent-chat.ts";
+import { chatThreads$ } from "../chat-thread-list.ts";
 import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 import { computed } from "ccstate";

@@ -384,7 +384,7 @@
         "connectors": "Connectors",
         "settings": "Settings",
         "workflows": "Workflows",
-        "works": "Where {{agentName}} works"
+        "works": "Where {{assistantName}} works"
       },
       "rail": {
         "workflows": "Workflows",
@@ -1511,115 +1511,6 @@
       "description": "This action does not belong to this chat or is no longer valid.",
       "title": "Action unavailable"
     },
-    "agentPage": {
-      "getStarted": {
-        "checkedIn": "Checked in",
-        "checkin": {
-          "action": "Check in",
-          "description": "Check in once a day. Resets at 00:00 UTC.",
-          "name": "Check in daily",
-          "unit": "a day"
-        },
-        "connector": {
-          "action": "Connect",
-          "description": "Gmail, Notion, and 4,000+ more",
-          "name": "Connect a connector",
-          "unit": "per connector"
-        },
-        "howRewardsWork": "How rewards work",
-        "imessage": {
-          "action": "Add",
-          "description": "Text {{assistantName}} from your iPhone",
-          "name": "Add to iMessage"
-        },
-        "inReview": "In review",
-        "intro": {
-          "connector": {
-            "confirm": "Browse all connectors",
-            "connected": "Connected",
-            "description": "Pick one and {{assistantName}} starts working in it.",
-            "notConnected": "Not connected",
-            "pickerFailed": "Connectors could not be loaded.",
-            "pickerLoading": "Loading connectors…",
-            "title": "{{assistantName}} works inside the tools you already use"
-          },
-          "invite": {
-            "confirm": "Invite teammates",
-            "description": "Invite your teammates to this workspace.",
-            "note": "What you set up once stops being yours alone. Someone who joined this morning can run it this afternoon, without asking you how it works.",
-            "title": "What one person knows, everyone can run"
-          },
-          "later": "Later",
-          "slack": {
-            "confirm": "Add to Slack",
-            "description": "Add {{assistantName}} to your team's Slack workspace.",
-            "note": "Your teammates stop coming to you first. They ask in the channel, and the work comes back in the thread where everyone can see it.",
-            "title": "Work with {{assistantName}} where your team already talks"
-          },
-          "workflow": {
-            "description": "Turn a job you repeat into a workflow the team can run.",
-            "title": "One good run becomes something the team keeps"
-          }
-        },
-        "invite": {
-          "action": "Invite",
-          "description": "Everyone you add counts",
-          "name": "Invite your team",
-          "unit": "per member"
-        },
-        "pendingState": "{{amount}} pending",
-        "rewardsNote": "Task rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
-        "slack": {
-          "action": "Add",
-          "description": "Where your team already works",
-          "name": "Add to Slack"
-        },
-        "stepCount": "{{completed}}/{{total}}",
-        "streak": "{{amount}}-day streak",
-        "title": "Get more credits",
-        "toGo": "{{amount}} to go",
-        "workflow": {
-          "action": "Build",
-          "description": "Turn a repeat task into a reusable skill",
-          "name": "Build a workflow"
-        }
-      },
-      "growth": {
-        "addInSlack": "Add {{assistantName}} in Slack",
-        "connect": "Connect",
-        "credits": "Credits",
-        "inSlack": "{{assistantName}} is in Slack",
-        "inviteMember": "Invite humans 🤝",
-        "otherChannels": "Telegram and phone"
-      },
-      "taglines": {
-        "anonymous": {
-          "buildSomething": "Ready to build something?",
-          "goodToSeeYou": "Good to see you.",
-          "readyToRoll": "Ready to roll?",
-          "welcomeBack": "Welcome back.",
-          "whatAreWeWorkingOn": "What are we working on?",
-          "whatsOnYourMind": "What's on your mind?",
-          "whatsTheMove": "What's the move?"
-        },
-        "anotherWin": "Another win today, {{userName}}?",
-        "coffeeReady": "Coffee's ready, {{userName}}.",
-        "enteredChat": "{{userName}} has entered the chat.",
-        "goodToSeeYou": "Good to see you, {{userName}}.",
-        "knewYouWouldCome": "Knew you'd come back, {{userName}}.",
-        "makeTodayCount": "Let's make today count, {{userName}}.",
-        "newIdeas": "New ideas today, {{userName}}?",
-        "readyToBuild": "Ready to build, {{userName}}?",
-        "rightOnTime": "Right on time, {{userName}}.",
-        "savedYourSeat": "Saved your seat, {{userName}}.",
-        "theUsual": "The usual, {{userName}}?",
-        "welcomeBack": "Welcome back, {{userName}}.",
-        "whatAreWeWorkingOn": "What are we working on, {{userName}}?",
-        "whatsCooking": "What's cooking, {{userName}}?",
-        "whatsOnYourMind": "What's on your mind, {{userName}}?",
-        "whatsTheMove": "What's the move, {{userName}}?"
-      }
-    },
     "agentSuggestions": {
       "addReason": "Add a reason",
       "alreadyDone": "Already done",
@@ -2221,6 +2112,115 @@
       "composerPlaceholder": "Add a message",
       "title": "Forward to"
     },
+    "homePage": {
+      "getStarted": {
+        "checkedIn": "Checked in",
+        "checkin": {
+          "action": "Check in",
+          "description": "Check in once a day. Resets at 00:00 UTC.",
+          "name": "Check in daily",
+          "unit": "a day"
+        },
+        "connector": {
+          "action": "Connect",
+          "description": "Gmail, Notion, and 4,000+ more",
+          "name": "Connect a connector",
+          "unit": "per connector"
+        },
+        "howRewardsWork": "How rewards work",
+        "imessage": {
+          "action": "Add",
+          "description": "Text {{assistantName}} from your iPhone",
+          "name": "Add to iMessage"
+        },
+        "inReview": "In review",
+        "intro": {
+          "connector": {
+            "confirm": "Browse all connectors",
+            "connected": "Connected",
+            "description": "Pick one and {{assistantName}} starts working in it.",
+            "notConnected": "Not connected",
+            "pickerFailed": "Connectors could not be loaded.",
+            "pickerLoading": "Loading connectors…",
+            "title": "{{assistantName}} works inside the tools you already use"
+          },
+          "invite": {
+            "confirm": "Invite teammates",
+            "description": "Invite your teammates to this workspace.",
+            "note": "What you set up once stops being yours alone. Someone who joined this morning can run it this afternoon, without asking you how it works.",
+            "title": "What one person knows, everyone can run"
+          },
+          "later": "Later",
+          "slack": {
+            "confirm": "Add to Slack",
+            "description": "Add {{assistantName}} to your team's Slack workspace.",
+            "note": "Your teammates stop coming to you first. They ask in the channel, and the work comes back in the thread where everyone can see it.",
+            "title": "Work with {{assistantName}} where your team already talks"
+          },
+          "workflow": {
+            "description": "Turn a job you repeat into a workflow the team can run.",
+            "title": "One good run becomes something the team keeps"
+          }
+        },
+        "invite": {
+          "action": "Invite",
+          "description": "Everyone you add counts",
+          "name": "Invite your team",
+          "unit": "per member"
+        },
+        "pendingState": "{{amount}} pending",
+        "rewardsNote": "Task rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
+        "slack": {
+          "action": "Add",
+          "description": "Where your team already works",
+          "name": "Add to Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "streak": "{{amount}}-day streak",
+        "title": "Get more credits",
+        "toGo": "{{amount}} to go",
+        "workflow": {
+          "action": "Build",
+          "description": "Turn a repeat task into a reusable skill",
+          "name": "Build a workflow"
+        }
+      },
+      "growth": {
+        "addInSlack": "Add {{assistantName}} in Slack",
+        "connect": "Connect",
+        "credits": "Credits",
+        "inSlack": "{{assistantName}} is in Slack",
+        "inviteMember": "Invite humans 🤝",
+        "otherChannels": "Telegram and phone"
+      },
+      "taglines": {
+        "anonymous": {
+          "buildSomething": "Ready to build something?",
+          "goodToSeeYou": "Good to see you.",
+          "readyToRoll": "Ready to roll?",
+          "welcomeBack": "Welcome back.",
+          "whatAreWeWorkingOn": "What are we working on?",
+          "whatsOnYourMind": "What's on your mind?",
+          "whatsTheMove": "What's the move?"
+        },
+        "anotherWin": "Another win today, {{userName}}?",
+        "coffeeReady": "Coffee's ready, {{userName}}.",
+        "enteredChat": "{{userName}} has entered the chat.",
+        "goodToSeeYou": "Good to see you, {{userName}}.",
+        "knewYouWouldCome": "Knew you'd come back, {{userName}}.",
+        "makeTodayCount": "Let's make today count, {{userName}}.",
+        "newIdeas": "New ideas today, {{userName}}?",
+        "readyToBuild": "Ready to build, {{userName}}?",
+        "rightOnTime": "Right on time, {{userName}}.",
+        "savedYourSeat": "Saved your seat, {{userName}}.",
+        "theUsual": "The usual, {{userName}}?",
+        "welcomeBack": "Welcome back, {{userName}}.",
+        "whatAreWeWorkingOn": "What are we working on, {{userName}}?",
+        "whatsCooking": "What's cooking, {{userName}}?",
+        "whatsOnYourMind": "What's on your mind, {{userName}}?",
+        "whatsTheMove": "What's the move, {{userName}}?"
+      }
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -2513,7 +2513,7 @@
     "sidebar": {
       "archive": "Archive chat",
       "archived": "Archived",
-      "chatsWith": "Chats with {{agentName}}",
+      "chatsWith": "Chats with {{assistantName}}",
       "chatThreads": "Chat threads",
       "delete": "Delete chat",
       "deleteDescription": "This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone.",
@@ -2528,7 +2528,7 @@
       "movePinUp": "Move up",
       "mute": "Mute chat",
       "muted": "Muted",
-      "newChatWith": "New chat with {{agentName}}",
+      "newChatWith": "New chat with {{assistantName}}",
       "noArchived": "No archived chats",
       "noMuted": "No muted chats",
       "noUnread": "No unread chats",
@@ -3276,7 +3276,7 @@
     "directed": {
       "connectDocumentTitle": "Connect {{connector}}",
       "connected": "{{connector}} connected",
-      "needsConnector": "{{agent}} needs {{connector}} to proceed",
+      "needsConnector": "{{assistantName}} needs {{connector}} to proceed",
       "reconnecting": "Reconnecting..."
     },
     "expiration": {
@@ -7314,7 +7314,7 @@
         "visibilityHelp": "Choose how this workflow is shared inside your workspace."
       },
       "notFound": "Workflow not found.",
-      "refineWith": "Refine with {{agent}}",
+      "refineWith": "Refine with {{assistantName}}",
       "sectionNavigation": "Workflow details section",
       "visibility": {
         "automationWarning": "Automations will stop",

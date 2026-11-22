@@ -69,7 +69,7 @@ async function linkTelegramTestSender(
   telegramUserId: string,
 ) {
   const bdd = createBddApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   await bdd.provisionWorkspace(actor);
   await bdd.completeOnboarding(actor);
   await createBddIntegrationApi(context).requestLinkTelegram(
@@ -182,7 +182,7 @@ function sendExecutionModelMessage(model: FooterModel) {
   });
   return owner
     .run(async () => {
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
       mockOptionalEnv("OPENROUTER_API_KEY", undefined);
@@ -213,11 +213,7 @@ function sendExecutionModelMessage(model: FooterModel) {
       expect(available?.subscriptionOptions?.serviceTier).toBe(
         fast ? "priority" : null,
       );
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Model footer sender",
-        visibility: "private",
-      });
-      expect(agent.displayName).toBe("Model footer sender");
+
       const thread = await chat.createThread(actor, {
         model,
       });
@@ -225,7 +221,6 @@ function sendExecutionModelMessage(model: FooterModel) {
         codexServiceTier: fast ? "fast" : null,
       });
       const run = await api.createThreadRun(actor, {
-        agentId: agent.agentId,
         threadId: thread.id,
         prompt: "Exercise footer",
       });

@@ -38,7 +38,6 @@ const api = createChatFilesBddApi(context);
 describe("CHAT-01 chat thread lifecycle", () => {
   it("creates, mutates, searches, and deletes a thread through visible APIs", async () => {
     const actor = bdd.user();
-    await api.createAgentForChatThread(actor);
     const created = await api.createThread(actor, {
       title: "Launch notes",
     });
@@ -160,7 +159,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const owner = bdd.user({ orgId });
     const peer = bdd.user({ orgId });
     const outsider = bdd.user();
-    await api.createAgentForChatThread(owner);
     const thread = await api.createThread(owner, {
       title: "Private planning",
     });
@@ -220,9 +218,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const orgId = `org_${randomUUID()}`;
     const owner = bdd.user({ orgId });
     const peer = bdd.user({ orgId });
-    await bdd.createAgent(owner, {
-      displayName: "Pinned launch plan agent",
-    });
     const thread = await api.createThread(owner, {
       title: "Owner launch plan",
     });
@@ -322,9 +317,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
   it("sends chat messages through API-visible no-credit, recall, and interrupt branches", async () => {
     const actor = bdd.user();
     const peer = bdd.user({ orgId: actor.orgId });
-    await bdd.createAgent(actor, {
-      displayName: "No-credit chat branch agent",
-    });
     const uploadId = randomUUID();
     const clientEventId = randomUUID();
     api.mockCompletedUploadObject(actor, uploadId, "launch-plan.txt", 24);
@@ -526,9 +518,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
 
   it("rejects invalid generation template and reused client thread ids through the send API", async () => {
     const actor = bdd.user();
-    await bdd.createAgent(actor, {
-      displayName: "Client-thread retry branch agent",
-    });
 
     const clientThreadId = randomUUID();
     const first = await api.requestSendEvent(
@@ -565,10 +554,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
         );
       }),
     ).toHaveLength(1);
-
-    await bdd.createAgent(actor, {
-      displayName: "Client-thread mismatch branch agent",
-    });
     const reusedClientThreadForOtherAgent = await api.requestSendEvent(
       actor,
       {
@@ -622,7 +607,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
   it("lists visible events and rejects invalid send requests without hidden fixtures", async () => {
     const actor = bdd.user();
     const peer = bdd.user({ orgId: actor.orgId });
-    await api.createAgentForChatThread(actor);
     const thread = await api.createThread(actor, {
       title: "Message validation",
     });
@@ -657,7 +641,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const orgId = `org_${randomUUID()}`;
     const owner = bdd.user({ orgId });
     const peer = bdd.user({ orgId });
-    await api.createAgentForChatThread(owner);
     const thread = await api.createThread(owner, {
       title: "Empty message boundary",
     });
@@ -692,7 +675,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
 describe("CHAT-03 artifacts", () => {
   it("exposes empty artifact state through the list API", async () => {
     const actor = bdd.user();
-    await api.createAgentForChatThread(actor);
     const thread = await api.createThread(actor, {
       title: "Artifacts",
     });

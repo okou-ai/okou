@@ -281,11 +281,7 @@ describe("member source-first onboarding", () => {
       throw new Error("Expected the seeded admin to belong to an org");
     }
     const existing = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    bdd.acceptAgentStorageWrites();
-    await bdd.createAgent(existing, {
-      displayName: "Existing member agent",
-      visibility: "private",
-    });
+    bdd.acceptStorageWrites();
     await chat.createThread(existing, {});
     const member = {
       userId: existing.userId,
@@ -318,25 +314,12 @@ describe("member source-first onboarding", () => {
       email: member.email,
       orgRole: "org:member",
     });
-    bdd.acceptAgentStorageWrites();
-    await bdd.createAgent(peer, {
-      displayName: "Peer agent",
-      visibility: "private",
-    });
+    bdd.acceptStorageWrites();
     await chat.createThread(peer, {});
-    await bdd.createAgent(sameUserElsewhere, {
-      displayName: "Other workspace agent",
-      visibility: "private",
-    });
     await chat.createThread(sameUserElsewhere, {});
     await expect(statusAs(actor)).resolves.toMatchObject({
       needsOnboarding: true,
       isAdmin: false,
-    });
-
-    await bdd.createAgent(member, {
-      displayName: "Member agent",
-      visibility: "private",
     });
     await chat.createThread(member, {});
     await expect(statusAs(actor)).resolves.toMatchObject({

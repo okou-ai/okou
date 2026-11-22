@@ -6,7 +6,7 @@ import type {
   ThinkingMessage,
 } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { accept } from "../../lib/accept.ts";
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setLoop } from "../utils.ts";
 import { createActiveRunSubscription } from "./active-run-subscription.ts";

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Real Auto/OpenRouter steering through the supported agent and chat APIs.
+# Real Auto/OpenRouter steering through the chat API.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
@@ -31,7 +31,6 @@ run_auto_steer() {
     local successor_run_id successor_output
 
     steer_result="$(runner_chat_steer \
-        "" \
         "$initial_prompt" \
         "$steer_prompt" \
         "auto" \
@@ -44,7 +43,6 @@ run_auto_steer() {
         "$run_id" \
         45)" || return 1
     successor_result="$(runner_chat_send_after_completion \
-        "" \
         "$thread_id" \
         "$run_id" \
         "Now reply with a different word: $after_complete_prompt" \

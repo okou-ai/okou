@@ -230,13 +230,13 @@ export function QuestConnectorPicker({
           <LoadingSkeleton
             className="px-4 py-6"
             label={t(($) => {
-              return $.chat.agentPage.getStarted.intro.connector.pickerLoading;
+              return $.chat.homePage.getStarted.intro.connector.pickerLoading;
             })}
           />
         ) : (
           <p role="alert" className="px-4 py-6 text-sm text-muted-foreground">
             {t(($) => {
-              return $.chat.agentPage.getStarted.intro.connector.pickerFailed;
+              return $.chat.homePage.getStarted.intro.connector.pickerFailed;
             })}
           </p>
         )}
@@ -280,7 +280,7 @@ export function QuestConnectorPicker({
           <ScrollArea.Content className="flex flex-col gap-3.5">
             <ConnectorGroup
               heading={t(($) => {
-                return $.chat.agentPage.getStarted.intro.connector.notConnected;
+                return $.chat.homePage.getStarted.intro.connector.notConnected;
               })}
               connectors={connectors.filter((connector) => {
                 return !connector.connected;
@@ -290,7 +290,7 @@ export function QuestConnectorPicker({
             />
             <ConnectorGroup
               heading={t(($) => {
-                return $.chat.agentPage.getStarted.intro.connector.connected;
+                return $.chat.homePage.getStarted.intro.connector.connected;
               })}
               connectors={connectors.filter((connector) => {
                 return connector.connected;

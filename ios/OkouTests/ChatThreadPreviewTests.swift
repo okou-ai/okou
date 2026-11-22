@@ -13,7 +13,7 @@ final class ChatThreadPreviewTests: XCTestCase {
       indicators: { _ in
         ChatHTTPResponse(
           body: """
-            {"agents":{},"threads":{"\(ConversationHistoryFixture.threadID)":"unread"},"unreadAt":{"\(ConversationHistoryFixture.threadID)":"2026-10-20T00:00:00Z"}}
+            {"threads":{"\(ConversationHistoryFixture.threadID)":"unread"},"unreadAt":{"\(ConversationHistoryFixture.threadID)":"2026-10-20T00:00:00Z"}}
             """)
       })
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)

@@ -6,7 +6,7 @@ import { chatThreadByIdContract } from "@okouai/api-contracts/client/chat-thread
 import type { ChatThreadSnapshotProjection } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { currentChatThreadId$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../chat-thread-list.ts";
 import {
   registerOptimisticChatThreadEvent$,
   catchUpChatThreadEventSource$,

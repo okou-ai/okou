@@ -2,7 +2,7 @@ import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
-/// The agent's email, ready to send from the phone: who it goes to, what it says, and
+/// Okou's email, ready to send from the phone: who it goes to, what it says, and
 /// Send / Discard. Nothing leaves until the user confirms.
 struct MailDraftCard: View {
   let store: MailDraftCardStore

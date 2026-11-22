@@ -214,7 +214,7 @@ async function responseFixture() {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const webhooks = createWebhookCallbackApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
@@ -222,7 +222,6 @@ async function responseFixture() {
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
-  await bdd.provisionWorkspace(actor);
   const sentTexts: string[] = [];
   server.use(
     http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
@@ -1241,7 +1240,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   const { actor, provider, confirm } = await fixture();
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
@@ -1249,7 +1248,6 @@ test("receives an owner DM once, resumes its native session and delivers the can
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
-  await bdd.provisionWorkspace(actor);
   const sends: unknown[] = [];
   const delivered = createDeferredPromise<void>(context.signal);
   let extraItems: NonNullable<WechatMessage["item_list"]> = [];
@@ -2531,14 +2529,13 @@ describe("WeChat system notices", () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     await runs.configureRunnerGroup();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     context.mocks.ably.publish.mockResolvedValue(undefined);
     await runs.grantProEntitlement(owner.actor);
     await runs.ensurePersonalSubscriptionModel(owner.actor);
     await runs.updateUserModelPreference(owner.actor, "claude-fable-5-1");
-    await bdd.provisionWorkspace(owner.actor);
     const message = ownerMessage(owner.actor.userId);
     let attempts = 0;
     const messages = setupApp({
@@ -3039,14 +3036,13 @@ test("a restored transport ignores provider backlog and accepts only newly creat
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   await runs.configureRunnerGroup();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await runs.grantProEntitlement(owner.actor);
   await runs.ensurePersonalSubscriptionModel(owner.actor);
   await runs.updateUserModelPreference(owner.actor, "claude-fable-5-1");
-  await bdd.provisionWorkspace(owner.actor);
   const oldMessage = {
     ...ownerMessage(owner.actor.userId),
     create_time_ms: now() - 60_000,

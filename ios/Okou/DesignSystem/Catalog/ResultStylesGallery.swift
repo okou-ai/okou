@@ -12,7 +12,7 @@
     }
   }
 
-  /// Every way a result can look in a chat, on one page, each under a caption: what the agent
+  /// Every way a result can look in a chat, on one page, each under a caption: what Okou
   /// made (website, slides, document, file, picture, video) in each state a card goes through,
   /// and what the user attached. Covers come from the real pipeline: a live website is drawn
   /// by `SitePreviewSnapshotter`, and a deck and a document are generated here and drawn by
@@ -30,7 +30,7 @@
 
     var body: some View {
       VStack(alignment: .leading, spacing: OkouSpace.xl) {
-        group("From the agent") {
+        group("From Okou") {
           specimen("Website, cover drawn from the live page") {
             OkouResultCard(
               title: siteTitle ?? "okou-404-options.sites.vm0.io",

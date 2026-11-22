@@ -3299,7 +3299,7 @@ function prepareRunnerLaunch(input: {
         FeatureSwitchKey.ArtifactThreePointTiming,
         args.featureSwitchContext,
       ),
-      singleAgent: args.featureSwitchContext.personalExecution,
+      singleAgent: true,
     },
   };
   return {

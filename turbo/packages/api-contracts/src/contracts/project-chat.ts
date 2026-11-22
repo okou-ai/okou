@@ -8,32 +8,6 @@ import {
 import { apiErrorSchema } from "./errors";
 const c = initContract();
 export const projectChatContract = c.router({
-  agentDraft: {
-    method: "GET",
-    path: "/api/project-chat/agents/:id/draft",
-    pathParams: object({ id: uuid() }),
-    headers: authHeadersSchema,
-    responses: {
-      200: composerDraftSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-  },
-  saveAgentDraft: {
-    method: "PATCH",
-    path: "/api/project-chat/agents/:id/draft",
-    pathParams: object({ id: uuid() }),
-    headers: authHeadersSchema,
-    body: composerDraftSchema,
-    responses: {
-      204: c.noBody(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-  },
   send: {
     method: "POST",
     path: "/api/project-chat/events",

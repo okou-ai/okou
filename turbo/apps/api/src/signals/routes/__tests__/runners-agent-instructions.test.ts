@@ -23,7 +23,6 @@ describe("Published member instructions in direct Runs", () => {
       const s3 = installWorkflowVolumeS3Fixture(context);
       await bdd.updatePersonalInstructions(owned.actor, "A at admission");
       const queued = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "execute with admitted instructions",
         model: "auto",
       });
@@ -47,7 +46,6 @@ describe("Published member instructions in direct Runs", () => {
           ?.toString(),
       ).toBe("A at admission");
       const next = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "execute with the later edit",
         model: "auto",
       });
@@ -73,7 +71,6 @@ describe("Published member instructions in direct Runs", () => {
       await bdd.updatePersonalInstructions(owned.actor, "Old managed file");
       await bdd.updatePersonalInstructions(owned.actor, "");
       const queued = await api.createThreadRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "clear instructions",
         model: "auto",
       });
@@ -94,9 +91,6 @@ describe("Published member instructions in direct Runs", () => {
       const member = bdd.user({
         orgId: owned.actor.orgId,
         orgRole: "org:member",
-      });
-      await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
-        visibility: "public",
       });
       await bdd.completeOnboarding(member);
       await createChatEventsFixture(context).configureSubscriptionPiModel(
@@ -127,9 +121,6 @@ describe("Published member instructions in direct Runs", () => {
             member,
             "Member instructions updated during attachment verification",
           );
-          await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
-            visibility: "private",
-          });
         }
         return await send(command);
       });

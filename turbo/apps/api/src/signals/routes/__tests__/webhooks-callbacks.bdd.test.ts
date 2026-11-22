@@ -147,7 +147,7 @@ function orgOf(actor: ApiTestUser): string {
 async function createLimitedFreeOrgFromClerk(): Promise<ApiTestUser> {
   const bdd = createBddApi(context);
   api.configureClerkWebhookSecret();
-  bdd.acceptAgentStorageWrites();
+  bdd.acceptStorageWrites();
 
   const admin = bdd.user();
   api.verifyNextClerkWebhook({
@@ -414,7 +414,6 @@ function customOauthConnectorBodyForTeardown(
  */
 async function sendChatInputAtCapacity(
   actor: ApiTestUser,
-  agentId: string,
   prompt: string,
 ): Promise<string> {
   const sent = await createChatFilesBddApi(context).requestSendEvent(
@@ -887,13 +886,6 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       isAdmin: true,
       hasOrg: true,
     });
-
-    const agents = await bdd.listAgents(admin);
-    expect(
-      agents.filter((agent) => {
-        return agent.displayName === "Okou";
-      }),
-    ).toHaveLength(1);
   });
 
   it("rejects GitHub requests with missing headers or invalid signatures", async () => {
@@ -2917,7 +2909,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const billing = createBillingMediaApi(context);
     const actor = bdd.user();
     const orgId = orgOf(actor);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -2925,26 +2917,18 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Team Upgrade Agent",
-      visibility: "private",
-    });
 
     const first = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "team upgrade run one",
     });
     const second = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "team upgrade run two",
     });
     const third = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "team upgrade run three",
     });
     const queuedThreadId = await sendChatInputAtCapacity(
       actor,
-      agent.agentId,
       "team upgrade queued chat input",
     );
     const queuedBefore = await runs.readRunQueue(actor);
@@ -3459,7 +3443,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const billing = createBillingMediaApi(context);
     const actor = bdd.user();
     const orgId = orgOf(actor);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -3467,32 +3451,23 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Concurrency Add-on Agent",
-      visibility: "private",
-    });
 
     await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "concurrency add-on run one",
     });
     await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "concurrency add-on run two",
     });
     await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "concurrency add-on run three",
     });
     const queuedThreadIds = [
       await sendChatInputAtCapacity(
         actor,
-        agent.agentId,
         "concurrency add-on queued chat one",
       ),
       await sendChatInputAtCapacity(
         actor,
-        agent.agentId,
         "concurrency add-on queued chat two",
       ),
     ];
@@ -3591,7 +3566,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
 
     await sendChatInputAtCapacity(
       actor,
-      agent.agentId,
       "concurrency add-on input over the new limit",
     );
 
@@ -4956,7 +4930,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const connectors = createConnectorBddApi(context);
     const gh = createGithubBddApi(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerGroup = await runs.configureRunnerGroup();
@@ -4970,10 +4944,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     await connectors.connectManualGrant(actor, "openai", "api-token", {
       apiKey: "org-teardown-connector-token",
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Org Teardown Agent",
-      visibility: "public",
-    });
+
     const customManual = await connectors.createCustomConnector(actor, {
       ...customManualConnectorBodyForTeardown("org"),
       skillMarkdown: "Keep this registered teardown skill active.",
@@ -4994,7 +4965,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       await connectors.startCustomConnectorOAuth2(actor, customOauth.id),
     );
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "survive until teardown",
     });
     expect(run.status).toBe("running");
@@ -5079,9 +5049,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const updateCalls =
       context.mocks.stripe.subscriptions.update.mock.calls.length;
     const plainActor = bdd.user();
-    await bdd.bootstrapLimitedFreeOnboarding(plainActor, {
-      displayName: "BDD Plain Teardown",
-    });
+    await bdd.bootstrapLimitedFreeOnboarding(plainActor);
     api.verifyNextClerkWebhook({
       type: "organization.deleted",
       data: { id: orgOf(plainActor) },
@@ -5098,7 +5066,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
 
@@ -5144,7 +5112,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const runs = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -5152,24 +5120,16 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const doomed = bdd.user();
     await runs.grantProEntitlement(doomed);
     await runs.ensurePersonalSubscriptionModel(doomed);
-    const agent = await bdd.createAgent(doomed, {
-      displayName: "Retained queued history",
-      visibility: "public",
-    });
+
     const active = [];
     for (let index = 0; index < 3; index++) {
       active.push(
         await runs.createThreadRun(doomed, {
-          agentId: agent.agentId,
           prompt: `Previously started input ${index}`,
         }),
       );
     }
-    await sendChatInputAtCapacity(
-      doomed,
-      agent.agentId,
-      "Never execute after deletion",
-    );
+    await sendChatInputAtCapacity(doomed, "Never execute after deletion");
     const first = active[0];
     if (!first) {
       throw new Error("Expected a publicly started Run");
@@ -5206,7 +5166,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     await runs.ensurePersonalSubscriptionModel(peer);
     const peerThread = await sendChatInputAtCapacity(
       peer,
-      agent.agentId,
       "Surviving peer queued input",
     );
     api.verifyNextClerkWebhook({
@@ -5216,7 +5175,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     await api.requestClerkWebhook("{}", {}, [200]);
     const peerRunId = await waitForPickedThreadRun(peer, peerThread);
     await runs.createThreadRun(peer, {
-      agentId: agent.agentId,
       prompt: "New peer input after stop",
     });
     await flushWaitUntilForTest();
@@ -5250,7 +5208,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const workflows = createWorkflowsBddApi(context);
     const mocks = createRouteMocks(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const doomed = bdd.user();
     const otherWorkspace = bdd.user({ userId: doomed.userId });
     const auditor = bdd.user({ orgId: orgOf(doomed), orgRole: "org:admin" });
@@ -5317,7 +5275,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       const bdd = createBddApi(context);
       const runs = createRunsApi(context);
       api.configureClerkWebhookSecret();
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       const runnerGroup = await runs.configureRunnerGroup();
@@ -5326,15 +5284,8 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       await runs.grantProEntitlement(doomed);
       await runs.ensurePersonalSubscriptionModel(doomed);
       const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:member" });
-      const sharedAgent = await bdd.createAgent(peer, {
-        displayName: "BDD Shared Grant Agent",
-        visibility: "public",
-      });
-      const doomedAgent = await bdd.createAgent(doomed, {
-        displayName: "BDD Doomed Agent",
-        visibility: "public",
-      });
-      return { runs, runnerGroup, doomed, peer, sharedAgent, doomedAgent };
+
+      return { runs, runnerGroup, doomed, peer };
     }
 
     async function startUserDeletion(
@@ -5357,12 +5308,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     async function expectSurvivingOrganization(
       fixture: Awaited<ReturnType<typeof prepareUserDeletion>>,
     ) {
-      // User deletion retains the Agents the deleted user owned.
-      await createBddApi(context).requestReadAgent(
-        fixture.peer,
-        fixture.doomedAgent.agentId,
-        [200],
-      );
       expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
       const preserved = await createBillingMediaApi(context).readBillingStatus(
@@ -5382,7 +5327,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
           restoreSetupWebhook?.();
         },
       });
-      bdd.acceptAgentStorageWrites();
+      bdd.acceptStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       await own(() => {
@@ -5394,18 +5339,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       });
       restoreSetupWebhook = undefined;
       const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:member" });
-      await own(() => {
-        return bdd.createAgent(peer, {
-          displayName: "BDD Shared Grant Agent",
-          visibility: "public",
-        });
-      });
-      await own(() => {
-        return bdd.createAgent(doomed, {
-          displayName: "BDD Doomed Agent",
-          visibility: "private",
-        });
-      });
+
       const connectors = createConnectorBddApi(context);
       const chat = createChatFilesBddApi(context);
       await own(() => {
@@ -5591,13 +5525,10 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
 
     it("retains the deleted user's Agents and another member's thread and run on them", async () => {
       const fixture = await prepareUserDeletion();
-      const { runs, runnerGroup, doomed, peer, doomedAgent } = fixture;
+      const { runs, runnerGroup, doomed, peer } = fixture;
       const bdd = createBddApi(context);
       const chat = createChatFilesBddApi(context);
-      const doomedPublicAgent = await bdd.createAgent(doomed, {
-        displayName: "BDD Doomed Public Agent",
-        visibility: "public",
-      });
+
       const peerThread = await chat.createThread(peer, {
         title: "BDD peer thread on the deleted user's Agent",
       });
@@ -5607,13 +5538,11 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         model: "claude-sonnet-5-5",
       });
       const peerRun = await runs.createThreadRun(peer, {
-        agentId: doomedPublicAgent.agentId,
         prompt: "peer run on the deleted user's Agent",
         model: "claude-sonnet-5-5",
       });
       const doomedRun = await runs.createThreadRun(doomed, {
-        agentId: doomedAgent.agentId,
-        prompt: "doomed run on the retained Agent",
+        prompt: "run owned by the deleted member",
       });
       await runs.heartbeatRunner(runnerGroup);
       const execution = await runs.executionInput(doomedRun.runId);
@@ -5621,18 +5550,8 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       await startUserDeletion(fixture);
       await flushWaitUntilForTest();
 
-      // Both Agents survive with their owner unchanged, as does the other
-      // member's thread and run on the public one.
       await expectSurvivingOrganization(fixture);
-      const retainedPublicAgent = await bdd.readAgent(
-        peer,
-        doomedPublicAgent.agentId,
-      );
-      expect(retainedPublicAgent).toMatchObject({
-        agentId: doomedPublicAgent.agentId,
-        ownerId: doomed.userId,
-        visibility: "public",
-      });
+
       await chat.requestReadThread(peer, peerThread.id, [200]);
       await runs.requestReadRun(peer, peerRun.runId, [200]);
       // The original Runner remains a real observer after identity deletion.
@@ -5670,7 +5589,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     await runs.configureRunnerGroup();
@@ -5678,13 +5597,8 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const banned = bdd.user();
     const granted = await runs.grantProEntitlement(banned);
     await runs.ensurePersonalSubscriptionModel(banned);
-    const agent = await bdd.createAgent(banned, {
-      displayName: "BDD Banned User Agent",
-      visibility: "private",
-    });
 
     const run = await runs.createThreadRun(banned, {
-      agentId: agent.agentId,
       prompt: "banned user cleanup run",
     });
     expect(run.status).toBe("running");

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Mock Codex smoke test through the supported agent and chat APIs.
+# Mock Codex smoke test through the chat API.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
@@ -28,7 +28,7 @@ setup() {
     ' <<<"$output"
     assert_success
 
-    run runner_chat_start_mock_codex "" "echo from codex"
+    run runner_chat_start_mock_codex "echo from codex"
 
     assert_success
     assert_output --partial '"status":"completed"'

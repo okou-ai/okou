@@ -48,11 +48,8 @@ describe("MCP OAuth foundations", () => {
     });
     const bdd = createBddApi(context);
     const connectors = createConnectorBddApi(context);
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     const actor = bdd.user({ orgRole: "org:admin" });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "OAuth transport owner",
-    });
 
     const connector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
@@ -69,7 +66,6 @@ describe("MCP OAuth foundations", () => {
     });
     return {
       actor,
-      agent,
       connector,
       connectors,
       provider,
@@ -664,7 +660,7 @@ describe("MCP OAuth foundations", () => {
     const runs = createRunsApi(context);
     const firewall = createFirewallApi(context);
     const actor = bdd.user({ orgRole: "org:admin" });
-    bdd.acceptAgentStorageWrites();
+    bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const runnerIdentity = {
@@ -681,9 +677,6 @@ describe("MCP OAuth foundations", () => {
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
-    });
-    const agent = await bdd.createAgent(actor, {
-      displayName: "OAuth refresh transport owner",
     });
 
     const tokenRequests: {
@@ -774,7 +767,6 @@ describe("MCP OAuth foundations", () => {
       throw new Error("Expected the publicly authorized OAuth account");
     }
     const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
       prompt: "Resolve my configured OAuth connector",
     });
     const input = await runs.executionInput(run.runId);

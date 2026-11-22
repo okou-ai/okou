@@ -29,7 +29,7 @@ final class ChatConnectorInputTests: XCTestCase {
     let service = ChatConnectorService(client: fixture.client)
     let loaded = try await service.status(
       .configuration(
-        target: .builtin("stripe"), agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+        target: .builtin("stripe"), threadID: FixtureData.threadID))
     let status = try XCTUnwrap(loaded)
     let receipt = try await service.start(
       status: status, method: status.builtin?.authMethods.first, values: [:], options: [:])
@@ -60,7 +60,7 @@ final class ChatConnectorInputTests: XCTestCase {
       let service = ChatConnectorService(client: fixture.client)
       let loaded = try await service.status(
         .configuration(
-          target: .builtin("slack"), agentID: FixtureData.agentID, threadID: FixtureData.threadID))
+          target: .builtin("slack"), threadID: FixtureData.threadID))
       let status = try XCTUnwrap(loaded)
       var options = ["other-method": "unused"]
       if mode == "live" { options["mode"] = mode }
@@ -101,7 +101,7 @@ final class ChatConnectorInputTests: XCTestCase {
     let service = ChatConnectorService(client: fixture.client)
     let loaded = try await service.status(
       .configuration(
-        target: .custom(FixtureData.customID), agentID: FixtureData.agentID,
+        target: .custom(FixtureData.customID),
         threadID: FixtureData.threadID, connectionID: FixtureData.accountID))
     let status = try XCTUnwrap(loaded)
     let custom = try XCTUnwrap(status.custom)

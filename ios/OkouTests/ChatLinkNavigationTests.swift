@@ -23,14 +23,13 @@ final class ChatLinkNavigationTests: XCTestCase {
       "https://app.example.invalid.evil/chats/\(ChatLinkFixture.sourceID)",
       "https://app.example.invalid:8443/chats/\(ChatLinkFixture.sourceID)",
       "https://example.slack.com/archives/C1/p1",
-      "https://app.example.invalid/agents/\(ChatLinkFixture.agentID)/chat",
       "https://app.example.invalid/workflows/\(ChatLinkFixture.workflowID)/automations"
     ] {
       XCTAssertNil(ChatLinkDestination(url: try XCTUnwrap(URL(string: link)), webURL: web))
     }
   }
 
-  func testWorkflowAndCrossAgentRunLinksOpenNativeChatAndRestoreTheOriginalInput() async throws {
+  func testWorkflowAndRunLinksOpenNativeChatAndRestoreTheOriginalInput() async throws {
     let fixture = ChatLinkFixture()
     let store = fixture.workspace()
     defer { store.close() }
@@ -41,7 +40,6 @@ final class ChatLinkNavigationTests: XCTestCase {
     let openedWorkflow = await store.openChatLink(.workflow(id: ChatLinkFixture.workflowID))
     XCTAssertTrue(openedWorkflow)
     XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.sourceID)
-    XCTAssertEqual(store.selectedAgentID, ChatLinkFixture.otherAgentID)
     let source = try XCTUnwrap(store.selectedConversation)
     await source.refresh()
     XCTAssertFalse(source.visibleMessages.contains { $0.id == ChatLinkFixture.eventID(1) })
@@ -208,8 +206,6 @@ final class ChatLinkNavigationTests: XCTestCase {
 final class ChatLinkFixture: Sendable {
   static let homeID = "74000000-0000-4000-8000-000000000001"
   static let sourceID = "74000000-0000-4000-8000-000000000002"
-  static let agentID = "74000000-0000-4000-8000-000000000003"
-  static let otherAgentID = "74000000-0000-4000-8000-000000000004"
   static let workflowID = "74000000-0000-4000-8000-000000000005"
   let requests = HistoryRequests()
   let http: ChatHTTPFixture
@@ -236,10 +232,10 @@ final class ChatLinkFixture: Sendable {
             {"automations":[{"chatThreadId":"\(Self.sourceID)"},{"chatThreadId":"\(Self.sourceID)"}]}
             """)
       case "/api/chat-threads/snapshot":
-        let identities = [(Self.homeID, Self.agentID), (Self.sourceID, Self.otherAgentID)]
-        let threads = identities.map { id, agent in
+        let identities = [Self.homeID, Self.sourceID]
+        let threads = identities.map { id in
           """
-          {"id":"\(id)","agentId":"\(agent)","title":"Source chat","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}
+          {"id":"\(id)","title":"Source chat","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}
           """
         }.joined(separator: ",")
         return ChatHTTPResponse(
@@ -247,11 +243,11 @@ final class ChatLinkFixture: Sendable {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+        return ChatHTTPResponse(body: #"{"threads":{},"unreadAt":{}}"#)
       case "/api/chat-threads/\(Self.sourceID)/metadata":
         return ChatHTTPResponse(
           body:
-            "{\"id\":\"\(Self.sourceID)\",\"agentId\":\"\(Self.otherAgentID)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null}"
+            "{\"id\":\"\(Self.sourceID)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null}"
         )
       case "/api/chat-threads/\(Self.sourceID)/event-snapshot":
         return ChatHTTPResponse(

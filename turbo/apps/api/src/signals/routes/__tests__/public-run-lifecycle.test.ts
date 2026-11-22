@@ -6,7 +6,7 @@ import { mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import type { ApiTestUser } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
@@ -17,12 +17,12 @@ import {
 } from "./helpers/public-run-owner";
 
 const context = testContext();
-const api = createAuthOrgAgentsBddApi(context);
+const api = createAuthOrgBddApi(context);
 
 // Actor IDs isolate business state; this helper uses shared PostgreSQL.
 async function onboardIsolatedActor(actor: ApiTestUser) {
   api.mockClerkUsers([actor]);
-  api.acceptAgentStorageWrites();
+  api.acceptStorageWrites();
   const app = await setupApp({
     context,
     routes: onboardingCompleteRoutes,

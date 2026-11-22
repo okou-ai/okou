@@ -27,11 +27,8 @@ function projects() {
 }
 test("prepares queued inputs from current membership while preserving an already started Run and captured mentions", async () => {
   const { actor } = await fixture.entitledNativeChatActor();
-  fixture.bdd.acceptAgentStorageWrites();
-  const agentId = await fixture.bdd.readDefaultAgentId(actor);
-  if (!agentId) {
-    throw new Error("Expected the workspace executor");
-  }
+  fixture.bdd.acceptStorageWrites();
+  await fixture.bdd.provisionWorkspace(actor);
   if (!actor.orgId) {
     throw new Error("Missing organization");
   }
